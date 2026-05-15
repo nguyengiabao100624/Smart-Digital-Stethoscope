@@ -1,0 +1,30 @@
+# General
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.log
+
+# Android App (smart-health-android)
+smart-health-android/build/
+smart-health-android/.gradle/
+smart-health-android/local.properties
+smart-health-android/.idea/
+smart-health-android/app/build/
+smart-health-android/captures/
+smart-health-android/.cxx/
+
+# Embedded Project (smart-health-embedded)
+smart-health-embedded/build/
+smart-health-embedded/sdkconfig
+smart-health-embedded/sdkconfig.old
+smart-health-embedded/dependencies.lock
+smart-health-embedded/managed_components/
+
+# Python / Scripts
+__pycache__/
+*.pyc
+.env
+
+# VSCode Workspace
+KLTN.code-workspace

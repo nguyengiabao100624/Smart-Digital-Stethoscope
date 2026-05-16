@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <ArduinoWebsockets.h>
 #include "driver/i2s.h"
+#include <math.h>
 
 using namespace websockets;
 
@@ -11,7 +12,7 @@ using namespace websockets;
 const char* WIFI_SSID = "Quang_Danh";
 const char* WIFI_PASS = "#Danh28042004";
 
-// IP máy tính hoặc VPS chạy Node.js server
+// IP may tinh hoac VPS chay Node.js server
 const char* WS_HOST = "192.168.1.60";
 const int WS_PORT = 3000;
 
@@ -24,9 +25,8 @@ const int WS_PORT = 3000;
 #define I2S_SD   6
 #define I2S_SCK  4
 
+// Keep 16 kHz so the current WebSocket/audio pipeline does not need changes.
 #define SAMPLE_RATE 16000
-
-// Giảm buffer để giảm độ trễ
 #define BUFFER_LEN 128
 
 int32_t micBuffer[BUFFER_LEN];
@@ -35,32 +35,122 @@ int16_t pcmBuffer[BUFFER_LEN];
 WebsocketsClient wsClient;
 
 // =======================
-// FIR Bandpass Hamming Filter
-// Voice band: 300 Hz - 3400 Hz
+// Heartbeat listening profile
 // =======================
-#define FIR_TAPS 63
+// For listening to heart sounds through a stethoscope earpiece. This preserves
+// S1/S2 and many murmur components while rejecting speech and room noise.
+const float HEART_LOW_CUT_HZ = 15.0f;
+const float HEART_HIGH_CUT_HZ = 550.0f;
+const float FILTER_Q = 0.70710678f;
 
-float firCoeff[FIR_TAPS];
-float firBuffer[FIR_TAPS];
-int firIndex = 0;
+struct Biquad {
+  float b0 = 1.0f;
+  float b1 = 0.0f;
+  float b2 = 0.0f;
+  float a1 = 0.0f;
+  float a2 = 0.0f;
+  float z1 = 0.0f;
+  float z2 = 0.0f;
 
-const float LOW_CUT_HZ  = 300.0f;
-const float HIGH_CUT_HZ = 3400.0f;
+  void reset() {
+    z1 = 0.0f;
+    z2 = 0.0f;
+  }
+
+  void setLowPass(float cutoffHz, float q) {
+    const float omega = 2.0f * PI * cutoffHz / SAMPLE_RATE;
+    const float sinOmega = sinf(omega);
+    const float cosOmega = cosf(omega);
+    const float alpha = sinOmega / (2.0f * q);
+
+    const float rawB0 = (1.0f - cosOmega) * 0.5f;
+    const float rawB1 = 1.0f - cosOmega;
+    const float rawB2 = (1.0f - cosOmega) * 0.5f;
+    const float rawA0 = 1.0f + alpha;
+    const float rawA1 = -2.0f * cosOmega;
+    const float rawA2 = 1.0f - alpha;
+
+    b0 = rawB0 / rawA0;
+    b1 = rawB1 / rawA0;
+    b2 = rawB2 / rawA0;
+    a1 = rawA1 / rawA0;
+    a2 = rawA2 / rawA0;
+    reset();
+  }
+
+  void setHighPass(float cutoffHz, float q) {
+    const float omega = 2.0f * PI * cutoffHz / SAMPLE_RATE;
+    const float sinOmega = sinf(omega);
+    const float cosOmega = cosf(omega);
+    const float alpha = sinOmega / (2.0f * q);
+
+    const float rawB0 = (1.0f + cosOmega) * 0.5f;
+    const float rawB1 = -(1.0f + cosOmega);
+    const float rawB2 = (1.0f + cosOmega) * 0.5f;
+    const float rawA0 = 1.0f + alpha;
+    const float rawA1 = -2.0f * cosOmega;
+    const float rawA2 = 1.0f - alpha;
+
+    b0 = rawB0 / rawA0;
+    b1 = rawB1 / rawA0;
+    b2 = rawB2 / rawA0;
+    a1 = rawA1 / rawA0;
+    a2 = rawA2 / rawA0;
+    reset();
+  }
+
+  float process(float x) {
+    const float y = b0 * x + z1;
+    z1 = b1 * x - a1 * y + z2;
+    z2 = b2 * x - a2 * y;
+    return y;
+  }
+};
+
+Biquad heartHighPass;
+Biquad heartLowPass1;
+Biquad heartLowPass2;
 
 // =======================
 // Audio tuning
 // =======================
-float volumeGain = 1.3f;
-int noiseGateThreshold = 120;
-const float limiterThreshold = 26000.0f;
-
+const int RAW_SHIFT = 14;
+float volumeGain = 6.0f;
 float dcOffset = 0.0f;
 
-// AGC nhẹ
+// Keep this off while finding the heartbeat signal. A gate before gain can
+// remove quiet S1/S2 sounds completely.
+const bool ENABLE_SOFT_NOISE_FLOOR = false;
+const float noiseFloorStart = 6.0f;
+const float noiseFloorFull = 45.0f;
+const float limiterThreshold = 30000.0f;
+
 float agcGain = 1.0f;
-const float targetRms = 5000.0f;
-const float agcMin = 0.6f;
-const float agcMax = 2.5f;
+const float targetRms = 9000.0f;
+const float agcMin = 1.0f;
+const float agcMax = 14.0f;
+const int32_t agcActivityRms = 4;
+
+// =======================
+// Heart metrics for Serial Plotter
+// =======================
+float heartEnvelope = 0.0f;
+float heartEnvelopeMean = 0.0f;
+float heartThreshold = 500.0f;
+float heartBpm = 0.0f;
+
+uint32_t sampleCounter = 0;
+uint32_t lastBeatSample = 0;
+uint16_t beatsInPlotWindow = 0;
+bool beatArmed = true;
+
+const float envelopeAttackAlpha = 0.0062f;   // about 10 ms at 16 kHz
+const float envelopeReleaseAlpha = 0.00052f; // about 120 ms at 16 kHz
+const float envelopeMeanAlpha = 0.00002f;
+const float beatThresholdMultiplier = 1.9f;
+const float beatThresholdMin = 600.0f;
+const uint32_t minBeatIntervalSamples = (SAMPLE_RATE * 280UL) / 1000UL;  // ~214 BPM max
+const uint32_t maxBeatIntervalSamples = (SAMPLE_RATE * 1800UL) / 1000UL; // ~33 BPM min
 
 // =======================
 // Serial Plotter
@@ -71,9 +161,18 @@ uint64_t plotSumSq = 0;
 uint16_t plotCount = 0;
 uint16_t clipCount = 0;
 int16_t lastWave = 0;
+int32_t rawPeak = 0;
+int32_t filteredPeak = 0;
+
+unsigned long lastWsConnectAttemptMs = 0;
+const unsigned long WS_RECONNECT_INTERVAL_MS = 1200;
 
 int32_t abs32(int32_t value) {
   return value < 0 ? -value : value;
+}
+
+float maxFloat(float a, float b) {
+  return a > b ? a : b;
 }
 
 int16_t clamp16(int32_t value) {
@@ -103,53 +202,31 @@ float softLimiter(float x) {
   return x;
 }
 
-void designFIRBandpass() {
-  int M = (FIR_TAPS - 1) / 2;
+float applySoftNoiseFloor(float x) {
+  const float magnitude = fabsf(x);
 
-  float wa = 2.0f * PI * LOW_CUT_HZ / SAMPLE_RATE;
-  float wb = 2.0f * PI * HIGH_CUT_HZ / SAMPLE_RATE;
-
-  for (int n = 0; n < FIR_TAPS; n++) {
-    int m = n - M;
-
-    float ideal;
-
-    if (m == 0) {
-      ideal = (wb - wa) / PI;
-    } else {
-      ideal = (sin(wb * m) - sin(wa * m)) / (PI * m);
-    }
-
-    float hamming = 0.54f - 0.46f * cos((2.0f * PI * n) / (FIR_TAPS - 1));
-
-    firCoeff[n] = ideal * hamming;
-    firBuffer[n] = 0.0f;
+  if (magnitude <= noiseFloorStart) {
+    return 0.0f;
   }
 
-  Serial.println("FIR Hamming bandpass ready");
+  if (magnitude < noiseFloorFull) {
+    const float scale = (magnitude - noiseFloorStart) / (noiseFloorFull - noiseFloorStart);
+    return x * scale;
+  }
+
+  return x;
 }
 
-float applyFIR(float input) {
-  firBuffer[firIndex] = input;
+void setupHeartbeatFilters() {
+  heartHighPass.setHighPass(HEART_LOW_CUT_HZ, FILTER_Q);
+  heartLowPass1.setLowPass(HEART_HIGH_CUT_HZ, FILTER_Q);
+  heartLowPass2.setLowPass(HEART_HIGH_CUT_HZ, FILTER_Q);
 
-  float output = 0.0f;
-  int index = firIndex;
-
-  for (int i = 0; i < FIR_TAPS; i++) {
-    output += firCoeff[i] * firBuffer[index];
-
-    index--;
-    if (index < 0) {
-      index = FIR_TAPS - 1;
-    }
-  }
-
-  firIndex++;
-  if (firIndex >= FIR_TAPS) {
-    firIndex = 0;
-  }
-
-  return output;
+  Serial.print("Heartbeat listen band ready: ");
+  Serial.print(HEART_LOW_CUT_HZ);
+  Serial.print(" - ");
+  Serial.print(HEART_HIGH_CUT_HZ);
+  Serial.println(" Hz");
 }
 
 void setupWiFi() {
@@ -158,7 +235,7 @@ void setupWiFi() {
   Serial.println(WIFI_SSID);
 
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false); // giảm delay WiFi
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -173,6 +250,7 @@ void setupWiFi() {
 }
 
 bool connectWebSocket() {
+  lastWsConnectAttemptMs = millis();
   String url = "ws://" + String(WS_HOST) + ":" + String(WS_PORT) + "/esp";
 
   Serial.print("Connecting WebSocket: ");
@@ -197,11 +275,8 @@ void setupI2S() {
     .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-
-    // Giảm DMA buffer để giảm độ trễ
     .dma_buf_count = 4,
     .dma_buf_len = BUFFER_LEN,
-
     .use_apll = false,
     .tx_desc_auto_clear = false,
     .fixed_mclk = 0
@@ -236,26 +311,76 @@ void setupI2S() {
 }
 
 int16_t processAudioSample(int32_t raw) {
-  float x = (float)(raw >> 14);
+  float x = (float)(raw >> RAW_SHIFT);
 
-  dcOffset = dcOffset * 0.999f + x * 0.001f;
+  dcOffset = dcOffset * 0.9995f + x * 0.0005f;
   x = x - dcOffset;
 
-  float y = applyFIR(x);
+  float y = heartHighPass.process(x);
+  y = heartLowPass1.process(y);
+  y = heartLowPass2.process(y);
 
-  if (abs((int)y) < noiseGateThreshold) {
-    y = 0.0f;
+  int32_t filteredLevel = (int32_t)fabsf(y);
+  if (filteredLevel > filteredPeak) {
+    filteredPeak = filteredLevel;
+  }
+
+  if (ENABLE_SOFT_NOISE_FLOOR) {
+    y = applySoftNoiseFloor(y);
   }
 
   y *= volumeGain;
   y *= agcGain;
-
   y = softLimiter(y);
 
   return clamp16((int32_t)y);
 }
 
+void updateHeartMetrics(int16_t audio) {
+  sampleCounter++;
+
+  const float rectified = fabsf((float)audio);
+  const float envelopeAlpha = rectified > heartEnvelope
+                                ? envelopeAttackAlpha
+                                : envelopeReleaseAlpha;
+
+  heartEnvelope += envelopeAlpha * (rectified - heartEnvelope);
+
+  if (heartEnvelopeMean < 1.0f) {
+    heartEnvelopeMean = heartEnvelope;
+  } else {
+    heartEnvelopeMean += envelopeMeanAlpha * (heartEnvelope - heartEnvelopeMean);
+  }
+
+  heartThreshold = maxFloat(beatThresholdMin, heartEnvelopeMean * beatThresholdMultiplier);
+
+  const uint32_t samplesSinceLastBeat = sampleCounter - lastBeatSample;
+
+  if (beatArmed &&
+      heartEnvelope > heartThreshold &&
+      samplesSinceLastBeat > minBeatIntervalSamples) {
+    if (lastBeatSample > 0 && samplesSinceLastBeat < maxBeatIntervalSamples) {
+      const float instantBpm = 60.0f * SAMPLE_RATE / (float)samplesSinceLastBeat;
+      heartBpm = heartBpm <= 0.1f ? instantBpm : heartBpm * 0.8f + instantBpm * 0.2f;
+    }
+
+    lastBeatSample = sampleCounter;
+    beatArmed = false;
+    beatsInPlotWindow++;
+  }
+
+  if (!beatArmed && heartEnvelope < heartThreshold * 0.55f) {
+    beatArmed = true;
+  }
+
+  if (lastBeatSample > 0 && samplesSinceLastBeat > maxBeatIntervalSamples) {
+    heartBpm = 0.0f;
+  }
+}
+
 void updateAgcAndPlotter(int16_t audio) {
+  updateHeartMetrics(audio);
+
   int32_t a = abs32(audio);
 
   if (a > plotPeak) {
@@ -269,25 +394,36 @@ void updateAgcAndPlotter(int16_t audio) {
 
   unsigned long now = millis();
 
-  // In mỗi 150ms để không làm nghẽn audio
   if (now - lastPlotMs >= 150) {
     int32_t rms = 0;
 
     if (plotCount > 0) {
-      rms = sqrt((float)plotSumSq / plotCount) * 8;
+      rms = sqrtf((float)plotSumSq / plotCount) * 8;
     }
 
-    if (rms > 200) {
+    if (rms > agcActivityRms) {
       float desiredGain = targetRms / (float)rms;
 
       if (desiredGain < agcMin) desiredGain = agcMin;
       if (desiredGain > agcMax) desiredGain = agcMax;
 
-      agcGain = agcGain * 0.97f + desiredGain * 0.03f;
+      agcGain = agcGain * 0.94f + desiredGain * 0.06f;
     }
 
     Serial.print(">wave:");
     Serial.println(lastWave);
+
+    Serial.print(">env:");
+    Serial.println((int32_t)heartEnvelope);
+
+    Serial.print(">thr:");
+    Serial.println((int32_t)heartThreshold);
+
+    Serial.print(">bpm:");
+    Serial.println((int32_t)heartBpm);
+
+    Serial.print(">beat:");
+    Serial.println(beatsInPlotWindow > 0 ? 20000 : 0);
 
     Serial.print(">rms:");
     Serial.println(rms);
@@ -295,16 +431,25 @@ void updateAgcAndPlotter(int16_t audio) {
     Serial.print(">peak:");
     Serial.println(plotPeak);
 
+    Serial.print(">raw:");
+    Serial.println(rawPeak);
+
+    Serial.print(">flt:");
+    Serial.println(filteredPeak);
+
     Serial.print(">clip:");
     Serial.println(clipCount);
 
     Serial.print(">agc:");
-    Serial.println(agcGain * 100);
+    Serial.println((int32_t)(agcGain * 100.0f));
 
     plotPeak = 0;
+    rawPeak = 0;
+    filteredPeak = 0;
     plotSumSq = 0;
     plotCount = 0;
     clipCount = 0;
+    beatsInPlotWindow = 0;
     lastPlotMs = now;
   }
 }
@@ -315,10 +460,10 @@ void setup() {
 
   setupWiFi();
   setupI2S();
-  designFIRBandpass();
+  setupHeartbeatFilters();
   connectWebSocket();
 
-  Serial.println("Low latency audio streaming started");
+  Serial.println("Amplified heartbeat audio streaming started");
 }
 
 void loop() {
@@ -329,11 +474,10 @@ void loop() {
     setupWiFi();
   }
 
-  if (!wsClient.available()) {
+  if (!wsClient.available() &&
+      millis() - lastWsConnectAttemptMs >= WS_RECONNECT_INTERVAL_MS) {
     Serial.println("WebSocket disconnected, reconnecting...");
-    delay(300);
     connectWebSocket();
-    return;
   }
 
   size_t bytesRead = 0;
@@ -350,6 +494,11 @@ void loop() {
     int samplesRead = bytesRead / sizeof(int32_t);
 
     for (int i = 0; i < samplesRead; i++) {
+      int32_t rawLevel = abs32(micBuffer[i] >> RAW_SHIFT);
+      if (rawLevel > rawPeak) {
+        rawPeak = rawLevel;
+      }
+
       int16_t audio16 = processAudioSample(micBuffer[i]);
 
       pcmBuffer[i] = audio16;
@@ -357,9 +506,11 @@ void loop() {
       updateAgcAndPlotter(audio16);
     }
 
-    wsClient.sendBinary(
-      (const char*)pcmBuffer,
-      samplesRead * sizeof(int16_t)
-    );
+    if (wsClient.available()) {
+      wsClient.sendBinary(
+        (const char*)pcmBuffer,
+        samplesRead * sizeof(int16_t)
+      );
+    }
   }
 }

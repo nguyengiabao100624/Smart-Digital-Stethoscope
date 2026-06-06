@@ -1,0 +1,331 @@
+
+
+===== PAGE 1 =====
+2023 International Conference on Communication, Circuits, and Systems (IC3S), May 26-28, 2023, Bhubaneswar,
+India
+Design of Real-time and Low-cost Electronic
+Stethoscope
+Trang Nguyen Minh, Hanh Nguyen Hong, Huy-Dung Han, Loan Pham-Nguyen*
+School of Electrical and Electronic Engineering, Hanoi University of Science and Technology
+Hanoi, Vietnam
+*loan.phamnguyenthanh@hust.edu.vn
+Abstract —Stethoscopes are a vital diagnostic tool in the med-
+ical field. The amplification and recording capabilities of a
+traditional stethoscope are constrained. Electronic stethoscopes
+have been created to address this issue. Nowadays, doctors
+frequently use conventional stethoscopes since they are less
+expensive than electronic ones. In this study, a low-cost electronic
+stethoscope with a hearing output jack and real-time cardiac
+sound realization based on the Arduino UNO R3 is presented.
+To enable the connection between the stethoscope and the laptop,
+a Bluetooth module was used. With Excel, the heart sound
+signal can be stored and displayed. It also activates additional
+processing to determine heart rate.
+Index Terms —electronic stethoscope, heart sound, PCG, aus-
+cultation, Arduino
+I. I NTRODUCTION
+In 2019, according to the World Health Organization
+(WHO), cardiovascular diseases (CVDs) were the main root
+of death, with 17.9 million cases globally (32% of total
+fatalities). In addition, about 75% of CVD-related deaths
+are observed in countries with low and moderate incomes
+[1]. For cardiovascular disease, early detection is essential
+in starting treatment with counseling and medical care. One
+of the fundamental techniques to diagnose heart disease is
+employing a stethoscope to listen to the heartbeat, as known
+as auscultation.
+Understanding the features of the heart sound, known as
+heart auscultation, is valuable data in diagnosing and monitor-
+ing heart conditions such as heart murmurs, valve defects, and
+irregular heartbeats. PCG stands for phonocardiography, a non-
+invasive technique to detect and record the sounds produced
+by the heart during each cardiac cycle [2].
+Mechanical (Acoustic) Stethoscopes are the traditional
+stethoscopes that have been used for decades. Conventional
+stethoscopes have limitations in amplification and recording
+capabilities. In auscultation learning, the instructor and medi-
+cal student can not share the sound. It can not be applied in
+remote healthcare monitoring and telemedicine consultations.
+An electronic stethoscope is needed to cope with these issues.
+Furthermore, a study demonstrated the effectiveness of the
+digital stethoscope as a tool for teaching auscultatory skills
+when compared to traditional methods [3].
+Air-conduction and contact-conduction electronic stetho-
+scopes are the two popular electronic stethoscopes, dependingon the sensor they employ. The electromagnetic coil or electret
+capacitor is used as the sensor in the air-conduction electronic
+stethoscope to gather sound signals with great stability and
+strong reliability but limited sensitivity. Piezoelectric materi-
+als, which have better anti-interference ability and sensitivity,
+are primarily used as sound sensors in contact-conduction elec-
+tronic stethoscopes. Unfortunately, any bending or deformation
+to the piezoelectric components during the manufacturing
+process reduces the stethoscope’s sensitivity [4].
+Muhammad et al in [5] demonstrated an Arduino DUE-
+based digital stethoscope with logging capabilities for post-
+processing in Matlab and the ability to visualize heart sounds
+in real-time through a graphic display. In the study on the
+application of an electronic stethoscope, Oktivasari et al in [6]
+designed a cost-effective and simple electronic stethoscope to
+capture and measure real-time heart rate data (unit: BPM).
+The results of the study show that this system does not
+show a significant deviation from the conventional heart rate
+measurement system, only about 2-5%, with a delay of 1.7 -
+2 seconds.
+In this study, we develop a low-cost electronic stethoscope
+with heart sound visualization in a smart device via Bluetooth
+and a 3.5mm hearing output for earphone connection.
+II. M ETHODOLOGY
+The block diagram of a proposed electronic stethoscope is
+presented in Fig. 1. The stethoscope consists of three main
+blocks: signal conditioning, analog front end (AFE), and signal
+processing.
+A. Signal Conditioning
+The signal conditioning part contains a chest piece of the
+conventional stethoscope to detect the mechanical sound wave
+(sound of heartbeat) and a high-sensitive microphone attached
+at the end of the chest piece.
+The connected stem, diaphragm, and bell make up the
+stethoscope’s chest piece. The chest piece’s smaller round end
+is known as the bell half. One side of the gadget concentrates
+on a smaller spectrum of lower-frequency sounds. The large
+disk-shaped end of the chest piece is called the diaphragm,
+it is a sealed membrane. This side of the device picks up a
+higher-frequency sound than the bell half. The sound of the
+979-8-3503-2590-4/23/$31.00 ©2023 IEEE2023 International Conference on Communication, Circuits, and Systems (IC3S) | 979-8-3503-2590-4/23/$31.00 ©2023 IEEE | DOI: 10.1109/IC3S57698.2023.10169456
+Authorized licensed use limited to: RMIT University Library. Downloaded on July 31,2025 at 09:02:36 UTC from IEEE Xplore. Restrictions apply. 
+
+
+===== PAGE 2 =====
+Fig. 1. Block diagram of stethoscope system.
+heart will cause the diaphragm, which moves the stethoscope’s
+inner air molecules, to vibrate when a chest piece is placed on
+a human being’s chest. This movement leads to a change in
+air pressure, which vibrates the membrane of the microphone.
+Fig. 2. Microphone biasing circuit.
+The microphone functions as a transducer, which is made
+up of parts for detection and transduction and changes one
+kind of energy into another. The sensor component produces
+matching outputs in response to bodily movements. Its output
+may take the form of strain, displacement, or other quantities.
+The transduction element is connected to the sensing element’s
+output. As a result, this component was specifically created to
+react to the sensing element’s reaction and provide an electrical
+signal with a proportional output. The selected microphone,
+shown in Fig. 2, has a sensitivity of −45dB, an output
+impedance of 2.2kΩ, and a frequency range of 20Hz−20kHz .
+The microphone operates with a voltage range of 1−10V DC .
+B. Analog-front-end (AFE)
+The electrical signal converted by the microphone is then
+amplified by the analog front end (AFE), consisting of two
+stages. The gain of the first stage is configured as a fixed-
+gain voltage. The capacitor Cmic= 10uFof the microphone
+removes the DC level of the signal.(Fig. 3).
+Before entering the second buffer stage, the signal passes
+through capacitor C2to remove the DC offset from the first
+stage. In the second stage, the volume of the sound can be
+adjusted easily by tuning variable resistor R4. After being
+amplified at the two stages, the signal goes through a passive
+low-pass filter RC to filter out noise (at a frequency higher than
+Fig. 3. Amplifier topology.
+200Hz). For each of these stages, an OpAmp in the LTC6078
+package is used. The op-am, powered by a 3.7V battery, has
+a dynamic range of signal from 0V to 3.7V . As the op-am
+requires a 1.8V bias for a high output swing, a voltage divider
+is used to create a Vbiasto supply for the positive terminal of
+the op-amp.
+The total gain of the AFE is calculated as:
+Av=R1
+R1+R2×R3
+R3+R4(1)
+The heart sound has a frequency range from 20 to 200 Hz,
+so a low pass filter is proposed at the tail of the second stage.
+The cut-off frequency is determined by:
+fL=1
+2πR5C4(2)
+C. Signal processing
+1) PCG signal study: A sample PCG signal is shown in
+Fig. 4. Systole and diastole are the two phases in a heart cycle.
+Diastole is the phase when the heart relaxes, while systole is
+its contracting phase.
+Fig. 4. Sample PCG signal [7].
+Systole occurs when the heart valves close and blood
+is discharged from the ventricles into the pulmonary and
+systemic circulation. This produces the first heart sound, often
+known as S1. Low-frequency S1 is most audible at the top
+of the heart. The heart valves open to let blood flow into the
+heart as the heart chambers fill with blood during diastole. The
+second heart sound, sometimes referred to as S2, is created
+when the atrioventricular valves open, causing blood to move
+Authorized licensed use limited to: RMIT University Library. Downloaded on July 31,2025 at 09:02:36 UTC from IEEE Xplore. Restrictions apply. 
+
+
+===== PAGE 3 =====
+quickly from the atria to the ventricles. The base of the heart
+is the greatest place to hear S2, which is a higher-frequency
+sound [8].
+2) Transmission circuit: The obtained analog signal, after
+going through the amplifier and filter, can be heard by ear-
+phones via a 3.5mm jack for auscultation purposes or being
+sent to an Arduino Uno R3 circuit. Arduino Uno R3 works as
+an ADC converting analog signals to digital signals ready for
+streaming to a remote device via Bluetooth.
+Fig. 5. Transmission circuit.
+The transmission circuit is basically an Arduino UNO R3
+connecting with an HC-06 Bluetooth module. The converted
+signal will be sent to the Excel program for storage via
+Bluetooth. To verify the operation of the transmission circuit,
+a known input is supplied into the board then the output data
+is transmitted to the laptop to be stored in Excel files. Stored
+data are plotted to calibrate the signal.
+III. E XPERIMENTAL RESULTS AND DISCUSSION
+A. Simulation results
+The electronic components listed in table I are selected from
+the calculations and specifications of the system.
+TABLE I
+CHOOSING COMPONENTS
+Component Symbol Value
+OpAmp U1, U2 LTC6078
+C1, C3 47µF
+Capacitor C2 10µF
+C4 300nF
+R2 500kΩ
+Resistor R1, R3 1MΩ
+R5 2kΩ
+The circuit is then simulated by the TINA-TI simulation
+tool. The microphone is modeled by connecting a resistor in
+series with a capacitor. With R4= 350 k, gain of AFE will
+be above 11 (21dB). An input signal of 200mVppis applied
+through the Rmicand the output signal is measured at Vout
+point. The simulation results are shown in Fig. 6 and Fig. 7.
+From the transient simulation (Fig. 6), the output signal has
+an amplitude of 2.15Vppoffering a simulation gain of 10.75
+or20.63dB.
+An AC analysis (Fig. 7) was carried out to obtain the
+frequency response of the system. It is noticed that AC gain
+equals 10.86 or 20.72dB at a bandwidth of 0 – 265Hz.
+Fig. 6. Transient simulation results
+Fig. 7. AC analysis simulation results
+B. Heart sound measurement
+To determine the phases and shape of the signal, the
+measurements are set up with different steps. First, the chest
+piece is put on the chest of the subject (a volunteer). Second,
+the circuit is connected via Bluetooth to a laptop running the
+Excel program. Once in operation, the circuit continuously
+sends the output signals to the laptop for storage in Excel
+files. Each of these files contains 10 seconds of the heart sound.
+(Fig. 8) clearly confirms that the measured PCG signal has four
+different phases: S1, systole, S2, and diastole, as expected. The
+S1 peak is higher than the S2 peak.
+Fig. 8. Measured heart sound signal of one subject.
+Table II shows the experiment results from 5 different
+subjects. For each subject, the values of the S1 peak and S2
+peak are recorded and then averaged to detect the threshold
+for heartbeat counting.
+C. Heart rate analysis
+The calculation of heart rate can be summarized as follows:
+•Storage of heart sound data in Excel file (10 seconds of
+sound for each file).
+Authorized licensed use limited to: RMIT University Library. Downloaded on July 31,2025 at 09:02:36 UTC from IEEE Xplore. Restrictions apply. 
+
+
+===== PAGE 4 =====
+•Detection of meaningful signal peaks by using ’findpeak’
+function of Matlab and applying a threshold. The S1 peak,
+as the highest peak, is chosen to mark a heart cycle.
+•Extraction of the time interval (∆t)between the current
+S1 peak and the next one (unit: second). Calculating the
+average of four consecutive time intervals.
+•The heart rate can be calculated as follows:
+HR=60(s)
+∆t(s)(3)
+TABLE II
+S1AND S2PEAKS RESULTS
+S1 S2 S3 S4 S5 A VG
+S1 Peak(V) 3.40 3.23 3.35 3.61 3.20 3.36
+S2 Peak(V) 2.75 2.63 2.72 2.71 2.59 2.68
+To evaluate the heart rate counting algorithm, the heart rate
+results of the proposed electronic stethoscope are compared
+with commercially available pulse oximeters. The comparison
+is taken on 5 different subjects of different health conditions
+and genders, with ages ranging from 20 to 25 years old. We
+calculated the average heart rate measured by each product,
+then found the delta, which is determined as the difference
+between two HR A VG values.
+The heart rate results (compared to commercial devices) (see
+table III) show that with a heart rate range from 75 to 85, our
+design nearly fits the commercial device results (delta range
+0.7 to 1.0). However, with a heart rate lower or higher than
+that range, our system is not good. There are some reasons
+below that make this happen:
+•The measurement results are strongly impacted by the en-
+vironment (low noise environment required) and motion
+artifacts.
+•The threshold level is fixed at a specific value while this
+value, in turn, varies depending on some factors such as
+health condition, gender, environment, or motion artifacts.
+It is obvious that this area needs further improvement by
+testing on a bigger group of subjects to identify the most
+efficient threshold level
+TABLE III
+HEART RATE COMPARING RESULTS
+Proposed product Commercial productDeltaHR Range A VG HR Range A VG
+S1 96,84,84,72 84.0 84,84,83,82 83.3 0.7
+S2 82,82,79,79 80.5 82,81,82,81 81.5 1.0
+S3 114,114,101,113 110.589,90,89,91 89.8 20.7
+S4 66,66,66,60 64.5 69,70,69,72 70.0 5.5
+S5 66,60,60,60 61.5 64,64,64,65 64.3 2.8
+IV. C ONCLUSION
+This study described the development of a real-time and
+low-cost electronic stethoscope for the auscultation of heart
+sounds. For use in medical diagnosis and auscultation learning,
+the stethoscope produces clear sound recordings. The PCG wasused to determine the heart rate, and the results were compared
+with a commercial device. The design will be improved in the
+future by optimizing it to increase performance.
+REFERENCES
+[1] (World Health Organization [WHO], 2019). Cardiovascular diseases
+(CVDs).
+[2] Roy, J.K.; Roy, T.S.; Mukhopadhyay, S.C. Heart Sound: Detection and
+Analytical Approach Towards Diseases. In Modern Sensing Technolo-
+gies; Springer: Berlin/Heidelberg, Germany, 2019; pp. 103–145.
+[3] Wu Y-C, Han C-C, Chang C-S, Chang F-L, Chen S-F, Shieh T-Y ,
+Chen H-M, Lin J-Y . Development of an Electronic Stethoscope and
+a Classification Algorithm for Cardiopulmonary Sounds. Sensors. 2022;
+22(11):4263. https://doi.org/10.3390/s22114263
+[4] Mesquita, C. T., Reis, J. C., Sim ˜oes, L. S., Moura, E. C., Rodrigues,
+G. A., Athayde, C. C., Machado, H. L., & Lanzieri, P. G. (2013).
+Digital stethoscope as an innovative tool on the teaching of aus-
+cultatory skills. Arquivos brasileiros de cardiologia, 100(2), 187–189.
+https://doi.org/10.5935/abc.20130033
+[5] Waqar, M., Inam, S., ur Rehman, M. A., Ishaq, M., Afzal, M., Tariq, N.,
+. . . Qurat-ul-Ain. (2019). Arduino Based Cost-Effective Design and De-
+velopment of a Digital Stethoscope. 2019 15th International Conference
+on Emerging Technologies (ICET). doi:10.1109/icet48972.2019.899467
+[6] Oktivasari P, Haryanto F, Hamidal Salman A, Riandini R, & Suprijadi
+S. (2020). A Real-Time Heart Rate Signal Detection using an Electronic
+Stethoscope with Labview. Journal of biomedical physics and engineer-
+ing, 10(3), 375–382. https://doi.org/10.31661/jbpe.v0i0.1183
+[7] Khaled, Sara & Fakhry, Mahmoud & Mubarak, Ahmed. (2020). Clas-
+sification of PCG Signals Using A Nonlinear Autoregressive Network
+with Exogenous Inputs (NARX). 10.13140/RG.2.2.19832.39687/1.
+[8] Betts, J. Gordon (2013). Anatomy & physiology. pp. 787–846. ISBN
+978-1-938168-13-0. Archived from the original on 27 February 2021.
+Retrieved 11 August 2014.
+[9] Chowdhury, M. E. H., Khandakar, A., Alzoubi, K., Mansoor, S., M
+Tahir, A., Reaz, M. B. I., & Al-Emadi, N. (2019). Real-Time Smart-
+Digital Stethoscope System for Heart Diseases Monitoring. Sensors
+(Basel, Switzerland), 19(12), 2781. https://doi.org/10.3390/s19122781.
+[10] Szot, S., Levin, A., Ragazzi, A., Ning, T. (2018). A Wireless Digital
+Stethoscope Design. 2018 14th IEEE International Conference on Signal
+Processing (ICSP). doi:10.1109/icsp.2018.8652475.
+[11] Lakhe, A., Sodhi, I., Warrier, J., & Sinha, V . (2016). Development of dig-
+ital stethoscope for telemedicine. Journal of medical engineering & tech-
+nology, 40(1), 20–24. https://doi.org/10.3109/03091902.2015.1116633
+[12] Leng, S., Tan, R. S., Chai, K. T., Wang, C., Ghista, D., & Zhong, L.
+(2015). The electronic stethoscope. Biomedical engineering online, 14,
+66. https://doi.org/10.1186/s12938-015-0056-y
+[13] Kelmenson, D. A., Heath, J. K., Ball, S. A., Kaafarani, H. M., Baker,
+E. M., Yeh, D. D., Bittner, E. A., Eikermann, M., & Lee, J. (2014).
+Prototype electronic stethoscope vs. conventional stethoscope for aus-
+cultation of heart sounds. Journal of medical engineering & technology,
+38(6), 307–310. https://doi.org/10.3109/03091902.2014.921253
+Authorized licensed use limited to: RMIT University Library. Downloaded on July 31,2025 at 09:02:36 UTC from IEEE Xplore. Restrictions apply. 

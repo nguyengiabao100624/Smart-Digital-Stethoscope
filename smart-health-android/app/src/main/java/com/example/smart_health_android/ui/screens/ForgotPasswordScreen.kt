@@ -17,14 +17,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var sent by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(sent) {
         if (sent) {
@@ -95,16 +100,55 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
 
                         Spacer(modifier = Modifier.height(24.dp))
 
+                        errorMessage?.let { message ->
+                            Text(
+                                text = message,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp)
+                            )
+                        }
+
                         Button(
-                            onClick = { sent = true },
+                            onClick = {
+                                val login = email.trim()
+                                if (login.isBlank()) {
+                                    errorMessage = "Vui lòng nhập email hoặc số điện thoại"
+                                    return@Button
+                                }
+
+                                isSubmitting = true
+                                errorMessage = null
+                                coroutineScope.launch {
+                                    try {
+                                        SmartHealthRepository.api.requestPasswordReset(login)
+                                        sent = true
+                                    } catch (error: Exception) {
+                                        errorMessage = error.message ?: "Không thể gửi yêu cầu"
+                                    } finally {
+                                        isSubmitting = false
+                                    }
+                                }
+                            },
+                            enabled = !isSubmitting,
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Gửi hướng dẫn", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            if (isSubmitting) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Gửi hướng dẫn", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
                             }
                         }
 

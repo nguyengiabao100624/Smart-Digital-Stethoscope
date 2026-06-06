@@ -1,5 +1,6 @@
 package com.example.smart_health_android.ui.screens
 
+import android.media.MediaPlayer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,23 +27,98 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.BackendConfig
+import com.example.smart_health_android.data.Scan
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.scanIsNormal
+import com.example.smart_health_android.data.scanLabel
+import com.example.smart_health_android.data.scanSummary
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.sin
 
 @Composable
 fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
     var isPlaying by remember { mutableStateOf(false) }
     var currentTime by remember { mutableStateOf(0) }
-    val duration = 154
+    var duration by remember { mutableStateOf(1) }
+    var scan by remember { mutableStateOf<Scan?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isStopping by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(recordId) {
+        runCatching {
+            val loaded = SmartHealthRepository.api.getScan(recordId)
+            scan = loaded
+            duration = loaded.durationSeconds.toInt().coerceAtLeast(1)
+            loadError = null
+        }.onFailure {
+            loadError = it.message ?: "Không tải được hồ sơ"
+        }
+    }
+
+    val audioUrl = BackendConfig.audioUrl(scan?.audioUrl)
+    val isRecording = scan?.isRecording == true
+
+    fun stopCurrentScan() {
+        val currentScan = scan ?: return
+        if (isStopping) return
+        coroutineScope.launch {
+            isStopping = true
+            runCatching {
+                SmartHealthRepository.api.stopScan(currentScan.id)
+            }.onSuccess { stopped ->
+                scan = stopped
+                duration = stopped.durationSeconds.toInt().coerceAtLeast(1)
+                currentTime = 0
+                loadError = null
+            }.onFailure {
+                loadError = it.message ?: "Không dừng được lượt ghi"
+            }
+            isStopping = false
+        }
+    }
+
+    DisposableEffect(audioUrl) {
+        if (audioUrl.isNullOrBlank()) {
+            onDispose { }
+        } else {
+            val player = MediaPlayer()
+            runCatching {
+                player.setDataSource(audioUrl)
+                player.setOnPreparedListener {
+                    duration = (it.duration / 1000).coerceAtLeast(1)
+                }
+                player.setOnCompletionListener {
+                    isPlaying = false
+                    currentTime = duration
+                }
+                player.prepareAsync()
+                mediaPlayer = player
+            }.onFailure {
+                loadError = it.message ?: "Không phát được file WAV"
+                player.release()
+            }
+
+            onDispose {
+                if (mediaPlayer == player) mediaPlayer = null
+                player.release()
+            }
+        }
+    }
 
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
-            while (currentTime < duration) {
-                delay(1000)
-                currentTime += 1
+            while (isPlaying) {
+                delay(250)
+                currentTime = mediaPlayer?.currentPosition?.div(1000) ?: (currentTime + 1)
+                if (currentTime >= duration) {
+                    isPlaying = false
+                }
             }
-            isPlaying = false
         }
     }
 
@@ -73,7 +149,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                 IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
-                Text("Chi Tiết Hồ Sơ", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Chi tiết hồ sơ", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 IconButton(onClick = { }, modifier = Modifier.offset(x = 12.dp)) {
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
                 }
@@ -104,9 +180,9 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     Column {
                         Text(recordId, color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Trần Thị Mai", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        Text(scan?.patientName ?: "Đang tải...", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text("Mã BN: BN-2844", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("Mã BN: ${scan?.patientCode ?: "--"}", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                     Box(
                         modifier = Modifier
@@ -114,7 +190,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                             .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Text("Bất thường", color = Color(0xFFF59E0B), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(scan?.let { scanLabel(it) } ?: "Đang tải", color = if (scan?.let { scanIsNormal(it) } != false) SuccessGreen else Color(0xFFF59E0B), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 
@@ -122,12 +198,35 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        InfoChip(icon = Icons.Default.CalendarToday, text = "12-05-2026")
-                        InfoChip(icon = Icons.Default.Timer, text = "2:34 phút")
+                        InfoChip(icon = Icons.Default.CalendarToday, text = scan?.formattedDate() ?: "--")
+                        InfoChip(icon = Icons.Default.Timer, text = "${scan?.formattedDuration() ?: "--"} phút")
                     }
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        InfoChip(icon = Icons.Default.AccessTime, text = "13:20")
-                        InfoChip(icon = Icons.Default.Air, text = "Đo Phổi", iconColor = Color(0xFF0EA5E9))
+                        InfoChip(icon = Icons.Default.AccessTime, text = scan?.formattedTime() ?: "--")
+                        InfoChip(icon = if (scan?.isHeart != false) Icons.Default.Favorite else Icons.Default.Air, text = "Đo ${if (scan?.isHeart != false) "Tim" else "Phổi"}", iconColor = if (scan?.isHeart != false) Color(0xFFEF4444) else Color(0xFF0EA5E9))
+                    }
+                }
+
+                if (isRecording) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = ::stopCurrentScan,
+                        enabled = !isStopping,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlue,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        if (isStopping) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Dừng ghi và lưu", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -195,7 +294,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFE2E8F0), RoundedCornerShape(4.dp)).clickable { /* Seek */ }) {
-                    Box(modifier = Modifier.fillMaxWidth(currentTime.toFloat() / duration).fillMaxHeight().background(PrimaryBlue, RoundedCornerShape(4.dp)))
+                    Box(modifier = Modifier.fillMaxWidth((currentTime.toFloat() / duration).coerceIn(0f, 1f)).fillMaxHeight().background(PrimaryBlue, RoundedCornerShape(4.dp)))
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -207,14 +306,33 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier.size(48.dp).background(Color(0xFFF1F5F9), CircleShape).clickable { currentTime = maxOf(0, currentTime - 10) },
+                        modifier = Modifier.size(48.dp).background(Color(0xFFF1F5F9), CircleShape).clickable {
+                            val newTimeMs = maxOf(0, (currentTime - 10) * 1000)
+                            mediaPlayer?.seekTo(newTimeMs)
+                            currentTime = newTimeMs / 1000
+                        },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Default.Replay10, contentDescription = "Rewind", tint = TextPrimary.copy(alpha = 0.8f))
                     }
                     Spacer(modifier = Modifier.width(24.dp))
                     Box(
-                        modifier = Modifier.size(56.dp).background(PrimaryBlue, CircleShape).clickable { isPlaying = !isPlaying },
+                        modifier = Modifier.size(56.dp).background(PrimaryBlue, CircleShape).clickable {
+                            val player = mediaPlayer
+                            if (player == null) {
+                                isPlaying = false
+                            } else if (isPlaying) {
+                                player.pause()
+                                isPlaying = false
+                            } else {
+                                if (currentTime >= duration) {
+                                    player.seekTo(0)
+                                    currentTime = 0
+                                }
+                                player.start()
+                                isPlaying = true
+                            }
+                        },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play/Pause", tint = Color.White, modifier = Modifier.size(32.dp))
@@ -251,14 +369,14 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                         .padding(16.dp)
                 ) {
                     Text(
-                        text = "Kết luận: Phát hiện tiếng ran nổ - Đáy phổi trái",
+                        text = "Kết luận: ${scan?.let { scanLabel(it) } ?: "Đang tải"}",
                         color = TextPrimary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Mô hình AI đã phát hiện các âm thanh hô hấp bất thường tương thích với tiếng ran nổ nhỏ ở thuỳ dưới phổi trái. Mẫu âm thanh này thường liên quan đến sự tích tụ dịch hoặc viêm nhiễm ở các phế nang.",
+                        scan?.let { scanSummary(it) } ?: loadError ?: "Đang tải dữ liệu phân tích từ máy chủ...",
                         color = TextPrimary.copy(alpha = 0.7f),
                         fontSize = 14.sp,
                         lineHeight = 20.sp
@@ -275,7 +393,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     ) {
                         Text("Độ tin cậy", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("94%", color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("${(((scan?.aiConfidence ?: 0.65) * 100).toInt()).coerceIn(0, 100)}%", color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(
                         modifier = Modifier
@@ -286,7 +404,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     ) {
                         Text("Mức độ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Trung bình", color = Color(0xFFF59E0B), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(scan?.let { scanLabel(it) } ?: "--", color = Color(0xFFF59E0B), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -333,7 +451,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                         .padding(16.dp)
                 ) {
                     Text(
-                        "Bệnh nhân nhập viện với triệu chứng khó thở nhẹ. Đã xác nhận tiếng ran nổ khi nghe ống nghe. Kết quả AI phù hợp với biểu hiện lâm sàng. Đề nghị chụp X-quang phổi và cân nhắc viêm phổi giai đoạn đầu hoặc phù phổi. Đã bắt đầu dùng kháng sinh theo kinh nghiệm trong khi chờ kết quả cấy vi khuẩn.",
+                        scan?.doctorNotes?.ifBlank { "Chưa có ghi chú bác sĩ cho lượt đo này." } ?: "Đang tải ghi chú...",
                         color = TextPrimary.copy(alpha = 0.8f),
                         fontSize = 14.sp,
                         fontStyle = FontStyle.Italic,
@@ -344,7 +462,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Bs. Tuấn, CK1", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("12-05-2026 - 13:45", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("${scan?.formattedDate() ?: "--"} - ${scan?.formattedTime() ?: "--"}", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }

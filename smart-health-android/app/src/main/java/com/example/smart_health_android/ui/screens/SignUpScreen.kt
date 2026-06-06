@@ -3,40 +3,120 @@ package com.example.smart_health_android.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.ui.theme.*
+import androidx.compose.ui.window.Dialog
+import com.example.smart_health_android.data.ClinicOption
+import com.example.smart_health_android.data.FirebaseAuthService
+import com.example.smart_health_android.data.PendingRegistration
+import com.example.smart_health_android.data.PendingRegistrationStore
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.SpecialtyOption
+import com.example.smart_health_android.data.toVietnameseMessage
+import com.example.smart_health_android.ui.theme.Background
+import com.example.smart_health_android.ui.theme.Border
+import com.example.smart_health_android.ui.theme.PrimaryBlue
+import com.example.smart_health_android.ui.theme.Surface
+import com.example.smart_health_android.ui.theme.TextPrimary
+import com.example.smart_health_android.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignUpScreen(
     onNavigateToLogin: () -> Unit,
-    onNavigateToVerifyEmail: () -> Unit
+    onNavigateToVerifyEmail: (accountType: String) -> Unit
 ) {
-    var accountType by remember { mutableStateOf("doctor") }
+    var accountType by remember { mutableStateOf("personal") }
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var license by remember { mutableStateOf("") }
-    var hospital by remember { mutableStateOf("") }
+    var registrationReason by remember { mutableStateOf("") }
+    var clinics by remember { mutableStateOf<List<ClinicOption>>(emptyList()) }
+    var specialties by remember { mutableStateOf<List<SpecialtyOption>>(emptyList()) }
+    var selectedClinicId by remember { mutableStateOf("") }
+    var selectedSpecialtyId by remember { mutableStateOf("") }
+    var requestedClinicName by remember { mutableStateOf("") }
+    var isCatalogLoading by remember { mutableStateOf(false) }
+    var catalogError by remember { mutableStateOf<String?>(null) }
     var agreedToTerms by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val selectedClinic = clinics.firstOrNull { it.id == selectedClinicId }
+    val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
+    val clinicDisplayName = selectedClinic?.name ?: requestedClinicName
+    val isDoctorRegistration = accountType == "doctor" || accountType == "solo_doctor"
+    val requiresClinicSelection = accountType == "doctor"
+
+    LaunchedEffect(Unit) {
+        isCatalogLoading = true
+        catalogError = null
+        try {
+            clinics = SmartHealthRepository.api.listClinics()
+            specialties = SmartHealthRepository.api.listSpecialties()
+        } catch (error: Exception) {
+            catalogError = error.toVietnameseMessage("Không thể tải danh sách cơ sở y tế/chuyên khoa từ backend.")
+        } finally {
+            isCatalogLoading = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -45,13 +125,16 @@ fun SignUpScreen(
             .padding(24.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Back Button
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                modifier = Modifier.clickable(onClick = onNavigateToLogin).padding(8.dp),
+                modifier = Modifier
+                    .clickable(onClick = onNavigateToLogin)
+                    .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Default.ArrowBack, contentDescription = null, tint = PrimaryBlue)
@@ -61,8 +144,6 @@ fun SignUpScreen(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        
-        // Header
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Text("Tạo tài khoản mới", color = PrimaryBlue, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
@@ -71,110 +152,239 @@ fun SignUpScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Account Type Toggle
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Surface, RoundedCornerShape(12.dp))
                 .padding(4.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (accountType == "doctor") Color.White else Color.Transparent)
-                    .clickable { accountType = "doctor" }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Bác sĩ", color = if (accountType == "doctor") PrimaryBlue else TextSecondary, fontWeight = FontWeight.Medium)
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (accountType == "patient") Color.White else Color.Transparent)
-                    .clickable { accountType = "patient" }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Bệnh nhân", color = if (accountType == "patient") PrimaryBlue else TextSecondary, fontWeight = FontWeight.Medium)
-            }
+            AccountTypeTab(
+                label = "Cá nhân",
+                selected = accountType == "personal",
+                onClick = { accountType = "personal" },
+                modifier = Modifier.weight(1f)
+            )
+            AccountTypeTab(
+                label = "Bác sĩ tư",
+                selected = accountType == "solo_doctor",
+                onClick = { accountType = "solo_doctor" },
+                modifier = Modifier.weight(1f)
+            )
+            AccountTypeTab(
+                label = "Bác sĩ cơ sở",
+                selected = accountType == "doctor",
+                onClick = { accountType = "doctor" },
+                modifier = Modifier.weight(1f)
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Form Fields
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Name
             TextFieldGroup(
                 label = "Họ và tên",
                 value = name,
                 onValueChange = { name = it },
                 icon = Icons.Default.Person,
-                placeholder = if (accountType == "doctor") "Bs. Nguyễn Văn Tuấn" else "Nguyễn Văn An"
+                placeholder = if (isDoctorRegistration) "Bs. Nguyễn Văn Tuấn" else "Nguyễn Văn An"
             )
 
-            if (accountType == "doctor") {
+            if (isDoctorRegistration) {
                 TextFieldGroup(
                     label = "Số chứng chỉ hành nghề",
                     value = license,
                     onValueChange = { license = it },
-                    icon = Icons.Default.Info, // Use info as generic id card
+                    icon = Icons.Default.Info,
                     placeholder = "VD: 123456/BYT-CCHN"
                 )
+                if (requiresClinicSelection) {
+                    CatalogDropdown(
+                        label = "Cơ sở y tế",
+                        value = clinicDisplayName,
+                        placeholder = if (isCatalogLoading) "Đang tải cơ sở y tế..." else "Tìm và chọn cơ sở y tế",
+                        enabled = !isCatalogLoading && clinics.isNotEmpty(),
+                        options = clinics.map { it.id to it.name },
+                        onSelected = {
+                            selectedClinicId = it
+                            requestedClinicName = ""
+                        },
+                        icon = Icons.Default.Home,
+                        searchPlaceholder = "Tìm bệnh viện/phòng khám",
+                        missingRequestLabel = "Không thấy trong danh sách? Yêu cầu bổ sung",
+                        onRequestMissing = { query ->
+                            requestedClinicName = query.trim()
+                            selectedClinicId = ""
+                        }
+                    )
+                } else {
+                    Text(
+                        "Bác sĩ tư sẽ tạo workspace phòng khám cá nhân sau khi xác thực email và chờ duyệt giấy phép.",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                }
+                if (requiresClinicSelection && requestedClinicName.isNotBlank()) {
+                    Text(
+                        "Đã ghi nhận yêu cầu bổ sung: $requestedClinicName",
+                        color = PrimaryBlue,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                CatalogDropdown(
+                    label = "Chuyên khoa",
+                    value = selectedSpecialty?.name.orEmpty(),
+                    placeholder = if (isCatalogLoading) "Đang tải chuyên khoa..." else "Chọn chuyên khoa",
+                    enabled = !isCatalogLoading && specialties.isNotEmpty(),
+                    options = specialties.map { it.id to it.name },
+                    onSelected = { selectedSpecialtyId = it },
+                    icon = Icons.Default.LocalHospital
+                )
                 TextFieldGroup(
-                    label = "Cơ sở y tế",
-                    value = hospital,
-                    onValueChange = { hospital = it },
-                    icon = Icons.Default.Home, // Use home as generic building
-                    placeholder = "Bệnh viện Đa khoa Trung ương"
+                    label = "Lý do đăng ký",
+                    value = registrationReason,
+                    onValueChange = { registrationReason = it },
+                    icon = Icons.Default.Description,
+                    placeholder = "VD: Sử dụng hệ thống cho phòng khám tim mạch"
                 )
             }
 
             TextFieldGroup(
-                label = "Số điện thoại", value = phone, onValueChange = { phone = it },
-                icon = Icons.Default.Phone, placeholder = "0912 345 678"
+                label = "Số điện thoại",
+                value = phone,
+                onValueChange = { phone = it },
+                icon = Icons.Default.Phone,
+                placeholder = "0912 345 678"
             )
-
             TextFieldGroup(
-                label = "Địa chỉ Email", value = email, onValueChange = { email = it },
-                icon = Icons.Default.Email, placeholder = if (accountType == "doctor") "bacsituan@benhvien.com" else "nguyenvana@gmail.com"
+                label = "Địa chỉ Email",
+                value = email,
+                onValueChange = { email = it },
+                icon = Icons.Default.Email,
+                placeholder = if (isDoctorRegistration) "bacsituan@benhvien.com" else "nguyenvana@gmail.com"
             )
-
             TextFieldGroup(
-                label = "Mật khẩu", value = password, onValueChange = { password = it },
-                icon = Icons.Default.Lock, placeholder = "Tối thiểu 8 ký tự", isPassword = true
+                label = "Mật khẩu",
+                value = password,
+                onValueChange = { password = it },
+                icon = Icons.Default.Lock,
+                placeholder = "Tối thiểu 8 ký tự",
+                isPassword = true
             )
-
             TextFieldGroup(
-                label = "Xác nhận mật khẩu", value = confirmPassword, onValueChange = { confirmPassword = it },
-                icon = Icons.Default.Lock, placeholder = "Nhập lại mật khẩu", isPassword = true
+                label = "Xác nhận mật khẩu",
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it },
+                icon = Icons.Default.Lock,
+                placeholder = "Nhập lại mật khẩu",
+                isPassword = true
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Terms Checkbox
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
                 checked = agreedToTerms,
                 onCheckedChange = { agreedToTerms = it },
                 colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
             )
-            Text("Tôi đồng ý với Điều khoản sử dụng và Chính sách bảo mật", color = TextSecondary, fontSize = 14.sp)
+            Text(
+                "Tôi đồng ý với Điều khoản sử dụng và Chính sách bảo mật",
+                color = TextSecondary,
+                fontSize = 14.sp
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Submit Button
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+        }
+        catalogError?.takeIf { requiresClinicSelection }?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+        }
+
         Button(
-            onClick = onNavigateToVerifyEmail,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            onClick = {
+                val cleanName = name.trim()
+                val cleanEmail = email.trim()
+                val cleanPhone = phone.trim()
+                val cleanPassword = password.trim()
+
+                errorMessage = when {
+                    cleanName.isBlank() -> "Vui lòng nhập họ tên"
+                    cleanEmail.isBlank() -> "Vui lòng nhập email để xác thực tài khoản"
+                    cleanPassword.length < 8 -> "Mật khẩu cần tối thiểu 8 ký tự"
+                    cleanPassword != confirmPassword.trim() -> "Mật khẩu xác nhận không khớp"
+                    !agreedToTerms -> "Vui lòng đồng ý điều khoản sử dụng"
+                    isDoctorRegistration && license.isBlank() -> "Vui lòng nhập số chứng chỉ hành nghề"
+                    requiresClinicSelection && selectedClinic == null && requestedClinicName.isBlank() -> "Vui lòng chọn cơ sở y tế hoặc gửi yêu cầu bổ sung"
+                    isDoctorRegistration && selectedSpecialty == null -> "Vui lòng chọn chuyên khoa"
+                    else -> null
+                }
+                if (errorMessage != null) return@Button
+
+                isSubmitting = true
+                coroutineScope.launch {
+                    try {
+                        FirebaseAuthService.createAccount(
+                            email = cleanEmail,
+                            password = cleanPassword,
+                            displayName = cleanName
+                        )
+                        PendingRegistrationStore.save(
+                            context,
+                            PendingRegistration(
+                                accountType = accountType,
+                                name = cleanName,
+                                email = cleanEmail,
+                                phone = cleanPhone,
+                                license = license.trim(),
+                                hospital = if (accountType == "solo_doctor") "Phòng khám cá nhân - $cleanName" else clinicDisplayName,
+                                department = selectedSpecialty?.name.orEmpty(),
+                                organizationId = selectedClinic?.id.orEmpty(),
+                                reason = registrationReason.trim()
+                            )
+                        )
+                        onNavigateToVerifyEmail(accountType)
+                    } catch (error: Exception) {
+                        errorMessage = error.toVietnameseMessage("Không thể tạo tài khoản. Vui lòng kiểm tra thông tin và thử lại.")
+                    } finally {
+                        isSubmitting = false
+                    }
+                }
+            },
+            enabled = !isSubmitting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text("Đăng Ký", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            if (isSubmitting) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.height(20.dp)
+                )
+            } else {
+                Text("Đăng ký", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -189,10 +399,10 @@ fun SignUpScreen(
                 modifier = Modifier.clickable(onClick = onNavigateToLogin)
             )
         }
-        
+
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            "Phần Mềm Y Tế v2.1.0\nĐạt Chuẩn HIPAA & Được FDA Cấp Phép",
+            "Phần mềm Y tế v2.1.0",
             color = TextSecondary,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
@@ -202,13 +412,34 @@ fun SignUpScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AccountTypeTab(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(if (selected) Color.White else Color.Transparent, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            color = if (selected) PrimaryBlue else TextSecondary,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
 @Composable
 fun TextFieldGroup(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     placeholder: String,
     isPassword: Boolean = false
 ) {
@@ -221,7 +452,7 @@ fun TextFieldGroup(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder, color = TextSecondary.copy(alpha = 0.5f)) },
             leadingIcon = { Icon(icon, contentDescription = null, tint = TextSecondary) },
-            visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = PrimaryBlue,
@@ -231,5 +462,131 @@ fun TextFieldGroup(
             ),
             singleLine = true
         )
+    }
+}
+
+@Composable
+private fun CatalogDropdown(
+    label: String,
+    value: String,
+    placeholder: String,
+    enabled: Boolean,
+    options: List<Pair<String, String>>,
+    onSelected: (String) -> Unit,
+    icon: ImageVector,
+    searchPlaceholder: String = "Tìm kiếm",
+    missingRequestLabel: String? = null,
+    onRequestMissing: ((String) -> Unit)? = null
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val visibleOptions = remember(options, query) {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) {
+            options
+        } else {
+            options.filter { (_, name) -> name.contains(cleanQuery, ignoreCase = true) }
+        }
+    }
+    Column {
+        Text(label, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .border(1.dp, if (expanded) PrimaryBlue else Border, RoundedCornerShape(12.dp))
+                .clickable(enabled = enabled) {
+                    query = ""
+                    expanded = true
+                }
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = TextSecondary)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = value.ifBlank { placeholder },
+                color = if (value.isBlank()) TextSecondary.copy(alpha = 0.55f) else TextPrimary,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextSecondary)
+        }
+        if (expanded) {
+            Dialog(onDismissRequest = { expanded = false }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(16.dp))
+                        .padding(16.dp)
+                ) {
+                    Text(label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(searchPlaceholder, color = TextSecondary.copy(alpha = 0.6f)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryBlue,
+                        unfocusedBorderColor = Border,
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                    ) {
+                        items(visibleOptions, key = { it.first }) { (id, name) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelected(id)
+                                        expanded = false
+                                    }
+                                    .padding(vertical = 14.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(name, color = TextPrimary, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            }
+                        }
+                        if (visibleOptions.isEmpty()) {
+                            item {
+                            Text(
+                                    "Không có kết quả phù hợp",
+                                color = TextSecondary,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(vertical = 14.dp, horizontal = 4.dp)
+                            )
+                            }
+                        }
+                        if (!missingRequestLabel.isNullOrBlank() && query.trim().isNotBlank() && onRequestMissing != null) {
+                            item {
+                            Text(
+                                "$missingRequestLabel: ${query.trim()}",
+                                color = PrimaryBlue,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onRequestMissing(query)
+                                            expanded = false
+                                        }
+                                        .padding(vertical = 14.dp, horizontal = 4.dp)
+                            )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

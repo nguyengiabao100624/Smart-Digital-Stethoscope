@@ -21,11 +21,41 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun AICalibrationScreen(onNavigateBack: () -> Unit) {
     var selectedModel by remember { mutableStateOf("balanced") }
+    var isUpdating by remember { mutableStateOf(false) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun updateAiMode(mode: String) {
+        selectedModel = mode
+        coroutineScope.launch {
+            try {
+                SmartHealthRepository.api.updateAiSettings(JSONObject().put("model", mode))
+                actionMessage = "Đã cập nhật chế độ phân tích"
+                actionError = null
+            } catch (error: Exception) {
+                actionError = error.message ?: "Không thể cập nhật AI"
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            val settings = SmartHealthRepository.api.getSettings().ai
+            selectedModel = settings.optString("model", selectedModel)
+            actionError = null
+        } catch (error: Exception) {
+            actionError = error.message ?: "Không thể tải cấu hình AI"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -59,6 +89,13 @@ fun AICalibrationScreen(onNavigateBack: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            actionError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            }
+            actionMessage?.let { message ->
+                Text(message, color = SuccessGreen, fontSize = 13.sp)
+            }
+
             // Current Model Card
             Column(
                 modifier = Modifier
@@ -101,14 +138,31 @@ fun AICalibrationScreen(onNavigateBack: () -> Unit) {
                         .fillMaxWidth()
                         .background(Color.White, RoundedCornerShape(12.dp))
                         .border(1.dp, Border, RoundedCornerShape(12.dp))
-                        .clickable { }
+                        .clickable(enabled = !isUpdating) {
+                            isUpdating = true
+                            coroutineScope.launch {
+                                try {
+                                    SmartHealthRepository.api.updateAiModel()
+                                    actionMessage = "Mô hình AI đã được cập nhật"
+                                    actionError = null
+                                } catch (error: Exception) {
+                                    actionError = error.message ?: "Không thể cập nhật mô hình AI"
+                                } finally {
+                                    isUpdating = false
+                                }
+                            }
+                        }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                        if (isUpdating) {
+                            CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Cập nhật mô hình mới", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(if (isUpdating) "Đang cập nhật" else "Cập nhật mô hình mới", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -124,7 +178,7 @@ fun AICalibrationScreen(onNavigateBack: () -> Unit) {
                         accuracy = "92%",
                         speed = "Rất nhanh (< 1s)",
                         selected = selectedModel == "fast",
-                        onClick = { selectedModel = "fast" }
+                        onClick = { updateAiMode("fast") }
                     )
                     ModelRadioCard(
                         id = "balanced",
@@ -133,7 +187,7 @@ fun AICalibrationScreen(onNavigateBack: () -> Unit) {
                         accuracy = "96%",
                         speed = "Nhanh (1-2s)",
                         selected = selectedModel == "balanced",
-                        onClick = { selectedModel = "balanced" }
+                        onClick = { updateAiMode("balanced") }
                     )
                     ModelRadioCard(
                         id = "accurate",
@@ -142,7 +196,7 @@ fun AICalibrationScreen(onNavigateBack: () -> Unit) {
                         accuracy = "98.5%",
                         speed = "Trung bình (2-4s)",
                         selected = selectedModel == "accurate",
-                        onClick = { selectedModel = "accurate" }
+                        onClick = { updateAiMode("accurate") }
                     )
                 }
             }

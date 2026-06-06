@@ -21,37 +21,50 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AiChatMessage
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.formatIso
 import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
 data class ChatMessage(
-    val id: Int,
+    val id: String,
     val role: String, // "user" or "assistant"
     val content: String,
     val timestamp: String
 )
 
+private fun AiChatMessage.toChatMessage(): ChatMessage {
+    return ChatMessage(
+        id = id,
+        role = role,
+        content = content,
+        timestamp = formatIso(createdAt, "HH:mm")
+    )
+}
+
 @Composable
 fun AIAssistantScreen(onNavigateBack: () -> Unit) {
     var inputValue by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     
     val initialMessages = listOf(
         ChatMessage(
-            1, "assistant",
+            "local_1", "assistant",
             "Xin chào! Tôi là Trợ lý Y tế AI của bạn. Tôi có thể giúp bạn phân tích kết quả đo, đề xuất các chẩn đoán phân biệt và cung cấp hướng dẫn lâm sàng dựa trên bản thu âm ống nghe của bạn. Tôi có thể giúp gì cho bạn hôm nay?",
             "13:45"
         ),
         ChatMessage(
-            2, "user",
+            "local_2", "user",
             "Tôi vừa đo cho một bệnh nhân có tiếng ran nổ ở thùy dưới phổi trái. AI đã cảnh báo bất thường. Bạn có thể giải thích điều này có thể chỉ ra bệnh gì không?",
             "13:46"
         ),
         ChatMessage(
-            3, "assistant",
+            "local_3", "assistant",
             "Dựa trên tiếng ran nổ được phát hiện ở thùy dưới phổi trái, dưới đây là những yếu tố chính cần xem xét:\n\n" +
             "• Viêm phổi - Nguyên nhân phổ biến nhất của ran nổ khu trú\n" +
             "• Phù phổi - Đặc biệt nếu xuất hiện ở hai bên hoặc bệnh nhân có tiền sử bệnh tim\n" +
@@ -68,33 +81,47 @@ fun AIAssistantScreen(onNavigateBack: () -> Unit) {
     
     val messages = remember { mutableStateListOf<ChatMessage>().apply { addAll(initialMessages) } }
 
+    LaunchedEffect(Unit) {
+        try {
+            val remoteMessages = SmartHealthRepository.api.listAiMessages().map { it.toChatMessage() }
+            if (remoteMessages.isNotEmpty()) {
+                messages.clear()
+                messages.addAll(remoteMessages)
+            }
+            loadError = null
+        } catch (error: Exception) {
+            loadError = error.message ?: "Không thể tải lịch sử chat AI"
+        }
+    }
+
     val getCurrentTime = {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
     }
 
     fun handleSend() {
-        if (inputValue.isBlank()) return
+        if (inputValue.isBlank() || isSending) return
+        val content = inputValue.trim()
         
         messages.add(
             ChatMessage(
-                id = messages.size + 1,
+                id = "local_${System.currentTimeMillis()}",
                 role = "user",
-                content = inputValue,
+                content = content,
                 timestamp = getCurrentTime()
             )
         )
         inputValue = ""
+        isSending = true
 
         coroutineScope.launch {
-            delay(1000)
-            messages.add(
-                ChatMessage(
-                    id = messages.size + 1,
-                    role = "assistant",
-                    content = "Tôi đang phân tích câu hỏi của bạn. Trong ứng dụng thực tế, tính năng này sẽ được kết nối với mô hình AI đã được đào tạo dựa trên tài liệu y khoa và hướng dẫn lâm sàng để đưa ra các khuyến nghị có cơ sở khoa học.",
-                    timestamp = getCurrentTime()
-                )
-            )
+            try {
+                messages.add(SmartHealthRepository.api.sendAiMessage(content).toChatMessage())
+                loadError = null
+            } catch (error: Exception) {
+                loadError = error.message ?: "Không thể gửi câu hỏi AI"
+            } finally {
+                isSending = false
+            }
         }
     }
 
@@ -151,6 +178,14 @@ fun AIAssistantScreen(onNavigateBack: () -> Unit) {
                 .navigationBarsPadding()
                 .padding(16.dp)
         ) {
+            loadError?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -183,13 +218,17 @@ fun AIAssistantScreen(onNavigateBack: () -> Unit) {
                     modifier = Modifier
                         .size(40.dp)
                         .background(
-                            if (inputValue.isNotBlank()) PrimaryBlue else Color(0xFFE2E8F0),
+                            if (inputValue.isNotBlank() && !isSending) PrimaryBlue else Color(0xFFE2E8F0),
                             CircleShape
                         )
-                        .clickable(enabled = inputValue.isNotBlank()) { handleSend() },
+                        .clickable(enabled = inputValue.isNotBlank() && !isSending) { handleSend() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+                    if (isSending) {
+                        CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    } else {
+                        Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))

@@ -20,7 +20,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.StorageSummary
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun DataStorageScreen(
@@ -30,6 +34,51 @@ fun DataStorageScreen(
 ) {
     var autoSync by remember { mutableStateOf(true) }
     var cloudBackup by remember { mutableStateOf(true) }
+    var summary by remember { mutableStateOf(StorageSummary()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun loadStorageSummary() {
+        coroutineScope.launch {
+            try {
+                val nextSummary = SmartHealthRepository.api.getDataSummary()
+                summary = nextSummary
+                autoSync = nextSummary.autoSync
+                cloudBackup = nextSummary.cloudBackup
+                actionError = null
+            } catch (error: Exception) {
+                actionError = error.message ?: "Không thể tải dung lượng"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    fun updateStorageSetting(field: String, value: Boolean) {
+        if (field == "autoSync") autoSync = value else cloudBackup = value
+        coroutineScope.launch {
+            try {
+                SmartHealthRepository.api.updateSettings(
+                    JSONObject().put("storage", JSONObject().put(field, value))
+                )
+                summary = SmartHealthRepository.api.getDataSummary()
+                actionMessage = "Đã cập nhật cài đặt lưu trữ"
+                actionError = null
+            } catch (error: Exception) {
+                if (field == "autoSync") autoSync = !value else cloudBackup = !value
+                actionError = error.message ?: "Không thể cập nhật cài đặt"
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadStorageSummary()
+    }
+
+    val localRatio = storageRatio(summary.localUsedMb, summary.localTotalMb)
+    val cloudRatio = storageRatio(summary.cloudUsedMb, summary.cloudTotalMb)
 
     Column(
         modifier = Modifier
@@ -63,6 +112,16 @@ fun DataStorageScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            if (isLoading) {
+                LinearProgressIndicator(color = PrimaryBlue, modifier = Modifier.fillMaxWidth())
+            }
+            actionError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            }
+            actionMessage?.let { message ->
+                Text(message, color = SuccessGreen, fontSize = 13.sp)
+            }
+
             // Storage Overview
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StorageCard(
@@ -70,9 +129,9 @@ fun DataStorageScreen(
                     icon = Icons.Default.Save,
                     iconColor = PrimaryBlue,
                     title = "Bộ nhớ thiết bị",
-                    used = "2.4 GB",
-                    total = "/ 8.0 GB",
-                    percentage = 0.3f,
+                    used = formatStorageMb(summary.localUsedMb),
+                    total = "/ ${formatStorageMb(summary.localTotalMb)}",
+                    percentage = localRatio,
                     progressColors = listOf(PrimaryBlue, PrimaryTeal)
                 )
                 StorageCard(
@@ -80,9 +139,9 @@ fun DataStorageScreen(
                     icon = Icons.Default.Cloud,
                     iconColor = Color(0xFF3B82F6),
                     title = "Bộ nhớ đám mây",
-                    used = "12.8 GB",
-                    total = "/ 50.0 GB",
-                    percentage = 0.25f,
+                    used = formatStorageMb(summary.cloudUsedMb),
+                    total = "/ ${formatStorageMb(summary.cloudTotalMb)}",
+                    percentage = cloudRatio,
                     progressColors = listOf(Color(0xFF3B82F6), Color(0xFF60A5FA))
                 )
             }
@@ -100,32 +159,32 @@ fun DataStorageScreen(
                         icon = Icons.Default.Storage,
                         iconColor = PrimaryBlue,
                         name = "Hồ sơ bệnh án",
-                        count = "247 hồ sơ",
-                        size = "1.8 GB",
+                        count = "${summary.patientCount} hồ sơ",
+                        size = "${summary.scanCount} lượt đo",
                         showDivider = true
                     )
                     DataCategoryRow(
                         icon = Icons.Default.Save,
                         iconColor = Color(0xFF8B5CF6),
                         name = "File âm thanh",
-                        count = "892 file",
-                        size = "3.2 GB",
+                        count = "${summary.audioFileCount} file",
+                        size = formatStorageMb(summary.audioUsedMb),
                         showDivider = true
                     )
                     DataCategoryRow(
                         icon = Icons.Default.Upload,
                         iconColor = Color(0xFF10B981),
                         name = "Hình ảnh y tế",
-                        count = "1,245 ảnh",
-                        size = "1.5 GB",
+                        count = "Chưa đồng bộ",
+                        size = "0 MB",
                         showDivider = true
                     )
                     DataCategoryRow(
                         icon = Icons.Default.CheckCircle,
                         iconColor = Color(0xFFF97316),
                         name = "Báo cáo AI",
-                        count = "564 báo cáo",
-                        size = "890 MB",
+                        count = "${summary.scanCount} báo cáo",
+                        size = "Từ lượt đo",
                         showDivider = false
                     )
                 }
@@ -146,7 +205,7 @@ fun DataStorageScreen(
                         title = "Tự động đồng bộ",
                         subtitle = "Đồng bộ khi có Wi-Fi",
                         checked = autoSync,
-                        onCheckedChange = { autoSync = it },
+                        onCheckedChange = { updateStorageSetting("autoSync", it) },
                         showDivider = true
                     )
                     SettingToggleRow(
@@ -155,7 +214,7 @@ fun DataStorageScreen(
                         title = "Sao lưu đám mây",
                         subtitle = "Lần cuối: 2 giờ trước",
                         checked = cloudBackup,
-                        onCheckedChange = { cloudBackup = it },
+                        onCheckedChange = { updateStorageSetting("cloudBackup", it) },
                         showDivider = true
                     )
                     SettingActionRow(
@@ -183,10 +242,21 @@ fun DataStorageScreen(
                         icon = Icons.Default.Delete,
                         iconColor = Color(0xFFF97316),
                         title = "Xóa bộ nhớ tạm",
-                        subtitle = "Giải phóng 450 MB",
+                        subtitle = "Giải phóng ${summary.cacheMb} MB",
                         showDivider = true,
                         trailingText = "Xóa",
-                        trailingTextColor = Color(0xFFF97316)
+                        trailingTextColor = Color(0xFFF97316),
+                        onClick = {
+                            coroutineScope.launch {
+                                try {
+                                    summary = SmartHealthRepository.api.clearCache()
+                                    actionMessage = "Đã xóa bộ nhớ tạm"
+                                    actionError = null
+                                } catch (error: Exception) {
+                                    actionError = error.message ?: "Không thể xóa bộ nhớ tạm"
+                                }
+                            }
+                        }
                     )
                     SettingActionRow(
                         icon = Icons.Default.Warning,
@@ -225,6 +295,19 @@ fun DataStorageScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+}
+
+private fun storageRatio(usedMb: Int, totalMb: Int): Float {
+    if (totalMb <= 0) return 0f
+    return (usedMb.toFloat() / totalMb.toFloat()).coerceIn(0f, 1f)
+}
+
+private fun formatStorageMb(value: Int): String {
+    return if (value >= 1024) {
+        String.format("%.1f GB", value / 1024f)
+    } else {
+        "$value MB"
     }
 }
 

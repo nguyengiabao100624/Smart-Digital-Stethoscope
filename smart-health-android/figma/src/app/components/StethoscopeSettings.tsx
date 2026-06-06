@@ -10,6 +10,8 @@ import {
   Zap,
   Signal,
   AlertCircle,
+  QrCode,
+  Link
 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -143,19 +145,19 @@ export default function StethoscopeSettings() {
 
         <div>
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 px-2">
-            Kết Nối
+            Quản Lý Kết Nối
           </h3>
           <div className="bg-white rounded-2xl border border-border overflow-hidden shadow-sm">
             <div className="p-4 border-b border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-500/10 rounded-xl">
-                    <Bluetooth className="w-5 h-5 text-blue-500" />
+                  <div className="p-2 bg-[#10B981]/10 rounded-xl">
+                    <Link className="w-5 h-5 text-[#10B981]" />
                   </div>
                   <div>
                     <p className="font-semibold text-foreground/90">Tự động kết nối</p>
                     <p className="text-sm text-muted-foreground">
-                      Kết nối khi mở ứng dụng
+                      Kết nối ngay khi mở ứng dụng
                     </p>
                   </div>
                 </div>
@@ -174,14 +176,26 @@ export default function StethoscopeSettings() {
               </div>
             </div>
 
-            <button onClick={() => navigate('/bluetooth-settings')} className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
-              <div className="p-2 bg-[#0B5C9A]/10 rounded-xl">
-                <SettingsIcon className="w-5 h-5 text-[#0B5C9A]" />
+            <button onClick={() => navigate('/bluetooth')} className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors border-b border-border">
+              <div className="p-2 bg-[#0B5C9A]/10 rounded-xl flex-shrink-0">
+                <QrCode className="w-5 h-5 text-[#0B5C9A]" />
               </div>
               <div className="flex-1 text-left">
-                <p className="font-semibold text-foreground/90">Cài đặt Bluetooth</p>
+                <p className="font-semibold text-foreground/90">Ghép nối thiết bị mới</p>
                 <p className="text-sm text-muted-foreground">
-                  Quản lý thiết bị đã ghép nối
+                  Quét QR, Bluetooth hoặc mã thủ công
+                </p>
+              </div>
+            </button>
+
+            <button onClick={() => navigate('/bluetooth-settings')} className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+              <div className="p-2 bg-slate-100 rounded-xl flex-shrink-0">
+                <SettingsIcon className="w-5 h-5 text-slate-600" />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="font-semibold text-foreground/90">Quản lý thiết bị đã lưu</p>
+                <p className="text-sm text-muted-foreground">
+                  Xem và xóa các thiết bị trước đây
                 </p>
               </div>
             </button>

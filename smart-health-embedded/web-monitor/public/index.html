@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESP32 Audio Monitor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101315;
+        --panel: #181d20;
+        --panel-2: #20272b;
+        --text: #edf2f4;
+        --muted: #98a5ad;
+        --accent: #24c6a0;
+        --accent-2: #f2b84b;
+        --danger: #f06a6a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #061512;
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 700;
+        min-height: 40px;
+        padding: 0 16px;
+      }
+
+      button:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
+
+      .stop-button {
+        background: var(--danger);
+        color: #210707;
+      }
+
+      label {
+        align-items: center;
+        background: var(--panel);
+        border: 1px solid #2e383d;
+        border-radius: 6px;
+        color: var(--muted);
+        display: flex;
+        gap: 8px;
+        min-height: 40px;
+        padding: 0 12px;
+      }
+
+      output {
+        color: var(--text);
+        min-width: 34px;
+        text-align: right;
+      }
+
+      input[type="range"] {
+        accent-color: var(--accent);
+        width: 132px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+        margin-bottom: 14px;
+      }
+
+      .metric {
+        background: var(--panel);
+        border: 1px solid #2e383d;
+        border-radius: 8px;
+        min-height: 82px;
+        padding: 14px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        display: block;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .stage {
+        background: var(--panel-2);
+        border: 1px solid #313d42;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      canvas {
+        display: block;
+        height: min(56vh, 520px);
+        width: 100%;
+      }
+
+      .status-ok {
+        color: var(--accent);
+      }
+
+      .status-warn {
+        color: var(--accent-2);
+      }
+
+      .status-bad {
+        color: var(--danger);
+      }
+
+      @media (max-width: 760px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>ESP32 Audio Monitor</h1>
+        <div class="controls">
+          <button id="startButton">Start audio</button>
+          <button id="stopButton" class="stop-button" disabled>Stop</button>
+          <label>
+            Gain
+            <input id="gain" type="range" min="0.2" max="6" value="1.5" step="0.1" />
+          </label>
+          <label>
+            Gate
+            <input id="gate" type="range" min="0" max="30" value="0" step="1" />
+            <output id="gateValue">0%</output>
+          </label>
+        </div>
+      </header>
+
+      <section class="grid" aria-label="Audio status">
+        <div class="metric">
+          <span>Socket</span>
+          <strong id="socketStatus" class="status-bad">Idle</strong>
+        </div>
+        <div class="metric">
+          <span>ESP32</span>
+          <strong id="espStatus" class="status-warn">0</strong>
+        </div>
+        <div class="metric">
+          <span>Level</span>
+          <strong id="level">0%</strong>
+        </div>
+        <div class="metric">
+          <span>Ping</span>
+          <strong id="ping" class="status-warn">-- ms</strong>
+        </div>
+        <div class="metric">
+          <span>Buffer</span>
+          <strong id="buffer" class="status-warn">0 ms</strong>
+        </div>
+        <div class="metric">
+          <span>Underruns</span>
+          <strong id="underruns">0</strong>
+        </div>
+        <div class="metric">
+          <span>Chunks</span>
+          <strong id="chunks">0</strong>
+        </div>
+      </section>
+
+      <section class="stage">
+        <canvas id="scope" width="1200" height="520"></canvas>
+      </section>
+    </main>
+
+    <script>
+      const SAMPLE_RATE = 16000;
+      const BUFFER_SIZE = 256;
+      const PING_INTERVAL_MS = 1000;
+      const TARGET_BUFFER_SECONDS = 0.1;
+      const RESUME_BUFFER_SECONDS = 0.06;
+      const LOW_WATER_BUFFER_SECONDS = 0.025;
+      const MAX_BUFFER_SECONDS = 0.35;
+      const BUFFER_OK_MIN_MS = 60;
+      const BUFFER_OK_MAX_MS = 180;
+      const INPUT_TIMEOUT_MS = 2500;
+
+      const startButton = document.getElementById("startButton");
+      const stopButton = document.getElementById("stopButton");
+      const socketStatus = document.getElementById("socketStatus");
+      const espStatus = document.getElementById("espStatus");
+      const levelText = document.getElementById("level");
+      const pingText = document.getElementById("ping");
+      const bufferText = document.getElementById("buffer");
+      const underrunsText = document.getElementById("underruns");
+      const chunksText = document.getElementById("chunks");
+      const gainInput = document.getElementById("gain");
+      const gateInput = document.getElementById("gate");
+      const gateValue = document.getElementById("gateValue");
+      const canvas = document.getElementById("scope");
+      const ctx = canvas.getContext("2d");
+
+      let audioContext;
+      let processor;
+      let socket;
+      let audioRunning = false;
+      let queue = [];
+      let current = null;
+      let currentOffset = 0;
+      let playbackPrimed = false;
+      let playbackStarted = false;
+      let sourcePhase = 0;
+      let chunkCount = 0;
+      let underrunCount = 0;
+      let pingTimer;
+      let reconnectTimer;
+      let pingId = 0;
+      let lastPongAt = 0;
+      let lastChunkAt = 0;
+      let lastListenReconnectAt = 0;
+      let audioSourceCount = 0;
+      let lastLevel = 0;
+      let browserGateEnvelope = 0;
+      let browserGateGain = 1;
+      let scopeSamples = new Float32Array(1024);
+
+      function setSocketStatus(text, className) {
+        socketStatus.textContent = text;
+        socketStatus.className = className;
+      }
+
+      function setAudioControls(running) {
+        startButton.disabled = running;
+        stopButton.disabled = !running;
+      }
+
+      function resetPlaybackState() {
+        queue = [];
+        current = null;
+        currentOffset = 0;
+        playbackPrimed = false;
+        playbackStarted = false;
+        sourcePhase = 0;
+        lastChunkAt = 0;
+        lastPongAt = 0;
+        lastListenReconnectAt = 0;
+        browserGateEnvelope = 0;
+        browserGateGain = 1;
+        chunkCount = 0;
+        underrunCount = 0;
+        scopeSamples.fill(0);
+        levelText.textContent = "0%";
+        underrunsText.textContent = "0";
+        chunksText.textContent = "0";
+        bufferText.textContent = "0 ms";
+        bufferText.className = "status-bad";
+        pingText.textContent = "-- ms";
+        pingText.className = "status-warn";
+      }
+
+      function appendSamples(samples) {
+        const keep = scopeSamples.length - samples.length;
+        if (keep > 0) {
+          scopeSamples.copyWithin(0, samples.length);
+          scopeSamples.set(samples, keep);
+        } else {
+          scopeSamples.set(samples.subarray(samples.length - scopeSamples.length), 0);
+        }
+      }
+
+      function decodePcm16(arrayBuffer) {
+        const view = new DataView(arrayBuffer);
+        const samples = new Float32Array(view.byteLength / 2);
+        const gateThreshold = Number(gateInput.value);
+        let sum = 0;
+
+        for (let i = 0; i < samples.length; i++) {
+          const value = view.getInt16(i * 2, true) / 32768;
+          sum += value * value;
+
+          if (gateThreshold <= 0) {
+            browserGateEnvelope = 0;
+            browserGateGain = 1;
+            samples[i] = value;
+            continue;
+          }
+
+          const magnitude = Math.abs(value) * 100;
+          const envelopeAlpha = magnitude > browserGateEnvelope ? 0.02 : 0.002;
+          browserGateEnvelope += envelopeAlpha * (magnitude - browserGateEnvelope);
+
+          const openThreshold = gateThreshold;
+          const closeThreshold = gateThreshold * 0.55;
+          const gateTarget =
+            browserGateEnvelope >= openThreshold
+              ? 1
+              : browserGateEnvelope <= closeThreshold
+                ? 0
+                : browserGateGain > 0.08
+                  ? 1
+                  : 0;
+          const gateAlpha = gateTarget > browserGateGain ? 0.018 : 0.0015;
+          browserGateGain += gateAlpha * (gateTarget - browserGateGain);
+          samples[i] = value * browserGateGain;
+        }
+
+        const level = Math.min(100, Math.round(Math.sqrt(sum / samples.length) * 180));
+        lastLevel = level;
+
+        return samples;
+      }
+
+      function readPlaybackSample() {
+        const sample = current[currentOffset] || 0;
+        let nextSample = sample;
+
+        if (currentOffset + 1 < current.length) {
+          nextSample = current[currentOffset + 1];
+        } else if (queue.length > 0 && queue[0].length > 0) {
+          nextSample = queue[0][0];
+        }
+
+        return sample + (nextSample - sample) * sourcePhase;
+      }
+
+      function softClipSample(value) {
+        return Math.tanh(value);
+      }
+
+      function getBufferedSampleCount() {
+        let total = current ? Math.max(0, current.length - currentOffset) : 0;
+
+        for (const samples of queue) {
+          total += samples.length;
+        }
+
+        return total;
+      }
+
+      function sendPing() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        socket.send(
+          JSON.stringify({
+            type: "ping",
+            id: ++pingId,
+            sentAt: performance.now(),
+          })
+        );
+      }
+
+      function updatePing(sentAt) {
+        const pingMs = Math.max(0, Math.round(performance.now() - sentAt));
+        lastPongAt = performance.now();
+        pingText.textContent = `${pingMs} ms`;
+
+        if (pingMs <= 60) {
+          pingText.className = "status-ok";
+        } else if (pingMs <= 150) {
+          pingText.className = "status-warn";
+        } else {
+          pingText.className = "status-bad";
+        }
+      }
+
+      function updateBufferStatus() {
+        const now = performance.now();
+        const bufferedSamples = getBufferedSampleCount();
+        const bufferMs = Math.round((bufferedSamples / SAMPLE_RATE) * 1000);
+        bufferText.textContent = `${bufferMs} ms`;
+
+        if (bufferMs >= BUFFER_OK_MIN_MS && bufferMs <= BUFFER_OK_MAX_MS) {
+          bufferText.className = "status-ok";
+        } else if (bufferMs > 0) {
+          bufferText.className = "status-warn";
+        } else {
+          bufferText.className = "status-bad";
+        }
+
+        if (lastPongAt > 0 && now - lastPongAt > PING_INTERVAL_MS * 3) {
+          pingText.textContent = "timeout";
+          pingText.className = "status-bad";
+        }
+
+        if (lastChunkAt > 0 && now - lastChunkAt > INPUT_TIMEOUT_MS) {
+          espStatus.textContent = "stale";
+          espStatus.className = "status-bad";
+
+          if (
+            socket &&
+            socket.readyState === WebSocket.OPEN &&
+            now - lastListenReconnectAt > INPUT_TIMEOUT_MS
+          ) {
+            lastListenReconnectAt = now;
+            socket.close();
+          }
+        }
+      }
+
+      function trimBufferedAudio() {
+        const maxSamples = Math.round(MAX_BUFFER_SECONDS * SAMPLE_RATE);
+        let bufferedSamples = getBufferedSampleCount();
+
+        while (bufferedSamples > maxSamples && queue.length > 1) {
+          const removed = queue.shift();
+          bufferedSamples -= removed.length;
+        }
+      }
+
+      function getPlaybackCorrection(bufferSamples, targetSamples) {
+        if (bufferSamples < targetSamples * 0.6) {
+          return 0.985;
+        }
+
+        if (bufferSamples < targetSamples) {
+          return 0.995;
+        }
+
+        if (bufferSamples > targetSamples * 2.2) {
+          return 1.012;
+        }
+
+        if (bufferSamples > targetSamples * 1.5) {
+          return 1.006;
+        }
+
+        return 1;
+      }
+
+      function connectSocket() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          return;
+        }
+
+        const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/listen`;
+        socket = new WebSocket(wsUrl);
+        socket.binaryType = "arraybuffer";
+        const activeSocket = socket;
+
+        socket.addEventListener("open", () => {
+          if (activeSocket !== socket) {
+            return;
+          }
+
+          setSocketStatus("Connected", "status-ok");
+          sendPing();
+          pingTimer = window.setInterval(sendPing, PING_INTERVAL_MS);
+        });
+        socket.addEventListener("close", () => {
+          if (activeSocket !== socket && audioRunning) {
+            return;
+          }
+
+          window.clearInterval(pingTimer);
+          setSocketStatus(audioRunning ? "Closed" : "Stopped", "status-bad");
+
+          if (audioRunning && audioContext && !reconnectTimer) {
+            reconnectTimer = window.setTimeout(() => {
+              reconnectTimer = null;
+              connectSocket();
+            }, 1000);
+          }
+        });
+        socket.addEventListener("error", () => {
+          if (activeSocket !== socket) {
+            return;
+          }
+
+          setSocketStatus("Error", "status-bad");
+        });
+        socket.addEventListener("message", (event) => {
+          if (activeSocket !== socket) {
+            return;
+          }
+
+          if (typeof event.data === "string") {
+            const message = JSON.parse(event.data);
+
+            if (message.type === "status") {
+              audioSourceCount = message.esp;
+              espStatus.textContent = String(message.esp);
+              espStatus.className = message.esp > 0 ? "status-ok" : "status-warn";
+            } else if (message.type === "pong") {
+              updatePing(message.sentAt);
+            }
+
+            return;
+          }
+
+          const samples = decodePcm16(event.data);
+          queue.push(samples);
+          lastChunkAt = performance.now();
+          if (audioSourceCount <= 0 || espStatus.textContent === "stale") {
+            espStatus.textContent = String(Math.max(1, audioSourceCount));
+            espStatus.className = "status-ok";
+          }
+          trimBufferedAudio();
+          appendSamples(samples);
+          chunkCount++;
+          chunksText.textContent = String(chunkCount);
+          levelText.textContent = `${lastLevel}%`;
+        });
+      }
+
+      async function startAudio() {
+        if (audioRunning) {
+          return;
+        }
+
+        audioRunning = true;
+        setAudioControls(true);
+        resetPlaybackState();
+        audioContext = new AudioContext({
+          sampleRate: SAMPLE_RATE,
+          latencyHint: "interactive",
+        });
+        await audioContext.resume();
+
+        processor = audioContext.createScriptProcessor(BUFFER_SIZE, 0, 1);
+        processor.onaudioprocess = (event) => {
+          const output = event.outputBuffer.getChannelData(0);
+          const gain = Number(gainInput.value);
+          const bufferedSamples = getBufferedSampleCount();
+          const targetSamples = Math.round(TARGET_BUFFER_SECONDS * SAMPLE_RATE);
+          const resumeSamples = Math.round(RESUME_BUFFER_SECONDS * SAMPLE_RATE);
+          const lowWaterSamples = Math.round(LOW_WATER_BUFFER_SECONDS * SAMPLE_RATE);
+          const sourceStep =
+            (SAMPLE_RATE / audioContext.sampleRate) *
+            getPlaybackCorrection(bufferedSamples, targetSamples);
+          let underrunInBlock = false;
+
+          if (!playbackPrimed && bufferedSamples >= (playbackStarted ? resumeSamples : targetSamples)) {
+            playbackPrimed = true;
+            playbackStarted = true;
+          } else if (playbackPrimed && bufferedSamples < lowWaterSamples) {
+            playbackPrimed = false;
+            sourcePhase = 0;
+          }
+
+          for (let i = 0; i < output.length; i++) {
+            if (!playbackPrimed) {
+              output[i] = 0;
+              continue;
+            }
+
+            if (!current || currentOffset >= current.length) {
+              current = queue.shift() || null;
+              currentOffset = 0;
+            }
+
+            if (!current) {
+              if (!underrunInBlock) {
+                underrunCount++;
+                underrunsText.textContent = String(underrunCount);
+                underrunInBlock = true;
+              }
+              playbackPrimed = false;
+              sourcePhase = 0;
+              output[i] = 0;
+              continue;
+            }
+
+            output[i] = softClipSample(readPlaybackSample() * gain);
+            sourcePhase += sourceStep;
+
+            while (sourcePhase >= 1) {
+              sourcePhase -= 1;
+              currentOffset++;
+
+              if (currentOffset < current.length) {
+                continue;
+              }
+
+              current = queue.shift() || null;
+              currentOffset = 0;
+
+              if (!current) {
+                break;
+              }
+            }
+          }
+        };
+
+        processor.connect(audioContext.destination);
+        connectSocket();
+      }
+
+      async function stopAudio() {
+        if (!audioRunning && !audioContext && !socket) {
+          return;
+        }
+
+        audioRunning = false;
+        window.clearInterval(pingTimer);
+        window.clearTimeout(reconnectTimer);
+        pingTimer = null;
+        reconnectTimer = null;
+
+        if (socket) {
+          const closingSocket = socket;
+          socket = null;
+
+          if (
+            closingSocket.readyState === WebSocket.OPEN ||
+            closingSocket.readyState === WebSocket.CONNECTING
+          ) {
+            closingSocket.close();
+          }
+        }
+
+        if (processor) {
+          processor.onaudioprocess = null;
+          processor.disconnect();
+          processor = null;
+        }
+
+        if (audioContext) {
+          const closingContext = audioContext;
+          audioContext = null;
+          await closingContext.close();
+        }
+
+        resetPlaybackState();
+        setSocketStatus("Stopped", "status-bad");
+        setAudioControls(false);
+      }
+
+      function drawScope() {
+        const { width, height } = canvas;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#20272b";
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 1;
+        for (let i = 1; i < 4; i++) {
+          const y = (height / 4) * i;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = "#24c6a0";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < scopeSamples.length; i++) {
+          const x = (i / (scopeSamples.length - 1)) * width;
+          const y = height / 2 - scopeSamples[i] * height * 0.42;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+
+        requestAnimationFrame(drawScope);
+      }
+
+      startButton.addEventListener("click", startAudio);
+      stopButton.addEventListener("click", stopAudio);
+      gateInput.addEventListener("input", () => {
+        gateValue.textContent = `${gateInput.value}%`;
+      });
+      window.setInterval(updateBufferStatus, 250);
+      drawScope();
+    </script>
+  </body>
+</html>

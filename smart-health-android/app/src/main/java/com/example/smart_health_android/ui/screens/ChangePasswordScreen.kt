@@ -25,7 +25,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChangePasswordScreen(onNavigateBack: () -> Unit) {
@@ -35,6 +37,10 @@ fun ChangePasswordScreen(onNavigateBack: () -> Unit) {
     var showCurrent by remember { mutableStateOf(false) }
     var showNew by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -112,19 +118,68 @@ fun ChangePasswordScreen(onNavigateBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(40.dp))
 
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+            successMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = SuccessGreen,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
             Button(
-                onClick = { },
+                onClick = {
+                    val current = currentPassword.trim()
+                    val next = newPassword.trim()
+                    val confirm = confirmPassword.trim()
+                    errorMessage = when {
+                        current.isBlank() -> "Vui lòng nhập mật khẩu hiện tại"
+                        next.length < 8 -> "Mật khẩu mới cần tối thiểu 8 ký tự"
+                        next != confirm -> "Mật khẩu xác nhận không khớp"
+                        else -> null
+                    }
+                    if (errorMessage != null) return@Button
+
+                    isSubmitting = true
+                    successMessage = null
+                    coroutineScope.launch {
+                        try {
+                            SmartHealthRepository.api.changePassword(current, next)
+                            currentPassword = ""
+                            newPassword = ""
+                            confirmPassword = ""
+                            successMessage = "Đã cập nhật mật khẩu"
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "Không thể đổi mật khẩu"
+                        } finally {
+                            isSubmitting = false
+                        }
+                    }
+                },
+                enabled = !isSubmitting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
-                Text("Cập nhật mật khẩu", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                if (isSubmitting) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    Text("Cập nhật mật khẩu", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
             }
 
             TextButton(
-                onClick = { },
+                onClick = { errorMessage = "Bạn có thể dùng màn hình Quên mật khẩu ở trang đăng nhập" },
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
                 Text("Quên mật khẩu hiện tại?", color = PrimaryBlue, fontWeight = FontWeight.Medium)

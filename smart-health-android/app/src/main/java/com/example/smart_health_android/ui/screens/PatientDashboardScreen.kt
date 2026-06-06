@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
@@ -30,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +44,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.Scan
+import com.example.smart_health_android.data.SmartDevice
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.scanIsNormal
+import com.example.smart_health_android.data.scanSummary
 import com.example.smart_health_android.ui.theme.Background
 import com.example.smart_health_android.ui.theme.Border
 import com.example.smart_health_android.ui.theme.ErrorRed
@@ -54,6 +59,7 @@ import com.example.smart_health_android.ui.theme.Surface
 import com.example.smart_health_android.ui.theme.TextPrimary
 import com.example.smart_health_android.ui.theme.TextSecondary
 import com.example.smart_health_android.ui.theme.WarningYellow
+import kotlinx.coroutines.delay
 
 private data class PatientRecentScan(
     val id: String,
@@ -64,6 +70,17 @@ private data class PatientRecentScan(
     val isNormal: Boolean
 )
 
+private fun Scan.toPatientRecentScan(): PatientRecentScan {
+    return PatientRecentScan(
+        id = id,
+        date = formattedDate(),
+        time = formattedTime(),
+        type = if (isHeart) "Tim" else "Phổi",
+        diagnosis = if (isRecording) "Đang ghi âm từ thiết bị." else scanSummary(this),
+        isNormal = scanIsNormal(this)
+    )
+}
+
 @Composable
 fun PatientDashboardScreen(
     onNavigateToSettings: () -> Unit,
@@ -72,36 +89,42 @@ fun PatientDashboardScreen(
     onNavigateToMonitoring: () -> Unit,
     onNavigateToRecords: () -> Unit,
     onNavigateToAssistant: () -> Unit,
-    onNavigateToRecordDetail: () -> Unit
+    onNavigateToRecordDetail: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val recentScans = remember {
-        listOf(
-            PatientRecentScan(
-                id = "SCN-1029",
-                date = "12/05/2026",
-                time = "14:35",
-                type = "Tim",
-                diagnosis = "Nhịp xoang bình thường",
-                isNormal = true
-            ),
-            PatientRecentScan(
-                id = "SCN-1028",
-                date = "10/05/2026",
-                time = "09:20",
-                type = "Phổi",
-                diagnosis = "Phát hiện tiếng ran nổ - Đáy phổi trái",
-                isNormal = false
-            ),
-            PatientRecentScan(
-                id = "SCN-1027",
-                date = "05/05/2026",
-                time = "11:45",
-                type = "Tim",
-                diagnosis = "Âm sắc tim bình thường",
-                isNormal = true
-            )
-        )
+    var patientName by remember { mutableStateOf("Bệnh nhân") }
+    var recentScans by remember { mutableStateOf<List<PatientRecentScan>>(emptyList()) }
+    var currentDevice by remember { mutableStateOf<SmartDevice?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    suspend fun refreshPatientDashboard() {
+        runCatching {
+            val user = SmartHealthRepository.api.getMe()
+            patientName = user.name.ifBlank { patientName }
+            recentScans = SmartHealthRepository.api.listPatientScans(limit = 5).map { it.toPatientRecentScan() }
+            val devices = SmartHealthRepository.api.listDevices()
+            currentDevice = devices.firstOrNull { it.online || it.connected } ?: devices.firstOrNull()
+            loadError = null
+        }.onFailure {
+            loadError = it.message ?: "Không kết nối được máy chủ"
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshPatientDashboard()
+            delay(5000)
+        }
+    }
+
+    val visibleScans = remember(recentScans, searchQuery) {
+        val query = searchQuery.trim().lowercase()
+        if (query.isBlank()) {
+            recentScans
+        } else {
+            recentScans.filter { scan ->
+                listOf(scan.id, scan.type, scan.diagnosis).any { it.lowercase().contains(query) }
+            }
+        }
     }
 
     Column(
@@ -111,6 +134,7 @@ fun PatientDashboardScreen(
             .verticalScroll(rememberScrollState())
     ) {
         PatientHomeHeader(
+            patientName = patientName,
             searchQuery = searchQuery,
             onSearchQueryChange = { searchQuery = it },
             onNavigateToSettings = onNavigateToSettings,
@@ -123,7 +147,7 @@ fun PatientDashboardScreen(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 8.dp)
         ) {
-            PatientDeviceStatusCard(onClick = onNavigateToBluetooth)
+            PatientDeviceStatusCard(device = currentDevice, onClick = onNavigateToBluetooth)
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -190,15 +214,21 @@ fun PatientDashboardScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                recentScans.forEach { scan ->
-                    PatientHistoryCard(
-                        date = scan.date,
-                        time = scan.time,
-                        type = scan.type,
-                        diagnosis = scan.diagnosis,
-                        isNormal = scan.isNormal,
-                        onClick = onNavigateToRecordDetail
-                    )
+                if (loadError != null) {
+                    PatientNoticeCard(text = loadError ?: "")
+                } else if (visibleScans.isEmpty()) {
+                    PatientNoticeCard(text = "Chưa có hồ sơ đo từ máy chủ.")
+                } else {
+                    visibleScans.forEach { scan ->
+                        PatientHistoryCard(
+                            date = scan.date,
+                            time = scan.time,
+                            type = scan.type,
+                            diagnosis = scan.diagnosis,
+                            isNormal = scan.isNormal,
+                            onClick = { onNavigateToRecordDetail(scan.id) }
+                        )
+                    }
                 }
             }
         }
@@ -207,6 +237,7 @@ fun PatientDashboardScreen(
 
 @Composable
 private fun PatientHomeHeader(
+    patientName: String,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -228,7 +259,7 @@ private fun PatientHomeHeader(
                 Column {
                     Text("Chào buổi sáng,", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Nguyễn Văn A", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    Text(patientName, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -298,7 +329,18 @@ private fun PatientHeaderIconButton(icon: ImageVector, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PatientDeviceStatusCard(onClick: () -> Unit) {
+private fun PatientDeviceStatusCard(device: SmartDevice?, onClick: () -> Unit) {
+    val isOnline = device?.online == true || device?.connected == true
+    val statusColor = if (isOnline) SuccessGreen else WarningYellow
+    val statusText = when {
+        device == null -> "Chưa ghép thiết bị"
+        isOnline -> "Online qua cloud"
+        else -> "Chưa online"
+    }
+    val batteryText = device?.battery?.takeIf { it > 0 }?.coerceIn(0, 100)?.let { "$it%" } ?: "--"
+    val signalText = device?.wifiRssi?.let { "WiFi $it dBm" }
+        ?: device?.signal?.let { "RSSI $it dBm" }
+        ?: "Chưa có RSSI"
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -318,16 +360,16 @@ private fun PatientDeviceStatusCard(onClick: () -> Unit) {
                     Box(
                         modifier = Modifier
                             .size(42.dp)
-                            .background(SuccessGreen.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                            .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.MonitorHeart, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(24.dp))
+                        Icon(Icons.Default.MonitorHeart, contentDescription = null, tint = statusColor, modifier = Modifier.size(24.dp))
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text("Trạng thái thiết bị", color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text("Đã kết nối", color = SuccessGreen, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(statusText, color = statusColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
@@ -338,14 +380,25 @@ private fun PatientDeviceStatusCard(onClick: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.BatteryFull, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("85%", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(batteryText, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
-                    Icon(Icons.Default.Bluetooth, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
                     Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                "${device?.name?.ifBlank { "Smart Health Stethoscope" } ?: "Chưa có thiết bị"} • $signalText",
+                color = TextSecondary,
+                fontSize = 12.sp,
+                maxLines = 1
+            )
+            if (!device?.firmwareVersion.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Firmware ${device?.firmwareVersion}", color = TextSecondary, fontSize = 12.sp)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Box(
                 modifier = Modifier
@@ -402,6 +455,25 @@ private fun PatientQuickActionTile(
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+@Composable
+private fun PatientNoticeCard(text: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(18.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+    ) {
+        Text(
+            text,
+            color = TextSecondary,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }
 

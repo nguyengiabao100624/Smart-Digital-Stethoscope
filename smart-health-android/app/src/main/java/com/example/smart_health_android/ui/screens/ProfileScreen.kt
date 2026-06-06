@@ -22,7 +22,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AuthUser
+import com.example.smart_health_android.data.ClinicOption
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.SpecialtyOption
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,19 +41,83 @@ fun ProfileScreen(
     var license by remember { mutableStateOf("123456/BYT-CCHN") }
     var hospital by remember { mutableStateOf("Bệnh viện Đa khoa Trung ương") }
     var department by remember { mutableStateOf("Khoa Tim mạch") }
+    var organizationId by remember { mutableStateOf("") }
+    var selectedSpecialtyId by remember { mutableStateOf("") }
+    var clinics by remember { mutableStateOf<List<ClinicOption>>(emptyList()) }
+    var specialties by remember { mutableStateOf<List<SpecialtyOption>>(emptyList()) }
     var email by remember { mutableStateOf("bacsituan@benhvien.com") }
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("123 Đường Láng, Đống Đa, Hà Nội") }
+    var displayName by remember { mutableStateOf("Nguyễn Tuấn") }
+    var roleLabel by remember { mutableStateOf("Bác sĩ") }
+    var isSaving by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     val joinDate = "15/03/2020"
-    val originalEmail = "bacsituan@benhvien.com"
-    val originalPhone = "0912 345 678"
+    var originalEmail by remember { mutableStateOf("bacsituan@benhvien.com") }
+    var originalPhone by remember { mutableStateOf("0912 345 678") }
+    val selectedClinic = clinics.firstOrNull { it.id == organizationId }
+    val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
+
+    fun applyProfile(user: AuthUser) {
+        displayName = user.name.ifBlank { displayName }
+        roleLabel = if (user.role == "doctor") "Bác sĩ" else "Bệnh nhân"
+        license = user.license
+        hospital = user.hospital
+        department = user.department
+        organizationId = user.organizationId
+        selectedSpecialtyId = specialties.firstOrNull { it.name == user.department || it.name == user.specialty }?.id.orEmpty()
+        email = user.email
+        phone = user.phone
+        address = user.address
+        originalEmail = user.email
+        originalPhone = user.phone
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            clinics = SmartHealthRepository.api.listClinics()
+            specialties = SmartHealthRepository.api.listSpecialties()
+            applyProfile(SmartHealthRepository.api.getMe())
+            loadError = null
+        } catch (error: Exception) {
+            loadError = error.message ?: "Không thể tải hồ sơ"
+        }
+    }
 
     fun handleSave() {
-        when {
-            email != originalEmail -> onNavigateToReVerifyContact("email", email)
-            phone.isNotBlank() && phone != originalPhone -> onNavigateToReVerifyContact("phone", phone)
-            else -> isEditing = false
+        isSaving = true
+        loadError = null
+        coroutineScope.launch {
+            try {
+                val updated = SmartHealthRepository.api.updateMe(
+                    JSONObject()
+                        .put("email", email.trim())
+                        .put("phone", phone.trim())
+                        .put("license", license.trim())
+                        .put("organizationId", selectedClinic?.id.orEmpty())
+                        .put("hospital", selectedClinic?.name ?: hospital.trim())
+                        .put("department", selectedSpecialty?.name ?: department.trim())
+                        .put("specialty", selectedSpecialty?.name ?: department.trim())
+                        .put("address", address.trim())
+                )
+                applyProfile(updated)
+                isEditing = false
+            } catch (error: Exception) {
+                loadError = error.message ?: "Không thể lưu hồ sơ"
+            } finally {
+                isSaving = false
+            }
         }
+    }
+
+    val initials = remember(displayName) {
+        displayName
+            .split(" ")
+            .mapNotNull { it.firstOrNull()?.uppercaseChar()?.toString() }
+            .take(2)
+            .joinToString("")
+            .ifBlank { "SH" }
     }
 
     Column(
@@ -78,18 +148,22 @@ fun ProfileScreen(
                         modifier = Modifier
                             .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                             .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            .clickable { if (isEditing) handleSave() else isEditing = true }
+                            .clickable(enabled = !isSaving) { if (isEditing) handleSave() else isEditing = true }
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (isEditing) Icons.Default.Check else Icons.Default.Edit,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            if (isSaving) {
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                            } else {
+                                Icon(
+                                    if (isEditing) Icons.Default.Check else Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isEditing) "Lưu" else "Chỉnh sửa", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(if (isSaving) "Đang lưu" else if (isEditing) "Lưu" else "Chỉnh sửa", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -106,10 +180,10 @@ fun ProfileScreen(
                                 .fillMaxSize()
                                 .shadow(8.dp, CircleShape)
                                 .clip(CircleShape)
-                                .background(Color.White),
+                            .background(Color.White),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("NT", color = PrimaryBlue, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            Text(initials, color = PrimaryBlue, fontSize = 32.sp, fontWeight = FontWeight.Bold)
                         }
                         if (isEditing) {
                             Box(
@@ -127,9 +201,9 @@ fun ProfileScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Nguyễn Tuấn", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text(displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Bác sĩ Tim mạch • ID: 89432", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("$roleLabel ${department.ifBlank { "" }}", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -142,6 +216,20 @@ fun ProfileScreen(
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            loadError?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .padding(12.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

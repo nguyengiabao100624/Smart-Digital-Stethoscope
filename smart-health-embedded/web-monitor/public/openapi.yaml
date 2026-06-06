@@ -1,0 +1,382 @@
+openapi: 3.0.3
+info:
+  title: Smart Health Backend API
+  version: 0.2.0
+  description: Demo contract with role-separated doctor and patient routes. Production should keep this under /api/v1.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Health check
+      responses:
+        "200":
+          description: Backend status
+  /auth/login:
+    post:
+      security: []
+      summary: Login with demo account credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login:
+                  type: string
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [doctor, patient]
+      responses:
+        "200":
+          description: Session token and user profile
+  /auth/firebase:
+    get:
+      summary: Verify Firebase ID token and return mapped backend user
+      description: Requires Authorization bearer token from Firebase Authentication.
+      responses:
+        "200":
+          description: Firebase provider, mapped user, and backend auth session
+  /auth/role-request:
+    post:
+      summary: Request doctor or patient role review for the current Firebase user
+      responses:
+        "200":
+          description: Updated user and role request status
+  /auth/sessions:
+    get:
+      summary: List active/revoked auth sessions for the current user
+      responses:
+        "200":
+          description: Session list
+  /auth/sessions/{sessionId}/revoke:
+    post:
+      summary: Revoke one auth session belonging to the current user
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked session
+  /doctor/dashboard:
+    get:
+      summary: Doctor dashboard summary
+      responses:
+        "200":
+          description: Dashboard stats and recent scans
+  /doctor/patients:
+    get:
+      summary: List patients available to the doctor
+      responses:
+        "200":
+          description: Patient list
+    post:
+      summary: Create a patient record
+      responses:
+        "201":
+          description: Created patient
+  /doctor/scans:
+    get:
+      summary: List scans available to the doctor
+      parameters:
+        - in: query
+          name: patientId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Scan list
+  /doctor/scans/start:
+    post:
+      summary: Start a scan for a patient
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Scan started
+  /patient/dashboard:
+    get:
+      summary: Patient dashboard scoped to current session
+      responses:
+        "200":
+          description: Patient stats and recent scans
+  /patient/scans:
+    get:
+      summary: List scans belonging to the current patient
+      responses:
+        "200":
+          description: Patient scan list
+  /scans:
+    get:
+      summary: List scans with production filters
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: patientId
+          schema:
+            type: string
+        - in: query
+          name: deviceId
+          schema:
+            type: string
+        - in: query
+          name: createdFrom
+          schema:
+            type: string
+        - in: query
+          name: createdTo
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Filtered scans
+    post:
+      summary: Create a durable scan session before chunk upload
+      responses:
+        "201":
+          description: Created scan session
+  /scans/{scanId}/audio-chunks:
+    post:
+      summary: Upload one PCM audio chunk for a scan
+      parameters:
+        - in: path
+          name: scanId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chunk accepted
+  /scans/{scanId}/complete:
+    post:
+      summary: Complete chunk upload and process audio
+      parameters:
+        - in: path
+          name: scanId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Completed scan
+  /scans/{scanId}/audio-url:
+    get:
+      summary: Return authorized signed URL or local object URL
+      parameters:
+        - in: path
+          name: scanId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audio access URL
+  /patient/scans/start:
+    post:
+      summary: Start a scan for the current patient
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Scan started
+  /patient/scans/{scanId}:
+    get:
+      summary: Read one patient-owned scan
+      parameters:
+        - in: path
+          name: scanId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scan detail
+  /devices/provision-qr:
+    post:
+      summary: Create a claim code payload for a device QR
+      responses:
+        "201":
+          description: Claim payload with deviceId and claimCode
+  /devices/pair:
+    post:
+      summary: Pair or claim a device
+      responses:
+        "200":
+          description: Paired device without secret fields
+  /admin/doctor-requests:
+    get:
+      summary: List doctor approval requests
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [all, pending, approved, rejected, needs_info]
+      responses:
+        "200":
+          description: Doctor approval requests
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/doctor-requests/{requestId}/approve:
+    post:
+      summary: Approve a doctor account request
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approved doctor request
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/doctor-requests/{requestId}/reject:
+    post:
+      summary: Reject a doctor account request
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rejected doctor request
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/doctor-requests/{requestId}/request-info:
+    post:
+      summary: Request additional doctor profile information
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Doctor request moved to needs_info
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+  /notifications:
+    get:
+      summary: List notifications for current backend state
+      responses:
+        "200":
+          description: Notification list
+  /notifications/read-all:
+    post:
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: Updated notification list
+  /notifications/unread-count:
+    get:
+      summary: Return unread notification count
+      responses:
+        "200":
+          description: Unread count
+  /notifications/register-device:
+    post:
+      summary: Register an FCM token for the current user
+      responses:
+        "200":
+          description: Notification device registration
+  /notifications/{notificationId}/read:
+    post:
+      summary: Mark one notification as read
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated notification
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+  /notifications/{notificationId}:
+    delete:
+      summary: Delete one notification
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted notification marker
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+components:
+  responses:
+    ErrorResponse:
+      description: Standard API error. Top-level message/code fields are kept for old clients.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error, message, code, statusCode, requestId]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              example: FORBIDDEN
+            message:
+              type: string
+              example: Khong co quyen truy cap.
+            requestId:
+              type: string
+              example: req_lx0e9f_7a8b9c0d
+        message:
+          type: string
+        code:
+          type: string
+        statusCode:
+          type: integer
+        requestId:
+          type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

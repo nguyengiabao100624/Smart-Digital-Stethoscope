@@ -1,43 +1,91 @@
 package com.example.smart_health_android.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SsidChart
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
-import com.example.smart_health_android.ui.theme.*
+import com.example.smart_health_android.data.BackendStatus
+import com.example.smart_health_android.data.Scan
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.scanIsNormal
+import com.example.smart_health_android.data.scanLabel
+import com.example.smart_health_android.data.scanSummary
+import com.example.smart_health_android.ui.theme.Background
+import com.example.smart_health_android.ui.theme.Border
+import com.example.smart_health_android.ui.theme.PrimaryBlue
+import com.example.smart_health_android.ui.theme.PrimaryTeal
+import com.example.smart_health_android.ui.theme.SmarthealthandroidTheme
+import com.example.smart_health_android.ui.theme.SuccessGreen
+import com.example.smart_health_android.ui.theme.Surface
+import com.example.smart_health_android.ui.theme.TextPrimary
+import com.example.smart_health_android.ui.theme.TextSecondary
+import com.example.smart_health_android.ui.theme.WarningYellow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-data class ScanRecord(
-    val id: String,
-    val name: String,
-    val date: String,
-    val time: String,
-    val type: String,
-    val isNormal: Boolean,
-    val diagnosis: String
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     onNavigateToSettings: () -> Unit,
@@ -47,318 +95,581 @@ fun DashboardScreen(
     onNavigateToNewScan: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToBluetooth: () -> Unit,
-    onNavigateToRecordDetail: () -> Unit
+    onNavigateToRecordDetail: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val recentScans = listOf(
-        ScanRecord("BN-2845", "Nguyễn Văn An", "12-05-2026", "14:35", "Tim", true, "Nhịp xoang bình thường"),
-        ScanRecord("BN-2844", "Trần Thị Mai", "12-05-2026", "13:20", "Phổi", false, "Phát hiện tiếng ran nổ - Đáy phổi trái"),
-        ScanRecord("BN-2843", "Lê Văn Minh", "12-05-2026", "11:45", "Tim", true, "Âm sắc tim bình thường")
-    )
+    var backendStatus by remember { mutableStateOf(BackendStatus()) }
+    var scans by remember { mutableStateOf<List<Scan>>(emptyList()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var stoppingScanId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    suspend fun refreshDashboard() {
+        runCatching {
+            backendStatus = SmartHealthRepository.api.getStatus()
+            scans = SmartHealthRepository.api.listScans(limit = 5)
+            loadError = null
+        }.onFailure {
+            loadError = it.message ?: "Không kết nối được máy chủ"
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshDashboard()
+            delay(4000)
+        }
+    }
+
+    fun stopScan(scan: Scan) {
+        if (stoppingScanId != null) return
+        coroutineScope.launch {
+            stoppingScanId = scan.id
+            runCatching {
+                SmartHealthRepository.api.stopScan(scan.id)
+                refreshDashboard()
+            }.onFailure {
+                loadError = it.message ?: "Không dừng được lượt ghi"
+            }
+            stoppingScanId = null
+        }
+    }
+
+    val filteredScans = remember(scans, searchQuery) {
+        val query = searchQuery.trim().lowercase()
+        if (query.isBlank()) {
+            scans.take(3)
+        } else {
+            scans.filter { scan ->
+                listOf(scan.id, scan.patientName, scan.patientCode, scan.mode)
+                    .any { it.lowercase().contains(query) }
+            }.take(5)
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Surface)
+            .background(Background),
+        contentPadding = PaddingValues(bottom = 28.dp)
     ) {
-        // Header
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-                    .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                    .padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 64.dp)
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Chào mừng trở lại,", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-                            Text("Bs. Tuấn", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            IconButton(
-                                onClick = onNavigateToSettings,
-                                modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                    .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Settings, contentDescription = null, tint = Color.White)
-                            }
-                            IconButton(
-                                onClick = onNavigateToNotifications,
-                                modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                    .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Notifications, contentDescription = null, tint = Color.White)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Tìm kiếm bệnh nhân...", color = Color.White.copy(alpha = 0.6f)) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.6f)) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(16.dp)),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.White.copy(alpha = 0.2f),
-                            unfocusedContainerColor = Color.White.copy(alpha = 0.2f),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                }
-            }
+            DoctorDashboardHeader(
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                onNavigateToSettings = onNavigateToSettings,
+                onNavigateToNotifications = onNavigateToNotifications
+            )
         }
 
-        // Body Content
         item {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
                     .padding(horizontal = 24.dp)
-                    .offset(y = (-32).dp)
+                    .offset(y = (-28).dp)
             ) {
-                // Device Status Card
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = onNavigateToBluetooth),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    shape = RoundedCornerShape(16.dp)
+                DeviceStatusCard(
+                    status = backendStatus,
+                    error = loadError,
+                    onClick = onNavigateToBluetooth
+                )
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                Text(
+                    text = "Tác vụ nhanh",
+                    color = TextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .background(SuccessGreen.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.MonitorHeart, contentDescription = null, tint = SuccessGreen)
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Trạng thái thiết bị", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                    Text("Đã kết nối", color = SuccessGreen, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.BatteryFull, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(20.dp))
-                                    Text("85%", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                }
-                                Icon(Icons.Default.Bluetooth, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                                Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        // Battery Bar
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .background(Border, CircleShape)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.85f)
-                                    .height(6.dp)
-                                    .background(Brush.horizontalGradient(listOf(SuccessGreen, PrimaryTeal)), CircleShape)
-                            )
-                        }
-                    }
+                    QuickActionTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.SsidChart,
+                        label = "Đo ngay",
+                        background = PrimaryBlue,
+                        contentColor = Color.White,
+                        onClick = onNavigateToMonitoring
+                    )
+                    QuickActionTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.Description,
+                        label = "Hồ sơ",
+                        background = Color.White,
+                        contentColor = PrimaryBlue,
+                        borderColor = PrimaryBlue,
+                        onClick = onNavigateToRecords
+                    )
+                    QuickActionTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.ChatBubbleOutline,
+                        label = "Chat AI",
+                        background = PrimaryTeal,
+                        contentColor = Color.White,
+                        onClick = onNavigateToAssistant
+                    )
+                    QuickActionTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.Add,
+                        label = "Đo mới",
+                        background = Color.White,
+                        contentColor = PrimaryBlue,
+                        dashed = true,
+                        onClick = onNavigateToNewScan
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Quick Actions
-                Text("Tác Vụ Nhanh", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(
-                        modifier = Modifier.weight(1f).aspectRatio(0.85f).background(PrimaryBlue, RoundedCornerShape(16.dp)).clickable(onClick = onNavigateToMonitoring).padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(Icons.Default.SsidChart, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Đo Ngay", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f).aspectRatio(0.85f).background(Color.White, RoundedCornerShape(16.dp)).border(1.5.dp, PrimaryBlue, RoundedCornerShape(16.dp)).clickable(onClick = onNavigateToRecords).padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(Icons.Default.Description, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Hồ Sơ", color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f).aspectRatio(0.85f).background(PrimaryTeal, RoundedCornerShape(16.dp)).clickable(onClick = onNavigateToAssistant).padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Chat AI", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(0.85f)
-                            .background(Color.White, RoundedCornerShape(16.dp))
-                            .drawBehind {
-                                drawRoundRect(
-                                    color = PrimaryBlue,
-                                    style = Stroke(
-                                        width = 1.5.dp.toPx(),
-                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
-                                    ),
-                                    cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx())
-                                )
-                            }
-                            .clickable(onClick = onNavigateToNewScan)
-                            .padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Đo Mới", color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Recent Scans
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Kết Quả Gần Đây", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                    Text("Xem Tất Cả", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = PrimaryBlue, modifier = Modifier.clickable(onClick = onNavigateToRecords))
+                    Text(
+                        text = "Kết quả gần đây",
+                        color = TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Xem tất cả",
+                        color = PrimaryBlue,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable(onClick = onNavigateToRecords)
+                    )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+
+                if (filteredScans.isEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    EmptyRecentScans(loadError = loadError)
+                }
             }
         }
 
-        items(recentScans) { scan ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .offset(y = (-32).dp)
-                    .padding(bottom = 12.dp)
-                    .clickable(onClick = onNavigateToRecordDetail),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Border)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Column {
-                            Text(scan.id, color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(scan.name, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .background(if (scan.isNormal) SuccessGreen.copy(alpha = 0.1f) else WarningYellow.copy(alpha = 0.1f), CircleShape)
-                                .padding(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                if (scan.isNormal) "Bình thường" else "Bất thường",
-                                color = if (scan.isNormal) SuccessGreen else WarningYellow,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Đo ${scan.type}", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text(scan.time, color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Surface, RoundedCornerShape(12.dp))
-                            .border(1.dp, Border, RoundedCornerShape(12.dp))
-                            .padding(12.dp)
-                    ) {
-                        Column {
-                            Text("Kết luận AI:", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(scan.diagnosis, color = TextPrimary, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
+        items(filteredScans, key = { it.id }) { scan ->
+            RecentScanCard(
+                scan = scan,
+                onClick = { onNavigateToRecordDetail(scan.id) },
+                onStopRecording = { stopScan(scan) },
+                isStopping = stoppingScanId == scan.id
+            )
         }
     }
 }
 
 @Composable
-fun QuickActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    gradient: List<Color>?,
-    borderColor: Color? = null,
-    iconColor: Color = Color.White,
-    textColor: Color,
-    isDashed: Boolean = false, // Compose doesn't have dashed border out of the box, we use solid for now
+private fun DoctorDashboardHeader(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToNotifications: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
+            .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
+            .statusBarsPadding()
+            .padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 64.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Chào mừng trở lại,",
+                        color = Color.White.copy(alpha = 0.82f),
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Bs. Tuấn",
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HeaderIconButton(icon = Icons.Default.Settings, onClick = onNavigateToSettings)
+                    HeaderIconButton(icon = Icons.Default.Notifications, onClick = onNavigateToNotifications)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            TextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text(
+                        text = "Tìm kiếm bệnh nhân...",
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 14.sp
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f)
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(14.dp)),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White.copy(alpha = 0.18f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.18f),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color.White
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeaderIconButton(icon: ImageVector, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(46.dp)
+            .background(Color.White.copy(alpha = 0.18f), CircleShape)
+            .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White)
+    }
+}
+
+@Composable
+private fun DeviceStatusCard(
+    status: BackendStatus,
+    error: String?,
     onClick: () -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick)
+    val connected = status.espCount > 0
+    val statusColor = if (connected) SuccessGreen else WarningYellow
+    val statusText = when {
+        error != null -> "Không kết nối máy chủ"
+        connected -> "Đã nhận tín hiệu ESP32"
+        else -> "Chờ tín hiệu thiết bị"
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Border)
     ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .background(
-                    if (gradient != null) Brush.linearGradient(gradient) else androidx.compose.ui.graphics.SolidColor(Color.White),
-                    RoundedCornerShape(16.dp)
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(statusColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.MonitorHeart,
+                        contentDescription = null,
+                        tint = statusColor,
+                        modifier = Modifier.size(23.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Trạng thái thiết bị",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StatusPill(icon = Icons.Default.MonitorHeart, text = "${status.espCount}")
+                    Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(Border, CircleShape)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(if (connected) 1f else 0.18f)
+                        .height(6.dp)
+                        .background(Brush.horizontalGradient(listOf(statusColor, PrimaryTeal)), CircleShape)
                 )
-                .then(
-                    if (borderColor != null) Modifier.border(2.dp, borderColor, RoundedCornerShape(16.dp))
-                    else Modifier
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(28.dp))
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Máy chủ: ${status.sampleRate} Hz • UDP ${status.udpPort}",
+                color = TextSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(label, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun StatusPill(icon: ImageVector, text: String) {
+    Row(
+        modifier = Modifier
+            .background(Surface, CircleShape)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(text = text, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun QuickActionTile(
+    modifier: Modifier,
+    icon: ImageVector,
+    label: String,
+    background: Color,
+    contentColor: Color,
+    onClick: () -> Unit,
+    borderColor: Color? = null,
+    dashed: Boolean = false
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val borderModifier = when {
+        dashed -> Modifier.drawBehind {
+            drawRoundRect(
+                color = PrimaryBlue,
+                style = Stroke(
+                    width = 1.5.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
+                ),
+                cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
+            )
+        }
+        borderColor != null -> Modifier.border(1.5.dp, borderColor, shape)
+        else -> Modifier
+    }
+
+    Column(
+        modifier = modifier
+            .aspectRatio(0.92f)
+            .background(background, shape)
+            .then(borderModifier)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(30.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = label,
+            color = contentColor,
+            fontSize = 12.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun EmptyRecentScans(loadError: String?) {
+    val message = loadError ?: "Chưa có lượt đo nào. Bấm Đo mới để tạo hồ sơ đầu tiên."
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(14.dp))
+            .border(1.dp, Border, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Warning, contentDescription = null, tint = WarningYellow, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(text = message, color = TextSecondary, fontSize = 14.sp, lineHeight = 19.sp)
+    }
+}
+
+@Composable
+private fun RecentScanCard(
+    scan: Scan,
+    onClick: () -> Unit,
+    onStopRecording: () -> Unit,
+    isStopping: Boolean
+) {
+    val normal = scanIsNormal(scan)
+    val isRecording = scan.isRecording
+    val badgeColor = when {
+        isRecording -> PrimaryBlue
+        normal -> SuccessGreen
+        else -> WarningYellow
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .offset(y = (-16).dp)
+            .padding(bottom = 12.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Border)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = scan.id,
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = scan.patientName,
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = scanLabel(scan),
+                    color = badgeColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .background(badgeColor.copy(alpha = 0.1f), CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Đo ${if (scan.isHeart) "tim" else "phổi"}",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${scan.formattedDate()} • ${scan.formattedTime()}",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Surface, RoundedCornerShape(12.dp))
+                    .border(1.dp, Border, RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "Kết luận AI:",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = scanSummary(scan),
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (isRecording) {
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = onStopRecording,
+                    enabled = !isStopping,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = PrimaryBlue
+                    ),
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    if (isStopping) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = PrimaryBlue
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text("Dừng ghi và lưu", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
     }
 }
 

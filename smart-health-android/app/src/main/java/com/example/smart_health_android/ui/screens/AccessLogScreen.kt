@@ -13,7 +13,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -21,6 +21,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AccessLog
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.formatIso
 import com.example.smart_health_android.ui.theme.*
 
 private data class AccessLogEntry(
@@ -32,50 +35,34 @@ private data class AccessLogEntry(
     val color: Color
 )
 
+private fun AccessLog.toAccessLogEntry(): AccessLogEntry {
+    val isWarning = severity == "warning" || severity == "error"
+    return AccessLogEntry(
+        action = action,
+        device = device.ifBlank { "Ứng dụng Smart Health" },
+        location = if (ip.isNotBlank()) "${location.ifBlank { "Không rõ vị trí" }} (IP: $ip)" else location.ifBlank { "Không rõ vị trí" },
+        time = formatIso(createdAt, "HH:mm - dd/MM/yyyy"),
+        icon = if (isWarning) Icons.Default.Security else Icons.Default.Smartphone,
+        color = if (isWarning) ErrorRed else PrimaryBlue
+    )
+}
+
 @Composable
 fun AccessLogScreen(onNavigateBack: () -> Unit) {
-    val logs = listOf(
-        AccessLogEntry(
-            "Đăng nhập thành công",
-            "Samsung Galaxy S23 Ultra",
-            "Hồ Chí Minh, Việt Nam (IP: 14.161.x.x)",
-            "14:30 - Hôm nay",
-            Icons.Default.Smartphone,
-            PrimaryTeal
-        ),
-        AccessLogEntry(
-            "Bác sĩ Nguyễn Trần B xem hồ sơ",
-            "Hệ thống Bệnh viện Đa khoa",
-            "Cổng thông tin nội bộ",
-            "09:15 - Hôm nay",
-            Icons.Default.Schedule,
-            PrimaryBlue
-        ),
-        AccessLogEntry(
-            "Xuất tệp báo cáo âm phổi (PDF)",
-            "Samsung Galaxy S23 Ultra",
-            "Ứng dụng di động",
-            "18:45 - Hôm qua",
-            Icons.Default.Schedule,
-            PrimaryBlue
-        ),
-        AccessLogEntry(
-            "Cảnh báo: Sai mật khẩu 3 lần",
-            "Trình duyệt Chrome (Windows)",
-            "Hà Nội, Việt Nam (IP: 113.190.x.x)",
-            "20:10 - 12/05/2026",
-            Icons.Default.Security,
-            ErrorRed
-        ),
-        AccessLogEntry(
-            "Đổi mật khẩu tài khoản",
-            "Samsung Galaxy S23 Ultra",
-            "Hồ Chí Minh, Việt Nam",
-            "19:00 - 10/05/2026",
-            Icons.Default.Key,
-            PrimaryBlue
-        )
-    )
+    var logs by remember { mutableStateOf<List<AccessLogEntry>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            logs = SmartHealthRepository.api.listAccessLogs().map { it.toAccessLogEntry() }
+            loadError = null
+        } catch (error: Exception) {
+            loadError = error.message ?: "Không thể tải nhật ký truy cập"
+        } finally {
+            isLoading = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -97,6 +84,15 @@ fun AccessLogScreen(onNavigateBack: () -> Unit) {
                 lineHeight = 20.sp
             )
             Spacer(modifier = Modifier.height(24.dp))
+
+            if (isLoading) {
+                CircularProgressIndicator(color = PrimaryBlue, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            loadError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             Column(modifier = Modifier.padding(start = 4.dp)) {
                 logs.forEachIndexed { index, log ->

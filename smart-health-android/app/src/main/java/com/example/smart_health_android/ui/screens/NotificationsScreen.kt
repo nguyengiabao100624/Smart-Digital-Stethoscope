@@ -20,7 +20,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AppNotification
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.formatIso
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 data class NotificationItem(
     val id: String,
@@ -31,17 +35,36 @@ data class NotificationItem(
     var read: Boolean
 )
 
+private fun AppNotification.toNotificationItem(): NotificationItem {
+    return NotificationItem(
+        id = id,
+        type = type,
+        title = title,
+        message = message,
+        time = formatIso(createdAt, "dd/MM/yyyy HH:mm"),
+        read = read
+    )
+}
+
 @Composable
 fun NotificationsScreen(onNavigateBack: () -> Unit) {
-    var notifications by remember { mutableStateOf(listOf(
-        NotificationItem("1", "warning", "Kết quả bất thường", "Bệnh nhân Trần Thị Mai - Phát hiện tiếng ran nổ đáy phổi trái. Cần tái khám.", "10 phút trước", false),
-        NotificationItem("2", "success", "Kết nối thành công", "Ống nghe thông minh đã được kết nối. Pin: 85%", "1 giờ trước", false),
-        NotificationItem("3", "info", "Lịch hẹn sắp tới", "Bệnh nhân Nguyễn Văn An - Tái khám vào 15:30 hôm nay", "2 giờ trước", true),
-        NotificationItem("4", "success", "Cập nhật mô hình AI", "Mô hình nhận diện tim phổi v3.2.1 đã được cài đặt thành công", "1 ngày trước", true),
-        NotificationItem("5", "info", "Sao lưu dữ liệu", "Dữ liệu đã được đồng bộ lên cloud. 247 hồ sơ mới", "2 ngày trước", true)
-    )) }
+    var notifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     val unreadCount = notifications.count { !it.read }
+
+    LaunchedEffect(Unit) {
+        try {
+            notifications = SmartHealthRepository.api.listNotifications().map { it.toNotificationItem() }
+            loadError = null
+        } catch (error: Exception) {
+            loadError = error.message ?: "Không thể tải thông báo"
+        } finally {
+            isLoading = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -82,7 +105,15 @@ fun NotificationsScreen(onNavigateBack: () -> Unit) {
                             .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                             .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
                             .clickable {
-                                notifications = notifications.map { it.copy(read = true) }
+                                coroutineScope.launch {
+                                    try {
+                                        notifications = SmartHealthRepository.api.markAllNotificationsRead()
+                                            .map { it.toNotificationItem() }
+                                        loadError = null
+                                    } catch (error: Exception) {
+                                        loadError = error.message ?: "Không thể cập nhật thông báo"
+                                    }
+                                }
                             }
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                     ) {
@@ -97,7 +128,15 @@ fun NotificationsScreen(onNavigateBack: () -> Unit) {
         }
 
         // List
-        if (notifications.isEmpty()) {
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = PrimaryBlue)
+            }
+        } else if (loadError != null && notifications.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text(loadError.orEmpty(), color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+            }
+        } else if (notifications.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(modifier = Modifier.size(80.dp).background(Surface, CircleShape), contentAlignment = Alignment.Center) {
@@ -173,7 +212,18 @@ fun NotificationsScreen(onNavigateBack: () -> Unit) {
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Medium,
                                             modifier = Modifier.clickable {
-                                                notifications = notifications.map { if (it.id == notification.id) it.copy(read = true) else it }
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val updated = SmartHealthRepository.api.markNotificationRead(notification.id)
+                                                            .toNotificationItem()
+                                                        notifications = notifications.map {
+                                                            if (it.id == notification.id) updated else it
+                                                        }
+                                                        loadError = null
+                                                    } catch (error: Exception) {
+                                                        loadError = error.message ?: "Không thể cập nhật thông báo"
+                                                    }
+                                                }
                                             }
                                         )
                                         Spacer(modifier = Modifier.width(16.dp))
@@ -183,7 +233,15 @@ fun NotificationsScreen(onNavigateBack: () -> Unit) {
                                         contentDescription = "Xóa",
                                         tint = TextSecondary,
                                         modifier = Modifier.size(16.dp).clickable {
-                                            notifications = notifications.filter { it.id != notification.id }
+                                            coroutineScope.launch {
+                                                try {
+                                                    SmartHealthRepository.api.deleteNotification(notification.id)
+                                                    notifications = notifications.filter { it.id != notification.id }
+                                                    loadError = null
+                                                } catch (error: Exception) {
+                                                    loadError = error.message ?: "Không thể xóa thông báo"
+                                                }
+                                            }
                                         }
                                     )
                                 }

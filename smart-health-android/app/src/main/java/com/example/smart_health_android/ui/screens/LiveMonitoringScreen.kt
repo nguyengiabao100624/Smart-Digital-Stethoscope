@@ -1,5 +1,6 @@
 package com.example.smart_health_android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -21,19 +22,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,20 +54,64 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.LiveAudioClient
+import com.example.smart_health_android.data.LiveMetrics
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.StartScanRequest
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
 
 @Composable
-fun LiveMonitoringScreen(onNavigateBack: () -> Unit) {
-    var isRecording by remember { mutableStateOf(false) }
+fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Unit) {
+    var isRecording by remember { mutableStateOf(!initialScanId.isNullOrBlank()) }
+    var activeScanId by remember(initialScanId) { mutableStateOf(initialScanId) }
     var mode by remember { mutableStateOf("heart") }
     var heartRate by remember { mutableStateOf(72) }
     var respRate by remember { mutableStateOf(16) }
     var sqi by remember { mutableStateOf(98) }
     var hasAlert by remember { mutableStateOf(false) }
+    var connectionText by remember { mutableStateOf("Đang kết nối máy chủ...") }
+    var isConnected by remember { mutableStateOf(false) }
+    var liveMetrics by remember { mutableStateOf(LiveMetrics()) }
+    var waveformSamples by remember { mutableStateOf(FloatArray(1024)) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var isBusy by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val liveClient = remember {
+        LiveAudioClient(
+            onConnectionChanged = { connected, message ->
+                isConnected = connected
+                connectionText = message
+            },
+            onStatus = { status ->
+                if (status.recording) {
+                    activeScanId = status.activeScanId ?: activeScanId
+                    isRecording = true
+                } else {
+                    activeScanId = null
+                    isRecording = false
+                }
+            },
+            onMetrics = { metrics ->
+                liveMetrics = metrics
+                if (metrics.recording) {
+                    activeScanId = metrics.activeScanId ?: activeScanId
+                }
+                if (metrics.bpm > 0) heartRate = metrics.bpm
+                sqi = metrics.levelPercent.coerceIn(0, 100)
+            },
+            onSamples = { samples -> waveformSamples = samples }
+        )
+    }
+
+    DisposableEffect(Unit) {
+        liveClient.connect()
+        onDispose { liveClient.close() }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "monitoring-wave")
     val phase by infiniteTransition.animateFloat(
@@ -91,12 +141,98 @@ fun LiveMonitoringScreen(onNavigateBack: () -> Unit) {
         }
     }
 
+    fun stopRecording(navigateBackAfterStop: Boolean = false) {
+        if (isBusy) return
+        coroutineScope.launch {
+            actionError = null
+            isBusy = true
+            var shouldNavigateBack = false
+            runCatching {
+                val scanId = activeScanId ?: liveMetrics.activeScanId
+                if (scanId.isNullOrBlank()) {
+                    SmartHealthRepository.api.stopActiveScan()
+                } else {
+                    SmartHealthRepository.api.stopScan(scanId)
+                }
+            }.onSuccess {
+                activeScanId = null
+                isRecording = false
+                shouldNavigateBack = navigateBackAfterStop
+            }.onFailure {
+                actionError = it.message ?: "Không dừng được lượt ghi"
+            }
+            isBusy = false
+            if (shouldNavigateBack) {
+                onNavigateBack()
+            }
+        }
+    }
+
+    fun startRecording() {
+        if (isBusy) return
+        coroutineScope.launch {
+            actionError = null
+            isBusy = true
+            runCatching {
+                SmartHealthRepository.api.startScan(
+                    StartScanRequest(
+                        mode = mode,
+                        patientName = "Bệnh nhân vãng lai",
+                        deviceId = "android-app"
+                    )
+                )
+            }.onSuccess { scan ->
+                activeScanId = scan.id
+                isRecording = true
+            }.onFailure { error ->
+                runCatching { SmartHealthRepository.api.getStatus() }
+                    .onSuccess { status ->
+                        if (status.recording) {
+                            activeScanId = status.activeScanId
+                            isRecording = true
+                            actionError = "Máy chủ đang có lượt ghi khác. Bấm Dừng ghi và lưu để kết thúc."
+                        } else {
+                            actionError = error.message ?: "Không bắt đầu được lượt ghi"
+                        }
+                    }
+                    .onFailure {
+                        actionError = error.message ?: "Không bắt đầu được lượt ghi"
+                    }
+            }
+            isBusy = false
+        }
+    }
+
+    fun toggleRecording() {
+        if (isRecording) {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    BackHandler {
+        if (isRecording) {
+            stopRecording(navigateBackAfterStop = true)
+        } else {
+            onNavigateBack()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF9FAFB))
     ) {
-        MonitoringHeader(onNavigateBack = onNavigateBack)
+        MonitoringHeader(
+            onNavigateBack = {
+                if (isRecording) {
+                    stopRecording(navigateBackAfterStop = true)
+                } else {
+                    onNavigateBack()
+                }
+            }
+        )
         PatientInfoStrip()
 
         Column(
@@ -109,7 +245,8 @@ fun LiveMonitoringScreen(onNavigateBack: () -> Unit) {
                 mode = mode,
                 isRecording = isRecording,
                 hasAlert = hasAlert,
-                phase = phase
+                phase = phase,
+                samples = waveformSamples
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -139,6 +276,19 @@ fun LiveMonitoringScreen(onNavigateBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            Text(
+                text = if (isConnected) connectionText else "Máy chủ: $connectionText",
+                color = if (isConnected) PrimaryTeal else ErrorRed,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            actionError?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(it, color = ErrorRed, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             AnimatedVisibility(visible = isRecording) {
                 EdgeAiAlert(hasAlert = hasAlert)
             }
@@ -157,8 +307,29 @@ fun LiveMonitoringScreen(onNavigateBack: () -> Unit) {
 
             RecordButton(
                 isRecording = isRecording,
-                onClick = { isRecording = !isRecording }
+                enabled = !isBusy,
+                onClick = ::toggleRecording
             )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = ::toggleRecording,
+                enabled = !isBusy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRecording) ErrorRed else PrimaryBlue,
+                    contentColor = Color.White
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(if (isRecording) "Dừng ghi và lưu" else "Bắt đầu ghi")
+            }
 
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -190,10 +361,10 @@ private fun MonitoringHeader(onNavigateBack: () -> Unit) {
                 fontWeight = FontWeight.SemiBold
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Bluetooth, contentDescription = null, tint = PrimaryTeal, modifier = Modifier.size(14.dp))
+                Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryTeal, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    "StethoEdge Pro - Đã kết nối",
+                    "Backend cloud audio",
                     color = PrimaryTeal,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
@@ -234,7 +405,7 @@ private fun PatientInfoStrip() {
             Text("ID: #4928 • Lưu trữ cục bộ", color = TextSecondary, fontSize = 12.sp)
         }
         Text(
-            "FDA Clear",
+            "Đã kiểm định",
             color = PrimaryTeal,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
@@ -251,7 +422,8 @@ private fun WaveformCard(
     mode: String,
     isRecording: Boolean,
     hasAlert: Boolean,
-    phase: Float
+    phase: Float,
+    samples: FloatArray
 ) {
     Column(
         modifier = Modifier
@@ -320,6 +492,7 @@ private fun WaveformCard(
                 hasAlert = hasAlert,
                 isRecording = isRecording,
                 phase = phase,
+                samples = samples,
                 modifier = Modifier.fillMaxSize()
             )
             Box(
@@ -346,6 +519,7 @@ private fun MedicalWaveformCanvas(
     hasAlert: Boolean,
     isRecording: Boolean,
     phase: Float,
+    samples: FloatArray,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
@@ -400,12 +574,21 @@ private fun MedicalWaveformCanvas(
         }
 
         val path = Path()
-        val sweep = if (isRecording) phase * width * 2.5f else 0f
-        val step = 3
+        val hasLiveSamples = samples.any { kotlin.math.abs(it) > 0.0001f }
 
-        for (x in 0..width.toInt() step step) {
-            val t = (x + sweep) * 0.08f
-            val y = if (mode == "heart") {
+        if (hasLiveSamples) {
+            samples.forEachIndexed { index, sample ->
+                val x = (index.toFloat() / (samples.size - 1).coerceAtLeast(1)) * width
+                val y = centerY - sample.coerceIn(-1f, 1f) * height * 0.42f
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+        } else {
+            val sweep = if (isRecording) phase * width * 2.5f else 0f
+            val step = 3
+
+            for (x in 0..width.toInt() step step) {
+                val t = (x + sweep) * 0.08f
+                val y = if (mode == "heart") {
                 val cycle = (t % 150f)
                 val s1 = if (cycle in 10f..25f) {
                     sin(t * 4f) * 45f * exp(-((cycle - 17.5f) * (cycle - 17.5f)) / 20f)
@@ -438,10 +621,11 @@ private fun MedicalWaveformCanvas(
                 centerY + inspiration + expiration + crackles + sin(t * 2f) * 2f
             }
 
-            if (x == 0) {
-                path.moveTo(x.toFloat(), y)
-            } else {
-                path.lineTo(x.toFloat(), y)
+                if (x == 0) {
+                    path.moveTo(x.toFloat(), y)
+                } else {
+                    path.lineTo(x.toFloat(), y)
+                }
             }
         }
 
@@ -624,7 +808,7 @@ private fun ModeButton(
 }
 
 @Composable
-private fun RecordButton(isRecording: Boolean, onClick: () -> Unit) {
+private fun RecordButton(isRecording: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val buttonSize by animateDpAsState(
         targetValue = if (isRecording) 80.dp else 72.dp,
         animationSpec = tween(250),
@@ -646,7 +830,7 @@ private fun RecordButton(isRecording: Boolean, onClick: () -> Unit) {
                     .size(buttonSize)
                     .background(if (isRecording) ErrorRed else PrimaryBlue, CircleShape)
                     .border(3.dp, Color.White, CircleShape)
-                    .clickable(onClick = onClick),
+                    .clickable(enabled = enabled, onClick = onClick),
                 contentAlignment = Alignment.Center
             ) {
                 if (isRecording) {

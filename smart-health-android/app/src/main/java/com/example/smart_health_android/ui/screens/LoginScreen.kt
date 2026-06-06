@@ -18,18 +18,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.FirebaseAuthService
+import com.example.smart_health_android.data.PendingRegistration
+import com.example.smart_health_android.data.PendingRegistrationStore
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     onLoginSuccess: (isDoctorMode: Boolean) -> Unit,
+    onDoctorApprovalPending: () -> Unit,
+    onNavigateToVerifyEmail: (accountType: String) -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToForgotPassword: () -> Unit,
     onNavigateToPhoneLogin: () -> Unit
@@ -39,6 +48,10 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -180,15 +193,86 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+        }
+
         Button(
-            onClick = { onLoginSuccess(isDoctorMode) },
+            onClick = {
+                val login = email.trim()
+                val currentPassword = password.trim()
+                if (login.isBlank() || currentPassword.isBlank()) {
+                    errorMessage = "Vui lòng nhập email và mật khẩu"
+                    return@Button
+                }
+
+                isLoading = true
+                errorMessage = null
+                coroutineScope.launch {
+                    try {
+                        FirebaseAuthService.signIn(login, currentPassword)
+                        val verifiedEmail = FirebaseAuthService.reloadCurrentUser()
+                        if (!verifiedEmail) {
+                            PendingRegistrationStore.save(
+                                context,
+                                PendingRegistration(
+                                    accountType = if (isDoctorMode) "doctor" else "patient",
+                                    name = "",
+                                    email = login,
+                                    phone = ""
+                                )
+                            )
+                            onNavigateToVerifyEmail(if (isDoctorMode) "doctor" else "patient")
+                            return@launch
+                        }
+
+                        val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
+                        val result = SmartHealthRepository.api.authenticateFirebase(idToken)
+                        val isDoctorAccount = result.user.role == "doctor" || result.user.role == "admin"
+                        val isPendingDoctorApproval =
+                            result.user.requestedRole == "doctor" &&
+                                (result.user.roleRequestStatus == "pending" || result.user.roleRequestStatus == "needs_info")
+                        if (isDoctorMode && isPendingDoctorApproval) {
+                            onDoctorApprovalPending()
+                            return@launch
+                        }
+                        if (isDoctorMode && !isDoctorAccount) {
+                            error("Tài khoản này chưa được cấp quyền bác sĩ")
+                        }
+                        if (!isDoctorMode && result.user.role != "patient") {
+                            error("Vui lòng chọn chế độ bác sĩ cho tài khoản này")
+                        }
+                        onLoginSuccess(isDoctorAccount)
+                    } catch (error: Exception) {
+                        errorMessage = error.toVietnameseMessage("Không thể đăng nhập. Vui lòng kiểm tra thông tin và thử lại.")
+                    } finally {
+                        isLoading = false
+                    }
+                }
+            },
+            enabled = !isLoading,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
         ) {
-            Text(text = "Đăng Nhập", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            if (isLoading) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp)
+                )
+            } else {
+                Text(text = "Đăng nhập", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

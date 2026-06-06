@@ -1,0 +1,1256 @@
+
+
+===== PAGE 1 =====
+Academic Editors: Evangelos
+Hristoforou and Gemma Leone
+Received: 4 July 2025
+Revised: 17 August 2025
+Accepted: 23 October 2025
+Published: 29 October 2025
+Citation: Schatz, V .C.; Vande Velde,
+J.; Segers, L.; da Silva, B. OMES: An
+Open-Source Multi-Sensor Modular
+Electronic Stethoscope. Appl. Sci. 2025 ,
+15, 11569. https://doi.org/10.3390/
+app152111569
+Copyright: © 2025 by the authors.
+Licensee MDPI, Basel, Switzerland.
+This article is an open access article
+distributed under the terms and
+conditions of the Creative Commons
+Attribution (CC BY) license
+(https://creativecommons.org/
+licenses/by/4.0/).
+Article
+OMES: An Open-Source Multi-Sensor Modular
+Electronic Stethoscope
+Veronika Catharina Schatz
+ , Jerome Vande Velde
+ , Laurent Segers
+ and Bruno da Silva *
+Department of Electronics and Informatics (ETRO), Vrije Universiteit Brussel (VUB), 1050 Brussels, Belgium;
+schatz.veronika@googlemail.com (V .C.S.); jerome.antoine.b.vande.velde@vub.be (J.V .V .);
+laurent.segers@vub.be (L.S.)
+*Correspondence: bruno.da.silva@vub.be
+Abstract
+Electronic stethoscopes address limitations of auscultation with analog stethoscopes, such
+as the dependency on the physicians’ hearing ability, their experience, and their subjective
+interpretation. However, electronic stethoscopes currently found on the commercial market
+fail to exploit the full potential of cutting-edge microphone technology and innovative multi-
+sensor approaches. Our novel device, called Open-source Modular Electronic Stethoscope
+(OMES), proposes a modular upgrade to an analog stethoscope that incorporates multiple
+sensor types and features microphone array capabilities. OMES has been tested for its
+performance in detecting heart beats but is designed to be applied to other auscultation
+sites as well. Above that, it can be employed as an educational and potential research
+platform to promote the development of revolutionary signal processing techniques and
+artificial intelligence algorithms.
+Keywords: electronic stethoscope; digital stethoscope; multi-sensor; modular; sensor array;
+microphones; microphone array; educational; research platform
+1. Introduction
+The human body emits internal sounds that can propagate through tissue to the surface
+of the skin. These sounds contain crucial information about a patient’s health condition
+and are an essential tool to diagnose a disease or monitor its progression. Listening to body
+sounds is called auscultation and is a non-invasive and easy-to-use technique. A doctor
+performs auscultation by placing the chestpiece of a stethoscope at specific auscultation
+points on the skin of a patient. The diaphragm of the chestpiece captures skin vibrations
+induced by internal body sounds, and the stethoscope tubes transmit the sound to the ears
+of a physician [ 1]. However, this analog auscultation procedure is strongly affected by the
+doctor’s hearing abilities and experience as well as his/her subjective interpretation.
+Electronic stethoscopes, available on the commercial market since the early 1990s [1],
+address these issues by recording body sounds with acoustic sensors and relaying them to
+the user in an amplified fashion. Today, commercial electronic stethoscopes offer a wide
+range of functionalities in addition to measuring and amplifying body sounds. The user
+can specify the target organ to auscultate using pre-configured filters, store recordings to
+replay them at another time, or share them with specialists. In addition, some commer-
+cial stethoscopes offer artificial intelligence (AI) classifiers to automatically identify and
+categorize a medical condition.
+Appl. Sci. 2025 ,15, 11569 https://doi.org/10.3390/app152111569
+
+
+===== PAGE 2 =====
+Appl. Sci. 2025 ,15, 11569 2 of 28
+The conventional stethoscope is a frequently used instrument in medicine. However,
+most electronic stethoscopes are manufactured as a fully stand-alone device, and there
+hardly exist any add-on modules to digitalize the auscultation process of a conventional
+stethoscope. Paradoxically, state-of-the-art electronic stethoscopes try to mimic conven-
+tional stethoscopes and often filter for the human hearing range [ 2,3], presenting the same
+limiting frequency range. By disregarding valuable diagnostic information beyond this
+range, the potential of cutting-edge microphone technology is not fully exploited. Addi-
+tionally, the stethoscopes often employ only one acoustic sensor to detect body sounds
+and thereby omit options for sensor fusion techniques that could promote the accuracy of
+disease diagnosis.
+We propose an electronic upgrade to widespread conventional stethoscopes that en-
+ables simultaneous analog and digital auscultation. In comparison to other designs on the
+commercial market, e.g., [ 3–5], and in the scientific literature, e.g., [ 6–9], our prototype
+can embed a traditional stethoscope without interfering with its physical appearance or
+mechanically modifying the natural sound propagation path. This approach gives fully
+functional analog stethoscopes a new purpose and keeps them from being discarded in the
+replacement of a fully electronic stethoscope. To our knowledge, the presented prototype is
+the first one converting traditional stethoscopes into electronic stethoscopes without intru-
+sive modifications. Furthermore, the design exploits multiple sensor technologies that offer
+heterogeneous responses and can thus potentially be suitable for different auscultation sites.
+Above that, our multi-sensor modular electronic stethoscope, called OMES, aims to
+meet the following three scientific goals:
+• Modularity: The prototype offers multiple acoustic sensor types that can be ex-
+changed or combined in a modular fashion, thus allowing for technology comparison.
+It does not physically interfere with the conventional stethoscope to which it is at-
+tached, and therefore the original condition of the stethoscope can be easily restored.
+The modular approach additionally facilitates the repair or replacement of damaged
+components and thereby promotes the device’s sustainability factor.
+• Microphone array capability: The prototype features a microphone array config-
+uration that enables advanced signal processing algorithms for sensor fusion and
+potentially drive AI algorithms. In future works, this arrangement can help to locate
+the sound source and might provide an added value to the diagnosis of diseases.
+• Research and Educational Platform: Our electronic stethoscope aspires to be used
+as an educational and potential research platform. The prototype is compatible with
+multiple computational platforms, making its application spectrum versatile. In
+future works, it can enable verifying the performance of signal processing techniques
+or newly emerging AI algorithms for disease classification with sounds from real-
+life auscultation scenarios. Furthermore, it can serve as an educational tool to teach
+students and professionals about existing microphone technologies and auscultation
+techniques, thereby potentially reinforcing multi-disciplinary collaboration.
+This paper is structured as follows. Section 2 provides valuable information about body
+sounds and how they can be detected with acoustic sensors. Advancements of electronic
+stethoscopes currently available on the market and in the scientific field are reviewed in
+Section 3. Our electronic stethoscope is explained in Section 4, and its performance is
+experimentally evaluated in Section 5. Finally, Section 6 draws a conclusion about OMES
+and gives an outlook on future works.
+2. Background
+The stethoscope is an instrument used to collect internal body sounds and serves
+as a diagnostic tool to detect medical conditions [ 1]. The major body sounds detectable
+
+
+===== PAGE 3 =====
+Appl. Sci. 2025 ,15, 11569 3 of 28
+with a stethoscope originate from movements of the heart, lungs, joints, or abdomen [ 1].
+Today, the stethoscope consists of a chestpiece that detects vibrations of the patient’s skin
+and a tubing that directs the sound waves to a headset [ 10]. A sketch of a typical acoustic
+stethoscope is depicted in Figure 1.
+(a)
+ (b)
+Figure 1. (a) Sketch of an acoustic stethoscope. ( b) Drawing of a typical chestpiece.
+2.1. Body Sounds
+The electronic stethoscope presented in this work is designed for multiple auscultation
+sites, but its performance is evaluated on detecting heart sounds. This section therefore has
+a special focus on the typical heart beat profile and its standard auscultation process, but it
+also provides information on other body sounds.
+2.1.1. Heart Sounds
+There are four heart sounds in a cardiac cycle: The first two heart sounds, S1 and S2,
+can be heard in all healthy hearts. The third and fourth heart sounds, S3 and S4, can be
+pathologic and are also called ventricular or atrial gallop, respectively [ 11]. The S1 sound is
+the highest in amplitude and duration and generates a “crescendo-decrescendo” signal [ 12].
+It is caused by the closure of the tricuspid and mitral valve which is delayed by 20–30 ms
+(“the split”) [ 13]. The S2 sound results from the closure of the aortic and pulmonary valve
+likewise separated by a split of approximately 30 ms. The S3 heart sound arises from rapid
+ventricular filling during early diastole and can be a sign of a diseased heart in adults. The
+fourth heart sound S4 comes from the contraction of the atria prior to the onset of a systole.
+Other sounds detected during a cardiac cycle are called murmurs and suggest a heart
+malfunction [ 13]. A visualization of cardiac sounds over time is called a phonocardiogram
+(PCG), and an example can be seen in Figure 2a.
+To make those heart sounds audible, the stethoscope is placed at five dedicated
+auscultation points [ 14]. The arrangement of these points on the chest is illustrated in
+Figure 2b. Auscultation points 1, 2, 4 and 5 allow for detailed listening to sounds originating
+from the four heart valves individually. Auscultation point 3, the so-called Erb’s point,
+is the spot where the opening and closing of the aortic and the pulmonary valve can be
+heard similarly [ 14]. Table 1 summarizes the features of different heart sounds and gives
+an overview of their frequency distributions. The S1 and S2 heart sounds contain higher
+frequency components than the S3 and S4 heart sounds, but in general, cardiac sounds do
+not exceed 500 Hz [1].
+
+
+===== PAGE 4 =====
+Appl. Sci. 2025 ,15, 11569 4 of 28
+(a)
+ (b)
+Figure 2. (a) Visualization of a typical PCG showing the first two heart sounds, S1 and S2, recorded
+with the Littmann CORE Digital Stethoscope from auscultation point 2. ( b) Auscultation scheme of
+the heart. There are five points for listening to sound originating from the aortic valve (point 1), the
+pulmonic valve (point 2), the tricuspid valve (point 4), and the mitral valve (point 5). The Erb’s point
+serves to listen to both semilunar valves similarly.
+Table 1. Comparison of features of the four major heart sounds S1, S2, S3, S4, and pathologic heart
+murmurs. S3 and S4 may be caused by a diseased heart as well and are then referred to as ventricular
+or atrial gallop, respectively [ 11]. The auscultation points refer to the auscultation scheme illustrated
+in Figure 2b.
+Heart Sound Origin Frequency [Hz] Best Heard at Auscultation Point
+S1 Closure of atrioventricular valves [ 13]10–200 [13] 4, 5 [13]
+S2 Closure of semilunar valves [13] 50–250 [15] 2, 3 [13]
+S3Vibration of ventricular
+walls during early diastole [11]20–70 [11]Left ventricle: 5
+Right ventricle: 4 [11]
+S4Vibration of ventricular
+walls during late diastole [11]20–70 [11]Left ventricle: 5
+Right ventricle: 4 [11]
+Systolic murmurs Diseased heart 50–450 [15] /
+Diastolic murmurs Diseased heart 45–400 [15] /
+2.1.2. Lung, Bowel and Knee Joint Sounds
+The stethoscope is a versatile instrument and can auscultate a wide range of organs
+besides the heart. For example, analysis of lung sounds can reveal obstructions in the
+pulmonary tracts as well as other lung diseases. The breath sounds are a superposition of
+normal breath sounds during in- and expiration as well as adventitious sounds that are
+caused by pulmonary disorder. The latter can include crackles that appear as explosive
+sounds during inspiration, wheezes with an almost musical character throughout the whole
+breath cycle, or cough sounds, among others [ 16]. Typically, lung sounds have frequency
+components between 60 and 1200 Hz [1].
+Auscultation of bowel sounds can be a patient-friendly, economic, and time-efficient
+alternative to other diagnostic tools to detect abdominal diseases. The sounds can be
+separated into clicks that are short-time, high-pitched sounds, and bursts that take more
+time. The main frequencies of intestinal sounds are between 50 and 1500 Hz [17].
+Knee joints consist of three articulating bones, namely the femur, tibia, and patella.
+Frictions in the joint induce vibrations that propagate to the surface of the skin and can
+be picked up by a stethoscope. This examination is ideal for assessing the rehabilitation
+
+
+===== PAGE 5 =====
+Appl. Sci. 2025 ,15, 11569 5 of 28
+progress after joint injuries. Frequencies emitted by the knee joints lie between 15 and
+21,000 Hz [18].
+Table 2 summarizes the typical frequency ranges for the main body sounds detectable
+with a stethoscope.
+Table 2. Overview of auscultation sites and their corresponding frequencies.
+Heart Lung Abdomen Knee Joint
+<=500 Hz [1] 60–1200 Hz [1] 50–1500 Hz [17] 15–21,000 Hz [18]
+2.2. Acoustic Sensors
+Electronic stethoscopes enable digital auscultation and allow the detection of body
+sounds with acoustic sensors. This section gives an overview of various sensor types that
+can be considered in an electronic stethoscope design.
+2.2.1. Electret Condenser Microphones
+Electret condenser microphones are capacitive microphones [ 19]. They consist of a
+fixed backplate and a flexible diaphragm that form a capacitor [ 19]. Any movement of the
+membrane results in a change in capacitance relative to the deflection of the membrane
+and, ultimately, in a change in output voltage [20].
+This type of microphone can be purchased at low cost [ 20] in the range of a few
+cents and is typically a few millimeters to centimeters large. It shows low sensitivity, and
+therefore its output voltage must be amplified and filtered before it can be digitized with
+an analog-to-digital converter (ADC) [20].
+2.2.2. Piezoelectric Transducers
+These kinds of sensors exploit the piezoelectric effect. This phenomenon occurs when
+a piezoelectric crystal is deformed and generates charges on conductive plates surrounding
+the piezoelectric material. The evolving potential is proportional to the input deformation
+and is measured as an output signal [19].
+An advantage of piezoelectric transducers is that they do not need to be actively
+driven by a power source due to their intrinsic voltage creation capability. Their analog
+output signals have to be digitized with an ADC. The authors of [ 21] point out that sounds
+captured with a piezoelectric transducer are different in tonality than sounds heard with an
+acoustic stethoscope, and [ 22] states that piezoelectric elements require careful stabilization
+to operate effectively. In conventional auscultation scenarios, the chestpiece is placed
+in direct contact with the skin to pick up vibrations induced by internal body sounds.
+In a similar manner, piezoelectric microphones can detect skin vibrations, making them
+particularly appropriate for use in electronic stethoscopes [1].
+2.2.3. MEMS Microphones
+Microphone engineering has been revolutionized by the introduction of microelec-
+tromechanical system (MEMS) technology, miniaturizing devices and therefore making
+them light-weight and of a compact size [ 19]. Nowadays, MEMS microphones can be found
+in manifold configurations exploiting various working principles such as piezoelectric,
+piezoresistive, capacitive, and optical MEMS microphones [19].
+MEMS microphones come with several advantages over previously discussed acoustic
+sensors, ranging from their compact size to low power consumption, in particular, due to
+optimized current consumption [ 23]. The output of MEMS microphones can be analog or
+digital. Digital MEMS microphones provide the output immediately in a digitized form and
+therefore require a minimum number of components to which they need to be connected.
+
+
+===== PAGE 6 =====
+Appl. Sci. 2025 ,15, 11569 6 of 28
+This ultimately leads to a smaller size of manufactured printed circuit boards (PCBs) and
+an increased ease of usage. Furthermore, the authors of [ 24] suggest that digital outputs
+might be less susceptible to interferences from surrounding devices than analog outputs.
+3. Related Work
+3.1. Commercial Electronic Stethoscopes
+One of the first electronic stethoscopes introduced to the industrial market was the
+E-Scope II presented by Cardionics (Houston, TX, USA) in 1991. Its chestpiece recorded
+electrocardiography (ECG) signals that were converted to PCG signals by a computer
+embedded in a housing adjacent to the tubing [ 25]. Today, Cardionics (Houston, TX, USA)
+additionally incorporates a microphone in their device that acquires sounds directly.
+In the following years, other manufacturers such as JABES by GST ( Seoul, South Korea)
+or Thinklabs’ ONE (Thinkslabs, CO, USA) entered the market. Their system designs did
+not contain any internal wireless transmission module, and therefore computation, sound
+storage, and acoustic output were performed on the device. The inventor of Thinklabs’
+ONE (Thinkslabs, CO, USA), incorporated all necessary components in a chestpiece that
+can be connected to ordinary auxiliary headphones.
+Today, all devices come with the option to transmit data wirelessly and some abandon
+stethoscope tubings, such as eKuore’s Pro stethoscope (eKuore Medical Devices, Burjassot,
+Spain). Others offer a modular system that allows the user to remove the tubing and listen
+to the sound remotely. This approach is taken, for instance, by Eko Health Inc. (Emeryville,
+CA, USA) with their Eko Core 500. An additional feature of the Eko Core 500 is a built-in
+ECG that is displayed on the chestpiece during auscultation. Another noteworthy device is
+the Littmann CORE published by 3M (Maplewood, MN, USA) that offers to switch between
+amplified and analog listening modes.
+Furthermore, manufacturers are beginning to incorporate diagnostic AI into their
+stethoscopes. For example, Eko Health Inc. (Emeryville, CA, USA) published an app that
+is capable of detecting heart diseases, such as atrial fibrillation or brady- and tachycardia.
+The Eko app can be connected to the Eko Core 500 as well as the Littmann CORE.
+Table 3 summarizes the electronic stethoscopes currently available on the market with
+regard to their technical specifications, and Figure 3 shows an example of commercially
+available electronic stethoscopes, i.e., the Littmann CORE Digital Stethoscope by (3M,
+Maplewood, MN, USA). Most companies do not publish the sensor type or the amount
+of sensors they employ. This lack in information limits the degree of comparison between
+the commercial electronic stethoscopes. The table reveals that all considered manufactur-
+ers filter for the human hearing range. However, there is no common standard among
+manufacturers for the filtering bandwidths.
+Figure 3. Photograph of the Littmann CORE Digital Stethoscope by 3M, Maplewood, (MN), USA.
+
+
+===== PAGE 7 =====
+Appl. Sci. 2025 ,15, 11569 7 of 28
+Table 3. Comparison of the state-of-the-art electronic stethoscopes on the commercial market sorted
+by their release dates: NM: not mentioned, PCG: phonocardiogram, ECG: electrocardiogram.
+Company—Product Name Year Sensor Type(s) Frequency Bandwidth [Hz]
+Cardionics—E-Scope II [4] 1991 [25]PCG derived
+from ECG waves [25];
+Microphone [21]Heart: 20–650
+Lung: 70–2000 [26]
+GST—JABES [3] 2003 NMBell mode: 20–200
+Diaphragm mode: 200–500
+Wide mode: 20–1000 [3]
+Thinklabs—ONE [5] 2015 [21]patented
+capacitive
+transducer [21,27]Heart: 30–500
+Bell mode: 60–500
+Lung, heart valve clicks: 80–500
+Lung: 100–1000
+Wideband mode: 20–2000 [2]
+eKuore—Pro [28] 2016 [29] NMCardiac: 50–150
+Lung: 50–500
+Wide range: 40–600 [30]
+3M—Littmann CORE [31] 2020 [32]NM
+Littmann Range:
+piezoelectric sensor [21]NM but filters for
+wide, cardiac and pulmonary [33]
+Littmann Range:
+Bell (20–200 Hz)
+Diaphragm (100–500 Hz)
+Extended mode (20–1000 Hz) [21]
+Eko Health Inc.—
+Eko Core 500 [34]2023 [32] NM20–2000 [35]
+filters:
+wide, cardiac, pulmonary [35]
+3.2. Scientific Electronic Stethoscopes
+While commercial manufacturers of electronic stethoscopes primarily focus on record-
+ing heart and lung sounds, researchers in the scientific domain also consider sounds
+originating from the joints and the abdomen. This section is dedicated to providing an
+overview of the recent scientific advances made in recording body sounds, and Table 4
+summarizes their key features.
+Teague et al. [ 18] proposed a wearable knee joint sound acquisition unit to continu-
+ously evaluate the rehabilitation process after a musculoskeletal injury. They collect sound
+using three microphone types simultaneously: namely a piezoelectric film, an electret
+microphone, and a MEMS microphone. Wang et al. [ 36] developed a flexible patch for
+continuous real-time monitoring bowel sounds. The patch holds a MEMS microphone to
+sense bowel sounds and a Bluetooth chip to send them to an external mobile phone for
+inspection and analysis. Another wearable prototype for continuous breath monitoring
+is being developed by Yilmaz et al. [ 22]. The authors claim that with a wearable device,
+the limitations of stethoscopes, such as user-dependent improper positioning of the sensor
+or insufficient pressure on the skin, can be overcome. As a sound transducer, they opted
+for a piezoelectric film embedded in a silicone rubber that is in direct contact with the
+skin to improve the transducer’s stability and reduce ambient noise. In 2023, Soo Hyun
+Lee et al. [ 37] developed a wearable, flexible patch that continuously monitors respiratory
+function in real time. The patch can be glued to the patient’s back with medical adhesive. A
+flexible PCB holds all relevant components for capturing lung sounds: a battery powering
+a microcontroller unit (MCU) and a MEMS microphone. The electronic circuit is protected
+by a skin-colored cover that additionally functions as a barrier against surrounding noise.
+Inspired by the COVID19 pandemic that required medical personnel to wear protective
+suits and consequently impaired the auscultation process, Yang et al. [ 9] developed a
+contactless auscultation device for heart and lung sounds. The authors found a simple
+
+
+===== PAGE 8 =====
+Appl. Sci. 2025 ,15, 11569 8 of 28
+and cost-effective way to electrify a regular stethoscope chestpiece by placing a collar
+microphone behind its stem. Cowdhury et al. [ 6] proposed a portable stethoscope by
+mounting an electret microphone in a regular stethoscope tubing close to the chestpiece.
+The acoustic signals are being filtered, pre-amplfied and transmitted to a heart sound
+classification algorithm. In [ 38], Chuchnowska et. al published an electronic stethoscope
+specifically designed for remote auscultations with virtual medical supervision. The
+prototype consists of a digital MEMS microphone breakout board glued to a stethoscope
+chestpiece that is incorporated in a modular 3D-printed casing. Duggan et al. [ 39] employ
+an optical transducer that captures vibrations from a reflective membrane. With this
+approach, they claim to reduce the impact of ambient noise and are able to capture low-
+frequency components that might improve medical diagnosis.
+Further advances in electronic auscultation can be achieved by deploying multiple
+microphones simultaneously. Tian Wang et al. [ 8] arranged 16 electret condenser micro-
+phones in a 4 ×4 array to record heart sounds. The authors state that choosing microphone
+arrays increases the amplitude of the total signal output, enhances sensitivity, and further
+enlarges the auscultation area, therefore providing more accurate heart sound recordings.
+Han et al. [ 40] also adopted a sensor array approach by fabricating a 2 ×2 array with
+stretchable piezoelectric transducers. They state that the stretchability enhances cardiac
+and respiratory long-term monitoring. In [ 41], McDonald et al. propose a novel design
+approach that features six piezoelectric transducers that increase the sensing area and can
+guide non-skilled users in the optimal placement of the device. During auscultation, the
+device is held by the patients themselves and can be applied over clothing, making it
+especially suitable for telemedicine.
+Some researchers combined their devices with other biosignals that can be collected
+from the same auscultation site. For example, Park et al. [ 7] presented a light-weight,
+ergonomic prototype that can simultaneously measure heart sounds and pulse. The front
+side of the device is placed on the chest, and heart sounds are being collected with a
+digital MEMS microphone mounted behind a stethoscope bell. The back of the device is
+equipped with a photoplethysmography (PPG) sensor that simultaneously takes pulse
+measurements. Lee et al. [ 42] combined heart sound monitoring with ECG measurements.
+An electret microphone collects heart sounds, while an ECG patch simultaneously measures
+electrical activity. After signal synchronization, the aligned signals are displayed on a
+mobile phone and can be analyzed by a heart murmur classification algorithm. A multi-
+modal, multi-sensor approach has been taken by Giordano et al. [ 43] who designed a
+device consisting of 48 electret condenser microphones that detect heart sounds from
+all auscultation sites simultaneously and three electrodes to additionally sample ECG.
+They embedded all sensors in a flexible PCB to enable conformity with the human chest
+and allow untrained users to perform auscultation, e.g., in a homecare setting. Another
+multi-modal approach has been taken by Klum et al. [ 44] who suggested a patch for long-
+term auscultation by measuring body sounds and ambient noise, and performing ECG,
+impedance pneumography and actigraphy in parallel. Other researches propose universal
+electronic stethoscopes that can be applied to various auscultation sites by switching
+between dedicated frequency filters. This approach has, for example, been taken by Wu
+et al. [ 45], who presented a prototype that comprises interchangeable analog filters for lung
+and heart sounds.
+
+
+===== PAGE 9 =====
+Appl. Sci. 2025 ,15, 11569 9 of 28
+Table 4. Electronic stethoscopes presented in the scientific literature sorted by year, ECM: electret
+condenser microphone; and NM: not mentioned.
+Ref.Release
+YearApplication Sensor TypeNumber of
+SensorsSample Rate [kHz]Frequency
+Bandwidth [Hz]
+[18] 2016 kneepiezoelectric film,
+ECM,
+analog MEMS1piezo and MEMS: 50
+electret: 44.1piezo: 15k–21k
+electret: 7k–16k
+[6] 2019 heart ECM 1 2 20–600
+[36] 2019 abdomen analog MEMS 1 2 <=600
+[44] 2019 heart and lung digital MEMS 2 10,000heart: 20–150,
+lung: 75–2500
+[22] 2020 lung piezoelectric film 1 5 100–1600
+[8] 2021 heart ECM 4×4 8 <=4000
+[9] 2021 lung collar microphone 1 NM NM
+[45] 2022 heart and lung ECM 2 44.1heart: <=400,
+lung: 100–2000
+[7] 2022 heart digital MEMS 1 NM 20–400
+[42] 2023 heart ECM 1 2 20–300
+[43] 2023 heart ECM 48 1 >=2
+[37] 2023 lung digital MEMS 1 NMheart: 20–200
+lung: 50–500
+[40] 2024 heart and lung piezoelectric sensor 2×2 NM NM
+[39] 2024 heart optical sensor 1 2.9 NM
+[38] 2025 heart digital MEMS 1 NM NM
+[41] 2025 heart piezoelectric sensors 6 5.120 >=20
+3.3. The Need for a Multi-Sensor Modular Approach
+Tables 3 and 4 summarize the features of commercial and scientific state-of-the-art
+electronic stethoscopes proposed in the preceding decades. While a high variety of de-
+vices have been proposed ranging from modifications of analog stethoscopes to wearable
+sound acquisition modules, developers of electronic stethoscopes often disregard the full
+potential of cutting-edge microphone technology and innovative multi-sensor approaches.
+Specifically, they tend to employ only one acoustic sensor instead of microphone arrays,
+precluding any sensor fusion techniques and failing to optimize the design for sensitivity.
+Secondly, the captured signals are often filtered for the human hearing range, although
+frequencies outside this range can also contain diagnostically important details and could
+potentially be relevant for decision-support algorithms. Thirdly, most developers opt for a
+monolithic design approach, making it impossible to easily repair or exchange damaged
+components, thereby contributing to electronic waste and reducing the design’s flexibility.
+Lastly, most systems are battery driven and become fully inoperable in the event of energy
+depletion, which can be extremely inconvenient in emergency situations.
+Our multi-sensor modular electronic stethoscope OMES seeks to address these shortcom-
+ings of previously published electronic stethoscope design approaches. Traditional stetho-
+scopes are a widely spread instrument in medicine, and medical personnel are trained for their
+use. For this reason, the prototype presented in this paper is an add-on device that enables
+an easy electrification of conventional stethoscopes. Furthermore, this approach prevents
+the device from becoming fully non-functional in the event of energy depletion, as it can
+always be used in analog mode. The prototype offers microphone array arrangements and
+is compatible with three different acoustic sensor types that can be arbitrarily interchanged
+due to the prototype’s modular design. As every type of acoustic transducer comes with
+different acoustic properties, this interchangeability between different acoustic sensors en-
+ables an auscultation process tailored to the target body sound. In addition, the device is
+
+
+===== PAGE 10 =====
+Appl. Sci. 2025 ,15, 11569 10 of 28
+modular-compatible with multiple computational platforms, offering a versatile application
+spectrum and making it an optimal choice to be employed in education or research.
+4. OMES: An Open-Source Multi-Sensor Modular Electronic Stethoscope
+An illustrative sketch of OMES is depicted in Figure 4a. The add-on device is attached
+to a conventional stethoscope chestpiece and offers four connectors configured in an
+array arrangement to mount acoustic sensors. At this stage of the device, the user can
+freely choose from three types of transducers, namely an electret condenser microphone,
+a piezoelectric transducer, and a digital MEMS microphone. Detected body sounds can
+be transmitted wirelessly, for example, to a personal computer (PC). The whole setup is
+encapsulated by a casing that consolidates the components and protects the device from
+mechanical damage. As shown in Figure 4b, the proposed device consists of three highly
+flexible layers:
+• Analog front end: comprises the three acoustic sensors deployed.
+• Interface layer: consists of a main board that collects measured data and converts
+analog signals into digital signals using an ADC.
+• Digital back end: is compatible with a wide range of computational platforms.
+In accordance with the signal flow path illustrated in Figure 4b, the following subsec-
+tions detail the analog front end, the interface layer, and the digital back end with special
+emphasis on their modularity.
+(a)
+ (b)
+Figure 4. (a) Schematic of the multi-sensor modular stethoscope design in form of a chestpiece add-on
+device. The device surrounds the conventional chestpiece highlighted in red. Acoustic sensors arranged
+in an array of four are shown in brown. ( b) System design of the developed electronic stethoscope . The
+analog front end consists of three acoustic sensors that transmit data to the interface layer represented
+by a main board. The device is powered by a buck converter and features an ADC that digitizes the
+signals received from the analog front end. The back end offers a flexible platform selection, and the
+user of the device is free to choose the system most appropriate for her or his application.
+4.1. Analog Front End
+The prototype features three acoustic sensor types: namely, an electret condenser
+microphone, a piezoelectric transducer, and a digital MEMS microphone. In compliance
+with the modular design approach, each of these transducers along with their electronic
+circuit is installed on a dedicated PCB, here also called a breakout board, to allow deliberate
+interchange between them. In the following text, the front end PCBs are explained in detail
+by reasoning about the electronic components used and describing their interfacing circuits.
+
+
+===== PAGE 11 =====
+Appl. Sci. 2025 ,15, 11569 11 of 28
+4.1.1. Electret Condenser Microphone Board
+Condenser microphones have been used frequently in scientific literature and have
+been proven to accurately capture heart sounds, see, e.g., [ 6,8,42,45], among others. Conse-
+quently, these microphones can be used as a reference to compare the performance of other
+microphone types. In addition, electret condenser microphones are very cost-effective.
+Therefore, the CMA-4544PF-W electret condenser microphone is one of the three acoustic
+sensors deployed in the design. It is an omnidirectional electret condenser microphone
+and promises a flat frequency response curve between 50 Hz and 2 kHz that covers the
+typical body sound frequencies. It offers a sensitivity of −44 dBV at 94 dB sound pressure
+level (SPL) and a signal-to-noise ratio (SNR) of 60 dBA at 1 kHz. Its power consumption
+is determined by a current consumption of maximally 0.5 mA and an operating voltage
+between 3 and 10 V .
+A block diagram of the circuit designed to operate the electret condenser microphone
+is shown in Figure 5. The electret condenser microphone is connected through a resistor of
+2.2 kΩto a 5 V voltage supply. The DC component of the output signal is removed when
+passing the coupling resistor of 10 µF. Subsequently, the signal is amplified and filtered by
+two active low-pass-filter (LPF) stages with cutoff frequency of 2 kHz, in which the second
+offers a customizable amplification factor through the means of a trimmer potentiometer.
+Subsequently, a 50 Hz notch filter removes mains hum frequency components, and the
+signal is filtered another time by a second order Sallen-Key LPF. Furthermore, the signal
+is referenced to be around 1.25 V to stay within the voltage range that the ADC in the
+interface layer expects.
+Figure 6 shows the breakout board produced that holds the electret condenser micro-
+phone. The board is 30.4 mm in length and 17.1 mm in width.
+Figure 5. Electrical circuit that interfaces the electret condenser microphone (CMA-4544PF-W). The
+microphone is powered with the typical application circuit for electret condenser microphones (ECMs).
+The output signal is amplified and filtered by two active LPF stages, and then it is subsequently
+filtered by a notch filter with a target frequency of 50 Hz mains hum and another LPF.
+Figure 6. Photograph showing the front and back sides of the developed electret microphone board
+with a one-euro coin for scale reference. The breakout board is 30.4 mm long and 17.1 mm wide.
+4.1.2. Piezoelectric Transducer Board
+Body sounds propagate to the skin’s surface and induce skin vibrations. Piezoelectric
+transducers can convert these vibrations into electrical signals and ultimately into audio
+signals, thereby mimicking the behavior of a traditional stethoscope diaphragm. For
+this reason, the second acoustic sensor employed is a piezoelectric element, namely the
+
+
+===== PAGE 12 =====
+Appl. Sci. 2025 ,15, 11569 12 of 28
+CEB-20D64 manufactured by Same Sky (Lake Oswego, OR, USA). This sensor is a typical
+piezoelectric disc with two wire leads carrying the voltage changes when the transducer is
+deformed. It is 20 mm in diameter and has a resonance frequency of 6.5 kHz.
+Figure 7 shows a block diagram of the electrical circuit that interfaces the piezoelectric
+transducer. The acoustic signals are fed into a differential amplifier to obtain the voltage
+differences between the backplate of the transducer and the piezoelectric material. This
+stage features passive LPFs for both differential inputs at a cutoff frequency of 1.6 kHz and
+an amplification factor of 1000. Similarly as for the electret condenser microphones, the
+sensed signals are referenced around 1.25 V to stay within voltage ranges expected by the
+ADC in the interface layer. The first stage is followed by a buffer amplifier with a unity gain
+of 1. This stage has shown to stabilize the circuit and offers the possibility to be bypassed.
+Finally, the signal is filtered by an active Sallen-Key LPF with a cutoff frequency of 2 kHz.
+Figure 7. Electrical circuit that interfaces the piezoelectric transducer (CEB-20D64). The signal is
+captured with a differential amplifier that provides the difference between the backplate of the
+transducer and the piezoelement. Then a buffer amplifier with gain 1 follows. There is a bypassing
+possibility to this stage. Lastly, the signals are filtered with a Sallen-Key LPF.
+The piezoelectric transducer needs to be encapsulated in a casing due to two reasons.
+First, the transducer consists of a conductive material, and the measured signals get
+distorted when in direct contact with the electrically conductive human skin. Second,
+the piezoelectric effect is based on the compression of the piezoelectric material, hence
+the transducer’s backside must be fixed. Figure 8 shows an image of the encapsulated
+piezoelectric transducer. The transducer is glued with superglue to the lower part and
+the upper part of the casing. The lower part fixes the outer surface of the transducer
+while leaving a cavity below the transducer. In case of mechanical stress, the top part
+presses the transducer into the cavity. In response to this deformation, the wire leads of the
+piezoelectric element experience a voltage change.
+The final physical appearance of the encapsulated piezoelectric transducer, along with
+its PCB, is shown in Figure 9. The developed PCB has a width of 17.0 mm and a length of
+20.4 mm.
+Figure 8. Piezoelectric transducer (gold–white) encapsulated by a casing consisting of two black
+parts. ( Left): isometric view on the assembly; a notch is left open for the wires of the transducer.
+(Right ): cross-section of the setup, sound waves exert forces on the center of the transducer, leading
+to its deformation and, ultimately, to an electric signal.
+
+
+===== PAGE 13 =====
+Appl. Sci. 2025 ,15, 11569 13 of 28
+Figure 9. Photograph showing the front and back sides of the developed PCB and the casing of the
+piezoelectric transducer with a one-euro coin for scale reference. The breakout board is 20.4 mm long
+and 17.0 mm wide.
+4.1.3. Digital MEMS Microphone Board
+MEMS microphones offer a light-weight and compact alternative to the previously
+presented transducers. They generally operate on low power consumption and are easy to
+install. Digital MEMS microphones, in particular, convert analog audio signals internally
+into a digital form, thereby making audio data immediately available without the need
+for intermediate filtering, amplification, or conversion steps. This property makes them
+less susceptible to noise and interference from surrounding devices. Therefore, a digital
+MEMS microphone, namely the DMM-4026-B-I2S-R, is selected as the third type of acoustic
+transducer to capture body sounds. The output of the chosen microphone is formatted
+with the I2S standard. It was specifically opted for this standard, as it transmits data over a
+dedicated data line, making audio data directly available to access without any complex
+decoding steps, as opposed to the PDM standard. The DMM-4026-B-I2S-R promises a flat
+frequency response ranging from 20 Hz to 20 kHz, thus covering all audible frequencies.
+The microphone provides an 18-bit precision resolution, a sensitivity of −26 dBV at 94 dB
+SPL, and an SNR of 64 dBA at 1 kHz. Its power consumption is composed of a voltage
+supply of 1.8 V and a current consumption of 820–1000 µA.
+The digital MEMS microphone is electronically interfaced as suggested in its datasheet.
+As all microphone breakout boards are supplied with 5 V , a low-dropout regulator (LDO)
+scales down the input voltage to the required level of 1.8 V for the MEMS microphones.
+The PCB holding the MEMS microphone is 13.02 mm long and 17.1 mm wide and can be
+inspected in Figure 10.
+Figure 10. Photograph showing the front and back sides of the developed digital MEMS board with a
+one-euro coin for scale reference. The breakout board is 13.02 mm long and 17.1 mm wide.
+4.2. Interface Layer
+The second layer in the signal transmission path shown in Figure 4b is represented by
+a main board that acts as an interface between the analog front end and the digital back end.
+
+
+===== PAGE 14 =====
+Appl. Sci. 2025 ,15, 11569 14 of 28
+A buck converter powers the circuitry of the main board with 3.3 V and the microphone
+boards with 5 V . Once again, to promote modularity of the design, the buck converter is
+manufactured on an individual PCB and can be easily replaced in case of damage.
+Figure 11a shows the front side of the developed main board PCB. Four female pin
+headers offer a connection to the individual microphone breakout boards. Each of them is
+represented by a 1 ×4 pin header and a 1 ×3 pin header. The 1 ×4 pin header supplies
+the microphone boards with voltage and manages the communication with the analog
+microphones, while the 1 ×3 pin header establishes the I2S interface between the digital
+microphones and the back end. This arrangement serves two main purposes: first, it avoids
+accidentally switching the orientation of the microphone boards when plugging them onto
+the main board, and second, this design allows for keeping analog and digital voltage
+planes galvanically isolated, thereby reducing noise and interferences. A circular ground
+(GND) trace additionally acts as a barrier to current flow between these voltage domains.
+Lastly, this configuration guarantees a secure connection of the microphone boards to the
+main board. The main board’s back side, shown in Figure 11b, offers pin headers in the
+Arduino UNO R3 standard, which allows every back end device with this format to be
+used. The diameter of the PCB is 96 mm, leaving enough room in its center to mount a
+traditional stethoscope chestpiece with a diameter of 47 mm.
+(a)
+ (b)
+Figure 11. Photograph showing the front and back sides of the developed main board. ( a) The
+front side shows the headers, highlighted by red rectangles, to which the microphone boards can be
+attached, as well as the PCB of the buck converter that powers the whole setup. ( b) The back side
+shows the physical interface to the back end with the Arduino UNO R3 standard.
+The principal task of the main board is to receive audio data from the individual
+microphone breakout boards and convert it to a format that the back end can interpret.
+The outputs of the digital MEMS microphones are immediately provided in the I2S format
+and can therefore be forwarded without any further processing steps to the back end. For
+analog signals from the electret microphone and the piezoelectric transducer, the main
+board contains an ADC, namely the ADS131A04, that digitizes the signals and sends them
+over Serial Peripheral Interface (SPI) to the back end. The ADS131A04 is a four-channel
+delta-sigma ADC with a data rate of up to 128 kSPS and a high resolution of 24 bits ensuring
+superior accuracy, which is crucial for audio applications. This ADC was explicitly chosen
+for three main reasons. First, it features the delta-sigma method that oversamples the
+analog signal at a much higher frequency than the Nyquist rate, consequently reducing the
+risk for aliasing and promising little presence of noise in the converted signal. Secondly,
+
+
+===== PAGE 15 =====
+Appl. Sci. 2025 ,15, 11569 15 of 28
+it offers a wide range of programmable features such as the oversampling ratio (OSR) or
+the digital gain setting for individual ADC channels. And finally, because it runs on a low
+power consumption of 7.2 mW, the ADC can be configured in multiple SPI modes, such
+as asynchronous interrupt and synchronous master or slave mode. The PCB of the main
+board is designed in a flexible configuration that allows for switching between SPI modes
+through minor changes, in essence resistor replacements, on the PCB.
+Figure 12 shows the interface diagram using the example of the asynchronous SPI
+interface. This communication includes a DRDY line that indicates the time point when
+data are ready to be sampled, a CS line that starts the data read out, a clock line SCK, and
+two lines MISO and MOSI for data exchange between the ADC and the back end device.
+The digital MEMS microphones are immediately interfaced to the back end device.
+Figure 12. Interface diagram between analog front end, main board and digital back end. The analog
+signal conversion is shown in solid lines, and the digital signal transmission is shown in dashed
+lines. The analog signals from the electret condenser microphone and piezoelectric transducer are
+converted with an ADC to digital data. The ADC communicates over asynchronous SPI with the
+digital back end. The digital audio data of the MEMS microphones are immediately sent over an I2S
+interface to the digital back end.
+4.3. Digital Back End
+The final stage of the signal transmission path shown in Figure 4b is the back end to
+which all computational platforms with Arduino UNO R3 compatibility can connect. In the
+following, some compatible digital back ends are presented, emphasizing the prototype’s
+flexibility. Thereafter, the back end realized in this work is described, highlighting the MCU
+deployed and explaining the firmware developed.
+4.3.1. Flexible Platform Selection
+The options for back end devices are manifold and range from typical MCUs to high-
+performing FPGAs. Commercially available platforms with suitable header configurations
+exist on the market. The following text briefly summarizes the advantages of suitable
+systems.
+• Microcontroller Units: MCUs are general-purpose integrated circuits (ICs) that
+incorporate CPU, memory, and I/O pins in one compact chip. They are suited for
+simple general-purpose applications and are easy to operate. MCUs are available at
+low cost and are energy-efficient. The Adafruit METRO 328, for example, incorporates
+the ATmega328P , is interoperable with the Arduino IDE, and can be used for simple
+
+
+===== PAGE 16 =====
+Appl. Sci. 2025 ,15, 11569 16 of 28
+projects. Adafruit also provides the ESP32-S3 with Arduino-compatible output head-
+ers. This powerful chip supports both WiFi and Bluetooth, making it most suitable for
+Internet-of-Things (IoT) projects. Another example is the ESPDuino that features an
+ESP32-WROOM-32.
+• Digital Signal Processors: DSPs are low-cost microprocessors designed to perform
+efficient signal processing that is crucial for audio applications [ 46]. The prototype
+presented herein could serve as a framework for testing and engineering novel audio
+processing technologies.
+• System-on-Chips: SoCs are a combination of multiple computer components in
+a single IC and thus can execute diverse and more complex tasks. When a desired
+system with Arduino header compatibility is unavailable, it can be easily mounted on a
+dedicated bridging board, as has been shown, for example, by [ 47]. With this approach,
+any possible platform can be connected to the electronic stethoscope developed in
+this work.
+• Field-Programmable Gate Arrays: FPGAs are reprogrammable and reconfigurable
+ICs that offer a parallel processing architecture [ 46]. This makes them a powerful tool
+to execute the most complex algorithms, such as advanced signal processing or even
+machine learning algorithms [ 47]. Combining the developed electronic stethoscope
+with such a system enables for sophisticated and versatile engineering applications.
+4.3.2. Firmware
+The firmware establishes the software communication between the analog front end
+and the digital back end, as shown in the interface diagram in Figure 12. In this work, an
+ESPDuino was chosen to demonstrate the functionality of the developed prototype. This
+Arduino compatible MCU contains an ESP32-WROOM-32 chip and features a wide range
+of wired and wireless communication types, including I2S, SPI, and WiFi. For both I2S
+and SPI communication, a double-buffering structure was chosen that alternates between
+filling and wirelessly sending two buffers with audio data from the analog front end. These
+two tasks run in parallel on the two cores offered by the MCU, thereby enabling real-time
+data streaming without delays. An interrupt service routine (ISR) initializes the readout of
+audio samples from the analog front end. In asynchronous SPI communication, the ISR is
+triggered externally by the DRDY pin that pulsates at a sample rate of 16 kHz. In I2S mode,
+the ISR is triggered by an internal interrupt that is repeatedly executed at a frequency of
+48 kHz. Whenever a buffer is full, it is transmitted in the form of UDP packages to the IP
+address of a PC for further processing and analysis.
+4.4. Prototype Demonstration
+The previous sections described the design of the developed electronic stethoscope
+and its three essential layers. An objective of this work is to enable simultaneous analog
+and digital auscultation. For this purpose, a casing encloses a conventional chestpiece at
+the center of the prototype. Figure 13 shows a photograph of the final assembly.
+The housing was designed to meet three requirements:
+• All acoustic sensors and the diaphragm of the conventional stethoscope had to be
+flush to ensure equal detection of heart sounds.
+• The design had to be modular and easily exchangeable in case of damage. Therefore,
+the construction is tied together with screws and can thus be quickly assembled and
+disassembled. The casing of the piezoelement is mounted with screws as well.
+• The casing offers access to the microphone boards to enable for a quick exchange
+between sensor types.
+
+
+===== PAGE 17 =====
+Appl. Sci. 2025 ,15, 11569 17 of 28
+The prototype can also be used as a stand-alone device without a conventional stetho-
+scope attached to it. Figure 14 shows photographs of the device’s three configurations with,
+from left to right, the piezoelectric transducer encapsulated in a magenta-colored casing, the
+electret condenser microphone boards, and the MEMS microphone boards. The latter two
+microphones can be operated without housing the prototype. For the piezoelectric transducer,
+the casing is necessary in order to achieve adequate stabilization of the sensor. However,
+the main board and the buck converter provide space for no more than three piezoelectric
+transducers. Nevertheless, the setup’s microphone array configurations enable advanced
+technologies, like sensor fusion, beamforming, or multi-sensor body sound acquisition.
+Figure 13. Setup of OMES featuring digital MEMS microphones, piezoelectric transducers, and
+electret condenser microphones. The microphones are arranged in an array of four surrounding a
+conventional stethoscope chestpiece, thereby enabling simultaneous digital and analog auscultation.
+Figure 14. Photographs of the three microphone configurations from left to right: the piezoelectric
+transducer with its magenta-colored casing, the electret condenser microphone, and the MEMS
+microphone boards.
+5. Experimental Evaluation
+The experiments can be separated into two kinds of measurements: reproducible
+tests conducted in an anechoic box and examinations performed on a human heart. The
+measurements carried out in the anechoic box include a noise floor analysis, an SNR
+analysis, a frequency response determination, and a sensitivity measurement for each
+microphone board individually. To assess the performance of the developed microphone
+
+
+===== PAGE 18 =====
+Appl. Sci. 2025 ,15, 11569 18 of 28
+boards in sensing heart sounds, the developed prototype was applied to all five heart
+auscultation points typically investigated in medical examinations. All tests were also
+conducted with the commercial 3M Littmann CORE digital stethoscope to obtain a reference
+measurement. This commercial stethoscope incorporates multiple signal enhancement
+steps such as filtering and amplification stages, and the user does not have access to raw
+audio data. Therefore, the 3M Littmann CORE stethoscope was treated as a “black box” in
+the experiments.
+5.1. Microphone Characterization in the Anechoic Box
+The image on the left in Figure 15 shows the inside of the anechoic box with the used
+loudspeaker. On the right, the measurement setup is depicted. The distance between
+the loudspeaker and each microphone was set to 3 cm for all measurements except the
+sensitivity experiment, in which the distance was increased to 50 cm in order to increase
+the number of measurable data points.
+For the noise floor, the SNR and the sensitivity test, the root-mean-square (RMS) value
+was chosen as a metric to quantify the effective energy present in the recorded signal. The
+RMS value for N data points in a signal was calculated with formula (1):
+RMS =vuut1
+NN
+∑
+n=1|xn|2(1)
+and expressed in dB with formula (2):
+RMS dB=20·log10(RMS ) (2)
+Figure 15. Measurement setup in the anechoic box. ( Left): Inside of the anechoic box with the em-
+ployed loudspeaker. ( Right ): Exemplary measurement setup with the electret condenser microphone
+for measuring the noise floor, the SNR, and the frequency response. The same setup was used for
+every other microphone type and for the 3M Littmann CORE digital stethoscope. For the sensitivity
+test, the distance between the loudspeaker and microphone was increased to approximately 50 cm.
+The 3M Littmann CORE digital stethoscope was chosen as a commercial reference to
+compare the experimental results of the three microphones boards. However, the extent of
+comparison is limited by two aspects: First, in contrast to OMES, the 3M Littmann CORE
+digital stethoscope does not offer access to raw unfiltered audio data. And second, the
+commercial stethoscope comes with a generic chestpiece that mechanically increases the
+sound intensity at the location of the microphone and therefore contributes to the overall
+sensitivity of the device.
+
+
+===== PAGE 19 =====
+Appl. Sci. 2025 ,15, 11569 19 of 28
+Furthermore, both the 3M Littmann CORE digital stethoscope and the piezoelectric
+transducer are meant to be used in direct contact with a pulsating surface and could
+therefore show a weaker performance when exposed to sound waves transmitted through
+air. However, for the experiments conducted, they were treated as if their behavior was
+equal to a generic microphone to establish a comparability between the test results.
+5.1.1. Sensitivity and Noise Floor Measurement
+Sensitivity measurements serve to evaluate how changing sound volumes influence
+the effective energy of recorded signals. The acoustic sensors were placed approximately
+50 cm in front of the loudspeaker that emitted a sine wave of 300 Hz. This frequency was
+chosen because it lies in the range of typical heart sounds (compare Section 2). At first, the
+loudspeaker was configured to output its maximum sound level. Then, a 30 s recording
+was performed with every microphone board and the commercial stethoscope individually.
+At the same time, a decibel meter measured the sound volume in dB. Subsequently, the
+volume of the loudspeaker was successively reduced between recordings until it reached
+its minimal volume.
+The captured signals were filtered by a digital Butterworth bandpass filter with cutoff
+frequencies 270 and 330 Hz, respectively, to isolate the relevant frequency components.
+Next, the RMS value of the signals was calculated and plotted over the sound volume
+measured with the decibel meter.
+In a last step, the noise floor was determined in order to obtain the minimum level of
+noise that the microphones perceive in the measurement setup. This measured noise can,
+for example, originate from acoustic noise emitted by the loudspeaker, the ESP32 module,
+or from mechanical vibrations inside the anechoic box. But also electric distortions, like
+50 Hz main hum, can be considered noise. For this purpose, the whole measurement setup
+was switched on but the loudspeaker did not emit sound. Again, a recording of 30 s was
+made for each microphone and the 3M Littmann CORE digital stethoscope individually.
+Finally, the RMS value of the noise floor signals was added as a green line to the sensitivity
+curves shown in Figure 16.
+Figure 16. Response curves for the developed microphone boards and the commercial reference
+stethoscope for different sound volumes at a frequency of 300 Hz. The RMS values were calculated
+from the recorded signals after applying a bandpass filter with cutoff frequencies 270 Hz and 330 Hz.
+A regression line was fit to fifteen data points in the linear regions of each curve and is shown in red.
+Additionally, the RMS value of the noise floor measurement was inserted as a green horizontal line.
+All graphs show linear growth for increasing sound levels. To emphasize this trend, a
+regression model was applied to fifteen data points inside the linear region of the sensitivity
+curves. The regression line follows the structure of the equation:
+ypred=em∗x+b(3)
+
+
+===== PAGE 20 =====
+Appl. Sci. 2025 ,15, 11569 20 of 28
+and the coefficients for every microphone board and the commercial stethoscope are given
+in Table 5. The exponential component in the equation comes from the fact that x is the
+sound level in dB, and thus it is given in a logarithmic scale.
+Table 5. Coefficients of the linear regression model from Equation (3) for the three microphone boards
+and the commercial reference stethoscope and their noise floor levels in dB deduced from the intersection
+point of the measured RMS value of the noise floor level and the regression line in Figure 16.
+Electret Microphone
+BoardPiezoelectric Transducer
+BoardMEMS Microphone
+Board3M Littmann CORE
+Stethoscope
+Regression coefficient m 0.11370 0.11096 0.11535 0.11360
+Regression coefficient b 3.440596 −0.58407 4.60109 −3.81060
+Noise Floor [dB] 48.5 37.5 14.5 14.77
+The sensitivity curves given in Figure 16 show the recorded data points in blue, the
+fitted linear regression line in red, and the measured noise floor in green. The noise floor
+in dB corresponds to the intersection point of the red regression line and the green noise
+floor as the RMS value and is also given in Table 5. In the following, the graphs are
+explained in detail for each microphone type individually:
+• Electret Microphone Board: The sensitivity curve of the electret microphone board
+is visualized in Figure 16A. The graph rises smoothly for increasing sound volumes
+until it meets the fitted regression line at around 59 dB. The noise floor of the electret
+microphone board is 48.5 dB and represents thus the highest noise floor among all
+sensors tested. The high noise floor of the electret microphone board makes it less
+suitable for detecting low-amplitude signals.
+• Piezoelectric Transducer Board: As can be seen in Figure 16B, the recordings made
+with the piezoelectric transducer board demonstrate a linear sensitivity curve for all
+sound volumes. The noise floor lies below all measured data points, indicating that
+the noise floor has never been reached during the measurements. The theoretical noise
+floor is 37.5 dB.
+• MEMS Microphone Board: Figure 16C shows the sensitivity curve recorded with
+the MEMS microphone board. The graph starts with two data points measured at the
+noise floor level. At a sound level of approximately 30 dB, the graph suddenly jumps
+and then follows a linear trend for increasing sound intensity. The rapid increase in
+RMS value at the beginning of the curve might occur because the output of the MEMS
+microphone is digital and might therefore intrinsically truncate sound volumes of low
+intensity, e.g., due to internal sound volume thresholds that intend to reduce noise
+sensitivity. However, this truncation can imply a reduced applicability of the MEMS
+microphone board to detect low-intensity body sounds. The intersection of the red
+regression curve and the green noise floor line indicates a theoretical noise floor level
+of 14.5 dB when neglecting this truncation.
+• 3M Littmann Core Stethoscope: The sensitivity curve of the commercial stethoscope
+is shown in Figure 16D and starts with a data point close to the noise floor level. For
+increasing sound levels, the curve approximates the regression line. It is noteworthy
+that the measured data points are located below the regression line, demonstrating
+a non-linear nature for sound levels of low intensity and indicating a lower signal
+strength than predicted by the regression model. However, it should be kept in
+mind that the stethoscope is not indented to be used for these kinds of experimental
+characterizations, and internal signal processing might explain this behavior. The
+theoretical noise floor of the 3M Littmann CORE stethoscope is 14.75 dB.
+
+
+===== PAGE 21 =====
+Appl. Sci. 2025 ,15, 11569 21 of 28
+5.1.2. Signal-to-Noise Ratio Analysis
+The SNR is the signal over the noise floor and is a good indicator to evaluate the clarity
+of a signal. This section provides the maximal SNR ( SNR max) and a theoretical SNR for a
+typical heart beat ( SNR HeartBeat ) per microphone board. The SNR maxis calculated via the
+following formula (4):
+SNR max=20∗log10(RMS max
+RMS noiseFloor) (4)
+Here, RMS maxrepresents the theoretical maximum RMS value that a microphone
+board can output and RMS noiseFloor is the RMS value of the noise floor determined in the
+previous Section 5.1.1.
+To obtain values for RMS max, the subsequent Equation (5) was used:
+RMS max= (224−1)∗√
+2
+2(5)
+This equation is composed of two parts. Firstly, the maximum data value that can be
+transmitted from the developed main board to the ESP is 224−1because the data resolution
+is 24 bit. Secondly, the RMS value of a sine wave with amplitude = 1 can be estimated by√
+2
+2.
+Therefore, multiplying these two terms approximates the theoretical maximal RMS value.
+To determine the microphone’s SNR for a typical heart sound, the following procedure
+was applied: First, an auscultation of a healthy 26-year-old woman with a body-mass-index
+(BMI) of 21.1 was performed at auscultation point 1 with the commercial stethoscope.
+Then, the RMS value of the resulting heart beat signal was determined to be 122.12. The
+corresponding sound level was calculated with the means of the regression model for the
+commercial stethoscope provided in the previous Section 5.1.1 and yields 75.8 dB. Inserting
+this sound volume into the regression models for the developed microphone boards delivers
+the corresponding RMS value RMS HeartBeat for every developed microphone board.
+It should be noted that only one single person’s heart beat was auscultated to de-
+termine RMS HeartBeat . In reality, the sound pressure level of a heart is unique for each
+person. However, this approach approximates the orders of volume magnitude that can be
+expected from a healthy heart sound. The SNR HeartBeat is determined with the following
+formula (6):
+SNR HeartBeat =20∗log10(RMS HeartBeat
+RMS noiseFloor) (6)
+The SNRs obtained are summarized in Table 6. The highest theoretical SNR maxis
+achieved by the piezoelectric transducer board with 110.4 dB followed by the MEMS
+microphone board with 87.0 dB. The lowest SNR maxis reached by the electret microphone
+board with 63.7 dB. The theoretical maximal RMS of the 3M Littmann CORE cannot be
+determined, as 3M, Maplewood, MN, USA does not provide any information about the
+transfer word size deployed.
+Regarding SNR HeartBeat , the two analog sensors offer acceptable values: 27.0 dB for
+the electret microphone board and 36.9 dB for the piezoelectric transducer. The MEMS
+microphone board and the commercial stethoscope yield comparable SNRs of 61.4 dB and
+60.3 dB, respectively, and are therefore superior in terms of signal strength over noise.
+For every developed microphone board, the SNR maxis considerably larger than the
+SNR HeartBeat . In particular, for the electret microphone board, the latter is so small that
+detecting low-amplitude signals might become difficult, especially in a noisy environment.
+In future work, the SNRs of all microphone boards for typical body sound volumes need to
+be optimized, e.g., by reducing their intrinsic noise floors and enhancing their sensitivity.
+
+
+===== PAGE 22 =====
+Appl. Sci. 2025 ,15, 11569 22 of 28
+Table 6. SNRs for the developed microphone boards and the commercial reference stethoscope.
+SNR maxrepresents the maximal SNR that a sensor can achieve and SNR HeartBeat is the SNR that can
+be expected for a typical heart sound. The SNR maxof the 3M Littmann CORE stethoscope is not
+available as 3M (Maplewood, MN, USA) does not provide the specifications necessary to calculate
+the SNR.
+Electret Microphone
+BoardPiezoelectric Transducer
+BoardMEMS Microphone
+Board3M Littmann CORE
+Stethoscope
+SNR max[dB] 63.7 110.4 87.0 -
+SNR HeartBeat [dB] 27.0 36.9 61.4 60.3
+5.1.3. Frequency Response
+The frequency response reveals how the output of a system changes with varying
+input signal frequency, and it is hence another crucial aspect of microphone characterization.
+In pursuit of obtaining the frequency response, the microphones were exposed to a chirp
+signal that covers frequencies from 2 Hz to 20 kHz. This experiment was repeated three
+times, and the recorded signals were averaged in the time domain to compensate for any
+potential disturbances. Subsequently, the DC offset was removed from the averaged signal
+by subtracting its mean value. Then, the zero-centered signal was normalized by dividing
+through its maximal value to achieve a comparability between the sensors’ signals. In the
+next step, the signal was converted into the frequency domain by means of a Fast Fourier
+Transform (FFT). Finally, the spectrum was smoothed out in order to remove noise and
+fluctuations that obscure the genuine frequency response. For smoothing, an averaging
+window of 32 Hz was slid across the spectrum.
+The spectra obtained for all the sensors can be seen in Figure 17. Hereafter, a com-
+prehensive analysis of the frequency responses subdivided by the microphone types is
+provided:
+• Electret Microphone Board: The ADC sampling frequency was configured to 16 kHz.
+Consequently, consistent with the Nyquist criterion, the electret microphone cannot
+detect frequencies beyond 8 kHz. The frequency response of the electret condenser
+breakout board shown in Figure 17A is akin to its circuitry described in Section 4.1.1.
+A pronounced dip at 50 Hz is caused by the notch filter, and frequencies above 2 kHz
+are being attenuated due to the LPFs applied in the circuit.
+• Piezoelectric Transducer Board: Similarly to the electret microphone, the maximum
+perceptible frequency of the piezoelectric transducer is 8 kHz. Its frequency response
+is depicted in Figure 17B and shows a nearly flat behavior for frequencies below
+200 Hz. For larger frequencies, the spectrum is highly irregular and shows noticeable
+peaks at 2.7 kHz, 5.1 kHz and 6.7 kHz. The latter could potentially represent the
+resonance frequency of the CEB-20D64 piezoelectric element. The LPF designed in
+the circuitry seems to be insufficient at attenuating frequencies above 2 kHz because
+high frequencies are more perceptible than those of the cardiac frequency range below
+500 Hz. However, it has to be kept in mind that the piezoelectric element should
+be placed against a vibrating surface, unlike in this experiment, where sound waves
+were transmitted through air. This could lead to a deformation of the true frequency
+response.
+• MEMS Microphone Board: The MEMS microphones are sampled at a frequency of
+48 kHz and can therefore theoretically sense frequencies up to 24 kHz. Figure 17C
+reveals that similarly to the frequency response of the electret condenser microphone,
+the spectrum of the MEMS microphone shows an evident dip at 50 Hz, suggesting
+that a notch filter was incorporated into its internal circuitry. Apart from that, the
+
+
+===== PAGE 23 =====
+Appl. Sci. 2025 ,15, 11569 23 of 28
+frequency response of the MEMS microphone appears non-uniform and shows similar
+sharp peaks like the piezoelectric transducer at 5.1 kHz, 6.9 kHz and 12.5 kHz.
+• 3M Littmann Core Stethoscope: The Fourier transform of signals recorded with
+the commmercial stethoscope covers frequencies up to 2 kHz. As can be seen in
+Figure 17D, frequencies below 10 Hz are being suppressed. The frequency response is
+fairly flat in the range of 60 Hz to 750 Hz with peaks at 100 Hz, 400 Hz, and 670 Hz.
+The spectrum begins to decline at frequencies beyond 750 Hz.
+Figure 17. Frequency responses for all developed microphone boards and the commercial reference
+stethoscope after exposing them to a chirp signal from 2 Hz to 20 kHz. The recorded signals were
+post-processed by averaging over three recordings, removing the DC components and normalizing
+the signal. The frequency response was obtained by applying an FFT to the time-domain signals and
+subsequently smoothing the acquired spectrum by shifting an averaging window of 32 Hz over the
+spectrum.
+5.1.4. Summary of Experimental Results
+OMES has been tested for its performance regarding sensitivity, noise floor, SNR and
+frequency response and was compared to the 3M Littmann CORE digital stethoscope. A
+summary of the findings can be seen in the comparative Table 7. The electret microphone
+board has the highest noise floor among all tested sensors and hence performs the worse in
+SNR and in detecting low-amplitude signals. This drawback needs to be addressed in future
+work in order to fully exploit the benefits of this type of acoustic sensor. In contrast to that,
+the MEMS microphone board performs similarly to the commercial reference stethoscope
+with regard to the noise floor and SNR HeartBeat .
+Table 7. Summary of the performance of OMES’ microphone boards in comparison with the Littmann
+CORE digital stethoscope as a commercial reference. The frequency bandwidth represents the
+theoretical Nyquist limit according to the corresponding sample rates. For a detailed insight on the
+frequency response, it is referred to Section 5.1.3.
+Electret Microphone
+BoardPiezoelectric Transducer
+BoardMEMS Microphone
+Board3M Littmann CORE
+Stethoscope
+Noise Floor [dB] 48.5 37.5 14.5 14.77
+SNR max[dB] 63.7 110.4 87.0 -
+SNR HeartBeat [dB] 27.0 36.9 61.4 60.3
+Frequency Bandwidth [Hz] <=8000 <=8000 <=24,000 <=2000
+5.2. Microphone Performance on Recording Heart Sounds
+After characterizing the microphone boards in the anechoic box, they were applied to
+real-life scenarios capturing cardiac sounds from the five heart auscultation points. Each
+microphone was placed precisely at the auscultation points and in direct contact with the
+skin. All recordings were made in a silent environment. As some microphone boards
+
+
+===== PAGE 24 =====
+Appl. Sci. 2025 ,15, 11569 24 of 28
+do not show sufficient sensitivity, for some measurements, the subject was instructed to
+perform a short exercise of approximately 30 s to increase the intensity of the heart sound.
+This is indicated in the captions of Figures 18–20 that show the zero-centered, normalized
+heart sound signal per auscultation point along with the corresponding spectrogram. The
+resulting signals were analyzed in terms of shape and frequency components and compared
+to the profile of a reference signal found in the literature.
+Hereafter, the recordings per microphone board are described in detail:
+• Electret Microphone Board: Figure 18 shows the signals recorded with an electret
+microphone board for each auscultation point. The test person performed 30 s of
+exercise to increase the intensity of the heart beat as no heart sounds were detected for
+a resting pulse. This might be due to the prominent noise floor and the weak SNR of
+the microphone board (compare Sections 5.1.1 and 5.1.2).
+In general, the signals recorded with the electret microphone suffer from noise and it
+is hard to adequately distinguish heart beats from each other.
+• Piezoelectric Transducer Board: Heart sounds recorded with the piezoelectric trans-
+ducer board and their corresponding spectrograms are shown in Figure 19. For aus-
+cultating points 1 and 2, the test person performed 30 s of exercise, as the intensity of
+the resting heart beat was too weak to detect a valuable signal. For auscultation points
+3–5, one can distinguish the first and the second heart sound in the spectrograms.
+• MEMS Microphone Board: The signals recorded with the MEMS microphone
+board are depicted in Figure 20. For this microphone type, no physical activity was
+necessary as the microphone has a sufficiently high SNR. In the signals collected from
+auscultation points 3–5, both major heart sounds S1 and S2 can be visibly distinct
+with the S1 heart sound generating a higher amplitude in the signals than the S2 heart
+sound. This is reflected in the spectrograms for these auscultation points. In contrast,
+the signals recorded at auscultation points 1 and 2 suffer from more distortions and
+noise and show a blurring between the first and the second heart sound in both the
+signal plot and the corresponding spectrograms.
+Figure 18. Heart sound of a healthy 26-year-old woman with BMI 21.1 performed with the electret
+condenser breakout board at all five auscultation points. ( Top): recorded signals of 5 s with nor-
+malized amplitude for each auscultation point. ( Bottom ): corresponding spectrogram showing the
+frequency distribution over time. For all auscultation points, the subject performed 30 s of exercise to
+increase heart beat intensity. White arrows indicate heart sounds S1 or S2.
+
+
+===== PAGE 25 =====
+Appl. Sci. 2025 ,15, 11569 25 of 28
+Figure 19. Heart sound of a healthy 26-year old woman with BMI 21.1 performed with the piezo-
+electric transducer breakout board at all five auscultation points. ( Top): recorded signals of 5 s with
+normalized amplitude for each auscultation point. ( Bottom ): corresponding spectrogram showing
+the frequency distribution over time. For auscultation point 1, the subject performed 30 s of exercise
+to increase the heart beat intensity. White arrows indicate heart sounds S1 or S2.
+Figure 20. Heart sound of a healthy 26-year old woman with BMI 21.1 performed with the MEMS
+microphone breakout board at all five auscultation points. ( Top): recorded signals of 5 s with
+normalized amplitude for each auscultation point. ( Bottom ): corresponding spectrogram showing
+the frequency distribution over time. All recordings were performed at resting heart beat. White
+arrows indicate heart sounds S1 or S2.
+6. Conclusions and Future Work
+Stethoscopes are an essential instrument for evaluating body sounds and are prevalent
+in medical practice. In the early 1990s, electronic stethoscopes emerged on the market,
+striving for an enhanced sound quality and compensating for the varying hearing abilities
+of physicians. However, they often target the human hearing range and thereby ignore the
+potential of nowadays affordable advanced microphone technology.
+This work proposes an upgrade of analog stethoscopes that allows the recording
+of body sounds during the traditional auscultation process. This gives fully functional
+conventional stethoscopes an added value and prevents them from being discarded in
+the replacement of a new electronic stethoscope. Our multi-sensor modular electronic
+stethoscope, called OMES, offers high modular flexibility regarding microphone selection,
+features microphone array arrangements, and is compatible with multiple computation
+platforms. This versatility enables the prototyping of algorithms ranging from signal
+processing techniques to AI models, making the device suitable for research and education.
+The experimental evaluation of OMES, detailed in Section 5, showed the inferior
+performance of the electret microphone board and the piezoelectric transducer board
+compared to the commercial reference stethoscope. In particular, their noise floors need
+to be reduced to increase their SNR and improve the detection of low-amplitude signals.
+The MEMS microphone board showed similar results as the commercial stethoscope but
+demonstrated an internal truncation of low-intensity sound volumes.
+
+
+===== PAGE 26 =====
+Appl. Sci. 2025 ,15, 11569 26 of 28
+In this work, the prototype has been experimentally characterized and evaluated for
+its performance in detecting heart sounds. However, OMES is engineered to sense other
+body sounds as well. Its sensors offer heterogeneous responses and can potentially be
+qualified for different auscultation sites. Comprehensive studies are needed to assess the
+performance per microphone type and body sound. OMES can be easily assembled with
+a generic stethoscope chestpiece through a 3D-printed casing. However, the casing has
+not yet been tested or optimized for its influence on detecting body sounds. Furthermore,
+the arrangement of the microphone array has not yet been exhausted for signal processing
+and analysis. In upcoming projects, techniques like sensor fusion or beamforming can be
+employed, for example, to determine the exact location of the sound source. This could
+potentially reveal new diagnostic details and eventually lead to more accurate disease
+identification and characterization, as signals from multiple locations surrounding an
+auscultation point could be a valuable feature for machine or deep learning algorithms.
+Author Contributions: Conceptualization, V .C.S., J.V .V ., L.S. and B.d.S.; methodology, V .C.S., J.V .V .,
+L.S. and B.d.S.; software, V .C.S., J.V .V . and L.S.; validation, J.V .V ., L.S. and B.d.S.; resources, B.d.S.;
+writing—original draft preparation, V .C.S.; writing—review and editing, J.V .V ., L.S. and B.d.S.;
+supervision, J.V .V ., L.S. and B.d.S.; project administration, B.d.S.; funding acquisition, B.d.S. All
+authors have read and agreed to the published version of the manuscript.
+Funding: This research received no external funding.
+Institutional Review Board Statement: The study was exempted by the Ethics Committee for Human
+Sciences (ECHW) of the Vrije Universiteit Brussel (VUB). Dossier ECHW_W_019, date of approval:
+13 October 2025.
+Informed Consent Statement: Informed consent was obtained from all subjects involved in the study .
+Data Availability Statement: All data are available with an open-source license in: https://gitlab.
+com/etrovub/embedded-systems/publications/omes (accessed on 22 October 2025).
+Conflicts of Interest: The authors declare no conflicts of interest.
+References
+1. Lee, S.H.; Kim, Y.S.; Yeo, W.H. Advances in microsensors and wearable bioelectronics for digital stethoscopes in health monitoring
+and disease diagnosis. Adv. Healthc. Mater. 2021 ,10, 2101400. [CrossRef]
+2. Thinklabs. Thinklabs One User’s Manual. Available online: https://www.oaktreeproducts.com/img/product/description/TL-
+One%20user%20manual.pdf (accessed on 8 September 2024).
+3. TelehealthTechnology. Electronic Stethoscopes—JABES. Available online: https://telehealthtechnology.org/toolkit/electronic-
+stethoscopes-jabes/ (accessed on 8 September 2024).
+4. Cardionics. Clinical E-Scope ®Electronic Stethoscope. Available online: https://cardionics.com/en/product/clinical-e-scope-
+electronic-stethoscope/ (accessed on 8 September 2024).
+5. Thinklabs. Thinklabs ONE—Digital Stethoscope. Available online: https://www.thinklabs.com/ (accessed on 7 November 2024).
+6. Chowdhury, M.E.H.; Khandakar, A.; Alzoubi, K.; Mansoor, S.; Tahir, A.M.; Reaz, M.B.I.; Al-Emadi, N. Real-time smart-digital
+stethoscope system for heart diseases monitoring. Sensors 2019 ,19, 2781. [CrossRef]
+7. Park, H.; Wei, Q.; Lee, S.; Lee, M. Novel Design of a Multimodal Technology-Based Smart Stethoscope for Personal Cardiovascular
+Health Monitoring. Sensors 2022 ,22, 6465. [CrossRef]
+8. Wang, T.; Gong, M.; Yu, X.; Lan, G.; Shi, Y. Acoustic-pressure sensor array system for cardiac-sound acquisition. Biomed. Signal
+Process. Control 2021 ,69, 102836. [CrossRef]
+9. Yang, C.; Zhang, W.; Pang, Z.; Zhang, J.; Zou, D.; Zhang, X.; Guo, S.; Wan, J.; Wang, K.; Pang, W.; et al. A low-cost, ear-contactless
+electronic stethoscope powered by Raspberry Pi for auscultation of patients with COVID-19: Prototype development and
+feasibility study. JMIR Med. Inform. 2021 ,9, e22753. [CrossRef] [PubMed]
+10. Nussbaumer, M.; Agarwal, A. Stethoscope acoustics. J. Sound Vib. 2022 ,539, 117194. [CrossRef]
+11. McGee, S. Evidence-Based Physical Diagnosis , 2nd ed.; Elsevier Health Sciences: Amsterdam, The Netherlands, 2007; pp. 411–471.
+12. Pappano, A.J.; Wier, W.G. Cardiovascular Physiology ; Elsevier: Amsterdam, The Netherlands, 2013; Chapter 4—The Cardiac Pump,
+pp. 55–90.
+
+
+===== PAGE 27 =====
+Appl. Sci. 2025 ,15, 11569 27 of 28
+13. Abbas, A.K.; Bassam, R. Phonocardiography Signal Processing ; Morgan & Claypool Publishers: San Rafael, CA, USA, 2009;
+Volume 31, Chapter 1, pp. 1–27.
+14. Sherazi, M.H. The Objective Structured Clinical Examination Review ; Springer: Berlin/Heidelberg, Germany, 2019; Chapter 4—The
+Cardiovascular System, pp. 111–130.
+15. Jeong, Y.; Kim, J.; Kim, D.; Kim, J.; Lee, K. Methods for improving deep learning-based cardiac auscultation accuracy: Data
+augmentation and data generalization. Appl. Sci. 2021 ,11, 4544. [CrossRef]
+16. Reichert, S.; Gass, R.; Brandt, C.; Andrès, E. Analysis of respiratory sounds: State of the art. Clin. Med. Circ. Respir. Pulm. Med.
+2008 ,2, CCRPM–S530. [CrossRef]
+17. Kölle, K.; Aftab, M.F.; Andersson, L.E.; Fougner, A.L.; Stavdahl, Ø. Data driven filtering of bowel sounds using multivariate
+empirical mode decomposition. Biomed. Eng. Online 2019 ,18, 28. [CrossRef]
+18. Teague, C.N.; Hersek, S.; Töreyin, H.; Millard-Stafford, M.L.; Jones, M.L.; Kogler, G.F.; Sawka, M.N.; Inan, O.T. Novel methods for
+sensing acoustical emissions from the knee for wearable joint health assessment. IEEE Trans. Biomed. Eng. 2016 ,63, 1581–1590.
+[CrossRef]
+19. Shah, M.A.; Shah, I.A.; Lee, D.G.; Hur, S. Design approaches of MEMS microphones for enhanced performance. J. Sens. 2019 ,
+2019 , 9294528. [CrossRef]
+20. Van Rhijn, A. Integrated circuits for high performance electret microphones. In Proceedings of the Audio Engineering Society
+Convention 114, Amsterdam, The Netherlands, 22–25 March 2003; Audio Engineering Society: New York, NY, USA, 2003.
+21. Leng, S.; Tan, R.S.; Chai, K.T.C.; Wang, C.; Ghista, D.; Zhong, L. The electronic stethoscope. Biomed. Eng. Online 2015 ,14, 66.
+[CrossRef]
+22. Yilmaz, G.; Rapin, M.; Pessoa, D.; Rocha, B.M.; de Sousa, A.M.; Rusconi, R.; Carvalho, P .; Wacker, J.; Paiva, R.P .; Chételat, O. A
+wearable stethoscope for long-term ambulatory respiratory health monitoring. Sensors 2020 ,20, 5124. [CrossRef]
+23. Ottoy, G.; Thoen, B.; De Strycker, L. A low-power MEMS microphone array for wireless acoustic sensors. In Proceedings of the
+2016 IEEE Sensors Applications Symposium (SAS), Catania, Italy, 20–22 April 2016; IEEE: Piscataway, NJ, USA, 2016; pp. 1–6.
+24. Kusainov, R.K.; Makukha, V .K. Evaluation of the applicability of MEMS microphone for auscultation. In Proceedings of the 2015
+16th International Conference of Young Specialists on Micro/Nanotechnologies and Electron Devices, Erlagol, Russia, 29 June–3
+July 2015; IEEE: Piscataway, NJ, USA, 2015; pp. 595–597.
+25. Johnson, K.H.; Underwood, D.A. Recording, Digital Stethoscope for Identifying PCG Signatures. U.S. Patent 5,025,809, 25 June 1991.
+26. Cardionics. Operator’s Manual E-Scope ®II Electronic Stethoscope. Available online: https://www.mystethoscope.com/PDF/
+escopeii.pdf?srsltid=AfmBOoqdh901PmsrY34ywaigVO7-yPkJzSKeqzVwhVMtTE1-Ja3rNUhA (accessed on 9 November 2023).
+27. Smith, C. Transducer for Sensing Body Sounds. U.S. Patent 6661897, 9 December 2003.
+28. eKuore. eKuore Pro Electronic Stethoscope. Available online: https://ekuore.com/product/ekuorepro-electronic-stethoscope/
+(accessed on 9 November 2023).
+29. eKuore. eKuore Trajectory. Available online: https://ekuore.com/about/ (accessed on 9 November 2023).
+30. eKuore. eKuore Pro User Manual. Available online: https://www.manualslib.com/manual/2449084/Ekuore-Pro.html (accessed
+on 16 October 2025).
+31. 3M. 3M ™Littmann ®CORE Digital Stethoscope. Available online: https://www.littmann.com/3M/en_US/p/d/b5005222000/
+(accessed on 7 November 2024).
+32. Eko Health Inc. Eko’s Story. Available online: https://www.ekohealth.com/pages/about-us (accessed on 12 November 2024).
+33. 3M. 3M ™Littmann ®CORE Digital Stethoscope FAQs. Available online: https://www.littmann.com/3M/en_US/littmann-
+stethoscopes/advantages/core-digital-stethoscope/ (accessed on 7 November 2024).
+34. Eko Health Inc. Eko Core 500 ™Digital Stethoscope. Available online: https://www.ekohealth.com/products/core-500-digital-
+stethoscope?variant=39662120304736 (accessed on 6 November 2024).
+35. Eko Health. Instructions for Use CORE 500 ™Digital Stethoscope. Available online: https://support.ekohealth.com/hc/en-us/
+articles/8890312188443-User-manuals (accessed on 16 October 2025).
+36. Wang, F.; Wu, D.; Jin, P .; Zhang, Y.; Yang, Y.; Ma, Y.; Yang, A.; Fu, J.; Feng, X. A flexible skin-mounted wireless acoustic device for
+bowel sounds monitoring and evaluation. Sci. China Inf. Sci. 2019 ,62, 202402. [CrossRef]
+37. Lee, S.H.; Lee, K.R.; Kim, T.; Im, S.; Lee, Y.J.; Jeong, S.; Shin, H.; Kim, M.; Lee, J.; Kim, D.; et al. A wearable stethoscope for
+accurate real-time lung sound monitoring and automatic wheezing detection based on an AI algorithm. Engineering 2025, in press .
+[CrossRef]
+38. Chuchnowska, I.; Białas, K. Prototype of Self-Service Electronic Stethoscope to Be Used by Patients During Online Medical
+Consultations. Sensors 2025 ,25, 226. [CrossRef] [PubMed]
+39. Duggan, D.; Sarana, V .; Factor, A.; Shelevytska, V .; Temko, A.; Popovici, E. Towards a Wearable, High Precision, Multi-Functional
+Stethoscope. In Proceedings of the 2024 46th Annual International Conference of the IEEE Engineering in Medicine and Biology
+Society (EMBC), Orlando, FL, USA, 15–19 July 2024; IEEE: Piscataway, NJ, USA, 2024; pp. 1–4.
+
+
+===== PAGE 28 =====
+Appl. Sci. 2025 ,15, 11569 28 of 28
+40. Han, L.; Liang, W.; Liu, Y.; Zeng, W.; Wang, J.; Yang, Z.; Zhou, Q.; Dong, Y.; Wang, X. Stretchable piezoelectret electronic
+stethoscope for phonocardiography and lung sound detection in motion and noise conditions. Appl. Mater. Today 2024 ,36, 102077.
+[CrossRef]
+41. McDonald, A.; Nussbaumer, M.; Rathnayake, N.; Steeds, R.; Agarwal, A. A flexible multi-sensor device enabling handheld
+sensing of heart sounds by untrained users. IEEE J. Biomed. Health Inform. 2025 ,29, 5575–5584. [CrossRef]
+42. Lee, S.Y.; Su, P .H.; Hsieh, Y.T.; Huang, S.H.; Lee, I.P .; Chen, J.Y. Intelligent Stethoscope System and Diagnosis Platform with
+Synchronized Heart Sound and Electrocardiogram Signals. IEEE Access 2023 ,11, 47420–47431. [CrossRef]
+43. Giordano, N.; Rosati, S.; Balestra, G.; Knaflitz, M. A wearable multi-sensor array enables the recording of heart sounds in
+homecare. Sensors 2023 ,23, 6241. [CrossRef] [PubMed]
+44. Klum, M.; Leib, F.; Oberschelp, C.; Martens, D.; Pielmus, A.G.; Tigges, T.; Penzel, T.; Orglmeister, R. Wearable multimodal
+stethoscope patch for wireless biosignal acquisition and long-term auscultation. In Proceedings of the 2019 41st Annual
+International Conference of the IEEE Engineering in Medicine and Biology Society (EMBC), Berlin, Germany, 23–27 July 2019;
+IEEE: Piscataway, NJ, USA, 2019; pp. 5781–5785.
+45. Wu, Y.C.; Han, C.C.; Chang, C.S.; Chang, F.L.; Chen, S.F.; Shieh, T.Y.; Chen, H.M.; Lin, J.Y. Development of an electronic
+stethoscope and a classification algorithm for cardiopulmonary sounds. Sensors 2022 ,22, 4263. [CrossRef] [PubMed]
+46. Diouri, O.; Gaga, A.; Ouanan, H.; Senhaji, S.; Faquir, S.; Jamil, M.O. Comparison study of hardware architectures performance
+between FPGA and DSP processors for implementing digital signal processing algorithms: Application of FIR digital filter.
+Results Eng. 2022 ,16, 100639. [CrossRef]
+47. Solé Morillo, Á.; Lambert Cause, J.; Baciu, V .E.; da Silva, B.; Garcia-Naranjo, J.C.; Stiens, J. Ppg edukit: An adjustable photo-
+plethysmography evaluation system for educational activities. Sensors 2022 ,22, 1389. [CrossRef] [PubMed]
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.

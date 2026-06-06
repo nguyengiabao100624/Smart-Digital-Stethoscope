@@ -21,7 +21,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun ExportDataScreen(onNavigateBack: () -> Unit) {
@@ -31,6 +33,10 @@ fun ExportDataScreen(onNavigateBack: () -> Unit) {
     var includeHistory by remember { mutableStateOf(true) }
     var startDate by remember { mutableStateOf("01/01/2026") }
     var endDate by remember { mutableStateOf("13/05/2026") }
+    var isExporting by remember { mutableStateOf(false) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -110,15 +116,47 @@ fun ExportDataScreen(onNavigateBack: () -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+            actionError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
+            actionMessage?.let { message ->
+                Text(message, color = SuccessGreen, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
             Button(
-                onClick = { },
+                onClick = {
+                    isExporting = true
+                    actionError = null
+                    actionMessage = null
+                    coroutineScope.launch {
+                        try {
+                            val job = SmartHealthRepository.api.createExport(
+                                format = format,
+                                includeAudio = includeAudio,
+                                includeReports = includeReports,
+                                includeHistory = includeHistory,
+                                startDate = startDate,
+                                endDate = endDate
+                            )
+                            actionMessage = "Đã tạo bản xuất ${job.format.uppercase()} cho ${job.recordCount} lượt đo"
+                        } catch (error: Exception) {
+                            actionError = error.message ?: "Không thể tạo bản xuất dữ liệu"
+                        } finally {
+                            isExporting = false
+                        }
+                    }
+                },
+                enabled = !isExporting,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Tạo bản xuất dữ liệu", fontWeight = FontWeight.SemiBold)
+                if (isExporting) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Tạo bản xuất dữ liệu", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }

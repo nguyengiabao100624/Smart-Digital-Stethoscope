@@ -20,15 +20,67 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.Patient
+import com.example.smart_health_android.data.StartScanRequest
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewScanScreen(onNavigateBack: () -> Unit, onNavigateToMonitoring: () -> Unit) {
+fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
     var patientId by remember { mutableStateOf("") }
+    var relationship by remember { mutableStateOf("") }
+    var profiles by remember { mutableStateOf<List<Patient>>(emptyList()) }
+    var selectedProfileId by remember { mutableStateOf("") }
+    var isCreatingProfile by remember { mutableStateOf(false) }
     var scanType by remember { mutableStateOf("heart") } // "heart" or "lung"
     var date by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    suspend fun refreshProfiles() {
+        runCatching {
+            val loaded = SmartHealthRepository.api.listPatients()
+            profiles = loaded
+            if (selectedProfileId.isBlank() && loaded.isNotEmpty()) {
+                selectedProfileId = loaded.first().id
+            }
+        }.onFailure {
+            errorMessage = it.message ?: "Không tải được hồ sơ sức khỏe"
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshProfiles()
+    }
+
+    fun createProfile() {
+        val name = patientId.trim()
+        if (name.isBlank() || isCreatingProfile) return
+        coroutineScope.launch {
+            isCreatingProfile = true
+            runCatching {
+                SmartHealthRepository.api.createPatient(
+                    patientCode = "",
+                    name = name,
+                    notes = "Hồ sơ gia đình tạo từ app Android",
+                    profileType = "dependent",
+                    relationship = relationship.trim()
+                )
+            }.onSuccess { created ->
+                patientId = ""
+                relationship = ""
+                selectedProfileId = created.id
+                refreshProfiles()
+            }.onFailure {
+                errorMessage = it.message ?: "Không tạo được hồ sơ gia đình"
+            }
+            isCreatingProfile = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -51,7 +103,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onNavigateToMonitoring: () -> Unit
                 IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
-                Text("Tạo Lượt Đo Mới", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Tạo lượt đo mới", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.width(48.dp))
             }
         }
@@ -65,10 +117,43 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onNavigateToMonitoring: () -> Unit
             Text("THÔNG TIN BỆNH NHÂN", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(16.dp))
 
+            if (profiles.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    profiles.forEach { profile ->
+                        val selected = profile.id == selectedProfileId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) PrimaryBlue.copy(alpha = 0.08f) else Color.White)
+                                .border(1.dp, if (selected) PrimaryBlue else Border, RoundedCornerShape(12.dp))
+                                .clickable { selectedProfileId = profile.id }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AccountCircle, contentDescription = null, tint = if (selected) PrimaryBlue else TextSecondary)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(profile.name, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    listOf(profile.relationship, profile.patientCode).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { "Hồ sơ sức khỏe" },
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            if (selected) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = PrimaryBlue)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             OutlinedTextField(
                 value = patientId,
                 onValueChange = { patientId = it },
-                placeholder = { Text("Mã bệnh nhân hoặc Họ tên") },
+                placeholder = { Text("Mã bệnh nhân hoặc họ tên") },
                 leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = TextSecondary) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -77,6 +162,30 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onNavigateToMonitoring: () -> Unit
                     unfocusedBorderColor = Border
                 )
             )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = relationship,
+                onValueChange = { relationship = it },
+                placeholder = { Text("Quan hệ: bản thân, ba, mẹ, con...") },
+                leadingIcon = { Icon(Icons.Default.Group, contentDescription = null, tint = TextSecondary) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryBlue,
+                    unfocusedBorderColor = Border
+                )
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = { createProfile() },
+                enabled = patientId.isNotBlank() && !isCreatingProfile,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (isCreatingProfile) "Đang thêm hồ sơ..." else "Thêm hồ sơ gia đình")
+            }
             Spacer(modifier = Modifier.height(12.dp))
             SelectableDateField(
                 value = date,
@@ -171,8 +280,70 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onNavigateToMonitoring: () -> Unit
 
             Spacer(modifier = Modifier.height(32.dp))
 
+            errorMessage?.let {
+                Text(
+                    text = it,
+                    color = ErrorRed,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
             Button(
-                onClick = onNavigateToMonitoring,
+                onClick = {
+                    if (isSubmitting) return@Button
+                    isSubmitting = true
+                    errorMessage = null
+                    coroutineScope.launch {
+                        runCatching {
+                            val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId }
+                                ?: if (patientId.isNotBlank()) {
+                                    SmartHealthRepository.api.createPatient(
+                                        patientCode = "",
+                                        name = patientId.trim(),
+                                        notes = "Ho so gia dinh tao nhanh truoc luot do",
+                                        profileType = "dependent",
+                                        relationship = relationship.trim()
+                                    )
+                                } else {
+                                    null
+                                }
+                            if (selectedProfile == null) {
+                                error("Hay chon hoac tao ho so suc khoe truoc khi do")
+                            }
+                            val query = patientId.trim()
+                            val matchedPatient = if (query.isBlank()) {
+                                null
+                            } else {
+                                SmartHealthRepository.api.listPatients(query).firstOrNull { patient ->
+                                    patient.id.equals(query, ignoreCase = true) ||
+                                        patient.patientCode.equals(query, ignoreCase = true) ||
+                                        patient.name.equals(query, ignoreCase = true)
+                                }
+                            }
+
+                            SmartHealthRepository.api.startScan(
+                                StartScanRequest(
+                                    patientId = selectedProfile.id,
+                                    patientName = if (matchedPatient == null) query.ifBlank { "Bệnh nhân vãng lai" } else null,
+                                    patientCode = if (matchedPatient == null && query.startsWith("BN", ignoreCase = true)) query else null,
+                                    mode = scanType,
+                                    bodySite = date,
+                                    deviceId = "android-app",
+                                    doctorNotes = notes
+                                )
+                            )
+                        }.onSuccess { scan ->
+                            isSubmitting = false
+                            onScanStarted(scan.id)
+                        }.onFailure {
+                            isSubmitting = false
+                            errorMessage = it.message ?: "Không tạo được lượt đo"
+                        }
+                    }
+                },
+                enabled = !isSubmitting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
@@ -187,7 +358,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onNavigateToMonitoring: () -> Unit
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Tiếp tục để Theo dõi", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(if (isSubmitting) "Đang tạo lượt đo..." else "Tiếp tục để theo dõi", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.White)
                     }

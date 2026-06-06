@@ -4,6 +4,8 @@
 .idea/
 *.swp
 *.log
+.codegraph/
+**/node_modules/
 
 # Android App (smart-health-android)
 smart-health-android/build/
@@ -25,6 +27,35 @@ smart-health-embedded/managed_components/
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
+!.env.sample
+
+# Smart Health secrets / local production config
+firebase/
+**/firebase/
+**/*service-account*.json
+**/*firebase-adminsdk*.json
+**/google-services.json
+**/.env.local
+**/.env.production
+**/.dev.vars
+
+# Coursework generated/heavy files
+**/.venv/
+**/runs/
+**/dataset/
+**/*.pt
+**/*.onnx
+**/*.engine
+**/*.rar
+**/*.zip
+**/*.tar
+**/*.tar.bz2
+**/*.mp4
+**/*.avi
+**/ServoController_Windows_*/
+**/[Hshop.vn] RC Servo Controller Software/
 
 # VSCode Workspace
 KLTN.code-workspace

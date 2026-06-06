@@ -29,13 +29,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.FirebaseAuthService
+import com.example.smart_health_android.data.PendingRegistrationStore
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun VerifyEmailScreen(
@@ -132,6 +138,172 @@ fun VerifyEmailScreen(
                     resendCooldown = 60
                     error = ""
                     code = ""
+                }
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                "Thay đổi địa chỉ email",
+                color = PrimaryBlue,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.clickable(onClick = onNavigateBack)
+            )
+        }
+    }
+}
+
+@Composable
+fun FirebaseVerifyEmailScreen(
+    onNavigateBack: () -> Unit,
+    onVerified: (accountType: String) -> Unit,
+    fallbackAccountType: String = "patient"
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val pendingRegistration = remember { PendingRegistrationStore.load(context) }
+    val routeAccountType = if (fallbackAccountType == "doctor") "doctor" else "patient"
+    val email = pendingRegistration?.email ?: FirebaseAuthService.currentEmail().ifBlank { "email của bạn" }
+    var isChecking by remember { mutableStateOf(false) }
+    var isVerified by remember { mutableStateOf(false) }
+    var verifiedAccountType by remember { mutableStateOf(pendingRegistration?.accountType ?: routeAccountType) }
+    var error by remember { mutableStateOf("") }
+    var info by remember {
+        mutableStateOf("Chúng tôi đã gửi email xác thực đến địa chỉ bạn đăng ký. Vui lòng mở email và bấm vào liên kết xác thực.")
+    }
+    var resendCooldown by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(resendCooldown) {
+        if (resendCooldown > 0) {
+            delay(1000)
+            resendCooldown -= 1
+        }
+    }
+
+    VerificationScaffold(
+        backLabel = "Quay lại",
+        onNavigateBack = onNavigateBack,
+        footerShowsConsent = true
+    ) {
+        VerificationHeroIcon(icon = Icons.Default.Email)
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            "Xác thực email",
+            color = PrimaryBlue,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Mở hộp thư và bấm vào liên kết xác thực Firebase. Sau đó quay lại ứng dụng để tiếp tục.",
+            color = TextSecondary,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(email, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(28.dp))
+
+        if (isVerified) {
+            VerificationSuccess(
+                title = "Xác thực thành công!",
+                subtitle = if (verifiedAccountType == "doctor") {
+                    "Đang gửi yêu cầu duyệt tài khoản bác sĩ..."
+                } else {
+                    "Đang chuyển đến hồ sơ của bạn..."
+                }
+            )
+        } else {
+            VerificationNotice(
+                icon = Icons.Default.Security,
+                title = "Xác thực bằng Firebase",
+                body = info,
+                background = Color(0xFFEFF6FF),
+                border = Color(0xFFBFDBFE),
+                tint = Color(0xFF1D4ED8)
+            )
+            VerificationStatusMessages(
+                error = error,
+                isVerifying = isChecking,
+                loadingText = "Đang kiểm tra trạng thái email..."
+            )
+            Button(
+                onClick = {
+                    isChecking = true
+                    error = ""
+                    coroutineScope.launch {
+                        try {
+                            val verified = FirebaseAuthService.reloadCurrentUser()
+                            if (!verified) {
+                                error = "Email chưa được xác thực. Vui lòng bấm liên kết trong email Firebase rồi thử lại."
+                                return@launch
+                            }
+
+                            val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
+                            SmartHealthRepository.api.authenticateFirebase(idToken)
+                            val registration = pendingRegistration
+                            val nextAccountType = registration?.accountType ?: routeAccountType
+                            if (nextAccountType == "doctor" || nextAccountType == "solo_doctor") {
+                                SmartHealthRepository.api.requestRole(
+                                    requestedRole = "doctor",
+                                    name = registration?.name.orEmpty(),
+                                    phone = registration?.phone.orEmpty(),
+                                    license = registration?.license.orEmpty(),
+                                    hospital = registration?.hospital.orEmpty(),
+                                    department = registration?.department.orEmpty(),
+                                    organizationId = registration?.organizationId.orEmpty(),
+                                    reason = registration?.reason.orEmpty(),
+                                    accountType = nextAccountType,
+                                    workspaceType = if (nextAccountType == "solo_doctor") "solo_practice" else "clinic"
+                                )
+                            } else if (nextAccountType == "personal") {
+                                SmartHealthRepository.api.requestRole(
+                                    requestedRole = "patient",
+                                    name = registration?.name.orEmpty(),
+                                    phone = registration?.phone.orEmpty(),
+                                    accountType = nextAccountType,
+                                    workspaceType = "personal"
+                                )
+                            }
+                            verifiedAccountType = nextAccountType
+                            PendingRegistrationStore.clear(context)
+                            isVerified = true
+                            delay(1200)
+                            onVerified(nextAccountType)
+                        } catch (exception: Exception) {
+                            error = exception.toVietnameseMessage(
+                                "Không thể kiểm tra xác thực email. Vui lòng thử lại."
+                            )
+                        } finally {
+                            isChecking = false
+                        }
+                    }
+                },
+                enabled = !isChecking,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Tôi đã xác thực email", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+            Text("Chưa nhận được email?", color = TextSecondary, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+            VerificationResendButton(
+                cooldown = resendCooldown,
+                label = "Gửi lại email xác thực",
+                onClick = {
+                    error = ""
+                    coroutineScope.launch {
+                        try {
+                            FirebaseAuthService.resendEmailVerification()
+                            resendCooldown = 60
+                            info = "Email xác thực mới đã được gửi. Hãy kiểm tra cả thư mục spam/quảng cáo nếu chưa thấy email."
+                        } catch (exception: Exception) {
+                            error = exception.toVietnameseMessage("Không thể gửi lại email xác thực.")
+                        }
+                    }
                 }
             )
             Spacer(modifier = Modifier.height(14.dp))

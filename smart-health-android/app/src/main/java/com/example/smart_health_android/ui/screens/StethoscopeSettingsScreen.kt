@@ -21,17 +21,56 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartDevice
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun StethoscopeSettingsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToBluetoothPairing: () -> Unit,
     onNavigateToBluetoothSettings: () -> Unit
 ) {
     var volume by remember { mutableStateOf(75f) }
     var sensitivity by remember { mutableStateOf(60f) }
     var noiseCancel by remember { mutableStateOf(true) }
     var autoConnect by remember { mutableStateOf(true) }
+    var currentDevice by remember { mutableStateOf<SmartDevice?>(null) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun updateStethoscopeSetting(field: String, value: Any) {
+        coroutineScope.launch {
+            try {
+                SmartHealthRepository.api.updateSettings(
+                    JSONObject().put("stethoscope", JSONObject().put(field, value))
+                )
+                actionMessage = "Đã cập nhật cài đặt ống nghe"
+                actionError = null
+            } catch (error: Exception) {
+                actionError = error.message ?: "Không thể cập nhật cài đặt ống nghe"
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            val settings = SmartHealthRepository.api.getSettings().stethoscope
+            volume = settings.optDouble("volume", volume.toDouble()).toFloat()
+            sensitivity = settings.optDouble("sensitivity", sensitivity.toDouble()).toFloat()
+            noiseCancel = settings.optBoolean("noiseCancel", noiseCancel)
+            autoConnect = settings.optBoolean("autoConnect", autoConnect)
+            val devices = SmartHealthRepository.api.listDevices()
+            currentDevice = devices.firstOrNull { it.online || it.connected }
+                ?: devices.firstOrNull()
+            actionError = null
+        } catch (error: Exception) {
+            actionError = error.message ?: "Không thể tải thiết bị"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -83,21 +122,21 @@ fun StethoscopeSettingsScreen(
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("Đã kết nối", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Thiết bị #ST-4892", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                                Text(if (currentDevice?.online == true) "Online qua cloud" else "Chưa online", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text(currentDevice?.name ?: "Chưa có thiết bị", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                             }
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.BatteryFull, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("85%", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text("${currentDevice?.battery ?: 0}%", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Wifi, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Tín hiệu mạnh", color = Color.White, fontSize = 12.sp)
+                                Text(currentDevice?.stethoscopeSignalLabel() ?: "Chưa có RSSI", color = Color.White, fontSize = 12.sp)
                             }
                         }
                     }
@@ -109,14 +148,28 @@ fun StethoscopeSettingsScreen(
                             .fillMaxWidth()
                             .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                             .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            .clickable { }
+                            .clickable(enabled = currentDevice != null) {
+                                val id = currentDevice?.id ?: return@clickable
+                                coroutineScope.launch {
+                                    try {
+                                        val devices = SmartHealthRepository.api.listDevices()
+                                        currentDevice = devices.firstOrNull { it.id == id }
+                                            ?: devices.firstOrNull { it.online || it.connected }
+                                            ?: devices.firstOrNull()
+                                        actionMessage = "Đã làm mới trạng thái thiết bị"
+                                        actionError = null
+                                    } catch (error: Exception) {
+                                        actionError = error.message ?: "Không thể làm mới trạng thái thiết bị"
+                                    }
+                                }
+                            }
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Kết nối lại", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text("Làm mới trạng thái cloud", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -131,6 +184,13 @@ fun StethoscopeSettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            actionError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            }
+            actionMessage?.let { message ->
+                Text(message, color = SuccessGreen, fontSize = 13.sp)
+            }
+
             // Section 1: Âm Thanh
             Column {
                 Text("ÂM THANH", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
@@ -158,6 +218,7 @@ fun StethoscopeSettingsScreen(
                     Slider(
                         value = volume,
                         onValueChange = { volume = it },
+                        onValueChangeFinished = { updateStethoscopeSetting("volume", volume.toInt()) },
                         valueRange = 0f..100f,
                         colors = SliderDefaults.colors(
                             thumbColor = PrimaryBlue,
@@ -185,6 +246,7 @@ fun StethoscopeSettingsScreen(
                     Slider(
                         value = sensitivity,
                         onValueChange = { sensitivity = it },
+                        onValueChangeFinished = { updateStethoscopeSetting("sensitivity", sensitivity.toInt()) },
                         valueRange = 0f..100f,
                         colors = SliderDefaults.colors(
                             thumbColor = Color(0xFFF97316),
@@ -219,7 +281,10 @@ fun StethoscopeSettingsScreen(
                         Spacer(modifier = Modifier.width(16.dp))
                         Switch(
                             checked = noiseCancel,
-                            onCheckedChange = { noiseCancel = it },
+                        onCheckedChange = {
+                            noiseCancel = it
+                            updateStethoscopeSetting("noiseCancel", it)
+                        },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = Color(0xFF10B981),
@@ -231,9 +296,9 @@ fun StethoscopeSettingsScreen(
                 }
             }
 
-            // Section 2: Kết Nối
+            // Section 2: Quản Lý Kết Nối
             Column {
-                Text("KẾT NỐI", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
+                Text("QUẢN LÝ KẾT NỐI", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -241,19 +306,30 @@ fun StethoscopeSettingsScreen(
                         .border(1.dp, Border, RoundedCornerShape(16.dp))
                 ) {
                     SettingToggleRow(
-                        icon = Icons.Default.Bluetooth,
-                        iconColor = Color(0xFF3B82F6),
+                        icon = Icons.Default.Link,
+                        iconColor = SuccessGreen,
                         title = "Tự động kết nối",
-                        subtitle = "Kết nối khi mở ứng dụng",
+                        subtitle = "Kết nối ngay khi mở ứng dụng",
                         checked = autoConnect,
-                        onCheckedChange = { autoConnect = it },
+                        onCheckedChange = {
+                            autoConnect = it
+                            updateStethoscopeSetting("autoConnect", it)
+                        },
                         showDivider = true
                     )
                     SettingActionRow(
-                        icon = Icons.Default.Settings,
+                        icon = Icons.Default.QrCodeScanner,
                         iconColor = PrimaryBlue,
-                        title = "Cài đặt Bluetooth",
-                        subtitle = "Quản lý thiết bị đã ghép nối",
+                        title = "Ghép nối thiết bị mới",
+                        subtitle = "Quét QR, Bluetooth hoặc mã thủ công",
+                        showDivider = true,
+                        onClick = onNavigateToBluetoothPairing
+                    )
+                    SettingActionRow(
+                        icon = Icons.Default.Settings,
+                        iconColor = Color(0xFF64748B),
+                        title = "Quản lý thiết bị đã lưu",
+                        subtitle = "Xem và xóa các thiết bị trước đây",
                         showDivider = false,
                         trailingIcon = Icons.Default.ChevronRight,
                         onClick = onNavigateToBluetoothSettings
@@ -277,7 +353,23 @@ fun StethoscopeSettingsScreen(
                         subtitle = "Lần cuối: 3 ngày trước",
                         showDivider = false,
                         trailingText = "Chạy ngay",
-                        trailingTextColor = PrimaryBlue
+                        trailingTextColor = PrimaryBlue,
+                        onClick = {
+                            val id = currentDevice?.id
+                            if (id == null) {
+                                actionError = "Chưa có thiết bị để hiệu chuẩn"
+                            } else {
+                                coroutineScope.launch {
+                                    try {
+                                        SmartHealthRepository.api.calibrateDevice(id)
+                                        actionMessage = "Đã hiệu chuẩn thiết bị"
+                                        actionError = null
+                                    } catch (error: Exception) {
+                                        actionError = error.message ?: "Không thể hiệu chuẩn thiết bị"
+                                    }
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -404,4 +496,9 @@ fun SettingActionRow(
             HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
         }
     }
+}
+
+private fun SmartDevice.stethoscopeSignalLabel(): String {
+    wifiRssi?.let { return "WiFi RSSI $it dBm" }
+    return "RSSI $signal dBm"
 }

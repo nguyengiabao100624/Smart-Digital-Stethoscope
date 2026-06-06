@@ -20,11 +20,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun DeleteDataScreen(onNavigateBack: () -> Unit) {
     var confirmText by remember { mutableStateOf("") }
+    var isDeleting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     val isConfirmed = confirmText == "XOA DU LIEU"
     val dataItems = listOf(
         "Hồ sơ bệnh án và lịch sử khám",
@@ -114,9 +120,31 @@ fun DeleteDataScreen(onNavigateBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            errorMessage?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
+            successMessage?.let { message ->
+                Text(message, color = SuccessGreen, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
+
             Button(
-                onClick = { },
-                enabled = isConfirmed,
+                onClick = {
+                    isDeleting = true
+                    errorMessage = null
+                    successMessage = null
+                    coroutineScope.launch {
+                        try {
+                            SmartHealthRepository.api.deleteAllData(confirmText)
+                            confirmText = ""
+                            successMessage = "Đã xóa toàn bộ dữ liệu y tế"
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "Không thể xóa dữ liệu"
+                        } finally {
+                            isDeleting = false
+                        }
+                    }
+                },
+                enabled = isConfirmed && !isDeleting,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -125,9 +153,13 @@ fun DeleteDataScreen(onNavigateBack: () -> Unit) {
                     disabledContentColor = Color(0xFF9CA3AF)
                 )
             ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Xoá Toàn Bộ Dữ Liệu", fontWeight = FontWeight.SemiBold)
+                if (isDeleting) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Xóa toàn bộ dữ liệu", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }

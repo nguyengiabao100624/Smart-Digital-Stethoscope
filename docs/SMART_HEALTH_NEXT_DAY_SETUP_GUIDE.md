@@ -345,6 +345,13 @@ ESP chi can co Internet. May tinh/web admin khong can cung WiFi voi ESP.
 
 ## Buoc 12 - Smoke Cuoi Truoc Khi Bao Cao
 
+Smoke public khong can secret:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:public-deployment
+```
+
 Checklist:
 
 - `https://smart-health-api-xj0a.onrender.com/api/health` ok.

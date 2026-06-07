@@ -63,6 +63,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Added root GitHub Actions workflow `Smart Health CI` for backend check, workspace smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds.
 - Added manual GitHub Actions workflow `Deploy Web Admin` to build and deploy `shcare-admin` from GitHub once Firebase secrets are configured.
 - Added Android `google-services.ci.json` so CI can compile debug without committing the real ignored Firebase Android config.
+- Added `npm.cmd run smoke:public-deployment` to verify the current public Render backend and Firebase Hosting Web Admin without secrets.
 - Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a detailed Vietnamese runbook for the next setup session across GitHub Actions, Render, Supabase, Firebase Hosting, admin account creation, Gmail/SMS/Zalo, Android, ESP first flash, and cloud OTA.
 
 ## Phase 0 - Context And Tooling Hygiene

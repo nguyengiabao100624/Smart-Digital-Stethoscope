@@ -541,11 +541,13 @@ KLTN report artifacts generated from this evidence set:
 - Added root workflow `.github/workflows/smart-health-ci.yml` so GitHub checks backend syntax, workspace access smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds on push, pull request, or manual dispatch.
 - Added root workflow `.github/workflows/deploy-web-admin.yml` for manual Firebase Hosting deploy of `https://shcare-admin.web.app` from GitHub Actions. It requires GitHub repository secrets `FIREBASE_SERVICE_ACCOUNT_JSON`, `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, and `VITE_FIREBASE_APP_ID`.
 - Added `smart-health-android/app/google-services.ci.json`, a dummy compile-only Firebase config copied by CI when the real ignored `google-services.json` is absent.
+- Added backend script `npm.cmd run smoke:public-deployment` to check the current public Render backend and Firebase Hosting Web Admin without any secrets.
 - Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a Vietnamese step-by-step runbook for GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Gmail/SMS/Zalo config, Android build, ESP first flash, and cloud OTA smoke.
 
 ### Verification
 
 - Backend: `npm.cmd run check` passed.
+- Public deployment smoke: `npm.cmd run smoke:public-deployment` passed against `https://smart-health-api-xj0a.onrender.com` and `https://shcare-admin.web.app`.
 - Backend workspace smoke: `npm.cmd run smoke:workspace-access` passed.
 - Backend readiness report: `npm.cmd run check:production` ran and correctly reports local env as `BLOCKED` because local PowerShell lacks production secrets/env.
 - Web Admin: `npm.cmd run build:firebase` passed against `https://smart-health-api-xj0a.onrender.com` with CI-safe Firebase web env placeholders.

@@ -88,6 +88,21 @@ npm run check
 
 Last verified on 2026-06-07 after the production RBAC persistence migrations and production role smoke script: passed.
 
+Public deployment smoke without secrets:
+
+```powershell
+npm.cmd run smoke:public-deployment
+```
+
+Defaults:
+
+```text
+SMOKE_BACKEND_URL=https://smart-health-api-xj0a.onrender.com
+SMOKE_ADMIN_URL=https://shcare-admin.web.app
+```
+
+This checks Render `/api/health`, verifies unauthenticated `/api/me` returns `401`, and verifies Firebase Hosting rewrites `/login` and `/admin-actions` to the Web Admin SPA shell.
+
 Production readiness check:
 
 ```powershell

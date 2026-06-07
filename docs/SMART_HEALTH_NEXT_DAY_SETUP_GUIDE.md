@@ -1,61 +1,70 @@
-# Smart Health - Huong Dan Setup Ngay Mai
+# Smart Health - Hướng Dẫn Setup Ngày Mai
 
 Last updated: 2026-06-08
 
-Tai lieu nay dung cho buoi setup tiep theo sau khi code da duoc push. Muc tieu la dua he thong vao trang thai demo thuc te: Web Admin tren Firebase Hosting, backend tren Render, database va storage tren Supabase, Firebase Auth that, Android tro ve backend HTTPS, va ESP32-S3 co the ket noi cloud.
+Tài liệu này dùng cho buổi setup tiếp theo sau khi code đã được push lên GitHub. Mục tiêu là đưa hệ thống vào trạng thái có thể demo thực tế: Web Admin chạy trên Firebase Hosting, backend chạy trên Render, database và object storage dùng Supabase, đăng nhập dùng Firebase Auth, Android trỏ về backend HTTPS, và ESP32-S3 có thể kết nối cloud để gửi trạng thái, audio và nhận lệnh OTA.
 
-## Nguyen Tac
+## Nguyên Tắc Trước Khi Làm
 
-- Khong commit secret len GitHub: `.env.production`, `.env.local`, Firebase service account JSON, `google-services.json`, device secret, SMTP password.
-- Neu can chay lenh co secret, chay local PowerShell hoac dat vao Render/Firebase secret/env.
-- Web Admin production: `https://shcare-admin.web.app`.
-- Web app nguoi dung tuong lai: `https://shcare.web.app`.
-- Backend Render hien tai: `https://smart-health-api-xj0a.onrender.com`.
-- Supabase project ref dung: `mahvymyncxszvuhlycwp`.
+- Không commit secret lên GitHub: `.env.production`, `.env.local`, Firebase service account JSON, `google-services.json`, device secret, SMTP password, Supabase password.
+- Các giá trị bí mật chỉ đặt trong Render Environment, GitHub Actions Secrets, Firebase Console hoặc file local đã bị `.gitignore`.
+- Nếu lệnh nào yêu cầu secret, chạy trên máy local của bạn hoặc nhập vào dashboard của dịch vụ, không ghi vào source.
+- Web Admin production hiện tại: `https://shcare-admin.web.app`.
+- Web app cho người dùng/app Android dạng web sau này: `https://shcare.web.app`.
+- Backend Render hiện tại: `https://smart-health-api-xj0a.onrender.com`.
+- Supabase project ref đang dùng: `mahvymyncxszvuhlycwp`.
+- Nếu thấy giao diện cũ sau khi deploy, dùng `Ctrl+F5` hoặc mở trình duyệt ẩn danh để loại cache.
 
-## Buoc 1 - Lay Code Moi Nhat
+## Bước 1 - Lấy Code Mới Nhất
+
+Mở PowerShell:
 
 ```powershell
 cd D:\Study\KLTN
 git pull origin main
 ```
 
-Kiem tra nhanh:
+Kiểm tra trạng thái file:
 
 ```powershell
 git status --short
 ```
 
-Neu thay nhieu file local chua commit ma ban khong muon day len GitHub, dung tiep binh thuong nhung dung chay lenh reset/xoa hang loat.
+Nếu thấy nhiều file local chưa commit mà bạn không chắc là gì, cứ để nguyên. Không chạy `git reset --hard`, không xóa hàng loạt, không checkout đè file nếu chưa hỏi lại.
 
-## Buoc 2 - Kiem Tra GitHub Actions
+## Bước 2 - Kiểm Tra GitHub Actions
 
-Mo repo GitHub:
+Mở trang Actions của repo:
 
 ```text
 https://github.com/nguyengiabao100624/Smart-Digital-Stethoscope/actions
 ```
 
-Can thay workflow `Smart Health CI`.
+Bạn cần thấy workflow `Smart Health CI`.
 
-Workflow nay se tu kiem tra:
+Workflow này tự kiểm tra:
 
 - Backend `npm run check`.
 - Backend workspace access smoke.
 - Backend production readiness report.
 - Web Admin Firebase build.
 - Android debug Kotlin compile.
-- Firmware ESP32-S3 normal va OTA build.
+- Firmware ESP32-S3 bản thường.
+- Firmware ESP32-S3 bản OTA.
 
-Neu workflow fail, mo job fail va copy log loi cho Codex sua tiep.
+Nếu workflow màu xanh là ổn. Nếu workflow màu đỏ, mở run bị lỗi, mở job bị lỗi, copy log lỗi gửi lại để sửa tiếp.
 
-Neu muon deploy Web Admin truc tiep tren GitHub thay vi may local, vao:
+## Bước 3 - Cấu Hình GitHub Secrets Nếu Muốn Deploy Web Admin Từ GitHub
+
+Bước này không bắt buộc nếu bạn muốn deploy Firebase từ máy local. Nhưng nếu muốn bấm deploy ngay trên GitHub thì làm như sau.
+
+Vào:
 
 ```text
 GitHub repo -> Settings -> Secrets and variables -> Actions -> New repository secret
 ```
 
-Them cac secret:
+Tạo các secret:
 
 ```text
 FIREBASE_SERVICE_ACCOUNT_JSON
@@ -65,32 +74,36 @@ VITE_FIREBASE_APP_ID
 VITE_FIREBASE_MEASUREMENT_ID
 ```
 
-Trong do:
+Ý nghĩa từng secret:
 
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: toan bo noi dung service account JSON cua Firebase Admin/Hosting deploy.
-- `VITE_FIREBASE_*`: lay trong Firebase Console -> Project settings -> Your apps -> Web app.
-- `VITE_FIREBASE_MEASUREMENT_ID` co the de trong neu Firebase web app khong co Analytics, nhung tao secret rong tren GitHub khong duoc; neu khong co thi co the bo qua, workflow khong bat buoc.
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: toàn bộ nội dung file service account JSON dùng để Firebase Hosting deploy.
+- `VITE_FIREBASE_API_KEY`: lấy trong Firebase Console, Web App config.
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`: lấy trong Firebase Console, Web App config.
+- `VITE_FIREBASE_APP_ID`: lấy trong Firebase Console, Web App config.
+- `VITE_FIREBASE_MEASUREMENT_ID`: nếu Firebase Web App có Analytics thì nhập, nếu không có thì có thể bỏ qua.
 
-Deploy bang GitHub:
+Sau khi thêm secret, deploy bằng GitHub:
 
 ```text
 GitHub repo -> Actions -> Deploy Web Admin -> Run workflow
 ```
 
-## Buoc 3 - Kiem Tra Render Backend Env
+Nếu workflow báo thiếu secret, quay lại phần Secrets và thêm đúng secret còn thiếu.
 
-Vao Render service backend `smart-health-api-xj0a`, tab `Environment`.
+## Bước 4 - Kiểm Tra Render Backend Environment
 
-Bat buoc nen co:
+Vào Render service backend `smart-health-api-xj0a`, mở tab `Environment`.
+
+Các biến bắt buộc nên có:
 
 ```env
 AUTH_MODE=production
 ALLOW_DEMO_AUTH=false
 FIREBASE_AUTH_ENABLED=true
 FIREBASE_PROJECT_ID=smart-health-stethoscope
-FIREBASE_SERVICE_ACCOUNT_JSON=<paste toan bo service account JSON tren mot dong hoac nhieu dong deu duoc>
+FIREBASE_SERVICE_ACCOUNT_JSON=<dán toàn bộ service account JSON>
 DATA_BACKEND=postgres
-DATABASE_URL=<Supabase pooler connection string, khong dung direct IPv6>
+DATABASE_URL=<Supabase pooler connection string, không dùng direct IPv6>
 PUBLIC_BACKEND_URL=https://smart-health-api-xj0a.onrender.com
 SMART_HEALTH_PUBLIC_URL=https://smart-health-api-xj0a.onrender.com
 PUBLIC_API_BASE_URL=https://smart-health-api-xj0a.onrender.com/api/v1
@@ -102,11 +115,28 @@ S3_REGION=ap-northeast-2
 S3_FORCE_PATH_STYLE=true
 S3_ACCESS_KEY_ID=<Supabase Storage access key id>
 S3_SECRET_ACCESS_KEY=<Supabase Storage secret access key>
-PHI_ENCRYPTION_KEY=<64 ky tu hex>
+PHI_ENCRYPTION_KEY=<chuỗi hex 64 ký tự>
 RATE_LIMIT_PER_MINUTE=300
 ```
 
-Tao `PHI_ENCRYPTION_KEY` bang PowerShell cu hon:
+Các biến tùy chọn, chưa có thì hệ thống vẫn chạy nhưng tính năng tương ứng chưa gửi thật:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<gmail của bạn>
+SMTP_PASS=<Gmail App Password>
+SMTP_FROM=Smart Health <gmail của bạn>
+OUTBOUND_WEBHOOK_URL=
+OUTBOUND_WEBHOOK_SECRET=
+REDIS_URL=
+MQTT_URL=
+MQTT_USERNAME=
+MQTT_PASSWORD=
+MQTT_CLIENT_ID=smart-health-backend
+```
+
+Tạo `PHI_ENCRYPTION_KEY` bằng PowerShell tương thích máy cũ:
 
 ```powershell
 $bytes = New-Object byte[] 32
@@ -115,34 +145,51 @@ $rng.GetBytes($bytes)
 -join ($bytes | ForEach-Object { $_.ToString("x2") })
 ```
 
-Sau khi sua env, bam `Manual Deploy` tren Render.
+Sau khi sửa env trên Render:
 
-Kiem tra backend:
+1. Bấm `Save Changes`.
+2. Bấm `Manual Deploy`.
+3. Chờ deploy xong.
+4. Mở health check:
 
 ```powershell
 Invoke-RestMethod https://smart-health-api-xj0a.onrender.com/api/health
 ```
 
-Ket qua can co `"ok": true`.
+Kết quả đúng cần có:
 
-## Buoc 4 - Chay Backend Production Checks Tu May Local
+```json
+{
+  "ok": true,
+  "service": "smart-health-backend"
+}
+```
 
-Khong can Render Shell tra phi. Chay local voi env giong production neu muon kiem tra truoc.
+## Bước 5 - Chạy Kiểm Tra Production Từ Máy Local
+
+Không cần Render Shell trả phí. Bạn có thể chạy các script từ máy local.
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\web-monitor
 npm.cmd run check
-npm.cmd run check:production
+npm.cmd run smoke:public-deployment
 ```
 
-Neu da dat du env local cho Firebase/Supabase/S3:
+`smoke:public-deployment` kiểm tra:
+
+- Render `/api/health` trả 200.
+- `/api/me` khi chưa đăng nhập phải trả 401.
+- Firebase Hosting `/login` trả được Web Admin shell.
+- Firebase Hosting `/admin-actions` rewrite đúng về Web Admin shell.
+
+Nếu bạn đã set đủ env Firebase/Supabase/S3 ở PowerShell local thì chạy thêm:
 
 ```powershell
 npm.cmd run smoke:storage
 npm.cmd run smoke:production-roles
 ```
 
-`smoke:production-roles` can Firebase service account local:
+Trước khi chạy `smoke:production-roles`, cần set Firebase Admin local:
 
 ```powershell
 $env:FIREBASE_PROJECT_ID="smart-health-stethoscope"
@@ -150,106 +197,135 @@ $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethos
 npm.cmd run smoke:production-roles
 ```
 
-## Buoc 5 - Deploy Lai Web Admin Firebase Hosting
+Nếu chỉ kiểm tra checklist triển khai:
 
-Dang nhap Firebase CLI neu chua dang nhap:
+```powershell
+npm.cmd run check:production
+```
+
+Nếu chạy local mà báo `BLOCKED` do thiếu env production thì không sao. Quan trọng là Render đã được set env đúng.
+
+## Bước 6 - Deploy Lại Web Admin Firebase Hosting Từ Máy Local
+
+Nếu chưa đăng nhập Firebase CLI:
 
 ```powershell
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 npx.cmd firebase-tools login
 ```
 
-Build va deploy:
+Build bản Firebase Hosting:
 
 ```powershell
 npm.cmd run build:firebase
+```
+
+Deploy lên site admin:
+
+```powershell
 npx.cmd firebase-tools deploy --only hosting:admin --project smart-health-stethoscope
 ```
 
-Mo:
+Mở:
 
 ```text
 https://shcare-admin.web.app
 ```
 
-Ky vong:
+Kỳ vọng sau deploy:
 
-- Neu chua dang nhap: tu dong ve `/login`.
-- Neu da dang nhap admin that: vao dashboard.
-- Sidebar co `Hành động quản trị`.
-- Dang nhap admin toan he thong se thay `Platform Admin Console`.
-- Dang nhap admin benh vien se thay `Workspace Portal`/ten benh vien va khong thay menu platform-only.
+- Nếu chưa đăng nhập: tự chuyển về `/login`.
+- Nếu đã có session Firebase admin: vào dashboard.
+- Sidebar có mục `Hành động quản trị`.
+- Admin toàn hệ thống thấy `Quản trị toàn hệ thống` và `Nền tảng: Toàn hệ thống`.
+- Admin bệnh viện thấy workspace/bệnh viện của họ, không thấy menu platform-only.
 
-Neu van thay giao dien cu, bam `Ctrl+F5` hoac mo incognito.
+Nếu vẫn thấy bản cũ:
 
-## Buoc 6 - Tao Tai Khoan Admin Ngay Tren Web Admin
+1. Bấm `Ctrl+F5`.
+2. Hoặc mở tab ẩn danh.
+3. Hoặc chờ 1-2 phút rồi thử lại.
 
-Dang nhap bang admin toan he thong.
+## Bước 7 - Tạo Tài Khoản Admin Ngay Trên Web Admin
 
-Vao:
+Đăng nhập bằng tài khoản admin toàn hệ thống.
+
+Vào:
 
 ```text
 Hành động quản trị -> Tạo tài khoản admin
 ```
 
-Chon mot trong hai kieu:
+Chọn loại tài khoản:
 
-- `Admin toàn hệ thống`: quan ly platform, goi dich vu, workspace, setup he thong.
-- `Admin bệnh viện`: chi quan ly du lieu cua mot benh vien/workspace duoc chon.
+- `Admin toàn hệ thống`: quản lý platform, gói dịch vụ, workspace, thiết bị, cấu hình hệ thống.
+- `Admin bệnh viện`: chỉ quản lý dữ liệu của một bệnh viện/workspace được chọn.
 
-Nhap:
+Nhập thông tin:
 
-- Ho ten.
+- Họ tên.
 - Email.
-- So dien thoai neu co.
-- Mat khau tam thoi toi thieu 8 ky tu.
-- Workspace neu tao admin benh vien.
+- Số điện thoại nếu có.
+- Mật khẩu tạm thời tối thiểu 8 ký tự.
+- Workspace nếu tạo admin bệnh viện.
 
-Sau khi tao xong, nguoi dung can dang nhap bang email/mat khau do va doi mat khau neu can.
+Sau khi tạo xong:
 
-## Buoc 7 - Gmail SMTP Neu Muon Gui Email That
+1. Đăng xuất tài khoản hiện tại nếu muốn test.
+2. Đăng nhập bằng email/mật khẩu vừa tạo.
+3. Kiểm tra quyền hiển thị có đúng không.
 
-Trong Gmail:
+Kỳ vọng:
 
-1. Bat 2-Step Verification.
-2. Tao App Password.
-3. Dat Render env:
+- Admin toàn hệ thống thấy các mục quản trị platform.
+- Admin bệnh viện không thấy quản lý gói toàn hệ thống, duyệt bác sĩ toàn hệ thống hoặc quản lý workspace khác.
+
+## Bước 8 - Cấu Hình Gmail SMTP Nếu Muốn Gửi Email Thật
+
+Nếu chỉ demo UI thì có thể bỏ qua. Nếu muốn gửi email thật:
+
+1. Vào tài khoản Gmail.
+2. Bật 2-Step Verification.
+3. Tạo App Password.
+4. Đặt các env này trên Render:
 
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=<gmail cua ban>
+SMTP_USER=<gmail của bạn>
 SMTP_PASS=<app password>
-SMTP_FROM=Smart Health <gmail cua ban>
+SMTP_FROM=Smart Health <gmail của bạn>
 ```
 
-Deploy lai Render.
+Deploy lại Render.
 
-Vao Web Admin:
+Vào Web Admin:
 
 ```text
 Cài đặt -> Thông báo/Outbound -> Test email
 ```
 
-Neu chua cau hinh SMTP, nut test se bao thieu config, day la dung.
+Nếu chưa cấu hình SMTP, nút test hoặc API sẽ báo thiếu `SMTP_*`. Đó là đúng, không phải lỗi code.
 
-## Buoc 8 - SMS/Zalo
+## Bước 9 - SMS/Zalo
 
-Ban khong can tra phi ngay. Ban co the de trong env nay neu chua demo SMS/Zalo that:
+Bản hiện tại không tích hợp trực tiếp nhà cung cấp trả phí. Đường production/free hiện tại là webhook tự cấu hình.
+
+Nếu chưa cần demo SMS/Zalo thật, để trống:
 
 ```env
 OUTBOUND_WEBHOOK_URL=
 OUTBOUND_WEBHOOK_SECRET=
 ```
 
-Neu co webhook trung gian/provider:
+Nếu có webhook trung gian hoặc provider:
 
 ```env
 OUTBOUND_WEBHOOK_URL=https://your-webhook.example/smart-health/outbound
 OUTBOUND_WEBHOOK_SECRET=<shared secret>
 ```
 
-Backend se POST payload:
+Backend sẽ POST payload dạng:
 
 ```json
 {
@@ -261,35 +337,45 @@ Backend se POST payload:
 }
 ```
 
-## Buoc 9 - Android Build De Cai Len Dien Thoai/Emulator
+Zalo cũng đi theo cùng flow webhook, chỉ đổi `channel` thành `zalo`.
 
-Debug cho emulator:
+## Bước 10 - Android Build Để Cài Lên Điện Thoại Hoặc Emulator
+
+Build debug cho emulator:
 
 ```powershell
 cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:assembleDebug
 ```
 
-Release tro ve backend Render:
+APK debug nằm ở:
+
+```text
+D:\Study\KLTN\smart-health-android\app\build\outputs\apk\debug\app-debug.apk
+```
+
+Build release trỏ về backend Render:
 
 ```powershell
 .\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com
 ```
 
-Neu release fail vi thieu signing, do la phan ky APK. Khi can phat hanh that, tao keystore rieng va khong commit len GitHub.
+Nếu release fail vì thiếu signing config thì đó là phần ký APK. Khi cần phát hành thật, tạo keystore riêng và không commit keystore lên GitHub.
 
-## Buoc 10 - ESP32-S3 Lan Dau
+## Bước 11 - ESP32-S3 Lần Đầu
 
-Lan dau van can cam day de nap firmware cloud-capable.
+Lần đầu vẫn cần cắm dây để nạp firmware có khả năng cloud/OTA. Sau khi đã có firmware này, các lần sau có thể OTA qua cloud nếu thiết bị online.
 
-Kiem tra cong COM:
+Kiểm tra cổng COM:
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
 & "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" device list
 ```
 
-Tam thoi them build flags local, khong commit secret:
+Nếu thấy ESP32-S3 ở COM6 hoặc COM khác, dùng đúng cổng đó.
+
+Tạm thời thêm build flags local để flash. Không commit secret này:
 
 ```ini
 build_flags =
@@ -303,7 +389,7 @@ build_flags =
   -DSMART_HEALTH_FIRMWARE_VERSION=\"1.0.0\"
 ```
 
-Build/upload:
+Build và upload:
 
 ```powershell
 & "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" run -e esp32-s3-devkitm-1
@@ -311,62 +397,95 @@ Build/upload:
 & "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" device monitor --port COM6 --baud 115200
 ```
 
-Neu mat WiFi, ESP phat AP `SmartHealth-xxxxxx`. Ket noi AP do va vao:
+Nếu thiết bị mất WiFi hoặc chưa có WiFi:
+
+1. ESP phát AP `SmartHealth-xxxxxx`.
+2. Dùng điện thoại/laptop kết nối AP đó.
+3. Mở trình duyệt:
 
 ```text
 http://192.168.4.1
 ```
 
-Trang local nay chi doi WiFi. Tat ca quan ly thiet bi/OTA/status van lam trong Web Admin chinh.
+Trang local chỉ dùng để đổi WiFi. Không đổi OTA password, backend host, device secret, quyền admin hoặc firmware tại trang local. Tất cả quản lý thiết bị làm trên Web Admin chính.
 
-## Buoc 11 - Cloud OTA Khong Can Cung Mang
+## Bước 12 - Cloud OTA Không Cần Cùng Mạng
 
-Build `.bin`:
+Build firmware `.bin`:
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
 & "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" run -e esp32-s3-devkitm-1
 ```
 
-File:
+File firmware nằm ở:
 
 ```text
 D:\Study\KLTN\smart-health-embedded\MSM261S4030H0\.pio\build\esp32-s3-devkitm-1\firmware.bin
 ```
 
-Vao Web Admin:
+Trên Web Admin:
 
 ```text
 Storage -> bucket device-firmware -> upload firmware.bin
-Devices -> chon device -> OTA -> chon file firmware -> gui lenh OTA
+Devices -> chọn device -> OTA -> chọn file firmware -> gửi lệnh OTA
 ```
 
-ESP chi can co Internet. May tinh/web admin khong can cung WiFi voi ESP.
+Luồng đúng:
 
-## Buoc 12 - Smoke Cuoi Truoc Khi Bao Cao
+1. Web Admin upload firmware lên storage.
+2. Backend tạo URL tải firmware có token.
+3. Backend gửi lệnh OTA cho ESP qua kết nối cloud.
+4. ESP tải firmware qua HTTPS.
+5. ESP kiểm tra SHA-256.
+6. ESP ghi OTA partition.
+7. ESP reboot.
+8. Web Admin thấy trạng thái OTA cập nhật.
 
-Smoke public khong can secret:
+ESP chỉ cần có Internet. Máy tính và ESP không cần cùng WiFi.
+
+## Bước 13 - Smoke Cuối Trước Khi Báo Cáo
+
+Chạy smoke public không cần secret:
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\web-monitor
 npm.cmd run smoke:public-deployment
 ```
 
-Checklist:
+Checklist Web Admin:
 
-- `https://smart-health-api-xj0a.onrender.com/api/health` ok.
-- `https://shcare-admin.web.app` chua login thi ve login.
-- Platform admin vao dung Platform Admin Console.
-- Sidebar co `Hành động quản trị`.
-- Tao duoc admin benh vien moi.
-- Admin benh vien chi thay du lieu benh vien cua minh.
-- Avatar/logo upload thanh cong.
-- Settings save thanh cong.
-- Storage upload/download thanh cong.
-- ESP len online trong Devices.
-- ESP gui heartbeat, WiFi RSSI/IP, firmware version.
-- Web/app nghe realtime audio qua backend.
-- OTA len firmware moi va ESP reboot thanh cong.
-- Android app dang nhap/ket noi backend HTTPS duoc.
+- `https://smart-health-api-xj0a.onrender.com/api/health` trả `ok: true`.
+- `https://shcare-admin.web.app` chưa đăng nhập thì tự về login.
+- Platform admin vào đúng giao diện quản trị toàn hệ thống.
+- Platform admin thấy `Nền tảng: Toàn hệ thống`, không còn `Smart Health Clinic` ở topbar/sidebar.
+- Sidebar có `Hành động quản trị`.
+- Tạo được admin bệnh viện mới ngay trên Web Admin.
+- Admin bệnh viện chỉ thấy dữ liệu bệnh viện của mình.
+- Avatar upload thành công.
+- Logo upload thành công.
+- Settings save thành công.
+- Storage upload/download thành công.
 
-Neu co loi, copy dung man hinh/log loi va noi dang o buoc nao.
+Checklist Android:
+
+- App build được.
+- App đăng nhập được bằng Firebase.
+- App gọi backend HTTPS được.
+- Dashboard không trỏ về localhost/emulator trong bản release.
+
+Checklist ESP32-S3:
+
+- Flash lần đầu thành công.
+- Serial monitor thấy WiFi kết nối thành công.
+- Web Admin thấy device online.
+- ESP gửi heartbeat, WiFi RSSI/IP, firmware version.
+- Realtime audio đi qua backend.
+- Cloud OTA gửi từ Web Admin, ESP tải firmware và reboot.
+
+Nếu có lỗi:
+
+1. Ghi rõ đang làm ở bước nào.
+2. Chụp màn hình lỗi.
+3. Copy log PowerShell/Render/GitHub Actions/Serial Monitor.
+4. Gửi lại để sửa tiếp đúng điểm lỗi.

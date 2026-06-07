@@ -544,11 +544,13 @@ KLTN report artifacts generated from this evidence set:
 - Added backend script `npm.cmd run smoke:public-deployment` to check the current public Render backend and Firebase Hosting Web Admin without any secrets.
 - Updated Web Admin platform-admin chrome so sidebar/topbar scope labels show `Nền tảng: Toàn hệ thống` instead of the legacy default workspace `Phòng khám: Smart Health Clinic`.
 - Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a Vietnamese step-by-step runbook for GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Gmail/SMS/Zalo config, Android build, ESP first flash, and cloud OTA smoke.
+- Rewrote `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` into a fully accented, more detailed Vietnamese guide after the initial ASCII/no-accent draft was hard to read.
 
 ### Verification
 
 - Backend: `npm.cmd run check` passed.
 - Public deployment smoke: `npm.cmd run smoke:public-deployment` passed against `https://smart-health-api-xj0a.onrender.com` and `https://shcare-admin.web.app`.
+- Setup guide UTF-8 audit: the guide heading reads `# Smart Health - Hướng Dẫn Setup Ngày Mai`, has 491 lines, and no longer contains old no-accent markers such as `Huong Dan`, `Buoc`, `Khong`, `Neu`, or mojibake markers.
 - Backend workspace smoke: `npm.cmd run smoke:workspace-access` passed.
 - Backend readiness report: `npm.cmd run check:production` ran and correctly reports local env as `BLOCKED` because local PowerShell lacks production secrets/env.
 - Web Admin: `npm.cmd run build:firebase` passed against `https://smart-health-api-xj0a.onrender.com` with CI-safe Firebase web env placeholders.

@@ -65,6 +65,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Added Android `google-services.ci.json` so CI can compile debug without committing the real ignored Firebase Android config.
 - Added `npm.cmd run smoke:public-deployment` to verify the current public Render backend and Firebase Hosting Web Admin without secrets.
 - Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a detailed Vietnamese runbook for the next setup session across GitHub Actions, Render, Supabase, Firebase Hosting, admin account creation, Gmail/SMS/Zalo, Android, ESP first flash, and cloud OTA.
+- Rewrote `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` with full Vietnamese accents and more explicit step-by-step instructions so it can be followed directly during the next setup session.
 
 ## Phase 0 - Context And Tooling Hygiene
 

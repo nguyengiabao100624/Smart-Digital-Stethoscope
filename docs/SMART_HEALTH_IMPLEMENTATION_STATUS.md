@@ -507,6 +507,7 @@ KLTN report artifacts generated from this evidence set:
 - Supabase Storage smoke passed after correcting the project ref and S3 credentials. Render deploy then failed because `DATABASE_URL` used Supabase Direct connection to IPv6 (`connect ENETUNREACH ...:5432`). Render needs Supabase Session/Transaction Pooler IPv4 connection string instead of Direct connection.
 - User switched Render `DATABASE_URL` to Supabase pooler and redeployed. Latest pushed commit is `e56ffad Fix Supabase S3 storage configuration`; remote `https://smart-health-api-xj0a.onrender.com/api/health` returned `ok: true` on 2026-06-07. Next step is Web Admin production env/build/deploy against this Render backend.
 - 2026-06-07 platform-admin login fix: `normalizeFirebaseRole()` now treats raw Firebase custom claims `role=admin` and `role=platform_admin` as backend role `admin` before workspace-role normalization. This fixes platform/system admin Firebase accounts being shown as Workspace Portal / hospital admin in Web Admin. Local Firebase Admin inspection confirmed `nguyengiabao100624@gmail.com` has UID `YOPbEgWu4pfRjMsbb8X5zOFBwUx1` and custom claims `role=admin`, `smartHealth.role=admin`. Supabase `public.users` was empty during inspection, so after redeploy the next Firebase login should create/self-heal the backend user row as `role=admin`.
+- User confirmed after redeploy/sign-in that the platform admin account now logs in correctly and no longer opens the hospital-admin Workspace Portal view.
 
 ### Verification
 

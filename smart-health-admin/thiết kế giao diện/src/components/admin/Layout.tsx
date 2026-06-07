@@ -583,6 +583,7 @@ export function Layout() {
       : "Workspace Portal";
   const workspaceLabel = isPlatformAdmin ? "Nền tảng" : workspaceTypeLabels[workspaceType] || portalMode;
   const accessMode = getAccessMode(currentUser);
+  const sidebarAccessLabel = isPlatformAdmin ? "Quản trị hệ thống" : accessMode.label;
 
   const handleLogout = useCallback(async () => {
     setAccessCheckComplete(false);
@@ -667,12 +668,14 @@ export function Layout() {
         <div className="border-t border-sidebar-border p-4">
           <div className={`inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold ${accessMode.toneClass}`}>
             <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{accessMode.label}</span>
+            <span className="truncate">{sidebarAccessLabel}</span>
           </div>
-          <div className="mt-2 text-xs leading-5 text-sidebar-foreground/70">
-            <div className="truncate font-medium text-sidebar-foreground">{workspaceName}</div>
-            <div className="truncate">{workspaceLabel}</div>
-          </div>
+          {!isPlatformAdmin && (
+            <div className="mt-2 text-xs leading-5 text-sidebar-foreground/70">
+              <div className="truncate font-medium text-sidebar-foreground">{workspaceName}</div>
+              <div className="truncate">{workspaceLabel}</div>
+            </div>
+          )}
         </div>
       </aside>
 

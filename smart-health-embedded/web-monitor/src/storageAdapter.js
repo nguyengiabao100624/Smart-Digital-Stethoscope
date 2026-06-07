@@ -66,9 +66,17 @@ function createStorageAdapter(options = {}) {
     if (!bucket) {
       throw new Error("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3");
     }
-    const body = fs.createReadStream(sourceFile);
-    await client.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, Body: body, ContentType: contentType }));
     const stat = await fs.promises.stat(sourceFile);
+    const body = await fs.promises.readFile(sourceFile);
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: objectKey,
+        Body: body,
+        ContentType: contentType,
+        ContentLength: stat.size,
+      }),
+    );
     return {
       provider: "s3",
       objectKey,

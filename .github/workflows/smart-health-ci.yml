@@ -122,14 +122,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
       - name: Install PlatformIO
-        run: pip install platformio
+        run: |
+          python3 --version
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --user platformio
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build default firmware
         run: pio run -e esp32-s3-devkitm-1

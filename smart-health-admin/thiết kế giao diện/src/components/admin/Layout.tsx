@@ -565,11 +565,12 @@ export function Layout() {
   const adminName = currentUser?.name?.trim() || "Quản trị hệ thống";
   const adminEmail = currentUser?.email?.trim() || "";
   const adminInitial = (adminName || adminEmail || "Q").trim().charAt(0).toUpperCase();
-  const workspaceName =
-    currentUser?.workspace?.name ||
-    currentUser?.currentMembership?.workspaceName ||
-    currentUser?.hospital ||
-    "Smart Health";
+  const capabilities = currentUser?.capabilities || [];
+  const isPlatformAdmin =
+    currentUser?.role === "admin" || capabilities.some((capability) => capability.startsWith("platform."));
+  const workspaceName = isPlatformAdmin
+    ? "Toàn hệ thống"
+    : currentUser?.workspace?.name || currentUser?.currentMembership?.workspaceName || currentUser?.hospital || "Smart Health";
   const workspaceType =
     currentUser?.workspace?.workspaceType ||
     currentUser?.workspace?.type ||
@@ -577,10 +578,10 @@ export function Layout() {
     "";
   const portalMode = !currentUser
     ? "Smart Health Admin"
-    : currentUser.capabilities?.some((capability) => capability.startsWith("platform."))
+    : isPlatformAdmin
       ? "Platform Admin Console"
       : "Workspace Portal";
-  const workspaceLabel = workspaceTypeLabels[workspaceType] || portalMode;
+  const workspaceLabel = isPlatformAdmin ? "Nền tảng" : workspaceTypeLabels[workspaceType] || portalMode;
   const accessMode = getAccessMode(currentUser);
 
   const handleLogout = useCallback(async () => {

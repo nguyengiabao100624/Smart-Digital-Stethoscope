@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -57,6 +57,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Chrome smoke passed on `shcare-admin.web.app`: Firebase login, `Platform Admin Console` role, clean console, and Render backend API calls returned 200. `shcare.web.app` returning 404 is expected until the future web app is implemented.
 - Fixed the hosted Web Admin auth boundary: clean unauthenticated `/` now redirects to `/login`, an existing Firebase admin session opens dashboard directly, and logout signs out Firebase plus clears the stored backend token. `npm.cmd run build:firebase` passed and the fix was deployed to `https://shcare-admin.web.app`.
 - Hardened Firebase Hosting cache headers for `shcare-admin` with `Cache-Control: no-cache, no-store, must-revalidate` after Brave showed an old admin shell bundle. Fresh Chrome smoke still redirects clean unauthenticated `/` to `/login`.
+
+## Recently Completed - 2026-06-08 CI/CD And Setup Runbook
+
+- Added root GitHub Actions workflow `Smart Health CI` for backend check, workspace smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds.
+- Added manual GitHub Actions workflow `Deploy Web Admin` to build and deploy `shcare-admin` from GitHub once Firebase secrets are configured.
+- Added Android `google-services.ci.json` so CI can compile debug without committing the real ignored Firebase Android config.
+- Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a detailed Vietnamese runbook for the next setup session across GitHub Actions, Render, Supabase, Firebase Hosting, admin account creation, Gmail/SMS/Zalo, Android, ESP first flash, and cloud OTA.
 
 ## Phase 0 - Context And Tooling Hygiene
 
@@ -514,11 +521,18 @@ Goal: make deployment and incident response repeatable.
 
 Tasks:
 
-- GitHub Actions:
-  - backend check/test
-  - web build/lint
-  - Android compile
-  - PlatformIO firmware build
+- GitHub Actions baseline is now present:
+  - backend check and workspace smoke
+  - production readiness report
+  - Web Admin Firebase build
+  - Android debug compile
+  - PlatformIO ESP32-S3 normal/OTA firmware build
+  - manual Web Admin Firebase Hosting deploy once GitHub secrets are configured
+- Remaining CI/CD hardening:
+  - add frontend lint once current lint debt is cleaned
+  - add Android release build/signing lane with secrets
+  - add backend deploy verification against Render after auto-deploy
+  - add firmware artifact upload for OTA releases
 - Structured JSON logs with request IDs.
 - `/metrics` Prometheus text.
 - Alerts:
@@ -538,8 +552,8 @@ Done when:
 
 ## Immediate Recommended Next Sprint
 
-1. User/provider setup: create or provide Firebase production project/service account, public HTTPS backend host/domain, managed Postgres `DATABASE_URL`, S3/R2 bucket credentials, `PHI_ENCRYPTION_KEY`, and optional SMTP/SMS/Zalo/Redis/MQTT credentials. Follow `SMART_HEALTH_THIRD_PARTY_SETUP.md`.
-2. After provider setup, run `npm.cmd run check:production:strict` and fix every required failure before final deployment smoke.
+1. Follow `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`: verify GitHub Actions, add Firebase GitHub secrets if using Actions deploy, confirm Render env, deploy `shcare-admin`, and smoke login/admin-account creation.
+2. After provider setup, run `npm.cmd run check:production:strict` with production-like env and fix every required failure before final deployment smoke.
 3. Finish the remaining KLTN hardware evidence gap: real ESP32-S3 flash, serial monitor, cloud heartbeat, WSS audio, command delivery, and cloud OTA from Web Admin.
 4. Verify current web admin storage/notification/doctor/account/settings flows against a real authenticated platform admin and workspace admin browser session.
 5. Browser-smoke export/report downloads against a real authenticated backend session.

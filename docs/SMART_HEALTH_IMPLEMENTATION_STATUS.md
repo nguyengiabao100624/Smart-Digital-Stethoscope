@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -31,7 +31,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. No real queue/model pipeline yet. |
 | Object storage | Scaffold/partial | MinIO/S3 direction is chosen. Local storage fallback remains important. Signed URL and quota/retention need verification/completion. |
 | Firmware production | Partial cloud-first | ESP32 code avoids committed secrets, has WiFi recovery AP, outbound backend WebSocket telemetry/audio, backend command handling, and HTTPS cloud OTA with SHA-256 verification. LAN ArduinoOTA is dev-only and disabled by default. Secure NVS/certificate provisioning, signed firmware, rollback, buffering, and real-board validation remain pending. |
-| CI/CD and monitoring | Partial/scaffold | Docker/docs/scripts exist. Full GitHub Actions, metrics, structured logs, backups, alerts are not complete. |
+| CI/CD and monitoring | Partial | GitHub Actions now checks backend, workspace access smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds. A manual Web Admin Firebase Hosting deploy workflow exists for `shcare-admin` once GitHub secrets are configured. Metrics, alerts, backups, and full release automation are still pending. |
 | Production readiness gate | Real/checker | Backend has a readiness CLI, strict deploy gate, platform-only readiness API, Web Admin deployment tab, production env example, and third-party setup runbook. The current local/demo env is intentionally blocked until real Firebase/Postgres/S3/HTTPS/secret setup is supplied. |
 | Context/new-chat handoff | Real | Context docs and AI skill docs exist. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
 
@@ -533,3 +533,27 @@ KLTN report artifacts generated from this evidence set:
 
 - `check:production:strict` cannot pass until the user supplies real production setup: Firebase Admin credentials, HTTPS backend domain, Postgres `DATABASE_URL`, S3/R2 credentials, `PHI_ENCRYPTION_KEY`, and deployment-specific Web Admin/Android URLs.
 - SMTP/Gmail, SMS/Zalo, Redis, MQTT, signed firmware, and Android release signing remain provider/account setup items rather than source-code-only tasks.
+
+## 2026-06-08 GitHub Actions And Next-Day Setup Runbook
+
+### Implemented
+
+- Added root workflow `.github/workflows/smart-health-ci.yml` so GitHub checks backend syntax, workspace access smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds on push, pull request, or manual dispatch.
+- Added root workflow `.github/workflows/deploy-web-admin.yml` for manual Firebase Hosting deploy of `https://shcare-admin.web.app` from GitHub Actions. It requires GitHub repository secrets `FIREBASE_SERVICE_ACCOUNT_JSON`, `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, and `VITE_FIREBASE_APP_ID`.
+- Added `smart-health-android/app/google-services.ci.json`, a dummy compile-only Firebase config copied by CI when the real ignored `google-services.json` is absent.
+- Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a Vietnamese step-by-step runbook for GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Gmail/SMS/Zalo config, Android build, ESP first flash, and cloud OTA smoke.
+
+### Verification
+
+- Backend: `npm.cmd run check` passed.
+- Backend workspace smoke: `npm.cmd run smoke:workspace-access` passed.
+- Backend readiness report: `npm.cmd run check:production` ran and correctly reports local env as `BLOCKED` because local PowerShell lacks production secrets/env.
+- Web Admin: `npm.cmd run build:firebase` passed against `https://smart-health-api-xj0a.onrender.com` with CI-safe Firebase web env placeholders.
+- Android: `.\gradlew.bat :app:compileDebugKotlin` passed.
+- Firmware: `platformio run -e esp32-s3-devkitm-1` and `platformio run -e esp32-s3-ota` both passed.
+
+### Remaining Limits
+
+- GitHub CI must be observed after pushing because local validation cannot execute GitHub-hosted Actions.
+- Manual GitHub deploy workflow cannot succeed until the user adds Firebase GitHub secrets.
+- Physical ESP32-S3 heartbeat/audio/OTA evidence still requires the board and real device credentials.

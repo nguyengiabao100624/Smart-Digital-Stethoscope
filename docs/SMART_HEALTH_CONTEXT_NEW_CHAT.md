@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
 
@@ -39,6 +39,7 @@ Nếu claude-mem chưa chạy, hãy tự bật bằng `npx claude-mem start` ở
 - `SMART_HEALTH_REMOTE_FIRST_PRODUCT_DIRECTION.md`: canonical product direction for remote-first monitoring, family/dependent profiles, package quota semantics, and clinic/hospital Workspace Portal.
 - `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`: report-first checklist derived from `PL2 (3)-IEEE references.docx`; use it to finish KLTN evidence/content before opening the next production-development slice.
 - `SMART_HEALTH_THIRD_PARTY_SETUP.md`: production setup guide for Firebase, HTTPS backend host, Postgres, S3/R2 storage, Redis, SMTP/Gmail, SMS/Zalo webhook, Android release, and ESP provisioning secrets.
+- `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`: Vietnamese step-by-step setup/runbook for the current deployed stack: GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Android, ESP first flash, and cloud OTA smoke.
 - `SMART_HEALTH_IMPLEMENTATION_STATUS.md`: what is already implemented, what is partial, and what remains demo/scaffold.
 - `SMART_HEALTH_PRODUCTION_BACKLOG.md`: ordered production backlog and recommended next milestones.
 - `SMART_HEALTH_COMMANDS_GUIDE.md`: local run, build, smoke, Firebase, MCP, and tooling commands.
@@ -178,6 +179,7 @@ Production-readiness gate now exists:
 - 2026-06-07 Firebase Hosting: reserved `https://shcare.web.app` for the future patient/doctor web app and deployed the current Web Admin to `https://shcare-admin.web.app`. Web Admin uses `npm.cmd run build:firebase` and Firebase Hosting target `admin`; `shcare.web.app` intentionally returns 404 until the future web app is built/deployed. Chrome smoke on `shcare-admin.web.app` logged in with the platform smoke admin, showed `Platform Admin Console`, and loaded Render backend APIs with 200 responses.
 - 2026-06-07 Web Admin auth boundary: `https://shcare-admin.web.app/` now waits for Firebase/backend auth before rendering the admin shell. A clean unauthenticated browser redirects to `/login`; an existing Firebase admin session opens dashboard directly; logout signs out Firebase and clears the backend token. Evidence screenshot: `D:\Study\KLTN\docs\report-evidence\2026-06-07-shcare-admin-login-redirect.png`.
 - 2026-06-08 Web Admin Firebase Hosting cache hardening: `firebase.json` now sends `Cache-Control: no-cache, no-store, must-revalidate` for `shcare-admin` so browsers revalidate the SPA entry and do not keep an old auth-boundary bundle. If a browser still shows the old admin shell without login, do one hard refresh (`Ctrl+F5`) or open an incognito window once.
+- 2026-06-08 CI/deploy runbook update: root GitHub Actions now includes `.github/workflows/smart-health-ci.yml` for backend check, workspace smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds. `.github/workflows/deploy-web-admin.yml` is a manual Web Admin deploy workflow for `shcare-admin` once GitHub secrets are configured. Android has `app/google-services.ci.json`, a dummy compile-only Firebase config used only by CI when the real ignored `google-services.json` is absent.
 
 Do not commit Firebase private keys, service-account JSON, `.env.local`, or `.env.production` unless the user explicitly requests and security is reviewed.
 
@@ -234,7 +236,7 @@ npm run smoke:workspace-access
 
 ```powershell
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
-npm run build
+npm run build:firebase
 ```
 
 ```powershell

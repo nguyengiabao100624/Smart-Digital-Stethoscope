@@ -1,10 +1,53 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
 All commands are for Windows PowerShell unless noted.
+
+## 0. Current Production Runbook And GitHub Actions
+
+Detailed next setup runbook:
+
+```text
+D:\Study\KLTN\docs\SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md
+```
+
+GitHub Actions workflows at repo root:
+
+```text
+.github/workflows/smart-health-ci.yml
+.github/workflows/deploy-web-admin.yml
+```
+
+Open Actions:
+
+```text
+https://github.com/nguyengiabao100624/Smart-Digital-Stethoscope/actions
+```
+
+`Smart Health CI` runs on push, pull request, or manual dispatch and checks:
+
+- backend `npm run check`
+- backend `npm run smoke:workspace-access`
+- backend `npm run check:production` report
+- Web Admin `npm run build:firebase`
+- Android `:app:compileDebugKotlin`
+- ESP32-S3 `platformio run -e esp32-s3-devkitm-1`
+- ESP32-S3 `platformio run -e esp32-s3-ota`
+
+`Deploy Web Admin` is manual and deploys `https://shcare-admin.web.app` after these GitHub repository secrets exist:
+
+```text
+FIREBASE_SERVICE_ACCOUNT_JSON
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_MESSAGING_SENDER_ID
+VITE_FIREBASE_APP_ID
+VITE_FIREBASE_MEASUREMENT_ID
+```
+
+`VITE_FIREBASE_MEASUREMENT_ID` is optional for runtime if Analytics is not used, but the other four are required by the deploy workflow.
 
 ## 1. Backend - `web-monitor`
 

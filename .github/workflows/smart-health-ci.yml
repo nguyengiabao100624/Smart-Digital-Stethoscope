@@ -1,0 +1,138 @@
+name: Smart Health CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: smart-health-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: smart-health-embedded/web-monitor
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: smart-health-embedded/web-monitor/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax and script check
+        run: npm run check
+
+      - name: Workspace access smoke
+        run: npm run smoke:workspace-access
+
+      - name: Production readiness report
+        run: npm run check:production
+
+  web-admin:
+    name: Web admin build
+    runs-on: ubuntu-latest
+    env:
+      VITE_AUTH_MODE: production
+      VITE_SMART_HEALTH_BASE_URL: https://smart-health-api-xj0a.onrender.com
+      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-xj0a.onrender.com/api
+      VITE_FIREBASE_API_KEY: ci-build-only
+      VITE_FIREBASE_AUTH_DOMAIN: smart-health-stethoscope.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: smart-health-stethoscope
+      VITE_FIREBASE_STORAGE_BUCKET: smart-health-stethoscope.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: 1:000000000000:web:0000000000000000000000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: smart-health-admin/**/package-lock.json
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          ADMIN_DIR="$(find smart-health-admin -maxdepth 1 -type d -name 'thi*t*' -print -quit)"
+          test -n "$ADMIN_DIR"
+          cd "$ADMIN_DIR"
+          npm ci
+
+      - name: Build Firebase hosting bundle
+        shell: bash
+        run: |
+          ADMIN_DIR="$(find smart-health-admin -maxdepth 1 -type d -name 'thi*t*' -print -quit)"
+          test -n "$ADMIN_DIR"
+          cd "$ADMIN_DIR"
+          npm run build:firebase
+
+  android:
+    name: Android debug compile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: smart-health-android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Create CI Firebase config
+        run: |
+          if [ ! -f app/google-services.json ]; then
+            cp app/google-services.ci.json app/google-services.json
+          fi
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Compile debug Kotlin
+        run: ./gradlew :app:compileDebugKotlin --no-daemon
+
+  firmware:
+    name: ESP32-S3 firmware build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: smart-health-embedded/MSM261S4030H0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build default firmware
+        run: pio run -e esp32-s3-devkitm-1
+
+      - name: Build OTA firmware environment
+        run: pio run -e esp32-s3-ota

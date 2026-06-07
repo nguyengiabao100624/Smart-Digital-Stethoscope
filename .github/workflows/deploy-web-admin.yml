@@ -1,0 +1,76 @@
+name: Deploy Web Admin
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-admin
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy shcare-admin
+    runs-on: ubuntu-latest
+    env:
+      VITE_AUTH_MODE: production
+      VITE_SMART_HEALTH_BASE_URL: https://smart-health-api-xj0a.onrender.com
+      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-xj0a.onrender.com/api
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: smart-health-stethoscope.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: smart-health-stethoscope
+      VITE_FIREBASE_STORAGE_BUCKET: smart-health-stethoscope.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: smart-health-admin/**/package-lock.json
+
+      - name: Validate required Firebase secrets
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          test -n "$FIREBASE_SERVICE_ACCOUNT_JSON" || {
+            echo "::error::Missing GitHub secret FIREBASE_SERVICE_ACCOUNT_JSON"
+            exit 1
+          }
+          test -n "$VITE_FIREBASE_API_KEY" || {
+            echo "::error::Missing GitHub secret VITE_FIREBASE_API_KEY"
+            exit 1
+          }
+          test -n "$VITE_FIREBASE_MESSAGING_SENDER_ID" || {
+            echo "::error::Missing GitHub secret VITE_FIREBASE_MESSAGING_SENDER_ID"
+            exit 1
+          }
+          test -n "$VITE_FIREBASE_APP_ID" || {
+            echo "::error::Missing GitHub secret VITE_FIREBASE_APP_ID"
+            exit 1
+          }
+
+      - name: Install and build Web Admin
+        shell: bash
+        run: |
+          ADMIN_DIR="$(find smart-health-admin -maxdepth 1 -type d -name 'thi*t*' -print -quit)"
+          test -n "$ADMIN_DIR"
+          cd "$ADMIN_DIR"
+          npm ci
+          npm run build:firebase
+
+      - name: Deploy to Firebase Hosting
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        shell: bash
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          ADMIN_DIR="$(find smart-health-admin -maxdepth 1 -type d -name 'thi*t*' -print -quit)"
+          test -n "$ADMIN_DIR"
+          cd "$ADMIN_DIR"
+          npx firebase-tools@latest deploy --only hosting:admin --project smart-health-stethoscope --non-interactive

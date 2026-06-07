@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import {
   Link as TLink,
   Outlet,
@@ -14,5 +15,5 @@ export { Outlet, useLocation };
 
 export function useNavigate() {
   const nav = tNavigate();
-  return (to: string) => nav({ to: to as never });
+  return useCallback((to: string) => nav({ to: to as never }), [nav]);
 }

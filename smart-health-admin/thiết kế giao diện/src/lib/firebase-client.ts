@@ -1,5 +1,11 @@
 import { initializeApp, getApps, type FirebaseOptions } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from "firebase/auth";
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -37,7 +43,15 @@ function getFirebaseAuth() {
   return getAuth(app);
 }
 
+export function onFirebaseAuthStateChange(callback: (user: User | null) => void) {
+  return onAuthStateChanged(getFirebaseAuth(), callback);
+}
+
 export async function signInWithFirebaseEmail(email: string, password: string) {
   const credential = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
   return credential.user.getIdToken(true);
+}
+
+export async function signOutFirebase() {
+  await signOut(getFirebaseAuth());
 }

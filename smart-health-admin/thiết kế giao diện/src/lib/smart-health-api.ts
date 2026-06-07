@@ -463,6 +463,10 @@ function clearToken() {
   TOKEN_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
 }
 
+export function clearSmartHealthStoredToken() {
+  clearToken();
+}
+
 function buildUrl(path: string, query?: Record<string, QueryValue>) {
   const url = new URL(path.replace(/^\/+/, ""), `${getApiBaseUrl()}/`);
 

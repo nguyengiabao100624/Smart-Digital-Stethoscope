@@ -28,11 +28,17 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
+  clearSmartHealthStoredToken,
   smartHealthApi,
   type SmartHealthAuthUser,
   type SmartHealthDevice,
   type SmartHealthNotification,
 } from "@/lib/smart-health-api";
+import {
+  hasFirebaseWebConfig,
+  onFirebaseAuthStateChange,
+  signOutFirebase,
+} from "@/lib/firebase-client";
 import {
   NotificationDetailDialog,
   type NotificationItem,
@@ -277,6 +283,20 @@ function getAccessMode(user: SmartHealthAuthUser | null) {
   };
 }
 
+function hasAdminConsoleAccess(user?: SmartHealthAuthUser | null) {
+  const capabilities = user?.capabilities || [];
+  return (
+    user?.role === "admin" ||
+    capabilities.some(
+      (capability) =>
+        capability.startsWith("platform.") ||
+        capability === "workspace.dashboard.view" ||
+        capability === "workspace.staff.manage" ||
+        capability === "workspace.settings.manage",
+    )
+  );
+}
+
 type Variant = "rail" | "expanded";
 
 function SidebarNav({
@@ -432,28 +452,86 @@ export function Layout() {
 
   useEffect(() => {
     let cancelled = false;
+
+    const finishAsSignedOut = () => {
+      clearSmartHealthStoredToken();
+      setCurrentUser(null);
+      setTopNotifications([]);
+      setUnreadNotificationCount(0);
+      setSidebarBadges({});
+      setAccessCheckComplete(true);
+      navigate("/login");
+    };
+
+    const applyBackendUser = (user?: SmartHealthAuthUser | null) => {
+      if (!user || !hasAdminConsoleAccess(user)) {
+        finishAsSignedOut();
+        return;
+      }
+      setCurrentUser(user);
+      setAccessCheckComplete(true);
+    };
+
+    setAccessCheckComplete(false);
+
+    if (hasFirebaseWebConfig()) {
+      const unsubscribe = onFirebaseAuthStateChange(async (firebaseUser) => {
+        if (cancelled) return;
+        setAccessCheckComplete(false);
+
+        if (!firebaseUser) {
+          finishAsSignedOut();
+          return;
+        }
+
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const result = await smartHealthApi.authenticateFirebase(idToken);
+          if (!cancelled) {
+            applyBackendUser(result.user);
+          }
+        } catch {
+          if (!cancelled) {
+            finishAsSignedOut();
+          }
+        }
+      });
+
+      return () => {
+        cancelled = true;
+        unsubscribe();
+      };
+    }
+
     smartHealthApi
       .me()
       .then(({ user }) => {
         if (!cancelled) {
-          setCurrentUser(user);
-          setAccessCheckComplete(true);
+          applyBackendUser(user);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setCurrentUser(null);
-          setAccessCheckComplete(true);
+          finishAsSignedOut();
         }
       });
 
-    refreshEventBadges().catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [refreshEventBadges]);
+  }, [navigate]);
 
   useEffect(() => {
+    if (!accessCheckComplete || !currentUser) {
+      return;
+    }
+    refreshEventBadges().catch(() => undefined);
+  }, [accessCheckComplete, currentUser, refreshEventBadges]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
     const handleNotificationSync = () => {
       refreshEventBadges().catch(() => undefined);
     };
@@ -464,7 +542,7 @@ export function Layout() {
       window.removeEventListener(NOTIFICATION_SYNC_EVENT, handleNotificationSync);
       window.clearInterval(intervalId);
     };
-  }, [refreshEventBadges]);
+  }, [currentUser, refreshEventBadges]);
 
   const adminName = currentUser?.name?.trim() || "Quản trị hệ thống";
   const adminEmail = currentUser?.email?.trim() || "";
@@ -486,6 +564,30 @@ export function Layout() {
       : "Workspace Portal";
   const workspaceLabel = workspaceTypeLabels[workspaceType] || portalMode;
   const accessMode = getAccessMode(currentUser);
+
+  const handleLogout = useCallback(async () => {
+    setAccessCheckComplete(false);
+    try {
+      await smartHealthApi.logout();
+    } catch {
+      clearSmartHealthStoredToken();
+    }
+
+    if (hasFirebaseWebConfig()) {
+      try {
+        await signOutFirebase();
+      } catch {
+        // Backend token cleanup above is still enough to leave the admin shell.
+      }
+    }
+
+    setCurrentUser(null);
+    setTopNotifications([]);
+    setUnreadNotificationCount(0);
+    setSidebarBadges({});
+    setAccessCheckComplete(true);
+    navigate("/login");
+  }, [navigate]);
 
   const openTopNotification = (item: NotificationItem) => {
     setNotificationDetail(item);
@@ -511,6 +613,16 @@ export function Layout() {
     setMobileOpen(false);
     setMobileSearchOpen(false);
   }, [location.pathname]);
+
+  if (!currentUser) {
+    return (
+      <AdminAccessProvider currentUser={currentUser} accessCheckComplete={accessCheckComplete}>
+        <div className="min-h-screen bg-background text-sm">
+          <AccessCheckingPanel />
+        </div>
+      </AdminAccessProvider>
+    );
+  }
 
   return (
     <AdminAccessProvider currentUser={currentUser} accessCheckComplete={accessCheckComplete}>
@@ -799,7 +911,7 @@ export function Layout() {
                   <DropdownMenu.Separator className="h-px bg-border my-1" />
                   <DropdownMenu.Item
                     className="text-sm px-3 py-2 cursor-pointer outline-none hover:bg-destructive hover:text-destructive-foreground text-destructive rounded-sm flex items-center gap-2"
-                    onClick={() => navigate("/login")}
+                    onClick={handleLogout}
                   >
                     <LogOut className="w-4 h-4" /> Đăng xuất
                   </DropdownMenu.Item>

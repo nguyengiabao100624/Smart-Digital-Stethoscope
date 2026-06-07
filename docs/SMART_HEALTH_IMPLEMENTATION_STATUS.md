@@ -508,15 +508,20 @@ KLTN report artifacts generated from this evidence set:
 - User switched Render `DATABASE_URL` to Supabase pooler and redeployed. Latest pushed commit is `e56ffad Fix Supabase S3 storage configuration`; remote `https://smart-health-api-xj0a.onrender.com/api/health` returned `ok: true` on 2026-06-07. Next step is Web Admin production env/build/deploy against this Render backend.
 - 2026-06-07 platform-admin login fix: `normalizeFirebaseRole()` now treats raw Firebase custom claims `role=admin` and `role=platform_admin` as backend role `admin` before workspace-role normalization. This fixes platform/system admin Firebase accounts being shown as Workspace Portal / hospital admin in Web Admin. Local Firebase Admin inspection confirmed `nguyengiabao100624@gmail.com` has UID `YOPbEgWu4pfRjMsbb8X5zOFBwUx1` and custom claims `role=admin`, `smartHealth.role=admin`. Supabase `public.users` was empty during inspection, so after redeploy the next Firebase login should create/self-heal the backend user row as `role=admin`.
 - User confirmed after redeploy/sign-in that the platform admin account now logs in correctly and no longer opens the hospital-admin Workspace Portal view.
+- 2026-06-07 production RBAC persistence fix: Supabase `users_role_check` still allowed only `admin`, `doctor`, and `patient`, so workspace roles could not persist to Postgres. Added/applied `004_expand_user_roles.sql` for `workspace_admin`, `workspace_owner`, `nurse`, `technician`, `billing`, and `viewer`. Added/applied `005_seed_default_organization.sql` so `org_default_clinic` exists before Firebase-auth users are upserted with an `organization_id` foreign key.
+- Added `npm.cmd run smoke:production-roles`, which creates/updates Firebase smoke accounts for platform admin and workspace admin, signs in through Firebase REST, calls the Render backend `/api/auth/firebase` and `/api/me`, and asserts platform vs workspace capabilities. The smoke passed against `https://smart-health-api-xj0a.onrender.com`; Supabase confirmed persisted roles `admin` and `workspace_admin`.
 
 ### Verification
 
 - Backend: `npm.cmd run check` passed after adding the readiness checker.
 - Backend: `npm.cmd run check` passed after the 2026-06-07 platform-admin Firebase role normalization fix.
+- Backend: `npm.cmd run check` passed after adding migrations and `scripts/productionRoleSmokeTest.js`.
 - Backend readiness: `npm.cmd run check:production` ran successfully and correctly reported `BLOCKED` for the current local/demo env.
 - Backend workspace smoke: `npm.cmd run smoke:workspace-access` passed.
 - Backend storage smoke: `npm.cmd run smoke:storage` passed.
+- Backend production role smoke: `npm.cmd run smoke:production-roles` passed using Firebase Auth and the Render backend.
 - Web Admin: `npm.cmd run build` passed after adding the Settings deployment tab.
+- Web Admin: `npm.cmd run build:product` passed with production env pointing at the Render backend; Vite still warns about large chunks.
 - Unicode/source audit: no unexpected mojibake hits in active backend/admin/docs files; only the old report-evidence mojibake backup and the intentional guide search pattern matched.
 - Browser smoke at `http://127.0.0.1:5174/settings` with the current unauthenticated/limited session rendered the access-denied state without crashing; backend calls returned `401` as expected. Screenshot: `D:\Study\KLTN\docs\report-evidence\2026-06-05\screenshots\web-admin-settings-readiness-access-gated-20260606.png`.
 

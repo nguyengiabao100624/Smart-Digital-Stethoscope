@@ -35,7 +35,7 @@ Backend syntax/check:
 npm run check
 ```
 
-Last verified on 2026-06-07 after the platform-admin Firebase role normalization fix: passed.
+Last verified on 2026-06-07 after the production RBAC persistence migrations and production role smoke script: passed.
 
 Production readiness check:
 
@@ -45,6 +45,21 @@ npm.cmd run check:production:strict
 ```
 
 `check:production` prints a deployment checklist and exits normally. `check:production:strict` exits nonzero if required production items are missing. In the current local/demo env it is expected to report `BLOCKED` until real third-party setup is supplied.
+
+Production Firebase role/RBAC smoke against the deployed backend:
+
+```powershell
+$env:FIREBASE_PROJECT_ID="smart-health-stethoscope"
+$env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+npm.cmd run smoke:production-roles
+```
+
+This creates or updates two Firebase smoke accounts, signs in through Firebase REST, calls the Render backend `/api/auth/firebase` and `/api/me`, and verifies:
+
+- `platform.admin.smoke@smarthealth.test` returns backend `role=admin` and `platform.*` capabilities.
+- `workspace.admin.smoke@smarthealth.test` returns backend `role=workspace_admin` and no `platform.*` capabilities.
+
+The generated smoke-account passwords are saved locally in ignored file `web-monitor\.test-data\production-role-smoke-credentials.json`.
 
 Platform-only readiness API used by Web Admin Settings > `Triển khai`:
 

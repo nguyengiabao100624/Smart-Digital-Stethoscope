@@ -29,6 +29,8 @@ If admin web login shows `Phiên đăng nhập Firebase không hợp lệ hoặc
 
 If a platform/system admin login shows the hospital-admin Workspace Portal UI, verify the Firebase custom claims first. Platform admin claims should be `role=admin` and `smartHealth.role=admin`, or `platform_admin`. Backend fix on 2026-06-07 makes those claims resolve to backend `role=admin` before workspace normalization. After pushing/deploying that fix, sign out and sign in again so Firebase sends a fresh ID token; `/api/me` should then return `role=admin` and `platform.*` capabilities.
 
+If `https://shcare-admin.web.app/` still shows the old admin shell or access-denied screen instead of redirecting to `/login` while unauthenticated, the browser is likely serving an old SPA bundle. Hosting was updated on 2026-06-08 to send `Cache-Control: no-cache, no-store, must-revalidate`; do one hard refresh (`Ctrl+F5`) or open an incognito window, then `/` should redirect to `/login`.
+
 Backend syntax/check:
 
 ```powershell

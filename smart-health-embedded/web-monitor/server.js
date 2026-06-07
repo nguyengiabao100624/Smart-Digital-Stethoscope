@@ -3605,10 +3605,12 @@ function normalizeFirebaseRole(decodedToken) {
     decodedToken.smartHealth && typeof decodedToken.smartHealth === "object"
       ? readString(decodedToken.smartHealth.role, 40)
       : "";
-  const role = directRole || nestedRole;
+  const role = (directRole || nestedRole).toLowerCase();
+  if (role === "admin" || role === "platform_admin") {
+    return "admin";
+  }
   const normalizedRole = normalizeWorkspaceRole(role);
-  if (normalizedRole === "platform_admin") return "admin";
-  if (["admin", "workspace_admin", "workspace_owner", "doctor", "patient", "nurse", "technician", "billing", "viewer"].includes(normalizedRole)) {
+  if (["workspace_admin", "workspace_owner", "doctor", "patient", "nurse", "technician", "billing", "viewer"].includes(normalizedRole)) {
     return normalizedRole;
   }
   return "patient";

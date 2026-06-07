@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -40,6 +40,11 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - `web-monitor\.env.example` now lists production placeholders for Firebase, public HTTPS backend URL, Postgres, S3/R2, PHI encryption, SMTP/Gmail, SMS/Zalo webhook, MQTT, CORS, and rate limit.
 - `SMART_HEALTH_THIRD_PARTY_SETUP.md` now lists the real third-party accounts/secrets the user must create before strict production smoke can pass.
 - Current local/demo env correctly reports `BLOCKED`; this is expected until real provider credentials and deployment URLs are supplied.
+
+## Recently Completed - 2026-06-07 Platform Admin Login Fix
+
+- Fixed backend Firebase role normalization so custom claims `role=admin` or `role=platform_admin` resolve to backend `role=admin` before workspace-role normalization. This prevents real platform/system admin accounts from being shown as hospital Workspace Portal admins after Firebase login.
+- Verified backend syntax/check with `npm.cmd run check`. After deploying this fix, the admin user should sign out and sign in again so Firebase issues a fresh ID token.
 
 ## Phase 0 - Context And Tooling Hygiene
 

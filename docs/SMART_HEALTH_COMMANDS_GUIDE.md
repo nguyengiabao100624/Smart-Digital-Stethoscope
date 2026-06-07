@@ -1,6 +1,6 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
@@ -27,13 +27,15 @@ npm start
 
 If admin web login shows `Phiên đăng nhập Firebase không hợp lệ hoặc đã hết hạn`, check the backend was started with the Firebase env above. Also verify the JSON demo user email maps to the current Firebase UID. The 2026-05-26 repair set `nguyengiabao100624@gmail.com` to UID `YOPbEgWu4pfRjMsbb8X5zOFBwUx1`, and backend login now self-heals stale stored UIDs when the verified token email matches.
 
+If a platform/system admin login shows the hospital-admin Workspace Portal UI, verify the Firebase custom claims first. Platform admin claims should be `role=admin` and `smartHealth.role=admin`, or `platform_admin`. Backend fix on 2026-06-07 makes those claims resolve to backend `role=admin` before workspace normalization. After pushing/deploying that fix, sign out and sign in again so Firebase sends a fresh ID token; `/api/me` should then return `role=admin` and `platform.*` capabilities.
+
 Backend syntax/check:
 
 ```powershell
 npm run check
 ```
 
-Last verified on 2026-06-06 after the cloud-device backend changes: passed.
+Last verified on 2026-06-07 after the platform-admin Firebase role normalization fix: passed.
 
 Production readiness check:
 
@@ -573,6 +575,18 @@ MQTT_USERNAME=<username>
 MQTT_PASSWORD=<password>
 MQTT_CLIENT_ID=smart-health-backend
 RATE_LIMIT_PER_MINUTE=300
+```
+
+Current Render backend created on 2026-06-06:
+
+```text
+https://smart-health-api-xj0a.onrender.com
+```
+
+Health check:
+
+```text
+https://smart-health-api-xj0a.onrender.com/api/health
 ```
 
 Generate a `PHI_ENCRYPTION_KEY` locally:

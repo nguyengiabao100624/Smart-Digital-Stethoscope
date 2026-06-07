@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
 
@@ -172,6 +172,7 @@ Production-readiness gate now exists:
 - Admin custom claims used during setup:
   - `role=admin`
   - `organizationId=org_default_clinic`
+- 2026-06-07: backend Firebase role normalization was fixed so raw custom claims `role=admin` or `role=platform_admin` become backend `role=admin` before workspace-role normalization. Before this fix, `role=admin` could be mapped to `workspace_admin`, making the Web Admin show Workspace Portal / hospital admin for a platform admin account. If this appears after deploy, sign out/sign in to refresh the Firebase ID token and verify `/api/me` returns `role=admin` plus `platform.*` capabilities.
 
 Do not commit Firebase private keys, service-account JSON, `.env.local`, or `.env.production` unless the user explicitly requests and security is reviewed.
 

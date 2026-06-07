@@ -27,6 +27,12 @@ Open Actions:
 https://github.com/nguyengiabao100624/Smart-Digital-Stethoscope/actions
 ```
 
+Last observed passing CI run for this setup slice:
+
+```text
+https://github.com/nguyengiabao100624/Smart-Digital-Stethoscope/actions/runs/27100213174
+```
+
 `Smart Health CI` runs on push, pull request, or manual dispatch and checks:
 
 - backend `npm run check`

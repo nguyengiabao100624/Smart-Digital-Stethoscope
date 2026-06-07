@@ -551,6 +551,7 @@ KLTN report artifacts generated from this evidence set:
 - Web Admin: `npm.cmd run build:firebase` passed against `https://smart-health-api-xj0a.onrender.com` with CI-safe Firebase web env placeholders.
 - Android: `.\gradlew.bat :app:compileDebugKotlin` passed.
 - Firmware: `platformio run -e esp32-s3-devkitm-1` and `platformio run -e esp32-s3-ota` both passed.
+- GitHub Actions: `Smart Health CI` passed on commit `d54855b` with backend, Web Admin, Android, and ESP32-S3 firmware jobs successful.
 
 ### Remaining Limits
 

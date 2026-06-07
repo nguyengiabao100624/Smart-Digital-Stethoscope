@@ -504,6 +504,7 @@ KLTN report artifacts generated from this evidence set:
 - User created Supabase Storage bucket `smart-health-production`, enabled S3-compatible storage, created an access key, set Render S3 env, and confirmed Render `/api/health` still works. `npm run smoke:storage` has not been run yet because Render shell/local secret execution is still pending.
 - Supabase Storage local smoke initially failed with AWS SDK deserialization error while uploading a stream. `src/storageAdapter.js` now sends `ContentLength` and uploads `putFile` as a buffer instead of a streaming body for S3-compatible providers that do not handle chunked streaming exactly like AWS S3.
 - User installed Supabase agent skills with `npx skills add supabase/agent-skills`; Supabase MCP/plugin is available. Plugin `list_projects` confirmed the actual project ref is `mahvymyncxszvuhlycwp` (database host `db.mahvymyncxszvuhlycwp.supabase.co`), not `mahvymycnxszvuhlycwp`. Any Supabase Storage S3 endpoint must use this exact ref.
+- Supabase Storage smoke passed after correcting the project ref and S3 credentials. Render deploy then failed because `DATABASE_URL` used Supabase Direct connection to IPv6 (`connect ENETUNREACH ...:5432`). Render needs Supabase Session/Transaction Pooler IPv4 connection string instead of Direct connection.
 
 ### Verification
 

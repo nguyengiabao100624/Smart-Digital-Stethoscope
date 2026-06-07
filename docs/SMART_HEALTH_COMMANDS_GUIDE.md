@@ -761,6 +761,16 @@ The script sets Firebase custom claims:
 }
 ```
 
+Preferred production/admin UI path:
+
+- Sign in to Web Admin as a platform/system admin.
+- Open `Hành động quản trị`.
+- Choose `Tạo tài khoản admin`.
+- Select `Admin bệnh viện` and a workspace, or `Admin toàn hệ thống`.
+- Enter name, email, phone, and a temporary password with at least 8 characters.
+
+The UI calls `POST /api/admin/admin-users`. The backend requires `platform.users.manage`, creates the Firebase Auth user, sets custom claims, saves the backend user/membership through the repository layer, rejects existing emails to avoid accidental password resets, and audits `admin.user.create`. Keep `npm.cmd run firebase:create-workspace-admin` only for local smoke/demo seeding.
+
 Start backend in production Firebase mode:
 
 ```powershell

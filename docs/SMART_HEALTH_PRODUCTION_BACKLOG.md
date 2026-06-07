@@ -608,14 +608,14 @@ Completed in this slice:
 - Hid and route-blocked platform-only surfaces from workspace admin: global packages, clinic/workspace management, doctor approval, and Firebase sync.
 - Scoped settings GET/PATCH so workspace admins edit hospital settings, not global platform settings.
 - Verified API and browser smoke for scoped clinics/doctors/patients/devices/storage/settings and platform-denied routes.
+- 2026-06-08: Added the platform-admin UI workflow to create admin accounts without terminal scripts. `POST /api/admin/admin-users` creates Firebase Auth users, sets admin/workspace-admin claims, saves backend user/membership through repositories, rejects duplicate email, and audits the action.
 
 Next practical backlog items:
 
 - Rotate or recreate the local workspace-admin demo password before sharing outside the local KLTN machine.
 - Add automated browser E2E for platform admin vs workspace admin navigation and direct-route denial.
 - Add CRUD smoke for workspace admin creating/editing doctors, patients, devices, storage files, notifications, and settings inside only its own hospital.
-- Port the Firebase workspace-admin seeding path to PostgreSQL/repository mode.
-- Add a UI workflow for platform admin to create a hospital admin account without running a script.
+- Port or retire the legacy Firebase workspace-admin seed script if it is still needed outside local smoke; the Web Admin endpoint already uses repository saves for production account creation.
 
 ## 2026-06-06 Backlog Update - Settings/Account Demo Functions
 

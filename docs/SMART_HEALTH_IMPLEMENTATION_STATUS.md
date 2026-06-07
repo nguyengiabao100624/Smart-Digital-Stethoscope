@@ -383,6 +383,7 @@ KLTN report artifacts generated from this evidence set:
 
 - Backend production Firebase auth now supports real scoped roles from custom claims: `workspace_admin`, `workspace_owner`, `doctor`, `nurse`, `technician`, `billing`, and `viewer`. `workspace_admin` is no longer treated as invalid during `/api/me` upsert.
 - Added `scripts/createWorkspaceAdmin.js` and `npm run firebase:create-workspace-admin` to create/update a Firebase workspace admin, set claims, upsert JSON organization/user/membership, and seed a demo doctor/patient/device.
+- Added platform-admin UI/API account creation: Web Admin > `Hành động quản trị` > `Tạo tài khoản admin` calls `POST /api/admin/admin-users`, creates a Firebase Auth user, sets admin/workspace-admin custom claims, saves backend user/membership through repositories for JSON/Postgres parity, rejects duplicate emails, and writes `admin.user.create` audit metadata.
 - Global package APIs are platform-only (`platform.packages.manage`) for list/create/update/delete. Workspace users with billing capability cannot manage global service packages.
 - Overview stats, clinics, doctors, patients, devices, storage, notifications, audit, and settings now behave as workspace-scoped for the browser-smoked `workspace_admin`.
 - `/api/settings` now returns effective merged settings plus a `scope` object. Platform admins write global settings; workspace admins write `organization.settings`.
@@ -394,6 +395,7 @@ KLTN report artifacts generated from this evidence set:
 - Backend: `npm.cmd run check` passed.
 - Backend workspace smoke: `npm.cmd run smoke:workspace-access` passed.
 - Web admin: `npm.cmd run build` passed with existing Vite large-chunk warnings only.
+- 2026-06-08 admin-account UI/API change: `npm.cmd run check` in `web-monitor`, `npm.cmd run build`, and `npm.cmd run build:firebase` in Web Admin all passed.
 - API smoke with Firebase account `workspace.admin.demo@smarthealth.test` returned role `workspace_admin`, workspace `Bệnh viện Demo Workspace`, 1 scoped clinic, 1 scoped doctor, 1 scoped patient, 1 scoped device, workspace settings scope, and 403 for `/api/admin/packages` and `/api/admin/doctor-requests`.
 - Browser smoke at `http://127.0.0.1:5174` showed `Admin bệnh viện`, `Bệnh viện Demo Workspace`, scoped sidebar, direct `/packages` and `/doctor-approval` access-denied screens, `/settings` title `Cài đặt bệnh viện`, and scoped Doctors/Patients/Devices tables.
 
@@ -401,7 +403,7 @@ KLTN report artifacts generated from this evidence set:
 
 - The workspace admin password used for smoke is a local demo credential and should be rotated before any public deployment.
 - Workspace admin browser smoke covers core scoping and route gates; deeper CRUD-by-role E2E scripts still need to be automated.
-- Firebase user creation currently targets JSON demo data; PostgreSQL/repository parity for this account-seeding workflow remains future work.
+- The legacy `firebase:create-workspace-admin` smoke script is still JSON-oriented, but the new Web Admin account-creation endpoint uses repository saves for JSON/Postgres parity.
 
 ## 2026-06-06 Settings/Account Unlocked Demo Functions
 

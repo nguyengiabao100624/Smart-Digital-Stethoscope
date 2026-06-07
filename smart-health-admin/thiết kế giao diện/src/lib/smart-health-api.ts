@@ -81,6 +81,18 @@ export type SmartHealthAuthUser = {
   updatedAt?: string;
 };
 
+export type SmartHealthAdminAccountRole = "admin" | "platform_admin" | "workspace_admin" | "workspace_owner";
+
+export type CreateAdminAccountPayload = {
+  role: SmartHealthAdminAccountRole;
+  email: string;
+  password: string;
+  name: string;
+  phone?: string;
+  title?: string;
+  organizationId?: string;
+};
+
 export type SmartHealthPatient = {
   id: string;
   patientCode?: string;
@@ -860,6 +872,21 @@ export const smartHealthApi = {
     organizationId?: string;
   }) {
     return requestJson<{ doctor: SmartHealthAuthUser }>("/admin/doctors", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async createAdminAccount(payload: CreateAdminAccountPayload) {
+    return requestJson<{
+      user: SmartHealthAuthUser;
+      firebase: {
+        uid: string;
+        email: string;
+        created: boolean;
+        claims?: unknown;
+      };
+    }>("/admin/admin-users", {
       method: "POST",
       body: JSON.stringify(payload),
     });

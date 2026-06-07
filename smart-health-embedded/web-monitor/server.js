@@ -4223,6 +4223,185 @@ async function setFirebaseRoleClaimsForUser(user, role, organizationId) {
   return { updated: true, claims };
 }
 
+function isValidEmailAddress(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ""));
+}
+
+function normalizeManagedAdminRole(value) {
+  const raw = readString(value, 40).toLowerCase();
+  if (raw === "admin" || raw === "platform_admin") {
+    return {
+      role: "admin",
+      claimRole: "admin",
+      title: "Quan tri vien he thong",
+      label: "Quan tri toan he thong",
+      requiresWorkspace: false,
+    };
+  }
+  if (raw === "workspace_owner") {
+    return {
+      role: "workspace_owner",
+      claimRole: "workspace_owner",
+      title: "Chu so huu workspace",
+      label: "Chu so huu benh vien",
+      requiresWorkspace: true,
+    };
+  }
+  if (raw === "workspace_admin" || raw === "hospital_admin") {
+    return {
+      role: "workspace_admin",
+      claimRole: "workspace_admin",
+      title: "Admin benh vien",
+      label: "Admin benh vien",
+      requiresWorkspace: true,
+    };
+  }
+  throw httpError(400, "Vai tro admin khong hop le");
+}
+
+async function createManagedAdminAccount(payload = {}, actorUser, req) {
+  requireAnyCapability(actorUser, ["platform.users.manage"], "Chi platform admin moi duoc tao tai khoan quan tri");
+
+  if (!FIREBASE_AUTH_ENABLED) {
+    throw httpError(503, "Firebase Admin chua duoc cau hinh tren backend production");
+  }
+  const firebaseAdminApp = getFirebaseAdmin(process.env);
+  if (!firebaseAdminApp) {
+    throw httpError(503, "Khong the khoi tao Firebase Admin. Kiem tra service account tren backend");
+  }
+
+  const email = readString(payload.email, 160).toLowerCase();
+  const password = readString(payload.password, 200);
+  const name = readString(payload.name || payload.fullName || payload.displayName, 160);
+  const phone = readString(payload.phone, 40);
+  const roleInfo = normalizeManagedAdminRole(payload.role || "workspace_admin");
+
+  if (!isValidEmailAddress(email)) {
+    throw httpError(400, "Email admin khong hop le");
+  }
+  if (!name) {
+    throw httpError(400, "Ho ten admin la bat buoc");
+  }
+  if (password.length < 8) {
+    throw httpError(400, "Mat khau tam thoi phai co it nhat 8 ky tu");
+  }
+  if (findUserByLogin(email)) {
+    throw httpError(409, "Email nay da ton tai trong he thong Smart Health");
+  }
+
+  let organizationId = readString(payload.organizationId || payload.workspaceId, 120);
+  let organization = null;
+  if (roleInfo.requiresWorkspace) {
+    if (!organizationId) {
+      throw httpError(400, "Admin benh vien phai duoc gan workspace/benh vien");
+    }
+    organization = db.organizations.find((item) => item.id === organizationId) || null;
+    if (!organization) {
+      throw httpError(404, "Khong tim thay workspace/benh vien de cap quyen");
+    }
+  } else {
+    organizationId = organizationId || "org_default_clinic";
+    organization = db.organizations.find((item) => item.id === organizationId) || null;
+  }
+
+  try {
+    await firebaseAdminApp.auth().getUserByEmail(email);
+    throw httpError(409, "Email nay da ton tai tren Firebase Auth");
+  } catch (err) {
+    if (err && err.statusCode === 409) {
+      throw err;
+    }
+    if (!err || err.code !== "auth/user-not-found") {
+      throw err;
+    }
+  }
+
+  const firebaseUser = await firebaseAdminApp.auth().createUser({
+    email,
+    password,
+    displayName: name,
+    emailVerified: true,
+    disabled: false,
+  });
+
+  const claims = {
+    role: roleInfo.claimRole,
+    organizationId,
+    smartHealth: {
+      role: roleInfo.claimRole,
+      organizationId,
+    },
+  };
+  await firebaseAdminApp.auth().setCustomUserClaims(firebaseUser.uid, claims);
+
+  const now = nowIso();
+  const backendUser = {
+    id: createId("usr"),
+    role: roleInfo.role,
+    requestedRole: roleInfo.role,
+    roleRequestStatus: "approved",
+    accountStatus: "active",
+    name,
+    title: readString(payload.title, 120) || roleInfo.title,
+    email,
+    phone,
+    firebaseUid: firebaseUser.uid,
+    organizationId,
+    hospital: readString(payload.hospital, 160) || organization?.name || "Smart Health",
+    verifiedEmail: true,
+    verifiedPhone: Boolean(phone),
+    roleRequestedAt: now,
+    roleApprovedAt: now,
+    firebaseClaims: claims,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (repositories) {
+    await repositories.users.save(backendUser);
+    await repositories.memberships.ensureForUser(backendUser);
+  } else {
+    db.users.unshift(backendUser);
+    ensureMembershipForUser(backendUser);
+    saveDb();
+  }
+
+  await appendAudit("admin.user.create", req, {
+    actorUserId: actorUser.id,
+    organizationId,
+    resourceType: "user",
+    resourceId: backendUser.id,
+    metadata: {
+      role: backendUser.role,
+      email,
+      firebaseUid: firebaseUser.uid,
+      workspaceName: organization?.name || "",
+    },
+  });
+  addAccessLog(`Tao tai khoan ${roleInfo.label}: ${email}`, {
+    severity: "success",
+    userId: actorUser.id,
+    organizationId,
+  });
+  createNotification(
+    "success",
+    "Da tao tai khoan admin",
+    `${name} da duoc cap quyen ${roleInfo.label}.`,
+    { userId: actorUser.id, organizationId, targetUserId: backendUser.id },
+  );
+  await saveDb();
+
+  return {
+    user: publicUser(backendUser),
+    firebase: {
+      uid: firebaseUser.uid,
+      email,
+      created: true,
+      claims,
+    },
+  };
+}
+
 function getStorageSummary() {
   const audioBytes = fs.existsSync(AUDIO_DIR)
     ? fs
@@ -5535,6 +5714,13 @@ async function handleAdminApi(req, res, url, segments) {
       }
     }
     sendJson(res, 200, { deletedCount });
+    return;
+  }
+
+  if (segments[2] === "admin-users" && segments.length === 3 && method === "POST") {
+    const payload = await readJsonBody(req);
+    const result = await createManagedAdminAccount(payload, adminUser, req);
+    sendJson(res, 201, result);
     return;
   }
 

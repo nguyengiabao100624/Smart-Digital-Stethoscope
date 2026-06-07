@@ -12,12 +12,14 @@ import {
   Stethoscope,
   Download,
   Settings,
+  ShieldCheck,
 } from "lucide-react";
 import { AddClinicDialog } from "./dialogs/AddClinicDialog";
 import { AddDoctorDialog } from "./dialogs/AddDoctorDialog";
 import { AddPatientDialog } from "./dialogs/AddPatientDialog";
 import { AddDeviceDialog } from "./dialogs/AddDeviceDialog";
 import { ActivateDeviceDialog } from "./dialogs/ActivateDeviceDialog";
+import { CreateAdminAccountDialog } from "./dialogs/CreateAdminAccountDialog";
 import { ExportReportDialog } from "./dialogs/ExportReportDialog";
 import { ExportDataDialog } from "./dialogs/ExportDataDialog";
 import { CreatePackageDialog } from "./dialogs/CreatePackageDialog";
@@ -28,6 +30,7 @@ import {
   NOTIFICATION_MANAGE_CAPABILITIES,
   PACKAGE_MANAGE_CAPABILITIES,
   PATIENT_MANAGE_CAPABILITIES,
+  PLATFORM_USER_MANAGE_CAPABILITIES,
   REPORT_EXPORT_CAPABILITIES,
   STAFF_MANAGE_CAPABILITIES,
   STORAGE_MANAGE_CAPABILITIES,
@@ -55,6 +58,15 @@ export function AdminActions() {
       icon: UserPlus,
       color: "bg-green-500",
       capabilities: STAFF_MANAGE_CAPABILITIES,
+      category: "Quản lý",
+    },
+    {
+      id: "create-admin-account",
+      title: "Tạo tài khoản admin",
+      description: "Tạo Firebase user và cấp quyền quản trị",
+      icon: ShieldCheck,
+      color: "bg-sky-600",
+      capabilities: PLATFORM_USER_MANAGE_CAPABILITIES,
       category: "Quản lý",
     },
     {
@@ -241,6 +253,10 @@ export function AdminActions() {
       />
       <AddDoctorDialog
         open={canOpenDialog("add-doctor") && openDialog === "add-doctor"}
+        onOpenChange={(open) => !open && setOpenDialog(null)}
+      />
+      <CreateAdminAccountDialog
+        open={canOpenDialog("create-admin-account") && openDialog === "create-admin-account"}
         onOpenChange={(open) => !open && setOpenDialog(null)}
       />
       <AddPatientDialog

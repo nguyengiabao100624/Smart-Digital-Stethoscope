@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-firebase
 dist-ssr
 .output
 .vinxi
@@ -23,6 +24,9 @@ dist-ssr
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+
+# Firebase Hosting local cache
+.firebase/
 
 # Editor directories and files
 .vscode/*

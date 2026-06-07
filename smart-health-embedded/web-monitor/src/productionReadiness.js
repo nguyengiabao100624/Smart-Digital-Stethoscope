@@ -57,6 +57,13 @@ function inspectUrl(value) {
   }
 }
 
+function readOriginList(value) {
+  return readString(value)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 function createItem(items, input) {
   const required = Boolean(input.required);
   const item = {
@@ -89,7 +96,10 @@ function buildProductionReadiness(env = process.env) {
     readString(env.PUBLIC_API_BASE_URL).replace(/\/api(?:\/v1)?\/?$/, "");
   const publicUrl = inspectUrl(publicBackendUrl);
   const corsOrigin = readString(env.CORS_ORIGIN);
-  const corsUrl = corsOrigin && corsOrigin !== "*" ? inspectUrl(corsOrigin) : null;
+  const corsOrigins = corsOrigin && corsOrigin !== "*" ? readOriginList(corsOrigin) : [];
+  const corsUrls = corsOrigins.map(inspectUrl);
+  const corsReady =
+    corsOrigins.length > 0 && corsUrls.every((item) => item.valid && item.isHttps && !item.isLocal);
   const databaseUrl = readString(env.DATABASE_URL);
   const databaseDisplay = maskUrl(databaseUrl);
   const s3Endpoint = inspectUrl(env.S3_ENDPOINT);
@@ -160,12 +170,12 @@ function buildProductionReadiness(env = process.env) {
   createItem(items, {
     id: "network.cors",
     group: "network",
-    label: "CORS giới hạn về Web Admin domain",
-    status: corsOrigin && corsOrigin !== "*" && (!corsUrl || (corsUrl.valid && corsUrl.isHttps && !corsUrl.isLocal)) ? "pass" : "warn",
+    label: "CORS giới hạn về Web Admin/Web App domain",
+    status: corsReady ? "pass" : "warn",
     required: false,
     detail: corsOrigin ? `CORS_ORIGIN=${corsOrigin}` : "CORS_ORIGIN chưa cấu hình; backend sẽ dùng *.",
     env: ["CORS_ORIGIN"],
-    setup: "Sau khi có Web Admin domain, đặt CORS_ORIGIN=https://<admin-domain> thay vì *.",
+    setup: "Sau khi có Firebase Hosting domains, đặt CORS_ORIGIN=https://shcare-admin.web.app,https://shcare.web.app thay vì *.",
   });
 
   createItem(items, {

@@ -211,7 +211,12 @@ export function Overview() {
         }
         action={
           <>
-            <select className="bg-card border border-border rounded-md px-3 py-1.5 text-sm outline-none">
+            <select
+              id="overview-time-range"
+              name="overview-time-range"
+              aria-label="Khoảng thời gian thống kê"
+              className="bg-card border border-border rounded-md px-3 py-1.5 text-sm outline-none"
+            >
               <option>Hôm nay</option>
               <option>7 ngày qua</option>
               <option>30 ngày qua</option>

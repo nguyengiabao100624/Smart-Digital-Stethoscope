@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "smart-health-stethoscope"
+  },
+  "targets": {
+    "smart-health-stethoscope": {
+      "hosting": {
+        "webapp": [
+          "shcare"
+        ],
+        "admin": [
+          "shcare-admin"
+        ]
+      }
+    }
+  }
+}

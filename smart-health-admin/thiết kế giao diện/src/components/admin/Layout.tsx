@@ -626,6 +626,8 @@ export function Layout() {
             <div className="hidden md:flex items-center w-full max-w-md lg:max-w-lg relative">
               <Search className="w-4 h-4 absolute left-3 text-muted-foreground" />
               <input
+                id="admin-global-search"
+                name="admin-global-search"
                 type="text"
                 placeholder="Tìm bệnh nhân, thiết bị, phòng khám, UID..."
                 className="w-full pl-9 pr-4 py-2 bg-input-background border-transparent rounded-md focus:border-ring focus:ring-1 focus:ring-ring outline-none text-sm transition-all"
@@ -820,6 +822,8 @@ export function Layout() {
               <div className="p-3 relative">
                 <Search className="w-4 h-4 absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  id="admin-mobile-search"
+                  name="admin-mobile-search"
                   autoFocus
                   type="text"
                   placeholder="Tìm kiếm..."

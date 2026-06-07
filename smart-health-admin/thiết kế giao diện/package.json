@@ -8,6 +8,7 @@
     "dev:prod": "vite dev --mode production",
     "build": "vite build",
     "build:product": "node scripts/validate-product-env.mjs && vite build --mode production",
+    "build:firebase": "node scripts/validate-product-env.mjs && vite build --mode production --config vite.firebase.config.ts",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "preview:prod": "vite preview --host 0.0.0.0",

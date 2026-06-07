@@ -132,6 +132,15 @@ Do not assume these smoke scripts exist; check `package.json` first.
 
 `npm run smoke:storage` passed on 2026-06-06 after storage uploads started recording firmware SHA-256/version metadata for cloud OTA.
 
+Production CORS after Firebase Hosting domains are active:
+
+```powershell
+# Render backend env
+CORS_ORIGIN=https://shcare-admin.web.app,https://shcare.web.app
+```
+
+Backend supports comma-separated CORS origins. `https://shcare-admin.web.app` is the deployed Web Admin; `https://shcare.web.app` is reserved for the future user-facing web app.
+
 ## 2. Web Admin
 
 Working directory:
@@ -153,6 +162,38 @@ npm run build
 ```
 
 Last verified in this workspace on 2026-06-06 after the cloud-first Devices page rewrite, storage-backed firmware selector, and admin copy cleanup. Build passed; Vite warned that some export-related chunks are larger than 500 kB. After Chrome DevTools previously found an Overview crash, `src/components/admin/Overview.tsx` was fixed by importing `Users` from `lucide-react`.
+
+Firebase Hosting production domains:
+
+- Current Web Admin: `https://shcare-admin.web.app`
+- Future Android-like Web App reservation: `https://shcare.web.app`
+
+Build Web Admin for Firebase Hosting:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build:firebase
+```
+
+Deploy Web Admin to Firebase Hosting target `admin`:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+$env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+npx firebase-tools@latest deploy --only hosting:admin --project smart-health-stethoscope --non-interactive
+```
+
+HTTP smoke after deploy:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://shcare-admin.web.app/login
+```
+
+Expected state:
+
+- `shcare-admin.web.app/login` returns 200 and shows Smart Health Admin login.
+- `shcare.web.app` can return 404 until the future user-facing web app is implemented/deployed.
+- Chrome smoke on 2026-06-07 logged in with `platform.admin.smoke@smarthealth.test`, showed `Platform Admin Console`, had no console messages after hard reload, and backend calls to `/api/me`, notifications, overview stats, and devices returned 200.
 
 If the UI still shows stale data after frontend edits, restart Vite or hard-refresh the browser.
 

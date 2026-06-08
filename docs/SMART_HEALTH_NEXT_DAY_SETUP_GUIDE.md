@@ -54,6 +54,8 @@ Workflow này tự kiểm tra:
 
 Nếu workflow màu xanh là ổn. Nếu workflow màu đỏ, mở run bị lỗi, mở job bị lỗi, copy log lỗi gửi lại để sửa tiếp.
 
+Nếu bạn thấy lỗi kiểu `Installed versions ... No file ... requirements.txt or pyproject.toml`, đó thường là lỗi của run cũ hoặc job cache sai. Chỉ cần kiểm tra run mới nhất: nếu các job mới đều xanh thì bỏ qua run đỏ cũ.
+
 ## Bước 3 - Cấu Hình GitHub Secrets Nếu Muốn Deploy Web Admin Từ GitHub
 
 Bước này không bắt buộc nếu bạn muốn deploy Firebase từ máy local. Nhưng nếu muốn bấm deploy ngay trên GitHub thì làm như sau.

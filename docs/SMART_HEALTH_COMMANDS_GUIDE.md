@@ -1057,6 +1057,7 @@ Account Settings avatar/password behavior:
 - Production password change uses Firebase Web Auth re-authentication plus `updatePassword`, then backend `POST /api/me/password` with `{ "firebaseClientUpdated": true }`.
 - Demo/no-Firebase fallback still uses backend current-password validation.
 - Forgot Password uses Firebase Web Auth `sendPasswordResetEmail`; real delivery requires Firebase Console > Authentication > Sign-in method > Email/Password enabled, and `shcare-admin.web.app` listed under authorized domains.
+- If Forgot Password shows a domain/continue URL authorization message, open Firebase Console > Authentication > Settings > Authorized domains and add `shcare-admin.web.app`. This is Firebase configuration, not a backend session problem.
 
 Runtime mojibake/font source audit:
 

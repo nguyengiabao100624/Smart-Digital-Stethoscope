@@ -712,6 +712,7 @@ Completed in this slice:
 - Removed the remaining visible Storage mojibake labels in admin runtime source.
 - Normalized no-accent backend permission/error messages in `server.js` for the account/admin/storage/workspace/settings/export/sharing flows that surface in toast/modal responses.
 - Replaced Forgot Password frontend-only simulation with Firebase `sendPasswordResetEmail`.
+- Added correct user-facing handling for Firebase `auth/unauthorized-domain` and `auth/unauthorized-continue-uri`, so missing Firebase authorized-domain setup no longer appears as an expired login session.
 - Hardened `/api/me/avatar` for Supabase/S3 production storage by allowing the upload filename header, sending S3 `ContentLength`, persisting avatar object metadata in the user profile, serving avatar bytes through the backend, and cleaning up old avatar objects.
 - Scoped password-change notifications to the current user and fixed their Vietnamese copy.
 

@@ -593,6 +593,7 @@ KLTN report artifacts generated from this evidence set:
 - Replaced the remaining visible Storage mojibake text with proper Vietnamese: `Hoạt động gần đây` and `Gần đây`.
 - Normalized backend user-facing permission/error strings in `server.js` from old no-accent copy to Vietnamese with accents across the account/admin-account/storage/workspace/doctor/settings/export/sharing paths.
 - Added Firebase forgot-password delivery through `sendPasswordResetEmail` on the Web Admin Forgot Password page. The previous frontend-only timeout is gone.
+- Added explicit Firebase Auth error mapping for `auth/unauthorized-domain` and `auth/unauthorized-continue-uri`, so Forgot Password now shows the correct setup problem when `shcare-admin.web.app` is missing from Firebase Authentication authorized domains instead of incorrectly reporting an expired login session.
 - Hardened account avatar storage for production S3/Supabase Storage: backend CORS now accepts `X-File-Name`, S3 uploads include `ContentLength`, `/api/me/avatar` stores durable `avatarStorage` metadata in the user profile, and avatar download is served through the backend from object storage instead of redirecting to a signed URL.
 - Avatar update/removal now deletes or replaces the old avatar object when possible, while hiding storage object metadata from `publicUser`.
 - Password-change notifications now use correct Vietnamese text and include `userId`/`organizationId` metadata so the notification is scoped to the current user.

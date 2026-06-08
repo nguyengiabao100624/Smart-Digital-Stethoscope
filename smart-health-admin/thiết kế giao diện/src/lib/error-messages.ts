@@ -41,6 +41,10 @@ const FIREBASE_AUTH_MESSAGES: Record<string, string> = {
   "auth/weak-password": "Mật khẩu quá yếu. Vui lòng dùng mật khẩu mạnh hơn.",
   "auth/requires-recent-login": "Phiên xác thực đã cũ. Vui lòng đăng nhập lại rồi đổi mật khẩu.",
   "auth/operation-not-allowed": "Firebase Auth chưa bật phương thức Email/Password.",
+  "auth/unauthorized-domain":
+    "Domain web admin chưa được cho phép trong Firebase Auth. Vào Firebase Console > Authentication > Settings > Authorized domains và thêm shcare-admin.web.app.",
+  "auth/unauthorized-continue-uri":
+    "Đường dẫn quay lại của email đặt lại mật khẩu chưa được Firebase cho phép. Hãy thêm domain web admin vào Authorized domains trong Firebase Authentication.",
   "auth/expired-action-code": "Link đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu gửi lại link mới.",
   "auth/invalid-action-code": "Link đặt lại mật khẩu không hợp lệ hoặc đã được sử dụng.",
 };

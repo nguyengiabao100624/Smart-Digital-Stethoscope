@@ -723,3 +723,19 @@ Next practical backlog items:
 - In Firebase Console, verify Email/Password sign-in is enabled and `shcare-admin.web.app` is an authorized domain, then test `/forgot-password` with a real admin email.
 - In Render, set Brevo email env (`EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`) and verify the Brevo sender email is approved; then retest Settings > Test email.
 - Browser-smoke Account Settings avatar upload/remove and password change on the deployed site using a real platform-admin account.
+
+## 2026-06-08 Backlog Update - Platform Admin Notification Email Fanout
+
+Completed in this slice:
+
+- All backend-created Web Admin notifications now queue a branded HTML email to active platform/system admin emails.
+- The email template includes Smart Health branding, notification severity, full message, timestamp, workspace/user scope, sanitized metadata, and a CTA to `WEB_ADMIN_URL/notifications`.
+- Delivery reuses Brevo API over HTTPS as the Render Free path and SMTP/Gmail only as fallback.
+- Added `NOTIFICATION_EMAIL_ENABLED` as an emergency disable switch and `WEB_ADMIN_URL` for the notification CTA.
+
+Next practical backlog items:
+
+- Set/verify Render env `WEB_ADMIN_URL=https://shcare-admin.web.app`, `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, and optional `BREVO_FROM_NAME`, then create a Web Admin notification and confirm all platform admin inboxes receive the email.
+- Add per-recipient delivery history/retry status after notification persistence is fully repository-backed.
+- Decide a workspace/hospital admin email policy later: which notification types should go to hospital admins, doctors, technicians, and patients, and how to respect notification preferences.
+- Keep SMS/Zalo direct provider integration in future development unless a real provider account/token is supplied; free/demo remains webhook relay only.

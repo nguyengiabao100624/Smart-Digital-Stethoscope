@@ -1098,3 +1098,41 @@ cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 npm.cmd run build
 npm.cmd run build:firebase
 ```
+
+## 2026-06-08 Platform Admin Notification Email Fanout
+
+Backend now sends a branded HTML email for every backend-created Web Admin notification to active platform/system admin emails only.
+
+Render backend env needed for real delivery:
+
+```text
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<Brevo API key>
+BREVO_FROM_EMAIL=<verified sender email>
+BREVO_FROM_NAME=Smart Health
+BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+WEB_ADMIN_URL=https://shcare-admin.web.app
+NOTIFICATION_EMAIL_ENABLED=true
+```
+
+`NOTIFICATION_EMAIL_ENABLED=false` is only an emergency switch if notification email needs to be disabled without removing Brevo env.
+
+After Render redeploy, create a Web Admin notification as a platform admin:
+
+```text
+https://shcare-admin.web.app/notifications
+```
+
+Expected behavior:
+
+- The notification appears in Web Admin.
+- All active platform/system admin accounts with valid email addresses receive a branded Smart Health email.
+- The email CTA opens `https://shcare-admin.web.app/notifications`.
+- Workspace/hospital admin accounts do not receive these fanout emails yet; that recipient policy is intentionally future work.
+
+Backend syntax check for this feature:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+```

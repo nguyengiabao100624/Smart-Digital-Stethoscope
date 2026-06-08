@@ -613,3 +613,23 @@ KLTN report artifacts generated from this evidence set:
 
 - Real password-reset email delivery still depends on Firebase Console setup: Email/Password provider enabled, password-reset template configured as desired, and `shcare-admin.web.app` authorized.
 - Brevo test email still depends on correct Render env and Brevo sender setup: `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, and `BREVO_FROM_EMAIL` must be set, and the sender email must be verified in Brevo. Gmail SMTP remains fallback only when the host permits SMTP.
+
+## 2026-06-08 Platform Admin Notification Email Fanout
+
+### Implemented
+
+- Every backend-created Web Admin notification now queues an outbound email to all active platform/system admin accounts only. Hospital/workspace admin recipient fanout is intentionally left for a later policy pass.
+- Notification email delivery uses the same outbound provider stack as Settings email test: Brevo Transactional Email API over HTTPS first on Render Free, SMTP/Gmail fallback only when the host permits SMTP.
+- Added a branded Smart Health HTML email template with severity badge, message card, metadata table, timestamp, workspace/user context, and CTA link to `WEB_ADMIN_URL/notifications`.
+- Added metadata sanitization before email rendering so password/token/secret/API-key-like fields are not included in notification emails.
+- Added duplicate-dispatch protection by `notification.id`, so old flows that pass through both JSON notification state and repository persistence do not email the same event twice.
+- Added `NOTIFICATION_EMAIL_ENABLED=false` emergency switch and `WEB_ADMIN_URL` env for the email CTA target.
+
+### Verification
+
+- Backend `npm.cmd run check` passed after the notification email fanout change.
+
+### Remaining Limits
+
+- Real delivery still requires Render env `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and `WEB_ADMIN_URL=https://shcare-admin.web.app`.
+- Email fanout currently targets platform admins only. Workspace/hospital admin notification email policy, unsubscribe/preference handling, retry queue, and per-recipient delivery records remain future work.

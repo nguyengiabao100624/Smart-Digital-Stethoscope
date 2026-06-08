@@ -732,6 +732,8 @@ function seedNotification(type, title, message, read = false) {
   });
 }
 
+const notificationEmailDispatchIds = new Set();
+
 function createDemoSecret(prefix = "sk_demo") {
   return `${prefix}_${crypto.randomBytes(18).toString("base64url")}`;
 }
@@ -1250,6 +1252,33 @@ function addAccessLog(action, detail = {}) {
   return log;
 }
 
+function sanitizeNotificationMetadata(metadata = {}) {
+  const safe = {};
+  const source = metadata && typeof metadata === "object" ? metadata : {};
+  for (const [key, value] of Object.entries(source)) {
+    const normalizedKey = readString(key, 80);
+    if (!normalizedKey || /password|token|secret|api.?key|credential|private/i.test(normalizedKey)) {
+      continue;
+    }
+    if (value === null || value === undefined) {
+      continue;
+    }
+    if (typeof value === "string") {
+      const cleaned = readString(value, 500);
+      if (cleaned) safe[normalizedKey] = cleaned;
+      continue;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      safe[normalizedKey] = value;
+      continue;
+    }
+    if (value instanceof Date) {
+      safe[normalizedKey] = value.toISOString();
+    }
+  }
+  return safe;
+}
+
 function createNotification(type, title, message, metadata = {}) {
   const notification = {
     id: createId("noti"),
@@ -1259,12 +1288,14 @@ function createNotification(type, title, message, metadata = {}) {
     userId: readString(metadata.userId, 120),
     organizationId: readString(metadata.organizationId, 120),
     channel: readString(metadata.channel, 40) || "in_app",
+    metadata: sanitizeNotificationMetadata(metadata),
     read: false,
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
   db.notifications.unshift(notification);
   db.notifications = db.notifications.slice(0, 200);
+  queuePlatformAdminNotificationEmail(notification);
   return notification;
 }
 
@@ -1287,7 +1318,10 @@ async function createBackendNotification(input) {
     };
   }
   if (repositories) {
-    return repositories.notifications.create(input);
+    const notification = await repositories.notifications.create(input);
+    notification.metadata = sanitizeNotificationMetadata(input.metadata || input);
+    queuePlatformAdminNotificationEmail(notification);
+    return notification;
   }
   return createNotification(input.type, input.title, input.message, input);
 }
@@ -2125,6 +2159,46 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function normalizeEmailRecipients(value) {
+  const rawItems = Array.isArray(value) ? value : [value];
+  const recipients = [];
+  const seen = new Set();
+  for (const item of rawItems) {
+    if (!item) continue;
+    const rawEmail = typeof item === "string" ? item : item.email || item.to || "";
+    for (const part of String(rawEmail || "").split(/[;,]/)) {
+      const email = readString(part.replace(/[\r\n]/g, ""), 240).toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || seen.has(email)) {
+        continue;
+      }
+      const name = typeof item === "object" ? readString(item.name || item.fullName || "", 120).replace(/[\r\n]/g, "") : "";
+      recipients.push({ email, name });
+      seen.add(email);
+    }
+  }
+  return recipients;
+}
+
+function formatSmtpRecipient(recipient) {
+  const email = readString(recipient.email, 240).replace(/[\r\n]/g, "");
+  const name = readString(recipient.name, 120).replace(/[\r\n"]/g, "");
+  return name ? `"${name}" <${email}>` : email;
+}
+
+function formatVietnamDateTime(value = nowIso()) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return readString(value, 80);
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Ho_Chi_Minh",
+  }).format(date);
 }
 
 function readOptionalNumber(value) {
@@ -4246,16 +4320,20 @@ function createSmtpTransport() {
   });
 }
 
-async function sendSmtpTestEmail({ to, subject, text }) {
+async function sendSmtpEmail({ to, subject, text, html }) {
+  const recipients = normalizeEmailRecipients(to);
+  if (recipients.length === 0) {
+    throw httpError(400, "Cần ít nhất một email người nhận hợp lệ", "EMAIL_RECIPIENT_REQUIRED");
+  }
   const transporter = createSmtpTransport();
   let info;
   try {
     info = await transporter.sendMail({
       from: getSmtpEnv().from,
-      to,
+      to: recipients.map(formatSmtpRecipient).join(", "),
       subject,
       text,
-      html: `<p>${escapeHtml(text).replace(/\n/g, "<br />")}</p>`,
+      html: html || `<p>${escapeHtml(text).replace(/\n/g, "<br />")}</p>`,
     });
   } catch (error) {
     throw httpError(400, describeSmtpFailure(error), "SMTP_SEND_FAILED", {
@@ -4274,13 +4352,17 @@ async function sendSmtpTestEmail({ to, subject, text }) {
   };
 }
 
-async function sendBrevoTestEmail({ to, subject, text }) {
+async function sendBrevoEmail({ to, subject, text, html }) {
   const runtime = getBrevoRuntimeStatus();
   if (!runtime.configured) {
     throw httpError(400, `Brevo API chưa được cấu hình: ${runtime.missing.join(", ")}`, "BREVO_NOT_CONFIGURED", {
       provider: "brevo",
       missing: runtime.missing,
     });
+  }
+  const recipients = normalizeEmailRecipients(to);
+  if (recipients.length === 0) {
+    throw httpError(400, "Cần ít nhất một email người nhận hợp lệ", "EMAIL_RECIPIENT_REQUIRED");
   }
 
   const brevo = getBrevoEnv();
@@ -4302,9 +4384,13 @@ async function sendBrevoTestEmail({ to, subject, text }) {
           name: brevo.fromName,
           email: brevo.fromEmail,
         },
-        to: [{ email: to }],
+        to: recipients.map((recipient) => ({
+          email: recipient.email,
+          ...(recipient.name ? { name: recipient.name } : {}),
+        })),
         subject,
-        htmlContent: `<html><head></head><body><p>${escapeHtml(text).replace(/\n/g, "<br />")}</p></body></html>`,
+        textContent: text,
+        htmlContent: html || `<html><head></head><body><p>${escapeHtml(text).replace(/\n/g, "<br />")}</p></body></html>`,
       }),
       signal: controller.signal,
     });
@@ -4339,9 +4425,31 @@ async function sendBrevoTestEmail({ to, subject, text }) {
   return {
     provider: "brevo",
     messageId: readString(responseBody.messageId, 240),
-    accepted: [to],
+    accepted: recipients.map((recipient) => recipient.email),
     rejected: [],
   };
+}
+
+async function sendEmail({ to, subject, text, html }) {
+  const runtime = getEmailRuntimeStatus();
+  if (!runtime.configured) {
+    throw httpError(400, `Email chưa được cấu hình: ${runtime.missing.join(", ")}`, "EMAIL_NOT_CONFIGURED", {
+      provider: runtime.provider,
+      missing: runtime.missing,
+    });
+  }
+  if (runtime.provider === "smtp") {
+    return sendSmtpEmail({ to, subject, text, html });
+  }
+  return sendBrevoEmail({ to, subject, text, html });
+}
+
+async function sendSmtpTestEmail({ to, subject, text }) {
+  return sendSmtpEmail({ to, subject, text });
+}
+
+async function sendBrevoTestEmail({ to, subject, text }) {
+  return sendBrevoEmail({ to, subject, text });
 }
 
 async function sendTestEmail(payload = {}) {
@@ -4353,17 +4461,235 @@ async function sendTestEmail(payload = {}) {
   const text =
     readString(payload.message, 2000) ||
     "Đây là email kiểm tra từ hệ thống Smart Health. Nếu bạn nhận được email này, cấu hình email outbound đang hoạt động.";
+  return sendEmail({ to, subject, text });
+}
+
+function isNotificationEmailEnabled() {
+  const value = String(process.env.NOTIFICATION_EMAIL_ENABLED || "true").trim().toLowerCase();
+  return !["0", "false", "off", "no", "disabled"].includes(value);
+}
+
+function getWebAdminBaseUrl() {
+  const configured = readString(
+    process.env.WEB_ADMIN_URL ||
+      process.env.SMART_HEALTH_WEB_ADMIN_URL ||
+      process.env.ADMIN_WEB_URL ||
+      process.env.FRONTEND_URL,
+    500
+  );
+  return (configured || "https://shcare-admin.web.app").replace(/\/+$/, "");
+}
+
+function getAdminNotificationsUrl() {
+  return `${getWebAdminBaseUrl()}/notifications`;
+}
+
+function getNotificationTypePresentation(type) {
+  const normalized = readString(type, 40).toLowerCase();
+  const map = {
+    success: { label: "Thành công", tone: "#10B981", background: "#ECFDF5" },
+    warning: { label: "Cảnh báo", tone: "#F59E0B", background: "#FFFBEB" },
+    error: { label: "Lỗi", tone: "#EF4444", background: "#FEF2F2" },
+    critical: { label: "Khẩn cấp", tone: "#DC2626", background: "#FEF2F2" },
+    info: { label: "Thông tin", tone: "#0B5C9A", background: "#EFF6FF" },
+  };
+  return map[normalized] || { label: normalized || "Thông báo", tone: "#0B5C9A", background: "#EFF6FF" };
+}
+
+function getPlatformAdminEmailRecipients() {
+  return normalizeEmailRecipients(
+    db.users
+      .filter((user) => isPlatformAdminUser(user))
+      .filter((user) => !["locked", "deleted", "disabled", "inactive"].includes(String(user.accountStatus || "active").toLowerCase()))
+      .map((user) => ({
+        email: user.email,
+        name: user.name || user.email,
+      }))
+  );
+}
+
+function getNotificationUserLabel(userId) {
+  const user = db.users.find((item) => item.id === userId || item.firebaseUid === userId);
+  if (!user) return userId || "";
+  return `${user.name || user.email || user.id}${user.email ? ` (${user.email})` : ""}`;
+}
+
+function getNotificationWorkspaceLabel(organizationId) {
+  const workspace = getClinicById(organizationId);
+  if (!workspace) return organizationId || "Toàn hệ thống";
+  const typeLabel =
+    workspace.workspaceType === "hospital"
+      ? "Bệnh viện"
+      : workspace.workspaceType === "clinic"
+        ? "Phòng khám"
+        : workspace.workspaceType === "solo_practice"
+          ? "Phòng khám cá nhân"
+          : workspace.workspaceType === "personal"
+            ? "Cá nhân/gia đình"
+            : "Workspace";
+  return `${typeLabel}: ${workspace.name || workspace.id}`;
+}
+
+function buildNotificationInfoRows(notification) {
+  const metadata = sanitizeNotificationMetadata(notification.metadata || notification);
+  const rows = [
+    ["Mã thông báo", notification.id || ""],
+    ["Loại", getNotificationTypePresentation(notification.type).label],
+    ["Kênh trong hệ thống", notification.channel || "in_app"],
+    ["Phạm vi", getNotificationWorkspaceLabel(notification.organizationId)],
+    ["Người liên quan", getNotificationUserLabel(notification.userId)],
+    ["Thời gian", formatVietnamDateTime(notification.createdAt || nowIso())],
+  ];
+  for (const [key, value] of Object.entries(metadata)) {
+    if (["id", "type", "title", "message", "channel", "read", "createdAt", "updatedAt", "userId", "organizationId"].includes(key)) {
+      continue;
+    }
+    rows.push([key, typeof value === "boolean" ? (value ? "true" : "false") : String(value)]);
+  }
+  return rows.filter(([, value]) => readString(String(value), 800));
+}
+
+function renderNotificationRows(rows) {
+  return rows
+    .map(
+      ([label, value]) => `
+        <tr>
+          <td style="width: 34%; padding: 12px 14px; border-bottom: 1px solid #E2E8F0; color: #64748B; font-size: 13px; font-weight: 600;">${escapeHtml(label)}</td>
+          <td style="padding: 12px 14px; border-bottom: 1px solid #E2E8F0; color: #0F172A; font-size: 13px; line-height: 1.55;">${escapeHtml(value)}</td>
+        </tr>`
+    )
+    .join("");
+}
+
+function buildPlatformAdminNotificationEmail(notification, recipientCount = 0) {
+  const presentation = getNotificationTypePresentation(notification.type);
+  const title = readString(notification.title, 180) || "Thông báo Smart Health";
+  const message = readString(notification.message, 2400) || "Hệ thống Smart Health vừa ghi nhận một thông báo mới.";
+  const notificationUrl = getAdminNotificationsUrl();
+  const rows = buildNotificationInfoRows(notification);
+  const subject = `[Smart Health] ${title}`;
+  const text = [
+    "Smart Health - Thông báo quản trị",
+    "",
+    `Tiêu đề: ${title}`,
+    `Nội dung: ${message}`,
+    `Loại: ${presentation.label}`,
+    `Phạm vi: ${getNotificationWorkspaceLabel(notification.organizationId)}`,
+    `Người liên quan: ${getNotificationUserLabel(notification.userId) || "Không có"}`,
+    `Thời gian: ${formatVietnamDateTime(notification.createdAt || nowIso())}`,
+    `Mở Web Admin: ${notificationUrl}`,
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(subject)}</title>
+  </head>
+  <body style="margin: 0; padding: 0; background: #F5F7FA; color: #0F172A; font-family: Inter, Arial, Helvetica, sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: #F5F7FA; padding: 28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 680px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden; box-shadow: 0 14px 35px rgba(15, 23, 42, 0.08);">
+            <tr>
+              <td style="background: #0B5C9A; padding: 26px 28px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td>
+                      <div style="display: inline-block; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.35); border-radius: 999px; color: #E0F2FE; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">Smart Health Admin</div>
+                      <h1 style="margin: 18px 0 6px; color: #FFFFFF; font-size: 26px; line-height: 1.25; font-weight: 800;">${escapeHtml(title)}</h1>
+                      <p style="margin: 0; color: #D8EEFF; font-size: 14px; line-height: 1.6;">Thông báo này được gửi tự động đến quản trị viên toàn hệ thống.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 28px;">
+                <div style="display: inline-block; margin-bottom: 18px; padding: 7px 12px; border-radius: 999px; background: ${presentation.background}; color: ${presentation.tone}; font-size: 13px; font-weight: 800;">${escapeHtml(presentation.label)}</div>
+                <div style="padding: 18px 20px; border: 1px solid #D8E7F3; border-left: 5px solid ${presentation.tone}; border-radius: 12px; background: #FBFDFF;">
+                  <p style="margin: 0; color: #0F172A; font-size: 16px; line-height: 1.75;">${escapeHtml(message).replace(/\n/g, "<br />")}</p>
+                </div>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top: 22px; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; border-collapse: separate; border-spacing: 0;">
+                  ${renderNotificationRows(rows)}
+                </table>
+                <div style="margin-top: 26px; text-align: center;">
+                  <a href="${escapeAttribute(notificationUrl)}" style="display: inline-block; background: #0B5C9A; color: #FFFFFF; text-decoration: none; padding: 13px 20px; border-radius: 10px; font-size: 14px; font-weight: 800;">Mở trang thông báo</a>
+                </div>
+                <p style="margin: 22px 0 0; color: #64748B; font-size: 12px; line-height: 1.6;">Email được gửi tới ${recipientCount || "các"} quản trị viên toàn hệ thống đang hoạt động. Nếu thông báo không liên quan, hãy kiểm tra cấu hình phân quyền và phạm vi workspace trong Web Admin.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 18px 28px;">
+                <p style="margin: 0; color: #64748B; font-size: 12px; line-height: 1.6;">Smart Health Digital Stethoscope - hệ thống giám sát, quản trị thiết bị và hồ sơ nghe tim phổi từ xa.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { subject, text, html };
+}
+
+async function sendNotificationEmailToPlatformAdmins(notification) {
+  const recipients = getPlatformAdminEmailRecipients();
+  if (recipients.length === 0) {
+    console.warn(`Skip notification email ${notification.id || ""}: no platform admin recipients`);
+    return null;
+  }
   const runtime = getEmailRuntimeStatus();
   if (!runtime.configured) {
-    throw httpError(400, `Email chưa được cấu hình: ${runtime.missing.join(", ")}`, "EMAIL_NOT_CONFIGURED", {
-      provider: runtime.provider,
-      missing: runtime.missing,
+    console.warn(`Skip notification email ${notification.id || ""}: ${runtime.provider} not configured (${runtime.missing.join(", ")})`);
+    return null;
+  }
+
+  const email = buildPlatformAdminNotificationEmail(notification, recipients.length);
+  const result = await sendEmail({
+    to: recipients,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
+  });
+
+  notification.deliveryStatus = "email_sent";
+  notification.sentAt = nowIso();
+  addAccessLog(`Email thông báo đã gửi tới ${recipients.length} quản trị viên toàn hệ thống`, {
+    severity: "success",
+    organizationId: notification.organizationId || "",
+  });
+  await saveDb();
+  return result;
+}
+
+function queuePlatformAdminNotificationEmail(notification) {
+  if (!isNotificationEmailEnabled() || !notification || !notification.id) {
+    return;
+  }
+  if (notificationEmailDispatchIds.has(notification.id)) {
+    return;
+  }
+  notificationEmailDispatchIds.add(notification.id);
+  if (notificationEmailDispatchIds.size > 1000) {
+    const stale = Array.from(notificationEmailDispatchIds).slice(0, 300);
+    for (const id of stale) notificationEmailDispatchIds.delete(id);
+  }
+
+  setTimeout(() => {
+    sendNotificationEmailToPlatformAdmins(notification).catch((error) => {
+      notification.deliveryStatus = "email_failed";
+      notification.failedAt = nowIso();
+      notification.errorMessage = readString(error && error.message ? error.message : String(error), 500);
+      addAccessLog("Không gửi được email thông báo tới quản trị viên toàn hệ thống", {
+        severity: "warning",
+        organizationId: notification.organizationId || "",
+      });
+      void saveDb();
+      console.error(`Notification email failed (${notification.id}): ${notification.errorMessage}`);
     });
-  }
-  if (runtime.provider === "smtp") {
-    return sendSmtpTestEmail({ to, subject, text });
-  }
-  return sendBrevoTestEmail({ to, subject, text });
+  }, 0);
 }
 
 function buildOutboundWebhookPayload(channel, payload = {}) {
@@ -7577,9 +7903,7 @@ async function handleNotificationsApi(req, res, segments) {
     if (!input.title || !input.message) {
       throw httpError(400, "Can nhap tieu de va noi dung thong bao");
     }
-    const notification = repositories
-      ? await repositories.notifications.create(input)
-      : createNotification(input.type, input.title, input.message, input);
+    const notification = await createBackendNotification(input);
     await appendAudit("notification.create", req, {
       resourceType: "notification",
       resourceId: notification.id,

@@ -334,3 +334,11 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - Account avatar upload now allows `X-File-Name` through backend CORS, sends S3 `ContentLength`, persists `avatarStorage` metadata in the user profile, serves `/api/me/avatar` through the backend from object storage, and deletes/replaces the previous avatar object when updating or removing the avatar.
 - Password-change notifications now use correct Vietnamese copy and are scoped to the current user instead of being emitted as unscoped/global notifications.
 - Email test now maps Brevo API and Gmail/Nodemailer fallback failures to clear 400 messages and uses short timeouts so Web Admin does not sit on `Đang gửi...` for a long time. For Render Free, use Brevo API envs first; Gmail SMTP fallback is only practical when the host permits SMTP.
+
+## 2026-06-08 Platform Admin Notification Email Fanout
+
+- All backend-created Web Admin notifications now queue a branded HTML email to active platform/system admin accounts only.
+- The notification email template includes Smart Health branding, severity badge, message, timestamp, workspace/user context, sanitized metadata, and a CTA to `WEB_ADMIN_URL/notifications`.
+- Delivery reuses the existing outbound email stack: Brevo Transactional Email API over HTTPS first for Render Free, SMTP/Gmail only as fallback when the host permits SMTP.
+- Required/important env: `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, optional `BREVO_API_URL`, `WEB_ADMIN_URL=https://shcare-admin.web.app`, and optional emergency switch `NOTIFICATION_EMAIL_ENABLED=false`.
+- Workspace/hospital admin email fanout is intentionally not enabled yet; define notification policy and preferences before expanding recipients beyond platform admins.

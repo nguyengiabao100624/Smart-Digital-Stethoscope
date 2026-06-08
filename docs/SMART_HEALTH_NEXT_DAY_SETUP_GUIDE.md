@@ -129,6 +129,8 @@ BREVO_API_KEY=<Brevo API key>
 BREVO_FROM_EMAIL=<email gửi đi đã xác minh trong Brevo>
 BREVO_FROM_NAME=Smart Health
 BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+WEB_ADMIN_URL=https://shcare-admin.web.app
+NOTIFICATION_EMAIL_ENABLED=true
 ```
 
 SMTP/Gmail chỉ là fallback nếu hosting cho phép SMTP. Render Free đang chặn các cổng SMTP phổ biến, nên không dùng Gmail SMTP làm hướng chính:
@@ -310,6 +312,8 @@ BREVO_API_KEY=<Brevo API key>
 BREVO_FROM_EMAIL=<email đã xác minh trong Brevo>
 BREVO_FROM_NAME=Smart Health
 BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+WEB_ADMIN_URL=https://shcare-admin.web.app
+NOTIFICATION_EMAIL_ENABLED=true
 ```
 
 6. Bấm `Save Changes` để Render redeploy backend.
@@ -320,6 +324,8 @@ Cài đặt -> Thông báo/Outbound -> Email thông báo / Brevo API -> Gửi em
 ```
 
 Nếu thiếu env, Web Admin sẽ báo thiếu `BREVO_API_KEY` hoặc `BREVO_FROM_EMAIL`. Nếu Brevo báo lỗi sender/from, hãy kiểm tra lại email gửi đi đã được xác minh trong Brevo chưa.
+
+Sau khi Brevo hoạt động, mọi thông báo được tạo trong Web Admin cũng sẽ gửi kèm email HTML đến tất cả quản trị viên toàn hệ thống đang hoạt động. `WEB_ADMIN_URL` là link nút mở trang thông báo trong email. Chỉ đặt `NOTIFICATION_EMAIL_ENABLED=false` khi cần tắt khẩn cấp việc gửi email thông báo.
 
 Gmail SMTP vẫn được giữ trong code làm fallback cho hosting trả phí hoặc chạy local. Chỉ dùng fallback này khi bạn chắc chắn server cho phép SMTP:
 

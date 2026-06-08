@@ -461,7 +461,11 @@ BREVO_API_KEY=<brevo-api-key>
 BREVO_FROM_EMAIL=<verified-sender@example.com>
 BREVO_FROM_NAME=Smart Health
 BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+WEB_ADMIN_URL=https://shcare-admin.web.app
+NOTIFICATION_EMAIL_ENABLED=true
 ```
+
+Khi Brevo đã cấu hình, backend sẽ dùng cùng kênh email này để gửi mọi thông báo Web Admin tới các quản trị viên toàn hệ thống đang hoạt động. `WEB_ADMIN_URL` dùng cho nút mở trang thông báo trong email. `NOTIFICATION_EMAIL_ENABLED=false` chỉ dùng như công tắc tắt khẩn cấp.
 
 SMTP/Gmail vẫn có trong code nhưng chỉ là fallback cho hosting trả phí hoặc local demo có mở SMTP:
 

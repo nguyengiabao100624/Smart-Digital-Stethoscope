@@ -446,7 +446,7 @@ function createDefaultSettings() {
     outbound: {
       email: {
         enabled: true,
-        provider: "gmail-smtp",
+        provider: "brevo-api",
         host: "smtp.gmail.com",
         port: 587,
         encryption: "tls",
@@ -4037,11 +4037,56 @@ function getEffectiveSettingsForUser(user) {
 function getSmtpRuntimeStatus() {
   const missing = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"].filter((key) => !process.env[key]);
   return {
+    provider: "smtp",
     configured: missing.length === 0,
     missing,
     host: process.env.SMTP_HOST || "",
     port: Number(process.env.SMTP_PORT || 0) || null,
     from: process.env.SMTP_FROM || "",
+  };
+}
+
+function normalizeEmailProvider(value) {
+  const provider = readString(value, 40).toLowerCase();
+  if (["brevo", "brevo-api", "sendinblue", "sendinblue-api"].includes(provider)) return "brevo";
+  if (["smtp", "gmail", "gmail-smtp", "nodemailer"].includes(provider)) return "smtp";
+  if (["auto", ""].includes(provider)) return "";
+  return provider;
+}
+
+function getBrevoRuntimeStatus() {
+  const missing = ["BREVO_API_KEY", "BREVO_FROM_EMAIL"].filter((key) => !process.env[key]);
+  const apiUrl = readString(process.env.BREVO_API_URL, 500) || "https://api.brevo.com/v3/smtp/email";
+  return {
+    provider: "brevo",
+    configured: missing.length === 0,
+    missing,
+    apiUrl,
+    from: readString(process.env.BREVO_FROM_EMAIL, 240),
+    fromName: readString(process.env.BREVO_FROM_NAME, 120) || "Smart Health",
+  };
+}
+
+function getEmailRuntimeStatus(settings = db.settings) {
+  const brevo = getBrevoRuntimeStatus();
+  const smtp = getSmtpRuntimeStatus();
+  const explicitProvider = normalizeEmailProvider(process.env.EMAIL_PROVIDER || process.env.OUTBOUND_EMAIL_PROVIDER);
+  const settingsProvider = normalizeEmailProvider(settings?.outbound?.email?.provider);
+  const providerCandidate = explicitProvider || (brevo.configured ? "brevo" : smtp.configured ? "smtp" : settingsProvider || "brevo");
+  const provider = providerCandidate === "smtp" ? "smtp" : "brevo";
+  const active = provider === "smtp" ? smtp : brevo;
+  return {
+    provider,
+    configured: active.configured,
+    missing: active.missing,
+    from: active.from || "",
+    apiUrl: provider === "brevo" ? brevo.apiUrl : "",
+    fallback: {
+      brevoConfigured: brevo.configured,
+      smtpConfigured: smtp.configured,
+    },
+    brevo,
+    smtp,
   };
 }
 
@@ -4067,6 +4112,7 @@ function publicSettings(user) {
           name: getUserWorkspaceContext(user).workspace?.name || "",
         },
     runtime: {
+      email: getEmailRuntimeStatus(settings),
       smtp: getSmtpRuntimeStatus(),
       outboundWebhook: getOutboundWebhookRuntimeStatus(settings),
       twoFactorAvailable: true,
@@ -4124,6 +4170,15 @@ function getSmtpEnv() {
   };
 }
 
+function getBrevoEnv() {
+  return {
+    apiKey: String(process.env.BREVO_API_KEY || "").trim(),
+    apiUrl: readString(process.env.BREVO_API_URL, 500) || "https://api.brevo.com/v3/smtp/email",
+    fromEmail: readString(process.env.BREVO_FROM_EMAIL, 240),
+    fromName: readString(process.env.BREVO_FROM_NAME, 120) || "Smart Health",
+  };
+}
+
 function describeSmtpFailure(error) {
   const message = String(error && error.message ? error.message : error || "");
   const response = String(error && error.response ? error.response : "");
@@ -4143,6 +4198,31 @@ function describeSmtpFailure(error) {
     return "Backend không kết nối được tới SMTP Gmail trong thời gian cho phép. Hãy kiểm tra Render đã redeploy sau khi set env và mạng SMTP không bị chặn.";
   }
   return `Không thể gửi email qua SMTP Gmail: ${message || "lỗi không xác định"}`;
+}
+
+function describeBrevoFailure(statusCode, responseBody, error) {
+  const raw =
+    typeof responseBody === "string"
+      ? responseBody
+      : responseBody && typeof responseBody === "object"
+        ? `${responseBody.code || ""} ${responseBody.message || ""}`
+        : "";
+  const message = String(error && error.message ? error.message : raw || error || "");
+  const combined = `${statusCode || ""} ${raw} ${message}`.toLowerCase();
+
+  if (statusCode === 401 || statusCode === 403 || combined.includes("unauthorized") || combined.includes("authentication")) {
+    return "Brevo từ chối API key. Hãy kiểm tra BREVO_API_KEY trên Render và redeploy backend.";
+  }
+  if (statusCode === 429 || combined.includes("rate") || combined.includes("quota") || combined.includes("limit")) {
+    return "Brevo đã hết quota hoặc bị giới hạn tốc độ. Gói miễn phí chỉ phù hợp demo/lưu lượng thấp.";
+  }
+  if (combined.includes("sender") || combined.includes("from") || combined.includes("not verified")) {
+    return "Brevo chưa chấp nhận email gửi đi. Hãy xác minh sender/domain trong Brevo và đặt BREVO_FROM_EMAIL đúng địa chỉ đã xác minh.";
+  }
+  if (combined.includes("timeout") || combined.includes("aborted") || combined.includes("econnrefused") || combined.includes("enetunreach")) {
+    return "Backend không kết nối được tới Brevo API qua HTTPS trong thời gian cho phép. Hãy kiểm tra Render đã redeploy sau khi set env và mạng outbound HTTPS.";
+  }
+  return `Không thể gửi email qua Brevo API: ${message || "lỗi không xác định"}`;
 }
 
 function createSmtpTransport() {
@@ -4166,15 +4246,7 @@ function createSmtpTransport() {
   });
 }
 
-async function sendTestEmail(payload = {}) {
-  const to = readString(payload.to || db.settings.outbound?.email?.testRecipient, 240);
-  if (!to) {
-    throw httpError(400, "Cần nhập email người nhận để gửi thử", "SMTP_TEST_RECIPIENT_REQUIRED");
-  }
-  const subject = readString(payload.subject, 180) || "Smart Health test email";
-  const text =
-    readString(payload.message, 2000) ||
-    "Đây là email kiểm tra từ hệ thống Smart Health. Nếu bạn nhận được email này, cấu hình SMTP đang hoạt động.";
+async function sendSmtpTestEmail({ to, subject, text }) {
   const transporter = createSmtpTransport();
   let info;
   try {
@@ -4195,10 +4267,103 @@ async function sendTestEmail(payload = {}) {
     });
   }
   return {
+    provider: "smtp",
     messageId: info.messageId || "",
     accepted: info.accepted || [],
     rejected: info.rejected || [],
   };
+}
+
+async function sendBrevoTestEmail({ to, subject, text }) {
+  const runtime = getBrevoRuntimeStatus();
+  if (!runtime.configured) {
+    throw httpError(400, `Brevo API chưa được cấu hình: ${runtime.missing.join(", ")}`, "BREVO_NOT_CONFIGURED", {
+      provider: "brevo",
+      missing: runtime.missing,
+    });
+  }
+
+  const brevo = getBrevoEnv();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  let response;
+  let responseText = "";
+  let responseBody = {};
+  try {
+    response = await fetch(brevo.apiUrl, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "api-key": brevo.apiKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: {
+          name: brevo.fromName,
+          email: brevo.fromEmail,
+        },
+        to: [{ email: to }],
+        subject,
+        htmlContent: `<html><head></head><body><p>${escapeHtml(text).replace(/\n/g, "<br />")}</p></body></html>`,
+      }),
+      signal: controller.signal,
+    });
+    responseText = await response.text();
+    if (responseText) {
+      try {
+        responseBody = JSON.parse(responseText);
+      } catch (_) {
+        responseBody = { message: responseText };
+      }
+    }
+  } catch (error) {
+    throw httpError(400, describeBrevoFailure(0, responseText, error), "BREVO_SEND_FAILED", {
+      provider: "brevo",
+      apiUrl: brevo.apiUrl,
+      from: brevo.fromEmail,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    throw httpError(400, describeBrevoFailure(response.status, responseBody, null), "BREVO_SEND_FAILED", {
+      provider: "brevo",
+      statusCode: response.status,
+      apiUrl: brevo.apiUrl,
+      from: brevo.fromEmail,
+      providerCode: readString(responseBody.code, 120),
+    });
+  }
+
+  return {
+    provider: "brevo",
+    messageId: readString(responseBody.messageId, 240),
+    accepted: [to],
+    rejected: [],
+  };
+}
+
+async function sendTestEmail(payload = {}) {
+  const to = readString(payload.to || db.settings.outbound?.email?.testRecipient, 240);
+  if (!to) {
+    throw httpError(400, "Cần nhập email người nhận để gửi thử", "EMAIL_TEST_RECIPIENT_REQUIRED");
+  }
+  const subject = readString(payload.subject, 180) || "Smart Health test email";
+  const text =
+    readString(payload.message, 2000) ||
+    "Đây là email kiểm tra từ hệ thống Smart Health. Nếu bạn nhận được email này, cấu hình email outbound đang hoạt động.";
+  const runtime = getEmailRuntimeStatus();
+  if (!runtime.configured) {
+    throw httpError(400, `Email chưa được cấu hình: ${runtime.missing.join(", ")}`, "EMAIL_NOT_CONFIGURED", {
+      provider: runtime.provider,
+      missing: runtime.missing,
+    });
+  }
+  if (runtime.provider === "smtp") {
+    return sendSmtpTestEmail({ to, subject, text });
+  }
+  return sendBrevoTestEmail({ to, subject, text });
 }
 
 function buildOutboundWebhookPayload(channel, payload = {}) {

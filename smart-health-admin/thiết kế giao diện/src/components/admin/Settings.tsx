@@ -128,6 +128,13 @@ type SettingsState = {
 };
 
 type RuntimeState = {
+  email: {
+    provider: string;
+    configured: boolean;
+    missing: string[];
+    from: string;
+    apiUrl: string;
+  };
   smtp: { configured: boolean; missing: string[]; host: string; port: number | null; from: string };
   outboundWebhook: { configured: boolean; missing: string[]; urlConfiguredIn: string };
   twoFactorAvailable: boolean;
@@ -193,7 +200,7 @@ const defaults: SettingsState = {
   outbound: {
     email: {
       enabled: true,
-      provider: "gmail-smtp",
+      provider: "brevo-api",
       host: "smtp.gmail.com",
       port: 587,
       encryption: "tls",
@@ -257,6 +264,13 @@ const defaults: SettingsState = {
 };
 
 const runtimeDefaults: RuntimeState = {
+  email: {
+    provider: "brevo",
+    configured: false,
+    missing: ["BREVO_API_KEY", "BREVO_FROM_EMAIL"],
+    from: "",
+    apiUrl: "https://api.brevo.com/v3/smtp/email",
+  },
   smtp: {
     configured: false,
     missing: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"],
@@ -454,18 +468,33 @@ function normalizeSettings(raw: Record<string, unknown>): SettingsState {
 
 function normalizeRuntime(raw: Record<string, unknown>): RuntimeState {
   const runtime = objectOf(raw.runtime);
+  const email = objectOf(runtime.email);
   const smtp = objectOf(runtime.smtp);
   const outboundWebhook = objectOf(runtime.outboundWebhook);
   const smtpPort = smtp.port === null ? null : asNumber(smtp.port, 0) || null;
+  const smtpState = {
+    configured: asBool(smtp.configured, false),
+    missing: Array.isArray(smtp.missing) ? smtp.missing.map(String) : runtimeDefaults.smtp.missing,
+    host: asString(smtp.host),
+    port: smtpPort,
+    from: asString(smtp.from),
+  };
+  const hasEmailRuntime = Object.keys(email).length > 0;
+  const emailState = {
+    provider: asString(email.provider) || (smtpState.configured ? "smtp" : runtimeDefaults.email.provider),
+    configured: hasEmailRuntime ? asBool(email.configured, false) : smtpState.configured,
+    missing: Array.isArray(email.missing)
+      ? email.missing.map(String)
+      : smtpState.configured
+        ? []
+        : runtimeDefaults.email.missing,
+    from: asString(email.from) || smtpState.from,
+    apiUrl: asString(email.apiUrl) || runtimeDefaults.email.apiUrl,
+  };
 
   return {
-    smtp: {
-      configured: asBool(smtp.configured, false),
-      missing: Array.isArray(smtp.missing) ? smtp.missing.map(String) : runtimeDefaults.smtp.missing,
-      host: asString(smtp.host),
-      port: smtpPort,
-      from: asString(smtp.from),
-    },
+    email: emailState,
+    smtp: smtpState,
     outboundWebhook: {
       configured: asBool(outboundWebhook.configured, false),
       missing: Array.isArray(outboundWebhook.missing)
@@ -683,7 +712,7 @@ export function Settings() {
         to: settings.outbound.email.testRecipient,
         subject: "Smart Health test email",
         message:
-          "Email kiểm tra từ Web Admin Smart Health. Gmail SMTP hoạt động nếu bạn nhận được email này.",
+          "Email kiểm tra từ Web Admin Smart Health. Email outbound đang hoạt động nếu bạn nhận được email này.",
       });
       toast.success("Đã gửi email kiểm tra.");
     } catch (error) {
@@ -802,9 +831,11 @@ export function Settings() {
     }
   };
 
-  const smtpReason = runtime.smtp.configured
+  const emailProviderLabel =
+    runtime.email.provider === "brevo" ? "Brevo API" : runtime.email.provider === "smtp" ? "SMTP fallback" : runtime.email.provider || "email";
+  const emailReason = runtime.email.configured
     ? ""
-    : `Thiếu cấu hình env: ${runtime.smtp.missing.join(", ")}. Gmail cần App Password, không lưu trong source.`;
+    : `Thiếu cấu hình env: ${runtime.email.missing.join(", ")}. Render Free nên dùng Brevo API qua HTTPS; SMTP/Gmail chỉ là fallback khi hosting cho phép SMTP.`;
   const webhookReady = runtime.outboundWebhook.configured || Boolean(settings.outbound.webhook.url.trim());
   const webhookReason = webhookReady
     ? ""
@@ -1070,20 +1101,21 @@ export function Settings() {
 
         <Tabs.Content value="notifications" className="space-y-6">
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
-            Email/Gmail gửi thật qua SMTP env. SMS/Zalo trong bản free dùng webhook tự cấu hình.
+            Email gửi thật ưu tiên Brevo API qua HTTPS để chạy được trên Render Free. SMS/Zalo không có gói production miễn phí ổn định nên dùng webhook tự cấu hình hoặc để hướng phát triển.
           </div>
 
-          <Panel title="SMTP Email / Gmail">
+          <Panel title="Email thông báo / Brevo API">
             <RuntimeNotice
-              ok={runtime.smtp.configured}
-              okText={`SMTP env đã cấu hình: ${runtime.smtp.host || settings.outbound.email.host}:${
-                runtime.smtp.port || settings.outbound.email.port
-              }`}
-              failText={smtpReason}
+              ok={runtime.email.configured}
+              okText={`Email provider ${emailProviderLabel} đã cấu hình${runtime.email.from ? `: ${runtime.email.from}` : ""}`}
+              failText={emailReason}
             />
+            <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Brevo API key và sender được lưu bằng env trên backend Render. Các ô SMTP bên dưới chỉ là thông tin hiển thị/fallback cho hosting cho phép SMTP.
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <TextField
-                label="SMTP Host hiển thị"
+                label="SMTP Host fallback"
                 value={settings.outbound.email.host}
                 onChange={(host) =>
                   patchSettings({
@@ -1092,7 +1124,7 @@ export function Settings() {
                 }
               />
               <NumberField
-                label="SMTP Port hiển thị"
+                label="SMTP Port fallback"
                 value={settings.outbound.email.port}
                 onChange={(port) =>
                   patchSettings({
@@ -1101,7 +1133,7 @@ export function Settings() {
                 }
               />
               <TextField
-                label="Email gửi đi (From)"
+                label="Email gửi đi hiển thị"
                 type="email"
                 value={settings.outbound.email.from}
                 onChange={(from) =>
@@ -1111,7 +1143,7 @@ export function Settings() {
                 }
               />
               <SelectField
-                label="Mã hóa"
+                label="Mã hóa SMTP fallback"
                 value={settings.outbound.email.encryption}
                 onChange={(encryption) =>
                   patchSettings({
@@ -1139,8 +1171,8 @@ export function Settings() {
             </div>
             <button
               onClick={testEmail}
-              disabled={!runtime.smtp.configured || emailTesting || !settings.outbound.email.testRecipient.trim()}
-              title={smtpReason || undefined}
+              disabled={!runtime.email.configured || emailTesting || !settings.outbound.email.testRecipient.trim()}
+              title={emailReason || undefined}
               className="mt-4 inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
             >
               <RefreshCw className="h-3.5 w-3.5" /> {emailTesting ? "Đang gửi..." : "Gửi email kiểm tra"}

@@ -94,7 +94,7 @@ This file records the real project state. Keep it factual: implemented, partial,
   - Storage uploads now persist SHA-256 checksum metadata and infer firmware version for `.bin` files in bucket `device-firmware`.
   - `POST /api/v1/devices/:id/ota` now creates a cloud OTA command with firmware version, HTTPS download URL or `firmwareFileId`, checksum, delivery status, event history, and audit. When `firmwareFileId` is used, backend creates a short-lived tokenized download URL for the ESP and hides the tokenized URL from normal device API responses. It no longer models product OTA as a same-LAN ArduinoOTA action.
 - 2026-06-06 production readiness slice:
-  - `src/productionReadiness.js` builds deployment checks for auth mode, Firebase Admin, public HTTPS backend URL, CORS, Postgres, Redis, S3/R2 storage, PHI encryption, SMTP/Gmail, SMS/Zalo webhook, MQTT/TLS, cloud OTA URL, signed firmware warning, Web Admin product build, and Android release build.
+  - `src/productionReadiness.js` builds deployment checks for auth mode, Firebase Admin, public HTTPS backend URL, CORS, Postgres, Redis, S3/R2 storage, PHI encryption, Brevo email API/SMTP fallback, SMS/Zalo webhook, MQTT/TLS, cloud OTA URL, signed firmware warning, Web Admin product build, and Android release build.
   - `scripts/productionReadiness.js` exposes `npm run check:production` and `npm run check:production:strict`.
   - `GET /api/v1/settings/production-readiness` is platform-settings-manage only, so workspace admins do not see global infrastructure env/status.
   - `web-monitor\.env.example` now lists production placeholders for the real third-party services and secrets.
@@ -321,8 +321,8 @@ KLTN report artifacts generated from this evidence set:
 - `src/components/admin/ConfirmActionDialog.tsx` added as shared dangerous-action modal with loading/error states.
 - Clinics, Packages, Storage, File Detail, Notifications, and Doctors no longer rely on browser `window.confirm`/`alert`; actions use modal/toast UI consistent with the admin dashboard.
 - `AccountSettings.tsx` was rewritten to use real backend calls for profile save, avatar upload/remove-link, password change, session listing, session revoke, and logout-all-other-devices. Email is readonly because Firebase Auth owns identity.
-- `Settings.tsx` was rewritten from mostly `defaultValue`/demo buttons to controlled state loaded/saved through `/api/settings`, with logo upload, SMTP/Gmail test, SMS/Zalo webhook test, and disabled production-only controls with explicit reasons.
-- `web-monitor/server.js` now includes `nodemailer`, expanded default settings sections, public runtime settings status, `POST /api/settings/test-email`, `POST /api/settings/test-outbound`, extended `/api/me` profile fields, public session shaping, and admin-preferred demo fallback user selection.
+- `Settings.tsx` was rewritten from mostly `defaultValue`/demo buttons to controlled state loaded/saved through `/api/settings`, with logo upload, Brevo email API/SMTP fallback test, SMS/Zalo webhook test, and disabled production-only controls with explicit reasons.
+- `web-monitor/server.js` now includes Brevo email API support, `nodemailer` fallback, expanded default settings sections, public runtime settings status, `POST /api/settings/test-email`, `POST /api/settings/test-outbound`, extended `/api/me` profile fields, public session shaping, and admin-preferred demo fallback user selection.
 - `src/lib/smart-health-api.ts` now supports the new profile/session/settings/test APIs and preserves raw file `Content-Type` for storage uploads.
 
 ### Verification
@@ -331,11 +331,11 @@ KLTN report artifacts generated from this evidence set:
 - Backend syntax: `node --check server.js` passed.
 - Web admin: `npm.cmd run build` passed with existing Vite large-chunk warnings only.
 - UI audit: `rg -n 'window\.confirm|alert\('` over admin source returned no matches.
-- API smoke on local backend: `/api/me` returned admin demo user, `/api/auth/sessions` returned sessions, `/api/settings` returned runtime SMTP/webhook status, `test-email` returned clear 400 when SMTP env is missing, and `test-outbound` returned clear 400 when webhook config is missing.
+- API smoke on local backend: `/api/me` returned admin demo user, `/api/auth/sessions` returned sessions, `/api/settings` returned runtime email/webhook status, `test-email` returned clear 400 when email provider env is missing, and `test-outbound` returned clear 400 when webhook config is missing.
 
 ### Remaining Limits
 
-- Real Gmail sending still needs env/app-password configuration; no secrets are hardcoded.
+- Real email sending now needs Brevo API env on Render Free or SMTP/App Password fallback on a host that allows SMTP; no secrets are hardcoded.
 - SMS/Zalo paid-provider direct APIs are intentionally not integrated; current free/demo path is webhook only.
 - 2FA, API key rotation, backup restore/check, and AI model update are visibly disabled until production backends/providers exist.
 - Physical ESP32-S3 upload/serial evidence remains pending until hardware is connected.
@@ -494,13 +494,13 @@ KLTN report artifacts generated from this evidence set:
 
 ### Implemented
 
-- Added backend production readiness checks for production auth mode, disabled demo auth, Firebase Admin, public HTTPS backend URL, CORS, Postgres, Redis, S3/R2 object storage, HTTPS storage endpoint, PHI encryption key, rate limit, SMTP/Gmail, SMS/Zalo webhook, MQTT/TLS, cloud OTA public URL, firmware signing/rollback warning, Web Admin product build, and Android release build.
+- Added backend production readiness checks for production auth mode, disabled demo auth, Firebase Admin, public HTTPS backend URL, CORS, Postgres, Redis, S3/R2 object storage, HTTPS storage endpoint, PHI encryption key, rate limit, Brevo email API/SMTP fallback, SMS/Zalo webhook, MQTT/TLS, cloud OTA public URL, firmware signing/rollback warning, Web Admin product build, and Android release build.
 - Added CLI commands `npm.cmd run check:production` and `npm.cmd run check:production:strict`.
 - Added platform-only readiness API `GET /api/v1/settings/production-readiness`.
 - Added Web Admin Settings tab `Triển khai` to render deployment status and blockers from backend readiness.
 - Expanded `web-monitor\.env.example` with production env placeholders for third-party services and secrets.
-- Added `D:\Study\KLTN\docs\SMART_HEALTH_THIRD_PARTY_SETUP.md` with setup steps and official documentation links for Firebase, Postgres, R2/S3, SMTP/Gmail, SMS/Zalo webhook, Android release, and ESP provisioning.
-- Rewrote `SMART_HEALTH_THIRD_PARTY_SETUP.md` as a detailed Vietnamese step-by-step checklist from Firebase project creation through backend/domain, Postgres, R2/S3, Gmail SMTP, SMS/Zalo webhook, Web Admin, Android release, ESP first flash, cloud OTA, and final readiness checks.
+- Added `D:\Study\KLTN\docs\SMART_HEALTH_THIRD_PARTY_SETUP.md` with setup steps and official documentation links for Firebase, Postgres, R2/S3, Brevo email API/SMTP fallback, SMS/Zalo webhook, Android release, and ESP provisioning.
+- Rewrote `SMART_HEALTH_THIRD_PARTY_SETUP.md` as a detailed Vietnamese step-by-step checklist from Firebase project creation through backend/domain, Postgres, R2/S3, email outbound, SMS/Zalo webhook, Web Admin, Android release, ESP first flash, cloud OTA, and final readiness checks.
 - Updated root `.gitignore` to keep production secrets/local config out of the public GitHub repo, including `.env.*`, Firebase service account JSON, `firebase/`, `google-services.json`, `.env.local`, `.env.production`, and `.dev.vars`.
 - User deployed backend to Render on 2026-06-06. Public backend URL is `https://smart-health-api-xj0a.onrender.com`; `/api/health` returned `ok: true` with Render `httpPort: 10000`. Current Render data backend was started with temporary JSON mode until Neon/Postgres is configured.
 - User completed Neon Postgres setup on 2026-06-06, set Render `DATA_BACKEND=postgres`, ran migration, and confirmed `https://smart-health-api-xj0a.onrender.com/api/health` still returns successfully. Production DB setup is now connected at the infrastructure level; app-level Postgres smoke and seeded admin/workspace data should still be verified after storage/env setup.
@@ -532,7 +532,7 @@ KLTN report artifacts generated from this evidence set:
 ### Remaining Limits
 
 - `check:production:strict` cannot pass until the user supplies real production setup: Firebase Admin credentials, HTTPS backend domain, Postgres `DATABASE_URL`, S3/R2 credentials, `PHI_ENCRYPTION_KEY`, and deployment-specific Web Admin/Android URLs.
-- SMTP/Gmail, SMS/Zalo, Redis, MQTT, signed firmware, and Android release signing remain provider/account setup items rather than source-code-only tasks.
+- Brevo email, SMS/Zalo webhook/provider accounts, Redis, MQTT, signed firmware, and Android release signing remain provider/account setup items rather than source-code-only tasks.
 
 ## 2026-06-08 GitHub Actions And Next-Day Setup Runbook
 
@@ -543,7 +543,7 @@ KLTN report artifacts generated from this evidence set:
 - Added `smart-health-android/app/google-services.ci.json`, a dummy compile-only Firebase config copied by CI when the real ignored `google-services.json` is absent.
 - Added backend script `npm.cmd run smoke:public-deployment` to check the current public Render backend and Firebase Hosting Web Admin without any secrets.
 - Updated Web Admin platform-admin chrome so the sidebar footer no longer shows the legacy default workspace `Phòng khám: Smart Health Clinic` or the platform scope subtitle. Platform admins now see a shorter `Quản trị hệ thống` badge in the sidebar; the topbar scope context remains unchanged.
-- Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a Vietnamese step-by-step runbook for GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Gmail/SMS/Zalo config, Android build, ESP first flash, and cloud OTA smoke.
+- Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a Vietnamese step-by-step runbook for GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Brevo email/SMS/Zalo config, Android build, ESP first flash, and cloud OTA smoke.
 - Rewrote `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` into a fully accented, more detailed Vietnamese guide after the initial ASCII/no-accent draft was hard to read.
 
 ### Verification
@@ -597,17 +597,19 @@ KLTN report artifacts generated from this evidence set:
 - Hardened account avatar storage for production S3/Supabase Storage: backend CORS now accepts `X-File-Name`, S3 uploads include `ContentLength`, `/api/me/avatar` stores durable `avatarStorage` metadata in the user profile, and avatar download is served through the backend from object storage instead of redirecting to a signed URL.
 - Avatar update/removal now deletes or replaces the old avatar object when possible, while hiding storage object metadata from `publicUser`.
 - Password-change notifications now use correct Vietnamese text and include `userId`/`organizationId` metadata so the notification is scoped to the current user.
-- SMTP test email now has bounded Nodemailer timeouts, trims Gmail App Password spacing, and converts common Gmail failures into actionable 400 responses instead of a generic backend 500. This covers invalid App Password, missing App Password, sender/from mismatch, and SMTP connection timeout cases.
+- Email test now prefers Brevo API over HTTPS on Render Free, with SMTP/Gmail kept as fallback. The SMTP fallback still has bounded Nodemailer timeouts, trims Gmail App Password spacing, and converts common Gmail failures into actionable 400 responses instead of a generic backend 500.
 
 ### Verification
 
 - Backend `npm.cmd run check` passed.
 - Web Admin `npm.cmd run build` passed.
 - Web Admin `npm.cmd run build:firebase` passed and prerendered `/forgot-password` and `/account`.
+- Backend `npm.cmd run check:production` ran after the Brevo readiness update; local shell still reports `BLOCKED` only because production env/secrets are not loaded, and the outbound check now labels `Email outbound Brevo API / SMTP fallback`.
+- API smoke with a temporary demo admin token verified `POST /api/settings/test-email` returns clear `400 EMAIL_NOT_CONFIGURED` with missing `BREVO_API_KEY, BREVO_FROM_EMAIL` when Brevo env is absent.
 - Browser smoke on local `/forgot-password` passed; the page renders proper Vietnamese text and was not submitted to avoid sending a real reset email.
 - Source audit passed: no mojibake-pattern hits in `smart-health-admin\thiết kế giao diện\src`, `web-monitor\server.js`, or `web-monitor\src`; remaining `??` matches are valid JavaScript nullish-coalescing operators.
 
 ### Remaining Limits
 
 - Real password-reset email delivery still depends on Firebase Console setup: Email/Password provider enabled, password-reset template configured as desired, and `shcare-admin.web.app` authorized.
-- Gmail SMTP test email still depends on correct Render env and Gmail setup: `SMTP_USER` should normally match `SMTP_FROM`, and `SMTP_PASS` must be an App Password.
+- Brevo test email still depends on correct Render env and Brevo sender setup: `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, and `BREVO_FROM_EMAIL` must be set, and the sender email must be verified in Brevo. Gmail SMTP remains fallback only when the host permits SMTP.

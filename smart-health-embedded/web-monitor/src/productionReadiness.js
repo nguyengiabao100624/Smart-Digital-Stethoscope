@@ -104,9 +104,22 @@ function buildProductionReadiness(env = process.env) {
   const databaseDisplay = maskUrl(databaseUrl);
   const s3Endpoint = inspectUrl(env.S3_ENDPOINT);
   const mqttUrl = inspectUrl(env.MQTT_URL);
+  const emailProvider = readString(env.EMAIL_PROVIDER || env.OUTBOUND_EMAIL_PROVIDER).toLowerCase();
+  const brevoReady = ["BREVO_API_KEY", "BREVO_FROM_EMAIL"].every((key) => readString(env[key]));
   const smtpReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"].every((key) =>
     readString(env[key]),
   );
+  const emailReady =
+    emailProvider === "brevo" || emailProvider === "brevo-api"
+      ? brevoReady
+      : emailProvider === "smtp" || emailProvider === "gmail" || emailProvider === "gmail-smtp"
+        ? smtpReady
+        : brevoReady || smtpReady;
+  const emailDetail = brevoReady
+    ? `Brevo API from ${readString(env.BREVO_FROM_EMAIL)}`
+    : smtpReady
+      ? `SMTP=${readString(env.SMTP_HOST)}:${readString(env.SMTP_PORT)} from ${readString(env.SMTP_FROM)}`
+      : "Chưa cấu hình Brevo API hoặc SMTP fallback.";
   const outboundWebhookReady = Boolean(readString(env.OUTBOUND_WEBHOOK_URL));
 
   createItem(items, {
@@ -259,16 +272,25 @@ function buildProductionReadiness(env = process.env) {
   });
 
   createItem(items, {
-    id: "email.smtp",
+    id: "email.outbound",
     group: "outbound",
-    label: "Email/Gmail SMTP",
-    status: smtpReady ? "pass" : "warn",
+    label: "Email outbound Brevo API / SMTP fallback",
+    status: emailReady ? "pass" : "warn",
     required: false,
-    detail: smtpReady
-      ? `SMTP=${readString(env.SMTP_HOST)}:${readString(env.SMTP_PORT)} from ${readString(env.SMTP_FROM)}`
-      : "Chưa đủ SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.",
-    env: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"],
-    setup: "Tạo Gmail App Password hoặc SMTP provider, cấu hình env, rồi dùng Settings > Test email.",
+    detail: emailDetail,
+    env: [
+      "EMAIL_PROVIDER",
+      "BREVO_API_KEY",
+      "BREVO_FROM_EMAIL",
+      "BREVO_FROM_NAME",
+      "SMTP_HOST",
+      "SMTP_PORT",
+      "SMTP_USER",
+      "SMTP_PASS",
+      "SMTP_FROM",
+    ],
+    setup:
+      "Render Free bị chặn SMTP 25/465/587, nên ưu tiên Brevo API qua HTTPS. SMTP/Gmail chỉ dùng làm fallback khi hosting cho phép SMTP.",
   });
 
   createItem(items, {

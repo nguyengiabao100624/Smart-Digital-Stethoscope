@@ -124,6 +124,16 @@ RATE_LIMIT_PER_MINUTE=300
 Các biến tùy chọn, chưa có thì hệ thống vẫn chạy nhưng tính năng tương ứng chưa gửi thật:
 
 ```env
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<Brevo API key>
+BREVO_FROM_EMAIL=<email gửi đi đã xác minh trong Brevo>
+BREVO_FROM_NAME=Smart Health
+BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+```
+
+SMTP/Gmail chỉ là fallback nếu hosting cho phép SMTP. Render Free đang chặn các cổng SMTP phổ biến, nên không dùng Gmail SMTP làm hướng chính:
+
+```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=<gmail của bạn>
@@ -282,47 +292,53 @@ Kỳ vọng:
 - Admin toàn hệ thống thấy các mục quản trị platform.
 - Admin bệnh viện không thấy quản lý gói toàn hệ thống, duyệt bác sĩ toàn hệ thống hoặc quản lý workspace khác.
 
-## Bước 8 - Cấu Hình Gmail SMTP Nếu Muốn Gửi Email Thật
+## Bước 8 - Cấu Hình Email Miễn Phí Bằng Brevo API
 
-Nếu chỉ demo UI thì có thể bỏ qua. Nếu muốn gửi email thật:
+Render Free chặn outbound SMTP port `25`, `465`, `587`, nên Gmail SMTP dễ bị treo hoặc timeout dù App Password đúng. Hướng nên dùng cho bản miễn phí là Brevo Transactional Email API vì backend gọi qua HTTPS.
 
-1. Vào tài khoản Gmail.
-2. Bật 2-Step Verification.
-3. Tạo App Password.
-4. Đặt các env này trên Render:
+Brevo Free hiện phù hợp demo KLTN vì có gói miễn phí 300 email/ngày. Cách làm:
+
+1. Vào `https://www.brevo.com/` và tạo tài khoản miễn phí.
+2. Vào phần Transactional hoặc SMTP & API.
+3. Tạo API key v3.
+4. Vào phần sender/domain và xác minh email gửi đi. Nếu chưa có domain riêng, dùng chính Gmail cá nhân làm sender đã xác minh cũng được cho demo.
+5. Trên Render -> service backend `smart-health-api` -> Environment, đặt:
 
 ```env
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<Brevo API key>
+BREVO_FROM_EMAIL=<email đã xác minh trong Brevo>
+BREVO_FROM_NAME=Smart Health
+BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+```
+
+6. Bấm `Save Changes` để Render redeploy backend.
+7. Vào Web Admin:
+
+```text
+Cài đặt -> Thông báo/Outbound -> Email thông báo / Brevo API -> Gửi email kiểm tra
+```
+
+Nếu thiếu env, Web Admin sẽ báo thiếu `BREVO_API_KEY` hoặc `BREVO_FROM_EMAIL`. Nếu Brevo báo lỗi sender/from, hãy kiểm tra lại email gửi đi đã được xác minh trong Brevo chưa.
+
+Gmail SMTP vẫn được giữ trong code làm fallback cho hosting trả phí hoặc chạy local. Chỉ dùng fallback này khi bạn chắc chắn server cho phép SMTP:
+
+```env
+EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=<gmail của bạn>
-SMTP_PASS=<app password>
+SMTP_PASS=<Gmail App Password>
 SMTP_FROM=Smart Health <gmail của bạn>
 ```
 
-Với Gmail, nên để email trong `SMTP_FROM` trùng với `SMTP_USER`, ví dụ:
-
-```env
-SMTP_USER=baobee1006@gmail.com
-SMTP_FROM=Smart Health <baobee1006@gmail.com>
-```
-
-Không nên cấu hình kiểu `SMTP_USER=baobee1006@gmail.com` nhưng `SMTP_FROM=Smart Health <nguyengiabao100624@gmail.com>` nếu Gmail đó chưa được cấu hình alias "Send mail as", vì Gmail có thể từ chối người gửi.
-
-`SMTP_PASS` là Gmail App Password 16 ký tự. Nếu Google hiển thị theo nhóm có khoảng trắng, ví dụ `abcd efgh ijkl mnop`, thì khi nhập vào Render có thể nhập liền `abcdefghijklmnop`.
-
-Deploy lại Render.
-
-Vào Web Admin:
-
-```text
-Cài đặt -> Thông báo/Outbound -> Test email
-```
-
-Nếu chưa cấu hình SMTP, nút test hoặc API sẽ báo thiếu `SMTP_*`. Nếu App Password sai, Gmail sẽ báo lỗi đăng nhập SMTP. Nếu `SMTP_FROM` không khớp `SMTP_USER`, Gmail có thể báo lỗi địa chỉ gửi. Đó là lỗi cấu hình Gmail/Render, không phải lỗi code.
+Với Gmail fallback, `SMTP_FROM` nên trùng `SMTP_USER`; `SMTP_PASS` là Gmail App Password 16 ký tự, không phải mật khẩu Gmail thường.
 
 ## Bước 9 - SMS/Zalo
 
-Bản hiện tại không tích hợp trực tiếp nhà cung cấp trả phí. Đường production/free hiện tại là webhook tự cấu hình.
+Không có kênh SMS/Zalo production miễn phí ổn định giống Brevo email. SMS thật thường tính tiền theo tin nhắn hoặc chỉ cho trial rất ít. Zalo OA/ZNS là dịch vụ chính thức có bảng giá/quy định mẫu tin, không nên xem là miễn phí cho sản phẩm thật.
+
+Bản hiện tại giữ đường webhook tự cấu hình để có thể cắm provider/trial sau này mà không sửa lại Web Admin:
 
 Nếu chưa cần demo SMS/Zalo thật, để trống:
 
@@ -351,6 +367,8 @@ Backend sẽ POST payload dạng:
 ```
 
 Zalo cũng đi theo cùng flow webhook, chỉ đổi `channel` thành `zalo`.
+
+Hướng phát triển sau báo cáo KLTN: nếu có tài khoản nhà cung cấp thật, thêm adapter trực tiếp cho SpeedSMS/eSMS/VietGuys hoặc Zalo OA/ZNS, kèm quản lý template, trạng thái gửi, chi phí theo workspace và retry.
 
 ## Bước 10 - Android Build Để Cài Lên Điện Thoại Hoặc Emulator
 

@@ -37,7 +37,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 
 - Backend now has `npm run check:production` and `npm run check:production:strict` to report or block missing production setup.
 - Web Admin Settings has a platform-only `Triển khai` tab backed by `/api/v1/settings/production-readiness`.
-- `web-monitor\.env.example` now lists production placeholders for Firebase, public HTTPS backend URL, Postgres, S3/R2, PHI encryption, SMTP/Gmail, SMS/Zalo webhook, MQTT, CORS, and rate limit.
+- `web-monitor\.env.example` now lists production placeholders for Firebase, public HTTPS backend URL, Postgres, S3/R2, PHI encryption, Brevo email API/SMTP fallback, SMS/Zalo webhook, MQTT, CORS, and rate limit.
 - `SMART_HEALTH_THIRD_PARTY_SETUP.md` now lists the real third-party accounts/secrets the user must create before strict production smoke can pass.
 - Current local/demo env correctly reports `BLOCKED`; this is expected until real provider credentials and deployment URLs are supplied.
 
@@ -64,7 +64,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Added manual GitHub Actions workflow `Deploy Web Admin` to build and deploy `shcare-admin` from GitHub once Firebase secrets are configured.
 - Added Android `google-services.ci.json` so CI can compile debug without committing the real ignored Firebase Android config.
 - Added `npm.cmd run smoke:public-deployment` to verify the current public Render backend and Firebase Hosting Web Admin without secrets.
-- Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a detailed Vietnamese runbook for the next setup session across GitHub Actions, Render, Supabase, Firebase Hosting, admin account creation, Gmail/SMS/Zalo, Android, ESP first flash, and cloud OTA.
+- Added `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`, a detailed Vietnamese runbook for the next setup session across GitHub Actions, Render, Supabase, Firebase Hosting, admin account creation, Brevo email/SMS/Zalo, Android, ESP first flash, and cloud OTA.
 - Rewrote `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` with full Vietnamese accents and more explicit step-by-step instructions so it can be followed directly during the next setup session.
 - Refined the platform-admin sidebar so it no longer shows the old default workspace scope text there; the sidebar now uses a shorter `Quản trị hệ thống` badge for platform admins.
 
@@ -575,13 +575,13 @@ Completed in this slice:
 - Replace browser confirm/alert in admin dangerous actions with shared modal/toast UI.
 - Make Account Settings real enough for KLTN demo: profile save, readonly Firebase email, avatar upload/link removal, backend sessions and revoke flows.
 - Make System Settings controlled and backend-backed: system, branding, notification, privacy, storage, stethoscope, AI, outbound, and security policy sections.
-- Add Gmail SMTP test endpoint via Nodemailer and SMS/Zalo webhook test endpoint without committing provider credentials.
+- Add Brevo email API/SMTP fallback test endpoint and SMS/Zalo webhook test endpoint without committing provider credentials.
 - Disable unavailable production-only controls with visible reasons instead of leaving clickable no-op buttons.
 
 Next practical backlog items:
 
-- Configure real Gmail SMTP env with an App Password only on the local/demo machine, then send a real test email from Settings.
-- If SMS/Zalo demo is needed, provide a webhook receiver URL and test payload delivery; direct eSMS/Zalo OA paid-provider integration stays later.
+- Configure real Brevo API env on Render Free, then send a real test email from Settings. SMTP/Gmail remains fallback only for local/paid hosts that allow SMTP.
+- If SMS/Zalo demo is needed, provide a webhook receiver URL and test payload delivery; direct SpeedSMS/eSMS/VietGuys/Zalo OA/ZNS paid-provider integration stays later because there is no stable production-free SMS/Zalo channel.
 - Add browser E2E scripts for account save/avatar/session revoke/settings save/delete modals under authenticated admin tokens.
 - Continue repository/PostgreSQL parity for settings, sessions, audit, storage metadata, and notification preferences.
 - Finish physical ESP32-S3 evidence once the board appears as a real COM port.
@@ -599,7 +599,7 @@ Next practical backlog items:
 
 - Test successful login with the real Firebase admin account and then smoke Account Settings, avatar upload, session revoke, Clinics/Packages/Storage delete dialogs, Settings save, and outbound test buttons in an authenticated browser session.
 - Add a small authenticated Playwright/Chrome smoke script once an admin test token or test account workflow is available.
-- Configure Gmail SMTP App Password and optional SMS/Zalo webhook only in local env, then run real outbound delivery tests.
+- Configure Brevo API env on Render Free and optional SMS/Zalo webhook/provider env, then run real outbound delivery tests.
 - Keep physical ESP32-S3 serial/upload evidence as the next hardware step when the board is connected.
 
 ## 2026-06-06 Backlog Update - Clinic Delete Clarity
@@ -666,7 +666,7 @@ Next practical backlog items:
 - Connect the ESP32-S3 board and capture real flash + serial-monitor evidence for setup portal, WiFi connection, UDP target, waveform stream, and one saved scan.
 - Deploy or expose the backend through a real HTTPS domain, then rebuild Android release with `-PSMART_HEALTH_BASE_URL=https://<real-api-domain>`.
 - Decide the KLTN demo data backend for presentation day: JSON local product-demo mode is verified; PostgreSQL/object storage mode needs final credentials and smoke if required by the committee.
-- Configure real SMTP and optional SMS/Zalo webhook env only on the deployment/demo machine, then run real outbound tests from Settings.
+- Configure real Brevo API or SMTP fallback env and optional SMS/Zalo webhook env only on the deployment/demo machine, then run real outbound tests from Settings.
 - Add release signing credentials for Android outside source control before distributing the APK.
 - Keep future-direction work blocked until the KLTN-critical real demo path is fully captured with web admin, Android, firmware, and evidence screenshots/logs.
 
@@ -715,11 +715,11 @@ Completed in this slice:
 - Added correct user-facing handling for Firebase `auth/unauthorized-domain` and `auth/unauthorized-continue-uri`, so missing Firebase authorized-domain setup no longer appears as an expired login session.
 - Hardened `/api/me/avatar` for Supabase/S3 production storage by allowing the upload filename header, sending S3 `ContentLength`, persisting avatar object metadata in the user profile, serving avatar bytes through the backend, and cleaning up old avatar objects.
 - Scoped password-change notifications to the current user and fixed their Vietnamese copy.
-- Hardened Gmail SMTP test email error handling so backend reports invalid App Password, missing App Password, From/Sender mismatch, or SMTP timeout as actionable setup errors instead of a generic backend 500.
+- Added Brevo API as the preferred Render Free email path while keeping Gmail SMTP fallback error handling for invalid App Password, missing App Password, From/Sender mismatch, or SMTP timeout.
 
 Next practical backlog items:
 
 - Push and redeploy Render + Firebase Hosting before re-testing `https://shcare-admin.web.app`; the deployed stack will not change until redeploy.
 - In Firebase Console, verify Email/Password sign-in is enabled and `shcare-admin.web.app` is an authorized domain, then test `/forgot-password` with a real admin email.
-- In Render, verify Gmail SMTP env uses `SMTP_FROM` from the same Gmail account as `SMTP_USER` unless a Gmail send-as alias is configured; then retest Settings > Test email.
+- In Render, set Brevo email env (`EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`) and verify the Brevo sender email is approved; then retest Settings > Test email.
 - Browser-smoke Account Settings avatar upload/remove and password change on the deployed site using a real platform-admin account.

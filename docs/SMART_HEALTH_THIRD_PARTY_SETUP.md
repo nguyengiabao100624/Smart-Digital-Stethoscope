@@ -1,6 +1,6 @@
 # Smart Health - Hướng Dẫn Setup Bên Thứ Ba
 
-Last updated: 2026-06-06
+Last updated: 2026-06-08
 
 Tài liệu này hướng dẫn từng bước để chuyển Smart Health từ chế độ local/demo sang luồng giống sản phẩm thật: Web Admin, Android app và ESP32 đều đi qua backend cloud, Firebase Auth, Postgres, object storage, email/SMS/Zalo và OTA cloud.
 
@@ -8,7 +8,7 @@ Không commit các giá trị sau lên git:
 
 - Firebase service account JSON
 - `.env.production`
-- mật khẩu Gmail/App Password
+- Brevo API key hoặc mật khẩu Gmail/App Password fallback
 - database URL thật
 - S3/R2 access key
 - webhook secret
@@ -26,7 +26,7 @@ Làm theo đúng thứ tự này để tránh bị rối:
 5. Tạo Postgres database.
 6. Tạo object storage S3/R2.
 7. Tạo PHI encryption key.
-8. Cấu hình SMTP/Gmail nếu muốn gửi email thật.
+8. Cấu hình Brevo Email API nếu muốn gửi email thật trên Render Free.
 9. Cấu hình SMS/Zalo webhook nếu muốn gửi SMS/Zalo thật.
 10. Cấu hình Redis/MQTT nếu cần production nâng cao.
 11. Cấu hình Web Admin production build.
@@ -440,32 +440,33 @@ PHI_ENCRYPTION_KEY=<chuỗi-64-ký-tự-hex>
 
 Không gửi key này vào chat công khai, không commit vào git.
 
-## Bước 11 - Cấu Hình Gmail SMTP Để Gửi Email Thật
+## Bước 11 - Cấu Hình Brevo Email API Để Gửi Email Thật
 
-Mục tiêu: nút test email trong Settings gửi Gmail thật.
+Mục tiêu: nút test email trong Settings gửi email thật bằng HTTPS API, chạy được trên Render Free.
 
-Nếu dùng Gmail cá nhân:
+Render Free chặn outbound SMTP port `25`, `465`, `587`, nên Gmail SMTP không phải hướng chính. Dùng Brevo Transactional Email API cho bản miễn phí/demo.
 
-1. Mở Google Account:
+Các bước:
 
-```text
-https://myaccount.google.com/
-```
-
-2. Vào `Security`.
-3. Bật `2-Step Verification`.
-4. Sau khi bật 2FA, tìm `App passwords`.
-5. Tạo App Password cho app, ví dụ tên:
-
-```text
-Smart Health SMTP
-```
-
-6. Copy app password. Đây không phải mật khẩu Gmail chính.
+1. Tạo tài khoản tại `https://www.brevo.com/`.
+2. Vào phần Transactional hoặc SMTP & API.
+3. Tạo API key v3.
+4. Xác minh sender/domain. Nếu chưa có domain riêng, có thể xác minh email cá nhân cho demo.
 
 Backend env:
 
 ```env
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<brevo-api-key>
+BREVO_FROM_EMAIL=<verified-sender@example.com>
+BREVO_FROM_NAME=Smart Health
+BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+```
+
+SMTP/Gmail vẫn có trong code nhưng chỉ là fallback cho hosting trả phí hoặc local demo có mở SMTP:
+
+```env
+EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-gmail@gmail.com
@@ -490,14 +491,16 @@ Invoke-RestMethod https://api.smart-health.example.com/api/settings/test-email -
 
 Nguồn chính thức:
 
-- Google App Passwords: https://support.google.com/accounts/answer/185833
-- Google SMTP relay/Gmail SMTP: https://support.google.com/a/answer/176600
+- Render SMTP block on Free services: https://render.com/changelog/free-web-services-will-no-longer-allow-outbound-traffic-to-smtp-ports
+- Brevo transactional email API: https://developers.brevo.com/docs/send-a-transactional-email
+- Brevo Free plan limit: https://help.brevo.com/hc/en-us/articles/208580669-What-are-the-limits-of-the-Free-plans-
+- Gmail App Passwords fallback: https://support.google.com/accounts/answer/185833
 
 ## Bước 12 - Cấu Hình SMS/Zalo
 
 Mục tiêu: backend gửi được SMS/Zalo qua webhook/provider thật.
 
-Hiện code Smart Health hỗ trợ cách an toàn nhất cho bản miễn phí/demo: backend POST payload sang webhook do bạn cấu hình. Webhook đó có thể là:
+Không có kênh SMS/Zalo production miễn phí ổn định giống email Brevo. SMS thật thường tính phí theo tin nhắn hoặc chỉ có trial nhỏ; Zalo OA/ZNS có bảng giá, quy định template và xét duyệt. Hiện code Smart Health hỗ trợ cách an toàn nhất cho bản miễn phí/demo: backend POST payload sang webhook do bạn cấu hình. Webhook đó có thể là:
 
 - server riêng của bạn,
 - Make/Zapier/n8n webhook,
@@ -535,7 +538,7 @@ Với Zalo OA production:
 
 Nguồn chính thức: https://developers.zalo.me/docs
 
-Ghi chú: tôi chưa hardcode eSMS/Zalo token vào source vì mỗi tài khoản/provider có API key riêng và có thể mất phí.
+Ghi chú: tôi chưa hardcode eSMS/Zalo token vào source vì mỗi tài khoản/provider có API key riêng và có thể mất phí. Direct adapter cho SpeedSMS/eSMS/VietGuys/Zalo OA/ZNS nên đưa vào hướng phát triển sau khi có tài khoản/token thật.
 
 ## Bước 13 - Cấu Hình Redis
 
@@ -804,7 +807,8 @@ Env S3 đã điền vào hosting: có/chưa
 Outbound:
 
 ```text
-SMTP đã cấu hình: có/chưa
+Brevo email API đã cấu hình: có/chưa
+SMTP fallback đã cấu hình nếu cần: có/chưa
 SMS/Zalo webhook đã cấu hình: có/chưa
 ```
 
@@ -846,7 +850,9 @@ cd D:\Study\KLTN\smart-health-android
 - Firebase Android setup: https://firebase.google.com/docs/android/setup
 - Cloudflare R2 S3 API: https://developers.cloudflare.com/r2/api/s3/
 - Cloudflare R2 API tokens: https://developers.cloudflare.com/r2/api/tokens/
-- Google App Passwords: https://support.google.com/accounts/answer/185833
-- Google Workspace/Gmail SMTP: https://support.google.com/a/answer/176600
+- Render SMTP block on Free services: https://render.com/changelog/free-web-services-will-no-longer-allow-outbound-traffic-to-smtp-ports
+- Brevo transactional email API: https://developers.brevo.com/docs/send-a-transactional-email
+- Brevo Free plan limits: https://help.brevo.com/hc/en-us/articles/208580669-What-are-the-limits-of-the-Free-plans-
+- Google App Passwords fallback: https://support.google.com/accounts/answer/185833
 - Zalo Developers: https://developers.zalo.me/docs
 - Neon Postgres connection strings: https://neon.com/docs/get-started-with-neon/connect-neon

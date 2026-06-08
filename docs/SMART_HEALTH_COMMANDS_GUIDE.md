@@ -619,6 +619,11 @@ rg -n 'window\.confirm|alert\(' -S "D:\Study\KLTN\smart-health-admin\thiáº¿t káº
 Settings outbound envs expected by backend:
 
 ```powershell
+$env:EMAIL_PROVIDER="brevo"
+$env:BREVO_API_KEY="your-brevo-api-key"
+$env:BREVO_FROM_EMAIL="verified-sender@example.com"
+$env:BREVO_FROM_NAME="Smart Health"
+$env:BREVO_API_URL="https://api.brevo.com/v3/smtp/email"
 $env:SMTP_HOST="smtp.gmail.com"
 $env:SMTP_PORT="587"
 $env:SMTP_USER="your-gmail@gmail.com"
@@ -640,7 +645,7 @@ $body=@{channel='sms';to='0900000000';message='Smart Health webhook test'} | Con
 Invoke-RestMethod http://127.0.0.1:3000/api/settings/test-outbound -Method POST -ContentType 'application/json' -Body $body
 ```
 
-Expected without env/config: test email returns 400 listing missing `SMTP_*`; SMS/Zalo test returns 400 when webhook URL is missing.
+Expected without env/config: test email returns 400 listing missing `BREVO_*` or SMTP fallback envs; SMS/Zalo test returns 400 when webhook URL is missing.
 
 ## 2026-06-06 Production Readiness And Third-Party Env
 
@@ -685,6 +690,12 @@ Optional but recommended:
 
 ```env
 REDIS_URL=rediss://:<password>@<host>:6379
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<brevo-api-key>
+BREVO_FROM_EMAIL=<verified-sender@example.com>
+BREVO_FROM_NAME=Smart Health
+BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+# SMTP fallback only for paid hosts/local demos that allow SMTP.
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-gmail@gmail.com
@@ -1058,7 +1069,7 @@ Account Settings avatar/password behavior:
 - Demo/no-Firebase fallback still uses backend current-password validation.
 - Forgot Password uses Firebase Web Auth `sendPasswordResetEmail`; real delivery requires Firebase Console > Authentication > Sign-in method > Email/Password enabled, and `shcare-admin.web.app` listed under authorized domains.
 - If Forgot Password shows a domain/continue URL authorization message, open Firebase Console > Authentication > Settings > Authorized domains and add `shcare-admin.web.app`. This is Firebase configuration, not a backend session problem.
-- Gmail SMTP test email uses backend env `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`. For Gmail, keep `SMTP_FROM` on the same Gmail account as `SMTP_USER` unless the Gmail account has a verified send-as alias. `SMTP_PASS` must be the 16-character Gmail App Password, not the normal Gmail password.
+- Email test now prefers Brevo HTTPS API on Render Free with env `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and optional `BREVO_API_URL`. Gmail SMTP remains fallback only for paid hosts/local demos that allow SMTP; if used, `SMTP_FROM` should match `SMTP_USER` and `SMTP_PASS` must be the 16-character Gmail App Password.
 
 Runtime mojibake/font source audit:
 

@@ -8,8 +8,38 @@ function optional(value) {
   return value === undefined ? null : value;
 }
 
+function objectOf(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function profileClaimsFromUser(user = {}) {
+  return {
+    title: user.title || "",
+    specialty: user.specialty || "",
+    avatarFileId: user.avatarFileId || "",
+    avatarUrl: user.avatarUrl || "",
+    avatarStorage: objectOf(user.avatarStorage),
+    twoFactorEnabled: Boolean(user.twoFactorEnabled),
+    twoFactorMethod: user.twoFactorMethod || "",
+    twoFactorSecretPreview: user.twoFactorSecretPreview || "",
+    twoFactorRecoveryCodes: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes : [],
+    notificationPreferences: objectOf(user.notificationPreferences),
+  };
+}
+
+function firebaseClaimsForUser(user = {}) {
+  const claims = { ...objectOf(user.firebaseClaims) };
+  claims.profile = {
+    ...objectOf(claims.profile),
+    ...profileClaimsFromUser(user),
+  };
+  return claims;
+}
+
 function rowToUser(row) {
   if (!row) return null;
+  const firebaseClaims = objectOf(row.firebase_claims);
+  const profile = objectOf(firebaseClaims.profile);
   return {
     id: row.id,
     firebaseUid: row.firebase_uid || "",
@@ -17,11 +47,21 @@ function rowToUser(row) {
     phone: row.phone || "",
     role: row.role || "patient",
     name: row.name || "",
+    title: profile.title || "",
     password: row.password_hash || "",
     license: row.license || "",
     hospital: row.hospital || "",
     department: row.department || "",
+    specialty: profile.specialty || "",
     address: row.address || "",
+    avatarFileId: profile.avatarFileId || "",
+    avatarUrl: profile.avatarUrl || "",
+    avatarStorage: objectOf(profile.avatarStorage),
+    twoFactorEnabled: Boolean(profile.twoFactorEnabled),
+    twoFactorMethod: profile.twoFactorMethod || "",
+    twoFactorSecretPreview: profile.twoFactorSecretPreview || "",
+    twoFactorRecoveryCodes: Array.isArray(profile.twoFactorRecoveryCodes) ? profile.twoFactorRecoveryCodes : [],
+    notificationPreferences: objectOf(profile.notificationPreferences),
     organizationId: row.organization_id || "",
     patientId: row.patient_id || "",
     verifiedEmail: Boolean(row.verified_email),
@@ -35,7 +75,7 @@ function rowToUser(row) {
     roleRejectReason: row.role_reject_reason || "",
     roleInfoRequestAt: toIso(row.role_info_request_at),
     roleInfoRequestMessage: row.role_info_request_message || "",
-    firebaseClaims: row.firebase_claims || {},
+    firebaseClaims,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
@@ -357,7 +397,7 @@ function createRepositories(options) {
           optional(user.roleRejectReason),
           optional(user.roleInfoRequestAt),
           optional(user.roleInfoRequestMessage),
-          JSON.stringify(user.firebaseClaims || {}),
+          JSON.stringify(firebaseClaimsForUser(user)),
         ]
       )
     );

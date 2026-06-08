@@ -564,3 +564,48 @@ KLTN report artifacts generated from this evidence set:
 - GitHub CI must be observed after pushing because local validation cannot execute GitHub-hosted Actions.
 - Manual GitHub deploy workflow cannot succeed until the user adds Firebase GitHub secrets.
 - Physical ESP32-S3 heartbeat/audio/OTA evidence still requires the board and real device credentials.
+
+## 2026-06-08 Admin Account Management And Account Security Fix
+
+### Implemented
+
+- Added a dedicated Web Admin page `/admin-accounts` under `Hành động quản trị` for platform admins with `platform.users.manage`.
+- The new page can list admin accounts and perform create, edit, lock/unlock, reset-password, and delete actions through backend APIs.
+- Account Settings avatar handling now uses dedicated `/api/me/avatar` upload/download/delete endpoints instead of the generic storage admin flow, so avatar changes work from the profile UI.
+- Password change in Account Settings now uses Firebase re-authentication plus `updatePassword` in production, then confirms the update through backend `/api/me/password`.
+- Backend `PATCH /api/admin/admin-users/:id` now only treats role/workspace as changed when the actual values differ, so editing your own name/title/phone no longer trips the self-role guard.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Web Admin `npm.cmd run build` passed.
+- Web Admin `npm.cmd run build:firebase` passed and prerendered `/admin-accounts`.
+
+### Remaining Limits
+
+- Browser smoke still needs a real authenticated platform-admin session to verify the new admin-account page, avatar upload, and password change end to end.
+- The platform admin still cannot self-change role/workspace or lock/delete the current login account.
+
+## 2026-06-08 Avatar, Password Reset, And Font Cleanup
+
+### Implemented
+
+- Replaced the remaining visible Storage mojibake text with proper Vietnamese: `Hoạt động gần đây` and `Gần đây`.
+- Normalized backend user-facing permission/error strings in `server.js` from old no-accent copy to Vietnamese with accents across the account/admin-account/storage/workspace/doctor/settings/export/sharing paths.
+- Added Firebase forgot-password delivery through `sendPasswordResetEmail` on the Web Admin Forgot Password page. The previous frontend-only timeout is gone.
+- Hardened account avatar storage for production S3/Supabase Storage: backend CORS now accepts `X-File-Name`, S3 uploads include `ContentLength`, `/api/me/avatar` stores durable `avatarStorage` metadata in the user profile, and avatar download is served through the backend from object storage instead of redirecting to a signed URL.
+- Avatar update/removal now deletes or replaces the old avatar object when possible, while hiding storage object metadata from `publicUser`.
+- Password-change notifications now use correct Vietnamese text and include `userId`/`organizationId` metadata so the notification is scoped to the current user.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Web Admin `npm.cmd run build` passed.
+- Web Admin `npm.cmd run build:firebase` passed and prerendered `/forgot-password` and `/account`.
+- Browser smoke on local `/forgot-password` passed; the page renders proper Vietnamese text and was not submitted to avoid sending a real reset email.
+- Source audit passed: no mojibake-pattern hits in `smart-health-admin\thiết kế giao diện\src`, `web-monitor\server.js`, or `web-monitor\src`; remaining `??` matches are valid JavaScript nullish-coalescing operators.
+
+### Remaining Limits
+
+- Real password-reset email delivery still depends on Firebase Console setup: Email/Password provider enabled, password-reset template configured as desired, and `shcare-admin.web.app` authorized.
+- Deployed Render/Firebase Hosting will keep the old behavior until these changes are pushed and redeployed.

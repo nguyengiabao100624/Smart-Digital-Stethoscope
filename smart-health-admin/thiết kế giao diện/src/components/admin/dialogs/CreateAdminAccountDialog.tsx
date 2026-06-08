@@ -42,6 +42,11 @@ const roleOptions = [
     description: "Quản lý bác sĩ, bệnh nhân, thiết bị, lưu trữ và cài đặt của một bệnh viện.",
   },
   {
+    value: "workspace_owner" as const,
+    label: "Chủ sở hữu bệnh viện",
+    description: "Vai trò cao nhất trong một workspace; có toàn quyền trong phạm vi bệnh viện đó.",
+  },
+  {
     value: "admin" as const,
     label: "Admin toàn hệ thống",
     description: "Quản lý toàn bộ workspace, gói dịch vụ, hạ tầng và tài khoản quản trị.",

@@ -189,7 +189,7 @@ export function FileDetailDialog({ file, onClose, onDownload, onShare, onDelete 
                 <div className="relative ml-1.5 space-y-2.5 border-l-2 border-border pl-4">
                   {[
                     { t: "Vừa xong", d: "Quản trị viên mở chi tiết tệp" },
-                    { t: "Gần ??y", d: "Hệ thống kiểm tra quyền truy cập" },
+                    { t: "Gần đây", d: "Hệ thống kiểm tra quyền truy cập" },
                     { t: file.uploadedAt, d: "Tệp được ghi nhận trong storage" },
                   ].map((event, index) => (
                     <div key={index} className="relative">

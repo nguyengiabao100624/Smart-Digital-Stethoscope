@@ -688,3 +688,35 @@ Next practical backlog items:
 - Browser-smoke the firmware selector with a real platform/workspace account after uploading a `.bin`, then run the OTA on a physical ESP32-S3 and capture progress/reboot evidence.
 - Harden security: QR claim-code provisioning, secure NVS/device secret lifecycle, mandatory device secret/certificate validation, trusted CA/cert handling, signed firmware, and rollback.
 - Add battery telemetry only after the battery circuit/ADC divider/charging module is fixed in hardware, so firmware does not fake unsupported battery data.
+
+## 2026-06-08 Backlog Update - Admin Account Management And Account Security
+
+Completed in this slice:
+
+- Added the `/admin-accounts` Web Admin page for platform admins to manage admin accounts from the UI instead of relying on terminal scripts.
+- Completed backend admin-account operations for list, update, lock/unlock, reset password, and delete, with Firebase Admin sync where configured and audit records for dangerous actions.
+- Fixed Account Settings avatar changes by moving profile avatar upload/download/delete to dedicated `/api/me/avatar` endpoints that do not require broad storage-admin permission.
+- Fixed Account Settings password changes for production Firebase users by re-authenticating in Firebase Web Auth, updating the Firebase password, and then recording the change in backend audit/settings.
+- Fixed self-edit logic so saving name/title/phone for the current platform admin no longer fails as a self role/workspace change.
+
+Next practical backlog items:
+
+- Browser-smoke `/admin-accounts` with a real platform-admin session: create a workspace admin, lock/unlock it, reset password, then delete it.
+- Browser-smoke Account Settings avatar upload/remove and password change against the deployed `shcare-admin` + Render backend.
+- Add automated E2E coverage for admin-account lifecycle once test credentials are stable in CI secrets.
+
+## 2026-06-08 Backlog Update - Avatar, Password Reset, And Font Cleanup
+
+Completed in this slice:
+
+- Removed the remaining visible Storage mojibake labels in admin runtime source.
+- Normalized no-accent backend permission/error messages in `server.js` for the account/admin/storage/workspace/settings/export/sharing flows that surface in toast/modal responses.
+- Replaced Forgot Password frontend-only simulation with Firebase `sendPasswordResetEmail`.
+- Hardened `/api/me/avatar` for Supabase/S3 production storage by allowing the upload filename header, sending S3 `ContentLength`, persisting avatar object metadata in the user profile, serving avatar bytes through the backend, and cleaning up old avatar objects.
+- Scoped password-change notifications to the current user and fixed their Vietnamese copy.
+
+Next practical backlog items:
+
+- Push and redeploy Render + Firebase Hosting before re-testing `https://shcare-admin.web.app`; the deployed stack will not change until redeploy.
+- In Firebase Console, verify Email/Password sign-in is enabled and `shcare-admin.web.app` is an authorized domain, then test `/forgot-password` with a real admin email.
+- Browser-smoke Account Settings avatar upload/remove and password change on the deployed site using a real platform-admin account.

@@ -1077,7 +1077,7 @@ export function Storage() {
 
           {/* Recent */}
           <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Hoạt động gần ??y</h2>
+            <h2 className="text-base font-semibold mb-3">Hoạt động gần đây</h2>
             <div className="space-y-3">
               {recentActivity.map((a: SmartHealthStorageActivity, i: number) => (
                 <div key={i} className="flex gap-3 text-sm">

@@ -1024,3 +1024,64 @@ Hardware status from the 2026-06-06 check:
 ```text
 PlatformIO device list showed only COM3 and COM4 Bluetooth serial links. ESP32-S3/COM6 was not connected yet.
 ```
+
+## 2026-06-08 Admin Account, Avatar, And Password Smoke
+
+Web Admin admin-account management route:
+
+```text
+https://shcare-admin.web.app/admin-accounts
+```
+
+Local dev route:
+
+```text
+http://127.0.0.1:5174/admin-accounts
+```
+
+Expected behavior:
+
+- Sign in as a platform/system admin with `platform.users.manage`.
+- Sidebar shows `Tài khoản admin`.
+- `/admin-accounts` lists platform and workspace admin accounts.
+- Create, edit name/title/phone, lock/unlock, reset password, and delete use backend APIs under `/api/admin/admin-users`.
+- Editing the current login account's name/title/phone is allowed. Self role/workspace change, self lock, and self delete are blocked.
+
+Account Settings avatar/password behavior:
+
+- Avatar upload uses `POST /api/me/avatar` with the image body.
+- Avatar preview/download uses authenticated `GET /api/me/avatar`.
+- Avatar removal uses `DELETE /api/me/avatar`.
+- Backend CORS must allow `X-File-Name`; this is required by avatar upload from Firebase Hosting to Render.
+- Production S3/Supabase Storage avatar upload uses `ContentLength` and stores profile `avatarStorage` metadata so `/api/me/avatar` can still serve the image after repository/Postgres reloads.
+- Production password change uses Firebase Web Auth re-authentication plus `updatePassword`, then backend `POST /api/me/password` with `{ "firebaseClientUpdated": true }`.
+- Demo/no-Firebase fallback still uses backend current-password validation.
+- Forgot Password uses Firebase Web Auth `sendPasswordResetEmail`; real delivery requires Firebase Console > Authentication > Sign-in method > Email/Password enabled, and `shcare-admin.web.app` listed under authorized domains.
+
+Runtime mojibake/font source audit:
+
+```powershell
+rg -n "Ă|Ä|áº|á»|Æ|â€|ï¿½|�" "D:\Study\KLTN\smart-health-admin\thiết kế giao diện\src" D:\Study\KLTN\smart-health-embedded\web-monitor\server.js D:\Study\KLTN\smart-health-embedded\web-monitor\src
+rg -n "\?\?y|Gần \?\?|Hoạt động gần \?\?" "D:\Study\KLTN\smart-health-admin\thiết kế giao diện\src"
+```
+
+Expected result after the 2026-06-08 fix: no mojibake-pattern matches in runtime source. Plain `??` matches from a broad search are usually valid JavaScript nullish-coalescing operators, not text errors.
+
+When reading Vietnamese files from Windows PowerShell, use UTF-8 explicitly:
+
+```powershell
+Get-Content -Encoding UTF8 "D:\Study\KLTN\docs\SMART_HEALTH_COMMANDS_GUIDE.md"
+```
+
+Verification commands:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+```
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build
+npm.cmd run build:firebase
+```

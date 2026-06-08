@@ -765,7 +765,7 @@ function normalizeNotificationPreferences(value = {}) {
 
 function publicUser(user) {
   if (!user) return null;
-  const { password, ...safeUser } = user;
+  const { password, avatarStorage, ...safeUser } = user;
   const organization = getClinicById(user.organizationId);
   const workspaceContext = getUserWorkspaceContext(user);
   return {
@@ -2390,6 +2390,7 @@ const SHARING_MANAGE_CAPABILITIES = [
   "workspace.patients.manage",
   "personal.sharing.manage",
 ];
+const MANAGED_ADMIN_ROLES = new Set(["admin", "platform_admin", "workspace_admin", "workspace_owner"]);
 
 function requireRole(req, roles) {
   const user = requireSessionUser(req);
@@ -2577,7 +2578,7 @@ function canManagePatientSharing(user, patient) {
 
 function assertCanManagePatientSharing(user, patient) {
   if (!canManagePatientSharing(user, patient)) {
-    throw httpError(403, "Khong co quyen chia se ho so suc khoe nay");
+    throw httpError(403, "Không có quyền chia sẻ hồ sơ sức khỏe này");
   }
 }
 
@@ -2692,7 +2693,7 @@ function assertCanAccessDevice(user, device) {
 
 function assertCanManageDevice(user, device) {
   if (!canManageDevice(user, device)) {
-    throw httpError(403, "Khong co quyen quan ly thiet bi trong workspace nay");
+    throw httpError(403, "Không có quyền quản lý thiết bị trong workspace này");
   }
 }
 
@@ -2717,7 +2718,7 @@ function canManageScan(user, scan) {
 
 function assertCanManageScan(user, scan) {
   if (!canManageScan(user, scan)) {
-    throw httpError(403, "Khong co quyen cap nhat luot do trong workspace nay");
+    throw httpError(403, "Không có quyền cập nhật lượt đo trong workspace này");
   }
 }
 
@@ -2774,7 +2775,7 @@ function assertCanAccessStorageRecord(user, record) {
 
 function assertCanManageStorageRecord(user, record) {
   if (!canManageStorageRecord(user, record)) {
-    throw httpError(403, "Khong co quyen quan ly tep luu tru trong workspace nay");
+    throw httpError(403, "Không có quyền quản lý tệp lưu trữ trong workspace này");
   }
 }
 
@@ -3428,7 +3429,7 @@ function setCommonHeaders(res, req = res.__smartHealthRequest) {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-File-Name");
   res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("X-Content-Type-Options", "nosniff");
 }
@@ -4082,7 +4083,7 @@ function getMutableSettingsForUser(user) {
   }
   const workspace = getClinicById(getUserWorkspaceContext(user).currentWorkspaceId);
   if (!workspace) {
-    throw httpError(403, "Khong tim thay workspace hien tai");
+    throw httpError(403, "Không tìm thấy workspace hiện tại");
   }
   workspace.settings = mergeSettingsObjects(db.settings, workspace.settings || {});
   workspace.settings.securityPolicy = {
@@ -4233,8 +4234,8 @@ function normalizeManagedAdminRole(value) {
     return {
       role: "admin",
       claimRole: "admin",
-      title: "Quan tri vien he thong",
-      label: "Quan tri toan he thong",
+      title: "Quản trị viên hệ thống",
+      label: "Quản trị toàn hệ thống",
       requiresWorkspace: false,
     };
   }
@@ -4242,8 +4243,8 @@ function normalizeManagedAdminRole(value) {
     return {
       role: "workspace_owner",
       claimRole: "workspace_owner",
-      title: "Chu so huu workspace",
-      label: "Chu so huu benh vien",
+      title: "Chủ sở hữu workspace",
+      label: "Chủ sở hữu bệnh viện",
       requiresWorkspace: true,
     };
   }
@@ -4251,23 +4252,144 @@ function normalizeManagedAdminRole(value) {
     return {
       role: "workspace_admin",
       claimRole: "workspace_admin",
-      title: "Admin benh vien",
-      label: "Admin benh vien",
+      title: "Admin bệnh viện",
+      label: "Admin bệnh viện",
       requiresWorkspace: true,
     };
   }
-  throw httpError(400, "Vai tro admin khong hop le");
+  throw httpError(400, "Vai trò admin không hợp lệ");
 }
 
-async function createManagedAdminAccount(payload = {}, actorUser, req) {
-  requireAnyCapability(actorUser, ["platform.users.manage"], "Chi platform admin moi duoc tao tai khoan quan tri");
+function isManagedAdminAccount(user) {
+  if (!user) return false;
+  const role = readString(user.role || user.requestedRole, 40);
+  return MANAGED_ADMIN_ROLES.has(role);
+}
 
-  if (!FIREBASE_AUTH_ENABLED) {
-    throw httpError(503, "Firebase Admin chua duoc cau hinh tren backend production");
+function activePlatformAdminCount(excludeUserId = "") {
+  return db.users.filter((user) => {
+    if (!user || user.id === excludeUserId) return false;
+    if (readString(user.accountStatus, 40) === "locked") return false;
+    return isPlatformAdminUser(user);
+  }).length;
+}
+
+async function persistUserRecord(user) {
+  user.updatedAt = nowIso();
+  if (repositories) {
+    await repositories.users.save(user);
+    await repositories.memberships.ensureForUser(user);
+  } else {
+    const index = db.users.findIndex((item) => item.id === user.id);
+    if (index >= 0) {
+      db.users[index] = user;
+    } else {
+      db.users.unshift(user);
+    }
+    await saveDb();
+  }
+  return user;
+}
+
+async function findManagedAdminAccount(userId) {
+  const id = readString(userId, 160);
+  const user = repositories
+    ? await repositories.users.findByIdOrFirebaseUid(id)
+    : db.users.find((item) => item.id === id || item.firebaseUid === id);
+  if (!user || !isManagedAdminAccount(user)) {
+    throw httpError(404, "Không tìm thấy tài khoản admin");
+  }
+  return user;
+}
+
+function assertAdminAccountCanBeLockedOrDeleted(actorUser, targetUser, action) {
+  if (actorUser.id === targetUser.id || actorUser.firebaseUid === targetUser.firebaseUid) {
+    throw httpError(400, `Không thể ${action} tài khoản đang đăng nhập`);
+  }
+  if (isPlatformAdminUser(targetUser) && activePlatformAdminCount(targetUser.id) === 0) {
+    throw httpError(400, "Không thể vô hiệu hóa tài khoản admin toàn hệ thống cuối cùng");
+  }
+}
+
+function publicManagedAdminAccount(user) {
+  const organization = getClinicById(user.organizationId);
+  const sessions = db.authSessions.filter((session) => session.userId === user.id && !session.revokedAt);
+  const lastSession = sessions
+    .slice()
+    .sort((a, b) => String(b.lastSeenAt || b.createdAt || "").localeCompare(String(a.lastSeenAt || a.createdAt || "")))[0];
+  return {
+    ...publicUser(user),
+    managedAdmin: true,
+    workspaceName: organization?.name || user.hospital || "",
+    workspaceType: organization?.workspaceType || organization?.type || "",
+    activeSessionCount: sessions.length,
+    lastLoginAt: lastSession?.lastSeenAt || lastSession?.createdAt || "",
+  };
+}
+
+async function updateFirebaseAdminAccount(targetUser, payload = {}) {
+  if (!targetUser.firebaseUid || !FIREBASE_AUTH_ENABLED) {
+    return { updated: false };
   }
   const firebaseAdminApp = getFirebaseAdmin(process.env);
   if (!firebaseAdminApp) {
-    throw httpError(503, "Khong the khoi tao Firebase Admin. Kiem tra service account tren backend");
+    return { updated: false };
+  }
+  const updates = {};
+  if (Object.prototype.hasOwnProperty.call(payload, "displayName")) {
+    updates.displayName = readString(payload.displayName, 160);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "disabled")) {
+    updates.disabled = Boolean(payload.disabled);
+  }
+  if (Object.keys(updates).length > 0) {
+    await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, updates);
+  }
+  return { updated: true };
+}
+
+async function applyManagedAdminRole(targetUser, roleValue, organizationIdValue) {
+  const roleInfo = normalizeManagedAdminRole(roleValue || targetUser.role || "workspace_admin");
+  let organizationId = readString(organizationIdValue || targetUser.organizationId, 120);
+  let organization = null;
+  if (roleInfo.requiresWorkspace) {
+    if (!organizationId) {
+      throw httpError(400, "Admin bệnh viện phải được gán workspace/bệnh viện");
+    }
+    organization = db.organizations.find((item) => item.id === organizationId) || null;
+    if (!organization) {
+      throw httpError(404, "Không tìm thấy workspace/bệnh viện để cấp quyền");
+    }
+  } else {
+    organizationId = organizationId || "org_default_clinic";
+    organization = db.organizations.find((item) => item.id === organizationId) || null;
+  }
+
+  targetUser.role = roleInfo.role;
+  targetUser.requestedRole = roleInfo.role;
+  targetUser.roleRequestStatus = "approved";
+  targetUser.organizationId = organizationId;
+  targetUser.hospital = organization?.name || targetUser.hospital || "Smart Health";
+  targetUser.title = targetUser.title || roleInfo.title;
+
+  const firebaseResult = await setFirebaseRoleClaimsForUser(targetUser, roleInfo.claimRole, organizationId);
+  if (firebaseResult.claims) {
+    targetUser.firebaseClaims = firebaseResult.claims;
+  }
+
+  ensureMembershipForUser(targetUser);
+  return { roleInfo, organization };
+}
+
+async function createManagedAdminAccount(payload = {}, actorUser, req) {
+  requireAnyCapability(actorUser, ["platform.users.manage"], "Chỉ platform admin mới được tạo tài khoản quản trị");
+
+  if (!FIREBASE_AUTH_ENABLED) {
+    throw httpError(503, "Firebase Admin chưa được cấu hình trên backend production");
+  }
+  const firebaseAdminApp = getFirebaseAdmin(process.env);
+  if (!firebaseAdminApp) {
+    throw httpError(503, "Không thể khởi tạo Firebase Admin. Kiểm tra service account trên backend");
   }
 
   const email = readString(payload.email, 160).toLowerCase();
@@ -4277,27 +4399,27 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
   const roleInfo = normalizeManagedAdminRole(payload.role || "workspace_admin");
 
   if (!isValidEmailAddress(email)) {
-    throw httpError(400, "Email admin khong hop le");
+    throw httpError(400, "Email admin không hợp lệ");
   }
   if (!name) {
-    throw httpError(400, "Ho ten admin la bat buoc");
+    throw httpError(400, "Họ tên admin là bắt buộc");
   }
   if (password.length < 8) {
-    throw httpError(400, "Mat khau tam thoi phai co it nhat 8 ky tu");
+    throw httpError(400, "Mật khẩu tạm thời phải có ít nhất 8 ký tự");
   }
   if (findUserByLogin(email)) {
-    throw httpError(409, "Email nay da ton tai trong he thong Smart Health");
+    throw httpError(409, "Email này đã tồn tại trong hệ thống Smart Health");
   }
 
   let organizationId = readString(payload.organizationId || payload.workspaceId, 120);
   let organization = null;
   if (roleInfo.requiresWorkspace) {
     if (!organizationId) {
-      throw httpError(400, "Admin benh vien phai duoc gan workspace/benh vien");
+      throw httpError(400, "Admin bệnh viện phải được gán workspace/bệnh viện");
     }
     organization = db.organizations.find((item) => item.id === organizationId) || null;
     if (!organization) {
-      throw httpError(404, "Khong tim thay workspace/benh vien de cap quyen");
+      throw httpError(404, "Không tìm thấy workspace/bệnh viện để cấp quyền");
     }
   } else {
     organizationId = organizationId || "org_default_clinic";
@@ -4306,7 +4428,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
 
   try {
     await firebaseAdminApp.auth().getUserByEmail(email);
-    throw httpError(409, "Email nay da ton tai tren Firebase Auth");
+    throw httpError(409, "Email này đã tồn tại trên Firebase Auth");
   } catch (err) {
     if (err && err.statusCode === 409) {
       throw err;
@@ -4363,7 +4485,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
   } else {
     db.users.unshift(backendUser);
     ensureMembershipForUser(backendUser);
-    saveDb();
+    await saveDb();
   }
 
   await appendAudit("admin.user.create", req, {
@@ -4378,15 +4500,15 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
       workspaceName: organization?.name || "",
     },
   });
-  addAccessLog(`Tao tai khoan ${roleInfo.label}: ${email}`, {
+  addAccessLog(`Tạo tài khoản ${roleInfo.label}: ${email}`, {
     severity: "success",
     userId: actorUser.id,
     organizationId,
   });
   createNotification(
     "success",
-    "Da tao tai khoan admin",
-    `${name} da duoc cap quyen ${roleInfo.label}.`,
+    "Đã tạo tài khoản admin",
+    `${name} đã được cấp quyền ${roleInfo.label}.`,
     { userId: actorUser.id, organizationId, targetUserId: backendUser.id },
   );
   await saveDb();
@@ -4831,7 +4953,7 @@ function buildStorageFileRecords(user = null) {
       type: file.type || getStorageFileType(file.name, file.contentType),
       size: formatFileSize(Number(file.byteSize || 0)),
       byteSize: Number(file.byteSize || 0),
-      uploader: file.uploader || "Quan tri he thong",
+      uploader: file.uploader || "Quản trị hệ thống",
       uploadedAt: formatDateTime(file.createdAt),
       createdAt: file.createdAt || nowIso(),
       visibility: file.visibility || "private",
@@ -4850,14 +4972,31 @@ function buildStorageFileRecords(user = null) {
   return records.sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
 }
 
-async function serveStorageFileDownload(req, res, fileId) {
+async function serveObjectBufferDownload(req, res, objectFile, downloadName) {
+  const objectKey = readString(objectFile?.objectKey, 1000);
+  if (!objectKey) {
+    throw httpError(404, "Không tìm thấy file trên storage");
+  }
+  const buffer = await storageAdapter.getBuffer(objectKey);
+  setCommonHeaders(res, req);
+  res.writeHead(200, {
+    "Content-Type": objectFile.contentType || "application/octet-stream",
+    "Content-Length": buffer.length,
+    "Content-Disposition": `inline; filename="${downloadName || path.basename(objectKey)}"`,
+  });
+  res.end(buffer);
+}
+
+async function serveStorageFileDownload(req, res, fileId, options = {}) {
   const user = requireUser(req);
   const record = getStorageRecord(fileId);
   if (!record) {
     throw httpError(404, "Không tìm thấy tệp lưu trữ");
   }
 
-  assertCanAccessStorageRecord(user, record);
+  if (!options.skipAccessCheck) {
+    assertCanAccessStorageRecord(user, record);
+  }
   const { scan, audioFile, storageFile } = getStorageFileSource(record);
   const downloadName = buildStorageDownloadFilename(record, { scan, audioFile, storageFile });
 
@@ -5233,7 +5372,7 @@ async function handleAdminApi(req, res, url, segments) {
   const adminUser = requireUser(req);
 
   if (segments[2] === "overview-stats" && method === "GET") {
-    requireAnyCapability(adminUser, DASHBOARD_VIEW_CAPABILITIES, "Khong co quyen xem tong quan workspace");
+    requireAnyCapability(adminUser, DASHBOARD_VIEW_CAPABILITIES, "Không có quyền xem tổng quan workspace");
     const workspaceId = getUserWorkspaceContext(adminUser).currentWorkspaceId || "";
     const scopedPatients = filterPatientsForUser(adminUser, db.patients);
     const scopedDevices = filterDevicesForUser(adminUser, db.devices);
@@ -5285,7 +5424,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-stats" && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Khong co quyen xem storage workspace");
+    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem storage workspace");
     const files = buildStorageFileRecords(adminUser);
     const buckets = buildStorageBucketSummaries(adminUser);
     const totalBytes = files.reduce((sum, file) => sum + Number(file.byteSize || 0), 0);
@@ -5361,7 +5500,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-buckets" && segments.length === 3 && method === "POST") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Khong co quyen tao bucket storage");
+    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền tạo bucket storage");
     const payload = await readJsonBody(req);
     const id = sanitizeStorageId(payload.id || payload.name);
     if (getStorageBucket(id)) {
@@ -5381,7 +5520,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-buckets" && segments.length === 4 && method === "DELETE") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Khong co quyen xoa bucket storage");
+    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa bucket storage");
     const bucketId = decodeURIComponent(segments[3]);
     const bucket = getStorageBucket(bucketId);
     if (!bucket) {
@@ -5406,7 +5545,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments.length === 5 && segments[2] === "storage-files" && segments[4] === "share" && method === "POST") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Khong co quyen tao signed URL chia se file");
+    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền tạo signed URL chia sẻ file");
     const fileId = decodeURIComponent(segments[3]);
     const record = getStorageRecord(fileId);
     if (!record) {
@@ -5429,13 +5568,13 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-files" && segments.length === 3 && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Khong co quyen xem tep storage");
+    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem tệp storage");
     sendJson(res, 200, { files: buildStorageFileRecords(adminUser) });
     return;
   }
 
   if (segments[2] === "storage-files" && segments.length === 3 && method === "POST") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Khong co quyen upload storage");
+    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền upload storage");
     const bucketId = sanitizeStorageId(url.searchParams.get("bucket") || req.headers["x-storage-bucket"], "heart-audio");
     const bucket = getStorageBucket(bucketId);
     if (!bucket) {
@@ -5493,7 +5632,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-files" && segments.length === 4 && method === "DELETE") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Khong co quyen xoa tep storage");
+    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa tệp storage");
     const fileId = decodeURIComponent(segments[3]);
     const record = getStorageRecord(fileId);
     if (!record) {
@@ -5520,7 +5659,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-stats" && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Khong co quyen xem storage workspace");
+    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem storage workspace");
     {
     const files = buildStorageFileRecords(adminUser);
     const audioBytes = files.reduce((sum, file) => sum + Number(file.byteSize || 0), 0);
@@ -5651,13 +5790,13 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments.length === 5 && segments[2] === "storage-files" && segments[4] === "download" && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Khong co quyen tai file storage");
+    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền tải file storage");
     await serveStorageFileDownload(req, res, decodeURIComponent(segments[3]));
     return;
   }
 
   if (segments[2] === "storage-files" && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Khong co quyen xem tep storage");
+    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem tệp storage");
     {
     sendJson(res, 200, { files: buildStorageFileRecords(adminUser) });
     return;
@@ -5686,7 +5825,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "sync-firebase" && method === "POST") {
-    requireAnyCapability(adminUser, ["platform.users.manage"], "Chi platform admin moi duoc dong bo Firebase");
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được đồng bộ Firebase");
     let deletedCount = 0;
     if (FIREBASE_AUTH_ENABLED) {
       try {
@@ -5717,6 +5856,27 @@ async function handleAdminApi(req, res, url, segments) {
     return;
   }
 
+  if (segments[2] === "admin-users" && segments.length === 3 && method === "GET") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được xem tài khoản quản trị");
+    const role = readString(url.searchParams.get("role"), 40);
+    const status = readString(url.searchParams.get("status"), 40);
+    const q = readString(url.searchParams.get("q"), 160).toLowerCase();
+    const adminUsers = db.users
+      .filter(isManagedAdminAccount)
+      .filter((user) => !role || user.role === role || user.requestedRole === role)
+      .filter((user) => !status || readString(user.accountStatus || "active", 40) === status)
+      .filter((user) => {
+        if (!q) return true;
+        return [user.name, user.email, user.phone, user.hospital, user.organizationId]
+          .map((value) => readString(value, 240).toLowerCase())
+          .some((value) => value.includes(q));
+      })
+      .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")))
+      .map(publicManagedAdminAccount);
+    sendJson(res, 200, { users: adminUsers });
+    return;
+  }
+
   if (segments[2] === "admin-users" && segments.length === 3 && method === "POST") {
     const payload = await readJsonBody(req);
     const result = await createManagedAdminAccount(payload, adminUser, req);
@@ -5724,9 +5884,188 @@ async function handleAdminApi(req, res, url, segments) {
     return;
   }
 
+  if (segments[2] === "admin-users" && segments.length === 4 && method === "PATCH") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được cập nhật tài khoản quản trị");
+    const targetUser = await findManagedAdminAccount(decodeURIComponent(segments[3]));
+    const payload = await readJsonBody(req);
+    const currentRole = normalizeManagedAdminRole(targetUser.role);
+    const currentOrganizationId = readString(targetUser.organizationId || targetUser.workspaceId || "", 120);
+    const nextRole = Object.prototype.hasOwnProperty.call(payload, "role")
+      ? normalizeManagedAdminRole(payload.role)
+      : currentRole;
+    const nextOrganizationId = Object.prototype.hasOwnProperty.call(payload, "organizationId") ||
+      Object.prototype.hasOwnProperty.call(payload, "workspaceId")
+      ? readString(payload.organizationId || payload.workspaceId, 120) || currentOrganizationId
+      : currentOrganizationId;
+
+    if (Object.prototype.hasOwnProperty.call(payload, "name")) {
+      targetUser.name = readString(payload.name, 160);
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "phone")) {
+      targetUser.phone = readString(payload.phone, 40);
+      targetUser.verifiedPhone = Boolean(targetUser.phone);
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "title")) {
+      targetUser.title = readString(payload.title, 120);
+    }
+
+    const roleChanged = nextRole !== currentRole || nextOrganizationId !== currentOrganizationId;
+    if (roleChanged) {
+      if (targetUser.id === adminUser.id) {
+        throw httpError(400, "Không thể tự thay đổi vai trò/workspace của tài khoản đang đăng nhập");
+      }
+      await applyManagedAdminRole(targetUser, nextRole, nextOrganizationId);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "accountStatus")) {
+      const nextStatus = readString(payload.accountStatus, 40) || "active";
+      if (!["active", "locked"].includes(nextStatus)) {
+        throw httpError(400, "Trạng thái tài khoản admin không hợp lệ");
+      }
+      if (nextStatus === "locked") {
+        assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "khóa");
+      }
+      targetUser.accountStatus = nextStatus;
+      await updateFirebaseAdminAccount(targetUser, { disabled: nextStatus === "locked" });
+      if (nextStatus === "locked") {
+        db.authSessions = db.authSessions.map((session) =>
+          session.userId === targetUser.id ? { ...session, revokedAt: session.revokedAt || nowIso() } : session,
+        );
+      }
+    }
+
+    await updateFirebaseAdminAccount(targetUser, { displayName: targetUser.name });
+    await persistUserRecord(targetUser);
+    await appendAudit("admin.user.update", req, {
+      actorUserId: adminUser.id,
+      organizationId: targetUser.organizationId || "",
+      resourceType: "user",
+      resourceId: targetUser.id,
+      metadata: { role: targetUser.role, accountStatus: targetUser.accountStatus || "active" },
+    });
+    addAccessLog("Cập nhật tài khoản admin", { severity: "info", userId: adminUser.id, targetUserId: targetUser.id });
+    sendJson(res, 200, { user: publicManagedAdminAccount(targetUser) });
+    return;
+  }
+
+  if (segments[2] === "admin-users" && segments.length === 5 && segments[4] === "reset-password" && method === "POST") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được đặt lại mật khẩu admin");
+    const targetUser = await findManagedAdminAccount(decodeURIComponent(segments[3]));
+    const payload = await readJsonBody(req);
+    const nextPassword = readString(payload.password || payload.newPassword || payload.temporaryPassword, 200);
+    if (nextPassword.length < 8) {
+      throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự");
+    }
+    if (FIREBASE_AUTH_ENABLED) {
+      if (!targetUser.firebaseUid) {
+        throw httpError(400, "Tài khoản này chưa liên kết Firebase Auth nên không thể đặt lại mật khẩu");
+      }
+      const firebaseAdminApp = getFirebaseAdmin(process.env);
+      if (!firebaseAdminApp) {
+        throw httpError(503, "Firebase Admin chưa sẵn sàng");
+      }
+      await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, { password: nextPassword, disabled: false });
+      await firebaseAdminApp.auth().revokeRefreshTokens(targetUser.firebaseUid);
+    } else {
+      assertDemoAuthAllowed();
+      targetUser.password = nextPassword;
+    }
+    targetUser.accountStatus = "active";
+    targetUser.updatedAt = nowIso();
+    db.authSessions = db.authSessions.map((session) =>
+      session.userId === targetUser.id ? { ...session, revokedAt: session.revokedAt || nowIso() } : session,
+    );
+    await persistUserRecord(targetUser);
+    await appendAudit("admin.user.reset_password", req, {
+      actorUserId: adminUser.id,
+      organizationId: targetUser.organizationId || "",
+      resourceType: "user",
+      resourceId: targetUser.id,
+    });
+    createNotification("warning", "Mật khẩu admin đã được đặt lại", `Tài khoản ${targetUser.email} vừa được cấp mật khẩu mới.`, {
+      userId: adminUser.id,
+      organizationId: targetUser.organizationId || "",
+      targetUserId: targetUser.id,
+    });
+    sendJson(res, 200, { ok: true, user: publicManagedAdminAccount(targetUser) });
+    return;
+  }
+
+  if (segments[2] === "admin-users" && segments.length === 5 && ["lock", "unlock"].includes(segments[4]) && method === "POST") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được khóa/mở khóa admin");
+    const targetUser = await findManagedAdminAccount(decodeURIComponent(segments[3]));
+    const action = segments[4];
+    if (action === "lock") {
+      assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "khóa");
+    }
+    targetUser.accountStatus = action === "lock" ? "locked" : "active";
+    await updateFirebaseAdminAccount(targetUser, { disabled: action === "lock" });
+    if (action === "lock") {
+      db.authSessions = db.authSessions.map((session) =>
+        session.userId === targetUser.id ? { ...session, revokedAt: session.revokedAt || nowIso() } : session,
+      );
+    }
+    await persistUserRecord(targetUser);
+    await appendAudit(`admin.user.${action}`, req, {
+      actorUserId: adminUser.id,
+      organizationId: targetUser.organizationId || "",
+      resourceType: "user",
+      resourceId: targetUser.id,
+    });
+    sendJson(res, 200, { user: publicManagedAdminAccount(targetUser) });
+    return;
+  }
+
+  if (segments[2] === "admin-users" && segments.length === 4 && method === "DELETE") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được xóa tài khoản admin");
+    const targetUser = await findManagedAdminAccount(decodeURIComponent(segments[3]));
+    assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "xóa");
+    let firebaseDeleted = false;
+    let firebaseAlreadyMissing = false;
+    if (targetUser.firebaseUid && FIREBASE_AUTH_ENABLED) {
+      const firebaseAdminApp = getFirebaseAdmin(process.env);
+      if (firebaseAdminApp) {
+        try {
+          await firebaseAdminApp.auth().deleteUser(targetUser.firebaseUid);
+          firebaseDeleted = true;
+        } catch (err) {
+          if (err && err.code === "auth/user-not-found") {
+            firebaseAlreadyMissing = true;
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
+    if (repositories) {
+      await repositories.users.deleteById(targetUser.id);
+    } else {
+      db.users = db.users.filter((user) => user.id !== targetUser.id);
+      db.memberships = db.memberships.filter((membership) => membership.userId !== targetUser.id);
+      db.sessions = db.sessions.filter((session) => session.userId !== targetUser.id);
+      db.authSessions = db.authSessions.filter((session) => session.userId !== targetUser.id);
+      await saveDb();
+    }
+    await appendAudit("admin.user.delete", req, {
+      actorUserId: adminUser.id,
+      organizationId: targetUser.organizationId || "",
+      resourceType: "user",
+      resourceId: targetUser.id,
+      metadata: { firebaseUid: targetUser.firebaseUid || "", firebaseDeleted, firebaseAlreadyMissing },
+    });
+    sendJson(res, 200, {
+      deleted: true,
+      userId: targetUser.id,
+      firebaseUid: targetUser.firebaseUid || "",
+      firebaseDeleted,
+      firebaseAlreadyMissing,
+    });
+    return;
+  }
+
   if (segments[2] === "clinics" || segments[2] === "workspaces") {
     if (segments.length === 3 && method === "GET") {
-      requireAnyCapability(adminUser, WORKSPACE_VIEW_CAPABILITIES, "Khong co quyen xem workspace");
+      requireAnyCapability(adminUser, WORKSPACE_VIEW_CAPABILITIES, "Không có quyền xem workspace");
       const currentWorkspaceId = getUserWorkspaceContext(adminUser).currentWorkspaceId;
       const sourceWorkspaces = isPlatformAdminUser(adminUser)
         ? db.organizations
@@ -5737,7 +6076,7 @@ async function handleAdminApi(req, res, url, segments) {
     }
 
     if (segments.length === 3 && method === "POST") {
-      requireAnyCapability(adminUser, ["platform.workspaces.manage"], "Chi platform admin moi duoc tao workspace");
+      requireAnyCapability(adminUser, ["platform.workspaces.manage"], "Chỉ platform admin mới được tạo workspace");
       const payload = await readJsonBody(req);
       const name = readString(payload.name, 160);
       if (!name) {
@@ -5784,7 +6123,7 @@ async function handleAdminApi(req, res, url, segments) {
     }
 
     if (segments.length === 5 && segments[4] === "package" && method === "POST") {
-      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Khong co quyen gan goi dich vu");
+      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền gán gói dịch vụ");
       const clinicId = decodeURIComponent(segments[3]);
       const clinic = db.organizations.find((item) => item.id === clinicId);
       if (!clinic) {
@@ -5822,7 +6161,7 @@ async function handleAdminApi(req, res, url, segments) {
     }
 
     if (segments.length === 4 && method === "DELETE") {
-      requireAnyCapability(adminUser, ["platform.workspaces.manage"], "Chi platform admin moi duoc xoa workspace");
+      requireAnyCapability(adminUser, ["platform.workspaces.manage"], "Chỉ platform admin mới được xóa workspace");
       const clinicId = decodeURIComponent(segments[3]);
       const clinic = db.organizations.find((item) => item.id === clinicId);
       if (!clinic) {
@@ -5853,7 +6192,7 @@ async function handleAdminApi(req, res, url, segments) {
     if (segments.length === 4 && method === "PATCH") {
       const clinicId = decodeURIComponent(segments[3]);
       const clinic = db.organizations.find((item) => item.id === clinicId);
-      requireAnyCapability(adminUser, WORKSPACE_MANAGE_CAPABILITIES, "Khong co quyen cap nhat workspace");
+      requireAnyCapability(adminUser, WORKSPACE_MANAGE_CAPABILITIES, "Không có quyền cập nhật workspace");
       if (!isPlatformAdminUser(adminUser) && clinicId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
         throw httpError(403, "Workspace nam ngoai pham vi hien tai");
       }
@@ -5865,7 +6204,7 @@ async function handleAdminApi(req, res, url, segments) {
       if (!isPlatformAdminUser(adminUser)) {
         for (const restrictedField of ["type", "workspaceType", "status", "ownerUserId", "packageId", "subscriptionStatus", "billingCycle"]) {
           if (Object.prototype.hasOwnProperty.call(payload, restrictedField)) {
-            throw httpError(403, "Workspace Portal khong duoc sua goi, billing hoac loai workspace");
+            throw httpError(403, "Workspace Portal không được sửa gói, billing hoặc loại workspace");
           }
         }
       }
@@ -5924,13 +6263,13 @@ async function handleAdminApi(req, res, url, segments) {
 
   if (segments[2] === "packages") {
     if (segments.length === 3 && method === "GET") {
-      requireAnyCapability(adminUser, ["platform.packages.manage"], "Khong co quyen xem goi dich vu he thong");
+      requireAnyCapability(adminUser, ["platform.packages.manage"], "Không có quyền xem gói dịch vụ hệ thống");
       sendJson(res, 200, { packages: db.servicePackages });
       return;
     }
 
     if (segments.length === 3 && method === "POST") {
-      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Khong co quyen tao goi dich vu");
+      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền tạo gói dịch vụ");
       const payload = await readJsonBody(req);
       const name = readString(payload.name || payload.packageName, 160);
       if (!name) {
@@ -5968,7 +6307,7 @@ async function handleAdminApi(req, res, url, segments) {
     }
 
     if (segments.length === 4 && method === "PATCH") {
-      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Khong co quyen sua goi dich vu");
+      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền sửa gói dịch vụ");
       const packageId = decodeURIComponent(segments[3]);
       const servicePackage = db.servicePackages.find((item) => item.id === packageId);
       if (!servicePackage) {
@@ -6012,7 +6351,7 @@ async function handleAdminApi(req, res, url, segments) {
     }
 
     if (segments.length === 4 && method === "DELETE") {
-      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Khong co quyen xoa goi dich vu");
+      requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền xóa gói dịch vụ");
       const packageId = decodeURIComponent(segments[3]);
       const servicePackage = db.servicePackages.find((item) => item.id === packageId);
       if (!servicePackage) {
@@ -6032,7 +6371,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "doctor-requests") {
-    requireAnyCapability(adminUser, ["platform.doctorRequests.manage"], "Chi platform admin moi duoc xu ly yeu cau bac si");
+    requireAnyCapability(adminUser, ["platform.doctorRequests.manage"], "Chỉ platform admin mới được xử lý yêu cầu bác sĩ");
     if (segments.length === 3 && method === "GET") {
       const status = readString(url.searchParams.get("status"), 40);
       const users = repositories ? await repositories.users.listDoctorRequests(status) : db.users
@@ -6216,7 +6555,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "doctors" && segments.length === 3 && method === "GET") {
-    requireAnyCapability(adminUser, ["platform.users.manage", "workspace.staff.manage"], "Khong co quyen xem nhan su bac si");
+    requireAnyCapability(adminUser, ["platform.users.manage", "workspace.staff.manage"], "Không có quyền xem nhân sự bác sĩ");
     const users = (repositories ? await repositories.users.listApprovedDoctors() : db.users
       .filter((user) => user.requestedRole === "doctor" && user.roleRequestStatus === "approved"))
       .filter((user) => isPlatformAdminUser(adminUser) || user.organizationId === getUserWorkspaceContext(adminUser).currentWorkspaceId)
@@ -6228,7 +6567,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "doctors" && segments.length === 3 && method === "POST") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Khong co quyen tao tai khoan bac si");
+    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền tạo tài khoản bác sĩ");
     const payload = await readJsonBody(req);
     const email = readString(payload.email, 160).toLowerCase();
     const phone = readString(payload.phone, 40);
@@ -6281,7 +6620,7 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "doctors" && segments.length === 4 && method === "DELETE") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Khong co quyen xoa tai khoan bac si");
+    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền xóa tài khoản bác sĩ");
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories
       ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
@@ -6294,7 +6633,7 @@ async function handleAdminApi(req, res, url, segments) {
       throw httpError(400, "Only doctor accounts can be deleted from this endpoint");
     }
     if (!isPlatformAdminUser(adminUser) && targetUser.organizationId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
-      throw httpError(403, "Khong duoc xoa bac si ngoai workspace");
+      throw httpError(403, "Không được xóa bác sĩ ngoài workspace");
     }
 
     let firebaseDeleted = false;
@@ -6384,14 +6723,14 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "lock" && method === "PATCH") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Khong co quyen khoa tai khoan bac si");
+    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền khóa tài khoản bác sĩ");
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories ? await repositories.users.findByIdOrFirebaseUid(targetUserId) : db.users.find((u) => u.id === targetUserId);
     if (!targetUser) {
       throw httpError(404, "User not found");
     }
     if (!isPlatformAdminUser(adminUser) && targetUser.organizationId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
-      throw httpError(403, "Khong duoc khoa bac si ngoai workspace");
+      throw httpError(403, "Không được khóa bác sĩ ngoài workspace");
     }
     
     targetUser.role = "patient";
@@ -6425,14 +6764,14 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "unlock" && method === "PATCH") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Khong co quyen mo khoa tai khoan bac si");
+    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền mở khóa tài khoản bác sĩ");
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories ? await repositories.users.findByIdOrFirebaseUid(targetUserId) : db.users.find((u) => u.id === targetUserId);
     if (!targetUser) {
       throw httpError(404, "User not found");
     }
     if (!isPlatformAdminUser(adminUser) && targetUser.organizationId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
-      throw httpError(403, "Khong duoc mo khoa bac si ngoai workspace");
+      throw httpError(403, "Không được mở khóa bác sĩ ngoài workspace");
     }
     
     targetUser.role = "doctor";
@@ -6522,9 +6861,161 @@ async function handleMeApi(req, res, segments) {
     return;
   }
 
+  if (segments.length === 3 && segments[2] === "avatar" && method === "GET") {
+    const avatarFileId = readString(user.avatarFileId, 160);
+    const avatarStorage =
+      user.avatarStorage && typeof user.avatarStorage === "object" && !Array.isArray(user.avatarStorage)
+        ? user.avatarStorage
+        : {};
+    if (!avatarFileId && !avatarStorage.objectKey) {
+      throw httpError(404, "Tài khoản chưa có ảnh đại diện");
+    }
+    if (avatarFileId) {
+      const record = getStorageRecord(avatarFileId);
+      const source = record ? getStorageFileSource(record) : {};
+      if (record && record.bucket === "avatars" && (!source.storageFile?.createdByUserId || source.storageFile.createdByUserId === user.id)) {
+        const objectFile = source.storageFile || record;
+        await serveObjectBufferDownload(req, res, objectFile, objectFile.name || record.name || "avatar.png");
+        return;
+      }
+    }
+    if (avatarStorage.objectKey) {
+      await serveObjectBufferDownload(req, res, avatarStorage, avatarStorage.name || "avatar.png");
+      return;
+    }
+    throw httpError(404, "Không tìm thấy ảnh đại diện của tài khoản");
+  }
+
+  if (segments.length === 3 && segments[2] === "avatar" && method === "POST") {
+    const bucket = getStorageBucket("avatars");
+    if (!bucket) {
+      throw httpError(500, "Bucket avatars chưa sẵn sàng");
+    }
+    const originalName = readString(req.headers["x-file-name"], 240) || `${user.id || "avatar"}.png`;
+    const contentType = readString(req.headers["content-type"], 160) || "application/octet-stream";
+    const buffer = await readRequestBuffer(req);
+    if (!buffer.length) {
+      throw httpError(400, "File ảnh đại diện đang rỗng");
+    }
+    assertStorageUploadAllowed(bucket, originalName, contentType, buffer.length);
+    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+    const fileId = createId("file");
+    const organizationId = user.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "org_default_clinic";
+    const objectKey = buildStorageObjectKey(organizationId, bucket.id, fileId, originalName);
+    const upload = await storageAdapter.putBuffer(objectKey, buffer, contentType);
+    const storageFile = {
+      id: fileId,
+      bucket: bucket.id,
+      name: path.basename(originalName),
+      objectKey,
+      storageProvider: upload.provider,
+      contentType,
+      type: getStorageFileType(originalName, contentType),
+      byteSize: upload.byteSize || buffer.length,
+      checksum,
+      sha256: checksum,
+      firmwareVersion: "",
+      visibility: "public",
+      tags: ["avatar", "account"],
+      uploader: user.name || user.email || "Tài khoản Smart Health",
+      createdByUserId: user.id,
+      organizationId,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    db.storageFiles.unshift(storageFile);
+    db.storageFiles = db.storageFiles.slice(0, 1000);
+    const previousAvatarFileId = readString(user.avatarFileId, 160);
+    const previousAvatarStorage =
+      user.avatarStorage && typeof user.avatarStorage === "object" && !Array.isArray(user.avatarStorage)
+        ? user.avatarStorage
+        : {};
+    user.avatarFileId = storageFile.id;
+    user.avatarUrl = "/api/me/avatar";
+    user.avatarStorage = {
+      objectKey: storageFile.objectKey,
+      storageProvider: storageFile.storageProvider,
+      contentType: storageFile.contentType,
+      name: storageFile.name,
+      byteSize: storageFile.byteSize,
+      checksum: storageFile.checksum,
+      uploadedAt: storageFile.createdAt,
+    };
+    await persistUserRecord(user);
+    if (previousAvatarStorage.objectKey && previousAvatarStorage.objectKey !== storageFile.objectKey) {
+      storageAdapter.deleteObject(previousAvatarStorage.objectKey).catch(() => {});
+    }
+    if (previousAvatarFileId && previousAvatarFileId !== storageFile.id) {
+      db.storageFiles = db.storageFiles.filter((file) => file.id !== previousAvatarFileId);
+    }
+    await appendAudit("account.avatar.update", req, {
+      actorUserId: user.id,
+      organizationId,
+      resourceType: "storage_file",
+      resourceId: storageFile.id,
+    });
+    await saveDb();
+    const file = buildStorageFileRecords(user).find((item) => item.id === storageFile.id) || {
+      id: storageFile.id,
+      bucket: storageFile.bucket,
+      name: storageFile.name,
+      downloadUrl: "/api/me/avatar",
+    };
+    sendJson(res, 201, { user: publicUser(user), file: { ...file, downloadUrl: "/api/me/avatar" } });
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "avatar" && method === "DELETE") {
+    const avatarFileId = readString(user.avatarFileId, 160);
+    const avatarStorage =
+      user.avatarStorage && typeof user.avatarStorage === "object" && !Array.isArray(user.avatarStorage)
+        ? user.avatarStorage
+        : {};
+    if (avatarStorage.objectKey) {
+      await storageAdapter.deleteObject(avatarStorage.objectKey).catch(() => {});
+    }
+    if (avatarFileId) {
+      db.storageFiles = db.storageFiles.filter((file) => file.id !== avatarFileId);
+    }
+    user.avatarFileId = "";
+    user.avatarUrl = "";
+    user.avatarStorage = {};
+    await persistUserRecord(user);
+    await appendAudit("account.avatar.delete", req, {
+      actorUserId: user.id,
+      organizationId: user.organizationId || "",
+      resourceType: "user",
+      resourceId: user.id,
+    });
+    sendJson(res, 200, { user: publicUser(user) });
+    return;
+  }
+
   if (segments.length === 3 && segments[2] === "password" && method === "POST") {
-    assertDemoAuthAllowed();
     const payload = await readJsonBody(req);
+    if (FIREBASE_AUTH_ENABLED && user.firebaseUid) {
+      if (payload.firebaseClientUpdated !== true) {
+        throw httpError(400, "Đổi mật khẩu Firebase cần xác thực lại trên Web Admin trước khi ghi nhận backend.");
+      }
+      user.updatedAt = nowIso();
+      db.settings.privacy.passwordUpdatedAt = nowIso();
+      await persistUserRecord(user);
+      await appendAudit("account.password.change", req, {
+        actorUserId: user.id,
+        organizationId: user.organizationId || "",
+        resourceType: "user",
+        resourceId: user.id,
+      });
+      createNotification("success", "Đã đổi mật khẩu", "Mật khẩu Firebase của tài khoản vừa được cập nhật.", {
+        userId: user.id,
+        organizationId: user.organizationId || "",
+      });
+      await saveDb();
+      sendJson(res, 200, { ok: true, provider: "firebase" });
+      return;
+    }
+
+    assertDemoAuthAllowed();
     if (user.password !== readString(payload.currentPassword, 200)) {
       throw httpError(400, "Mật khẩu hiện tại không đúng");
     }
@@ -6536,7 +7027,10 @@ async function handleMeApi(req, res, segments) {
     user.updatedAt = nowIso();
     db.settings.privacy.passwordUpdatedAt = nowIso();
     addAccessLog("Đổi mật khẩu tài khoản");
-    createNotification("success", "Đã đổi mật khẩu", "Mật khẩu tài khoản vừa được cập nhật.");
+    createNotification("success", "Đã đổi mật khẩu", "Mật khẩu tài khoản vừa được cập nhật.", {
+      userId: user.id,
+      organizationId: user.organizationId || "",
+    });
     saveDb();
     sendJson(res, 200, { ok: true });
     return;
@@ -6565,10 +7059,10 @@ async function handleMeApi(req, res, segments) {
     }
 
     if (!["app", "sms"].includes(methodName)) {
-      throw httpError(400, "Phuong thuc 2FA khong hop le");
+      throw httpError(400, "Phương thức 2FA không hợp lệ");
     }
     if (methodName === "sms" && !readString(user.phone, 40)) {
-      throw httpError(400, "Can cap nhat so dien thoai truoc khi bat 2FA SMS");
+      throw httpError(400, "Cần cập nhật số điện thoại trước khi bật 2FA SMS");
     }
 
     const secret = crypto.randomBytes(10).toString("base64url").toUpperCase();
@@ -6593,7 +7087,7 @@ async function handleMeApi(req, res, segments) {
         method: methodName,
         secretPreview: user.twoFactorSecretPreview,
         recoveryCodes,
-        note: "2FA demo da duoc luu vao backend. OTP provider that se tich hop sau.",
+        note: "2FA demo đã được lưu vào backend. OTP provider thật sẽ tích hợp sau.",
       },
     });
     return;
@@ -6612,13 +7106,13 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "production-readiness" && method === "GET") {
-    requireAnyCapability(user, ["platform.settings.manage"], "Khong co quyen xem cau hinh trien khai");
+    requireAnyCapability(user, ["platform.settings.manage"], "Không có quyền xem cấu hình triển khai");
     sendJson(res, 200, { readiness: buildProductionReadiness(process.env) });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "test-email" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen test email");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền test email");
     const payload = await readJsonBody(req);
     const result = await sendTestEmail(payload);
     await appendAudit("settings.test_email", req, {
@@ -6633,7 +7127,7 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "test-outbound" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen test webhook");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền test webhook");
     const payload = await readJsonBody(req);
     const result = await sendTestOutbound(payload, user);
     await appendAudit("settings.test_outbound", req, {
@@ -6648,7 +7142,7 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "backup-check" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen kiem tra backup");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền kiểm tra backup");
     const { settings, workspace } = getMutableSettingsForUser(user);
     const files = buildStorageFileRecords(user);
     const summary = {
@@ -6685,7 +7179,7 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "api-keys" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen tao API key");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền tạo API key");
     const payload = await readJsonBody(req);
     const { settings, workspace } = getMutableSettingsForUser(user);
     const secret = createDemoSecret(isPlatformAdminUser(user) ? "sk_live" : "sk_ws");
@@ -6716,13 +7210,13 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 5 && segments[2] === "api-keys" && segments[4] === "rotate" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen rotate API key");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền rotate API key");
     const keyId = decodeURIComponent(segments[3]);
     const { settings, workspace } = getMutableSettingsForUser(user);
     const apiKeys = Array.isArray(settings.securityPolicy?.apiKeys) ? settings.securityPolicy.apiKeys : [];
     const apiKey = apiKeys.find((item) => item.id === keyId);
     if (!apiKey) {
-      throw httpError(404, "Khong tim thay API key");
+      throw httpError(404, "Không tìm thấy API key");
     }
     const secret = createDemoSecret(apiKey.scope === "platform" ? "sk_live" : "sk_ws");
     apiKey.keyPreview = maskSecret(secret);
@@ -6743,13 +7237,13 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 4 && segments[2] === "api-keys" && method === "DELETE") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen thu hoi API key");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền thu hồi API key");
     const keyId = decodeURIComponent(segments[3]);
     const { settings, workspace } = getMutableSettingsForUser(user);
     const apiKeys = Array.isArray(settings.securityPolicy?.apiKeys) ? settings.securityPolicy.apiKeys : [];
     const apiKey = apiKeys.find((item) => item.id === keyId);
     if (!apiKey) {
-      throw httpError(404, "Khong tim thay API key");
+      throw httpError(404, "Không tìm thấy API key");
     }
     apiKey.status = "revoked";
     apiKey.updatedAt = nowIso();
@@ -6767,7 +7261,7 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 4 && segments[2] === "ai" && segments[3] === "check-update" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen kiem tra AI");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền kiểm tra AI");
     const settings = getEffectiveSettingsForUser(user);
     const currentVersion = readString(settings.ai?.version, 120) || "AI Medical Analysis v3.2.1";
     sendJson(res, 200, {
@@ -6784,7 +7278,7 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 4 && segments[2] === "ai" && segments[3] === "update" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen cap nhat AI");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
     const { settings, workspace } = getMutableSettingsForUser(user);
     settings.ai = {
       ...(settings.ai || {}),
@@ -6806,7 +7300,7 @@ async function handleSettingsApi(req, res, segments) {
   }
 
   if (segments.length === 2 && method === "PATCH") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen cap nhat cai dat");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật cài đặt");
     const payload = await readJsonBody(req);
     const currentSettings = getEffectiveSettingsForUser(user);
     const patch = parseSettingsPatch(payload, currentSettings);
@@ -7442,7 +7936,7 @@ async function handleAiApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "settings" && method === "PATCH") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen cap nhat AI");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
     const payload = await readJsonBody(req);
     db.settings.ai = {
       ...db.settings.ai,
@@ -7456,7 +7950,7 @@ async function handleAiApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "update" && method === "POST") {
-    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Khong co quyen cap nhat AI");
+    requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
     db.settings.ai.updatedAt = nowIso();
     createNotification("success", "Đã cập nhật mô hình AI", "Mô hình AI đang dùng là phiên bản mới nhất.");
     saveDb();
@@ -7472,13 +7966,13 @@ async function handleExportsApi(req, res, segments) {
   const user = requireUser(req);
 
   if (segments.length === 2 && method === "GET") {
-    requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Khong co quyen xem ban xuat du lieu");
+    requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền xem bản xuất dữ liệu");
     sendJson(res, 200, { exports: filterExportsForUser(user, db.exports) });
     return;
   }
 
   if (segments.length === 2 && method === "POST") {
-    requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Khong co quyen tao ban xuat du lieu");
+    requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền tạo bản xuất dữ liệu");
     const payload = await readJsonBody(req);
     const scopedScans = filterScansForUser(user, db.scans);
     const organizationId = isPlatformAdminUser(user)
@@ -7521,7 +8015,7 @@ async function handleExportsApi(req, res, segments) {
   }
 
   if (segments.length === 4 && segments[2] === "download" && method === "GET") {
-    requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Khong co quyen tai ban xuat du lieu");
+    requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền tải bản xuất dữ liệu");
     const requestedExportId = decodeURIComponent(segments[3] || "");
     const scopedExport = filterExportsForUser(user, db.exports).find((item) => {
       return item.id === requestedExportId || path.basename(item.downloadUrl || "") === requestedExportId;
@@ -7556,13 +8050,13 @@ async function handleDataApi(req, res, segments) {
 
   if (segments.length === 3 && segments[2] === "summary" && method === "GET") {
     const user = requireUser(req);
-    requireAnyCapability(user, STORAGE_READ_CAPABILITIES, "Khong co quyen xem tong hop storage");
+    requireAnyCapability(user, STORAGE_READ_CAPABILITIES, "Không có quyền xem tổng hợp storage");
     sendJson(res, 200, { storage: getStorageSummaryForUser(user) });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "cache" && method === "DELETE") {
-    requireAnyCapability(requireUser(req), STORAGE_MANAGE_CAPABILITIES, "Khong co quyen xoa cache storage");
+    requireAnyCapability(requireUser(req), STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa cache storage");
     db.settings.storage.cacheMb = 0;
     addAccessLog("Xóa bộ nhớ tạm");
     saveDb();
@@ -7571,7 +8065,7 @@ async function handleDataApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "all" && method === "DELETE") {
-    requireAnyCapability(requireUser(req), ["platform.storage.manage"], "Chi platform admin moi duoc xoa toan bo du lieu");
+    requireAnyCapability(requireUser(req), ["platform.storage.manage"], "Chỉ platform admin mới được xóa toàn bộ dữ liệu");
     const payload = await readJsonBody(req);
     if (readString(payload.confirm, 40) !== "XOA DU LIEU") {
       throw httpError(400, "Cần nhập XOA DU LIEU để xác nhận");
@@ -7900,7 +8394,7 @@ async function handlePatientsApi(req, res, url, segments) {
 
   const patient = repositories ? await repositories.patients.findById(patientId) : findPatient(patientId);
   if (!patient) {
-    throw httpError(404, "Khong tim thay ho so suc khoe");
+    throw httpError(404, "Không tìm thấy hồ sơ sức khỏe");
   }
 
   if (segments.length === 4 && segments[3] === "shares" && method === "GET") {
@@ -7928,11 +8422,11 @@ async function handlePatientsApi(req, res, url, segments) {
     if (doctorUserId) {
       const doctor = db.users.find((item) => item.id === doctorUserId || item.firebaseUid === doctorUserId);
       if (!doctor || doctor.role !== "doctor") {
-        throw httpError(404, "Khong tim thay bac si nhan chia se");
+        throw httpError(404, "Không tìm thấy bác sĩ nhận chia sẻ");
       }
     }
     if (organizationId && !getClinicById(organizationId)) {
-      throw httpError(404, "Khong tim thay workspace nhan chia se");
+      throw httpError(404, "Không tìm thấy workspace nhận chia sẻ");
     }
     const scanIds = Array.isArray(payload.scanIds)
       ? payload.scanIds.map((item) => readString(item, 120)).filter(Boolean)
@@ -7978,7 +8472,7 @@ async function handlePatientsApi(req, res, url, segments) {
     const grantId = decodeURIComponent(segments[4]);
     const grant = db.doctorPatientAccess.find((item) => item.id === grantId && item.patientId === patient.id);
     if (!grant) {
-      throw httpError(404, "Khong tim thay quyen chia se");
+      throw httpError(404, "Không tìm thấy quyền chia sẻ");
     }
     grant.revokedAt = nowIso();
     grant.revokedByUserId = user.id;

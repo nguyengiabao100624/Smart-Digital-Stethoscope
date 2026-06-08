@@ -1,9 +1,13 @@
 import { initializeApp, getApps, type FirebaseOptions } from "firebase/app";
 import {
+  EmailAuthProvider,
   getAuth,
   onAuthStateChanged,
+  reauthenticateWithCredential,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   type User,
 } from "firebase/auth";
 
@@ -54,4 +58,35 @@ export async function signInWithFirebaseEmail(email: string, password: string) {
 
 export async function signOutFirebase() {
   await signOut(getFirebaseAuth());
+}
+
+export async function changeFirebasePassword(currentPassword: string, newPassword: string) {
+  const auth = getFirebaseAuth();
+  const user = auth.currentUser;
+  const email = user?.email || "";
+  if (!user || !email) {
+    throw new Error("Bạn cần đăng nhập lại trước khi đổi mật khẩu.");
+  }
+
+  const credential = EmailAuthProvider.credential(email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, newPassword);
+  return user.getIdToken(true);
+}
+
+export async function sendFirebasePasswordReset(email: string) {
+  const normalizedEmail = email.trim();
+  if (!normalizedEmail) {
+    throw new Error("Vui lòng nhập email.");
+  }
+
+  const actionCodeSettings =
+    typeof window !== "undefined"
+      ? {
+          url: `${window.location.origin}/login`,
+          handleCodeInApp: false,
+        }
+      : undefined;
+
+  await sendPasswordResetEmail(getFirebaseAuth(), normalizedEmail, actionCodeSettings);
 }

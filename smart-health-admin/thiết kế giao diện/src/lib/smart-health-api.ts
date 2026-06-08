@@ -83,6 +83,14 @@ export type SmartHealthAuthUser = {
 
 export type SmartHealthAdminAccountRole = "admin" | "platform_admin" | "workspace_admin" | "workspace_owner";
 
+export type SmartHealthAdminAccount = SmartHealthAuthUser & {
+  managedAdmin?: boolean;
+  workspaceName?: string;
+  workspaceType?: string;
+  activeSessionCount?: number;
+  lastLoginAt?: string;
+};
+
 export type CreateAdminAccountPayload = {
   role: SmartHealthAdminAccountRole;
   email: string;
@@ -665,8 +673,29 @@ export const smartHealthApi = {
     });
   },
 
-  async changePassword(payload: { currentPassword: string; newPassword: string }) {
-    return requestJson<{ ok: boolean }>("/me/password", {
+  async uploadMyAvatar(file: File) {
+    return requestJson<{ user: SmartHealthAuthUser; file: SmartHealthStorageFile }>("/me/avatar", {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-File-Name": file.name,
+      },
+      body: file,
+    });
+  },
+
+  async downloadMyAvatar() {
+    return requestBlob("/me/avatar");
+  },
+
+  async deleteMyAvatar() {
+    return requestJson<{ user: SmartHealthAuthUser }>("/me/avatar", {
+      method: "DELETE",
+    });
+  },
+
+  async changePassword(payload: { currentPassword?: string; newPassword?: string; firebaseClientUpdated?: boolean }) {
+    return requestJson<{ ok: boolean; provider?: string }>("/me/password", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -889,6 +918,61 @@ export const smartHealthApi = {
     }>("/admin/admin-users", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+
+  async listAdminAccounts(params: { q?: string; role?: string; status?: string } = {}) {
+    return requestJson<{ users: SmartHealthAdminAccount[] }>("/admin/admin-users", {
+      query: params,
+    });
+  },
+
+  async updateAdminAccount(
+    userId: string,
+    payload: Partial<Pick<SmartHealthAdminAccount, "name" | "phone" | "title" | "role" | "organizationId" | "accountStatus">>,
+  ) {
+    return requestJson<{ user: SmartHealthAdminAccount }>(
+      `/admin/admin-users/${encodeURIComponent(userId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async resetAdminAccountPassword(userId: string, password: string) {
+    return requestJson<{ ok: boolean; user: SmartHealthAdminAccount }>(
+      `/admin/admin-users/${encodeURIComponent(userId)}/reset-password`,
+      {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      },
+    );
+  },
+
+  async lockAdminAccount(userId: string) {
+    return requestJson<{ user: SmartHealthAdminAccount }>(
+      `/admin/admin-users/${encodeURIComponent(userId)}/lock`,
+      { method: "POST" },
+    );
+  },
+
+  async unlockAdminAccount(userId: string) {
+    return requestJson<{ user: SmartHealthAdminAccount }>(
+      `/admin/admin-users/${encodeURIComponent(userId)}/unlock`,
+      { method: "POST" },
+    );
+  },
+
+  async deleteAdminAccount(userId: string) {
+    return requestJson<{
+      deleted: boolean;
+      userId: string;
+      firebaseUid?: string;
+      firebaseDeleted?: boolean;
+      firebaseAlreadyMissing?: boolean;
+    }>(`/admin/admin-users/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     });
   },
 

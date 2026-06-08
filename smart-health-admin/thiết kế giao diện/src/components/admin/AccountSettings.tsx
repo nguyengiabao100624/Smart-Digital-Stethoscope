@@ -25,6 +25,7 @@ import {
   type SmartHealthAuthSession,
   type SmartHealthAuthUser,
 } from "@/lib/smart-health-api";
+import { changeFirebasePassword, hasFirebaseWebConfig } from "@/lib/firebase-client";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 
@@ -134,6 +135,7 @@ function sessionIcon(session: SmartHealthAuthSession) {
 
 export function AccountSettings() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarObjectUrlRef = useRef("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success">("idle");
   const [isLoading, setIsLoading] = useState(true);
   const [avatarPreview, setAvatarPreview] = useState("");
@@ -152,6 +154,15 @@ export function AccountSettings() {
     confirmPassword: "",
   });
   const [profile, setProfile] = useState<ProfileState>(emptyProfile);
+
+  const setObjectAvatarPreview = useCallback((blob: Blob) => {
+    if (avatarObjectUrlRef.current) {
+      URL.revokeObjectURL(avatarObjectUrlRef.current);
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    avatarObjectUrlRef.current = objectUrl;
+    setAvatarPreview(objectUrl);
+  }, []);
 
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
@@ -187,27 +198,34 @@ export function AccountSettings() {
   }, [loadSessions]);
 
   useEffect(() => {
-    let objectUrl = "";
     let cancelled = false;
     if (!profile.avatarFileId) {
       setAvatarPreview(profile.avatarUrl || "");
       return undefined;
     }
     smartHealthApi
-      .downloadStorageFile(profile.avatarFileId, profile.avatarUrl)
+      .downloadMyAvatar()
       .then((blob) => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setAvatarPreview(objectUrl);
+        setObjectAvatarPreview(blob);
       })
       .catch(() => {
-        if (!cancelled) setAvatarPreview(profile.avatarUrl || "");
+        if (!cancelled) {
+          setAvatarPreview(profile.avatarUrl && !profile.avatarUrl.includes("/me/avatar") ? profile.avatarUrl : "");
+        }
       });
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [profile.avatarFileId, profile.avatarUrl]);
+  }, [profile.avatarFileId, profile.avatarUrl, setObjectAvatarPreview]);
+
+  useEffect(() => {
+    return () => {
+      if (avatarObjectUrlRef.current) {
+        URL.revokeObjectURL(avatarObjectUrlRef.current);
+      }
+    };
+  }, []);
 
   const activeSessions = useMemo(() => sessions.filter((session) => !session.revokedAt), [sessions]);
   const otherSessions = useMemo(
@@ -299,18 +317,9 @@ export function AccountSettings() {
       return;
     }
     setAvatarUploading(true);
+    setObjectAvatarPreview(file);
     try {
-      const { file: storageFile } = await smartHealthApi.uploadStorageFile({
-        bucket: "avatars",
-        file,
-        visibility: "public",
-        tags: ["avatar", "account"],
-      });
-      const nextProfile = {
-        avatarFileId: storageFile.id,
-        avatarUrl: storageFile.downloadUrl || storageFile.previewUrl || "",
-      };
-      const { user } = await smartHealthApi.updateMe(nextProfile);
+      const { user } = await smartHealthApi.uploadMyAvatar(file);
       setProfile(profileFromUser(user));
       toast.success("Đã cập nhật ảnh đại diện.");
     } catch (error) {
@@ -325,10 +334,15 @@ export function AccountSettings() {
     setConfirmError("");
     setConfirmTask({
       title: "Gỡ ảnh đại diện",
-      description: "Ảnh đại diện sẽ được gỡ khỏi hồ sơ tài khoản. File cũ trong storage không còn được liên kết với user này.",
+      description: "Ảnh đại diện sẽ được gỡ khỏi hồ sơ tài khoản và file avatar hiện tại sẽ bị xóa khỏi storage nếu còn tồn tại.",
       confirmLabel: "Gỡ ảnh",
       run: async () => {
-        const { user } = await smartHealthApi.updateMe({ avatarFileId: "", avatarUrl: "" });
+        const { user } = await smartHealthApi.deleteMyAvatar();
+        if (avatarObjectUrlRef.current) {
+          URL.revokeObjectURL(avatarObjectUrlRef.current);
+          avatarObjectUrlRef.current = "";
+        }
+        setAvatarPreview("");
         setProfile(profileFromUser(user));
         toast.success("Đã gỡ ảnh đại diện.");
       },
@@ -344,11 +358,21 @@ export function AccountSettings() {
       toast.error("Mật khẩu xác nhận không khớp.");
       return;
     }
+    if (passwordForm.newPassword.length < 8) {
+      toast.error("Mật khẩu mới cần tối thiểu 8 ký tự.");
+      return;
+    }
     try {
-      await smartHealthApi.changePassword({
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword,
-      });
+      if (hasFirebaseWebConfig()) {
+        const idToken = await changeFirebasePassword(passwordForm.currentPassword, passwordForm.newPassword);
+        await smartHealthApi.authenticateFirebase(idToken);
+        await smartHealthApi.changePassword({ firebaseClientUpdated: true });
+      } else {
+        await smartHealthApi.changePassword({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        });
+      }
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
       toast.success("Đã cập nhật mật khẩu thành công.");
     } catch (error) {

@@ -25,6 +25,7 @@ import { Route as AdminClinicsRouteImport } from './routes/_admin.clinics'
 import { Route as AdminAuditLogRouteImport } from './routes/_admin.audit-log'
 import { Route as AdminAiMeasurementsRouteImport } from './routes/_admin.ai-measurements'
 import { Route as AdminAdminActionsRouteImport } from './routes/_admin.admin-actions'
+import { Route as AdminAdminAccountsRouteImport } from './routes/_admin.admin-accounts'
 import { Route as AdminAccountRouteImport } from './routes/_admin.account'
 
 const LoginRoute = LoginRouteImport.update({
@@ -106,6 +107,11 @@ const AdminAdminActionsRoute = AdminAdminActionsRouteImport.update({
   path: '/admin-actions',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAdminAccountsRoute = AdminAdminAccountsRouteImport.update({
+  id: '/admin-accounts',
+  path: '/admin-accounts',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminAccountRoute = AdminAccountRouteImport.update({
   id: '/account',
   path: '/account',
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/account': typeof AdminAccountRoute
+  '/admin-accounts': typeof AdminAdminAccountsRoute
   '/admin-actions': typeof AdminAdminActionsRoute
   '/ai-measurements': typeof AdminAiMeasurementsRoute
   '/audit-log': typeof AdminAuditLogRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/account': typeof AdminAccountRoute
+  '/admin-accounts': typeof AdminAdminAccountsRoute
   '/admin-actions': typeof AdminAdminActionsRoute
   '/ai-measurements': typeof AdminAiMeasurementsRoute
   '/audit-log': typeof AdminAuditLogRoute
@@ -154,6 +162,7 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/_admin/account': typeof AdminAccountRoute
+  '/_admin/admin-accounts': typeof AdminAdminAccountsRoute
   '/_admin/admin-actions': typeof AdminAdminActionsRoute
   '/_admin/ai-measurements': typeof AdminAiMeasurementsRoute
   '/_admin/audit-log': typeof AdminAuditLogRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/account'
+    | '/admin-accounts'
     | '/admin-actions'
     | '/ai-measurements'
     | '/audit-log'
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/account'
+    | '/admin-accounts'
     | '/admin-actions'
     | '/ai-measurements'
     | '/audit-log'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/_admin/account'
+    | '/_admin/admin-accounts'
     | '/_admin/admin-actions'
     | '/_admin/ai-measurements'
     | '/_admin/audit-log'
@@ -346,6 +358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAdminActionsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/_admin/admin-accounts': {
+      id: '/_admin/admin-accounts'
+      path: '/admin-accounts'
+      fullPath: '/admin-accounts'
+      preLoaderRoute: typeof AdminAdminAccountsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_admin/account': {
       id: '/_admin/account'
       path: '/account'
@@ -358,6 +377,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminAccountRoute: typeof AdminAccountRoute
+  AdminAdminAccountsRoute: typeof AdminAdminAccountsRoute
   AdminAdminActionsRoute: typeof AdminAdminActionsRoute
   AdminAiMeasurementsRoute: typeof AdminAiMeasurementsRoute
   AdminAuditLogRoute: typeof AdminAuditLogRoute
@@ -375,6 +395,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAccountRoute: AdminAccountRoute,
+  AdminAdminAccountsRoute: AdminAdminAccountsRoute,
   AdminAdminActionsRoute: AdminAdminActionsRoute,
   AdminAiMeasurementsRoute: AdminAiMeasurementsRoute,
   AdminAuditLogRoute: AdminAuditLogRoute,

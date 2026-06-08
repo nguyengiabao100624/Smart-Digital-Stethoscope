@@ -23,6 +23,7 @@ import {
   X,
   Database,
   ShieldCheck,
+  UserCog,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
@@ -93,6 +94,12 @@ const MENU_ITEMS = [
       "workspace.storage.manage",
       "workspace.settings.manage",
     ],
+  },
+  {
+    path: "/admin-accounts",
+    label: "Tài khoản admin",
+    icon: UserCog,
+    capabilities: ["platform.users.manage"],
   },
   {
     path: "/patients",

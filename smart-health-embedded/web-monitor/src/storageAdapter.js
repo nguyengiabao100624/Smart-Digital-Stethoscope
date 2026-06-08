@@ -96,7 +96,15 @@ function createStorageAdapter(options = {}) {
     if (!bucket) {
       throw new Error("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3");
     }
-    await client.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, Body: buffer, ContentType: contentType }));
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: objectKey,
+        Body: buffer,
+        ContentType: contentType,
+        ContentLength: buffer.length,
+      }),
+    );
     return {
       provider: "s3",
       objectKey,
@@ -118,6 +126,40 @@ function createStorageAdapter(options = {}) {
       throw new Error("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3");
     }
     return presign(client, new GetObjectCommand({ Bucket: bucket, Key: objectKey }), { expiresIn: expiresInSeconds });
+  }
+
+  async function getBuffer(objectKey) {
+    if (!objectKey) {
+      throw new Error("objectKey is required");
+    }
+
+    if (provider !== "s3") {
+      const target = path.join(localRoot, objectKey.split("/").map((part) => path.basename(part)).join(path.sep));
+      const resolved = path.resolve(target);
+      if (!resolved.startsWith(localRoot)) {
+        throw new Error("Invalid local object path");
+      }
+      return fs.promises.readFile(resolved);
+    }
+
+    const { GetObjectCommand } = require("@aws-sdk/client-s3");
+    const client = await createS3Client();
+    const bucket = readString(env.OBJECT_STORAGE_BUCKET);
+    if (!bucket) {
+      throw new Error("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3");
+    }
+    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey }));
+    if (!response.Body) {
+      return Buffer.alloc(0);
+    }
+    if (typeof response.Body.transformToByteArray === "function") {
+      return Buffer.from(await response.Body.transformToByteArray());
+    }
+    const chunks = [];
+    for await (const chunk of response.Body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 
   async function deleteObject(objectKey) {
@@ -152,6 +194,7 @@ function createStorageAdapter(options = {}) {
     provider,
     putFile,
     putBuffer,
+    getBuffer,
     getSignedUrl,
     deleteObject,
   };

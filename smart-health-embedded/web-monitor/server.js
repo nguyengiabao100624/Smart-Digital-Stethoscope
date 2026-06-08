@@ -4105,19 +4105,63 @@ async function persistMutableSettings(user, settings, workspace = null) {
   await saveDb();
 }
 
+function normalizeSmtpSecret(value, host) {
+  const raw = String(value || "").trim();
+  if (/gmail/i.test(host) && raw.replace(/\s+/g, "").length === 16) {
+    return raw.replace(/\s+/g, "");
+  }
+  return raw;
+}
+
+function getSmtpEnv() {
+  const host = String(process.env.SMTP_HOST || "").trim();
+  return {
+    host,
+    port: Number(process.env.SMTP_PORT || 587),
+    user: String(process.env.SMTP_USER || "").trim(),
+    pass: normalizeSmtpSecret(process.env.SMTP_PASS, host),
+    from: String(process.env.SMTP_FROM || "").trim(),
+  };
+}
+
+function describeSmtpFailure(error) {
+  const message = String(error && error.message ? error.message : error || "");
+  const response = String(error && error.response ? error.response : "");
+  const code = String(error && (error.code || error.command || error.responseCode) ? error.code || error.command || error.responseCode : "");
+  const combined = `${code} ${message} ${response}`.toLowerCase();
+
+  if (combined.includes("invalid login") || combined.includes("535") || combined.includes("badcredentials")) {
+    return "Gmail từ chối đăng nhập SMTP. Hãy kiểm tra SMTP_USER và SMTP_PASS; SMTP_PASS phải là Gmail App Password 16 ký tự, không phải mật khẩu Gmail thường.";
+  }
+  if (combined.includes("less secure") || combined.includes("application-specific password required")) {
+    return "Gmail yêu cầu App Password. Hãy bật 2-Step Verification rồi tạo App Password cho SMTP_PASS.";
+  }
+  if (combined.includes("mail from") || combined.includes("sender") || combined.includes("from address")) {
+    return "Gmail không chấp nhận địa chỉ gửi. Nên đặt SMTP_FROM trùng email SMTP_USER, ví dụ: Smart Health <SMTP_USER>.";
+  }
+  if (combined.includes("etimedout") || combined.includes("timeout") || combined.includes("econnrefused") || combined.includes("enetunreach")) {
+    return "Backend không kết nối được tới SMTP Gmail trong thời gian cho phép. Hãy kiểm tra Render đã redeploy sau khi set env và mạng SMTP không bị chặn.";
+  }
+  return `Không thể gửi email qua SMTP Gmail: ${message || "lỗi không xác định"}`;
+}
+
 function createSmtpTransport() {
   const runtime = getSmtpRuntimeStatus();
   if (!runtime.configured) {
-    throw httpError(400, `SMTP chua duoc cau hinh: ${runtime.missing.join(", ")}`);
+    throw httpError(400, `SMTP chưa được cấu hình: ${runtime.missing.join(", ")}`, "SMTP_NOT_CONFIGURED", { missing: runtime.missing });
   }
-  const port = Number(process.env.SMTP_PORT || 587);
+  const smtp = getSmtpEnv();
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: port === 465,
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.port === 465,
+    requireTLS: smtp.port === 587,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: smtp.user,
+      pass: smtp.pass,
     },
   });
 }
@@ -4125,20 +4169,31 @@ function createSmtpTransport() {
 async function sendTestEmail(payload = {}) {
   const to = readString(payload.to || db.settings.outbound?.email?.testRecipient, 240);
   if (!to) {
-    throw httpError(400, "Can nhap email nguoi nhan de gui thu");
+    throw httpError(400, "Cần nhập email người nhận để gửi thử", "SMTP_TEST_RECIPIENT_REQUIRED");
   }
   const subject = readString(payload.subject, 180) || "Smart Health test email";
   const text =
     readString(payload.message, 2000) ||
-    "Day la email kiem tra tu he thong Smart Health. Neu ban nhan duoc email nay, cau hinh SMTP dang hoat dong.";
+    "Đây là email kiểm tra từ hệ thống Smart Health. Nếu bạn nhận được email này, cấu hình SMTP đang hoạt động.";
   const transporter = createSmtpTransport();
-  const info = await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to,
-    subject,
-    text,
-    html: `<p>${escapeHtml(text).replace(/\n/g, "<br />")}</p>`,
-  });
+  let info;
+  try {
+    info = await transporter.sendMail({
+      from: getSmtpEnv().from,
+      to,
+      subject,
+      text,
+      html: `<p>${escapeHtml(text).replace(/\n/g, "<br />")}</p>`,
+    });
+  } catch (error) {
+    throw httpError(400, describeSmtpFailure(error), "SMTP_SEND_FAILED", {
+      smtpHost: getSmtpEnv().host,
+      smtpPort: getSmtpEnv().port,
+      smtpUser: getSmtpEnv().user,
+      smtpFrom: getSmtpEnv().from,
+      providerCode: String(error && (error.code || error.command || error.responseCode) ? error.code || error.command || error.responseCode : ""),
+    });
+  }
   return {
     messageId: info.messageId || "",
     accepted: info.accepted || [],

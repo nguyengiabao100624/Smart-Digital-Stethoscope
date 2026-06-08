@@ -299,6 +299,17 @@ SMTP_PASS=<app password>
 SMTP_FROM=Smart Health <gmail của bạn>
 ```
 
+Với Gmail, nên để email trong `SMTP_FROM` trùng với `SMTP_USER`, ví dụ:
+
+```env
+SMTP_USER=baobee1006@gmail.com
+SMTP_FROM=Smart Health <baobee1006@gmail.com>
+```
+
+Không nên cấu hình kiểu `SMTP_USER=baobee1006@gmail.com` nhưng `SMTP_FROM=Smart Health <nguyengiabao100624@gmail.com>` nếu Gmail đó chưa được cấu hình alias "Send mail as", vì Gmail có thể từ chối người gửi.
+
+`SMTP_PASS` là Gmail App Password 16 ký tự. Nếu Google hiển thị theo nhóm có khoảng trắng, ví dụ `abcd efgh ijkl mnop`, thì khi nhập vào Render có thể nhập liền `abcdefghijklmnop`.
+
 Deploy lại Render.
 
 Vào Web Admin:
@@ -307,7 +318,7 @@ Vào Web Admin:
 Cài đặt -> Thông báo/Outbound -> Test email
 ```
 
-Nếu chưa cấu hình SMTP, nút test hoặc API sẽ báo thiếu `SMTP_*`. Đó là đúng, không phải lỗi code.
+Nếu chưa cấu hình SMTP, nút test hoặc API sẽ báo thiếu `SMTP_*`. Nếu App Password sai, Gmail sẽ báo lỗi đăng nhập SMTP. Nếu `SMTP_FROM` không khớp `SMTP_USER`, Gmail có thể báo lỗi địa chỉ gửi. Đó là lỗi cấu hình Gmail/Render, không phải lỗi code.
 
 ## Bước 9 - SMS/Zalo
 

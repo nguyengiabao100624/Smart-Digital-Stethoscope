@@ -715,9 +715,11 @@ Completed in this slice:
 - Added correct user-facing handling for Firebase `auth/unauthorized-domain` and `auth/unauthorized-continue-uri`, so missing Firebase authorized-domain setup no longer appears as an expired login session.
 - Hardened `/api/me/avatar` for Supabase/S3 production storage by allowing the upload filename header, sending S3 `ContentLength`, persisting avatar object metadata in the user profile, serving avatar bytes through the backend, and cleaning up old avatar objects.
 - Scoped password-change notifications to the current user and fixed their Vietnamese copy.
+- Hardened Gmail SMTP test email error handling so backend reports invalid App Password, missing App Password, From/Sender mismatch, or SMTP timeout as actionable setup errors instead of a generic backend 500.
 
 Next practical backlog items:
 
 - Push and redeploy Render + Firebase Hosting before re-testing `https://shcare-admin.web.app`; the deployed stack will not change until redeploy.
 - In Firebase Console, verify Email/Password sign-in is enabled and `shcare-admin.web.app` is an authorized domain, then test `/forgot-password` with a real admin email.
+- In Render, verify Gmail SMTP env uses `SMTP_FROM` from the same Gmail account as `SMTP_USER` unless a Gmail send-as alias is configured; then retest Settings > Test email.
 - Browser-smoke Account Settings avatar upload/remove and password change on the deployed site using a real platform-admin account.

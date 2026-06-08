@@ -1058,6 +1058,7 @@ Account Settings avatar/password behavior:
 - Demo/no-Firebase fallback still uses backend current-password validation.
 - Forgot Password uses Firebase Web Auth `sendPasswordResetEmail`; real delivery requires Firebase Console > Authentication > Sign-in method > Email/Password enabled, and `shcare-admin.web.app` listed under authorized domains.
 - If Forgot Password shows a domain/continue URL authorization message, open Firebase Console > Authentication > Settings > Authorized domains and add `shcare-admin.web.app`. This is Firebase configuration, not a backend session problem.
+- Gmail SMTP test email uses backend env `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`. For Gmail, keep `SMTP_FROM` on the same Gmail account as `SMTP_USER` unless the Gmail account has a verified send-as alias. `SMTP_PASS` must be the 16-character Gmail App Password, not the normal Gmail password.
 
 Runtime mojibake/font source audit:
 

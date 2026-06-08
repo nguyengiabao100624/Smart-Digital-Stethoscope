@@ -597,6 +597,7 @@ KLTN report artifacts generated from this evidence set:
 - Hardened account avatar storage for production S3/Supabase Storage: backend CORS now accepts `X-File-Name`, S3 uploads include `ContentLength`, `/api/me/avatar` stores durable `avatarStorage` metadata in the user profile, and avatar download is served through the backend from object storage instead of redirecting to a signed URL.
 - Avatar update/removal now deletes or replaces the old avatar object when possible, while hiding storage object metadata from `publicUser`.
 - Password-change notifications now use correct Vietnamese text and include `userId`/`organizationId` metadata so the notification is scoped to the current user.
+- SMTP test email now has bounded Nodemailer timeouts, trims Gmail App Password spacing, and converts common Gmail failures into actionable 400 responses instead of a generic backend 500. This covers invalid App Password, missing App Password, sender/from mismatch, and SMTP connection timeout cases.
 
 ### Verification
 
@@ -609,4 +610,4 @@ KLTN report artifacts generated from this evidence set:
 ### Remaining Limits
 
 - Real password-reset email delivery still depends on Firebase Console setup: Email/Password provider enabled, password-reset template configured as desired, and `shcare-admin.web.app` authorized.
-- Deployed Render/Firebase Hosting will keep the old behavior until these changes are pushed and redeployed.
+- Gmail SMTP test email still depends on correct Render env and Gmail setup: `SMTP_USER` should normally match `SMTP_FROM`, and `SMTP_PASS` must be an App Password.

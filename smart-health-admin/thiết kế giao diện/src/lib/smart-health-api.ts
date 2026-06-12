@@ -40,6 +40,8 @@ export type SmartHealthAuthUser = {
   hospital?: string;
   department?: string;
   address?: string;
+  accountType?: string;
+  workspaceType?: string;
   avatarFileId?: string;
   avatarUrl?: string;
   twoFactorEnabled?: boolean;

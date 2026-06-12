@@ -1,5 +1,9 @@
 package com.example.smart_health_android.ui.screens
 
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,7 +22,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +35,9 @@ import com.example.smart_health_android.data.SpecialtyOption
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,47 +47,96 @@ fun ProfileScreen(
     onNavigateToReVerifyContact: (String, String) -> Unit
 ) {
     var isEditing by remember { mutableStateOf(false) }
-    var license by remember { mutableStateOf("123456/BYT-CCHN") }
-    var hospital by remember { mutableStateOf("Bệnh viện Đa khoa Trung ương") }
-    var department by remember { mutableStateOf("Khoa Tim mạch") }
+    var currentUser by remember { mutableStateOf<AuthUser?>(null) }
+    var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var isAvatarBusy by remember { mutableStateOf(false) }
+    var license by remember { mutableStateOf("") }
+    var hospital by remember { mutableStateOf("") }
+    var department by remember { mutableStateOf("") }
     var organizationId by remember { mutableStateOf("") }
     var selectedSpecialtyId by remember { mutableStateOf("") }
     var clinics by remember { mutableStateOf<List<ClinicOption>>(emptyList()) }
     var specialties by remember { mutableStateOf<List<SpecialtyOption>>(emptyList()) }
-    var email by remember { mutableStateOf("bacsituan@benhvien.com") }
+    var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("123 Đường Láng, Đống Đa, Hà Nội") }
-    var displayName by remember { mutableStateOf("Nguyễn Tuấn") }
-    var roleLabel by remember { mutableStateOf("Bác sĩ") }
+    var address by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("Đang tải...") }
+    var roleLabel by remember { mutableStateOf("Tài khoản Smart Health") }
     var isSaving by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
-    val joinDate = "15/03/2020"
-    var originalEmail by remember { mutableStateOf("bacsituan@benhvien.com") }
-    var originalPhone by remember { mutableStateOf("0912 345 678") }
-    val selectedClinic = clinics.firstOrNull { it.id == organizationId }
-    val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
+    val context = LocalContext.current
 
-    fun applyProfile(user: AuthUser) {
-        displayName = user.name.ifBlank { displayName }
-        roleLabel = if (user.role == "doctor") "Bác sĩ" else "Bệnh nhân"
+    fun applyProfile(user: AuthUser, keepAvatar: Boolean = false) {
+        currentUser = user
+        displayName = user.name.ifBlank { "Tài khoản Smart Health" }
+        roleLabel = when (user.role) {
+            "admin" -> "Quản trị"
+            "doctor" -> "Bác sĩ"
+            "patient" -> "Bệnh nhân"
+            else -> "Tài khoản Smart Health"
+        }
         license = user.license
         hospital = user.hospital
         department = user.department
-        organizationId = user.organizationId
+        organizationId = user.organizationId.ifBlank {
+            clinics.firstOrNull { it.name.equals(user.hospital, ignoreCase = true) }?.id.orEmpty()
+        }
         selectedSpecialtyId = specialties.firstOrNull { it.name == user.department || it.name == user.specialty }?.id.orEmpty()
         email = user.email
         phone = user.phone
         address = user.address
-        originalEmail = user.email
-        originalPhone = user.phone
+        if (!keepAvatar) {
+            avatarBitmap = null
+        }
     }
+
+    suspend fun loadAvatar(user: AuthUser) {
+        val hasAvatar = user.avatarUrl.isNotBlank() || user.avatarFileId.isNotBlank()
+        if (!hasAvatar) {
+            avatarBitmap = null
+            return
+        }
+        avatarBitmap = runCatching {
+            val bytes = SmartHealthRepository.api.downloadMyAvatarBytes()
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+
+    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                isAvatarBusy = true
+                try {
+                    val resolver = context.contentResolver
+                    val contentType = resolver.getType(uri) ?: "image/jpeg"
+                    val fileName = "avatar-${System.currentTimeMillis()}.${contentType.substringAfter("/", "jpg")}"
+                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("Không đọc được ảnh đã chọn")
+                    val updated = SmartHealthRepository.api.uploadMyAvatar(fileName, contentType, bytes)
+                    currentUser = updated
+                    applyProfile(updated, keepAvatar = true)
+                    loadAvatar(updated)
+                    loadError = null
+                } catch (error: Exception) {
+                    loadError = error.message ?: "Không thể tải avatar"
+                } finally {
+                    isAvatarBusy = false
+                }
+            }
+        }
+    }
+    val selectedClinic = clinics.firstOrNull { it.id == organizationId }
+    val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
+    val joinDate = currentUser?.createdAt?.let { formatCreatedAt(it) }.orEmpty().ifBlank { "--" }
 
     LaunchedEffect(Unit) {
         try {
             clinics = SmartHealthRepository.api.listClinics()
             specialties = SmartHealthRepository.api.listSpecialties()
-            applyProfile(SmartHealthRepository.api.getMe())
+            val user = SmartHealthRepository.api.getMe()
+            applyProfile(user)
+            loadAvatar(user)
             loadError = null
         } catch (error: Exception) {
             loadError = error.message ?: "Không thể tải hồ sơ"
@@ -92,7 +150,7 @@ fun ProfileScreen(
             try {
                 val updated = SmartHealthRepository.api.updateMe(
                     JSONObject()
-                        .put("email", email.trim())
+                        .put("name", displayName.trim())
                         .put("phone", phone.trim())
                         .put("license", license.trim())
                         .put("organizationId", selectedClinic?.id.orEmpty())
@@ -101,7 +159,9 @@ fun ProfileScreen(
                         .put("specialty", selectedSpecialty?.name ?: department.trim())
                         .put("address", address.trim())
                 )
-                applyProfile(updated)
+                applyProfile(updated, keepAvatar = true)
+                currentUser = updated
+                loadAvatar(updated)
                 isEditing = false
             } catch (error: Exception) {
                 loadError = error.message ?: "Không thể lưu hồ sơ"
@@ -180,23 +240,66 @@ fun ProfileScreen(
                                 .fillMaxSize()
                                 .shadow(8.dp, CircleShape)
                                 .clip(CircleShape)
-                            .background(Color.White),
+                                .background(Color.White),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(initials, color = PrimaryBlue, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            if (avatarBitmap != null) {
+                                Image(
+                                    bitmap = avatarBitmap!!,
+                                    contentDescription = "Ảnh đại diện",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text(initials, color = PrimaryBlue, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                         if (isEditing) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(32.dp)
-                                    .shadow(4.dp, CircleShape)
-                                    .background(Color.White, CircleShape)
-                                    .border(2.dp, PrimaryBlue, CircleShape)
-                                    .clickable { /* Upload avatar */ },
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.align(Alignment.BottomEnd),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "Camera", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .shadow(4.dp, CircleShape)
+                                        .background(Color.White, CircleShape)
+                                        .border(2.dp, PrimaryBlue, CircleShape)
+                                        .clickable(enabled = !isAvatarBusy) { avatarLauncher.launch("image/*") },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isAvatarBusy) {
+                                        CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                                    } else {
+                                        Icon(Icons.Default.PhotoCamera, contentDescription = "Chọn ảnh", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                if (currentUser?.avatarUrl?.isNotBlank() == true || currentUser?.avatarFileId?.isNotBlank() == true) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .shadow(4.dp, CircleShape)
+                                            .background(Color.White, CircleShape)
+                                            .border(2.dp, ErrorRed, CircleShape)
+                                            .clickable(enabled = !isAvatarBusy) {
+                                                coroutineScope.launch {
+                                                    isAvatarBusy = true
+                                                    try {
+                                                        val updated = SmartHealthRepository.api.deleteMyAvatar()
+                                                        currentUser = updated
+                                                        applyProfile(updated, keepAvatar = false)
+                                                        loadError = null
+                                                    } catch (error: Exception) {
+                                                        loadError = error.message ?: "Không thể xóa avatar"
+                                                    } finally {
+                                                        isAvatarBusy = false
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Xóa ảnh", tint = ErrorRed, modifier = Modifier.size(16.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -241,6 +344,15 @@ fun ProfileScreen(
                 // Section 1
                 Text("THÔNG TIN CHUYÊN MÔN", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(modifier = Modifier.height(16.dp))
+                ProfileItemRow(
+                    icon = Icons.Default.Person,
+                    iconColor = Color(0xFF0EA5E9),
+                    label = "Họ và tên",
+                    value = displayName,
+                    isEditing = isEditing,
+                    onValueChange = { displayName = it }
+                )
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 ProfileItemRow(
                     icon = Icons.Default.AssignmentInd,
@@ -282,8 +394,8 @@ fun ProfileScreen(
                     iconColor = Color(0xFF3B82F6),
                     label = "Email",
                     value = email,
-                    isEditing = isEditing,
-                    onValueChange = { email = it }
+                    isEditing = false,
+                    onValueChange = {}
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 if (phone.isNotBlank()) {
@@ -296,7 +408,7 @@ fun ProfileScreen(
                         onValueChange = { phone = it }
                     )
                 } else {
-                    ProfileAddPhoneRow(onClick = onNavigateToVerifyPhoneSettings)
+                    ProfileAddPhoneRow(onClick = { isEditing = true })
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 ProfileItemRow(
@@ -321,6 +433,15 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+private fun formatCreatedAt(value: String): String {
+    return runCatching {
+        val instant = Instant.parse(value)
+        DateTimeFormatter.ofPattern("dd/MM/yyyy")
+            .withZone(ZoneId.systemDefault())
+            .format(instant)
+    }.getOrDefault(value)
 }
 
 @Composable

@@ -282,10 +282,10 @@ fun DataStorageScreen(
                 Icon(Icons.Default.Shield, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.padding(top = 2.dp))
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text("Bảo Mật Dữ Liệu", color = Color(0xFF78350F), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Bảo mật dữ liệu", color = Color(0xFF78350F), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Tất cả dữ liệu được mã hóa AES-256 cả trên thiết bị và đám mây. Tuân thủ chuẩn HIPAA về bảo mật thông tin y tế.",
+                        "Dữ liệu được đồng bộ qua backend HTTPS và lưu trong storage cloud đã cấu hình. Các chứng nhận y tế chính thức sẽ được hoàn thiện ở giai đoạn triển khai thương mại.",
                         color = Color(0xFF92400E),
                         fontSize = 14.sp,
                         lineHeight = 20.sp

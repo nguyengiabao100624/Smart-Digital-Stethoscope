@@ -24,6 +24,10 @@ class SmartHealthApi(
 
     fun currentAuthToken(): String? = bearerToken
 
+    suspend fun getHealth(): BackendHealth = withContext(Dispatchers.IO) {
+        parseHealth(getJson("$baseUrl/health"))
+    }
+
     suspend fun authenticateFirebase(idToken: String): AuthResult = withContext(Dispatchers.IO) {
         setAuthToken(idToken)
         val json = getJson("$baseUrl/auth/firebase")
@@ -146,6 +150,29 @@ class SmartHealthApi(
         true
     }
 
+    suspend fun uploadMyAvatar(fileName: String, contentType: String, bytes: ByteArray): AuthUser = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$baseUrl/me/avatar")
+            .post(bytes.toRequestBody(contentType.toMediaType()))
+            .header("X-File-Name", fileName)
+            .withAuth()
+            .build()
+        parseAuthUser(executeJson(request).getJSONObject("user"))
+    }
+
+    suspend fun deleteMyAvatar(): AuthUser = withContext(Dispatchers.IO) {
+        parseAuthUser(deleteJson("$baseUrl/me/avatar").getJSONObject("user"))
+    }
+
+    suspend fun downloadMyAvatarBytes(): ByteArray = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$baseUrl/me/avatar")
+            .get()
+            .withAuth()
+            .build()
+        executeBytes(request)
+    }
+
     suspend fun getSettings(): AppSettings = withContext(Dispatchers.IO) {
         parseSettings(getJson("$baseUrl/settings").getJSONObject("settings"))
     }
@@ -175,6 +202,20 @@ class SmartHealthApi(
     suspend fun deleteNotification(id: String): Boolean = withContext(Dispatchers.IO) {
         deleteJson("$baseUrl/notifications/${id.urlEncode()}")
         true
+    }
+
+    suspend fun registerNotificationDevice(
+        fcmToken: String,
+        platform: String = "android",
+        enabled: Boolean = true
+    ): JSONObject = withContext(Dispatchers.IO) {
+        postJson(
+            "$baseUrl/notifications/register-device",
+            JSONObject()
+                .put("fcmToken", fcmToken)
+                .put("platform", platform)
+                .put("enabled", enabled)
+        ).getJSONObject("device")
     }
 
     suspend fun listAccessLogs(): List<AccessLog> = withContext(Dispatchers.IO) {
@@ -350,6 +391,15 @@ class SmartHealthApi(
         parsePatientShare(postJson("$baseUrl/patients/${patientId.urlEncode()}/shares", body).getJSONObject("share"))
     }
 
+    suspend fun listShareTargets(query: String = ""): ShareTargets = withContext(Dispatchers.IO) {
+        val url = if (query.isBlank()) {
+            "$baseUrl/share-targets"
+        } else {
+            "$baseUrl/share-targets?q=${query.urlEncode()}"
+        }
+        parseShareTargets(getJson(url))
+    }
+
     suspend fun listScans(
         patientId: String? = null,
         status: String? = null,
@@ -454,6 +504,8 @@ class SmartHealthApi(
             role = json.optString("role", "doctor"),
             name = json.optString("name"),
             email = json.optString("email"),
+            avatarFileId = json.optString("avatarFileId"),
+            avatarUrl = json.optString("avatarUrl"),
             phone = json.optString("phone"),
             license = json.optString("license"),
             hospital = json.optString("hospital"),
@@ -469,8 +521,21 @@ class SmartHealthApi(
             roleInfoRequiredFields = json.optJSONArray("roleInfoRequiredFields").toStringList(),
             roleInfoRequestMessage = json.optString("roleInfoRequestMessage"),
             registrationReason = json.optString("registrationReason"),
+            workspaceType = json.optString("workspaceType"),
+            accountType = json.optString("accountType"),
+            clinicSuggestion = json.optString("clinicSuggestion"),
+            notificationPreferences = json.optJSONObject("notificationPreferences") ?: JSONObject(),
             createdAt = json.stringOrNull("createdAt"),
             updatedAt = json.stringOrNull("updatedAt")
+        )
+    }
+
+    private fun parseHealth(json: JSONObject): BackendHealth {
+        return BackendHealth(
+            ok = json.optBoolean("ok"),
+            service = json.optString("service"),
+            status = parseStatus(json.optJSONObject("status") ?: JSONObject()),
+            now = json.stringOrNull("now")
         )
     }
 
@@ -604,6 +669,17 @@ class SmartHealthApi(
         }
     }
 
+    private fun executeBytes(request: Request): ByteArray {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val text = response.body?.string().orEmpty()
+                val message = runCatching { JSONObject(text).optString("error") }.getOrNull()
+                throw IOException(message?.ifBlank { null } ?: "HTTP ${response.code}")
+            }
+            return response.body?.bytes() ?: ByteArray(0)
+        }
+    }
+
     private fun parseStatus(json: JSONObject): BackendStatus {
         return BackendStatus(
             espCount = json.optInt("esp"),
@@ -643,6 +719,32 @@ class SmartHealthApi(
             scanIds = json.optJSONArray("scanIds").toStringList(),
             expiresAt = json.stringOrNull("expiresAt"),
             active = json.optBoolean("active", true)
+        )
+    }
+
+    private fun parseShareTargets(json: JSONObject): ShareTargets {
+        return ShareTargets(
+            doctors = json.optJSONArray("doctors").orEmpty().map(::parseShareTargetDoctor),
+            workspaces = json.optJSONArray("workspaces").orEmpty().map(::parseShareTargetWorkspace)
+        )
+    }
+
+    private fun parseShareTargetDoctor(json: JSONObject): ShareTargetDoctor {
+        return ShareTargetDoctor(
+            id = json.optString("id"),
+            name = json.optString("name"),
+            specialty = json.optString("specialty"),
+            organizationId = json.optString("organizationId"),
+            clinicName = json.optString("clinicName")
+        )
+    }
+
+    private fun parseShareTargetWorkspace(json: JSONObject): ShareTargetWorkspace {
+        return ShareTargetWorkspace(
+            id = json.optString("id"),
+            name = json.optString("name"),
+            type = json.optString("type"),
+            address = json.optString("address")
         )
     }
 

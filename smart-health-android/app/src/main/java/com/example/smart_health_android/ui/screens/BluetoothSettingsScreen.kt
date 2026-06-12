@@ -224,7 +224,7 @@ fun DeviceManagementScreen(
                 Icon(Icons.Default.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
-                    "Quản lý các thiết bị ống nghe đã từng kết nối. Để thêm thiết bị mới bằng QR code hoặc Bluetooth, vui lòng nhấn \"Thêm thiết bị\".",
+                    "Quản lý các thiết bị ống nghe đã từng kết nối. Để thêm thiết bị mới bằng QR hoặc mã thiết bị, vui lòng nhấn \"Thêm thiết bị\".",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
@@ -418,13 +418,13 @@ private fun EmptyHistoryCard() {
 private fun SmartDevice.displayConnectionMethod(fallbackIndex: Int = 0): String {
     val method = connectionMethod.trim()
     if (method.isNotBlank()) return method
-    if (online || backendHost.isNotBlank()) return "Cloud backend"
-    return if (fallbackIndex % 2 == 0) "Bluetooth" else "QR"
+    if (online || backendHost.isNotBlank()) return "Hệ thống Smart Health"
+    return if (fallbackIndex % 2 == 0) "Ghép nối thủ công" else "QR"
 }
 
 private fun SmartDevice.cloudStatusLabel(): String {
     return when {
-        online -> "Online qua backend cloud"
+        online -> "Online qua hệ thống Smart Health"
         connected -> "Đang kết nối cục bộ"
         else -> "Chưa online"
     }

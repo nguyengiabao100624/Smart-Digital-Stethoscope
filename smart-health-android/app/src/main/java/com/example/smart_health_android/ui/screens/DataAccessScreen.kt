@@ -63,7 +63,7 @@ fun DataAccessScreen(onNavigateBack: () -> Unit) {
                 icon = Icons.Default.Cloud,
                 iconTint = PrimaryBlue,
                 title = "Đồng bộ Đám mây (Cloud)",
-                description = "Tự động sao lưu dữ liệu đo nhịp tim, nhịp thở lên máy chủ bảo mật chuẩn HIPAA.",
+                description = "Tự động sao lưu dữ liệu đo nhịp tim, nhịp thở lên hệ thống Smart Health qua HTTPS.",
                 checked = cloudSync,
                 onCheckedChange = { cloudSync = it }
             )

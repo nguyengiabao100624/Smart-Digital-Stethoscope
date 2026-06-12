@@ -9,7 +9,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -28,12 +27,14 @@ import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.data.PendingRegistration
 import com.example.smart_health_android.data.PendingRegistrationStore
+import com.example.smart_health_android.data.SmartHealthPushRegistrar
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun LoginScreen(
     onLoginSuccess: (isDoctorMode: Boolean) -> Unit,
@@ -124,7 +125,7 @@ fun LoginScreen(
             value = email,
             onValueChange = { email = it },
             label = { Text("Địa chỉ Email") },
-            placeholder = { Text(if (isDoctorMode) "bacsytuan@benhvien.com" else "nguyenvana@gmail.com") },
+            placeholder = { Text("email@example.com") },
             leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TextSecondary) },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -235,6 +236,7 @@ fun LoginScreen(
 
                         val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
                         val result = SmartHealthRepository.api.authenticateFirebase(idToken)
+                        runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
                         val isDoctorAccount = result.user.role == "doctor" || result.user.role == "admin"
                         val isPendingDoctorApproval =
                             result.user.requestedRole == "doctor" &&
@@ -275,24 +277,6 @@ fun LoginScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Button(
-            onClick = onNavigateToPhoneLogin,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Surface),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Border)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Phone, contentDescription = null, tint = TextPrimary)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Đăng nhập bằng điện thoại", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            }
-        }
-
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
@@ -309,7 +293,7 @@ fun LoginScreen(
         Spacer(modifier = Modifier.weight(1f))
         
         Text(
-            text = "Phần Mềm Y Tế v2.1.0\nĐạt Chuẩn HIPAA & Được FDA Cấp Phép",
+            text = "Smart Health\nTheo dõi và lưu trữ dữ liệu ống nghe thông minh",
             color = TextSecondary,
             fontSize = 12.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

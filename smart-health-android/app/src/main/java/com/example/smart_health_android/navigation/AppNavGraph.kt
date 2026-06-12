@@ -35,6 +35,26 @@ fun AppNavGraph(
                     navController.navigate("login") {
                         popUpTo("splash") { inclusive = true }
                     }
+                },
+                onNavigateToDoctorDashboard = {
+                    navController.navigate("dashboard") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                },
+                onNavigateToPatientDashboard = {
+                    navController.navigate("patient-dashboard") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                },
+                onDoctorApprovalPending = {
+                    navController.navigate("doctor-approval-pending") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                },
+                onNavigateToVerifyEmail = { accountType ->
+                    navController.navigate("verify-email?accountType=${Uri.encode(accountType)}") {
+                        popUpTo("splash") { inclusive = true }
+                    }
                 }
             )
         }

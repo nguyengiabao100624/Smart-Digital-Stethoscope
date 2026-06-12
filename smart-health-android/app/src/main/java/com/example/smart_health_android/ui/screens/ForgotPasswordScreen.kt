@@ -17,7 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -74,7 +74,12 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Text("Quên mật khẩu?", color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Nhập địa chỉ email của bạn và chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu", color = TextSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
+                        Text(
+                            "Nhập email đăng nhập để Firebase gửi liên kết đặt lại mật khẩu",
+                            color = TextSecondary,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
+                        )
 
                         Spacer(modifier = Modifier.height(32.dp))
 
@@ -85,7 +90,7 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
                                 value = email,
                                 onValueChange = { email = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("bacsituan@benhvien.com", color = TextSecondary.copy(alpha = 0.5f)) },
+                                placeholder = { Text("email@example.com", color = TextSecondary.copy(alpha = 0.5f)) },
                                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TextSecondary) },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -115,7 +120,7 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
                             onClick = {
                                 val login = email.trim()
                                 if (login.isBlank()) {
-                                    errorMessage = "Vui lòng nhập email hoặc số điện thoại"
+                                    errorMessage = "Vui lòng nhập email đăng nhập"
                                     return@Button
                                 }
 
@@ -123,10 +128,10 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
                                 errorMessage = null
                                 coroutineScope.launch {
                                     try {
-                                        SmartHealthRepository.api.requestPasswordReset(login)
+                                        FirebaseAuthService.sendPasswordResetEmail(login)
                                         sent = true
                                     } catch (error: Exception) {
-                                        errorMessage = error.message ?: "Không thể gửi yêu cầu"
+                                        errorMessage = error.message ?: "Không thể gửi email đặt lại mật khẩu"
                                     } finally {
                                         isSubmitting = false
                                     }
@@ -178,7 +183,13 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
                         Spacer(modifier = Modifier.height(24.dp))
                         Text("Đã gửi email!", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("Vui lòng kiểm tra hộp thư của bạn tại\n${email}", color = PrimaryBlue, fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+                        Text(
+                            "Vui lòng kiểm tra hộp thư của bạn tại\n${email}",
+                            color = PrimaryBlue,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center
+                        )
                         Spacer(modifier = Modifier.height(24.dp))
                         Text("Đang chuyển hướng về trang đăng nhập...", color = TextSecondary, fontSize = 14.sp)
                     }
@@ -187,7 +198,7 @@ fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
         }
 
         Text(
-            "Phần Mềm Y Tế v2.1.0\nĐạt Chuẩn HIPAA & Được FDA Cấp Phép",
+            "Smart Health\nXác thực qua Firebase",
             color = TextSecondary,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,

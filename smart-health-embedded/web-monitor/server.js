@@ -804,6 +804,18 @@ function publicUser(user) {
         billingCycle: "",
       }
     : workspaceContext.workspace;
+  const workspaceType = isPlatformAdmin
+    ? "platform"
+    : user.workspaceType || workspace?.workspaceType || workspace?.type || organization?.workspaceType || organization?.type || "";
+  const accountType =
+    user.accountType ||
+    (workspaceType === "solo_practice"
+      ? "solo_doctor"
+      : workspaceType === "personal"
+        ? "personal"
+        : user.requestedRole === "doctor"
+          ? "doctor"
+          : user.role || "");
   return {
     ...safeUser,
     title: user.title || "",
@@ -822,19 +834,26 @@ function publicUser(user) {
     memberships: workspaceContext.memberships,
     workspace,
     capabilities: workspaceContext.capabilities,
-    scopeType: isPlatformAdmin ? "platform" : workspace?.workspaceType || workspace?.type || "",
+    workspaceType,
+    accountType,
+    clinicSuggestion: user.clinicSuggestion || "",
+    scopeType: isPlatformAdmin ? "platform" : workspaceType,
     scopeLabel: isPlatformAdmin ? "Quản trị toàn hệ thống" : workspace?.name || "",
   };
 }
 
 function publicDoctorRoleRequest(user) {
   const organization = getClinicById(user.organizationId);
+  const workspaceType = user.workspaceType || organization?.workspaceType || organization?.type || "";
   return {
     ...publicUser(user),
     hospital: user.hospital || organization?.name || "",
     clinicName: user.hospital || organization?.name || "",
     specialty: user.department || "",
     registrationReason: user.registrationReason || "",
+    workspaceType,
+    accountType: user.accountType || (workspaceType === "solo_practice" ? "solo_doctor" : "doctor"),
+    clinicSuggestion: user.clinicSuggestion || "",
     roleInfoRequiredFields: normalizeRoleInfoFields(user.roleInfoRequiredFields),
     status: user.roleRequestStatus || "pending",
     requestedAt: user.roleRequestedAt || user.createdAt || "",
@@ -4683,10 +4702,12 @@ function getNotificationMetadataLabel(key) {
     doctorName: "Tên bác sĩ",
     doctorEmail: "Email bác sĩ",
     doctorPhone: "Số điện thoại",
-    clinicName: "Cơ sở y tế",
+    clinicName: "Phòng khám/cơ sở",
     specialty: "Chuyên khoa",
     license: "Số CCHN",
     registrationReason: "Lý do đăng ký",
+    workspaceType: "Loại workspace",
+    accountType: "Loại đăng ký",
     roleRequestStatus: "Trạng thái yêu cầu",
     previousRoleRequestStatus: "Trạng thái trước đó",
     requiredFields: "Trường cần bổ sung",
@@ -4694,6 +4715,32 @@ function getNotificationMetadataLabel(key) {
     reason: "Lý do",
   };
   return labels[key] || key;
+}
+
+function formatWorkspaceTypeLabel(value) {
+  const raw = String(value || "");
+  if (raw === "hospital") return "Bệnh viện";
+  if (raw === "clinic") return "Phòng khám/cơ sở";
+  if (raw === "solo_practice") return "Phòng khám tư";
+  if (raw === "personal") return "Cá nhân/gia đình";
+  if (raw === "platform") return "Toàn hệ thống";
+  return raw;
+}
+
+function formatAccountTypeLabel(value) {
+  const raw = String(value || "");
+  if (raw === "solo_doctor") return "Bác sĩ tư";
+  if (raw === "doctor") return "Bác sĩ cơ sở";
+  if (raw === "personal") return "Cá nhân";
+  if (raw === "patient") return "Bệnh nhân";
+  return raw;
+}
+
+function formatNotificationMetadataValue(key, value) {
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (key === "workspaceType") return formatWorkspaceTypeLabel(value);
+  if (key === "accountType") return formatAccountTypeLabel(value);
+  return String(value);
 }
 
 function buildNotificationInfoRows(notification) {
@@ -4710,7 +4757,7 @@ function buildNotificationInfoRows(notification) {
     if (["id", "type", "title", "message", "channel", "read", "createdAt", "updatedAt", "userId", "organizationId"].includes(key)) {
       continue;
     }
-    rows.push([getNotificationMetadataLabel(key), typeof value === "boolean" ? (value ? "true" : "false") : String(value)]);
+    rows.push([getNotificationMetadataLabel(key), formatNotificationMetadataValue(key, value)]);
   }
   return rows.filter(([, value]) => readString(String(value), 800));
 }
@@ -5890,15 +5937,20 @@ async function handleAuthApi(req, res, segments) {
     }
     const previousRoleRequestStatus = user.roleRequestStatus || "";
 
+    const currentWorkspace = getClinicById(user.organizationId);
+    const currentWorkspaceType = normalizeWorkspaceType(
+      user.workspaceType || currentWorkspace?.workspaceType || currentWorkspace?.type,
+      "clinic"
+    );
     const requestedWorkspaceType = normalizeWorkspaceType(
       payload.workspaceType || payload.accountType,
-      payload.accountType === "solo_doctor" ? "solo_practice" : "clinic"
+      payload.accountType === "solo_doctor" ? "solo_practice" : currentWorkspaceType
     );
-    let selectedClinic = getClinicFromPayload(payload);
+    let selectedClinic = requestedWorkspaceType === "solo_practice" ? null : getClinicFromPayload(payload);
     if (requestedRole === "patient" && requestedWorkspaceType === "personal") {
       selectedClinic = ensurePersonalWorkspaceForUser(user);
     }
-    if (requestedRole === "doctor" && requestedWorkspaceType === "solo_practice" && !selectedClinic) {
+    if (requestedRole === "doctor" && requestedWorkspaceType === "solo_practice") {
       selectedClinic = ensureSoloPracticeWorkspaceForUser(user, payload);
     }
     const requestedClinicId = readString(payload.organizationId || payload.clinicId || payload.clinic, 120);
@@ -5907,6 +5959,15 @@ async function handleAuthApi(req, res, segments) {
     }
 
     user.requestedRole = requestedRole;
+    user.accountType =
+      payload.accountType ||
+      (requestedRole === "doctor"
+        ? requestedWorkspaceType === "solo_practice"
+          ? "solo_doctor"
+          : "doctor"
+        : requestedWorkspaceType === "personal"
+          ? "personal"
+          : user.accountType || "");
     user.accountStatus = user.accountStatus || "active";
     if (requestedRole === "doctor") {
       user.roleRequestStatus = isApprovedDoctorRole(user) || user.role === "admin" ? "approved" : "pending";
@@ -5951,6 +6012,9 @@ async function handleAuthApi(req, res, segments) {
         department: user.department,
         organizationId: user.organizationId,
         registrationReason: user.registrationReason,
+        workspaceType: user.workspaceType,
+        accountType: user.accountType,
+        clinicSuggestion: user.clinicSuggestion,
       });
       if (
         !persistedUser ||
@@ -5993,6 +6057,8 @@ async function handleAuthApi(req, res, segments) {
           specialty: user.department || user.specialty || "",
           license: user.license || "",
           registrationReason,
+          workspaceType: user.workspaceType || getClinicById(user.organizationId)?.workspaceType || "",
+          accountType: user.accountType || "",
           roleRequestStatus: user.roleRequestStatus || "",
           previousRoleRequestStatus,
         },

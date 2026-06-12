@@ -8,7 +8,7 @@ val requestedTasks = gradle.startParameter.taskNames.joinToString(" ").lowercase
 val releaseBuildRequested = requestedTasks.contains("release")
 val smartHealthBaseUrl = providers
     .gradleProperty("SMART_HEALTH_BASE_URL")
-    .orElse(if (releaseBuildRequested) "" else "http://10.0.2.2:3000")
+    .orElse(if (releaseBuildRequested) "" else "https://smart-health-api-xj0a.onrender.com")
     .get()
     .trimEnd('/')
 
@@ -78,6 +78,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.messaging)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -1,6 +1,7 @@
 package com.example.smart_health_android.data
 
 import com.google.android.gms.tasks.Task
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -36,6 +37,10 @@ object FirebaseAuthService {
         user.sendEmailVerification().await()
     }
 
+    suspend fun sendPasswordResetEmail(email: String) {
+        auth.sendPasswordResetEmail(email).await()
+    }
+
     suspend fun reloadCurrentUser(): Boolean {
         val user = auth.currentUser ?: error("Chưa đăng nhập")
         user.reload().await()
@@ -48,6 +53,14 @@ object FirebaseAuthService {
 
     fun isCurrentUserEmailVerified(): Boolean {
         return auth.currentUser?.isEmailVerified == true
+    }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String) {
+        val user = auth.currentUser ?: error("Chưa đăng nhập")
+        val email = user.email ?: error("Tài khoản hiện tại chưa có email đăng nhập")
+        val credential = EmailAuthProvider.getCredential(email, currentPassword)
+        user.reauthenticate(credential).await()
+        user.updatePassword(newPassword).await()
     }
 
     suspend fun getFreshIdToken(forceRefresh: Boolean = false): String {

@@ -25,7 +25,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -152,13 +152,13 @@ fun ChangePasswordScreen(onNavigateBack: () -> Unit) {
                     successMessage = null
                     coroutineScope.launch {
                         try {
-                            SmartHealthRepository.api.changePassword(current, next)
+                            FirebaseAuthService.changePassword(current, next)
                             currentPassword = ""
                             newPassword = ""
                             confirmPassword = ""
                             successMessage = "Đã cập nhật mật khẩu"
                         } catch (error: Exception) {
-                            errorMessage = error.message ?: "Không thể đổi mật khẩu"
+                            errorMessage = error.message ?: "Không thể đổi mật khẩu trên Firebase"
                         } finally {
                             isSubmitting = false
                         }

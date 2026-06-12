@@ -157,19 +157,19 @@ fun NotificationsScreen(onNavigateBack: () -> Unit) {
                 items(notifications, key = { it.id }) { notification ->
                     val bgColor = when (notification.type) {
                         "success" -> SuccessGreen.copy(alpha = 0.1f)
-                        "warning" -> WarningYellow.copy(alpha = 0.1f)
+                        "warning", "doctor_info_requested" -> WarningYellow.copy(alpha = 0.1f)
                         "info" -> PrimaryBlue.copy(alpha = 0.1f)
                         else -> Surface
                     }
                     val iconColor = when (notification.type) {
                         "success" -> SuccessGreen
-                        "warning" -> WarningYellow
+                        "warning", "doctor_info_requested" -> WarningYellow
                         "info" -> PrimaryBlue
                         else -> TextSecondary
                     }
                     val iconVector = when (notification.type) {
                         "success" -> Icons.Default.CheckCircle
-                        "warning" -> Icons.Default.Warning
+                        "warning", "doctor_info_requested" -> Icons.Default.Warning
                         "info" -> Icons.Default.Info
                         else -> Icons.Default.Notifications
                     }

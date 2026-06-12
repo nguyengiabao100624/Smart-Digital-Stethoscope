@@ -162,6 +162,11 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(firstSubmitResponse.status, 200);
       const firstSubmit = await firstSubmitResponse.json();
       assert.equal(firstSubmit.user.roleRequestStatus, "pending");
+      assert.equal(firstSubmit.user.name, "Lifecycle Doctor");
+      assert.equal(firstSubmit.user.phone, "0900000000");
+      assert.equal(firstSubmit.user.license, "CCHN-LIFE-001");
+      assert.equal(firstSubmit.user.hospital, "Smart Health Clinic");
+      assert.equal(firstSubmit.user.department, "Tim mach");
       assert.equal(firstSubmit.user.registrationReason, "Initial smoke request");
 
       const requestInfoResponse = await postJson(
@@ -203,12 +208,19 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(resubmit.user.roleRequestStatus, "pending");
       assert.deepEqual(resubmit.user.roleInfoRequiredFields, []);
       assert.equal(resubmit.user.roleInfoRequestMessage, "");
+      assert.equal(resubmit.user.name, "Lifecycle Doctor Updated");
+      assert.equal(resubmit.user.phone, "0911111111");
+      assert.equal(resubmit.user.license, "CCHN-LIFE-UPDATED");
+      assert.equal(resubmit.user.hospital, "Smart Health Clinic");
+      assert.equal(resubmit.user.department, "Tim mach");
       assert.equal(resubmit.user.registrationReason, "Updated smoke request");
 
       const polled = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, doctorHeaders);
       assert.equal(polled.response.status, 200);
       assert.equal(polled.data.user.roleRequestStatus, "pending");
       assert.deepEqual(polled.data.user.roleInfoRequiredFields, []);
+      assert.equal(polled.data.user.phone, "0911111111");
+      assert.equal(polled.data.user.license, "CCHN-LIFE-UPDATED");
       assert.equal(polled.data.user.registrationReason, "Updated smoke request");
 
       const needsInfoAfter = await getJson(
@@ -224,10 +236,84 @@ async function testDoctorRequestNeedsInfoResubmit() {
       );
       assert.equal(pendingAfter.response.status, 200);
       assert.ok(pendingAfter.data.requests.some((request) => request.id === doctor.user.id));
-      assert.equal(
-        pendingAfter.data.requests.find((request) => request.id === doctor.user.id).registrationReason,
-        "Updated smoke request",
+      const pendingDoctor = pendingAfter.data.requests.find((request) => request.id === doctor.user.id);
+      assert.equal(pendingDoctor.registrationReason, "Updated smoke request");
+      assert.equal(pendingDoctor.phone, "0911111111");
+      assert.equal(pendingDoctor.license, "CCHN-LIFE-UPDATED");
+
+      const soloDoctorResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/register`, {
+        role: "patient",
+        name: "Solo Lifecycle Doctor",
+        email: `solo-doctor-${suffix}@smarthealth.test`,
+        password: "12345678",
+      });
+      assert.equal(soloDoctorResponse.status, 201);
+      const soloDoctor = await soloDoctorResponse.json();
+      const soloHeaders = { Authorization: `Bearer ${soloDoctor.token}` };
+      const soloFirstResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request`,
+        {
+          requestedRole: "doctor",
+          name: "Solo Lifecycle Doctor",
+          phone: "0922222222",
+          license: "CCHN-SOLO-001",
+          hospital: "Phong kham tu nhan Alpha",
+          department: "Ho hap",
+          reason: "Solo first request",
+          accountType: "solo_doctor",
+          workspaceType: "solo_practice",
+        },
+        soloHeaders,
       );
+      assert.equal(soloFirstResponse.status, 200);
+      const soloFirst = await soloFirstResponse.json();
+      assert.equal(soloFirst.user.workspaceType, "solo_practice");
+      assert.equal(soloFirst.user.accountType, "solo_doctor");
+      assert.equal(soloFirst.user.hospital, "Phong kham tu nhan Alpha");
+
+      const soloRequestInfoResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests/${encodeURIComponent(soloDoctor.user.id)}/request-info`,
+        { message: "Cap nhat so dien thoai va ten phong kham.", requiredFields: ["phone", "clinic"] },
+        adminHeaders,
+      );
+      assert.equal(soloRequestInfoResponse.status, 200);
+
+      const soloResubmitResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request`,
+        {
+          requestedRole: "doctor",
+          name: "Solo Lifecycle Doctor Updated",
+          phone: "0933333333",
+          license: "CCHN-SOLO-UPDATED",
+          hospital: "Phong kham tu nhan Beta",
+          department: "Ho hap",
+          reason: "Solo updated request",
+          accountType: "solo_doctor",
+          workspaceType: "solo_practice",
+        },
+        soloHeaders,
+      );
+      assert.equal(soloResubmitResponse.status, 200);
+      const soloResubmit = await soloResubmitResponse.json();
+      assert.equal(soloResubmit.user.roleRequestStatus, "pending");
+      assert.equal(soloResubmit.user.workspaceType, "solo_practice");
+      assert.equal(soloResubmit.user.accountType, "solo_doctor");
+      assert.equal(soloResubmit.user.phone, "0933333333");
+      assert.equal(soloResubmit.user.hospital, "Phong kham tu nhan Beta");
+      assert.equal(soloResubmit.user.registrationReason, "Solo updated request");
+
+      const soloPendingAfter = await getJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests?status=pending`,
+        adminHeaders,
+      );
+      assert.equal(soloPendingAfter.response.status, 200);
+      const soloPendingDoctor = soloPendingAfter.data.requests.find((request) => request.id === soloDoctor.user.id);
+      assert.ok(soloPendingDoctor);
+      assert.equal(soloPendingDoctor.phone, "0933333333");
+      assert.equal(soloPendingDoctor.hospital, "Phong kham tu nhan Beta");
+      assert.equal(soloPendingDoctor.workspaceType, "solo_practice");
+      assert.equal(soloPendingDoctor.accountType, "solo_doctor");
+      assert.equal(soloPendingDoctor.registrationReason, "Solo updated request");
     }
   );
 }

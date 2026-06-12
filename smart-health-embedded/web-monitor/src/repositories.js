@@ -38,6 +38,18 @@ function firebaseClaimsForUser(user = {}) {
   if (registrationReason) {
     claims.registrationReason = registrationReason;
   }
+  const workspaceType = user.workspaceType || claims.workspaceType || existingProfile.workspaceType || "";
+  if (workspaceType) {
+    claims.workspaceType = workspaceType;
+  }
+  const accountType = user.accountType || claims.accountType || existingProfile.accountType || "";
+  if (accountType) {
+    claims.accountType = accountType;
+  }
+  const clinicSuggestion = user.clinicSuggestion || claims.clinicSuggestion || existingProfile.clinicSuggestion || "";
+  if (clinicSuggestion) {
+    claims.clinicSuggestion = clinicSuggestion;
+  }
   if (Array.isArray(user.roleInfoRequiredFields)) {
     claims.roleInfoRequiredFields = user.roleInfoRequiredFields;
   }
@@ -94,6 +106,9 @@ function rowToUser(row) {
     roleInfoRequestMessage: row.role_info_request_message || "",
     roleInfoRequiredFields,
     registrationReason: row.registration_reason || firebaseClaims.registrationReason || profile.registrationReason || "",
+    workspaceType: firebaseClaims.workspaceType || profile.workspaceType || "",
+    accountType: firebaseClaims.accountType || profile.accountType || "",
+    clinicSuggestion: firebaseClaims.clinicSuggestion || profile.clinicSuggestion || "",
     firebaseClaims,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -880,6 +895,15 @@ function createRepositories(options) {
       if (patch.registrationReason) {
         nextClaims.registrationReason = patch.registrationReason;
       }
+      if (patch.workspaceType) {
+        nextClaims.workspaceType = patch.workspaceType;
+      }
+      if (patch.accountType) {
+        nextClaims.accountType = patch.accountType;
+      }
+      if (patch.clinicSuggestion) {
+        nextClaims.clinicSuggestion = patch.clinicSuggestion;
+      }
       const hasSql = Boolean(getPool());
       const sqlUser = await withSql(async (pool) => {
         const result = await pool.query(
@@ -950,6 +974,9 @@ function createRepositories(options) {
         department: patch.department || patch.specialty || user.department,
         organizationId: patch.organizationId || user.organizationId,
         registrationReason: patch.registrationReason || user.registrationReason || "",
+        workspaceType: patch.workspaceType || user.workspaceType || "",
+        accountType: patch.accountType || user.accountType || "",
+        clinicSuggestion: patch.clinicSuggestion || user.clinicSuggestion || "",
         updatedAt: nowIso(),
       });
       syncArrayItem(getDb().users, user);

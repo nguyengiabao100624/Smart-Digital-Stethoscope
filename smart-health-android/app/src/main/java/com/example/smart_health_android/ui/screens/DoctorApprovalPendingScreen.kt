@@ -61,6 +61,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.smart_health_android.data.AuthUser
 import com.example.smart_health_android.data.ClinicOption
 import com.example.smart_health_android.data.FirebaseAuthService
+import com.example.smart_health_android.data.SmartHealthPushRegistrar
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.SpecialtyOption
 import com.example.smart_health_android.data.toVietnameseMessage
@@ -71,8 +72,25 @@ import com.example.smart_health_android.ui.theme.PrimaryTeal
 import com.example.smart_health_android.ui.theme.Surface
 import com.example.smart_health_android.ui.theme.TextPrimary
 import com.example.smart_health_android.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+
+private fun roleInfoFieldLabel(field: String): String {
+    return when (field) {
+        "name" -> "họ và tên"
+        "phone" -> "số điện thoại"
+        "license" -> "chứng chỉ hành nghề"
+        "clinic" -> "phòng khám/cơ sở y tế"
+        "specialty" -> "chuyên khoa"
+        "reason" -> "lý do đăng ký"
+        else -> field
+    }
+}
+
+private fun AuthUser.isSoloPracticeDoctor(): Boolean {
+    return workspaceType == "solo_practice" || accountType == "solo_doctor"
+}
 
 @Composable
 fun DoctorApprovalPendingScreen(
@@ -87,6 +105,7 @@ fun DoctorApprovalPendingScreen(
     var phone by remember { mutableStateOf("") }
     var license by remember { mutableStateOf("") }
     var selectedClinicId by remember { mutableStateOf("") }
+    var clinicName by remember { mutableStateOf("") }
     var selectedSpecialtyId by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
     var isChecking by remember { mutableStateOf(false) }
@@ -101,17 +120,22 @@ fun DoctorApprovalPendingScreen(
         name = nextUser.name
         phone = nextUser.phone
         license = nextUser.license
-        selectedClinicId = nextUser.organizationId
+        clinicName = nextUser.hospital.ifBlank { nextUser.clinicName.ifBlank { nextUser.clinicSuggestion } }
+        selectedClinicId = if (nextUser.isSoloPracticeDoctor()) "" else nextUser.organizationId
         selectedSpecialtyId = specialties.firstOrNull { it.name == nextUser.department || it.name == nextUser.specialty }?.id.orEmpty()
+        reason = nextUser.registrationReason
     }
 
-    fun refreshStatus() {
-        isChecking = true
+    fun refreshStatus(showLoading: Boolean = true) {
+        if (showLoading) {
+            isChecking = true
+        }
         errorMessage = null
         coroutineScope.launch {
             try {
                 val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
                 val result = SmartHealthRepository.api.authenticateFirebase(idToken)
+                runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
                 applyUser(result.user)
                 val approvedDoctor = result.user.role == "doctor" && result.user.roleRequestStatus == "approved"
                 if (approvedDoctor || result.user.role == "admin") {
@@ -128,9 +152,13 @@ fun DoctorApprovalPendingScreen(
                     }
                 }
             } catch (exception: Exception) {
-                errorMessage = exception.toVietnameseMessage("Không thể kiểm tra trạng thái duyệt tài khoản.")
+                if (showLoading) {
+                    errorMessage = exception.toVietnameseMessage("Không thể kiểm tra trạng thái duyệt tài khoản.")
+                }
             } finally {
-                isChecking = false
+                if (showLoading) {
+                    isChecking = false
+                }
             }
         }
     }
@@ -145,9 +173,25 @@ fun DoctorApprovalPendingScreen(
         refreshStatus()
     }
 
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15000)
+            val currentStatus = user?.roleRequestStatus
+            if (currentStatus == "approved" || currentStatus == "rejected") {
+                break
+            }
+            refreshStatus(showLoading = false)
+        }
+    }
+
     val selectedClinic = clinics.firstOrNull { it.id == selectedClinicId }
     val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
     val needsInfo = user?.roleRequestStatus == "needs_info"
+    val isSoloPractice = user?.isSoloPracticeDoctor() == true
+    val requiredFieldLabels = user?.roleInfoRequiredFields
+        .orEmpty()
+        .map(::roleInfoFieldLabel)
+        .distinct()
 
     Column(
         modifier = Modifier
@@ -204,7 +248,16 @@ fun DoctorApprovalPendingScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             PendingStep(Icons.Default.Email, PrimaryTeal, "Email đã xác thực", "Tài khoản đã qua bước xác thực Firebase.")
-            PendingStep(Icons.Default.VerifiedUser, PrimaryBlue, "Hồ sơ đang được kiểm tra", "Quản trị viên xác minh giấy phép, cơ sở y tế và chuyên khoa.")
+            PendingStep(
+                Icons.Default.VerifiedUser,
+                PrimaryBlue,
+                "Hồ sơ đang được kiểm tra",
+                if (isSoloPractice) {
+                    "Quản trị viên xác minh giấy phép, phòng khám tư và chuyên khoa."
+                } else {
+                    "Quản trị viên xác minh giấy phép, cơ sở y tế và chuyên khoa."
+                }
+            )
             PendingStep(Icons.Default.CheckCircle, Color(0xFF10B981), "Kích hoạt quyền bác sĩ", "Sau khi được duyệt, bấm kiểm tra trạng thái để vào dashboard.")
         }
 
@@ -219,11 +272,24 @@ fun DoctorApprovalPendingScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text("Bổ sung thông tin", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (requiredFieldLabels.isNotEmpty()) {
+                    Text(
+                        "Admin yêu cầu bổ sung: ${requiredFieldLabels.joinToString(", ")}.",
+                        color = Color(0xFF92400E),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 18.sp
+                    )
+                }
                 TextFieldGroup("Họ và tên", name, { name = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "Nhập họ tên")
                 TextFieldGroup("Số điện thoại", phone, { phone = it }, Icons.Default.Phone, "0912 345 678")
-                TextFieldGroup("Số chứng chỉ hành nghề", license, { license = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "VD: 123456/BYT-CCHN")
-                PendingDropdown("Cơ sở y tế", selectedClinic?.name.orEmpty(), "Chọn cơ sở y tế", clinics.map { it.id to it.name }, Icons.Default.Home) {
-                    selectedClinicId = it
+                TextFieldGroup("Số chứng chỉ hành nghề", license, { license = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "VD: CCHN-BYT-2026-001")
+                if (isSoloPractice) {
+                    TextFieldGroup("Tên phòng khám tư", clinicName, { clinicName = it }, Icons.Default.Home, "VD: Phòng khám Tim mạch An Khang")
+                } else {
+                    PendingDropdown("Cơ sở y tế", selectedClinic?.name.orEmpty(), "Chọn cơ sở y tế", clinics.map { it.id to it.name }, Icons.Default.Home) {
+                        selectedClinicId = it
+                    }
                 }
                 PendingDropdown("Chuyên khoa", selectedSpecialty?.name.orEmpty(), "Chọn chuyên khoa", specialties.map { it.id to it.name }, Icons.Default.LocalHospital) {
                     selectedSpecialtyId = it
@@ -233,33 +299,50 @@ fun DoctorApprovalPendingScreen(
                     onClick = {
                         val clinic = clinics.firstOrNull { it.id == selectedClinicId }
                         val specialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
-                        if (name.isBlank() || phone.isBlank() || license.isBlank() || clinic == null || specialty == null) {
-                            errorMessage = "Vui lòng bổ sung đủ họ tên, số điện thoại, CCHN, cơ sở y tế và chuyên khoa."
+                        val nextClinicName = if (isSoloPractice) clinicName.trim() else clinic?.name.orEmpty()
+                        if (name.isBlank() || phone.isBlank() || license.isBlank() || specialty == null) {
+                            errorMessage = "Vui lòng bổ sung đủ họ tên, số điện thoại, CCHN và chuyên khoa."
                             return@Button
                         }
+                        if (isSoloPractice && nextClinicName.isBlank()) {
+                            errorMessage = "Vui lòng nhập tên phòng khám tư."
+                            return@Button
+                        }
+                        if (!isSoloPractice && clinic == null) {
+                            errorMessage = "Vui lòng chọn cơ sở y tế."
+                            return@Button
+                        }
+                        val nextAccountType = if (isSoloPractice) "solo_doctor" else "doctor"
+                        val nextWorkspaceType = if (isSoloPractice) "solo_practice" else "clinic"
+                        val nextOrganizationId = if (isSoloPractice) "" else clinic!!.id
                         isSubmitting = true
                         errorMessage = null
                         coroutineScope.launch {
                             try {
-                                SmartHealthRepository.api.updateMe(
-                                    JSONObject()
-                                        .put("name", name.trim())
-                                        .put("phone", phone.trim())
-                                        .put("license", license.trim())
-                                        .put("organizationId", clinic.id)
-                                        .put("hospital", clinic.name)
-                                        .put("department", specialty.name)
-                                        .put("specialty", specialty.name)
-                                )
+                                val profilePayload = JSONObject()
+                                    .put("name", name.trim())
+                                    .put("phone", phone.trim())
+                                    .put("license", license.trim())
+                                    .put("hospital", nextClinicName)
+                                    .put("department", specialty.name)
+                                    .put("specialty", specialty.name)
+                                    .put("accountType", nextAccountType)
+                                    .put("workspaceType", nextWorkspaceType)
+                                if (!isSoloPractice) {
+                                    profilePayload.put("organizationId", nextOrganizationId)
+                                }
+                                SmartHealthRepository.api.updateMe(profilePayload)
                                 val updated = SmartHealthRepository.api.requestRole(
                                     requestedRole = "doctor",
                                     name = name.trim(),
                                     phone = phone.trim(),
                                     license = license.trim(),
-                                    hospital = clinic.name,
+                                    hospital = nextClinicName,
                                     department = specialty.name,
-                                    organizationId = clinic.id,
-                                    reason = reason.trim()
+                                    organizationId = nextOrganizationId,
+                                    reason = reason.trim(),
+                                    accountType = nextAccountType,
+                                    workspaceType = nextWorkspaceType
                                 )
                                 applyUser(updated)
                                 statusMessage = "Đã gửi lại hồ sơ. Tài khoản đang chờ quản trị viên phê duyệt."

@@ -85,7 +85,7 @@ private enum class PairingMethod(
 ) {
     Qr("Quét mã QR", "Kết nối nhanh và chính xác nhất bằng cách quét mã QR in trên hộp hoặc thân thiết bị.", "QR"),
     Manual("Nhập mã thủ công", "Nhập mã seri hoặc claim code trên thân thiết bị", "Nhập tay"),
-    Bluetooth("Bluetooth truyền thống", "Tìm kiếm và ghép nối thủ công qua danh sách thiết bị Bluetooth xung quanh.", "Bluetooth")
+    Bluetooth("Tìm thiết bị", "Tìm và ghép nối ống nghe đã được hệ thống phát hiện ở gần bạn.", "Bluetooth")
 }
 
 private data class PairingPayload(
@@ -621,7 +621,7 @@ private fun BluetoothRadarScreen(
             .fillMaxSize()
             .background(Background)
     ) {
-        AddDeviceHeader(title = "Kết nối Bluetooth", onNavigateBack = onNavigateBack)
+        AddDeviceHeader(title = "Tìm thiết bị", onNavigateBack = onNavigateBack)
 
         Column(
             modifier = Modifier

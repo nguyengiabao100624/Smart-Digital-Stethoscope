@@ -1,5 +1,11 @@
 package com.example.smart_health_android.ui.screens
 
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,13 +23,47 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+private const val REQUEST_POST_NOTIFICATIONS = 1001
+
+private tailrec fun Context.findActivity(): Activity? {
+    return when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+}
+
+private fun Context.hasPostNotificationsPermission(): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun Context.requestPostNotificationsPermission(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+    val activity = findActivity() ?: return false
+    ActivityCompat.requestPermissions(
+        activity,
+        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+        REQUEST_POST_NOTIFICATIONS
+    )
+    return true
+}
 
 @Composable
 fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
+    val context = LocalContext.current
     var enabled by remember { mutableStateOf(true) }
     var sound by remember { mutableStateOf(true) }
     var vibration by remember { mutableStateOf(true) }
@@ -33,6 +73,104 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
     var appointments by remember { mutableStateOf(true) }
     var aiUpdates by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(true) }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var showNotificationPrePrompt by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun buildPreferences(): JSONObject {
+        return JSONObject()
+            .put("enabled", enabled)
+            .put("sound", sound)
+            .put("vibration", vibration)
+            .put("abnormalResults", abnormalResults)
+            .put("deviceOffline", deviceConnection)
+            .put("appointments", appointments)
+            .put("aiUpdates", aiUpdates)
+            .put("messages", messages)
+            .put("newLogin", true)
+            .put("doctorRequests", true)
+    }
+
+    fun applyPreferences(preferences: JSONObject) {
+        enabled = preferences.optBoolean("enabled", true)
+        sound = preferences.optBoolean("sound", true)
+        vibration = preferences.optBoolean("vibration", true)
+        abnormalResults = preferences.optBoolean("abnormalResults", true)
+        deviceConnection = preferences.optBoolean("deviceOffline", true)
+        appointments = preferences.optBoolean("appointments", true)
+        aiUpdates = preferences.optBoolean("aiUpdates", false)
+        messages = preferences.optBoolean("messages", true)
+    }
+
+    fun persistPreference(key: String, value: Boolean) {
+        when (key) {
+            "enabled" -> enabled = value
+            "sound" -> sound = value
+            "vibration" -> vibration = value
+            "abnormalResults" -> abnormalResults = value
+            "deviceOffline" -> deviceConnection = value
+            "appointments" -> appointments = value
+            "aiUpdates" -> aiUpdates = value
+            "messages" -> messages = value
+        }
+        val nextPreferences = buildPreferences().put(key, value)
+        isSaving = true
+        errorMessage = null
+        statusMessage = null
+        coroutineScope.launch {
+            try {
+                val user = SmartHealthRepository.api.updateMe(
+                    JSONObject().put("notificationPreferences", nextPreferences)
+                )
+                applyPreferences(user.notificationPreferences)
+                statusMessage = "Đã lưu tùy chọn thông báo"
+            } catch (exception: Exception) {
+                errorMessage = exception.toVietnameseMessage("Không thể lưu tùy chọn thông báo")
+            } finally {
+                isSaving = false
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        isLoading = true
+        errorMessage = null
+        runCatching {
+            applyPreferences(SmartHealthRepository.api.getMe().notificationPreferences)
+        }.onFailure {
+            errorMessage = it.toVietnameseMessage("Không thể tải tùy chọn thông báo")
+        }
+        isLoading = false
+    }
+
+    if (showNotificationPrePrompt) {
+        AlertDialog(
+            onDismissRequest = { showNotificationPrePrompt = false },
+            title = { Text("Cho phép thông báo") },
+            text = {
+                Text("Smart Health cần quyền thông báo để gửi cảnh báo kết quả bất thường, trạng thái ống nghe và nhắc lịch khám.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showNotificationPrePrompt = false
+                        context.requestPostNotificationsPermission()
+                        persistPreference("enabled", true)
+                    }
+                ) {
+                    Text("Tiếp tục")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNotificationPrePrompt = false }) {
+                    Text("Để sau")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -66,6 +204,29 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            if (isLoading || isSaving) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = PrimaryTeal,
+                    trackColor = Border
+                )
+            }
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+            statusMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = Color(0xFF047857),
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
             // Section 1: Tổng Quan
             Column {
                 Text("TỔNG QUAN", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
@@ -81,7 +242,14 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Bật thông báo",
                         subtitle = "Nhận tất cả thông báo",
                         checked = enabled,
-                        onCheckedChange = { enabled = it },
+                        onCheckedChange = {
+                            if (it && !context.hasPostNotificationsPermission()) {
+                                showNotificationPrePrompt = true
+                            } else {
+                                persistPreference("enabled", it)
+                            }
+                        },
+                        enabled = !isLoading && !isSaving,
                         showDivider = true
                     )
                     NotificationToggleRow(
@@ -90,8 +258,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Âm thanh",
                         subtitle = "Phát âm thanh cảnh báo",
                         checked = sound && enabled,
-                        onCheckedChange = { sound = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("sound", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = true
                     )
                     NotificationToggleRow(
@@ -100,8 +268,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Rung",
                         subtitle = "Rung khi có thông báo",
                         checked = vibration && enabled,
-                        onCheckedChange = { vibration = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("vibration", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = false
                     )
                 }
@@ -123,8 +291,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Kết quả bất thường",
                         subtitle = "Cảnh báo khi phát hiện dấu hiệu bất thường",
                         checked = abnormalResults && enabled,
-                        onCheckedChange = { abnormalResults = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("abnormalResults", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = true
                     )
                     NotificationToggleRow(
@@ -133,8 +301,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Kết nối thiết bị",
                         subtitle = "Thông báo trạng thái ống nghe",
                         checked = deviceConnection && enabled,
-                        onCheckedChange = { deviceConnection = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("deviceOffline", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = true
                     )
                     NotificationToggleRow(
@@ -143,8 +311,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Lịch hẹn",
                         subtitle = "Nhắc nhở lịch khám bệnh",
                         checked = appointments && enabled,
-                        onCheckedChange = { appointments = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("appointments", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = true
                     )
                     NotificationToggleRow(
@@ -153,8 +321,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Tin nhắn",
                         subtitle = "Chat AI và hỗ trợ",
                         checked = messages && enabled,
-                        onCheckedChange = { messages = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("messages", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = true
                     )
                     NotificationToggleRow(
@@ -163,8 +331,8 @@ fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
                         title = "Cập nhật AI",
                         subtitle = "Mô hình và tính năng mới",
                         checked = aiUpdates && enabled,
-                        onCheckedChange = { aiUpdates = it },
-                        enabled = enabled,
+                        onCheckedChange = { persistPreference("aiUpdates", it) },
+                        enabled = enabled && !isLoading && !isSaving,
                         showDivider = false
                     )
                 }

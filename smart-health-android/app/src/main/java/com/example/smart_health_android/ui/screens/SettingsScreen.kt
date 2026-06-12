@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AuthUser
+import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.ui.theme.*
 
 @Composable
@@ -33,6 +35,27 @@ fun SettingsScreen(
     onNavigateToNotificationSettings: () -> Unit,
     onLogout: () -> Unit
 ) {
+    var currentUser by remember { mutableStateOf<AuthUser?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            currentUser = SmartHealthRepository.api.getMe()
+            loadError = null
+        }.onFailure {
+            loadError = it.message ?: "Không thể tải hồ sơ"
+        }
+    }
+
+    val displayName = currentUser?.name?.ifBlank { "Tài khoản Smart Health" } ?: "Đang tải..."
+    val subtitle = when (currentUser?.role) {
+        "admin" -> "Quản trị toàn hệ thống"
+        "doctor" -> "Bác sĩ"
+        "patient" -> "Bệnh nhân"
+        else -> "Tài khoản Smart Health"
+    }
+    val memberId = currentUser?.id?.takeIf { it.isNotBlank() } ?: "--"
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -71,12 +94,17 @@ fun SettingsScreen(
                             .background(Color.White, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("NT", color = PrimaryBlue, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            displayName.split(" ").mapNotNull { it.firstOrNull()?.uppercaseChar()?.toString() }.take(2).joinToString("").ifBlank { "SH" },
+                            color = PrimaryBlue,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
-                        Text("Nguyễn Tuấn", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Bác sĩ Tim mạch • ID: 89432", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(displayName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        Text("$subtitle • ID: $memberId", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -89,6 +117,15 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            loadError?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 12.dp)
+                )
+            }
+
             SettingsGroup("TÀI KHOẢN") {
                 SettingsItem(Icons.Default.Person, "Thông tin cá nhân", Color(0xFF3B82F6), onClick = onNavigateToProfile)
                 Divider(color = Border)

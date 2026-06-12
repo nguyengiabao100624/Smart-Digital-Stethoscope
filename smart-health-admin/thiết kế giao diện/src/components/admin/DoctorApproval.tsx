@@ -35,6 +35,7 @@ type DoctorRequest = {
   email: string;
   phone: string;
   clinic: string;
+  requestType: string;
   specialty: string;
   date: string;
   status: RequestStatus;
@@ -45,6 +46,8 @@ type DoctorRequest = {
   lastLogin: string;
   organizationId?: string;
   requiredFields?: string[];
+  workspaceType?: string;
+  accountType?: string;
 };
 
 const DOCTOR_REQUESTS: DoctorRequest[] = [
@@ -54,6 +57,7 @@ const DOCTOR_REQUESTS: DoctorRequest[] = [
     email: "nam.tran@hospital.vn",
     phone: "0901 234 567",
     clinic: "Phòng khám Đa khoa Tâm Anh",
+    requestType: "Bác sĩ cơ sở",
     specialty: "Nội Tim Mạch",
     date: "20/05/2026",
     status: "pending",
@@ -69,6 +73,7 @@ const DOCTOR_REQUESTS: DoctorRequest[] = [
     email: "huong.nguyen@clinic.vn",
     phone: "0912 345 678",
     clinic: "Phòng khám Hô hấp Việt",
+    requestType: "Bác sĩ cơ sở",
     specialty: "Nội Hô Hấp",
     date: "19/05/2026",
     status: "pending",
@@ -84,6 +89,7 @@ const DOCTOR_REQUESTS: DoctorRequest[] = [
     email: "minh.le@cardio.vn",
     phone: "0988 765 432",
     clinic: "Phòng khám Tim mạch Minh Tâm",
+    requestType: "Bác sĩ tư",
     specialty: "Tim Mạch",
     date: "16/05/2026",
     status: "approved",
@@ -99,6 +105,7 @@ const DOCTOR_REQUESTS: DoctorRequest[] = [
     email: "ha.pham@example.vn",
     phone: "0977 111 222",
     clinic: "Chưa xác định",
+    requestType: "Bác sĩ",
     specialty: "Đa Khoa",
     date: "14/05/2026",
     status: "rejected",
@@ -157,15 +164,33 @@ function formatDateTime(value?: string) {
   }).format(date);
 }
 
+function getDoctorWorkspaceType(user: SmartHealthAuthUser, clinic?: SmartHealthClinic) {
+  return user.workspaceType || user.workspace?.workspaceType || user.workspace?.type || clinic?.workspaceType || clinic?.type || "";
+}
+
+function getDoctorRequestTypeLabel(accountType?: string, workspaceType?: string) {
+  if (accountType === "solo_doctor" || workspaceType === "solo_practice") {
+    return "Bác sĩ tư";
+  }
+  if (accountType === "doctor" || workspaceType === "clinic" || workspaceType === "hospital") {
+    return "Bác sĩ cơ sở";
+  }
+  return "Bác sĩ";
+}
+
 function toDoctorRequest(user: SmartHealthAuthUser, clinicMap: Map<string, SmartHealthClinic> = new Map()): DoctorRequest {
   const hasLicense = Boolean(user.license?.trim());
   const clinic = user.organizationId ? clinicMap.get(user.organizationId) : undefined;
+  const workspaceType = getDoctorWorkspaceType(user, clinic);
+  const accountType =
+    user.accountType || (workspaceType === "solo_practice" ? "solo_doctor" : user.requestedRole === "doctor" ? "doctor" : "");
   return {
     id: user.id,
     name: user.name || user.email || "Bác sĩ chưa cập nhật tên",
     email: user.email || "Chưa có email",
     phone: user.phone || "Chưa cung cấp",
-    clinic: user.clinicName || user.hospital || clinic?.name || "Chưa xác định",
+    clinic: user.clinicName || user.hospital || user.clinicSuggestion || clinic?.name || "Chưa xác định",
+    requestType: getDoctorRequestTypeLabel(accountType, workspaceType),
     specialty: user.specialty || user.department || "Chưa cung cấp",
     date: formatDateTime(user.requestedAt || user.roleRequestedAt || user.createdAt),
     status: normalizeRequestStatus(user),
@@ -181,6 +206,8 @@ function toDoctorRequest(user: SmartHealthAuthUser, clinicMap: Map<string, Smart
     lastLogin: formatDateTime(user.updatedAt),
     organizationId: user.organizationId,
     requiredFields: user.roleInfoRequiredFields || [],
+    workspaceType,
+    accountType,
   };
 }
 
@@ -368,7 +395,8 @@ export function DoctorApproval() {
                 <th className="px-5 py-3">Họ tên</th>
                 <th className="px-5 py-3">Email</th>
                 <th className="px-5 py-3">Số điện thoại</th>
-                <th className="px-5 py-3">Cơ sở y tế</th>
+                <th className="px-5 py-3">Loại</th>
+                <th className="px-5 py-3">Phòng khám/cơ sở</th>
                 <th className="px-5 py-3">Chuyên khoa</th>
                 <th className="px-5 py-3">Ngày gửi</th>
                 <th className="px-5 py-3">Trạng thái</th>
@@ -389,6 +417,7 @@ export function DoctorApproval() {
                   </td>
                   <td className="px-5 py-4 text-muted-foreground">{doc.email}</td>
                   <td className="px-5 py-4 text-muted-foreground">{doc.phone}</td>
+                  <td className="px-5 py-4">{doc.requestType}</td>
                   <td className="max-w-[260px] truncate px-5 py-4">{doc.clinic}</td>
                   <td className="px-5 py-4">{doc.specialty}</td>
                   <td className="px-5 py-4 text-muted-foreground">{doc.date}</td>
@@ -407,7 +436,7 @@ export function DoctorApproval() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-muted-foreground">
                     {isLoading
                       ? "Đang tải yêu cầu duyệt bác sĩ..."
                       : loadError || "Chưa có yêu cầu duyệt bác sĩ trong trạng thái này."}
@@ -634,7 +663,8 @@ export function DoctorApproval() {
                       <div className="grid gap-3">
                         <InfoRow icon={Mail} label="Email" value={selectedDoc.email} />
                         <InfoRow icon={Phone} label="Số điện thoại" value={selectedDoc.phone} />
-                        <InfoRow icon={Building2} label="Cơ sở y tế" value={selectedDoc.clinic} />
+                        <InfoRow icon={UserRoundCheck} label="Loại đăng ký" value={selectedDoc.requestType} />
+                        <InfoRow icon={Building2} label="Phòng khám/cơ sở" value={selectedDoc.clinic} />
                         <InfoRow
                           icon={FileText}
                           label="Số giấy phép hành nghề"

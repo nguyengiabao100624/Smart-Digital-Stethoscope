@@ -16,6 +16,13 @@ data class BackendStatus(
     val updatedAt: String? = null
 )
 
+data class BackendHealth(
+    val ok: Boolean = false,
+    val service: String = "",
+    val status: BackendStatus = BackendStatus(),
+    val now: String? = null
+)
+
 data class Patient(
     val id: String,
     val patientCode: String,
@@ -84,7 +91,7 @@ data class StartScanRequest(
     val patientCode: String? = null,
     val mode: String = "heart",
     val bodySite: String = "",
-    val deviceId: String = "android-app",
+    val deviceId: String = "",
     val doctorNotes: String = ""
 )
 
@@ -97,6 +104,26 @@ data class PatientShare(
     val scanIds: List<String> = emptyList(),
     val expiresAt: String? = null,
     val active: Boolean = true
+)
+
+data class ShareTargets(
+    val doctors: List<ShareTargetDoctor> = emptyList(),
+    val workspaces: List<ShareTargetWorkspace> = emptyList()
+)
+
+data class ShareTargetDoctor(
+    val id: String,
+    val name: String = "",
+    val specialty: String = "",
+    val organizationId: String = "",
+    val clinicName: String = ""
+)
+
+data class ShareTargetWorkspace(
+    val id: String,
+    val name: String = "",
+    val type: String = "",
+    val address: String = ""
 )
 
 data class LiveMetrics(
@@ -114,6 +141,8 @@ data class AuthUser(
     val role: String = "doctor",
     val name: String = "",
     val email: String = "",
+    val avatarFileId: String = "",
+    val avatarUrl: String = "",
     val phone: String = "",
     val license: String = "",
     val hospital: String = "",
@@ -129,6 +158,10 @@ data class AuthUser(
     val roleInfoRequiredFields: List<String> = emptyList(),
     val roleInfoRequestMessage: String = "",
     val registrationReason: String = "",
+    val workspaceType: String = "",
+    val accountType: String = "",
+    val clinicSuggestion: String = "",
+    val notificationPreferences: JSONObject = JSONObject(),
     val createdAt: String? = null,
     val updatedAt: String? = null
 )

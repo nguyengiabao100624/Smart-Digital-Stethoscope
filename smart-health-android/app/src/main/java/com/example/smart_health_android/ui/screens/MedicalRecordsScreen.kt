@@ -19,13 +19,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.Scan
+import com.example.smart_health_android.data.ShareTargetDoctor
+import com.example.smart_health_android.data.ShareTargetWorkspace
+import com.example.smart_health_android.data.ShareTargets
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.scanIsNormal
 import com.example.smart_health_android.data.scanLabel
 import com.example.smart_health_android.data.scanSummary
+import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -61,26 +66,51 @@ private fun Scan.toMedicalRecord(): MedicalRecord {
             else -> "abnormal"
         },
         diagnosis = if (isRecording) "Đang ghi âm từ thiết bị. Bấm Dừng ghi để lưu kết quả." else scanSummary(this),
-        aiConfidence = if (isRecording) 0 else ((aiConfidence ?: 0.65) * 100).roundToInt().coerceIn(0, 100)
+        aiConfidence = if (isRecording) 0 else ((aiConfidence ?: 0.0) * 100).roundToInt().coerceIn(0, 100)
     )
 }
+
+private fun ShareTargetDoctor.displayName(): String = name.ifBlank { id }
+
+private fun ShareTargetWorkspace.displayName(): String = name.ifBlank { id }
 
 @Composable
 fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String) -> Unit) {
     var activeTab by remember { mutableStateOf("recent") }
     var backendScans by remember { mutableStateOf<List<Scan>>(emptyList()) }
+    var isLoadingRecords by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var stoppingRecordId by remember { mutableStateOf<String?>(null) }
     var sharingRecordId by remember { mutableStateOf<String?>(null) }
-    var shareTarget by remember { mutableStateOf("") }
+    var shareTargetQuery by remember { mutableStateOf("") }
+    var shareTargets by remember { mutableStateOf(ShareTargets()) }
+    var selectedShareDoctor by remember { mutableStateOf<ShareTargetDoctor?>(null) }
+    var selectedShareWorkspace by remember { mutableStateOf<ShareTargetWorkspace?>(null) }
+    var isLoadingShareTargets by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     suspend fun refreshRecords() {
+        if (isLoadingRecords.not()) {
+            loadError = null
+        }
         runCatching {
             backendScans = SmartHealthRepository.api.listScans(limit = 100)
             loadError = null
         }.onFailure {
             loadError = it.message ?: "Không kết nối được máy chủ"
+        }.also {
+            isLoadingRecords = false
+        }
+    }
+
+    suspend fun refreshShareTargets(query: String = shareTargetQuery) {
+        isLoadingShareTargets = true
+        runCatching {
+            shareTargets = SmartHealthRepository.api.listShareTargets(query.trim())
+        }.onFailure {
+            loadError = it.toVietnameseMessage("Không tải được danh sách nơi nhận chia sẻ")
+        }.also {
+            isLoadingShareTargets = false
         }
     }
 
@@ -89,6 +119,11 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             refreshRecords()
             delay(5000)
         }
+    }
+
+    LaunchedEffect(shareTargetQuery) {
+        delay(300)
+        refreshShareTargets(shareTargetQuery)
     }
 
     fun stopRecord(recordId: String) {
@@ -106,9 +141,15 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
     }
 
     fun shareRecord(record: MedicalRecord) {
-        val target = shareTarget.trim()
-        if (target.isBlank() || sharingRecordId != null) {
-            loadError = "Nhập doctorUserId hoặc workspaceId trước khi chia sẻ"
+        val targetDoctor = selectedShareDoctor
+        val targetWorkspace = selectedShareWorkspace
+        if (sharingRecordId != null) return
+        if (record.sourcePatientId.isBlank()) {
+            loadError = "Lượt đo này chưa gắn với hồ sơ bệnh nhân để chia sẻ"
+            return
+        }
+        if (targetDoctor == null && targetWorkspace == null) {
+            loadError = "Chọn bác sĩ hoặc cơ sở nhận chia sẻ trước khi bấm chia sẻ"
             return
         }
         coroutineScope.launch {
@@ -116,27 +157,19 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             runCatching {
                 SmartHealthRepository.api.sharePatientRecord(
                     patientId = record.sourcePatientId,
-                    targetDoctorUserId = if (target.startsWith("usr_") || target.startsWith("doctor")) target else "",
-                    targetWorkspaceId = if (target.startsWith("usr_") || target.startsWith("doctor")) "" else target,
+                    targetDoctorUserId = targetDoctor?.id.orEmpty(),
+                    targetWorkspaceId = targetWorkspace?.id.orEmpty(),
                     scanId = record.id
                 )
             }.onSuccess {
-                loadError = "Đã chia sẻ lượt đo ${record.id}"
+                val targetName = targetDoctor?.displayName() ?: targetWorkspace?.displayName() ?: "nơi nhận đã chọn"
+                loadError = "Đã chia sẻ lượt đo với $targetName"
             }.onFailure {
-                loadError = it.message ?: "Không chia sẻ được lượt đo"
+                loadError = it.toVietnameseMessage("Không chia sẻ được lượt đo")
             }
             sharingRecordId = null
         }
     }
-
-    val records = listOf(
-        MedicalRecord("HS-2845", "pat_demo_1", "BN-2845", "Nguyễn Văn An", "12-05-2026", "14:35", "2:34", "heart", "normal", "Nhịp xoang bình thường", 98),
-        MedicalRecord("HS-2844", "pat_demo_2", "BN-2844", "Trần Thị Mai", "12-05-2026", "13:20", "3:12", "lung", "abnormal", "Phát hiện tiếng ran nổ - Đáy phổi trái", 94),
-        MedicalRecord("HS-2843", "pat_demo_3", "BN-2843", "Lê Văn Minh", "12-05-2026", "11:45", "2:18", "heart", "normal", "Âm sắc tim bình thường", 99),
-        MedicalRecord("HS-2842", "pat_demo_4", "BN-2842", "Phạm Thuỳ Linh", "11-05-2026", "16:20", "4:05", "lung", "abnormal", "Tiếng rít - Cả hai bên phổi", 91),
-        MedicalRecord("HS-2841", "pat_demo_5", "BN-2841", "Hoàng Minh Tuấn", "11-05-2026", "15:10", "2:45", "heart", "abnormal", "Âm thổi tim - Mức 2/6", 96),
-        MedicalRecord("HS-2840", "pat_demo_6", "BN-2840", "Đặng Mai Phương", "11-05-2026", "14:00", "2:55", "lung", "normal", "Âm thanh nhịp thở rõ ràng", 97)
-    )
 
     val displayRecords = backendScans.map { it.toMedicalRecord() }
 
@@ -172,8 +205,15 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
                 Text("Hồ Sơ Bệnh Án", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                IconButton(onClick = { }, modifier = Modifier.offset(x = 12.dp)) {
-                    Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = Color.White)
+                IconButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            refreshRecords()
+                        }
+                    },
+                    modifier = Modifier.offset(x = 12.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Làm mới", tint = Color.White)
                 }
             }
         }
@@ -212,20 +252,25 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             )
         }
 
-        OutlinedTextField(
-            value = shareTarget,
-            onValueChange = { shareTarget = it },
-            placeholder = { Text("doctorUserId hoặc workspaceId nhận chia sẻ") },
-            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = TextSecondary) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrimaryBlue,
-                unfocusedBorderColor = Border
-            )
+        ShareTargetPicker(
+            query = shareTargetQuery,
+            onQueryChange = { shareTargetQuery = it },
+            targets = shareTargets,
+            selectedDoctor = selectedShareDoctor,
+            selectedWorkspace = selectedShareWorkspace,
+            loading = isLoadingShareTargets,
+            onSelectDoctor = {
+                selectedShareDoctor = it
+                selectedShareWorkspace = null
+            },
+            onSelectWorkspace = {
+                selectedShareWorkspace = it
+                selectedShareDoctor = null
+            },
+            onRetry = {
+                coroutineScope.launch { refreshShareTargets(shareTargetQuery) }
+            },
+            modifier = Modifier.padding(horizontal = 16.dp)
         )
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -238,6 +283,16 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             )
         }
 
+        if (isLoadingRecords) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                color = PrimaryBlue
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         // List
         Column(
             modifier = Modifier
@@ -246,17 +301,163 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            filteredRecords.forEach { record ->
-                RecordCard(
-                    record = record,
-                    onClick = { onNavigateToDetail(record.id) },
-                    onShare = { shareRecord(record) },
-                    onStop = { stopRecord(record.id) },
-                    isStopping = stoppingRecordId == record.id,
-                    isSharing = sharingRecordId == record.id
-                )
+            if (!isLoadingRecords && filteredRecords.isEmpty()) {
+                EmptyRecordsState(activeTab = activeTab, hasError = loadError != null, onRetry = {
+                    coroutineScope.launch { refreshRecords() }
+                })
+            } else {
+                filteredRecords.forEach { record ->
+                    RecordCard(
+                        record = record,
+                        onClick = { onNavigateToDetail(record.id) },
+                        onShare = { shareRecord(record) },
+                        onStop = { stopRecord(record.id) },
+                        isStopping = stoppingRecordId == record.id,
+                        isSharing = sharingRecordId == record.id,
+                        hasShareTarget = selectedShareDoctor != null || selectedShareWorkspace != null
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ShareTargetPicker(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    targets: ShareTargets,
+    selectedDoctor: ShareTargetDoctor?,
+    selectedWorkspace: ShareTargetWorkspace?,
+    loading: Boolean,
+    onSelectDoctor: (ShareTargetDoctor) -> Unit,
+    onSelectWorkspace: (ShareTargetWorkspace) -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Border, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Nơi nhận chia sẻ", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text("Tìm bác sĩ hoặc cơ sở y tế đã được cấp quyền", color = TextSecondary, fontSize = 12.sp)
+            }
+            if (loading) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryBlue)
+            } else {
+                IconButton(onClick = onRetry) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Tải lại nơi nhận", tint = PrimaryBlue)
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = { Text("Tìm bác sĩ hoặc cơ sở nhận chia sẻ") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = PrimaryBlue,
+                unfocusedBorderColor = Border
+            )
+        )
+
+        val workspaceOptions = targets.workspaces.take(4)
+        val doctorOptions = targets.doctors.take(4)
+
+        if (workspaceOptions.isNotEmpty()) {
+            Text("Cơ sở y tế", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            workspaceOptions.forEach { workspace ->
+                ShareTargetOptionRow(
+                    title = workspace.displayName(),
+                    subtitle = listOf(workspace.type, workspace.address).filter { it.isNotBlank() }.joinToString(" • "),
+                    icon = Icons.Default.Home,
+                    selected = selectedWorkspace?.id == workspace.id,
+                    onClick = { onSelectWorkspace(workspace) }
+                )
+            }
+        }
+
+        if (doctorOptions.isNotEmpty()) {
+            Text("Bác sĩ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            doctorOptions.forEach { doctor ->
+                ShareTargetOptionRow(
+                    title = doctor.displayName(),
+                    subtitle = listOf(doctor.specialty, doctor.clinicName).filter { it.isNotBlank() }.joinToString(" • "),
+                    icon = Icons.Default.Person,
+                    selected = selectedDoctor?.id == doctor.id,
+                    onClick = { onSelectDoctor(doctor) }
+                )
+            }
+        }
+
+        if (!loading && workspaceOptions.isEmpty() && doctorOptions.isEmpty()) {
+            Text(
+                "Chưa có nơi nhận phù hợp. Hãy thử từ khóa khác hoặc tải lại.",
+                color = TextSecondary,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShareTargetOptionRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (selected) PrimaryBlue.copy(alpha = 0.08f) else Color(0xFFF8FAFC),
+                RoundedCornerShape(12.dp)
+            )
+            .border(
+                1.dp,
+                if (selected) PrimaryBlue else Color(0xFFE2E8F0),
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(if (selected) PrimaryBlue.copy(alpha = 0.12f) else Color.White, RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = if (selected) PrimaryBlue else TextSecondary, modifier = Modifier.size(20.dp))
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, color = TextSecondary, fontSize = 12.sp)
+            }
+        }
+        if (selected) {
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -292,7 +493,8 @@ fun RecordCard(
     onShare: () -> Unit,
     onStop: () -> Unit,
     isStopping: Boolean,
-    isSharing: Boolean
+    isSharing: Boolean,
+    hasShareTarget: Boolean
 ) {
     val isRecording = record.status == "recording"
     val statusColor = when (record.status) {
@@ -413,13 +615,19 @@ fun RecordCard(
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedButton(
             onClick = onShare,
-            enabled = !isSharing && record.sourcePatientId.isNotBlank(),
+            enabled = !isSharing && record.sourcePatientId.isNotBlank() && hasShareTarget,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(10.dp)
         ) {
             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text(if (isSharing) "Đang chia sẻ..." else "Chia sẻ lượt đo")
+            Text(
+                when {
+                    isSharing -> "Đang chia sẻ..."
+                    !hasShareTarget -> "Chọn nơi nhận để chia sẻ"
+                    else -> "Chia sẻ lượt đo"
+                }
+            )
         }
 
         if (isRecording) {
@@ -443,6 +651,55 @@ fun RecordCard(
                 }
                 Text("Dừng ghi và lưu", fontWeight = FontWeight.SemiBold)
             }
+        }
+    }
+}
+
+@Composable
+fun EmptyRecordsState(
+    activeTab: String,
+    hasError: Boolean,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Border, RoundedCornerShape(16.dp))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            if (hasError) Icons.Default.Warning else Icons.Default.Description,
+            contentDescription = null,
+            tint = if (hasError) Color(0xFFEF4444) else PrimaryBlue,
+            modifier = Modifier.size(32.dp)
+        )
+        Text(
+            text = if (hasError) "Không tải được hồ sơ" else "Chưa có hồ sơ trong bộ lọc này",
+            color = TextPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = if (hasError) {
+                "Backend chưa trả dữ liệu hoặc mạng đang lỗi. Hãy thử tải lại."
+            } else {
+                when (activeTab) {
+                    "heart" -> "Hiện chưa có lượt đo tim."
+                    "lung" -> "Hiện chưa có lượt đo phổi."
+                    "abnormal" -> "Chưa có lượt đo bất thường."
+                    else -> "Chưa có lượt đo nào được đồng bộ về backend."
+                }
+            },
+            color = TextSecondary,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 20.sp
+        )
+        OutlinedButton(onClick = onRetry) {
+            Text("Tải lại")
         }
     }
 }

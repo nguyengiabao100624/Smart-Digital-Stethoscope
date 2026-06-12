@@ -21,10 +21,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.BackendConfig
@@ -36,7 +36,6 @@ import com.example.smart_health_android.data.scanSummary
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.sin
 
 @Composable
 fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
@@ -45,9 +44,11 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
     var duration by remember { mutableStateOf(1) }
     var scan by remember { mutableStateOf<Scan?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isStopping by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     LaunchedEffect(recordId) {
         runCatching {
@@ -62,6 +63,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
 
     val audioUrl = BackendConfig.audioUrl(scan?.audioUrl)
     val isRecording = scan?.isRecording == true
+    val hasAudio = !audioUrl.isNullOrBlank()
 
     fun stopCurrentScan() {
         val currentScan = scan ?: return
@@ -150,7 +152,16 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
                 Text("Chi tiết hồ sơ", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                IconButton(onClick = { }, modifier = Modifier.offset(x = 12.dp)) {
+                IconButton(
+                    onClick = {
+                        if (hasAudio) {
+                            uriHandler.openUri(audioUrl!!)
+                        } else {
+                            actionMessage = "Hồ sơ này chưa có file âm thanh để mở"
+                        }
+                    },
+                    modifier = Modifier.offset(x = 12.dp)
+                ) {
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
                 }
             }
@@ -164,6 +175,21 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            loadError?.let { message ->
+                Text(
+                    text = message,
+                    color = ErrorRed,
+                    fontSize = 13.sp
+                )
+            }
+            actionMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = SuccessGreen,
+                    fontSize = 13.sp
+                )
+            }
+
             // Section 1: Patient Info
             Column(
                 modifier = Modifier
@@ -255,7 +281,6 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                         val height = size.height
                         val centerY = height / 2
 
-                        // Draw Grid
                         val gridPaint = Color(0xFFE2E8F0)
                         for (i in 0 until height.toInt() step 30) {
                             drawLine(gridPaint, start = Offset(0f, i.toFloat()), end = Offset(width, i.toFloat()), strokeWidth = 1f)
@@ -264,24 +289,37 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                             drawLine(gridPaint, start = Offset(i.toFloat(), 0f), end = Offset(i.toFloat(), height), strokeWidth = 1f)
                         }
 
-                        // Draw Waveform
-                        val path = Path()
-                        for (x in 0 until width.toInt()) {
-                            val breathWave = sin(x * 0.015f) * 40f
-                            val noise = (Math.random() - 0.5f) * 5f
-                            val y = centerY + breathWave + noise.toFloat()
+                        val baselineColor = if (hasAudio) PrimaryBlue else TextSecondary.copy(alpha = 0.5f)
+                        drawLine(
+                            baselineColor,
+                            start = Offset(0f, centerY),
+                            end = Offset(width, centerY),
+                            strokeWidth = if (hasAudio) 3f else 2f
+                        )
 
-                            if (x == 0) {
-                                path.moveTo(x.toFloat(), y)
-                            } else {
-                                path.lineTo(x.toFloat(), y)
-                            }
-                        }
-                        drawPath(path = path, color = PrimaryBlue, style = Stroke(width = 2f))
-
-                        // Draw Progress Marker
                         val markerX = (currentTime.toFloat() / duration) * width
                         drawLine(Color(0xFFEF4444), start = Offset(markerX, 0f), end = Offset(markerX, height), strokeWidth = 4f)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            if (hasAudio) "File âm thanh đã lưu từ backend" else "Chưa có file âm thanh",
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            if (hasAudio) "Phát file WAV để nghe lại, waveform chi tiết sẽ được bổ sung khi backend trả sample." else "Hãy tạo lượt đo mới để có dữ liệu thật.",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
 
@@ -293,7 +331,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     Text(formatTime(duration), color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFE2E8F0), RoundedCornerShape(4.dp)).clickable { /* Seek */ }) {
+                Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFE2E8F0), RoundedCornerShape(4.dp))) {
                     Box(modifier = Modifier.fillMaxWidth((currentTime.toFloat() / duration).coerceIn(0f, 1f)).fillMaxHeight().background(PrimaryBlue, RoundedCornerShape(4.dp)))
                 }
 
@@ -339,7 +377,13 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     }
                     Spacer(modifier = Modifier.width(24.dp))
                     Box(
-                        modifier = Modifier.size(48.dp).background(Color(0xFFF1F5F9), CircleShape).clickable { /* Download */ },
+                        modifier = Modifier.size(48.dp).background(Color(0xFFF1F5F9), CircleShape).clickable {
+                            if (hasAudio) {
+                                uriHandler.openUri(audioUrl!!)
+                            } else {
+                                actionMessage = "Hồ sơ này chưa có file âm thanh để tải"
+                            }
+                        },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Default.Download, contentDescription = "Download", tint = TextPrimary.copy(alpha = 0.8f))
@@ -393,7 +437,12 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     ) {
                         Text("Độ tin cậy", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("${(((scan?.aiConfidence ?: 0.65) * 100).toInt()).coerceIn(0, 100)}%", color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            scan?.aiConfidence?.let { "${(it * 100).toInt().coerceIn(0, 100)}%" } ?: "--",
+                            color = PrimaryBlue,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     Column(
                         modifier = Modifier
@@ -415,16 +464,33 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                         .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                         .padding(12.dp)
                 ) {
-                    Text("Mẫu âm thanh phát hiện:", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text("Chỉ số tín hiệu backend:", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TagChip("Ran nổ nhỏ")
-                        TagChip("Cuối thì hít vào")
-                        TagChip("Bên trái")
+                    val metricTags = buildList {
+                        scan?.let {
+                            add(if (it.isHeart) "Tim" else "Phổi")
+                            if (it.bpm > 0) add("BPM ${it.bpm}")
+                            if (it.rms > 0) add("RMS ${it.rms}")
+                            if (it.levelPercent > 0) add("SQI ${it.levelPercent}%")
+                            if (it.sampleCount > 0) add("${it.sampleCount} mẫu")
+                        }
+                    }
+                    if (metricTags.isEmpty()) {
+                        Text(
+                            "Backend chưa trả chỉ số phụ cho lượt đo này.",
+                            color = TextSecondary,
+                            fontSize = 13.sp
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            metricTags.forEach { TagChip(it) }
+                        }
                     }
                 }
             }
@@ -461,7 +527,12 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                     HorizontalDivider(color = Color(0xFFE2E8F0))
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Bs. Tuấn, CK1", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "Thiết bị: ${scan?.deviceId?.ifBlank { "--" } ?: "--"}",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                         Text("${scan?.formattedDate() ?: "--"} - ${scan?.formattedTime() ?: "--"}", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }

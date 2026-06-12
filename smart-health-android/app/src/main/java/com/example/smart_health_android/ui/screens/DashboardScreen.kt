@@ -102,6 +102,7 @@ fun DashboardScreen(
     var scans by remember { mutableStateOf<List<Scan>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var stoppingScanId by remember { mutableStateOf<String?>(null) }
+    var displayName by remember { mutableStateOf("Bác sĩ") }
     val coroutineScope = rememberCoroutineScope()
 
     suspend fun refreshDashboard() {
@@ -115,6 +116,10 @@ fun DashboardScreen(
     }
 
     LaunchedEffect(Unit) {
+        runCatching {
+            val currentUser = SmartHealthRepository.api.getMe()
+            displayName = currentUser.name.ifBlank { currentUser.email.ifBlank { "Bác sĩ" } }
+        }
         while (true) {
             refreshDashboard()
             delay(4000)
@@ -155,6 +160,7 @@ fun DashboardScreen(
     ) {
         item {
             DoctorDashboardHeader(
+                displayName = displayName,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 onNavigateToSettings = onNavigateToSettings,
@@ -266,6 +272,7 @@ fun DashboardScreen(
 
 @Composable
 private fun DoctorDashboardHeader(
+    displayName: String,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -293,7 +300,7 @@ private fun DoctorDashboardHeader(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Bs. Tuấn",
+                        text = displayName,
                         color = Color.White,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.SemiBold,

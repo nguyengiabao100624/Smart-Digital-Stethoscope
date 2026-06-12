@@ -56,24 +56,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.LiveAudioClient
 import com.example.smart_health_android.data.LiveMetrics
+import com.example.smart_health_android.data.SmartDevice
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.StartScanRequest
 import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.exp
-import kotlin.math.sin
 
 @Composable
 fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Unit) {
     var isRecording by remember { mutableStateOf(!initialScanId.isNullOrBlank()) }
     var activeScanId by remember(initialScanId) { mutableStateOf(initialScanId) }
     var mode by remember { mutableStateOf("heart") }
-    var heartRate by remember { mutableStateOf(72) }
-    var respRate by remember { mutableStateOf(16) }
-    var sqi by remember { mutableStateOf(98) }
-    var hasAlert by remember { mutableStateOf(false) }
+    var heartRate by remember { mutableStateOf(0) }
+    var sqi by remember { mutableStateOf(0) }
+    var devices by remember { mutableStateOf<List<SmartDevice>>(emptyList()) }
+    var selectedDeviceId by remember { mutableStateOf("") }
     var connectionText by remember { mutableStateOf("Đang kết nối máy chủ...") }
     var isConnected by remember { mutableStateOf(false) }
     var liveMetrics by remember { mutableStateOf(LiveMetrics()) }
@@ -101,7 +98,7 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
                 if (metrics.recording) {
                     activeScanId = metrics.activeScanId ?: activeScanId
                 }
-                if (metrics.bpm > 0) heartRate = metrics.bpm
+                heartRate = metrics.bpm.coerceAtLeast(0)
                 sqi = metrics.levelPercent.coerceIn(0, 100)
             },
             onSamples = { samples -> waveformSamples = samples }
@@ -125,19 +122,20 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
     )
 
     LaunchedEffect(Unit) {
-        while (true) {
-            delay(2000)
-            heartRate = (heartRate + ((Math.random() * 3).toInt() - 1)).coerceIn(60, 100)
-            respRate = (respRate + ((Math.random() * 3).toInt() - 1)).coerceIn(12, 25)
-            sqi = (sqi + ((Math.random() * 3).toInt() - 1)).coerceIn(85, 100)
-        }
-    }
-
-    LaunchedEffect(isRecording, mode) {
-        hasAlert = false
-        if (isRecording && mode == "lung") {
-            delay(5000)
-            hasAlert = true
+        runCatching {
+            SmartHealthRepository.api.listDevices()
+                .filter { it.type == "stethoscope" || it.type.isBlank() }
+                .sortedWith(
+                    compareByDescending<SmartDevice> { it.online || it.connected }
+                        .thenByDescending { it.lastSeenAt.orEmpty() }
+                )
+        }.onSuccess { loaded ->
+            devices = loaded
+            if (selectedDeviceId.isBlank() && loaded.isNotEmpty()) {
+                selectedDeviceId = loaded.first().id
+            }
+        }.onFailure {
+            actionError = it.message ?: "Không tải được danh sách thiết bị"
         }
     }
 
@@ -174,11 +172,13 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
             actionError = null
             isBusy = true
             runCatching {
+                val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId }
+                    ?: error("Hãy liên kết và chọn ống nghe trước khi bắt đầu ghi")
                 SmartHealthRepository.api.startScan(
                     StartScanRequest(
                         mode = mode,
                         patientName = "Bệnh nhân vãng lai",
-                        deviceId = "android-app"
+                        deviceId = selectedDevice.id
                     )
                 )
             }.onSuccess { scan ->
@@ -202,6 +202,17 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
             isBusy = false
         }
     }
+
+    val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId }
+    val hasLiveSamples = waveformSamples.any { kotlin.math.abs(it) > 0.0001f }
+    val signalQualityAlert = isRecording && isConnected && sqi in 1..25
+    val primaryValue = when {
+        mode == "heart" && heartRate > 0 -> heartRate.toString()
+        mode == "lung" && liveMetrics.rms > 0 -> liveMetrics.rms.toString()
+        else -> "--"
+    }
+    val primaryUnit = if (mode == "heart") "BPM" else "RMS"
+    val sqiValue = if (sqi > 0) sqi.toString() else "--"
 
     fun toggleRecording() {
         if (isRecording) {
@@ -233,7 +244,7 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
                 }
             }
         )
-        PatientInfoStrip()
+        PatientInfoStrip(device = selectedDevice, activeScanId = activeScanId)
 
         Column(
             modifier = Modifier
@@ -244,7 +255,7 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
             WaveformCard(
                 mode = mode,
                 isRecording = isRecording,
-                hasAlert = hasAlert,
+                hasAlert = signalQualityAlert,
                 phase = phase,
                 samples = waveformSamples
             )
@@ -254,9 +265,9 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
                 VitalCard(
                     modifier = Modifier.weight(1f),
-                    label = if (mode == "heart") "Nhịp Tim" else "Nhịp Thở",
-                    value = if (mode == "heart") heartRate.toString() else respRate.toString(),
-                    unit = if (mode == "heart") "BPM" else "RPM",
+                    label = if (mode == "heart") "Nhịp Tim" else "Cường Độ Âm Phổi",
+                    value = primaryValue,
+                    unit = primaryUnit,
                     icon = if (mode == "heart") Icons.Default.Favorite else Icons.Default.Air,
                     accent = if (mode == "heart") ErrorRed else PrimaryTeal,
                     valueColor = TextPrimary,
@@ -265,7 +276,7 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
                 VitalCard(
                     modifier = Modifier.weight(1f),
                     label = "Chất Lượng Tín Hiệu",
-                    value = sqi.toString(),
+                    value = sqiValue,
                     unit = "% SQI",
                     icon = Icons.Default.VerifiedUser,
                     accent = PrimaryTeal,
@@ -289,8 +300,22 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            if (!hasLiveSamples) {
+                Text(
+                    text = if (isConnected) {
+                        "Đã kết nối backend, đang chờ gói âm thanh từ ống nghe."
+                    } else {
+                        "Chưa có luồng audio realtime. Kiểm tra thiết bị online và backend."
+                    },
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             AnimatedVisibility(visible = isRecording) {
-                EdgeAiAlert(hasAlert = hasAlert)
+                EdgeAiAlert(hasAlert = signalQualityAlert)
             }
 
             if (isRecording) Spacer(modifier = Modifier.height(16.dp))
@@ -299,7 +324,6 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
                 mode = mode,
                 onModeChange = {
                     mode = it
-                    hasAlert = false
                 }
             )
 
@@ -381,7 +405,8 @@ private fun MonitoringHeader(onNavigateBack: () -> Unit) {
 }
 
 @Composable
-private fun PatientInfoStrip() {
+private fun PatientInfoStrip(device: SmartDevice?, activeScanId: String?) {
+    val isOnline = device?.let { it.online || it.connected } == true
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -401,17 +426,30 @@ private fun PatientInfoStrip() {
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Phiên khám ẩn danh", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text("ID: #4928 • Lưu trữ cục bộ", color = TextSecondary, fontSize = 12.sp)
+            Text(
+                device?.name?.ifBlank { device.id } ?: "Chưa chọn ống nghe",
+                color = TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                listOf(
+                    activeScanId?.let { "Scan: $it" }.orEmpty(),
+                    device?.wifiSsid?.takeIf { it.isNotBlank() }?.let { "WiFi: $it" }.orEmpty(),
+                    device?.firmwareVersion?.takeIf { it.isNotBlank() }?.let { "FW: $it" }.orEmpty()
+                ).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { "Thiết bị phải online để nghe realtime" },
+                color = TextSecondary,
+                fontSize = 12.sp
+            )
         }
         Text(
-            "Đã kiểm định",
-            color = PrimaryTeal,
+            if (isOnline) "Online" else "Offline",
+            color = if (isOnline) PrimaryTeal else TextSecondary,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
-                .background(PrimaryTeal.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
-                .border(1.dp, PrimaryTeal.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                .background((if (isOnline) PrimaryTeal else TextSecondary).copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                .border(1.dp, (if (isOnline) PrimaryTeal else TextSecondary).copy(alpha = 0.2f), RoundedCornerShape(6.dp))
                 .padding(horizontal = 10.dp, vertical = 5.dp)
         )
     }
@@ -583,50 +621,8 @@ private fun MedicalWaveformCanvas(
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
         } else {
-            val sweep = if (isRecording) phase * width * 2.5f else 0f
-            val step = 3
-
-            for (x in 0..width.toInt() step step) {
-                val t = (x + sweep) * 0.08f
-                val y = if (mode == "heart") {
-                val cycle = (t % 150f)
-                val s1 = if (cycle in 10f..25f) {
-                    sin(t * 4f) * 45f * exp(-((cycle - 17.5f) * (cycle - 17.5f)) / 20f)
-                } else {
-                    0f
-                }
-                val s2 = if (cycle in 60f..75f) {
-                    sin(t * 5f) * 35f * exp(-((cycle - 67.5f) * (cycle - 67.5f)) / 15f)
-                } else {
-                    0f
-                }
-                centerY + s1 + s2 + sin(t * 1.7f) * 2f
-            } else {
-                val cycle = (t % 250f)
-                val inspiration = if (cycle in 20f..100f) {
-                    sin(PI.toFloat() * (cycle - 20f) / 80f) * sin(t * 9f) * 30f
-                } else {
-                    0f
-                }
-                val expiration = if (cycle in 120f..180f) {
-                    sin(PI.toFloat() * (cycle - 120f) / 60f) * sin(t * 7f) * 22f
-                } else {
-                    0f
-                }
-                val crackles = if (hasAlert && isRecording && cycle in 140f..160f) {
-                    sin(t * 32f) * 24f
-                } else {
-                    0f
-                }
-                centerY + inspiration + expiration + crackles + sin(t * 2f) * 2f
-            }
-
-                if (x == 0) {
-                    path.moveTo(x.toFloat(), y)
-                } else {
-                    path.lineTo(x.toFloat(), y)
-                }
-            }
+            path.moveTo(0f, centerY)
+            path.lineTo(width, centerY)
         }
 
         drawPath(
@@ -703,7 +699,7 @@ private fun EdgeAiAlert(hasAlert: Boolean) {
         Spacer(modifier = Modifier.width(12.dp))
         Column {
             Text(
-                if (hasAlert) "Cảnh Báo Lâm Sàng (Edge AI)" else "Phân Tích Edge AI Trực Tiếp",
+                if (hasAlert) "Cảnh báo chất lượng tín hiệu" else "Theo dõi tín hiệu realtime",
                 color = if (hasAlert) Color(0xFFB91C1C) else PrimaryBlue,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -712,9 +708,9 @@ private fun EdgeAiAlert(hasAlert: Boolean) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 if (hasAlert) {
-                    "Phát hiện tiếng ran nổ (Crackles) ở thuỳ dưới phổi trái. Đề nghị kiểm tra thêm lâm sàng."
+                    "Tín hiệu hiện quá yếu hoặc không ổn định. Hãy kiểm tra tiếp xúc cảm biến, WiFi và vị trí đặt đầu nghe trước khi lưu kết quả."
                 } else {
-                    "Đang theo dõi và phân tích tín hiệu âm thanh theo thời gian thực..."
+                    "Đang nhận dữ liệu âm thanh từ hệ thống Smart Health. Kết quả chẩn đoán chỉ hiển thị khi hệ thống phân tích xong dữ liệu thật."
                 },
                 color = if (hasAlert) Color(0xFF7F1D1D) else Color(0xFF1E3A8A),
                 fontSize = 14.sp,

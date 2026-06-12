@@ -188,6 +188,27 @@ cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:compileDebugKotlin
 ```
 
+Doctor profile resubmit and solo-practice regression checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugKotlin
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build:firebase
+```
+
+This regression covers:
+
+- request-info `needs_info -> pending` resubmit staying pending after `/api/auth/firebase` polling.
+- updated doctor `phone`, `name`, `license`, `hospital`/private clinic, `department`, and `registrationReason` showing in admin pending list.
+- solo doctor requests preserving `workspaceType=solo_practice`, `accountType=solo_doctor`, updated private clinic name, and updated phone.
+- Web Admin production build accepting the `Bác sĩ tư/Bác sĩ cơ sở` display fields.
+
 Optional emulator smoke on this Windows machine, when `adb` is not in PATH:
 
 ```powershell

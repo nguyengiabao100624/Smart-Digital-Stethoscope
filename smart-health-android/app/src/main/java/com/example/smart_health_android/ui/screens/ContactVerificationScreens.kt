@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.data.PendingRegistrationStore
+import com.example.smart_health_android.data.SmartHealthPushRegistrar
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
@@ -47,7 +48,7 @@ import kotlinx.coroutines.launch
 fun VerifyEmailScreen(
     onNavigateBack: () -> Unit,
     onVerified: () -> Unit,
-    email: String = "bacsituan@benhvien.com"
+    email: String = "email@example.com"
 ) {
     var code by remember { mutableStateOf("") }
     var isVerifying by remember { mutableStateOf(false) }
@@ -66,13 +67,9 @@ fun VerifyEmailScreen(
         if (code.length == 6 && !isVerifying && !isVerified) {
             isVerifying = true
             error = ""
-            delay(1500)
-            if (code == "123456") {
-                isVerified = true
-            } else {
-                error = "Mã xác thực không chính xác. Vui lòng thử lại."
-                code = ""
-            }
+            delay(500)
+            error = "Màn nhập mã email không còn dùng mã thủ công. Vui lòng xác thực bằng liên kết Firebase trong email."
+            code = ""
             isVerifying = false
         }
     }
@@ -127,7 +124,7 @@ fun VerifyEmailScreen(
                 isVerifying = isVerifying,
                 loadingText = "Đang xác thực..."
             )
-            VerificationTip("Mã xác thực demo là 123456")
+            VerificationTip("Không dùng mã tạm. Hãy mở email Firebase để xác thực tài khoản.")
             Spacer(modifier = Modifier.height(20.dp))
             Text("Không nhận được mã?", color = TextSecondary, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(10.dp))
@@ -161,7 +158,11 @@ fun FirebaseVerifyEmailScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val pendingRegistration = remember { PendingRegistrationStore.load(context) }
-    val routeAccountType = if (fallbackAccountType == "doctor") "doctor" else "patient"
+    val routeAccountType = if (fallbackAccountType == "doctor" || fallbackAccountType == "solo_doctor") {
+        fallbackAccountType
+    } else {
+        "patient"
+    }
     val email = pendingRegistration?.email ?: FirebaseAuthService.currentEmail().ifBlank { "email của bạn" }
     var isChecking by remember { mutableStateOf(false) }
     var isVerified by remember { mutableStateOf(false) }
@@ -208,7 +209,7 @@ fun FirebaseVerifyEmailScreen(
         if (isVerified) {
             VerificationSuccess(
                 title = "Xác thực thành công!",
-                subtitle = if (verifiedAccountType == "doctor") {
+                subtitle = if (verifiedAccountType == "doctor" || verifiedAccountType == "solo_doctor") {
                     "Đang gửi yêu cầu duyệt tài khoản bác sĩ..."
                 } else {
                     "Đang chuyển đến hồ sơ của bạn..."
@@ -242,6 +243,7 @@ fun FirebaseVerifyEmailScreen(
 
                             val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
                             SmartHealthRepository.api.authenticateFirebase(idToken)
+                            runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
                             val registration = pendingRegistration
                             val nextAccountType = registration?.accountType ?: routeAccountType
                             if (nextAccountType == "doctor" || nextAccountType == "solo_doctor") {
@@ -343,13 +345,9 @@ fun VerifyPhoneSettingsScreen(
         if (step == "verify" && code.length == 6 && !isVerifying) {
             isVerifying = true
             error = ""
-            delay(1500)
-            if (code == "123456") {
-                step = "success"
-            } else {
-                error = "Mã xác thực không chính xác. Vui lòng thử lại."
-                code = ""
-            }
+            delay(500)
+            error = "Xác thực SMS/OTP chưa được bật vì chưa cấu hình nhà cung cấp SMS thật."
+            code = ""
             isVerifying = false
         }
     }
@@ -465,7 +463,7 @@ fun VerifyPhoneSettingsScreen(
                     isError = error.isNotBlank()
                 )
                 VerificationStatusMessages(error = error, isVerifying = isVerifying, loadingText = "Đang xác thực...")
-                VerificationTip("Mã xác thực demo là 123456")
+                VerificationTip("Xác thực SMS/OTP cần nhà cung cấp SMS thật. Tính năng này chưa bật trong bản app hiện tại.")
                 Spacer(modifier = Modifier.height(20.dp))
                 Text("Không nhận được mã?", color = TextSecondary, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(10.dp))
@@ -538,13 +536,9 @@ fun ReVerifyContactScreen(
         if (code.length == 6 && !isVerifying && !isVerified) {
             isVerifying = true
             error = ""
-            delay(1500)
-            if (code == "123456") {
-                isVerified = true
-            } else {
-                error = "Mã xác thực không chính xác. Vui lòng thử lại."
-                code = ""
-            }
+            delay(500)
+            error = "Xác thực SMS/OTP chưa được bật vì chưa cấu hình nhà cung cấp SMS thật."
+            code = ""
             isVerifying = false
         }
     }
@@ -607,7 +601,7 @@ fun ReVerifyContactScreen(
                 isError = error.isNotBlank()
             )
             VerificationStatusMessages(error = error, isVerifying = isVerifying, loadingText = "Đang xác thực...")
-            VerificationTip("Mã xác thực demo là 123456")
+            VerificationTip("Xác thực SMS/OTP cần nhà cung cấp SMS thật. Tính năng này chưa bật trong bản app hiện tại.")
             Spacer(modifier = Modifier.height(20.dp))
             Text("Không nhận được mã?", color = TextSecondary, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(10.dp))
@@ -910,8 +904,8 @@ internal fun VerificationFooter(showConsent: Boolean) {
             )
             Spacer(modifier = Modifier.height(10.dp))
         }
-        Text("Phần Mềm Y Tế v2.1.0", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Text("Smart Health Android", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(4.dp))
-        Text("Đạt Chuẩn HIPAA & Được FDA Cấp Phép", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Text("Smart Health • Xác thực và phân quyền an toàn", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
     }
 }

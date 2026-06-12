@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.Patient
+import com.example.smart_health_android.data.SmartDevice
 import com.example.smart_health_android.data.StartScanRequest
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.launch
@@ -33,6 +34,9 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
     var relationship by remember { mutableStateOf("") }
     var profiles by remember { mutableStateOf<List<Patient>>(emptyList()) }
     var selectedProfileId by remember { mutableStateOf("") }
+    var devices by remember { mutableStateOf<List<SmartDevice>>(emptyList()) }
+    var selectedDeviceId by remember { mutableStateOf("") }
+    var isLoadingDevices by remember { mutableStateOf(false) }
     var isCreatingProfile by remember { mutableStateOf(false) }
     var scanType by remember { mutableStateOf("heart") } // "heart" or "lung"
     var date by remember { mutableStateOf("") }
@@ -53,8 +57,28 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
         }
     }
 
+    suspend fun refreshDevices() {
+        isLoadingDevices = true
+        runCatching {
+            val loaded = SmartHealthRepository.api.listDevices()
+                .filter { it.type == "stethoscope" || it.type.isBlank() }
+                .sortedWith(
+                    compareByDescending<SmartDevice> { it.online || it.connected }
+                        .thenByDescending { it.lastSeenAt.orEmpty() }
+                )
+            devices = loaded
+            if (selectedDeviceId.isBlank() && loaded.isNotEmpty()) {
+                selectedDeviceId = loaded.first().id
+            }
+        }.onFailure {
+            errorMessage = it.message ?: "Không tải được danh sách thiết bị"
+        }
+        isLoadingDevices = false
+    }
+
     LaunchedEffect(Unit) {
         refreshProfiles()
+        refreshDevices()
     }
 
     fun createProfile() {
@@ -198,6 +222,79 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
             Divider(color = Border)
             Spacer(modifier = Modifier.height(24.dp))
 
+            Text("THIẾT BỊ ỐNG NGHE", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(modifier = Modifier.height(12.dp))
+            if (isLoadingDevices) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .border(1.dp, Border, RoundedCornerShape(12.dp))
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryBlue)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Đang tải thiết bị đã liên kết...", color = TextSecondary, fontSize = 14.sp)
+                }
+            } else if (devices.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFFFBEB), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Text("Chưa có ống nghe nào được liên kết", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Hãy liên kết thiết bị trong mục Ống nghe trước khi tạo lượt đo thật.",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    devices.forEach { device ->
+                        val selected = device.id == selectedDeviceId
+                        val isOnline = device.online || device.connected
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) PrimaryTeal.copy(alpha = 0.08f) else Color.White)
+                                .border(1.dp, if (selected) PrimaryTeal else Border, RoundedCornerShape(12.dp))
+                                .clickable { selectedDeviceId = device.id }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.GraphicEq, contentDescription = null, tint = if (isOnline) PrimaryTeal else TextSecondary)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(device.name.ifBlank { device.id }, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    listOf(
+                                        if (isOnline) "Online" else "Offline",
+                                        device.wifiRssi?.let { "RSSI ${it} dBm" }.orEmpty(),
+                                        device.firmwareVersion.ifBlank { "" }
+                                    ).filter { it.isNotBlank() }.joinToString(" • "),
+                                    color = if (isOnline) PrimaryTeal else TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            if (selected) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = PrimaryTeal)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            Divider(color = Border)
+            Spacer(modifier = Modifier.height(24.dp))
+
             Text("LOẠI KIỂM TRA", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -302,7 +399,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
                                     SmartHealthRepository.api.createPatient(
                                         patientCode = "",
                                         name = patientId.trim(),
-                                        notes = "Ho so gia dinh tao nhanh truoc luot do",
+                                        notes = "Hồ sơ gia đình tạo nhanh trước lượt đo",
                                         profileType = "dependent",
                                         relationship = relationship.trim()
                                     )
@@ -310,8 +407,10 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
                                     null
                                 }
                             if (selectedProfile == null) {
-                                error("Hay chon hoac tao ho so suc khoe truoc khi do")
+                                error("Hãy chọn hoặc tạo hồ sơ sức khỏe trước khi đo")
                             }
+                            val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId }
+                                ?: error("Hãy liên kết và chọn ống nghe trước khi tạo lượt đo")
                             val query = patientId.trim()
                             val matchedPatient = if (query.isBlank()) {
                                 null
@@ -330,7 +429,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
                                     patientCode = if (matchedPatient == null && query.startsWith("BN", ignoreCase = true)) query else null,
                                     mode = scanType,
                                     bodySite = date,
-                                    deviceId = "android-app",
+                                    deviceId = selectedDevice.id,
                                     doctorNotes = notes
                                 )
                             )
@@ -343,7 +442,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
                         }
                     }
                 },
-                enabled = !isSubmitting,
+                enabled = !isSubmitting && devices.isNotEmpty(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)

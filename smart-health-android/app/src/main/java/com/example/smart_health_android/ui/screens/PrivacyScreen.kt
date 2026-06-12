@@ -29,8 +29,11 @@ fun PrivacyScreen(
     onNavigateToDataAccess: () -> Unit,
     onNavigateToAccessLog: () -> Unit
 ) {
-    var biometric by remember { mutableStateOf(true) }
+    var biometric by remember { mutableStateOf(false) }
     var twoFactor by remember { mutableStateOf(false) }
+    var securityNotice by remember {
+        mutableStateOf("Sinh trắc học và 2FA trên app sẽ được bật khi nối native biometric/SMS provider thật.")
+    }
 
     Column(
         modifier = Modifier
@@ -79,19 +82,30 @@ fun PrivacyScreen(
                         title = "Xác thực sinh trắc học",
                         subtitle = "Vân tay hoặc Face ID",
                         checked = biometric,
-                        onCheckedChange = { biometric = it },
+                        onCheckedChange = {
+                            securityNotice = "Sinh trắc học cần tích hợp Android BiometricPrompt trước khi bật trong bản phát hành."
+                        },
                         showDivider = true
                     )
                     PrivacyToggleRow(
                         icon = Icons.Default.Smartphone,
                         iconColor = PrimaryBlue,
                         title = "Xác thực 2 yếu tố (2FA)",
-                        subtitle = "Mã OTP qua SMS",
+                        subtitle = "Cần nhà cung cấp OTP thật",
                         checked = twoFactor,
-                        onCheckedChange = { twoFactor = it },
+                        onCheckedChange = {
+                            securityNotice = "2FA qua SMS/app chưa bật trên Android vì chưa cấu hình provider OTP thật."
+                        },
                         showDivider = false
                     )
                 }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    securityNotice,
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             }
 
             // Section 2: Mật Khẩu
@@ -194,7 +208,7 @@ fun PrivacyScreen(
                 }
             }
 
-            // Alert HIPAA & FDA
+            // Security note
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -206,10 +220,10 @@ fun PrivacyScreen(
                 Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.padding(top = 2.dp))
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text("Tuân Thủ HIPAA & FDA", color = Color(0xFF78350F), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Bảo mật dữ liệu y tế", color = Color(0xFF78350F), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Mọi dữ liệu y tế được mã hóa và lưu trữ tuân thủ chuẩn HIPAA. Hệ thống được FDA cấp phép Class IIa.",
+                        "Dữ liệu y tế được bảo vệ bằng xác thực Firebase, phân quyền backend và kênh truyền HTTPS. Chứng nhận y tế chính thức sẽ nằm ở giai đoạn triển khai thương mại.",
                         color = Color(0xFF92400E),
                         fontSize = 14.sp,
                         lineHeight = 20.sp

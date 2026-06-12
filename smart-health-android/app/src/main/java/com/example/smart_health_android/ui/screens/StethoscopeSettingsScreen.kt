@@ -321,7 +321,7 @@ fun StethoscopeSettingsScreen(
                         icon = Icons.Default.QrCodeScanner,
                         iconColor = PrimaryBlue,
                         title = "Ghép nối thiết bị mới",
-                        subtitle = "Quét QR, Bluetooth hoặc mã thủ công",
+                        subtitle = "Quét QR hoặc nhập mã thiết bị",
                         showDivider = true,
                         onClick = onNavigateToBluetoothPairing
                     )

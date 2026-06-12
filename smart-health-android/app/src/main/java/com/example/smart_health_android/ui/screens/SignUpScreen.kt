@@ -90,8 +90,11 @@ fun SignUpScreen(
     var clinics by remember { mutableStateOf<List<ClinicOption>>(emptyList()) }
     var specialties by remember { mutableStateOf<List<SpecialtyOption>>(emptyList()) }
     var selectedClinicId by remember { mutableStateOf("") }
+    var selectedSoloClinicId by remember { mutableStateOf("") }
     var selectedSpecialtyId by remember { mutableStateOf("") }
     var requestedClinicName by remember { mutableStateOf("") }
+    var soloClinicName by remember { mutableStateOf("") }
+    var catalogReloadKey by remember { mutableStateOf(0) }
     var isCatalogLoading by remember { mutableStateOf(false) }
     var catalogError by remember { mutableStateOf<String?>(null) }
     var agreedToTerms by remember { mutableStateOf(false) }
@@ -100,12 +103,15 @@ fun SignUpScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val selectedClinic = clinics.firstOrNull { it.id == selectedClinicId }
+    val privateClinicOptions = clinics.filter { it.type != "hospital" }
+    val selectedSoloClinic = privateClinicOptions.firstOrNull { it.id == selectedSoloClinicId }
     val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
     val clinicDisplayName = selectedClinic?.name ?: requestedClinicName
+    val soloClinicDisplayName = selectedSoloClinic?.name ?: soloClinicName
     val isDoctorRegistration = accountType == "doctor" || accountType == "solo_doctor"
     val requiresClinicSelection = accountType == "doctor"
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(catalogReloadKey) {
         isCatalogLoading = true
         catalogError = null
         try {
@@ -161,19 +167,33 @@ fun SignUpScreen(
             AccountTypeTab(
                 label = "Cá nhân",
                 selected = accountType == "personal",
-                onClick = { accountType = "personal" },
+                onClick = {
+                    accountType = "personal"
+                    selectedClinicId = ""
+                    selectedSoloClinicId = ""
+                    requestedClinicName = ""
+                    soloClinicName = ""
+                },
                 modifier = Modifier.weight(1f)
             )
             AccountTypeTab(
                 label = "Bác sĩ tư",
                 selected = accountType == "solo_doctor",
-                onClick = { accountType = "solo_doctor" },
+                onClick = {
+                    accountType = "solo_doctor"
+                    selectedClinicId = ""
+                    requestedClinicName = ""
+                },
                 modifier = Modifier.weight(1f)
             )
             AccountTypeTab(
                 label = "Bác sĩ cơ sở",
                 selected = accountType == "doctor",
-                onClick = { accountType = "doctor" },
+                onClick = {
+                    accountType = "doctor"
+                    selectedSoloClinicId = ""
+                    soloClinicName = ""
+                },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -186,7 +206,7 @@ fun SignUpScreen(
                 value = name,
                 onValueChange = { name = it },
                 icon = Icons.Default.Person,
-                placeholder = if (isDoctorRegistration) "Bs. Nguyễn Văn Tuấn" else "Nguyễn Văn An"
+                placeholder = if (isDoctorRegistration) "Họ tên bác sĩ" else "Họ tên người dùng"
             )
 
             if (isDoctorRegistration) {
@@ -195,14 +215,18 @@ fun SignUpScreen(
                     value = license,
                     onValueChange = { license = it },
                     icon = Icons.Default.Info,
-                    placeholder = "VD: 123456/BYT-CCHN"
+                    placeholder = "VD: CCHN-BYT-2026-001"
                 )
                 if (requiresClinicSelection) {
                     CatalogDropdown(
                         label = "Cơ sở y tế",
                         value = clinicDisplayName,
-                        placeholder = if (isCatalogLoading) "Đang tải cơ sở y tế..." else "Tìm và chọn cơ sở y tế",
-                        enabled = !isCatalogLoading && clinics.isNotEmpty(),
+                        placeholder = when {
+                            isCatalogLoading -> "Đang tải cơ sở y tế..."
+                            clinics.isEmpty() -> "Không tải được cơ sở y tế - bấm để thử lại"
+                            else -> "Tìm và chọn cơ sở y tế"
+                        },
+                        enabled = !isCatalogLoading,
                         options = clinics.map { it.id to it.name },
                         onSelected = {
                             selectedClinicId = it
@@ -210,6 +234,9 @@ fun SignUpScreen(
                         },
                         icon = Icons.Default.Home,
                         searchPlaceholder = "Tìm bệnh viện/phòng khám",
+                        loading = isCatalogLoading,
+                        emptyMessage = catalogError ?: "Chưa có cơ sở y tế trong danh mục backend. Bạn có thể nhập tên để gửi yêu cầu bổ sung.",
+                        onRetry = { catalogReloadKey++ },
                         missingRequestLabel = "Không thấy trong danh sách? Yêu cầu bổ sung",
                         onRequestMissing = { query ->
                             requestedClinicName = query.trim()
@@ -217,10 +244,30 @@ fun SignUpScreen(
                         }
                     )
                 } else {
-                    Text(
-                        "Bác sĩ tư sẽ tạo workspace phòng khám cá nhân sau khi xác thực email và chờ duyệt giấy phép.",
-                        color = TextSecondary,
-                        fontSize = 13.sp
+                    CatalogDropdown(
+                        label = "Phòng khám tư",
+                        value = soloClinicDisplayName,
+                        placeholder = when {
+                            isCatalogLoading -> "Đang tải gợi ý phòng khám..."
+                            privateClinicOptions.isEmpty() -> "Nhập tên phòng khám tư của bạn"
+                            else -> "Chọn gợi ý hoặc nhập tên phòng khám tư"
+                        },
+                        enabled = !isCatalogLoading,
+                        options = privateClinicOptions.map { it.id to it.name },
+                        onSelected = {
+                            selectedSoloClinicId = it
+                            soloClinicName = ""
+                        },
+                        icon = Icons.Default.Home,
+                        searchPlaceholder = "Tìm hoặc nhập tên phòng khám tư",
+                        loading = isCatalogLoading,
+                        emptyMessage = catalogError ?: "Nhập tên phòng khám tư để tạo workspace riêng cho bác sĩ tư.",
+                        onRetry = { catalogReloadKey++ },
+                        missingRequestLabel = "Dùng tên phòng khám tư này",
+                        onRequestMissing = { query ->
+                            soloClinicName = query.trim()
+                            selectedSoloClinicId = ""
+                        }
                     )
                 }
                 if (requiresClinicSelection && requestedClinicName.isNotBlank()) {
@@ -234,11 +281,18 @@ fun SignUpScreen(
                 CatalogDropdown(
                     label = "Chuyên khoa",
                     value = selectedSpecialty?.name.orEmpty(),
-                    placeholder = if (isCatalogLoading) "Đang tải chuyên khoa..." else "Chọn chuyên khoa",
-                    enabled = !isCatalogLoading && specialties.isNotEmpty(),
+                    placeholder = when {
+                        isCatalogLoading -> "Đang tải chuyên khoa..."
+                        specialties.isEmpty() -> "Không tải được chuyên khoa - bấm để thử lại"
+                        else -> "Chọn chuyên khoa"
+                    },
+                    enabled = !isCatalogLoading,
                     options = specialties.map { it.id to it.name },
                     onSelected = { selectedSpecialtyId = it },
-                    icon = Icons.Default.LocalHospital
+                    icon = Icons.Default.LocalHospital,
+                    loading = isCatalogLoading,
+                    emptyMessage = catalogError ?: "Chưa có chuyên khoa trong danh mục backend. Hãy tải lại hoặc kiểm tra backend.",
+                    onRetry = { catalogReloadKey++ }
                 )
                 TextFieldGroup(
                     label = "Lý do đăng ký",
@@ -261,7 +315,7 @@ fun SignUpScreen(
                 value = email,
                 onValueChange = { email = it },
                 icon = Icons.Default.Email,
-                placeholder = if (isDoctorRegistration) "bacsituan@benhvien.com" else "nguyenvana@gmail.com"
+                placeholder = if (isDoctorRegistration) "bacsi@example.com" else "email@example.com"
             )
             TextFieldGroup(
                 label = "Mật khẩu",
@@ -308,7 +362,7 @@ fun SignUpScreen(
                     .padding(bottom = 12.dp)
             )
         }
-        catalogError?.takeIf { requiresClinicSelection }?.let { message ->
+        catalogError?.takeIf { isDoctorRegistration }?.let { message ->
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
@@ -333,6 +387,7 @@ fun SignUpScreen(
                     cleanPassword != confirmPassword.trim() -> "Mật khẩu xác nhận không khớp"
                     !agreedToTerms -> "Vui lòng đồng ý điều khoản sử dụng"
                     isDoctorRegistration && license.isBlank() -> "Vui lòng nhập số chứng chỉ hành nghề"
+                    accountType == "solo_doctor" && soloClinicDisplayName.isBlank() -> "Vui lòng chọn hoặc nhập tên phòng khám tư"
                     requiresClinicSelection && selectedClinic == null && requestedClinicName.isBlank() -> "Vui lòng chọn cơ sở y tế hoặc gửi yêu cầu bổ sung"
                     isDoctorRegistration && selectedSpecialty == null -> "Vui lòng chọn chuyên khoa"
                     else -> null
@@ -355,9 +410,9 @@ fun SignUpScreen(
                                 email = cleanEmail,
                                 phone = cleanPhone,
                                 license = license.trim(),
-                                hospital = if (accountType == "solo_doctor") "Phòng khám cá nhân - $cleanName" else clinicDisplayName,
+                                hospital = if (accountType == "solo_doctor") soloClinicDisplayName.trim() else clinicDisplayName,
                                 department = selectedSpecialty?.name.orEmpty(),
-                                organizationId = selectedClinic?.id.orEmpty(),
+                                organizationId = if (accountType == "solo_doctor") "" else selectedClinic?.id.orEmpty(),
                                 reason = registrationReason.trim()
                             )
                         )
@@ -475,6 +530,9 @@ private fun CatalogDropdown(
     onSelected: (String) -> Unit,
     icon: ImageVector,
     searchPlaceholder: String = "Tìm kiếm",
+    loading: Boolean = false,
+    emptyMessage: String = "Không có kết quả phù hợp",
+    onRetry: (() -> Unit)? = null,
     missingRequestLabel: String? = null,
     onRequestMissing: ((String) -> Unit)? = null
 ) {
@@ -524,64 +582,97 @@ private fun CatalogDropdown(
                 ) {
                     Text(label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(searchPlaceholder, color = TextSecondary.copy(alpha = 0.6f)) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryBlue,
-                        unfocusedBorderColor = Border,
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(searchPlaceholder, color = TextSecondary.copy(alpha = 0.6f)) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryBlue,
+                            unfocusedBorderColor = Border,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 360.dp)
-                    ) {
-                        items(visibleOptions, key = { it.first }) { (id, name) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelected(id)
-                                        expanded = false
-                                    }
-                                    .padding(vertical = 14.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(name, color = TextPrimary, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                            }
-                        }
-                        if (visibleOptions.isEmpty()) {
-                            item {
-                            Text(
-                                    "Không có kết quả phù hợp",
-                                color = TextSecondary,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(vertical = 14.dp, horizontal = 4.dp)
-                            )
-                            }
-                        }
-                        if (!missingRequestLabel.isNullOrBlank() && query.trim().isNotBlank() && onRequestMissing != null) {
-                            item {
-                            Text(
-                                "$missingRequestLabel: ${query.trim()}",
+                    if (loading) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
                                 color = PrimaryBlue,
-                                    fontWeight = FontWeight.SemiBold,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.height(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Đang tải danh mục...", color = TextSecondary, fontSize = 14.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 360.dp)
+                        ) {
+                            items(visibleOptions, key = { it.first }) { (id, name) ->
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            onRequestMissing(query)
+                                            onSelected(id)
                                             expanded = false
                                         }
-                                        .padding(vertical = 14.dp, horizontal = 4.dp)
-                            )
+                                        .padding(vertical = 14.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(name, color = TextPrimary, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                }
+                            }
+                            if (visibleOptions.isEmpty()) {
+                                item {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 14.dp, horizontal = 4.dp)
+                                    ) {
+                                        Text(
+                                            if (query.trim().isBlank()) emptyMessage else "Không có kết quả phù hợp",
+                                            color = TextSecondary,
+                                            fontSize = 14.sp,
+                                            lineHeight = 20.sp
+                                        )
+                                        if (onRetry != null) {
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Button(
+                                                onClick = onRetry,
+                                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text("Tải lại danh mục", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (!missingRequestLabel.isNullOrBlank() && query.trim().isNotBlank() && onRequestMissing != null) {
+                                item {
+                                    Text(
+                                        "$missingRequestLabel: ${query.trim()}",
+                                        color = PrimaryBlue,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onRequestMissing(query)
+                                                expanded = false
+                                            }
+                                            .padding(vertical = 14.dp, horizontal = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }

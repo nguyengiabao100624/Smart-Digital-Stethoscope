@@ -103,12 +103,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Follow-up production bug was fixed after live API testing: request-info initially returned success but the list stayed pending because Postgres rejected empty-string timestamps and repository fallback hid the failed save. Commits `951c82c` and `7f1cdef` fixed guarded persistence and timestamp null handling; production verification now shows the affected doctor in `needs_info`, not `pending`.
 - Follow-up resubmit bug fixed after Android polling reproduced the issue: app submit returned `pending`, then `/api/auth/firebase` pulled the SQL-backed `needs_info` state again. Backend now has guarded direct writes for doctor resubmit, approve, reject, and request-info; `npm.cmd test` covers the request-info/resubmit lifecycle locally.
 - Follow-up registration reason fix: Android-submitted doctor signup `reason` is now persisted as `registrationReason` through repository-backed users, shown in Web Admin Doctor Approval, returned to Android/admin APIs, and included in platform-admin email metadata with a direct `/doctor-approval` CTA.
+- Registration reason deploy completed on 2026-06-12: commit `4ce7915` pushed, Firebase Hosting Web Admin version `5124335308359eb3` released, public smoke passed, and production canary confirmed the exact submitted reason in auth, admin pending list, and notification metadata.
 
 Next practical backlog items:
 
 - Continue with the real doctor Firebase account E2E after the resubmit fix deploys: Android doctor resubmits, admin approves, and the doctor dashboard unlocks.
 - Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
-- After deploy, run one production canary with a unique doctor registration reason and confirm the admin list plus Gmail notification show that exact text.
+- Ask the user to resubmit once from the real Android UI with the final human-written reason, then approve from Web Admin and confirm the doctor dashboard unlocks.
 
 ## Phase 0 - Context And Tooling Hygiene
 

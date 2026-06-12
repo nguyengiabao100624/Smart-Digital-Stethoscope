@@ -199,6 +199,7 @@ export function DoctorApproval() {
   const [verificationFilter, setVerificationFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [doctorRequests, setDoctorRequests] = useState<DoctorRequest[]>([]);
+  const [activeRequestTab, setActiveRequestTab] = useState<RequestStatus>("pending");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -324,7 +325,14 @@ export function DoctorApproval() {
 
     setActionLoading(true);
     try {
-      await smartHealthApi.requestDoctorRoleMoreInfo(selectedDoc.id, infoMessage.trim(), infoFields);
+      const response = await smartHealthApi.requestDoctorRoleMoreInfo(selectedDoc.id, infoMessage.trim(), infoFields);
+      const clinicMap = new Map(clinics.map((clinic) => [clinic.id, clinic]));
+      const updatedRequest = toDoctorRequest(response.request, clinicMap);
+      setDoctorRequests((current) =>
+        current.map((request) => (request.id === updatedRequest.id ? updatedRequest : request)),
+      );
+      setRequestPages((current) => ({ ...current, needs_info: 1 }));
+      setActiveRequestTab("needs_info");
       toast.success("Đã gửi yêu cầu bổ sung thông tin đến bác sĩ.");
       setInfoOpen(false);
       setSelectedDoc(null);
@@ -428,7 +436,11 @@ export function DoctorApproval() {
         description="Xác minh hồ sơ bác sĩ, cấp quyền phòng khám và ghi lại toàn bộ quyết định vào audit log."
       />
 
-      <Tabs.Root defaultValue="pending" className="flex flex-1 flex-col">
+      <Tabs.Root
+        value={activeRequestTab}
+        onValueChange={(value) => setActiveRequestTab(value as RequestStatus)}
+        className="flex flex-1 flex-col"
+      >
         <div className="rounded-xl border border-border bg-card shadow-sm">
           <div className="flex flex-col gap-4 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
             <Tabs.List className="flex flex-wrap gap-2">

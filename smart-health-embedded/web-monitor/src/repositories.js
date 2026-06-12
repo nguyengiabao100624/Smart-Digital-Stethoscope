@@ -29,6 +29,9 @@ function profileClaimsFromUser(user = {}) {
 
 function firebaseClaimsForUser(user = {}) {
   const claims = { ...objectOf(user.firebaseClaims) };
+  if (Array.isArray(user.roleInfoRequiredFields)) {
+    claims.roleInfoRequiredFields = user.roleInfoRequiredFields;
+  }
   claims.profile = {
     ...objectOf(claims.profile),
     ...profileClaimsFromUser(user),
@@ -40,6 +43,11 @@ function rowToUser(row) {
   if (!row) return null;
   const firebaseClaims = objectOf(row.firebase_claims);
   const profile = objectOf(firebaseClaims.profile);
+  const roleInfoRequiredFields = Array.isArray(firebaseClaims.roleInfoRequiredFields)
+    ? firebaseClaims.roleInfoRequiredFields
+    : Array.isArray(profile.roleInfoRequiredFields)
+      ? profile.roleInfoRequiredFields
+      : [];
   return {
     id: row.id,
     firebaseUid: row.firebase_uid || "",
@@ -75,6 +83,7 @@ function rowToUser(row) {
     roleRejectReason: row.role_reject_reason || "",
     roleInfoRequestAt: toIso(row.role_info_request_at),
     roleInfoRequestMessage: row.role_info_request_message || "",
+    roleInfoRequiredFields,
     firebaseClaims,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -750,13 +759,16 @@ function createRepositories(options) {
     async findByIdOrFirebaseUid(identifier) {
       const id = String(identifier || "");
       const sqlUser = await withSql(async (pool) => {
-        const result = await pool.query("SELECT * FROM users WHERE id = $1 OR firebase_uid = $1 LIMIT 1", [id]);
+        const result = await pool.query(
+          "SELECT * FROM users WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1) LIMIT 1",
+          [id]
+        );
         return result.rows[0] ? rowToUser(result.rows[0]) : null;
       });
       if (sqlUser) {
         return syncArrayItem(getDb().users, sqlUser);
       }
-      return getDb().users.find((user) => user.id === id || user.firebaseUid === id) || null;
+      return getDb().users.find((user) => user.id === id || user.firebaseUid === id || String(user.email || "").toLowerCase() === id.toLowerCase()) || null;
     },
 
     async listDoctorRequests(status) {

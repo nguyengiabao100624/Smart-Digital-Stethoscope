@@ -33,6 +33,7 @@ const DATA_BACKEND = resolveBackendFromEnv(process.env);
 const AUTH_MODE = String(process.env.AUTH_MODE || "demo").toLowerCase();
 const FIREBASE_AUTH_ENABLED = isFirebaseAuthEnabled(process.env);
 const ALLOW_DEMO_AUTH = String(process.env.ALLOW_DEMO_AUTH || "").toLowerCase() === "true";
+const SHOULD_SEED_DEMO_DATA = AUTH_MODE !== "production";
 
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 100 * 1024 * 1024);
 const UDP_SOURCE_TIMEOUT_MS = 3000;
@@ -519,14 +520,14 @@ function createDefaultSettings() {
 function ensureAppDefaults() {
   let changed = false;
 
-  if (db.users.length === 0) {
+  if (SHOULD_SEED_DEMO_DATA && db.users.length === 0) {
     const createdAt = nowIso();
     db.users.push(
       {
         id: "usr_doctor_default",
         role: "doctor",
-        name: "Bs. Tuấn",
-        email: "bacsytuan@benhvien.com",
+        name: "Bác sĩ Smart Health",
+        email: "doctor@example.com",
         phone: "0912345678",
         password: "12345678",
         license: "123456/BYT-CCHN",
@@ -541,8 +542,8 @@ function ensureAppDefaults() {
       {
         id: "usr_patient_default",
         role: "patient",
-        name: "Nguyễn Văn A",
-        email: "nguyenvana@gmail.com",
+        name: "Người dùng Smart Health",
+        email: "patient@example.com",
         phone: "0900000000",
         password: "12345678",
         address: "Hồ Chí Minh",
@@ -555,7 +556,7 @@ function ensureAppDefaults() {
     changed = true;
   }
 
-  if (db.organizations.length === 0) {
+  if (SHOULD_SEED_DEMO_DATA && db.organizations.length === 0) {
     const createdAt = nowIso();
     db.organizations.push({
       id: "org_default_clinic",
@@ -571,7 +572,7 @@ function ensureAppDefaults() {
     changed = true;
   }
 
-  if (db.servicePackages.length === 0) {
+  if (SHOULD_SEED_DEMO_DATA && db.servicePackages.length === 0) {
     const createdAt = nowIso();
     db.servicePackages.push(
       {
@@ -680,7 +681,7 @@ function ensureAppDefaults() {
     }
   }
 
-  if (db.devices.length === 0) {
+  if (SHOULD_SEED_DEMO_DATA && db.devices.length === 0) {
     const updatedAt = nowIso();
     db.devices.push(
       {
@@ -709,7 +710,7 @@ function ensureAppDefaults() {
     changed = true;
   }
 
-  if (db.notifications.length === 0) {
+  if (SHOULD_SEED_DEMO_DATA && db.notifications.length === 0) {
     seedNotification("info", "Máy chủ đã sẵn sàng", "Ứng dụng đã kết nối với máy chủ Smart Health.", true);
     seedNotification("success", "Thiết bị khả dụng", "ESP32 đang gửi tín hiệu âm thanh qua UDP.", false);
     changed = true;
@@ -730,6 +731,21 @@ function seedNotification(type, title, message, read = false) {
     createdAt: nowIso(),
     updatedAt: nowIso(),
   });
+}
+
+function getDemoDeviceId() {
+  return db.devices.find((item) => item.type === "stethoscope" && !item.revokedAt)?.id || "";
+}
+
+function resolveIncomingDeviceId(payload = {}, socket = null) {
+  const explicitDeviceId = readString(payload.deviceId || socket?._queryDeviceId, 120);
+  if (explicitDeviceId) {
+    return explicitDeviceId;
+  }
+  if (SHOULD_SEED_DEMO_DATA) {
+    return getDemoDeviceId();
+  }
+  return "";
 }
 
 const notificationEmailDispatchIds = new Set();
@@ -758,9 +774,15 @@ function createRecoveryCodes(count = 8) {
 function normalizeNotificationPreferences(value = {}) {
   const current = value && typeof value === "object" ? value : {};
   return {
+    enabled: current.enabled !== false,
+    sound: current.sound !== false,
+    vibration: current.vibration !== false,
     doctorRequests: current.doctorRequests !== false,
     abnormalResults: current.abnormalResults !== false,
     deviceOffline: current.deviceOffline !== false,
+    appointments: current.appointments !== false,
+    messages: current.messages !== false,
+    aiUpdates: current.aiUpdates === true,
     newLogin: current.newLogin !== false,
   };
 }
@@ -768,8 +790,20 @@ function normalizeNotificationPreferences(value = {}) {
 function publicUser(user) {
   if (!user) return null;
   const { password, avatarStorage, ...safeUser } = user;
-  const organization = getClinicById(user.organizationId);
+  const organization = isPlatformAdminUser(user) ? null : getClinicById(user.organizationId);
   const workspaceContext = getUserWorkspaceContext(user);
+  const isPlatformAdmin = isPlatformAdminUser(user);
+  const workspace = isPlatformAdmin
+    ? {
+        id: "platform",
+        name: "Quản trị toàn hệ thống",
+        type: "platform",
+        workspaceType: "platform",
+        packageId: "",
+        subscriptionStatus: "",
+        billingCycle: "",
+      }
+    : workspaceContext.workspace;
   return {
     ...safeUser,
     title: user.title || "",
@@ -778,16 +812,18 @@ function publicUser(user) {
     twoFactorEnabled: Boolean(user.twoFactorEnabled),
     twoFactorMethod: user.twoFactorMethod || "",
     notificationPreferences: normalizeNotificationPreferences(user.notificationPreferences),
-    hospital: user.hospital || organization?.name || "",
-    clinicName: user.hospital || organization?.name || "",
+    hospital: isPlatformAdmin ? "" : user.hospital || organization?.name || "",
+    clinicName: isPlatformAdmin ? "" : user.hospital || organization?.name || "",
     specialty: user.specialty || user.department || "",
     roleInfoRequiredFields: normalizeRoleInfoFields(user.roleInfoRequiredFields),
     workspaceId: workspaceContext.currentWorkspaceId,
     currentWorkspaceId: workspaceContext.currentWorkspaceId,
     currentMembership: workspaceContext.currentMembership,
     memberships: workspaceContext.memberships,
-    workspace: workspaceContext.workspace,
+    workspace,
     capabilities: workspaceContext.capabilities,
+    scopeType: isPlatformAdmin ? "platform" : workspace?.workspaceType || workspace?.type || "",
+    scopeLabel: isPlatformAdmin ? "Quản trị toàn hệ thống" : workspace?.name || "",
   };
 }
 
@@ -1472,7 +1508,11 @@ async function handleDeviceEvent(deviceId, payload = {}) {
 }
 
 async function registerDeviceSocket(socket, payload = {}) {
-  const deviceId = readString(payload.deviceId || socket._queryDeviceId, 120) || "esp32-stethoscope";
+  const deviceId = resolveIncomingDeviceId(payload, socket);
+  if (!deviceId) {
+    closeSocket(socket);
+    return false;
+  }
   const suppliedSecret = readString(payload.secret || socket._querySecret, 160);
   let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
   if (device && device.secret && suppliedSecret !== device.secret) {
@@ -1873,13 +1913,34 @@ function getAudioSourceCount() {
 }
 
 function refreshDevicePresence() {
-  const espCount = getAudioSourceCount();
-  const device = db.devices.find((item) => item.id === "esp32-stethoscope");
-  if (device) {
-    device.connected = espCount > 0;
-    device.status = espCount > 0 ? "connected" : "available";
-    device.lastSeenAt = espCount > 0 ? nowIso() : device.lastSeenAt;
-    device.updatedAt = nowIso();
+  const activeSocketDeviceIds = new Set();
+  for (const [deviceId, socket] of deviceSockets.entries()) {
+    if (socket && socket.writable && !socket.destroyed) {
+      activeSocketDeviceIds.add(deviceId);
+    }
+  }
+
+  const fallbackDeviceId =
+    activeSocketDeviceIds.size === 0 && getAudioSourceCount() > 0
+      ? db.devices.find((item) => item.type === "stethoscope" && !item.revokedAt)?.id || ""
+      : "";
+  const now = nowIso();
+
+  for (const device of db.devices) {
+    const isActive = activeSocketDeviceIds.has(device.id) || device.id === fallbackDeviceId;
+    if (isActive) {
+      device.connected = true;
+      device.status = "connected";
+      device.lastSeenAt = now;
+      device.updatedAt = now;
+      continue;
+    }
+
+    if (device.connected || device.status === "connected") {
+      device.connected = false;
+      device.status = device.revokedAt ? "revoked" : "available";
+      device.updatedAt = now;
+    }
   }
 }
 
@@ -3009,7 +3070,10 @@ function buildPatientSnapshot(patient) {
 async function createScanSession(payload = {}, actorUser = null) {
   const patient = resolvePatientForScan(payload, actorUser);
   const createdAt = nowIso();
-  const deviceId = readString(payload.deviceId, 120) || "esp32-stethoscope";
+  const deviceId = resolveIncomingDeviceId(payload);
+  if (!deviceId) {
+    throw httpError(400, "Thiết bị là bắt buộc để bắt đầu lượt đo");
+  }
   const device = findDevice(deviceId);
   if (device && actorUser) {
     assertCanAccessDevice(actorUser, device);
@@ -3152,7 +3216,10 @@ function startRecording(payload = {}, actorUser = null) {
   const wavFilePath = path.join(AUDIO_DIR, wavFile);
   const mode = readString(payload.mode, 40) || "heart";
   const bodySite = readString(payload.bodySite || payload.location, 120);
-  const deviceId = readString(payload.deviceId, 120) || "esp32-stethoscope";
+  const deviceId = resolveIncomingDeviceId(payload);
+  if (!deviceId) {
+    throw httpError(400, "Thiết bị là bắt buộc để ghi âm");
+  }
   const device = findDevice(deviceId);
   if (device && actorUser) {
     assertCanAccessDevice(actorUser, device);
@@ -3699,6 +3766,57 @@ function findSessionUserByToken(token) {
   return { user, session };
 }
 
+function getSocketAccessToken(req, url) {
+  const queryToken = readString(
+    url.searchParams.get("token") || url.searchParams.get("access_token"),
+    4000
+  );
+  if (queryToken) {
+    return queryToken;
+  }
+  return getBearerToken(req);
+}
+
+async function authenticateRealtimeSocket(req, url) {
+  const token = getSocketAccessToken(req, url);
+  if (!token) {
+    return null;
+  }
+
+  const sessionAuth = findSessionUserByToken(token);
+  if (sessionAuth) {
+    if (AUTH_MODE === "production" && !ALLOW_DEMO_AUTH) {
+      return null;
+    }
+    req.authSource = "demo-session";
+    req.authUser = sessionAuth.user;
+    req.authSession = sessionAuth.session;
+    attachActor(req, sessionAuth.user);
+    return sessionAuth.user;
+  }
+
+  if (!FIREBASE_AUTH_ENABLED) {
+    return null;
+  }
+
+  let decodedToken;
+  try {
+    decodedToken = await verifyFirebaseIdToken(token, process.env);
+  } catch {
+    return null;
+  }
+
+  if (!decodedToken) {
+    return null;
+  }
+
+  const user = await upsertFirebaseUser(decodedToken, req);
+  req.authSource = "firebase";
+  req.authUser = user;
+  attachActor(req, user);
+  return user;
+}
+
 function normalizeFirebaseRole(decodedToken) {
   const directRole = readString(decodedToken.role, 40);
   const nestedRole =
@@ -3738,7 +3856,7 @@ function ensureMembershipForUser(user) {
   }
 }
 
-function upsertFirebaseUser(decodedToken, req) {
+async function upsertFirebaseUser(decodedToken, req) {
   const firebaseUid = readString(decodedToken.uid, 160);
   if (!firebaseUid) {
     throw httpError(401, "Firebase token is missing uid");
@@ -3754,8 +3872,15 @@ function upsertFirebaseUser(decodedToken, req) {
       : "") ||
     "org_default_clinic";
 
-  let user = db.users.find((item) => item.firebaseUid === firebaseUid);
   let matchedByEmail = false;
+  let user = repositories ? await repositories.users.findByIdOrFirebaseUid(firebaseUid) : null;
+  if (!user && repositories && email) {
+    user = await repositories.users.findByIdOrFirebaseUid(email);
+    matchedByEmail = Boolean(user);
+  }
+  if (!user) {
+    user = db.users.find((item) => item.firebaseUid === firebaseUid);
+  }
   if (!user && email) {
     user = db.users.find((item) => readString(item.email, 160).toLowerCase() === email);
     matchedByEmail = Boolean(user);
@@ -3891,7 +4016,7 @@ async function authenticateRequest(req) {
 
   req.authSource = "firebase";
   req.firebaseToken = decodedToken;
-  req.authUser = upsertFirebaseUser(decodedToken, req);
+  req.authUser = await upsertFirebaseUser(decodedToken, req);
   attachActor(req, req.authUser);
   if (repositories) {
     await repositories.users.save(req.authUser);
@@ -7080,11 +7205,16 @@ async function handleAdminApi(req, res, url, segments) {
         ip: req.socket.remoteAddress || "",
       });
       await createBackendNotification({
-        type: "warning",
+        type: "doctor_info_requested",
         title: "Yêu cầu bổ sung hồ sơ bác sĩ",
         message: `${targetUser.name || targetUser.email || targetUser.id}: ${message}`,
         userId: targetUser.id,
         organizationId: targetUser.organizationId || "",
+        metadata: {
+          roleRequestStatus: targetUser.roleRequestStatus,
+          requiredFields,
+          requestMessage: message,
+        },
       });
       await appendAudit("doctor.request_info", req, {
         actorUserId: adminUser.id,
@@ -7633,7 +7763,7 @@ async function handleMeApi(req, res, segments) {
         method: methodName,
         secretPreview: user.twoFactorSecretPreview,
         recoveryCodes,
-        note: "2FA demo đã được lưu vào backend. OTP provider thật sẽ tích hợp sau.",
+        note: "Thiết lập 2FA đã được lưu. OTP provider thật sẽ tích hợp sau.",
       },
     });
     return;
@@ -7816,7 +7946,7 @@ async function handleSettingsApi(req, res, segments) {
         available: true,
         currentVersion,
         latestVersion: "AI Medical Analysis v3.2.2-local",
-        notes: "Bản local-demo cập nhật metadata model cho báo cáo KLTN; chưa tải model cloud.",
+        notes: "Bản local cập nhật metadata model cho báo cáo KLTN; chưa tải model cloud.",
         checkedAt: nowIso(),
       },
     });
@@ -7840,7 +7970,7 @@ async function handleSettingsApi(req, res, segments) {
       resourceId: "ai",
       metadata: { version: settings.ai.version },
     });
-    createNotification("success", "Đã cập nhật mô hình AI", "Metadata model AI local-demo vừa được cập nhật.");
+    createNotification("success", "Đã cập nhật mô hình AI", "Metadata model AI local vừa được cập nhật.");
     sendJson(res, 200, { ok: true, settings: publicSettings(user), ai: settings.ai });
     return;
   }
@@ -8754,6 +8884,88 @@ async function handleDoctorPortalApi(req, res, url, segments) {
   sendJson(res, 404, { error: "Doctor route not found" });
 }
 
+function isActiveUserAccount(user) {
+  const status = readString(user?.accountStatus || "active", 40).toLowerCase();
+  return user && !user.deletedAt && !["locked", "deleted", "disabled", "inactive"].includes(status);
+}
+
+function shareTargetWorkspace(org) {
+  const clinic = publicClinic(org);
+  return {
+    id: clinic.id,
+    name: clinic.name,
+    type: clinic.workspaceType || clinic.type || "",
+    address: clinic.address || "",
+  };
+}
+
+function shareTargetDoctor(user) {
+  const clinic = getClinicById(user.organizationId);
+  return {
+    id: user.id,
+    name: user.name || user.email || user.id,
+    specialty: user.department || user.specialty || "",
+    organizationId: user.organizationId || "",
+    clinicName: user.hospital || clinic?.name || "",
+  };
+}
+
+function matchesShareTargetQuery(target, query) {
+  if (!query) return true;
+  return [target.id, target.name, target.specialty, target.clinicName, target.type, target.address]
+    .filter(Boolean)
+    .some((value) => normalizeLookup(value).includes(query));
+}
+
+function getVisibleShareWorkspaces(user) {
+  const activeWorkspaces = db.organizations.filter((org) => String(org.status || "active") === "active");
+  if (isPlatformAdminUser(user) || isPatientUser(user)) {
+    return activeWorkspaces;
+  }
+
+  const workspaceContext = getUserWorkspaceContext(user);
+  const visibleIds = new Set(
+    [
+      user.organizationId,
+      workspaceContext.currentWorkspaceId,
+      ...workspaceContext.memberships.map((membership) => membership.workspaceId || membership.organizationId),
+    ]
+      .map((id) => readString(id, 120))
+      .filter(Boolean),
+  );
+  return activeWorkspaces.filter((workspace) => visibleIds.has(workspace.id));
+}
+
+async function handleShareTargetsApi(req, res, url, segments) {
+  const method = req.method || "GET";
+  const user = requireUser(req);
+  if (segments.length !== 2 || method !== "GET") {
+    sendJson(res, 404, { error: "Share targets route not found" });
+    return;
+  }
+
+  const query = normalizeLookup(url.searchParams.get("q") || "");
+  const visibleWorkspaces = getVisibleShareWorkspaces(user);
+  const visibleWorkspaceIds = new Set(visibleWorkspaces.map((workspace) => workspace.id));
+  const canSeeAllDoctors = isPlatformAdminUser(user) || isPatientUser(user);
+
+  const doctors = db.users
+    .filter(isActiveUserAccount)
+    .filter((candidate) => candidate.id !== user.id)
+    .filter((candidate) => candidate.role === "doctor" || isApprovedDoctorRole(candidate))
+    .filter((candidate) => canSeeAllDoctors || visibleWorkspaceIds.has(candidate.organizationId))
+    .map(shareTargetDoctor)
+    .filter((target) => matchesShareTargetQuery(target, query))
+    .slice(0, 50);
+
+  const workspaces = visibleWorkspaces
+    .map(shareTargetWorkspace)
+    .filter((target) => matchesShareTargetQuery(target, query))
+    .slice(0, 50);
+
+  sendJson(res, 200, { doctors, workspaces });
+}
+
 async function handleApi(req, res, url) {
   const method = req.method || "GET";
   let segments = url.pathname.split("/").filter(Boolean);
@@ -8811,6 +9023,11 @@ async function handleApi(req, res, url) {
 
   if (segments[1] === "me") {
     await handleMeApi(req, res, segments);
+    return;
+  }
+
+  if (segments[1] === "share-targets") {
+    await handleShareTargetsApi(req, res, url, segments);
     return;
   }
 
@@ -9375,73 +9592,95 @@ audioUdp.on("error", (err) => {
   console.error(`UDP audio error: ${err.message}`);
 });
 
-server.on("upgrade", (req, socket) => {
+server.on("upgrade", async (req, socket) => {
   socket.setNoDelay(true);
 
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const role =
-    url.pathname === "/esp" || url.pathname === "/device"
-      ? "esp"
-      : url.pathname === "/listen" || url.pathname === "/app"
-        ? "listen"
-        : "";
-  const key = req.headers["sec-websocket-key"];
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const role =
+      url.pathname === "/esp" || url.pathname === "/device"
+        ? "esp"
+        : url.pathname === "/listen" || url.pathname === "/app"
+          ? "listen"
+          : "";
+    const key = req.headers["sec-websocket-key"];
 
-  if (!role || !key) {
-    socket.destroy();
-    return;
-  }
-
-  socket.write(
-    [
-      "HTTP/1.1 101 Switching Protocols",
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      `Sec-WebSocket-Accept: ${websocketAcceptKey(key)}`,
-      "",
-      "",
-    ].join("\r\n")
-  );
-
-  socket._wsRole = role;
-  socket._wsBuffer = Buffer.alloc(0);
-  socket._queryDeviceId = readString(url.searchParams.get("deviceId"), 120);
-  socket._querySecret = readString(url.searchParams.get("secret"), 160);
-
-  if (role === "esp") {
-    espClients.add(socket);
-    if (socket._queryDeviceId) {
-      deviceSockets.set(socket._queryDeviceId, socket);
-      socket._deviceId = socket._queryDeviceId;
+    if (!role || !key) {
+      socket.destroy();
+      return;
     }
-    console.log("ESP connected");
-  } else {
-    listenClients.add(socket);
-    console.log("App/browser connected");
-    sendText(socket, JSON.stringify(getStatusPayload()));
-    sendText(
-      socket,
-      JSON.stringify({
-        type: "metrics",
-        ...liveMetrics,
-        recording: Boolean(activeRecording),
-        activeScanId: activeRecording ? activeRecording.scanId : null,
-      })
+
+    if (role === "listen") {
+      const realtimeToken = getSocketAccessToken(req, url);
+      const requiresAuth = AUTH_MODE === "production" && !ALLOW_DEMO_AUTH;
+      let wsUser = null;
+      if (realtimeToken) {
+        wsUser = await authenticateRealtimeSocket(req, url);
+        if (!wsUser) {
+          socket.destroy();
+          return;
+        }
+      } else if (requiresAuth) {
+        socket.destroy();
+        return;
+      }
+      socket._wsUser = wsUser;
+    }
+
+    socket.write(
+      [
+        "HTTP/1.1 101 Switching Protocols",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        `Sec-WebSocket-Accept: ${websocketAcceptKey(key)}`,
+        "",
+        "",
+      ].join("\r\n")
     );
-  }
 
-  socket.on("data", (chunk) => {
-    try {
-      handleWebSocketData(socket, chunk);
-    } catch (err) {
-      console.error(err.message);
-      closeSocket(socket);
+    socket._wsRole = role;
+    socket._wsBuffer = Buffer.alloc(0);
+    socket._queryDeviceId = readString(url.searchParams.get("deviceId"), 120);
+    socket._querySecret = readString(url.searchParams.get("secret"), 160);
+
+    if (role === "esp") {
+      espClients.add(socket);
+      if (socket._queryDeviceId) {
+        deviceSockets.set(socket._queryDeviceId, socket);
+        socket._deviceId = socket._queryDeviceId;
+      }
+      console.log("ESP connected");
+    } else {
+      listenClients.add(socket);
+      console.log("App/browser connected");
+      sendText(socket, JSON.stringify(getStatusPayload()));
+      sendText(
+        socket,
+        JSON.stringify({
+          type: "metrics",
+          ...liveMetrics,
+          recording: Boolean(activeRecording),
+          activeScanId: activeRecording ? activeRecording.scanId : null,
+        })
+      );
     }
-  });
-  socket.on("close", () => cleanupSocket(socket));
-  socket.on("error", () => cleanupSocket(socket));
 
-  broadcastStatus();
+    socket.on("data", (chunk) => {
+      try {
+        handleWebSocketData(socket, chunk);
+      } catch (err) {
+        console.error(err.message);
+        closeSocket(socket);
+      }
+    });
+    socket.on("close", () => cleanupSocket(socket));
+    socket.on("error", () => cleanupSocket(socket));
+
+    broadcastStatus();
+  } catch (err) {
+    console.error(`WebSocket upgrade error: ${err.message}`);
+    socket.destroy();
+  }
 });
 
 function startNetworkServers() {

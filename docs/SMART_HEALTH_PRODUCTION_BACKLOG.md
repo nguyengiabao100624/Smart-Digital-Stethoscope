@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-06-08
+Last updated: 2026-06-12
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -68,6 +68,45 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Rewrote `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` with full Vietnamese accents and more explicit step-by-step instructions so it can be followed directly during the next setup session.
 - Refined the platform-admin sidebar so it no longer shows the old default workspace scope text there; the sidebar now uses a shorter `Quản trị hệ thống` badge for platform admins.
 
+## Recently Completed - 2026-06-09 Production Realtime Cleanup
+
+- Production backend no longer auto-seeds demo users, organizations, devices, or notifications when `AUTH_MODE=production`.
+- Device socket registration and scan start/recording now require an explicit device id in production; the old demo device fallback stays only for non-production use.
+- Realtime browser listeners at `/listen` and `/app` accept `?token=` or `?access_token=` so the live monitor can use a real auth token instead of an anonymous stream.
+- `/api/me` now returns `scopeType` and `scopeLabel`, which makes platform admin versus workspace/hospital context visible without reusing the old clinic footer text.
+- `npm run check` and `npm run smoke:workspace-access` passed after the cleanup.
+- Next practical slice: authenticated browser smoke for live audio, real platform-admin live-monitor session verification, and physical ESP32-S3 end-to-end smoke with the cloud audio/OTA path.
+
+## Recently Completed - 2026-06-09 Android App Reality Pass
+
+- Removed the most visible Android demo paths: fake `android-app` scan device id, hardcoded medical records, random/fake waveform confidence, OTP `123456`, and local-only notification toggles.
+- New Scan and Live Monitoring now require real backend device selection; records/detail screens show real empty/error states instead of sample data.
+- Profile/account flows now use real APIs: `/api/me` profile save, `/api/me/avatar` upload/delete/download, Firebase password reset, and Firebase password change.
+- Added Firebase Cloud Messaging on Android: dependency, service, notification permission request, token registration after backend auth, refreshed-token registration, and backend `/notifications/register-device` integration.
+- Notification preferences now persist through `/api/me.notificationPreferences`; backend normalization preserves the Android preference keys instead of discarding them.
+- Verification passed: Android compile/build, backend syntax check, emulator install/launch, phone-login UI smoke, permission-prompt smoke, and Android demo/no-op string audit.
+
+## Recently Completed - 2026-06-11 Skills And Android Signup Catalog UX
+
+- Installed `mattpocock/skills` into `.agents/skills` and added `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` to avoid loading all skills by default.
+- Replaced the Android doctor-signup catalog no-op failure with a real empty/error/retry dialog. `Cơ sở y tế` and `Chuyên khoa` are now clickable even when backend catalog data cannot be loaded.
+- Verified the fix with Android compile/build, emulator install/launch, doctor signup UI tree, specialty dialog smoke, clinic dialog smoke, and logcat scan.
+- Remaining E2E gap: run the same doctor signup path against the deployed backend/Firebase with real clinic and specialty catalog rows, then submit a real doctor role request and approve it from Web Admin.
+
+## Recently Completed - 2026-06-12 Doctor Request-Info Sync
+
+- Backend request-info status now survives repository-backed mode: `roleInfoRequiredFields` is preserved through user claims, `/api/auth/firebase` reloads latest user state by Firebase UID/email, and the request creates a dedicated `doctor_info_requested` notification.
+- Web Admin Doctor Approval now switches to the `needs_info` tab and updates the changed row immediately after a successful request-info action.
+- Android pending-approval flow now refreshes status every 15 seconds and displays the admin request message plus required fields to the doctor.
+- Verification passed: backend `npm.cmd run check`, Web Admin `npm.cmd run build`, Android `.\gradlew.bat :app:compileDebugKotlin`, Android `:app:installDebug`, emulator launch on `emulator-5554`, pending-screen UI tree dump, and crash-buffer scan with no app crash.
+- Production deploy completed: commit `4e8548e` pushed to `origin/main`, Render backend served the new `/api/share-targets` auth behavior, Firebase Hosting Web Admin version `f13b8b22666bc3cd` released, and `npm.cmd run smoke:public-deployment` passed.
+- Follow-up production bug was fixed after live API testing: request-info initially returned success but the list stayed pending because Postgres rejected empty-string timestamps and repository fallback hid the failed save. Commits `951c82c` and `7f1cdef` fixed guarded persistence and timestamp null handling; production verification now shows the affected doctor in `needs_info`, not `pending`.
+
+Next practical backlog items:
+
+- Continue with the real doctor Firebase account E2E after the verified `needs_info` state: Android doctor resubmits, admin approves, and the doctor dashboard unlocks.
+- Add an API/browser smoke test for `request-info -> needs_info -> resubmit` once the doctor-approval module is split enough for targeted test coverage.
+
 ## Phase 0 - Context And Tooling Hygiene
 
 Goal: make future chats efficient and safe.
@@ -82,7 +121,7 @@ Tasks:
 - Before opening the next production-development slice, finish the remaining physical-device KLTN evidence gap in `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`. The 2026-06-05 report evidence gate now has build/smoke logs, web admin screenshots, Android emulator screenshots, audio WAV metadata/waveform, and a final Word copy, but still lacks a same-day ESP32-S3 serial monitor/upload capture because COM6/ESP32-S3 was not detected.
 - Use CodeGraph for structure, Context7 for current docs, Chrome DevTools MCP for UI/browser verification.
 - Use the global `smart-health-project` Codex skill for project rules. The old project-local `.ai_skills` folder should not be recreated unless there is a strong reason.
-- Do not load heavy skills by default. Use `gstack-*`, `code-reviewer`, and other large skills only when the task clearly needs them.
+- Use `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` before choosing from the project-local `.agents/skills` set. Do not load every installed skill by default; open only the 1-2 skills needed for the current task.
 - New Smart Health chats should best-effort start claude-mem if it is not running.
 
 Done when:
@@ -282,7 +321,7 @@ Goal: make notification state and push delivery reliable.
 Tasks:
 
 - Canonical notification records stay in DB.
-- Register Android FCM token in `notification_devices`.
+- Register Android FCM token in `notification_devices`. First Android slice completed on 2026-06-09; continue with server-side FCM delivery and retry/failure tracking.
 - Add notification delivery fields:
   - channel
   - status
@@ -290,7 +329,7 @@ Tasks:
   - failedAt
   - retryCount
   - errorMessage
-- Add user preferences.
+- Add user preferences. First Android/backend save path completed on 2026-06-09; continue with provider-level delivery filtering.
 - Add unread count API.
 - Web admin topbar/dropdown/Notifications page use same source.
 - Mark-read/delete/share/detail actions sync immediately.
@@ -739,3 +778,38 @@ Next practical backlog items:
 - Add per-recipient delivery history/retry status after notification persistence is fully repository-backed.
 - Decide a workspace/hospital admin email policy later: which notification types should go to hospital admins, doctors, technicians, and patients, and how to respect notification preferences.
 - Keep SMS/Zalo direct provider integration in future development unless a real provider account/token is supplied; free/demo remains webhook relay only.
+
+## 2026-06-12 Backlog Update - Android Core MVP
+
+Completed in this slice:
+
+- Android debug APK default backend is now the public Render API instead of the stopped local emulator backend.
+- Startup now has backend health preflight, Firebase ID-token refresh, backend `/api/auth/firebase` session restore, and role/status routing.
+- Notification permission prompt was moved out of cold launch and into Notification Settings after an explicit user action.
+- Android core screens no longer show the visible SMS login button, fake personal placeholders, the hardcoded doctor greeting, raw share target IDs, or technical `backend cloud` wording.
+- Backend and Android now support share-target discovery through `GET /api/share-targets?q=` and a searchable Medical Records share picker.
+- Android CodeGraph was initialized locally for this repo to speed future structural navigation.
+
+Next practical backlog items:
+
+- Use a verified Firebase smoke account to QA real Android flows end to end: login/session restore, dashboards, profile/avatar, device list/pairing, new scan, live monitor, records/detail, share picker, notification settings, and logout.
+- Redeploy the Render backend after merging if the public deployment should expose `/api/share-targets` immediately.
+- Add automated Android instrumentation or UI smoke coverage around splash routing, no startup notification permission dialog, signup catalogs, and records share picker.
+- Keep SMS login hidden until a real SMS/Zalo provider account and backend verification flow are available.
+- Complete physical ESP32-S3 heartbeat/audio/OTA evidence separately from the Android Core MVP.
+
+## 2026-06-12 Backlog Update - Doctor Request-Info Sync
+
+Completed in this slice:
+
+- Backend repository/user lookup now keeps doctor request-info state fresh for Android session restore and pending-screen refresh.
+- Web Admin Doctor Approval immediately moves request-info rows to `needs_info` after success and then reloads backend data.
+- Android pending approval screen now polls for admin status changes and shows the admin message plus required fields.
+- Emulator smoke installed/launched the debug APK and confirmed the doctor pending screen renders without crash.
+- Render backend and Firebase Hosting Web Admin were redeployed on 2026-06-12; public deployment smoke passed afterward.
+- Live production recheck found and fixed the SQL persistence bug: empty strings in timestamp columns caused hidden Postgres save failures. After commit `7f1cdef` deployed, the affected doctor account is visible in `needs_info` and the doctor auth endpoint returns the admin request.
+
+Next practical backlog items:
+
+- Run one real doctor-account E2E loop through request-info, doctor resubmit, and admin approval.
+- Add targeted smoke coverage for the request-info status transition when the admin module is easier to test.

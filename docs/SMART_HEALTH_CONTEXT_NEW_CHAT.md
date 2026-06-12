@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-06-08
+Last updated: 2026-06-12
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
 
@@ -40,10 +40,12 @@ Nếu claude-mem chưa chạy, hãy tự bật bằng `npx claude-mem start` ở
 - `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`: report-first checklist derived from `PL2 (3)-IEEE references.docx`; use it to finish KLTN evidence/content before opening the next production-development slice.
 - `SMART_HEALTH_THIRD_PARTY_SETUP.md`: production setup guide for Firebase, HTTPS backend host, Postgres, S3/R2 storage, Redis, Brevo email API/SMTP fallback, SMS/Zalo webhook, Android release, and ESP provisioning secrets.
 - `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`: Vietnamese step-by-step setup/runbook for the current deployed stack: GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Android, ESP first flash, and cloud OTA smoke.
+- `SMART_HEALTH_AGENT_SKILLS_GUIDE.md`: Vietnamese guide for selecting Codex skills/handoff rules without loading every skill and wasting context.
 - `SMART_HEALTH_IMPLEMENTATION_STATUS.md`: what is already implemented, what is partial, and what remains demo/scaffold.
 - `SMART_HEALTH_PRODUCTION_BACKLOG.md`: ordered production backlog and recommended next milestones.
 - `SMART_HEALTH_COMMANDS_GUIDE.md`: local run, build, smoke, Firebase, MCP, and tooling commands.
 - `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md`: project-specific Smart Health rules consolidated into the global Codex skills folder.
+- `D:\Study\KLTN\smart-health-embedded\.agents\skills`: project-local skills installed from `mattpocock/skills` on 2026-06-11; restart Codex/new chat to auto-detect them, and use `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` to select only the needed skill.
 
 ## Workspace Map
 
@@ -78,9 +80,12 @@ Nếu claude-mem chưa chạy, hãy tự bật bằng `npx claude-mem start` ở
 - 2026-05-26 update: Android now has a first family-profile slice: list/create dependent patient profiles, select a profile before starting a scan, and share a profile/scan to a doctor/workspace through `/api/patients/:id/shares`.
 - 2026-06-05 update: KLTN report-first evidence was captured in `D:\Study\KLTN\docs\report-evidence\2026-06-05`: firmware PlatformIO build passed, backend `npm run check` passed, backend workspace smoke passed, backend runtime smoke passed (`/api/health`, WebSocket `/app`, UDP test packet), Android `:app:compileDebugKotlin` passed, and web admin `npm run build` passed with only Vite bundle-size warnings. A report-ready Word copy was generated at `D:\Study\KLTN\docs\PL2 (3)-IEEE references.report-ready-20260605.docx` with Chapter 4 technical verification results and Appendix D evidence mapping.
 - 2026-06-05 update: KLTN evidence was expanded into `D:\Study\KLTN\docs\PL2 (3)-IEEE references.final-evidence-20260605.docx`. Added web admin screenshots for the main modules, Android emulator screenshots after `:app:assembleDebug` install/launch, audio WAV metadata/waveform evidence, and a final evidence summary. During browser capture, `Overview.tsx` was fixed by adding the missing `Users` import from `lucide-react`; web admin build passed again afterward. Physical ESP32-S3 serial/upload evidence remains pending because `platformio device list` only detected COM3/COM4 Bluetooth links, not COM6/ESP32-S3.
+- 2026-06-11 update: installed `mattpocock/skills` into `smart-health-embedded\.agents\skills`, added `SMART_HEALTH_AGENT_SKILLS_GUIDE.md`, and kept the canonical Smart Health handoff files as the source of truth. Do not read every installed skill by default; open only the selected skill for the current task.
+- 2026-06-11 update: Android doctor signup catalog dropdowns were hardened. If backend catalog loading fails or returns empty, `Cơ sở y tế` and `Chuyên khoa` no longer become dead buttons; they open a dialog with the backend error/empty state and a `Tải lại danh mục` action.
 - 2026-06-06 update: cloud-first device control slice was implemented. The Web Admin Devices page now treats backend cloud as the management source, shows heartbeat-derived online/offline state, WiFi/IP/RSSI, firmware/audio/OTA status, device event history, and sends restart/revoke/rotate/OTA commands through backend APIs. Backend added WSS device socket registration, device telemetry/event persistence, `POST /api/v1/devices/:id/commands`, `GET /api/v1/devices/:id/events`, and cloud OTA command creation on `POST /api/v1/devices/:id/ota`. Firmware `MSM261S4030H0` now opens an outbound WebSocket to the backend, sends heartbeat/audio frames/events, receives cloud commands, performs HTTPS firmware download with SHA-256 verification, and falls back to the local AP `SmartHealth-xxxxxx` at `http://192.168.4.1` only for WiFi SSID/password recovery. The old `smarthealth-xxxxxx.local/admin` path is not the product management path.
 - 2026-06-06 update: storage-backed cloud OTA release selection is now wired. Backend storage uploads compute SHA-256 and infer firmware version for bucket `device-firmware`; `POST /api/v1/devices/:id/ota` accepts `firmwareFileId`, creates a short-lived tokenized firmware download URL for the ESP, and hides that token from normal device API responses. Web Admin Devices can select an uploaded `.bin` from `device-firmware`, prefill version/checksum, or fall back to a manual URL. Android now parses cloud device fields (`online`, WiFi RSSI/SSID/IP, firmware, OTA/audio status) and uses backend cloud status in device settings, stethoscope settings, patient dashboard, and live audio headers; `LiveAudioClient` also sends the current bearer token on the WebSocket request.
 - 2026-06-06 update: production readiness checker was added. Backend now has `npm run check:production`, `npm run check:production:strict`, and platform-only `GET /api/v1/settings/production-readiness`. Web Admin Settings has a `Triển khai` tab that shows required/warning/manual deployment checks. `.env.example` now lists the production third-party envs for Firebase, public HTTPS backend URL, Postgres, S3/R2, PHI encryption, Brevo email API/SMTP fallback, SMS/Zalo webhook, MQTT, and rate limit. `SMART_HEALTH_THIRD_PARTY_SETUP.md` documents which accounts/secrets the user must create before strict production smoke can pass.
+- 2026-06-09 update: Android app cleanup moved several rough/demo paths to real behavior. New Scan and Live Monitoring now require real backend device/profile selection instead of defaulting to `android-app`; Medical Records and Record Detail no longer render hardcoded demo records/waveforms; profile save, avatar upload/delete, Firebase password reset/change-password, FCM token registration, notification permission request, and notification preference save are wired to Firebase/backend. Phone/SMS login no longer contains OTP `123456` demo logic; it clearly routes users back to Firebase email login until a real SMS provider is configured.
 
 ## Installed Local AI Tooling
 
@@ -145,6 +150,9 @@ Cloud-first device flow now exists as the product direction:
 - Web Admin sends device commands and OTA requests to backend. Backend delivers commands over the device WebSocket when connected and can also publish to the MQTT control plane when configured.
 - Production OTA is cloud OTA: upload/host a `.bin`, send firmware version, HTTPS URL, and checksum through Web Admin, then the ESP downloads/verifies/installs/reboots itself.
 - Local ESP portal is recovery only. When WiFi is missing or fails, the device opens AP `SmartHealth-xxxxxx`; the user enters only SSID/password at `http://192.168.4.1`. It must not expose OTA password, backend host, device secret, ownership, or admin settings.
+- Production backend no longer auto-seeds demo users, organizations, devices, or notifications when `AUTH_MODE=production`. In production, scan creation/recording and device socket registration need an explicit device id; the demo device fallback is only kept for non-production mode.
+- Realtime browser listeners at `/listen` and `/app` now accept `?token=` or `?access_token=`; production listens require a real auth token instead of opening the audio stream anonymously.
+- `/api/me` now exposes `scopeType` and `scopeLabel` so the UI can clearly tell platform admin apart from workspace/hospital context without reusing the old clinic name in the platform footer.
 
 Legacy demo/local flow remains available for development fallback:
 
@@ -342,3 +350,21 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - Delivery reuses the existing outbound email stack: Brevo Transactional Email API over HTTPS first for Render Free, SMTP/Gmail only as fallback when the host permits SMTP.
 - Required/important env: `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, optional `BREVO_API_URL`, `WEB_ADMIN_URL=https://shcare-admin.web.app`, and optional emergency switch `NOTIFICATION_EMAIL_ENABLED=false`.
 - Workspace/hospital admin email fanout is intentionally not enabled yet; define notification policy and preferences before expanding recipients beyond platform admins.
+
+## 2026-06-12 Android Core MVP Completion Pass
+
+- Android APK debug default now points to the public Render backend `https://smart-health-api-xj0a.onrender.com`; local emulator backend is still available with `-PSMART_HEALTH_BASE_URL=http://10.0.2.2:3000`.
+- Android startup no longer assumes the local backend. `SplashScreen` runs backend health preflight, restores Firebase session with refreshed ID token, authenticates through `/api/auth/firebase`, then routes to doctor dashboard, patient dashboard, doctor approval pending, verify-email, or login.
+- Notification permission is no longer requested from `MainActivity` on cold launch. It is requested only from Notification Settings after a Vietnamese pre-prompt when the user enables notifications.
+- Mobile UI cleanup removed the visible SMS login button until a real SMS provider exists, removed fake personal placeholders and hardcoded doctor name, and replaced technical `backend cloud` wording in core Android screens with product wording.
+- Medical Records sharing no longer asks for raw `doctorUserId`/`workspaceId`. Backend adds authenticated `GET /api/share-targets?q=`, and Android uses a searchable doctor/workspace picker before calling the existing patient-share API.
+- Android CodeGraph was initialized in `D:\Study\KLTN\smart-health-android` for local agent navigation. Treat `.codegraph/` as local tool state unless the repo intentionally starts tracking it.
+
+## 2026-06-12 Doctor Request-Info Sync Fix
+
+- Doctor approval `request-info` now hardens the full loop: backend persists `needs_info`, request message, and required fields in repository-backed mode; `/api/auth/firebase` reloads the latest user by Firebase UID/email before returning status to Android.
+- Web Admin Doctor Approval controls the active tab and immediately moves a row into `Cần bổ sung` after `request-info` succeeds instead of relying only on a later full reload.
+- Android `DoctorApprovalPendingScreen` polls pending/needs-info status every 15 seconds, shows the admin message, lists required fields, and maps `doctor_info_requested` notifications as warnings.
+- Emulator smoke installed/launched debug APK on `emulator-5554`; the app opened the doctor pending screen and crash buffer stayed empty.
+- Deployed on 2026-06-12: commit `4e8548e` was pushed to `origin/main`, Render picked up the backend change, Firebase Hosting release `f13b8b22666bc3cd` went live for `https://shcare-admin.web.app`, `/api/share-targets` changed from old `404` to new unauthenticated `401`, and `npm.cmd run smoke:public-deployment` passed.
+- Follow-up production fix on 2026-06-12: production still kept the row in `pending` because repository saves passed empty strings into Postgres `timestamptz` columns (`role_approved_at`, `role_rejected_at`, `role_info_request_at`). Postgres rejected the save while the old repository fallback hid the error. Commits `951c82c` and `7f1cdef` added guarded direct request-state persistence plus `optionalTimestamp(...)`. Verified on Render: `baobee1006@gmail.com` moved from `pending` to `needs_info`, pending count became 0, needs-info count became 1, and the doctor Firebase token sees `roleRequestStatus=needs_info` with message and fields.

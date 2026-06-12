@@ -1,12 +1,30 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-06-08
+Last updated: 2026-06-12
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
 All commands are for Windows PowerShell unless noted.
 
-## 0. Current Production Runbook And GitHub Actions
+## 0. Tooling / Skills
+
+Project-local skills installed on 2026-06-11:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded
+npx skills@latest add mattpocock/skills
+Get-ChildItem .\.agents\skills -Directory | Select-Object -ExpandProperty Name | Sort-Object
+```
+
+Skill selection guide:
+
+```text
+D:\Study\KLTN\docs\SMART_HEALTH_AGENT_SKILLS_GUIDE.md
+```
+
+Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Use the project-local `.agents\skills` set only when the task needs it. Do not load all installed skills in one turn; open only the selected skill's `SKILL.md`. Restart Codex/new chat after installing skills so the session can auto-detect them.
+
+## 0.1. Current Production Runbook And GitHub Actions
 
 Detailed next setup runbook:
 
@@ -156,6 +174,51 @@ Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/catalog/clinics
 Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/catalog/specialties
 ```
 
+Doctor approval request-info sync checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build
+
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugKotlin
+```
+
+Optional emulator smoke on this Windows machine, when `adb` is not in PATH:
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+cd D:\Study\KLTN\smart-health-android
+& $adb devices
+& $adb -s emulator-5554 logcat -c
+.\gradlew.bat :app:installDebug
+& $adb -s emulator-5554 shell am start -n com.example.smart_health_android/.MainActivity
+Start-Sleep -Seconds 5
+& $adb -s emulator-5554 logcat -d -b crash
+& $adb -s emulator-5554 exec-out uiautomator dump /dev/tty
+```
+
+Manual E2E expectation for `request-info`:
+
+- Admin opens Web Admin Doctor Approval, requests more information for a pending doctor, and receives success.
+- The changed row moves to the `needs_info` tab immediately, without waiting for a full page reload.
+- Backend returns the doctor user with `roleRequestStatus = "needs_info"`, `roleInfoRequestMessage`, and `roleInfoRequiredFields`.
+- Android doctor pending screen refreshes within about 15 seconds, shows the admin message, and lists the required fields.
+- Notification list treats `doctor_info_requested` as a warning/info-required notification.
+
+2026-06-12 deploy evidence for this flow:
+
+- Git commit pushed for backend/Web Admin source: `4e8548e Fix doctor request info sync`.
+- Firebase Hosting Web Admin release: `projects/162993928259/sites/shcare-admin/versions/f13b8b22666bc3cd`.
+- Render canary after auto-deploy: unauthenticated `GET https://smart-health-api-xj0a.onrender.com/api/share-targets?q=test` returns `401` instead of old `404`.
+- Final public smoke: `npm.cmd run smoke:public-deployment` passed.
+- Follow-up commits after live stale-pending report: `951c82c Persist doctor info requests in postgres` and `7f1cdef Fix doctor request timestamp persistence`.
+- Root cause: repository saves were passing empty strings to Postgres `timestamptz` columns and falling back silently, so the request-info response looked successful while SQL-backed list APIs still returned `pending`.
+- Production verification command pattern: sign in as platform smoke admin, POST `/api/admin/doctor-requests/:id/request-info`, then verify `GET /api/admin/doctor-requests?status=pending` is empty for that user and `status=needs_info` contains it. For Android parity, create a Firebase token for the doctor UID with `FIREBASE_SERVICE_ACCOUNT_JSON` and verify `/api/auth/firebase` returns `roleRequestStatus = needs_info`.
+
 Doctor delete behavior: web admin `DELETE /api/admin/doctors/:id` requires Firebase Admin env when the doctor has `firebaseUid`. The backend deletes the Firebase Auth user first, then removes backend user/session/membership/device-token/access links. If Firebase deletion fails, the API returns an error and backend data is not reported as successfully deleted.
 
 Clinic management behavior: web admin uses `POST /api/admin/clinics` to create, `PATCH /api/admin/clinics/:id` to edit or toggle `status=inactive|active`, and `DELETE /api/admin/clinics/:id` to delete. Delete is rejected while the clinic still has doctors, patients, or devices.
@@ -176,6 +239,9 @@ Cloud device API shape:
 - When `firmwareFileId` is used, backend creates `/api/v1/devices/:id/ota/:otaId/firmware?token=...` for the ESP. The tokenized URL is intentionally hidden from normal device API responses.
 - `GET /api/v1/devices/:id/events` returns recent heartbeat, command, OTA, disconnect, and error events.
 - The ESP connection is outbound to backend WebSocket/WSS. The web/app does not need to be on the same WiFi/LAN as the ESP.
+- The browser realtime monitor at `/listen` or `/app` can pass `?token=<Firebase ID token or backend session token>` or `?access_token=...`. In production, do not expect an anonymous listener to work.
+- Production backend no longer auto-seeds demo users, organizations, devices, or notifications when `AUTH_MODE=production`. If the production database is empty, create real workspace/device records through the setup flow instead of expecting sample rows.
+- Scan creation/recording now needs an explicit `deviceId` in production. Demo fallback device selection only remains for non-production use.
 
 If `npm run check` is unavailable or broken, fall back to:
 
@@ -283,7 +349,7 @@ Compile Kotlin:
 .\gradlew.bat :app:compileDebugKotlin
 ```
 
-Last verified on 2026-06-05 for KLTN evidence and again on 2026-06-06 after Android cloud device status/live audio auth changes: passed. Gradle installed Android SDK Build-Tools 36 and Android SDK Platform 36 during the earlier evidence run.
+Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-06 after Android cloud device status/live audio auth changes, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, and again on 2026-06-11 after the doctor signup catalog-picker fix: passed. Gradle installed Android SDK Build-Tools 36 and Android SDK Platform 36 during the earlier evidence run.
 
 Full assemble debug when needed:
 
@@ -291,7 +357,7 @@ Full assemble debug when needed:
 .\gradlew.bat :app:assembleDebug
 ```
 
-Last verified on 2026-06-05 for KLTN evidence: passed. The debug APK installed and launched on emulator `Pixel_8_Pro_2`; screenshots were saved under `D:\Study\KLTN\docs\report-evidence\2026-06-05\screenshots\android`.
+Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, and again on 2026-06-11 after the doctor signup catalog-picker fix: passed. The debug APK installed and launched on emulator `Pixel_8_Pro_2`; 2026-06-09 smoke also verified direct `MainActivity` launch, phone-login UI, Android notification permission prompt, and empty crash buffer.
 
 Emulator install/launch/screenshot evidence pattern used on 2026-06-05:
 
@@ -305,6 +371,54 @@ $apk="D:\Study\KLTN\smart-health-android\app\build\outputs\apk\debug\app-debug.a
 ```
 
 Use Android Studio/emulator/device for end-to-end login and doctor approval flow.
+
+Android emulator smoke used on 2026-06-09:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:assembleDebug --console=plain
+$adb="$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r app\build\outputs\apk\debug\app-debug.apk
+& $adb shell am force-stop com.example.smart_health_android
+& $adb logcat -c
+& $adb shell am start -n com.example.smart_health_android/.MainActivity
+& $adb shell uiautomator dump /sdcard/final-smoke.xml
+& $adb pull /sdcard/final-smoke.xml .\build\final-smoke.xml
+& $adb logcat -d -b crash
+```
+
+Android demo/no-op audit used on 2026-06-09:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+rg -n "Math\.random|android-app|pat_demo|demo là|OTP demo|Mã xác thực demo|fake|mock|Tuân Thủ HIPAA|FDA Cấp|FDA cấp|HIPAA|clickable \{ /\*|onClick = \{ \}|/\* Upload avatar \*/|/\* Download \*/|/\* Seek \*/|123456" app\src\main\java app\src\main\res -S
+```
+
+Expected: no output.
+
+Doctor signup catalog picker smoke used on 2026-06-11:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugKotlin --console=plain
+.\gradlew.bat :app:assembleDebug --console=plain
+$adb="$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r app\build\outputs\apk\debug\app-debug.apk
+& $adb shell am force-stop com.example.smart_health_android
+& $adb logcat -c
+& $adb shell am start -n com.example.smart_health_android/.MainActivity
+
+# Manual/ADB smoke:
+# 1. Tap "Đăng ký ngay".
+# 2. Tap "Bác sĩ cơ sở".
+# 3. Tap "Chuyên khoa"; dialog must open even if backend catalog is unavailable.
+# 4. Back, then tap "Cơ sở y tế"; dialog must open with retry/empty state.
+& $adb shell uiautomator dump /sdcard/signup-picker-smoke.xml
+& $adb shell cat /sdcard/signup-picker-smoke.xml
+& $adb logcat -d -t 250 | Select-String -Pattern "FATAL EXCEPTION|AndroidRuntime|com.example.smart_health_android|Exception|ANR"
+```
+
+Expected when backend catalog is unavailable: the field text says `Không tải được ... - bấm để thử lại`; tapping opens a dialog with the backend error and `Tải lại danh mục`. There must be no app `FATAL EXCEPTION`.
 
 ## 4. Firmware - MSM261S4030H0
 
@@ -1136,3 +1250,54 @@ Backend syntax check for this feature:
 cd D:\Study\KLTN\smart-health-embedded\web-monitor
 npm.cmd run check
 ```
+
+## 2026-06-12 Android Core MVP Build And Smoke
+
+Android debug default now targets the public Render API:
+
+```text
+https://smart-health-api-xj0a.onrender.com
+```
+
+Use the local emulator backend only when `web-monitor` is actually running on the host:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:assembleDebug -PSMART_HEALTH_BASE_URL=http://10.0.2.2:3000
+```
+
+Normal cloud-backed Android build checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugKotlin
+.\gradlew.bat :app:assembleDebug -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com
+.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com
+```
+
+Backend syntax check for the Android share-target endpoint:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+```
+
+Emulator smoke path:
+
+```powershell
+adb devices
+adb install -r D:\Study\KLTN\smart-health-android\app\build\outputs\apk\debug\app-debug.apk
+adb shell pm clear com.example.smart_health_android
+adb logcat -c
+adb shell am start -n com.example.smart_health_android/.MainActivity
+adb exec-out uiautomator dump /dev/tty
+adb logcat -d -b crash
+adb logcat -d -t 300 | Select-String -Pattern "FATAL EXCEPTION|AndroidRuntime|ANR|com.example.smart_health_android"
+```
+
+Expected startup behavior:
+
+- No Android notification permission dialog before login.
+- If no Firebase session exists, app lands on email login after splash health preflight.
+- Login/signup copy should not mention `demo`, `backend cloud`, or raw `doctorUserId`/`workspaceId`.
+- Records sharing should use the searchable doctor/workspace picker after login.

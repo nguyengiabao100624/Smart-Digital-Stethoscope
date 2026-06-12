@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-06-08
+Last updated: 2026-06-12
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -16,24 +16,24 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Area | Status | Current reality |
 | --- | --- | --- |
 | Firebase Auth | Real/partial | Android and web admin use Firebase. Backend can verify Firebase ID tokens. Claims/session refresh UX still needs hardening. |
-| Doctor registration and approval | Real/partial | Android doctor registration verifies email and sends role request with persisted pending metadata, searchable hospital/clinic catalog selection, missing-hospital request, specialty, license, phone, name, and reason. Web admin can list/approve/reject/request-info/delete; the approve modal uses a searchable clinic picker backed by the clinic catalog. Backend exposes clinic/specialty catalogs, persists structured request-info fields, and deletes linked Firebase Auth users before deleting doctor backend data. Pending/dashboard route edge cases should still be E2E-tested. |
+| Doctor registration and approval | Real/partial | Android doctor registration verifies email and sends role request with persisted pending metadata, searchable hospital/clinic catalog selection, missing-hospital request, specialty, license, phone, name, and reason. If backend catalog loading fails or returns empty, the clinic/specialty fields still open with an error/empty-state dialog and retry action instead of becoming dead buttons. Web admin can list/approve/reject/request-info/delete; the approve modal uses a searchable clinic picker backed by the clinic catalog. Backend exposes clinic/specialty catalogs, persists structured request-info fields, and deletes linked Firebase Auth users before deleting doctor backend data. 2026-06-12 request-info sync fix: repository-backed users now preserve required fields, `/api/auth/firebase` reloads by Firebase UID/email, Web Admin immediately moves successful request-info rows to `needs_info`, and Android polls/displays admin info requests. Pending/dashboard route edge cases should still be E2E-tested. |
 | Backend API foundation | Partial | Request/error/audit/repository foundations were started. Legacy routes still exist and must remain compatible. |
 | Backend persistence | Partial | JSON mode works for demo. PostgreSQL schema and repository foundation exist, but not every runtime handler uses normalized tables yet. |
 | Workspace/Organization/RBAC | Partial | `organizations` is now treated as workspace source of truth in JSON mode, with `workspaceType` (`hospital`, `clinic`, `solo_practice`, `personal`), subscription/package fields, usage/quota summary, `/api/admin/workspaces` alias, and package assignment endpoint. `/api/me` returns workspace context and backend-derived capabilities for role-aware UI. `/api/admin/*` now accepts non-platform workspace roles through capability checks instead of hardcoding `role=admin`. Patients/family profiles, devices, scans, storage/signed URLs, exports, packages, workspace CRUD, doctor/staff actions, settings/AI updates, data delete, and sharing have first-pass backend enforcement and workspace scoping in JSON/demo mode. `npm run smoke:workspace-access` verifies six roles and cross-workspace failures. Repository-backed parity and complete OpenAPI coverage are still pending. |
 | Service packages and billing | Partial | Backend service packages are real JSON data with segment, quota, CRUD update/delete, default clinic/solo/personal packages, and workspace package assignment. Web admin Packages page reads backend data and now labels device quota as activated devices; personal package patient quota is presented as family profiles, not one device per patient. Payment provider, invoices, and quota enforcement are not done. |
 | Web admin UI | Partial production | High-fidelity UI exists. Core admin list pages are connected to backend and no longer fall back to visual demo rows on load failure. Dense admin tables now use shared 10-row pagination on Audit log, Clinics, Doctors, Patients, Storage files, and Doctor Approval tabs. Clinics/workspace management create/edit/lock/unlock/delete actions call real backend APIs, and workspace filters include organization, solo practice, and personal segments. Sidebar rendering, topbar Platform/Workspace labeling, first-pass route-level blocking, and major action/button/dialog gating now understand `/api/me` capabilities. Overview now distinguishes Platform Admin Console vs Workspace Portal and exposes Workspace Portal v1 modules. Firebase Hosting admin now has a real auth boundary: unauthenticated `/` redirects to `/login`, existing Firebase admin sessions open dashboard directly, and logout signs out Firebase plus clears the backend token. Technician device provisioning no longer sends an arbitrary workspace id unless the user is platform admin. Full portal information architecture and every dialog's field-level policy still need browser E2E. |
 | Storage admin | Partial | Storage API/work has been planned and partly implemented. Verify current backend routes before relying on upload/share/delete/download as production-ready. |
-| Notifications | Partial | Notification list/read/delete and topbar logic have been worked on. FCM token registration/delivery/retry is not complete. |
+| Notifications | Partial | Notification list/read/delete works in app/admin. Android now registers FCM tokens to backend notification devices and saves per-user notification preferences. Actual Firebase Admin push delivery, retry, and failure tracking are still incomplete. |
 | Android motion/animation | Real | Shared Compose motion layer is applied through `AppNavGraph.kt`, giving all routes consistent fade/slide/scale screen transitions. Element-level micro-interactions can still be expanded screen by screen later. |
 | Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Medical Records has a first share action for a scan/profile to a doctor/workspace. Full workspace switcher, dashboard-by-workspace, and polished family management screens are not complete. |
-| Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
-| Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend WSS auth enforcement, TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
+| Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
+| Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. No real queue/model pipeline yet. |
 | Object storage | Scaffold/partial | MinIO/S3 direction is chosen. Local storage fallback remains important. Signed URL and quota/retention need verification/completion. |
 | Firmware production | Partial cloud-first | ESP32 code avoids committed secrets, has WiFi recovery AP, outbound backend WebSocket telemetry/audio, backend command handling, and HTTPS cloud OTA with SHA-256 verification. LAN ArduinoOTA is dev-only and disabled by default. Secure NVS/certificate provisioning, signed firmware, rollback, buffering, and real-board validation remain pending. |
 | CI/CD and monitoring | Partial | GitHub Actions now checks backend, workspace access smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds. A manual Web Admin Firebase Hosting deploy workflow exists for `shcare-admin` once GitHub secrets are configured. Metrics, alerts, backups, and full release automation are still pending. |
 | Production readiness gate | Real/checker | Backend has a readiness CLI, strict deploy gate, platform-only readiness API, Web Admin deployment tab, production env example, and third-party setup runbook. The current local/demo env is intentionally blocked until real Firebase/Postgres/S3/HTTPS/secret setup is supplied. |
-| Context/new-chat handoff | Real | Context docs and AI skill docs exist. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
+| Context/new-chat handoff | Real | Context docs and AI skill docs exist. `mattpocock/skills` was installed project-locally under `.agents/skills` on 2026-06-11, with `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` documenting which skills to use without loading all of them. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
 
 ## Product Direction
 
@@ -42,6 +42,43 @@ This file records the real project state. Keep it factual: implemented, partial,
 - One activated device can measure many patient profiles. Device quota means activated/deployed machines in a workspace.
 - Personal/family workspaces should support multiple family/dependent patient profiles under one account; separate accounts for every family member are optional, not required.
 - Clinic/hospital management is web-first through a Workspace Portal. The existing web admin should evolve into role-aware Platform Admin Console and Workspace Portal modes.
+
+## 2026-06-09 Core Realtime Cleanup
+
+- Production backend no longer auto-seeds demo users, organizations, devices, or notifications when `AUTH_MODE=production`.
+- Scan creation, scan recording, and device socket registration now require an explicit device id in production; demo fallback only remains in non-production mode.
+- Realtime browser listeners at `/listen` and `/app` now accept `?token=` or `?access_token=` and production rejects anonymous listening.
+- `/api/me` now exposes `scopeType` and `scopeLabel` so the UI can clearly show platform admin versus workspace/hospital scope.
+- Verified `npm run check` and `npm run smoke:workspace-access` after the cleanup.
+
+## 2026-06-09 Android App Reality Pass
+
+- Android no longer starts scans with the fake `android-app` device id. New Scan and Live Monitoring require a backend device selection and send the selected `device.id` to scan APIs.
+- Medical Records and Record Detail no longer show hardcoded demo records, fake AI confidence, fake tags, or random waveform data. Empty/error states now describe real backend state.
+- Account/Profile now uses `/api/me` for real profile fields, treats Firebase email as read-only, uploads/deletes avatar through `/api/me/avatar`, and formats real account dates.
+- Forgot Password and Change Password now use Firebase Auth APIs instead of the old backend placeholder password endpoints.
+- Phone/SMS login and contact verification no longer accept OTP `123456`; they explain that SMS/OTP requires a real provider and route users back to Firebase email login.
+- Android FCM is now integrated: `firebase-messaging` dependency, `SmartHealthFirebaseMessagingService`, Android 13+ `POST_NOTIFICATIONS` permission request, token registration after Firebase/backend auth, and refreshed-token registration through `/notifications/register-device`.
+- Notification settings are now backend-backed through `/api/me.notificationPreferences`; backend normalization preserves `enabled`, `sound`, `vibration`, `abnormalResults`, `deviceOffline`, `appointments`, `messages`, `aiUpdates`, `newLogin`, and `doctorRequests`.
+- Verification passed: Android `:app:compileDebugKotlin`, Android `:app:assembleDebug`, backend `npm run check`, emulator install/launch smoke, phone-login UI smoke, notification permission dialog smoke, and Android demo/no-op string audit.
+
+## 2026-06-11 Skills And Android Signup Picker
+
+- Installed `mattpocock/skills` with `npx skills@latest add mattpocock/skills` into `D:\Study\KLTN\smart-health-embedded\.agents\skills`.
+- Added `D:\Study\KLTN\docs\SMART_HEALTH_AGENT_SKILLS_GUIDE.md` so future chats choose only the needed skill: `smart-health-project` for Smart Health rules, `diagnose` for bugs, Android emulator/ADB for app QA, and `handoff` only for compact temporary handoff.
+- Kept system/plugin skills untouched. The older project-local `.ai_skills` tree is no longer the preferred path; `.agents/skills` plus the Smart Health docs are the current handoff/tooling convention.
+- Fixed Android doctor signup catalog UX: when backend `/api/catalog/clinics` or `/api/catalog/specialties` fails, `Cơ sở y tế` and `Chuyên khoa` stay clickable, open a dialog, show the actual error/empty state, and provide `Tải lại danh mục`.
+- Verification passed: Android `:app:compileDebugKotlin`, Android `:app:assembleDebug`, emulator install/launch, doctor signup tab smoke, specialty dialog smoke, clinic dialog smoke, and logcat check with no app `FATAL EXCEPTION`.
+
+## 2026-06-12 Doctor Request-Info Sync Fix
+
+- Fixed the doctor approval request-info loop that could send an admin email but leave the doctor row in the old Web Admin tab and leave Android unaware of the request.
+- Backend repository mode now preserves `roleInfoRequiredFields` in user `firebase_claims`, reloads `/api/auth/firebase` users by Firebase UID or email before returning status, and emits a dedicated `doctor_info_requested` notification with required-field metadata.
+- Web Admin Doctor Approval now updates the changed row from the request-info response, switches the controlled tab to `needs_info`, and then refreshes the list, so the account moves to the needs-info bucket immediately after success.
+- Android `DoctorApprovalPendingScreen` polls the backend every 15 seconds while pending, shows the admin request message plus required fields, and treats `doctor_info_requested` notifications as warning-style notifications.
+- Verification passed: backend `npm.cmd run check`, Web Admin `npm.cmd run build`, Android `.\gradlew.bat :app:compileDebugKotlin`, Android `:app:installDebug`, emulator launch on `emulator-5554`, pending-screen UI tree dump, and crash-buffer scan with no app crash.
+- Deployment completed on 2026-06-12: pushed commit `4e8548e` to `origin/main` for Render backend auto-deploy, deployed Firebase Hosting Web Admin version `f13b8b22666bc3cd`, confirmed `/api/share-targets` now returns authenticated-route `401` instead of old `404`, and public deployment smoke passed.
+- Production follow-up: the first deploy still returned stale `pending` rows because SQL role-request saves sent `""` into `timestamptz` columns and the old repository path swallowed the Postgres error. Commits `951c82c` and `7f1cdef` added direct guarded request-state persistence and converted empty role-request timestamps to `null`. Render verification then moved `baobee1006@gmail.com` to `needs_info`; `/api/admin/doctor-requests?status=pending` returned 0, `status=needs_info` returned 1, and `/api/auth/firebase` for the doctor UID returned `roleRequestStatus=needs_info` with request message and required fields.
 
 ## Backend: `smart-health-embedded\web-monitor`
 
@@ -208,13 +245,17 @@ This file records the real project state. Keep it factual: implemented, partial,
 - API wrapper now includes patient share endpoints. `Patient` includes `profileType` and `relationship`.
 - New Scan loads patient profiles, lets the user add a dependent/family profile, and starts scans with the selected profile id.
 - Medical Records can share a selected scan/profile to a doctor/workspace id through the backend sharing endpoint.
+- Android push notification foundation is now real: the app requests notification permission on Android 13+, gets FCM tokens, registers them to backend notification devices after auth, and has a `FirebaseMessagingService` for refreshed tokens/messages.
+- Notification settings load and save per-user backend preferences through `/api/me` instead of local-only Compose state.
+- Profile avatar upload/delete, profile save, Firebase password reset, and Firebase password change are wired to real backend/Firebase APIs.
+- Phone/SMS login remains unavailable until a real SMS provider is configured, and the UI now states that clearly instead of simulating OTP.
 
 ### Known Android Limits
 
 - Doctor profile clinic/specialty edit is connected to canonical fields, but the profile UX still needs a full visual polish pass.
 - Some older Compose screens may still contain mojibake text; fix strings as UTF-8 when touched.
 - Live WebSocket sends the Android bearer token when available, but backend listener/device WebSocket auth enforcement still needs a full production pass.
-- No FCM token registration pipeline is complete.
+- FCM token registration is complete, but actual push delivery still needs Firebase Admin Cloud Messaging send logic, provider-side smoke, notification-channel/local display polish, and retry/failure tracking.
 - No production scan upload/offline queue.
 - No BLE/captive portal provisioning UI for ESP32.
 
@@ -280,14 +321,14 @@ cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:compileDebugKotlin
 ```
 
-Result: passed on 2026-06-05 for KLTN evidence and again on 2026-06-06 after Android cloud device status/live audio auth changes. Gradle installed Android SDK Build-Tools 36 and Android SDK Platform 36 during the earlier evidence run.
+Result: passed on 2026-06-05 for KLTN evidence, again on 2026-06-06 after Android cloud device status/live audio auth changes, and again on 2026-06-09 after the Android reality pass and FCM/token/preference wiring. Gradle installed Android SDK Build-Tools 36 and Android SDK Platform 36 during the earlier evidence run.
 
 ```powershell
 cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:assembleDebug
 ```
 
-Result: passed. `app-debug.apk` installed and launched on emulator `Pixel_8_Pro_2`; screenshots were captured for login, personal signup, and facility-doctor signup. A short post-launch logcat check did not show `FATAL EXCEPTION`/`AndroidRuntime` lines in the last 500 logcat lines.
+Result: passed. `app-debug.apk` installed and launched on emulator `Pixel_8_Pro_2`; screenshots were captured for login, personal signup, and facility-doctor signup on 2026-06-05. On 2026-06-09, emulator smoke verified direct `MainActivity` launch, phone-login UI, Android notification permission prompt, and no `FATAL EXCEPTION`/crash-buffer entries.
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
@@ -633,3 +674,29 @@ KLTN report artifacts generated from this evidence set:
 
 - Real delivery still requires Render env `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and `WEB_ADMIN_URL=https://shcare-admin.web.app`.
 - Email fanout currently targets platform admins only. Workspace/hospital admin notification email policy, unsubscribe/preference handling, retry queue, and per-recipient delivery records remain future work.
+
+## 2026-06-12 Android Core MVP Status
+
+### Implemented
+
+- Android debug builds now default to Render API `https://smart-health-api-xj0a.onrender.com`, fixing the common `Không thể kết nối máy chủ` startup failure when local `127.0.0.1:3000` is not running.
+- `SplashScreen` now performs backend health preflight plus Firebase session restore and backend auth before routing by user role/status.
+- `MainActivity` no longer requests notification permission on first launch. Notification Settings asks only after login/user action with a Vietnamese pre-prompt.
+- Login/signup/verification/device/monitoring/records copy was cleaned up to remove visible fake placeholders, `demo` wording, raw technical share IDs, and `backend cloud` phrasing from the Android core user path.
+- Backend exposes authenticated `GET /api/share-targets?q=` for doctor/workspace share recipients, scoped by the current user role/workspace.
+- Android Medical Records uses a searchable share-target picker and calls the existing patient share API with selected doctor/workspace IDs.
+
+### Verification
+
+- Backend syntax check: `npm.cmd run check` passed in `D:\Study\KLTN\smart-health-embedded\web-monitor`.
+- Android Kotlin compile: `.\gradlew.bat :app:compileDebugKotlin` passed in `D:\Study\KLTN\smart-health-android`.
+- Android debug APK: `.\gradlew.bat :app:assembleDebug -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com` passed.
+- Android release APK: `.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com` passed and produced `app-release-unsigned.apk`.
+- Render health: `https://smart-health-api-xj0a.onrender.com/api/health` returned `ok: true`.
+- Emulator smoke on `emulator-5554`: installed debug APK, cleared app data, launched `com.example.smart_health_android/.MainActivity`, verified login screen opens without startup notification permission dialog, signup screen renders with cleaned placeholders, doctor-clinic signup shows selectable clinic/specialty fields, and crash buffer stayed empty.
+
+### Remaining Limits
+
+- Full verified-account Android QA still needs a real Firebase smoke account for end-to-end profile save, avatar, device pairing, scans, record detail, share picker, notifications, and settings.
+- Physical ESP32-S3 heartbeat/audio/OTA smoke remains separate hardware evidence work.
+- SMS phone login remains intentionally hidden until a real SMS/Zalo provider is configured.

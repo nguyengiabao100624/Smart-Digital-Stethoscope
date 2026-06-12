@@ -468,6 +468,7 @@ class SmartHealthApi(
             requestedRole = json.optString("requestedRole"),
             roleInfoRequiredFields = json.optJSONArray("roleInfoRequiredFields").toStringList(),
             roleInfoRequestMessage = json.optString("roleInfoRequestMessage"),
+            registrationReason = json.optString("registrationReason"),
             createdAt = json.stringOrNull("createdAt"),
             updatedAt = json.stringOrNull("updatedAt")
         )

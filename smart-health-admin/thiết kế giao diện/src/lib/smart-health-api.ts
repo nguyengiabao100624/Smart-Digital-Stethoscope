@@ -69,6 +69,7 @@ export type SmartHealthAuthUser = {
   roleInfoRequestAt?: string;
   roleInfoRequestMessage?: string;
   roleInfoRequiredFields?: string[];
+  registrationReason?: string;
   clinicName?: string;
   clinicSuggestion?: string;
   specialty?: string;

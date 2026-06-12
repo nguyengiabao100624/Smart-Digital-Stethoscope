@@ -33,11 +33,16 @@ function profileClaimsFromUser(user = {}) {
 
 function firebaseClaimsForUser(user = {}) {
   const claims = { ...objectOf(user.firebaseClaims) };
+  const existingProfile = objectOf(claims.profile);
+  const registrationReason = user.registrationReason || claims.registrationReason || existingProfile.registrationReason || "";
+  if (registrationReason) {
+    claims.registrationReason = registrationReason;
+  }
   if (Array.isArray(user.roleInfoRequiredFields)) {
     claims.roleInfoRequiredFields = user.roleInfoRequiredFields;
   }
   claims.profile = {
-    ...objectOf(claims.profile),
+    ...existingProfile,
     ...profileClaimsFromUser(user),
   };
   return claims;
@@ -88,6 +93,7 @@ function rowToUser(row) {
     roleInfoRequestAt: toIso(row.role_info_request_at),
     roleInfoRequestMessage: row.role_info_request_message || "",
     roleInfoRequiredFields,
+    registrationReason: row.registration_reason || firebaseClaims.registrationReason || profile.registrationReason || "",
     firebaseClaims,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -871,6 +877,9 @@ function createRepositories(options) {
       const id = String(identifier || "");
       const submittedAt = patch.roleRequestedAt || nowIso();
       const nextClaims = { roleInfoRequiredFields: [] };
+      if (patch.registrationReason) {
+        nextClaims.registrationReason = patch.registrationReason;
+      }
       const hasSql = Boolean(getPool());
       const sqlUser = await withSql(async (pool) => {
         const result = await pool.query(
@@ -940,6 +949,7 @@ function createRepositories(options) {
         hospital: patch.hospital || user.hospital,
         department: patch.department || patch.specialty || user.department,
         organizationId: patch.organizationId || user.organizationId,
+        registrationReason: patch.registrationReason || user.registrationReason || "",
         updatedAt: nowIso(),
       });
       syncArrayItem(getDb().users, user);

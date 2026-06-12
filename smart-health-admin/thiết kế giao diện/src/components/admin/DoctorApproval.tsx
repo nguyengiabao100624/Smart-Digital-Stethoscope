@@ -172,6 +172,7 @@ function toDoctorRequest(user: SmartHealthAuthUser, clinicMap: Map<string, Smart
     verification: hasLicense ? "Đã xác minh CCHN" : "Thiếu hồ sơ",
     license: user.license || "Chưa cung cấp",
     reason:
+      user.registrationReason?.trim() ||
       user.rejectReason ||
       user.roleRejectReason ||
       user.roleInfoRequestMessage ||

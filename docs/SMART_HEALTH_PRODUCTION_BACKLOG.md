@@ -102,11 +102,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Production deploy completed: commit `4e8548e` pushed to `origin/main`, Render backend served the new `/api/share-targets` auth behavior, Firebase Hosting Web Admin version `f13b8b22666bc3cd` released, and `npm.cmd run smoke:public-deployment` passed.
 - Follow-up production bug was fixed after live API testing: request-info initially returned success but the list stayed pending because Postgres rejected empty-string timestamps and repository fallback hid the failed save. Commits `951c82c` and `7f1cdef` fixed guarded persistence and timestamp null handling; production verification now shows the affected doctor in `needs_info`, not `pending`.
 - Follow-up resubmit bug fixed after Android polling reproduced the issue: app submit returned `pending`, then `/api/auth/firebase` pulled the SQL-backed `needs_info` state again. Backend now has guarded direct writes for doctor resubmit, approve, reject, and request-info; `npm.cmd test` covers the request-info/resubmit lifecycle locally.
+- Follow-up registration reason fix: Android-submitted doctor signup `reason` is now persisted as `registrationReason` through repository-backed users, shown in Web Admin Doctor Approval, returned to Android/admin APIs, and included in platform-admin email metadata with a direct `/doctor-approval` CTA.
 
 Next practical backlog items:
 
 - Continue with the real doctor Firebase account E2E after the resubmit fix deploys: Android doctor resubmits, admin approves, and the doctor dashboard unlocks.
 - Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
+- After deploy, run one production canary with a unique doctor registration reason and confirm the admin list plus Gmail notification show that exact text.
 
 ## Phase 0 - Context And Tooling Hygiene
 

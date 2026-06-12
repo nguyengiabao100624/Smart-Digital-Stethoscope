@@ -162,6 +162,7 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(firstSubmitResponse.status, 200);
       const firstSubmit = await firstSubmitResponse.json();
       assert.equal(firstSubmit.user.roleRequestStatus, "pending");
+      assert.equal(firstSubmit.user.registrationReason, "Initial smoke request");
 
       const requestInfoResponse = await postJson(
         `http://127.0.0.1:${port}/api/v1/admin/doctor-requests/${encodeURIComponent(doctor.user.id)}/request-info`,
@@ -174,6 +175,7 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(requestInfoResponse.status, 200);
       const requestInfo = await requestInfoResponse.json();
       assert.equal(requestInfo.request.status, "needs_info");
+      assert.equal(requestInfo.request.registrationReason, "Initial smoke request");
 
       const needsInfoBefore = await getJson(
         `http://127.0.0.1:${port}/api/v1/admin/doctor-requests?status=needs_info`,
@@ -201,11 +203,13 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(resubmit.user.roleRequestStatus, "pending");
       assert.deepEqual(resubmit.user.roleInfoRequiredFields, []);
       assert.equal(resubmit.user.roleInfoRequestMessage, "");
+      assert.equal(resubmit.user.registrationReason, "Updated smoke request");
 
       const polled = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, doctorHeaders);
       assert.equal(polled.response.status, 200);
       assert.equal(polled.data.user.roleRequestStatus, "pending");
       assert.deepEqual(polled.data.user.roleInfoRequiredFields, []);
+      assert.equal(polled.data.user.registrationReason, "Updated smoke request");
 
       const needsInfoAfter = await getJson(
         `http://127.0.0.1:${port}/api/v1/admin/doctor-requests?status=needs_info`,
@@ -220,6 +224,10 @@ async function testDoctorRequestNeedsInfoResubmit() {
       );
       assert.equal(pendingAfter.response.status, 200);
       assert.ok(pendingAfter.data.requests.some((request) => request.id === doctor.user.id));
+      assert.equal(
+        pendingAfter.data.requests.find((request) => request.id === doctor.user.id).registrationReason,
+        "Updated smoke request",
+      );
     }
   );
 }

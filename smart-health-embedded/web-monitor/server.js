@@ -834,6 +834,7 @@ function publicDoctorRoleRequest(user) {
     hospital: user.hospital || organization?.name || "",
     clinicName: user.hospital || organization?.name || "",
     specialty: user.department || "",
+    registrationReason: user.registrationReason || "",
     roleInfoRequiredFields: normalizeRoleInfoFields(user.roleInfoRequiredFields),
     status: user.roleRequestStatus || "pending",
     requestedAt: user.roleRequestedAt || user.createdAt || "",
@@ -1302,6 +1303,14 @@ function sanitizeNotificationMetadata(metadata = {}) {
     if (typeof value === "string") {
       const cleaned = readString(value, 500);
       if (cleaned) safe[normalizedKey] = cleaned;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const cleaned = value
+        .map((item) => readString(item, 120))
+        .filter(Boolean)
+        .slice(0, 20);
+      if (cleaned.length > 0) safe[normalizedKey] = cleaned.join(", ");
       continue;
     }
     if (typeof value === "number" || typeof value === "boolean") {
@@ -4609,6 +4618,19 @@ function getAdminNotificationsUrl() {
   return `${getWebAdminBaseUrl()}/notifications`;
 }
 
+function getNotificationActionUrl(notification) {
+  const metadata = sanitizeNotificationMetadata(notification.metadata || notification);
+  const actionUrl = readString(metadata.actionUrl, 500);
+  if (/^https?:\/\//i.test(actionUrl)) {
+    return actionUrl;
+  }
+  const actionPath = readString(metadata.actionPath, 240);
+  if (actionPath.startsWith("/")) {
+    return `${getWebAdminBaseUrl()}${actionPath}`;
+  }
+  return getAdminNotificationsUrl();
+}
+
 function getNotificationTypePresentation(type) {
   const normalized = readString(type, 40).toLowerCase();
   const map = {
@@ -4655,6 +4677,25 @@ function getNotificationWorkspaceLabel(organizationId) {
   return `${typeLabel}: ${workspace.name || workspace.id}`;
 }
 
+function getNotificationMetadataLabel(key) {
+  const labels = {
+    actionPath: "Trang xử lý",
+    doctorName: "Tên bác sĩ",
+    doctorEmail: "Email bác sĩ",
+    doctorPhone: "Số điện thoại",
+    clinicName: "Cơ sở y tế",
+    specialty: "Chuyên khoa",
+    license: "Số CCHN",
+    registrationReason: "Lý do đăng ký",
+    roleRequestStatus: "Trạng thái yêu cầu",
+    previousRoleRequestStatus: "Trạng thái trước đó",
+    requiredFields: "Trường cần bổ sung",
+    requestMessage: "Nội dung yêu cầu",
+    reason: "Lý do",
+  };
+  return labels[key] || key;
+}
+
 function buildNotificationInfoRows(notification) {
   const metadata = sanitizeNotificationMetadata(notification.metadata || notification);
   const rows = [
@@ -4669,7 +4710,7 @@ function buildNotificationInfoRows(notification) {
     if (["id", "type", "title", "message", "channel", "read", "createdAt", "updatedAt", "userId", "organizationId"].includes(key)) {
       continue;
     }
-    rows.push([key, typeof value === "boolean" ? (value ? "true" : "false") : String(value)]);
+    rows.push([getNotificationMetadataLabel(key), typeof value === "boolean" ? (value ? "true" : "false") : String(value)]);
   }
   return rows.filter(([, value]) => readString(String(value), 800));
 }
@@ -4690,7 +4731,7 @@ function buildPlatformAdminNotificationEmail(notification, recipientCount = 0) {
   const presentation = getNotificationTypePresentation(notification.type);
   const title = readString(notification.title, 180) || "Thông báo Smart Health";
   const message = readString(notification.message, 2400) || "Hệ thống Smart Health vừa ghi nhận một thông báo mới.";
-  const notificationUrl = getAdminNotificationsUrl();
+  const notificationUrl = getNotificationActionUrl(notification);
   const rows = buildNotificationInfoRows(notification);
   const subject = `[Smart Health] ${title}`;
   const text = [
@@ -4739,7 +4780,7 @@ function buildPlatformAdminNotificationEmail(notification, recipientCount = 0) {
                   ${renderNotificationRows(rows)}
                 </table>
                 <div style="margin-top: 26px; text-align: center;">
-                  <a href="${escapeAttribute(notificationUrl)}" style="display: inline-block; background: #0B5C9A; color: #FFFFFF; text-decoration: none; padding: 13px 20px; border-radius: 10px; font-size: 14px; font-weight: 800;">Mở trang thông báo</a>
+                  <a href="${escapeAttribute(notificationUrl)}" style="display: inline-block; background: #0B5C9A; color: #FFFFFF; text-decoration: none; padding: 13px 20px; border-radius: 10px; font-size: 14px; font-weight: 800;">Mở trong Web Admin</a>
                 </div>
                 <p style="margin: 22px 0 0; color: #64748B; font-size: 12px; line-height: 1.6;">Email được gửi tới ${recipientCount || "các"} quản trị viên toàn hệ thống đang hoạt động. Nếu thông báo không liên quan, hãy kiểm tra cấu hình phân quyền và phạm vi workspace trong Web Admin.</p>
               </td>
@@ -5909,6 +5950,7 @@ async function handleAuthApi(req, res, segments) {
         hospital: user.hospital,
         department: user.department,
         organizationId: user.organizationId,
+        registrationReason: user.registrationReason,
       });
       if (
         !persistedUser ||
@@ -5927,12 +5969,33 @@ async function handleAuthApi(req, res, segments) {
     }
 
     if (requestedRole === "doctor" && user.role !== "doctor" && user.role !== "admin") {
+      const wasNeedsInfo = previousRoleRequestStatus === "needs_info";
+      const registrationReason = user.registrationReason || "";
+      const doctorRequestTitle = wasNeedsInfo ? "Bác sĩ đã gửi lại hồ sơ" : "Yêu cầu duyệt bác sĩ";
+      const doctorRequestMessage = [
+        wasNeedsInfo
+          ? `${user.name || user.email || user.id} đã bổ sung hồ sơ và đang chờ admin duyệt lại.`
+          : `${user.name || user.email || user.id} đang chờ admin cấp quyền bác sĩ.`,
+        registrationReason ? `Lý do đăng ký: ${registrationReason}` : "",
+      ].filter(Boolean).join("\n");
       await createBackendNotification({
         type: "info",
-        title: "Yêu cầu duyệt bác sĩ",
-        message: `${user.name || user.email || user.id} đang chờ admin cấp quyền bác sĩ.`,
         userId: user.id,
         organizationId: user.organizationId || "",
+        title: doctorRequestTitle,
+        message: doctorRequestMessage,
+        metadata: {
+          actionPath: "/doctor-approval",
+          doctorName: user.name || "",
+          doctorEmail: user.email || "",
+          doctorPhone: user.phone || "",
+          clinicName: user.hospital || getClinicById(user.organizationId)?.name || "",
+          specialty: user.department || user.specialty || "",
+          license: user.license || "",
+          registrationReason,
+          roleRequestStatus: user.roleRequestStatus || "",
+          previousRoleRequestStatus,
+        },
       });
       addAccessLog("Doctor role approval requested", {
         ip: req.socket.remoteAddress || "",

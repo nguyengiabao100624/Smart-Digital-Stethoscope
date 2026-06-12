@@ -128,6 +128,7 @@ data class AuthUser(
     val requestedRole: String = "",
     val roleInfoRequiredFields: List<String> = emptyList(),
     val roleInfoRequestMessage: String = "",
+    val registrationReason: String = "",
     val createdAt: String? = null,
     val updatedAt: String? = null
 )

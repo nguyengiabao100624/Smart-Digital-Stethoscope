@@ -286,21 +286,6 @@ fun DoctorApprovalPendingScreen(
                 TextFieldGroup("Họ và tên", name, { name = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "Nhập họ tên")
                 TextFieldGroup("Số điện thoại", phone, { phone = it }, Icons.Default.Phone, "0912 345 678")
                 TextFieldGroup("Số chứng chỉ hành nghề", license, { license = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "VD: CCHN-BYT-2026-001")
-                DoctorAccountTypeSelector(
-                    selectedAccountType = selectedAccountType,
-                    onSelected = { nextType ->
-                        if (nextType == selectedAccountType) return@DoctorAccountTypeSelector
-                        selectedAccountType = nextType
-                        if (nextType == "solo_doctor") {
-                            clinicName = ""
-                            selectedClinicId = ""
-                        } else {
-                            val currentOrganizationId = user?.organizationId.orEmpty()
-                            selectedClinicId = currentOrganizationId
-                            clinicName = clinics.firstOrNull { it.id == currentOrganizationId }?.name.orEmpty()
-                        }
-                    }
-                )
                 if (isSoloPractice) {
                     TextFieldGroup("Tên phòng khám tư", clinicName, { clinicName = it }, Icons.Default.Home, "VD: Phòng khám Tim mạch An Khang")
                 } else {
@@ -426,57 +411,6 @@ fun DoctorApprovalPendingScreen(
             Text("Đăng xuất", color = TextSecondary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
         Spacer(modifier = Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun DoctorAccountTypeSelector(
-    selectedAccountType: String,
-    onSelected: (String) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text("Loại đăng ký", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            DoctorAccountTypeButton(
-                label = "Bác sĩ tư",
-                selected = selectedAccountType == "solo_doctor",
-                onClick = { onSelected("solo_doctor") },
-                modifier = Modifier.weight(1f)
-            )
-            DoctorAccountTypeButton(
-                label = "Bác sĩ cơ sở",
-                selected = selectedAccountType == "doctor",
-                onClick = { onSelected("doctor") },
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun DoctorAccountTypeButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val containerColor = if (selected) PrimaryBlue else Color.White
-    val contentColor = if (selected) Color.White else TextPrimary
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(44.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = containerColor,
-            contentColor = contentColor
-        ),
-        shape = RoundedCornerShape(10.dp),
-        border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, Border)
-    ) {
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

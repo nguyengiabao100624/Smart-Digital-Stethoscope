@@ -709,7 +709,8 @@ internal fun VerificationBackButton(backLabel: String, onNavigateBack: () -> Uni
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 8.dp),
+            .statusBarsPadding()
+            .padding(top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(

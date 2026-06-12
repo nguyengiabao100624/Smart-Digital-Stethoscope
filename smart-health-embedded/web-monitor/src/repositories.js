@@ -800,6 +800,65 @@ function createRepositories(options) {
         .sort((a, b) => String(b.roleRequestedAt || b.createdAt || "").localeCompare(String(a.roleRequestedAt || a.createdAt || "")));
     },
 
+    async updateDoctorRequestState(identifier, patch = {}) {
+      const id = String(identifier || "");
+      const nextClaims = {};
+      if (Array.isArray(patch.roleInfoRequiredFields)) {
+        nextClaims.roleInfoRequiredFields = patch.roleInfoRequiredFields;
+      }
+      const hasSql = Boolean(getPool());
+      const sqlUser = await withSql(async (pool) => {
+        const result = await pool.query(
+          `
+            UPDATE users
+            SET
+              requested_role = 'doctor',
+              role = $2,
+              role_request_status = $3,
+              account_status = $4,
+              role_approved_at = $5,
+              role_rejected_at = $6,
+              role_reject_reason = $7,
+              role_info_request_at = $8,
+              role_info_request_message = $9,
+              firebase_claims = COALESCE(users.firebase_claims, '{}'::jsonb) || $10::jsonb,
+              updated_at = now()
+            WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1)
+            RETURNING *
+          `,
+          [
+            id,
+            patch.role || "patient",
+            patch.roleRequestStatus || "pending",
+            patch.accountStatus || "active",
+            optional(patch.roleApprovedAt),
+            optional(patch.roleRejectedAt),
+            optional(patch.roleRejectReason),
+            optional(patch.roleInfoRequestAt),
+            optional(patch.roleInfoRequestMessage),
+            JSON.stringify(nextClaims),
+          ]
+        );
+        return result.rows[0] ? rowToUser(result.rows[0]) : null;
+      });
+      if (hasSql && !sqlUser) {
+        return null;
+      }
+      const user = sqlUser
+        ? syncArrayItem(getDb().users, sqlUser)
+        : getDb().users.find((item) => item.id === id || item.firebaseUid === id || String(item.email || "").toLowerCase() === id.toLowerCase());
+      if (!user) {
+        return null;
+      }
+      Object.assign(user, patch, {
+        requestedRole: "doctor",
+        updatedAt: nowIso(),
+      });
+      syncArrayItem(getDb().users, user);
+      await saveDb();
+      return user;
+    },
+
     async listApprovedDoctors() {
       const sqlUsers = await withSql(async (pool) => {
         const result = await pool.query(

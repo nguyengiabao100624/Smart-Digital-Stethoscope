@@ -7056,7 +7056,7 @@ async function handleAdminApi(req, res, url, segments) {
     }
 
     const targetUserId = segments[3] ? decodeURIComponent(segments[3]) : "";
-    const targetUser = repositories
+    let targetUser = repositories
       ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
       : db.users.find((user) => user.id === targetUserId || user.firebaseUid === targetUserId);
     if (!targetUser) {
@@ -7191,7 +7191,23 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser.roleInfoRequestMessage = message;
       targetUser.roleInfoRequiredFields = requiredFields;
       targetUser.updatedAt = nowIso();
-      if (repositories) {
+      if (repositories && typeof repositories.users.updateDoctorRequestState === "function") {
+        const persistedUser = await repositories.users.updateDoctorRequestState(targetUser.id, {
+          role: targetUser.role,
+          roleRequestStatus: targetUser.roleRequestStatus,
+          accountStatus: targetUser.accountStatus,
+          roleApprovedAt: targetUser.roleApprovedAt || "",
+          roleRejectedAt: targetUser.roleRejectedAt || "",
+          roleRejectReason: targetUser.roleRejectReason || "",
+          roleInfoRequestAt: targetUser.roleInfoRequestAt,
+          roleInfoRequestMessage: targetUser.roleInfoRequestMessage,
+          roleInfoRequiredFields: targetUser.roleInfoRequiredFields,
+        });
+        if (!persistedUser || persistedUser.roleRequestStatus !== "needs_info") {
+          throw httpError(500, "Không thể lưu trạng thái cần bổ sung vào cơ sở dữ liệu.");
+        }
+        targetUser = persistedUser;
+      } else if (repositories) {
         await repositories.users.save(targetUser);
       }
       createNotification(

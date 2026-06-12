@@ -197,6 +197,7 @@ npm.cmd test
 
 cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:compileDebugKotlin
+.\gradlew.bat :app:assembleDebug
 
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 npm.cmd run build:firebase
@@ -207,6 +208,8 @@ This regression covers:
 - request-info `needs_info -> pending` resubmit staying pending after `/api/auth/firebase` polling.
 - updated doctor `phone`, `name`, `license`, `hospital`/private clinic, `department`, and `registrationReason` showing in admin pending list.
 - solo doctor requests preserving `workspaceType=solo_practice`, `accountType=solo_doctor`, updated private clinic name, and updated phone.
+- Android needs-info form exposing `Loại đăng ký` so a misclassified existing account can switch from facility doctor to private doctor and type `Tên phòng khám tư`.
+- Android needs-info polling not overwriting form edits while the user is still updating the request.
 - Web Admin production build accepting the `Bác sĩ tư/Bác sĩ cơ sở` display fields.
 
 Optional emulator smoke on this Windows machine, when `adb` is not in PATH:

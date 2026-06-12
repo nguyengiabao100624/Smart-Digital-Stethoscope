@@ -212,6 +212,23 @@ This regression covers:
 - Android needs-info polling not overwriting form edits while the user is still updating the request.
 - Web Admin production build accepting the `Bác sĩ tư/Bác sĩ cơ sở` display fields.
 
+Android Firebase email verification regression checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugKotlin
+.\gradlew.bat :app:assembleDebug
+
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb -s emulator-5554 logcat -c
+.\gradlew.bat :app:installDebug
+& $adb -s emulator-5554 shell am start -n com.example.smart_health_android/.MainActivity
+Start-Sleep -Seconds 6
+& $adb -s emulator-5554 logcat -d -b crash
+```
+
+Manual Firebase expectation: after a user clicks the Firebase email-verification link, reopening the app or tapping `Tôi đã xác thực email` should reload Firebase state, then either continue to backend auth/role-request or show a specific backend/session error. `Gửi lại email xác thực` should reload first; if Firebase already marks the account verified, it should tell the user to continue instead of claiming another email was sent.
+
 Optional emulator smoke on this Windows machine, when `adb` is not in PATH:
 
 ```powershell

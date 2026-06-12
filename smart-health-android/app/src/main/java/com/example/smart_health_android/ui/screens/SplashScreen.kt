@@ -77,18 +77,19 @@ fun SplashScreen(
                 error("Máy chủ chưa sẵn sàng. Vui lòng thử lại.")
             }
 
-            val idToken = runCatching { FirebaseAuthService.getFreshIdToken(forceRefresh = true) }.getOrNull()
-            if (idToken.isNullOrBlank()) {
+            val existingSessionToken = runCatching { FirebaseAuthService.getFreshIdToken(forceRefresh = false) }.getOrNull()
+            if (existingSessionToken.isNullOrBlank()) {
                 onNavigateToLogin()
                 return@LaunchedEffect
             }
 
-            if (!FirebaseAuthService.isCurrentUserEmailVerified()) {
+            if (!FirebaseAuthService.reloadCurrentUser()) {
                 val pending = PendingRegistrationStore.load(context)
                 onNavigateToVerifyEmail(pending?.accountType ?: "patient")
                 return@LaunchedEffect
             }
 
+            val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
             val result = SmartHealthRepository.api.authenticateFirebase(idToken)
             runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
             navigateForUser(result.user)

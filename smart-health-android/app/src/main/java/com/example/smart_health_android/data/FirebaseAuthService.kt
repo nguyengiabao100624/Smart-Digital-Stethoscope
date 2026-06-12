@@ -8,6 +8,11 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+enum class EmailVerificationResendResult {
+    Sent,
+    AlreadyVerified
+}
+
 object FirebaseAuthService {
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
 
@@ -29,12 +34,15 @@ object FirebaseAuthService {
         return getFreshIdToken(forceRefresh = true)
     }
 
-    suspend fun resendEmailVerification() {
-        val user = auth.currentUser ?: error("Chưa đăng nhập")
-        if (user.isEmailVerified) {
-            return
+    suspend fun resendEmailVerification(): EmailVerificationResendResult {
+        val user = auth.currentUser ?: error("Phiên đăng ký đã hết hạn. Vui lòng đăng nhập lại để gửi email xác thực.")
+        user.reload().await()
+        val refreshedUser = auth.currentUser ?: error("Phiên đăng ký đã hết hạn. Vui lòng đăng nhập lại để gửi email xác thực.")
+        if (refreshedUser.isEmailVerified) {
+            return EmailVerificationResendResult.AlreadyVerified
         }
-        user.sendEmailVerification().await()
+        refreshedUser.sendEmailVerification().await()
+        return EmailVerificationResendResult.Sent
     }
 
     suspend fun sendPasswordResetEmail(email: String) {
@@ -42,7 +50,7 @@ object FirebaseAuthService {
     }
 
     suspend fun reloadCurrentUser(): Boolean {
-        val user = auth.currentUser ?: error("Chưa đăng nhập")
+        val user = auth.currentUser ?: error("Phiên đăng ký đã hết hạn. Vui lòng đăng nhập lại để kiểm tra xác thực email.")
         user.reload().await()
         return auth.currentUser?.isEmailVerified == true
     }

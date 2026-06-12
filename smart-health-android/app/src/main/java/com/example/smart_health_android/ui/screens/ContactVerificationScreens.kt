@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.EmailVerificationResendResult
 import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.data.PendingRegistrationStore
 import com.example.smart_health_android.data.SmartHealthPushRegistrar
@@ -235,38 +236,81 @@ fun FirebaseVerifyEmailScreen(
                     error = ""
                     coroutineScope.launch {
                         try {
-                            val verified = FirebaseAuthService.reloadCurrentUser()
+                            val verified = try {
+                                FirebaseAuthService.reloadCurrentUser()
+                            } catch (exception: Exception) {
+                                error = exception.toVietnameseMessage(
+                                    "Không thể kiểm tra trạng thái xác thực Firebase. Vui lòng kiểm tra mạng rồi thử lại."
+                                )
+                                return@launch
+                            }
                             if (!verified) {
-                                error = "Email chưa được xác thực. Vui lòng bấm liên kết trong email Firebase rồi thử lại."
+                                error = "Email chưa được xác thực trên Firebase. Vui lòng mở đúng email mới nhất, bấm liên kết xác thực rồi quay lại ứng dụng."
                                 return@launch
                             }
 
-                            val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
-                            SmartHealthRepository.api.authenticateFirebase(idToken)
+                            val idToken = try {
+                                FirebaseAuthService.getFreshIdToken(forceRefresh = true)
+                            } catch (exception: Exception) {
+                                error = exception.toVietnameseMessage(
+                                    "Email đã xác thực nhưng ứng dụng chưa lấy được phiên đăng nhập mới. Vui lòng đăng nhập lại."
+                                )
+                                return@launch
+                            }
+
+                            val authResult = try {
+                                SmartHealthRepository.api.authenticateFirebase(idToken)
+                            } catch (exception: Exception) {
+                                error = exception.toVietnameseMessage(
+                                    "Email đã xác thực nhưng chưa kết nối được máy chủ Smart Health. Vui lòng thử lại."
+                                )
+                                return@launch
+                            }
                             runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
                             val registration = pendingRegistration
                             val nextAccountType = registration?.accountType ?: routeAccountType
                             if (nextAccountType == "doctor" || nextAccountType == "solo_doctor") {
-                                SmartHealthRepository.api.requestRole(
-                                    requestedRole = "doctor",
-                                    name = registration?.name.orEmpty(),
-                                    phone = registration?.phone.orEmpty(),
-                                    license = registration?.license.orEmpty(),
-                                    hospital = registration?.hospital.orEmpty(),
-                                    department = registration?.department.orEmpty(),
-                                    organizationId = registration?.organizationId.orEmpty(),
-                                    reason = registration?.reason.orEmpty(),
-                                    accountType = nextAccountType,
-                                    workspaceType = if (nextAccountType == "solo_doctor") "solo_practice" else "clinic"
-                                )
-                            } else if (nextAccountType == "personal") {
-                                SmartHealthRepository.api.requestRole(
-                                    requestedRole = "patient",
-                                    name = registration?.name.orEmpty(),
-                                    phone = registration?.phone.orEmpty(),
-                                    accountType = nextAccountType,
-                                    workspaceType = "personal"
-                                )
+                                if (registration == null || registration.name.isBlank()) {
+                                    if (authResult.user.requestedRole != "doctor") {
+                                        error = "Email đã xác thực nhưng ứng dụng không còn giữ hồ sơ đăng ký bác sĩ. Vui lòng quay lại đăng ký để gửi lại hồ sơ xét duyệt."
+                                        return@launch
+                                    }
+                                } else {
+                                    try {
+                                        SmartHealthRepository.api.requestRole(
+                                            requestedRole = "doctor",
+                                            name = registration.name,
+                                            phone = registration.phone,
+                                            license = registration.license,
+                                            hospital = registration.hospital,
+                                            department = registration.department,
+                                            organizationId = registration.organizationId,
+                                            reason = registration.reason,
+                                            accountType = nextAccountType,
+                                            workspaceType = if (nextAccountType == "solo_doctor") "solo_practice" else "clinic"
+                                        )
+                                    } catch (exception: Exception) {
+                                        error = exception.toVietnameseMessage(
+                                            "Email đã xác thực nhưng chưa gửi được hồ sơ bác sĩ lên máy chủ. Vui lòng thử lại."
+                                        )
+                                        return@launch
+                                    }
+                                }
+                            } else if (nextAccountType == "personal" && registration != null) {
+                                try {
+                                    SmartHealthRepository.api.requestRole(
+                                        requestedRole = "patient",
+                                        name = registration.name,
+                                        phone = registration.phone,
+                                        accountType = nextAccountType,
+                                        workspaceType = "personal"
+                                    )
+                                } catch (exception: Exception) {
+                                    error = exception.toVietnameseMessage(
+                                        "Email đã xác thực nhưng chưa hoàn tất hồ sơ người dùng. Vui lòng thử lại."
+                                    )
+                                    return@launch
+                                }
                             }
                             verifiedAccountType = nextAccountType
                             PendingRegistrationStore.clear(context)
@@ -299,11 +343,18 @@ fun FirebaseVerifyEmailScreen(
                     error = ""
                     coroutineScope.launch {
                         try {
-                            FirebaseAuthService.resendEmailVerification()
-                            resendCooldown = 60
-                            info = "Email xác thực mới đã được gửi. Hãy kiểm tra cả thư mục spam/quảng cáo nếu chưa thấy email."
+                            when (FirebaseAuthService.resendEmailVerification()) {
+                                EmailVerificationResendResult.Sent -> {
+                                    resendCooldown = 60
+                                    info = "Email xác thực mới đã được gửi. Hãy kiểm tra cả hộp thư đến, spam và quảng cáo."
+                                }
+                                EmailVerificationResendResult.AlreadyVerified -> {
+                                    resendCooldown = 0
+                                    info = "Email này đã được Firebase xác thực. Bấm \"Tôi đã xác thực email\" để tiếp tục gửi hồ sơ."
+                                }
+                            }
                         } catch (exception: Exception) {
-                            error = exception.toVietnameseMessage("Không thể gửi lại email xác thực.")
+                            error = exception.toVietnameseMessage("Không thể gửi lại email xác thực. Vui lòng đăng nhập lại hoặc thử sau vài phút.")
                         }
                     }
                 }

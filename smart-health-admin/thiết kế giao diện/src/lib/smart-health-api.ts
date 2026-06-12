@@ -992,7 +992,15 @@ export const smartHealthApi = {
   },
 
   async lockDoctor(userId: string) {
-    return requestJson<{ request: SmartHealthAuthUser }>(
+    return requestJson<{
+      request: SmartHealthAuthUser;
+      firebaseDisabled?: boolean;
+      firebaseTokensRevoked?: boolean;
+      firebaseAlreadyMissing?: boolean;
+      demoSessionsRevoked?: number;
+      firebaseSessionsRevoked?: number;
+      warning?: string;
+    }>(
       `/admin/doctors/${encodeURIComponent(userId)}/lock`,
       {
         method: "PATCH",
@@ -1126,7 +1134,13 @@ export const smartHealthApi = {
   },
 
   async unlockDoctor(userId: string) {
-    return requestJson<{ request: SmartHealthAuthUser }>(
+    return requestJson<{
+      request: SmartHealthAuthUser;
+      firebaseDisabled?: boolean;
+      firebaseAlreadyMissing?: boolean;
+      firebaseClaims?: unknown;
+      warning?: string;
+    }>(
       `/admin/doctors/${encodeURIComponent(userId)}/unlock`,
       {
         method: "PATCH",

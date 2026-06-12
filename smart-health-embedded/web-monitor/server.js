@@ -3789,6 +3789,10 @@ function findSessionUserByToken(token) {
   if (!user) {
     return null;
   }
+  if (!isActiveUserAccount(user)) {
+    session.revokedAt = session.revokedAt || nowIso();
+    return null;
+  }
 
   session.lastSeenAt = nowIso();
   return { user, session };
@@ -3839,6 +3843,9 @@ async function authenticateRealtimeSocket(req, url) {
   }
 
   const user = await upsertFirebaseUser(decodedToken, req);
+  if (!isActiveUserAccount(user)) {
+    return null;
+  }
   req.authSource = "firebase";
   req.authUser = user;
   attachActor(req, user);
@@ -4062,11 +4069,21 @@ function getRequestUser(req) {
   return AUTH_MODE === "production" ? null : getCurrentUser();
 }
 
+function assertUserAccountActive(user) {
+  if (!isActiveUserAccount(user)) {
+    const err = httpError(403, "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+    err.code = "account_locked";
+    throw err;
+  }
+  return user;
+}
+
 function requireUser(req) {
   const user = getRequestUser(req);
   if (!user) {
     throw httpError(401, "Chưa đăng nhập");
   }
+  assertUserAccountActive(user);
   attachActor(req, user);
   return user;
 }
@@ -4078,6 +4095,7 @@ function requireSessionUser(req) {
   }
 
   if (req.authUser) {
+    assertUserAccountActive(req.authUser);
     attachActor(req, req.authUser);
     return req.authUser;
   }
@@ -5107,6 +5125,90 @@ async function updateFirebaseAdminAccount(targetUser, payload = {}) {
   return { updated: true };
 }
 
+async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
+  const firebaseUid = targetUser.firebaseUid || "";
+  if (!FIREBASE_AUTH_ENABLED) {
+    return { updated: false, firebaseUid, skipped: true };
+  }
+  if (!firebaseUid) {
+    return {
+      updated: false,
+      firebaseUid,
+      warning: "Tài khoản này chưa liên kết Firebase Auth, backend đã cập nhật trạng thái nhưng không thể khóa đăng nhập Firebase.",
+    };
+  }
+  const firebaseAdminApp = getFirebaseAdmin(process.env);
+  if (!firebaseAdminApp) {
+    return {
+      updated: false,
+      firebaseUid,
+      warning: "Firebase Admin chưa sẵn sàng, backend đã cập nhật trạng thái nhưng chưa cập nhật được Firebase Auth.",
+    };
+  }
+
+  const updates = {};
+  if (Object.prototype.hasOwnProperty.call(payload, "displayName")) {
+    updates.displayName = readString(payload.displayName, 160);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "disabled")) {
+    updates.disabled = Boolean(payload.disabled);
+  }
+
+  try {
+    if (Object.keys(updates).length > 0) {
+      await firebaseAdminApp.auth().updateUser(firebaseUid, updates);
+    }
+    let firebaseTokensRevoked = false;
+    if (payload.revokeRefreshTokens) {
+      await firebaseAdminApp.auth().revokeRefreshTokens(firebaseUid);
+      firebaseTokensRevoked = true;
+    }
+    return {
+      updated: true,
+      firebaseUid,
+      firebaseDisabled: Object.prototype.hasOwnProperty.call(updates, "disabled") ? updates.disabled : undefined,
+      firebaseTokensRevoked,
+    };
+  } catch (err) {
+    const code = err && err.code ? String(err.code) : "";
+    const message = err && err.message ? String(err.message) : String(err);
+    if (code === "auth/user-not-found") {
+      return {
+        updated: false,
+        firebaseUid,
+        firebaseAlreadyMissing: true,
+        warning: "Tài khoản Firebase Auth không còn tồn tại, backend đã cập nhật trạng thái.",
+      };
+    }
+    return {
+      updated: false,
+      firebaseUid,
+      warning: `Không thể cập nhật Firebase Auth: ${message}`,
+    };
+  }
+}
+
+function revokeUserSessions(userId) {
+  const revokedAt = nowIso();
+  let demoSessionsRevoked = 0;
+  let firebaseSessionsRevoked = 0;
+  db.sessions = db.sessions.map((session) => {
+    if (session.userId === userId && !session.revokedAt) {
+      demoSessionsRevoked += 1;
+      return { ...session, revokedAt };
+    }
+    return session;
+  });
+  db.authSessions = db.authSessions.map((session) => {
+    if (session.userId === userId && !session.revokedAt) {
+      firebaseSessionsRevoked += 1;
+      return { ...session, revokedAt };
+    }
+    return session;
+  });
+  return { demoSessionsRevoked, firebaseSessionsRevoked };
+}
+
 async function applyManagedAdminRole(targetUser, roleValue, organizationIdValue) {
   const roleInfo = normalizeManagedAdminRole(roleValue || targetUser.role || "workspace_admin");
   let organizationId = readString(organizationIdValue || targetUser.organizationId, 120);
@@ -6093,6 +6195,7 @@ async function handleAuthApi(req, res, segments) {
       saveDb();
       throw httpError(401, "Email/số điện thoại hoặc mật khẩu không đúng");
     }
+    assertUserAccountActive(user);
     if (payload.role && user.role !== payload.role) {
       throw httpError(403, "Tài khoản không đúng vai trò đăng nhập");
     }
@@ -7625,7 +7728,9 @@ async function handleAdminApi(req, res, url, segments) {
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "lock" && method === "PATCH") {
     requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền khóa tài khoản bác sĩ");
     const targetUserId = decodeURIComponent(segments[3]);
-    const targetUser = repositories ? await repositories.users.findByIdOrFirebaseUid(targetUserId) : db.users.find((u) => u.id === targetUserId);
+    const targetUser = repositories
+      ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
+      : db.users.find((u) => u.id === targetUserId || u.firebaseUid === targetUserId);
     if (!targetUser) {
       throw httpError(404, "User not found");
     }
@@ -7633,40 +7738,50 @@ async function handleAdminApi(req, res, url, segments) {
       throw httpError(403, "Không được khóa bác sĩ ngoài workspace");
     }
     
-    targetUser.role = "patient";
+    targetUser.role = "doctor";
     targetUser.requestedRole = "doctor";
     targetUser.roleRequestStatus = "approved";
     targetUser.accountStatus = "locked";
     targetUser.updatedAt = nowIso();
-    if (repositories) {
-      await repositories.users.save(targetUser);
-    }
-    
-    if (targetUser.firebaseUid && FIREBASE_AUTH_ENABLED) {
-      try {
-        await setFirebaseRoleClaimsForUser(targetUser, "patient", targetUser.organizationId);
-      } catch (err) {
-        console.error("Failed to update firebase claim when locking account:", err);
-      }
-    }
+    const firebaseResult = await updateFirebaseLinkedAccount(targetUser, {
+      disabled: true,
+      revokeRefreshTokens: true,
+    });
+    const sessionResult = revokeUserSessions(targetUser.id);
+    await persistUserRecord(targetUser);
     await appendAudit("doctor.lock", req, {
       actorUserId: adminUser.id,
       organizationId: targetUser.organizationId || "",
       resourceType: "user",
       resourceId: targetUser.id,
+      metadata: {
+        firebaseUid: targetUser.firebaseUid || "",
+        firebaseDisabled: firebaseResult.firebaseDisabled === true,
+        firebaseTokensRevoked: firebaseResult.firebaseTokensRevoked === true,
+        firebaseAlreadyMissing: firebaseResult.firebaseAlreadyMissing === true,
+        demoSessionsRevoked: sessionResult.demoSessionsRevoked,
+        firebaseSessionsRevoked: sessionResult.firebaseSessionsRevoked,
+      },
     });
     
     addAccessLog("Admin khóa tài khoản bác sĩ", { severity: "warning", userId: adminUser.id });
     await saveDb();
     
-    sendJson(res, 200, { request: publicUser(targetUser) });
+    sendJson(res, 200, {
+      request: publicUser(targetUser),
+      ...firebaseResult,
+      ...sessionResult,
+      warning: firebaseResult.warning || "",
+    });
     return;
   }
 
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "unlock" && method === "PATCH") {
     requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền mở khóa tài khoản bác sĩ");
     const targetUserId = decodeURIComponent(segments[3]);
-    const targetUser = repositories ? await repositories.users.findByIdOrFirebaseUid(targetUserId) : db.users.find((u) => u.id === targetUserId);
+    const targetUser = repositories
+      ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
+      : db.users.find((u) => u.id === targetUserId || u.firebaseUid === targetUserId);
     if (!targetUser) {
       throw httpError(404, "User not found");
     }
@@ -7679,28 +7794,43 @@ async function handleAdminApi(req, res, url, segments) {
     targetUser.roleRequestStatus = "approved";
     targetUser.accountStatus = "active";
     targetUser.updatedAt = nowIso();
-    if (repositories) {
-      await repositories.users.save(targetUser);
-    }
-    
+    const firebaseAccountResult = await updateFirebaseLinkedAccount(targetUser, {
+      disabled: false,
+    });
+    let firebaseClaims;
+    let warning = firebaseAccountResult.warning || "";
     if (targetUser.firebaseUid && FIREBASE_AUTH_ENABLED) {
       try {
-        await setFirebaseRoleClaimsForUser(targetUser, "doctor", targetUser.organizationId);
+        firebaseClaims = await setFirebaseRoleClaimsForUser(targetUser, "doctor", targetUser.organizationId);
+        targetUser.firebaseClaims = firebaseClaims;
       } catch (err) {
-        console.error("Failed to update firebase claim when unlocking account:", err);
+        const message = err && err.message ? err.message : String(err);
+        warning = [warning, `Không thể cập nhật Firebase custom claims: ${message}`].filter(Boolean).join(" ");
       }
     }
+    await persistUserRecord(targetUser);
     await appendAudit("doctor.unlock", req, {
       actorUserId: adminUser.id,
       organizationId: targetUser.organizationId || "",
       resourceType: "user",
       resourceId: targetUser.id,
+      metadata: {
+        firebaseUid: targetUser.firebaseUid || "",
+        firebaseDisabled: firebaseAccountResult.firebaseDisabled === false ? false : undefined,
+        firebaseAlreadyMissing: firebaseAccountResult.firebaseAlreadyMissing === true,
+        firebaseClaims,
+      },
     });
     
     addAccessLog("Admin mở khóa tài khoản bác sĩ", { severity: "success", userId: adminUser.id });
     await saveDb();
     
-    sendJson(res, 200, { request: publicUser(targetUser) });
+    sendJson(res, 200, {
+      request: publicUser(targetUser),
+      ...firebaseAccountResult,
+      firebaseClaims,
+      warning,
+    });
     return;
   }
 

@@ -208,9 +208,22 @@ This regression covers:
 - request-info `needs_info -> pending` resubmit staying pending after `/api/auth/firebase` polling.
 - updated doctor `phone`, `name`, `license`, `hospital`/private clinic, `department`, and `registrationReason` showing in admin pending list.
 - solo doctor requests preserving `workspaceType=solo_practice`, `accountType=solo_doctor`, updated private clinic name, and updated phone.
-- Android needs-info form exposing `Loại đăng ký` so a misclassified existing account can switch from facility doctor to private doctor and type `Tên phòng khám tư`.
+- Android needs-info form deriving doctor type from backend metadata instead of exposing `Loại đăng ký`, while private doctors can still type `Tên phòng khám tư`.
 - Android needs-info polling not overwriting form edits while the user is still updating the request.
 - Web Admin production build accepting the `Bác sĩ tư/Bác sĩ cơ sở` display fields.
+
+Doctor account lock/unlock regression checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build
+```
+
+`npm.cmd test` covers an approved doctor lifecycle: approve, lock, keep the doctor row visible as `accountStatus=locked`, block the old bearer session, block new login while locked, unlock, and allow login again.
 
 Android Firebase email verification regression checks:
 

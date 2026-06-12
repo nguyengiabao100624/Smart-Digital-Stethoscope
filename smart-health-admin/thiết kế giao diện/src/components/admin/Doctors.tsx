@@ -177,12 +177,16 @@ export function Doctors() {
       tone: "danger",
       action: async () => {
         try {
-          await smartHealthApi.lockDoctor(doc.id);
+          const result = await smartHealthApi.lockDoctor(doc.id);
           if (selectedDoctor?.id === doc.id) setSelectedDoctor(null);
           void loadDoctors();
-          toast.success("Đã khóa tài khoản bác sĩ.");
+          if (result.warning) {
+            toast.warning(result.warning);
+          } else {
+            toast.success("Đã khóa tài khoản bác sĩ.");
+          }
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Có lỗi xảy ra khi khóa");
+          toast.error(toVietnameseErrorMessage(e, "Có lỗi xảy ra khi khóa"));
         }
       },
     });
@@ -200,12 +204,16 @@ export function Doctors() {
       tone: "success",
       action: async () => {
         try {
-          await smartHealthApi.unlockDoctor(doc.id);
+          const result = await smartHealthApi.unlockDoctor(doc.id);
           if (selectedDoctor?.id === doc.id) setSelectedDoctor(null);
           void loadDoctors();
-          toast.success("Đã mở khóa tài khoản bác sĩ.");
+          if (result.warning) {
+            toast.warning(result.warning);
+          } else {
+            toast.success("Đã mở khóa tài khoản bác sĩ.");
+          }
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Có lỗi xảy ra khi mở khóa");
+          toast.error(toVietnameseErrorMessage(e, "Có lỗi xảy ra khi mở khóa"));
         }
       },
     });

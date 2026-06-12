@@ -112,10 +112,12 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Android doctor-login recovery follow-up: verified doctor accounts that still have a stored full pending registration but no backend doctor request now resubmit that request from `LoginScreen` instead of showing the misleading "not granted doctor" message. The old rejected-account path remains separate, so an actual admin rejection is not silently resubmitted.
 - Backend doctor-login recovery follow-up: `/api/auth/role-request` now persists the selected workspace/private clinic before saving a repository-backed doctor request, fixing the new private-doctor account path that could fail and leave Android on a red "chưa gửi lại được hồ sơ" message. Android now parses backend error-object messages and re-checks auth status after role-request exceptions.
 - Deployment verification: Render is serving commit `8a2c9a4`; public smoke passed and a temporary production canary proved new `solo_doctor` role requests enter the pending admin list, then cleaned itself up.
+- Web Admin doctor account lock follow-up: backend lock now uses `accountStatus=locked` as the source of truth, disables linked Firebase Auth, revokes Firebase refresh tokens and backend sessions, and rejects locked users in auth/login guards. Unlock restores active doctor access and Firebase doctor claims. Local backend smoke now covers approve -> lock -> old session/login blocked -> unlock -> login restored.
 
 Next practical backlog items:
 
 - Install the new APK, then continue the real doctor Firebase account E2E: log in as the new verified private-doctor account, confirm the stored request is resubmitted to pending, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
+- Deploy the doctor lock fix to Render and Firebase Hosting, then run a production canary with a temporary approved doctor: lock from Web Admin/API, verify Firebase `disabled=true` and backend auth blocked, unlock, then clean up.
 - Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
 - Ask the user to resubmit once from the real Android UI with the final human-written reason, then approve from Web Admin and confirm the doctor dashboard unlocks.
 

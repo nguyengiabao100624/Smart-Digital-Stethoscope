@@ -65,6 +65,13 @@ async function postJson(url, body, headers = {}) {
   });
 }
 
+async function patchJson(url, headers = {}) {
+  return fetch(url, {
+    method: "PATCH",
+    headers,
+  });
+}
+
 async function testDemoAuth() {
   const port = "3410";
   await withServer(
@@ -240,6 +247,64 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(pendingDoctor.registrationReason, "Updated smoke request");
       assert.equal(pendingDoctor.phone, "0911111111");
       assert.equal(pendingDoctor.license, "CCHN-LIFE-UPDATED");
+
+      const approveDoctorResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests/${encodeURIComponent(doctor.user.id)}/approve`,
+        { organizationId: "org_default_clinic" },
+        adminHeaders,
+      );
+      assert.equal(approveDoctorResponse.status, 200);
+      const approvedDoctor = await approveDoctorResponse.json();
+      assert.equal(approvedDoctor.request.status, "approved");
+      assert.equal(approvedDoctor.request.role, "doctor");
+      assert.equal(approvedDoctor.request.accountStatus, "active");
+
+      const lockDoctorResponse = await patchJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctors/${encodeURIComponent(doctor.user.id)}/lock`,
+        adminHeaders,
+      );
+      assert.equal(lockDoctorResponse.status, 200);
+      const lockedDoctor = await lockDoctorResponse.json();
+      assert.equal(lockedDoctor.request.role, "doctor");
+      assert.equal(lockedDoctor.request.roleRequestStatus, "approved");
+      assert.equal(lockedDoctor.request.accountStatus, "locked");
+      assert.ok(lockedDoctor.demoSessionsRevoked >= 1);
+
+      const doctorsAfterLock = await getJson(`http://127.0.0.1:${port}/api/v1/admin/doctors`, adminHeaders);
+      assert.equal(doctorsAfterLock.response.status, 200);
+      const listedLockedDoctor = doctorsAfterLock.data.doctors.find((item) => item.id === doctor.user.id);
+      assert.ok(listedLockedDoctor);
+      assert.equal(listedLockedDoctor.role, "doctor");
+      assert.equal(listedLockedDoctor.accountStatus, "locked");
+
+      const lockedSessionPoll = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, doctorHeaders);
+      assert.equal(lockedSessionPoll.response.status, 401);
+      const lockedLoginResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/login`, {
+        login: `doctor-${suffix}@smarthealth.test`,
+        password: "12345678",
+        role: "doctor",
+      });
+      assert.equal(lockedLoginResponse.status, 403);
+
+      const unlockDoctorResponse = await patchJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctors/${encodeURIComponent(doctor.user.id)}/unlock`,
+        adminHeaders,
+      );
+      assert.equal(unlockDoctorResponse.status, 200);
+      const unlockedDoctor = await unlockDoctorResponse.json();
+      assert.equal(unlockedDoctor.request.role, "doctor");
+      assert.equal(unlockedDoctor.request.roleRequestStatus, "approved");
+      assert.equal(unlockedDoctor.request.accountStatus, "active");
+
+      const unlockedLoginResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/login`, {
+        login: `doctor-${suffix}@smarthealth.test`,
+        password: "12345678",
+        role: "doctor",
+      });
+      assert.equal(unlockedLoginResponse.status, 200);
+      const unlockedLogin = await unlockedLoginResponse.json();
+      assert.equal(unlockedLogin.user.role, "doctor");
+      assert.equal(unlockedLogin.user.accountStatus, "active");
 
       const soloDoctorResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/register`, {
         role: "patient",

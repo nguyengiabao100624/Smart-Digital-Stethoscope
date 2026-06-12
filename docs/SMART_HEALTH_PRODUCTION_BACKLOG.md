@@ -105,10 +105,11 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Follow-up registration reason fix: Android-submitted doctor signup `reason` is now persisted as `registrationReason` through repository-backed users, shown in Web Admin Doctor Approval, returned to Android/admin APIs, and included in platform-admin email metadata with a direct `/doctor-approval` CTA.
 - Registration reason deploy completed on 2026-06-12: commit `4ce7915` pushed, Firebase Hosting Web Admin version `5124335308359eb3` released, public smoke passed, and production canary confirmed the exact submitted reason in auth, admin pending list, and notification metadata.
 - Follow-up stale profile-field and solo-practice split fix: doctor resubmit now preserves updated phone/name/license/clinic/specialty/reason through backend repository mode and admin APIs. Android `Bác sĩ tư` registration now requires selecting or entering a private clinic name, stores that value, and sends `workspaceType=solo_practice`/`accountType=solo_doctor`; the needs-info form shows `Tên phòng khám tư` for solo doctors instead of forcing the hospital/facility catalog. Web Admin Doctor Approval displays `Bác sĩ tư` versus `Bác sĩ cơ sở`, maps `clinicSuggestion`, and admin email metadata translates account/workspace types to Vietnamese labels. Local verification passed: backend check/test, Android debug Kotlin compile, and Web Admin Firebase build.
+- Stale-profile/solo-practice deploy completed on 2026-06-12: commit `72b0f3d` pushed, Firebase Hosting Web Admin version `7de2656be1036977` released, public smoke passed, and an authenticated Render canary confirmed doctor-request responses expose the new profile/type fields needed by Web Admin.
 
 Next practical backlog items:
 
-- Deploy this stale-profile/solo-practice fix to Render and Firebase Hosting, then continue the real doctor Firebase account E2E: Android doctor resubmits with a changed phone/private-clinic value, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
+- Continue the real doctor Firebase account E2E: Android doctor resubmits with a changed phone/private-clinic value, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
 - Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
 - Ask the user to resubmit once from the real Android UI with the final human-written reason, then approve from Web Admin and confirm the doctor dashboard unlocks.
 

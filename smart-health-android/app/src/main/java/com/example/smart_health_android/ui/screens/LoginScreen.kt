@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AuthUser
 import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.data.PendingRegistration
 import com.example.smart_health_android.data.PendingRegistrationStore
@@ -218,37 +219,80 @@ fun LoginScreen(
                 errorMessage = null
                 coroutineScope.launch {
                     try {
+                        val storedRegistration = PendingRegistrationStore.load(context)
+                            ?.takeIf { it.matchesLoginEmail(login) }
                         FirebaseAuthService.signIn(login, currentPassword)
                         val verifiedEmail = FirebaseAuthService.reloadCurrentUser()
                         if (!verifiedEmail) {
-                            PendingRegistrationStore.save(
-                                context,
-                                PendingRegistration(
-                                    accountType = if (isDoctorMode) "doctor" else "patient",
-                                    name = "",
-                                    email = login,
-                                    phone = ""
+                            val verificationAccountType =
+                                storedRegistration?.accountType ?: if (isDoctorMode) "doctor" else "patient"
+                            if (storedRegistration == null) {
+                                PendingRegistrationStore.save(
+                                    context,
+                                    PendingRegistration(
+                                        accountType = verificationAccountType,
+                                        name = "",
+                                        email = login,
+                                        phone = ""
+                                    )
                                 )
-                            )
-                            onNavigateToVerifyEmail(if (isDoctorMode) "doctor" else "patient")
+                            }
+                            onNavigateToVerifyEmail(verificationAccountType)
                             return@launch
                         }
 
                         val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
                         val result = SmartHealthRepository.api.authenticateFirebase(idToken)
                         runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
-                        val isDoctorAccount = result.user.role == "doctor" || result.user.role == "admin"
-                        val isPendingDoctorApproval =
-                            result.user.requestedRole == "doctor" &&
-                                (result.user.roleRequestStatus == "pending" || result.user.roleRequestStatus == "needs_info")
-                        if (isDoctorMode && isPendingDoctorApproval) {
+                        var signedInUser = result.user
+                        val pendingDoctorRegistration = storedRegistration
+                            ?.takeIf { it.hasDoctorRequestPayload() }
+                        if (
+                            isDoctorMode &&
+                            !signedInUser.isClinicalAccount() &&
+                            !signedInUser.isPendingDoctorApproval() &&
+                            !signedInUser.isRejectedDoctorRequest() &&
+                            pendingDoctorRegistration != null
+                        ) {
+                            signedInUser = try {
+                                SmartHealthRepository.api.requestRole(
+                                    requestedRole = "doctor",
+                                    name = pendingDoctorRegistration.name,
+                                    phone = pendingDoctorRegistration.phone,
+                                    license = pendingDoctorRegistration.license,
+                                    hospital = pendingDoctorRegistration.hospital,
+                                    department = pendingDoctorRegistration.department,
+                                    organizationId = pendingDoctorRegistration.organizationId,
+                                    reason = pendingDoctorRegistration.reason,
+                                    accountType = pendingDoctorRegistration.accountType,
+                                    workspaceType = pendingDoctorRegistration.workspaceTypeForRoleRequest()
+                                )
+                            } catch (exception: Exception) {
+                                errorMessage = exception.toVietnameseMessage(
+                                    "Email đã xác thực nhưng chưa gửi lại được hồ sơ bác sĩ lên máy chủ. Vui lòng thử lại."
+                                )
+                                return@launch
+                            }
+                            if (signedInUser.isPendingDoctorApproval() || signedInUser.isClinicalAccount()) {
+                                PendingRegistrationStore.clear(context)
+                            }
+                        }
+                        val isDoctorAccount = signedInUser.isClinicalAccount()
+                        if (isDoctorMode && signedInUser.isPendingDoctorApproval()) {
                             onDoctorApprovalPending()
                             return@launch
                         }
-                        if (isDoctorMode && !isDoctorAccount) {
-                            error("Tài khoản này chưa được cấp quyền bác sĩ")
+                        if (isDoctorMode && signedInUser.isRejectedDoctorRequest()) {
+                            error("Yêu cầu đăng ký bác sĩ của tài khoản này đã bị từ chối. Vui lòng liên hệ quản trị viên hoặc đăng ký lại bằng hồ sơ mới.")
                         }
-                        if (!isDoctorMode && result.user.role != "patient") {
+                        if (isDoctorMode && !isDoctorAccount) {
+                            if (storedRegistration?.isDoctorRegistration() == true) {
+                                error("Hồ sơ đăng ký bác sĩ trên máy này không còn đủ thông tin để gửi duyệt. Vui lòng nhập lại hồ sơ bác sĩ hoặc liên hệ quản trị viên.")
+                            } else {
+                                error("Tài khoản này chưa có hồ sơ bác sĩ chờ duyệt. Vui lòng đăng ký bác sĩ trước khi đăng nhập ở chế độ bác sĩ.")
+                            }
+                        }
+                        if (!isDoctorMode && signedInUser.role != "patient") {
                             error("Vui lòng chọn chế độ bác sĩ cho tài khoản này")
                         }
                         onLoginSuccess(isDoctorAccount)
@@ -301,3 +345,24 @@ fun LoginScreen(
         )
     }
 }
+
+private fun PendingRegistration.matchesLoginEmail(login: String): Boolean =
+    email.trim().equals(login.trim(), ignoreCase = true)
+
+private fun PendingRegistration.isDoctorRegistration(): Boolean =
+    accountType == "doctor" || accountType == "solo_doctor"
+
+private fun PendingRegistration.hasDoctorRequestPayload(): Boolean =
+    isDoctorRegistration() && name.isNotBlank()
+
+private fun PendingRegistration.workspaceTypeForRoleRequest(): String =
+    if (accountType == "solo_doctor") "solo_practice" else "clinic"
+
+private fun AuthUser.isClinicalAccount(): Boolean =
+    role in setOf("doctor", "admin", "workspace_admin", "workspace_owner", "nurse", "technician")
+
+private fun AuthUser.isPendingDoctorApproval(): Boolean =
+    requestedRole == "doctor" && roleRequestStatus in setOf("pending", "needs_info")
+
+private fun AuthUser.isRejectedDoctorRequest(): Boolean =
+    requestedRole == "doctor" && roleRequestStatus == "rejected"

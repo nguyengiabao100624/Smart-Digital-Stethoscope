@@ -109,10 +109,11 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Android needs-info UI follow-up: existing private-doctor accounts that still load as `Bác sĩ cơ sở` can now switch `Loại đăng ký` to `Bác sĩ tư` inside the request-info form, type the private clinic name, and resubmit as solo practice. The app also stops background polling while already in `needs_info`, preventing typed values from being reset during editing. Android compile and debug APK build passed.
 - Android email verification follow-up: the app now reloads Firebase user state before splash routing, email verification checking, and resend. Generic "không thể kiểm tra xác thực email" is split into Firebase, token, backend, and role-request messages, and resend explains when the account is already verified instead of implying another email was sent. Android compile, debug APK build, install/launch smoke, and crash-buffer scan passed.
 - Android auth UI spacing follow-up: the shared `VerificationBackButton` now uses status-bar-safe top spacing so the `Quay lại` control on verification/contact auth screens sits lower like the signup/forgot-password controls. Reviewed the other Android back headers; the remaining gradient/white headers already use a larger top offset or `statusBarsPadding`.
+- Android doctor-login recovery follow-up: verified doctor accounts that still have a stored full pending registration but no backend doctor request now resubmit that request from `LoginScreen` instead of showing the misleading "not granted doctor" message. The old rejected-account path remains separate, so an actual admin rejection is not silently resubmitted.
 
 Next practical backlog items:
 
-- Continue the real doctor Firebase account E2E: Android doctor resubmits with a changed phone/private-clinic value, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
+- Continue the real doctor Firebase account E2E: log in as the new verified private-doctor account, confirm the stored request is resubmitted to pending, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
 - Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
 - Ask the user to resubmit once from the real Android UI with the final human-written reason, then approve from Web Admin and confirm the doctor dashboard unlocks.
 

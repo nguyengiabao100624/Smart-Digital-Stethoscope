@@ -227,6 +227,21 @@ Start-Sleep -Seconds 6
 & $adb -s emulator-5554 logcat -d -b crash
 ```
 
+Android doctor-login recovery regression checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugKotlin
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:installDebug
+
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb -s emulator-5554 shell am start -n com.example.smart_health_android/.MainActivity
+& $adb -s emulator-5554 logcat -d -b crash
+```
+
+Manual E2E target: create a private doctor account, verify Firebase email, then log in in doctor mode. If the device still has the full pending registration, `LoginScreen` should resubmit `/api/auth/role-request` and route to the pending approval screen instead of showing "Tài khoản này chưa được cấp quyền bác sĩ".
+
 Manual Firebase expectation: after a user clicks the Firebase email-verification link, reopening the app or tapping `Tôi đã xác thực email` should reload Firebase state, then either continue to backend auth/role-request or show a specific backend/session error. `Gửi lại email xác thực` should reload first; if Firebase already marks the account verified, it should tell the user to continue instead of claiming another email was sent.
 
 Optional emulator smoke on this Windows machine, when `adb` is not in PATH:

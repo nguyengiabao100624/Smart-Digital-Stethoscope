@@ -50,10 +50,17 @@ async function withServer(env, fn) {
   }
 }
 
-async function postJson(url, body) {
+async function getJson(url, headers = {}) {
+  const response = await fetch(url, { headers });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  return { response, data };
+}
+
+async function postJson(url, body, headers = {}) {
   return fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -105,9 +112,122 @@ async function testProductionLocksDemoAuth() {
   );
 }
 
+async function testDoctorRequestNeedsInfoResubmit() {
+  const port = "3414";
+  const suffix = Date.now();
+  await withServer(
+    {
+      PORT: port,
+      AUDIO_UDP_PORT: "3415",
+      DATA_BACKEND: "json",
+      DATA_DIR: `.test-data/smoke-doctor-request-${suffix}`,
+      AUTH_MODE: "demo",
+      FIREBASE_AUTH_ENABLED: "false",
+    },
+    async () => {
+      const adminResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/register`, {
+        role: "admin",
+        name: "Lifecycle Admin",
+        email: `admin-${suffix}@smarthealth.test`,
+        password: "12345678",
+      });
+      assert.equal(adminResponse.status, 201);
+      const admin = await adminResponse.json();
+      const adminHeaders = { Authorization: `Bearer ${admin.token}` };
+
+      const doctorResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/register`, {
+        role: "patient",
+        name: "Lifecycle Doctor",
+        email: `doctor-${suffix}@smarthealth.test`,
+        password: "12345678",
+      });
+      assert.equal(doctorResponse.status, 201);
+      const doctor = await doctorResponse.json();
+      const doctorHeaders = { Authorization: `Bearer ${doctor.token}` };
+
+      const firstSubmitResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request`,
+        {
+          requestedRole: "doctor",
+          name: "Lifecycle Doctor",
+          phone: "0900000000",
+          license: "CCHN-LIFE-001",
+          organizationId: "org_default_clinic",
+          hospital: "Smart Health Clinic",
+          department: "Tim mach",
+          reason: "Initial smoke request",
+        },
+        doctorHeaders,
+      );
+      assert.equal(firstSubmitResponse.status, 200);
+      const firstSubmit = await firstSubmitResponse.json();
+      assert.equal(firstSubmit.user.roleRequestStatus, "pending");
+
+      const requestInfoResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests/${encodeURIComponent(doctor.user.id)}/request-info`,
+        {
+          message: "Vui long bo sung CCHN va chuyen khoa.",
+          requiredFields: ["license", "specialty"],
+        },
+        adminHeaders,
+      );
+      assert.equal(requestInfoResponse.status, 200);
+      const requestInfo = await requestInfoResponse.json();
+      assert.equal(requestInfo.request.status, "needs_info");
+
+      const needsInfoBefore = await getJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests?status=needs_info`,
+        adminHeaders,
+      );
+      assert.equal(needsInfoBefore.response.status, 200);
+      assert.ok(needsInfoBefore.data.requests.some((request) => request.id === doctor.user.id));
+
+      const resubmitResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request`,
+        {
+          requestedRole: "doctor",
+          name: "Lifecycle Doctor Updated",
+          phone: "0911111111",
+          license: "CCHN-LIFE-UPDATED",
+          organizationId: "org_default_clinic",
+          hospital: "Smart Health Clinic",
+          department: "Tim mach",
+          reason: "Updated smoke request",
+        },
+        doctorHeaders,
+      );
+      assert.equal(resubmitResponse.status, 200);
+      const resubmit = await resubmitResponse.json();
+      assert.equal(resubmit.user.roleRequestStatus, "pending");
+      assert.deepEqual(resubmit.user.roleInfoRequiredFields, []);
+      assert.equal(resubmit.user.roleInfoRequestMessage, "");
+
+      const polled = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, doctorHeaders);
+      assert.equal(polled.response.status, 200);
+      assert.equal(polled.data.user.roleRequestStatus, "pending");
+      assert.deepEqual(polled.data.user.roleInfoRequiredFields, []);
+
+      const needsInfoAfter = await getJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests?status=needs_info`,
+        adminHeaders,
+      );
+      assert.equal(needsInfoAfter.response.status, 200);
+      assert.equal(needsInfoAfter.data.requests.some((request) => request.id === doctor.user.id), false);
+
+      const pendingAfter = await getJson(
+        `http://127.0.0.1:${port}/api/v1/admin/doctor-requests?status=pending`,
+        adminHeaders,
+      );
+      assert.equal(pendingAfter.response.status, 200);
+      assert.ok(pendingAfter.data.requests.some((request) => request.id === doctor.user.id));
+    }
+  );
+}
+
 async function main() {
   await testDemoAuth();
   await testProductionLocksDemoAuth();
+  await testDoctorRequestNeedsInfoResubmit();
   console.log("backend smoke tests passed");
 }
 

@@ -179,6 +179,7 @@ Doctor approval request-info sync checks:
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\web-monitor
 npm.cmd run check
+npm.cmd test
 
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 npm.cmd run build
@@ -207,6 +208,8 @@ Manual E2E expectation for `request-info`:
 - The changed row moves to the `needs_info` tab immediately, without waiting for a full page reload.
 - Backend returns the doctor user with `roleRequestStatus = "needs_info"`, `roleInfoRequestMessage`, and `roleInfoRequiredFields`.
 - Android doctor pending screen refreshes within about 15 seconds, shows the admin message, and lists the required fields.
+- When the doctor taps update/resubmit, backend must persist `roleRequestStatus = "pending"` and clear `roleInfoRequestMessage` plus `roleInfoRequiredFields`; a later `/api/auth/firebase` poll must still return `pending`, not fall back to `needs_info`.
+- Admin `pending` list should contain the doctor after resubmit, and `needs_info` should no longer contain that doctor.
 - Notification list treats `doctor_info_requested` as a warning/info-required notification.
 
 2026-06-12 deploy evidence for this flow:
@@ -218,6 +221,7 @@ Manual E2E expectation for `request-info`:
 - Follow-up commits after live stale-pending report: `951c82c Persist doctor info requests in postgres` and `7f1cdef Fix doctor request timestamp persistence`.
 - Root cause: repository saves were passing empty strings to Postgres `timestamptz` columns and falling back silently, so the request-info response looked successful while SQL-backed list APIs still returned `pending`.
 - Production verification command pattern: sign in as platform smoke admin, POST `/api/admin/doctor-requests/:id/request-info`, then verify `GET /api/admin/doctor-requests?status=pending` is empty for that user and `status=needs_info` contains it. For Android parity, create a Firebase token for the doctor UID with `FIREBASE_SERVICE_ACCOUNT_JSON` and verify `/api/auth/firebase` returns `roleRequestStatus = needs_info`.
+- Resubmit follow-up verification: with the doctor Firebase token, POST `/api/auth/role-request` with the corrected doctor profile payload, wait at least the Android polling interval, then verify `/api/auth/firebase` still returns `roleRequestStatus = pending`, `roleInfoRequestMessage = ""`, and `roleInfoRequiredFields = []`. Also verify admin `status=pending` contains the user and `status=needs_info` does not.
 
 Doctor delete behavior: web admin `DELETE /api/admin/doctors/:id` requires Firebase Admin env when the doctor has `firebaseUid`. The backend deletes the Firebase Auth user first, then removes backend user/session/membership/device-token/access links. If Firebase deletion fails, the API returns an error and backend data is not reported as successfully deleted.
 

@@ -101,11 +101,12 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed: backend `npm.cmd run check`, Web Admin `npm.cmd run build`, Android `.\gradlew.bat :app:compileDebugKotlin`, Android `:app:installDebug`, emulator launch on `emulator-5554`, pending-screen UI tree dump, and crash-buffer scan with no app crash.
 - Production deploy completed: commit `4e8548e` pushed to `origin/main`, Render backend served the new `/api/share-targets` auth behavior, Firebase Hosting Web Admin version `f13b8b22666bc3cd` released, and `npm.cmd run smoke:public-deployment` passed.
 - Follow-up production bug was fixed after live API testing: request-info initially returned success but the list stayed pending because Postgres rejected empty-string timestamps and repository fallback hid the failed save. Commits `951c82c` and `7f1cdef` fixed guarded persistence and timestamp null handling; production verification now shows the affected doctor in `needs_info`, not `pending`.
+- Follow-up resubmit bug fixed after Android polling reproduced the issue: app submit returned `pending`, then `/api/auth/firebase` pulled the SQL-backed `needs_info` state again. Backend now has guarded direct writes for doctor resubmit, approve, reject, and request-info; `npm.cmd test` covers the request-info/resubmit lifecycle locally.
 
 Next practical backlog items:
 
-- Continue with the real doctor Firebase account E2E after the verified `needs_info` state: Android doctor resubmits, admin approves, and the doctor dashboard unlocks.
-- Add an API/browser smoke test for `request-info -> needs_info -> resubmit` once the doctor-approval module is split enough for targeted test coverage.
+- Continue with the real doctor Firebase account E2E after the resubmit fix deploys: Android doctor resubmits, admin approves, and the doctor dashboard unlocks.
+- Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
 
 ## Phase 0 - Context And Tooling Hygiene
 
@@ -808,8 +809,9 @@ Completed in this slice:
 - Emulator smoke installed/launched the debug APK and confirmed the doctor pending screen renders without crash.
 - Render backend and Firebase Hosting Web Admin were redeployed on 2026-06-12; public deployment smoke passed afterward.
 - Live production recheck found and fixed the SQL persistence bug: empty strings in timestamp columns caused hidden Postgres save failures. After commit `7f1cdef` deployed, the affected doctor account is visible in `needs_info` and the doctor auth endpoint returns the admin request.
+- Android resubmit recheck then found the inverse stale-state bug: `/api/auth/role-request` returned `pending` before SQL persistence was confirmed, so polling returned `needs_info` again. Backend now verifies resubmit/approve/reject/request-info state transitions through direct repository updates, and `npm.cmd test` includes a lifecycle regression.
 
 Next practical backlog items:
 
-- Run one real doctor-account E2E loop through request-info, doctor resubmit, and admin approval.
-- Add targeted smoke coverage for the request-info status transition when the admin module is easier to test.
+- Run the deployed real doctor-account E2E loop through request-info, doctor resubmit, admin approval, and doctor dashboard unlock.
+- Add browser-level Doctor Approval smoke once the admin module is easier to test; backend API coverage for this transition is now present.

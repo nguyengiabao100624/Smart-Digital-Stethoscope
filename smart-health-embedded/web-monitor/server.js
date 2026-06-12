@@ -5841,12 +5841,13 @@ async function handleAuthApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "role-request" && method === "POST") {
-    const user = requireSessionUser(req);
+    let user = requireSessionUser(req);
     const payload = await readJsonBody(req);
     const requestedRole = readString(payload.requestedRole || payload.role, 40);
     if (!["doctor", "patient"].includes(requestedRole)) {
       throw httpError(400, "Requested role is not supported");
     }
+    const previousRoleRequestStatus = user.roleRequestStatus || "";
 
     const requestedWorkspaceType = normalizeWorkspaceType(
       payload.workspaceType || payload.accountType,
@@ -5893,7 +5894,34 @@ async function handleAuthApi(req, res, segments) {
     user.updatedAt = nowIso();
     ensureMembershipForUser(user);
 
-    if (repositories) {
+    if (
+      repositories &&
+      requestedRole === "doctor" &&
+      user.roleRequestStatus === "pending" &&
+      typeof repositories.users.resubmitDoctorRequest === "function"
+    ) {
+      const persistedUser = await repositories.users.resubmitDoctorRequest(user.id, {
+        role: user.role,
+        roleRequestedAt: user.roleRequestedAt,
+        name: user.name,
+        phone: user.phone,
+        license: user.license,
+        hospital: user.hospital,
+        department: user.department,
+        organizationId: user.organizationId,
+      });
+      if (
+        !persistedUser ||
+        persistedUser.roleRequestStatus !== "pending" ||
+        normalizeRoleInfoFields(persistedUser.roleInfoRequiredFields).length > 0 ||
+        (persistedUser.roleInfoRequestMessage || "")
+      ) {
+        throw httpError(500, "Không thể gửi lại hồ sơ bác sĩ vào trạng thái chờ duyệt.");
+      }
+      user = persistedUser;
+      ensureMembershipForUser(user);
+      await repositories.memberships.ensureForUser(user);
+    } else if (repositories) {
       await repositories.users.save(user);
       await repositories.memberships.ensureForUser(user);
     }
@@ -5906,7 +5934,10 @@ async function handleAuthApi(req, res, segments) {
         userId: user.id,
         organizationId: user.organizationId || "",
       });
-      addAccessLog("Doctor role approval requested", { ip: req.socket.remoteAddress || "" });
+      addAccessLog("Doctor role approval requested", {
+        ip: req.socket.remoteAddress || "",
+        previousRoleRequestStatus,
+      });
     }
 
     await saveDb();
@@ -7073,11 +7104,13 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser.roleApprovedAt = nowIso();
       targetUser.roleRejectedAt = "";
       targetUser.roleRejectReason = "";
+      targetUser.roleInfoRequestAt = "";
+      targetUser.roleInfoRequestMessage = "";
+      targetUser.roleInfoRequiredFields = [];
       targetUser.organizationId = organizationId;
       targetUser.updatedAt = nowIso();
       ensureMembershipForUser(targetUser);
       if (repositories) {
-        await repositories.users.save(targetUser);
         await repositories.memberships.ensureForUser(targetUser);
       }
 
@@ -7092,7 +7125,26 @@ async function handleAdminApi(req, res, url, segments) {
           error: err && err.message ? err.message : String(err),
         };
       }
-      if (repositories) {
+      if (repositories && typeof repositories.users.updateDoctorRequestState === "function") {
+        const persistedUser = await repositories.users.updateDoctorRequestState(targetUser.id, {
+          role: targetUser.role,
+          roleRequestStatus: targetUser.roleRequestStatus,
+          accountStatus: targetUser.accountStatus,
+          roleRequestedAt: targetUser.roleRequestedAt,
+          roleApprovedAt: targetUser.roleApprovedAt,
+          roleRejectedAt: targetUser.roleRejectedAt,
+          roleRejectReason: targetUser.roleRejectReason,
+          roleInfoRequestAt: targetUser.roleInfoRequestAt,
+          roleInfoRequestMessage: targetUser.roleInfoRequestMessage,
+          roleInfoRequiredFields: targetUser.roleInfoRequiredFields,
+          organizationId: targetUser.organizationId,
+          firebaseClaims: targetUser.firebaseClaims || {},
+        });
+        if (!persistedUser || persistedUser.roleRequestStatus !== "approved" || persistedUser.role !== "doctor") {
+          throw httpError(500, "Không thể lưu trạng thái phê duyệt bác sĩ vào cơ sở dữ liệu.");
+        }
+        targetUser = persistedUser;
+      } else if (repositories) {
         await repositories.users.save(targetUser);
       }
       createNotification(
@@ -7141,8 +7193,30 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser.accountStatus = "active";
       targetUser.roleRejectedAt = nowIso();
       targetUser.roleRejectReason = reason;
+      targetUser.roleApprovedAt = "";
+      targetUser.roleInfoRequestAt = "";
+      targetUser.roleInfoRequestMessage = "";
+      targetUser.roleInfoRequiredFields = [];
       targetUser.updatedAt = nowIso();
-      if (repositories) {
+      if (repositories && typeof repositories.users.updateDoctorRequestState === "function") {
+        const persistedUser = await repositories.users.updateDoctorRequestState(targetUser.id, {
+          role: targetUser.role,
+          roleRequestStatus: targetUser.roleRequestStatus,
+          accountStatus: targetUser.accountStatus,
+          roleRequestedAt: targetUser.roleRequestedAt,
+          roleApprovedAt: targetUser.roleApprovedAt,
+          roleRejectedAt: targetUser.roleRejectedAt,
+          roleRejectReason: targetUser.roleRejectReason,
+          roleInfoRequestAt: targetUser.roleInfoRequestAt,
+          roleInfoRequestMessage: targetUser.roleInfoRequestMessage,
+          roleInfoRequiredFields: targetUser.roleInfoRequiredFields,
+          organizationId: targetUser.organizationId,
+        });
+        if (!persistedUser || persistedUser.roleRequestStatus !== "rejected") {
+          throw httpError(500, "Không thể lưu trạng thái từ chối bác sĩ vào cơ sở dữ liệu.");
+        }
+        targetUser = persistedUser;
+      } else if (repositories) {
         await repositories.users.save(targetUser);
       }
       createNotification(
@@ -7196,12 +7270,14 @@ async function handleAdminApi(req, res, url, segments) {
           role: targetUser.role,
           roleRequestStatus: targetUser.roleRequestStatus,
           accountStatus: targetUser.accountStatus,
+          roleRequestedAt: targetUser.roleRequestedAt,
           roleApprovedAt: targetUser.roleApprovedAt || "",
           roleRejectedAt: targetUser.roleRejectedAt || "",
           roleRejectReason: targetUser.roleRejectReason || "",
           roleInfoRequestAt: targetUser.roleInfoRequestAt,
           roleInfoRequestMessage: targetUser.roleInfoRequestMessage,
           roleInfoRequiredFields: targetUser.roleInfoRequiredFields,
+          organizationId: targetUser.organizationId,
         });
         if (!persistedUser || persistedUser.roleRequestStatus !== "needs_info") {
           throw httpError(500, "Không thể lưu trạng thái cần bổ sung vào cơ sở dữ liệu.");

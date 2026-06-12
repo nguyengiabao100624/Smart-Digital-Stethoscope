@@ -806,7 +806,7 @@ function createRepositories(options) {
 
     async updateDoctorRequestState(identifier, patch = {}) {
       const id = String(identifier || "");
-      const nextClaims = {};
+      const nextClaims = { ...objectOf(patch.firebaseClaims) };
       if (Array.isArray(patch.roleInfoRequiredFields)) {
         nextClaims.roleInfoRequiredFields = patch.roleInfoRequiredFields;
       }
@@ -820,12 +820,14 @@ function createRepositories(options) {
               role = $2,
               role_request_status = $3,
               account_status = $4,
-              role_approved_at = $5,
-              role_rejected_at = $6,
-              role_reject_reason = $7,
-              role_info_request_at = $8,
-              role_info_request_message = $9,
-              firebase_claims = COALESCE(users.firebase_claims, '{}'::jsonb) || $10::jsonb,
+              role_requested_at = COALESCE($5, role_requested_at),
+              role_approved_at = $6,
+              role_rejected_at = $7,
+              role_reject_reason = $8,
+              role_info_request_at = $9,
+              role_info_request_message = $10,
+              organization_id = COALESCE($11, organization_id),
+              firebase_claims = COALESCE(users.firebase_claims, '{}'::jsonb) || $12::jsonb,
               updated_at = now()
             WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1)
             RETURNING *
@@ -835,11 +837,13 @@ function createRepositories(options) {
             patch.role || "patient",
             patch.roleRequestStatus || "pending",
             patch.accountStatus || "active",
+            optionalTimestamp(patch.roleRequestedAt),
             optionalTimestamp(patch.roleApprovedAt),
             optionalTimestamp(patch.roleRejectedAt),
             optional(patch.roleRejectReason),
             optionalTimestamp(patch.roleInfoRequestAt),
             optional(patch.roleInfoRequestMessage),
+            patch.organizationId === undefined ? null : patch.organizationId,
             JSON.stringify(nextClaims),
           ]
         );
@@ -856,6 +860,86 @@ function createRepositories(options) {
       }
       Object.assign(user, patch, {
         requestedRole: "doctor",
+        updatedAt: nowIso(),
+      });
+      syncArrayItem(getDb().users, user);
+      await saveDb();
+      return user;
+    },
+
+    async resubmitDoctorRequest(identifier, patch = {}) {
+      const id = String(identifier || "");
+      const submittedAt = patch.roleRequestedAt || nowIso();
+      const nextClaims = { roleInfoRequiredFields: [] };
+      const hasSql = Boolean(getPool());
+      const sqlUser = await withSql(async (pool) => {
+        const result = await pool.query(
+          `
+            UPDATE users
+            SET
+              requested_role = 'doctor',
+              role = $2,
+              role_request_status = 'pending',
+              account_status = 'active',
+              role_requested_at = $3,
+              role_approved_at = NULL,
+              role_rejected_at = NULL,
+              role_reject_reason = '',
+              role_info_request_at = NULL,
+              role_info_request_message = '',
+              name = COALESCE(NULLIF($4, ''), name),
+              phone = COALESCE(NULLIF($5, ''), phone),
+              license = COALESCE(NULLIF($6, ''), license),
+              hospital = COALESCE(NULLIF($7, ''), hospital),
+              department = COALESCE(NULLIF($8, ''), department),
+              organization_id = COALESCE(NULLIF($9, ''), organization_id),
+              firebase_claims = COALESCE(users.firebase_claims, '{}'::jsonb) || $10::jsonb,
+              updated_at = now()
+            WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1)
+            RETURNING *
+          `,
+          [
+            id,
+            patch.role || "patient",
+            optionalTimestamp(submittedAt),
+            patch.name || "",
+            patch.phone || "",
+            patch.license || "",
+            patch.hospital || "",
+            patch.department || patch.specialty || "",
+            patch.organizationId || "",
+            JSON.stringify(nextClaims),
+          ]
+        );
+        return result.rows[0] ? rowToUser(result.rows[0]) : null;
+      });
+      if (hasSql && !sqlUser) {
+        return null;
+      }
+      const user = sqlUser
+        ? syncArrayItem(getDb().users, sqlUser)
+        : getDb().users.find((item) => item.id === id || item.firebaseUid === id || String(item.email || "").toLowerCase() === id.toLowerCase());
+      if (!user) {
+        return null;
+      }
+      Object.assign(user, {
+        requestedRole: "doctor",
+        role: patch.role || "patient",
+        roleRequestStatus: "pending",
+        accountStatus: "active",
+        roleRequestedAt: submittedAt,
+        roleApprovedAt: "",
+        roleRejectedAt: "",
+        roleRejectReason: "",
+        roleInfoRequestAt: "",
+        roleInfoRequestMessage: "",
+        roleInfoRequiredFields: [],
+        name: patch.name || user.name,
+        phone: patch.phone || user.phone,
+        license: patch.license || user.license,
+        hospital: patch.hospital || user.hospital,
+        department: patch.department || patch.specialty || user.department,
+        organizationId: patch.organizationId || user.organizationId,
         updatedAt: nowIso(),
       });
       syncArrayItem(getDb().users, user);

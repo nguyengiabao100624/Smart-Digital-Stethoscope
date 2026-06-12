@@ -8,6 +8,10 @@ function optional(value) {
   return value === undefined ? null : value;
 }
 
+function optionalTimestamp(value) {
+  return value ? value : null;
+}
+
 function objectOf(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -400,11 +404,11 @@ function createRepositories(options) {
           user.accountStatus || "active",
           optional(user.requestedRole),
           optional(user.roleRequestStatus),
-          optional(user.roleRequestedAt),
-          optional(user.roleApprovedAt),
-          optional(user.roleRejectedAt),
+          optionalTimestamp(user.roleRequestedAt),
+          optionalTimestamp(user.roleApprovedAt),
+          optionalTimestamp(user.roleRejectedAt),
           optional(user.roleRejectReason),
-          optional(user.roleInfoRequestAt),
+          optionalTimestamp(user.roleInfoRequestAt),
           optional(user.roleInfoRequestMessage),
           JSON.stringify(firebaseClaimsForUser(user)),
         ]
@@ -831,10 +835,10 @@ function createRepositories(options) {
             patch.role || "patient",
             patch.roleRequestStatus || "pending",
             patch.accountStatus || "active",
-            optional(patch.roleApprovedAt),
-            optional(patch.roleRejectedAt),
+            optionalTimestamp(patch.roleApprovedAt),
+            optionalTimestamp(patch.roleRejectedAt),
             optional(patch.roleRejectReason),
-            optional(patch.roleInfoRequestAt),
+            optionalTimestamp(patch.roleInfoRequestAt),
             optional(patch.roleInfoRequestMessage),
             JSON.stringify(nextClaims),
           ]

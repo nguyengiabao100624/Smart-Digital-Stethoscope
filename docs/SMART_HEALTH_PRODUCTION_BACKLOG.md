@@ -110,10 +110,11 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Android email verification follow-up: the app now reloads Firebase user state before splash routing, email verification checking, and resend. Generic "không thể kiểm tra xác thực email" is split into Firebase, token, backend, and role-request messages, and resend explains when the account is already verified instead of implying another email was sent. Android compile, debug APK build, install/launch smoke, and crash-buffer scan passed.
 - Android auth UI spacing follow-up: the shared `VerificationBackButton` now uses status-bar-safe top spacing so the `Quay lại` control on verification/contact auth screens sits lower like the signup/forgot-password controls. Reviewed the other Android back headers; the remaining gradient/white headers already use a larger top offset or `statusBarsPadding`.
 - Android doctor-login recovery follow-up: verified doctor accounts that still have a stored full pending registration but no backend doctor request now resubmit that request from `LoginScreen` instead of showing the misleading "not granted doctor" message. The old rejected-account path remains separate, so an actual admin rejection is not silently resubmitted.
+- Backend doctor-login recovery follow-up: `/api/auth/role-request` now persists the selected workspace/private clinic before saving a repository-backed doctor request, fixing the new private-doctor account path that could fail and leave Android on a red "chưa gửi lại được hồ sơ" message. Android now parses backend error-object messages and re-checks auth status after role-request exceptions.
 
 Next practical backlog items:
 
-- Continue the real doctor Firebase account E2E: log in as the new verified private-doctor account, confirm the stored request is resubmitted to pending, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
+- After Render redeploys this backend fix and the new APK is installed, continue the real doctor Firebase account E2E: log in as the new verified private-doctor account, confirm the stored request is resubmitted to pending, admin sees the updated pending row, approves, and the doctor dashboard unlocks.
 - Add browser-level Web Admin smoke for the same lifecycle; the backend API regression now exists in `npm.cmd test`.
 - Ask the user to resubmit once from the real Android UI with the final human-written reason, then approve from Web Admin and confirm the doctor dashboard unlocks.
 

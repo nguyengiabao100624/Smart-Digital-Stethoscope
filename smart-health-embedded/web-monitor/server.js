@@ -5994,6 +5994,9 @@ async function handleAuthApi(req, res, segments) {
     user.department = readString(payload.department || payload.specialty, 160) || user.department;
     user.registrationReason = readString(payload.reason || payload.registrationReason, 1000) || user.registrationReason || "";
     user.updatedAt = nowIso();
+    if (repositories && selectedClinic && typeof repositories.organizations?.upsert === "function") {
+      await repositories.organizations.upsert(selectedClinic);
+    }
     ensureMembershipForUser(user);
 
     if (

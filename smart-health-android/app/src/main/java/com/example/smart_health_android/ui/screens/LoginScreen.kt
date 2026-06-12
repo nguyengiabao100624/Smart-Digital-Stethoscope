@@ -268,8 +268,16 @@ fun LoginScreen(
                                     workspaceType = pendingDoctorRegistration.workspaceTypeForRoleRequest()
                                 )
                             } catch (exception: Exception) {
+                                val refreshedUser = runCatching {
+                                    SmartHealthRepository.api.authenticateFirebase(idToken).user
+                                }.getOrNull()
+                                if (refreshedUser?.isPendingDoctorApproval() == true) {
+                                    PendingRegistrationStore.clear(context)
+                                    onDoctorApprovalPending()
+                                    return@launch
+                                }
                                 errorMessage = exception.toVietnameseMessage(
-                                    "Email đã xác thực nhưng chưa gửi lại được hồ sơ bác sĩ lên máy chủ. Vui lòng thử lại."
+                                    "Chưa gửi được hồ sơ bác sĩ lên máy chủ. Vui lòng thử lại hoặc mở lại màn xác thực email để gửi lại hồ sơ."
                                 )
                                 return@launch
                             }

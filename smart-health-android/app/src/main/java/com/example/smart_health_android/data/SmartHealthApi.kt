@@ -662,7 +662,7 @@ class SmartHealthApi(
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                val message = runCatching { JSONObject(text).optString("error") }.getOrNull()
+                val message = parseApiErrorMessage(text)
                 throw IOException(message?.ifBlank { null } ?: "HTTP ${response.code}")
             }
             return if (text.isBlank()) JSONObject() else JSONObject(text)
@@ -673,7 +673,7 @@ class SmartHealthApi(
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val text = response.body?.string().orEmpty()
-                val message = runCatching { JSONObject(text).optString("error") }.getOrNull()
+                val message = parseApiErrorMessage(text)
                 throw IOException(message?.ifBlank { null } ?: "HTTP ${response.code}")
             }
             return response.body?.bytes() ?: ByteArray(0)
@@ -690,6 +690,19 @@ class SmartHealthApi(
             udpPort = json.optInt("udpPort", 3001),
             updatedAt = json.stringOrNull("updatedAt")
         )
+    }
+
+    private fun parseApiErrorMessage(text: String): String? {
+        return runCatching {
+            val json = JSONObject(text)
+            val error = json.opt("error")
+            when (error) {
+                is JSONObject -> error.optString("message")
+                    .ifBlank { error.optString("code") }
+                is String -> error
+                else -> json.optString("message")
+            }.ifBlank { null }
+        }.getOrNull()
     }
 
     private fun parsePatient(json: JSONObject): Patient {

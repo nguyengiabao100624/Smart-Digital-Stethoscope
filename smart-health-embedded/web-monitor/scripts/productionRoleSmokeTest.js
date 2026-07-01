@@ -97,6 +97,19 @@ function assertWorkspaceAdminUser(user) {
   assert.equal(capabilities.some((capability) => capability.startsWith("platform.")), false);
 }
 
+function assertDoctorPortalUser(user) {
+  const capabilities = user.capabilities || [];
+  const allowedSurfaces = user.allowedSurfaces || [];
+  assert.equal(user.role, "doctor");
+  assert.equal(user.requestedRole, "doctor");
+  assert.equal(user.roleRequestStatus, "approved");
+  assert.ok(allowedSurfaces.includes("portal"));
+  assert.equal(user.defaultSurface, "portal");
+  assert.ok(capabilities.includes("workspace.dashboard.view"));
+  assert.ok(capabilities.includes("workspace.scans.manage"));
+  assert.equal(capabilities.some((capability) => capability.startsWith("platform.")), false);
+}
+
 async function authenticateBackend(backendUrl, idToken) {
   const authHeader = { Authorization: `Bearer ${idToken}` };
   const login = await getJson(`${backendUrl}/api/auth/firebase`, authHeader);
@@ -113,6 +126,8 @@ async function runAccountSmoke({ apiKey, backendUrl, account, assertUser }) {
     email: account.email,
     role: result.meUser.role,
     workspaceId: result.meUser.currentWorkspaceId || "",
+    allowedSurfaces: result.meUser.allowedSurfaces || [],
+    defaultSurface: result.meUser.defaultSurface || "",
     capabilityCount: (result.meUser.capabilities || []).length,
     hasPlatformCapabilities: (result.meUser.capabilities || []).some((capability) => capability.startsWith("platform.")),
   };
@@ -170,6 +185,18 @@ async function main() {
         smartHealth: { role: "workspace_admin", organizationId },
       },
       assertUser: assertWorkspaceAdminUser,
+    },
+    {
+      key: "doctor",
+      email: (process.env.SMOKE_DOCTOR_EMAIL || "doctor.portal.smoke@smarthealth.test").toLowerCase(),
+      password: process.env.SMOKE_DOCTOR_PASSWORD || randomPassword(),
+      displayName: "Smart Health Doctor Portal Smoke",
+      claims: {
+        role: "doctor",
+        organizationId: "vn_hospital_quan_y_175",
+        smartHealth: { role: "doctor", organizationId: "vn_hospital_quan_y_175" },
+      },
+      assertUser: assertDoctorPortalUser,
     },
   ];
 

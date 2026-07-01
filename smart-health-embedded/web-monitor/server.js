@@ -1121,8 +1121,10 @@ function getClinicFromPayload(payload) {
 }
 
 function ensureOrganizationFromCatalog(clinic) {
-  if (!clinic || getClinicById(clinic.id)) return;
-  db.organizations.push({
+  if (!clinic) return null;
+  const existing = getClinicById(clinic.id);
+  if (existing) return existing;
+  const organization = {
     id: clinic.id,
     name: clinic.name,
     type: clinic.type || "hospital",
@@ -1134,7 +1136,9 @@ function ensureOrganizationFromCatalog(clinic) {
     status: clinic.status || "active",
     createdAt: nowIso(),
     updatedAt: nowIso(),
-  });
+  };
+  db.organizations.push(organization);
+  return organization;
 }
 
 function ensurePersonalWorkspaceForUser(user) {
@@ -3952,6 +3956,7 @@ async function upsertFirebaseUser(decodedToken, req) {
       ? readString(decodedToken.smartHealth.organizationId, 120)
       : "") ||
     "org_default_clinic";
+  const claimedWorkspace = ensureOrganizationFromCatalog(getCatalogClinicById(organizationId));
 
   let matchedByEmail = false;
   let user = repositories ? await repositories.users.findByIdOrFirebaseUid(firebaseUid) : null;
@@ -4003,6 +4008,12 @@ async function upsertFirebaseUser(decodedToken, req) {
       user.role = "admin";
     } else if (claimedRole === "workspace_admin" || claimedRole === "workspace_owner") {
       user.role = claimedRole;
+    } else if (claimedRole === "doctor") {
+      user.role = "doctor";
+      user.requestedRole = "doctor";
+      user.roleRequestStatus = "approved";
+      user.roleApprovedAt = user.roleApprovedAt || now;
+      user.accountStatus = user.accountStatus || "active";
     } else if (["nurse", "technician", "billing", "viewer"].includes(claimedRole)) {
       user.role = claimedRole;
     } else if (isApprovedDoctorRole(user)) {
@@ -4022,7 +4033,22 @@ async function upsertFirebaseUser(decodedToken, req) {
     user.updatedAt = now;
   }
 
+  if (claimedRole === "doctor") {
+    user.requestedRole = "doctor";
+    user.roleRequestStatus = "approved";
+    user.roleApprovedAt = user.roleApprovedAt || now;
+    user.accountStatus = user.accountStatus || "active";
+    user.accountType = user.accountType && user.accountType !== "personal" ? user.accountType : "doctor";
+  }
+  if (claimedWorkspace) {
+    user.hospital = user.hospital || claimedWorkspace.name || "";
+    user.workspaceType = user.workspaceType || claimedWorkspace.workspaceType || claimedWorkspace.type || "";
+  }
+
   ensureMembershipForUser(user);
+  if (claimedWorkspace && repositories && typeof repositories.organizations?.upsert === "function") {
+    await repositories.organizations.upsert(claimedWorkspace);
+  }
   if (isPatientUser(user)) {
     ensurePatientProfileForUser(user);
   }

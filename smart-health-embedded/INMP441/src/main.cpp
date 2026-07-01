@@ -3,27 +3,60 @@
 #include <ArduinoWebsockets.h>
 #include "driver/i2s.h"
 #include <math.h>
+#include <string.h>
+#include <TFT_eSPI.h>
 
+TFT_eSPI tft = TFT_eSPI();
 using namespace websockets;
 
 // =======================
 // WiFi + WebSocket server
 // =======================
-const char* WIFI_SSID = "Quang_Danh";
-const char* WIFI_PASS = "#Danh28042004";
+#ifndef SMART_HEALTH_WIFI_SSID
+#define SMART_HEALTH_WIFI_SSID ""
+#endif
 
-// IP may tinh hoac VPS chay Node.js server
-const char* WS_HOST = "192.168.1.60";
-const int WS_PORT = 3000;
+#ifndef SMART_HEALTH_WIFI_PASS
+#define SMART_HEALTH_WIFI_PASS ""
+#endif
+
+#ifndef SMART_HEALTH_WS_HOST
+#define SMART_HEALTH_WS_HOST "smart-health-api-xj0a.onrender.com"
+#endif
+
+#ifndef SMART_HEALTH_WS_PORT
+#define SMART_HEALTH_WS_PORT 443
+#endif
+
+#ifndef SMART_HEALTH_WS_TLS
+#define SMART_HEALTH_WS_TLS 1
+#endif
+
+#ifndef SMART_HEALTH_DEVICE_ID
+#define SMART_HEALTH_DEVICE_ID ""
+#endif
+
+#ifndef SMART_HEALTH_DEVICE_SECRET
+#define SMART_HEALTH_DEVICE_SECRET ""
+#endif
+
+const char* WIFI_SSID = SMART_HEALTH_WIFI_SSID;
+const char* WIFI_PASS = SMART_HEALTH_WIFI_PASS;
+
+const char* WS_HOST = SMART_HEALTH_WS_HOST;
+const int WS_PORT = SMART_HEALTH_WS_PORT;
+const bool WS_USE_TLS = SMART_HEALTH_WS_TLS != 0;
+const char* DEVICE_ID = SMART_HEALTH_DEVICE_ID;
+const char* DEVICE_SECRET = SMART_HEALTH_DEVICE_SECRET;
 
 // =======================
 // INMP441 I2S pins
 // =======================
 #define MIC_I2S_PORT I2S_NUM_0
 
-#define I2S_WS   5
-#define I2S_SD   6
-#define I2S_SCK  4
+#define I2S_WS   11
+#define I2S_SD   12
+#define I2S_SCK  10
 
 // Keep 16 kHz so the current WebSocket/audio pipeline does not need changes.
 #define SAMPLE_RATE 16000
@@ -230,6 +263,13 @@ void setupHeartbeatFilters() {
 }
 
 void setupWiFi() {
+  if (strlen(WIFI_SSID) == 0 || strlen(WIFI_PASS) == 0) {
+    Serial.println("Missing WiFi config. Set SMART_HEALTH_WIFI_SSID and SMART_HEALTH_WIFI_PASS in PlatformIO build flags.");
+    while (true) {
+      delay(1000);
+    }
+  }
+
   Serial.println();
   Serial.print("Connecting WiFi: ");
   Serial.println(WIFI_SSID);
@@ -250,8 +290,23 @@ void setupWiFi() {
 }
 
 bool connectWebSocket() {
+  if (strlen(WS_HOST) == 0) {
+    Serial.println("Missing WebSocket host. Set SMART_HEALTH_WS_HOST in PlatformIO build flags.");
+    return false;
+  }
+
   lastWsConnectAttemptMs = millis();
-  String url = "ws://" + String(WS_HOST) + ":" + String(WS_PORT) + "/esp";
+  String deviceId = String(DEVICE_ID);
+  if (deviceId.length() == 0) {
+    deviceId = "smarthealth-inmp-" + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
+  }
+
+  String url = WS_USE_TLS ? "wss://" : "ws://";
+  url += String(WS_HOST) + ":" + String(WS_PORT) + "/esp?deviceId=" + deviceId;
+  if (strlen(DEVICE_SECRET) > 0) {
+    url += "&secret=";
+    url += DEVICE_SECRET;
+  }
 
   Serial.print("Connecting WebSocket: ");
   Serial.println(url);
@@ -454,6 +509,35 @@ void updateAgcAndPlotter(int16_t audio) {
   }
 }
 
+void uiTask(void *pvParameters) {
+  // Ép bật cứng đèn nền ở GPIO 16
+  pinMode(16, OUTPUT);
+  digitalWrite(16, HIGH);
+
+  tft.init();
+  tft.setRotation(1); // Màn hình ngang
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  // Dữ liệu hiệu chuẩn cảm ứng mẫu (có thể cần thay đổi tùy loại màn)
+  uint16_t calData[5] = { 275, 3620, 264, 3532, 1 };
+  tft.setTouch(calData);
+
+  while (true) {
+    tft.setCursor(10, 10, 4);
+    tft.printf("BPM: %3d   ", (int)heartBpm);
+    tft.setCursor(10, 40, 4);
+    tft.printf("Peak: %5d  ", rawPeak);
+
+    uint16_t x, y;
+    if (tft.getTouch(&x, &y)) {
+      tft.fillCircle(x, y, 2, TFT_RED);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -462,6 +546,16 @@ void setup() {
   setupI2S();
   setupHeartbeatFilters();
   connectWebSocket();
+
+  xTaskCreatePinnedToCore(
+    uiTask,
+    "uiTask",
+    4096,
+    NULL,
+    1,
+    NULL,
+    0 // Chạy trên Core 0 (Core rảnh)
+  );
 
   Serial.println("Amplified heartbeat audio streaming started");
 }

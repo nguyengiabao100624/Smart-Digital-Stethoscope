@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -30,7 +30,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. No real queue/model pipeline yet. |
 | Object storage | Scaffold/partial | MinIO/S3 direction is chosen. Local storage fallback remains important. Signed URL and quota/retention need verification/completion. |
-| Firmware production | Partial cloud-first | ESP32 code avoids committed secrets, has WiFi recovery AP, outbound backend WebSocket telemetry/audio, backend command handling, and HTTPS cloud OTA with SHA-256 verification. LAN ArduinoOTA is dev-only and disabled by default. Secure NVS/certificate provisioning, signed firmware, rollback, buffering, and real-board validation remain pending. |
+| Firmware production | Partial cloud-first | ESP32 code avoids committed secrets, has WiFi recovery AP, outbound backend WebSocket telemetry/audio, backend command handling, and HTTPS cloud OTA with SHA-256 verification. MSM261 builds normal/OTA firmware; INMP441 now defaults to WSS Render `/esp?deviceId=...&secret=...` instead of local-only `ws://`. LAN ArduinoOTA is dev-only and disabled by default. Secure NVS/certificate provisioning, signed firmware, rollback, buffering, and real-board validation remain pending. |
 | CI/CD and monitoring | Partial | GitHub Actions now checks backend, workspace access smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds. A manual Web Admin Firebase Hosting deploy workflow exists for `shcare-admin` once GitHub secrets are configured. Metrics, alerts, backups, and full release automation are still pending. |
 | Production readiness gate | Real/checker | Backend has a readiness CLI, strict deploy gate, platform-only readiness API, Web Admin deployment tab, production env example, and third-party setup runbook. The current local/demo env is intentionally blocked until real Firebase/Postgres/S3/HTTPS/secret setup is supplied. |
 | Context/new-chat handoff | Real | Context docs and AI skill docs exist. Third-party skills are user-wide under `C:\Users\baobe\.agents\skills`; project-local skill copies were removed on 2026-06-22. `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` documents selective routing, automatic installed skill/tool selection, and the every-task `context-budget` + `strategic-compact` token gate. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
@@ -66,6 +66,27 @@ This file records the real project state. Keep it factual: implemented, partial,
 - `productionRoleSmokeTest.js` now adds `doctor.portal.smoke@smarthealth.test` and asserts `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces` includes `portal`, `defaultSurface=portal`, workspace capabilities exist, and no `platform.*` capabilities leak.
 - `smart-health-web` auth now rejects stale/non-portal Firebase sessions cleanly and maps login errors to the right Vietnamese message instead of a single wrong-surface message.
 - Deployment/verification completed: backend commit `be70b551` pushed to `origin/main` and Render served the fix; `shcare.web.app` version `b7b7cbd5b2aa7ea4` and `shcare-admin.web.app` version `3dd196503be75e50` were released; live account audit returned `role=doctor`, `allowedSurfaces=["portal","android"]`, `defaultSurface=portal`, workspace `Bệnh viện Quân y 175`; `npm.cmd run smoke:production-roles` and `npm.cmd run smoke:public-deployment` passed.
+
+## 2026-07-02 End-to-end Validation And Firmware Sync
+
+### Implemented
+
+- Synced the INMP441 firmware sketch with the backend device WebSocket contract. It now defaults to `wss://smart-health-api-xj0a.onrender.com:443/esp?deviceId=...`, sends optional `secret`, and auto-generates a stable `smarthealth-inmp-<chip>` id if no build-time id is supplied. WiFi password and real device secret remain outside source.
+- Updated INMP441 PlatformIO comments with production Render/WSS flags and local `ws://` fallback flags.
+
+### Verification
+
+- Backend passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, rerun `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, and `npm.cmd run smoke:api-production`.
+- Live account audit for `baobee100624@gmail.com` passed without printing tokens: Firebase claim `doctor`, backend `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces=["portal","android"]`, `defaultSurface=portal`, workspace `Bệnh viện Quân y 175`, and no platform capability.
+- Web Portal passed: `bunx tsc --noEmit --pretty false`, `bun run build:firebase`, live `https://shcare.web.app` HTTP 200, no localhost API in live main bundle, and Render API present.
+- Web Admin passed: `npm.cmd run build:firebase:admin`; live fetched JS assets contain no old `Tài khoản chưa có quyền quản trị` guard text.
+- Android passed: `.\gradlew.bat :app:compileDebugKotlin`.
+- Firmware passed: MSM261 normal and OTA PlatformIO environments, plus INMP441 default environment.
+
+### Remaining Limits
+
+- `check:production:strict` remains blocked only in the local shell because Render/Supabase/S3/PHI/email envs are not loaded there. Workspace inspection found no Render CLI/API key/config, so host envs could not be inspected directly.
+- Physical ESP32-S3 validation still requires a connected board, real WiFi, device id/secret from Web Admin, flash/upload, serial monitor, heartbeat/audio evidence, and OTA evidence.
 
 ## 2026-06-09 Core Realtime Cleanup
 

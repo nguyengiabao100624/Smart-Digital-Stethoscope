@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
 
@@ -41,6 +41,15 @@ Update only the sections affected by the change. Keep the files concise, factual
 - Deployed `shcare.web.app` Firebase Hosting version `projects/162993928259/sites/shcare/versions/b7b7cbd5b2aa7ea4`, release `projects/162993928259/sites/shcare/channels/live/releases/1782922148098000`; live portal bundle has Render API URL and no localhost API fallback.
 - Rebuilt/deployed `shcare-admin.web.app` Firebase Hosting version `projects/162993928259/sites/shcare-admin/versions/3dd196503be75e50`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1782922169045000`; live admin bundle contains the portal redirection message for doctor/workspace accounts and no longer contains the old `Tài khoản chưa có quyền quản trị` login guard text.
 - Verified live after Render deploy: `baobee100624@gmail.com` returns `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces=["portal","android"]`, `defaultSurface=portal`, workspace `Bệnh viện Quân y 175`; `npm.cmd run smoke:production-roles` passes for platform admin, workspace admin, and doctor portal; `npm.cmd run smoke:public-deployment` passes for Render, `shcare-admin`, and `shcare`.
+
+## 2026-07-02 — End-to-end validation and INMP441 cloud sync
+
+- Ran the current cross-surface smoke matrix from the handoff: backend `check`, `test`, `smoke:workspace-access`, `smoke:repositories`, `smoke:public-deployment`, `smoke:production-roles`, and local `smoke:api-production` passed. The first public smoke attempt aborted on live network fetch, but the isolated rerun passed.
+- Rebuilt `smart-health-web` with production Firebase/Render envs; `bunx tsc --noEmit --pretty false` and `bun run build:firebase` passed. Live `shcare.web.app` still serves main JS `assets/index-CrirQFf4.js` with `smart-health-api-xj0a.onrender.com/api` present and `localhost:3000` count 0.
+- Rebuilt Web Admin with `npm.cmd run build:firebase:admin`; live `shcare-admin.web.app` has no `Tài khoản chưa có quyền quản trị` guard text in fetched JS assets and still contains portal-domain routing copy.
+- Android `.\gradlew.bat :app:compileDebugKotlin` passed. Android debug default remains the public Render backend; release builds still block non-HTTPS/local backend URLs.
+- Firmware builds passed with `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe`: MSM261 default and OTA environments, plus INMP441. INMP441 was synced to the backend cloud contract by defaulting to WSS `smart-health-api-xj0a.onrender.com:443` and sending `/esp?deviceId=...&secret=...`; WiFi and device secrets remain build/provisioning flags, not source constants.
+- Local `npm.cmd run check:production:strict` still reports `BLOCKED` because local PowerShell does not contain Render/Supabase/S3/PHI/email provider envs. This is a local-env limitation, not evidence that Firebase/Render/Supabase must be recreated. No Render CLI/API key/config was present in the workspace to inspect host secrets directly.
 
 Final responses after Smart Health implementation work must include a short "Còn chưa làm / tiếp tục" section listing the remaining planned work and the next practical step. This is required so future chats and the user do not have to ask what remains after each execution.
 

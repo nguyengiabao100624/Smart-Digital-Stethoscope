@@ -1,6 +1,6 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
@@ -628,7 +628,7 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
 C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-ota
 ```
 
-Last verified on 2026-06-06 after cloud-first firmware changes: both environments passed. Approximate result for the current build was RAM 15.7%, flash 29.7%.
+Last verified on 2026-07-02 after end-to-end validation: MSM261 normal and OTA environments passed. Approximate result for the current build was RAM 15.7%, flash 29.7%.
 
 Upload when board is on the configured COM port:
 
@@ -708,6 +708,57 @@ build_flags =
 ```
 
 - Keep the real LAN OTA password out of source. For KLTN/product demo, prefer cloud OTA from Web Admin.
+
+## 4.1. Firmware - INMP441 Display/Audio Sketch
+
+Working directory:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\INMP441
+```
+
+Build:
+
+```powershell
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
+```
+
+Last verified on 2026-07-02: default PlatformIO build passed after syncing the sketch to the backend cloud WebSocket contract.
+
+Current production defaults:
+
+- `SMART_HEALTH_WS_HOST` defaults to `smart-health-api-xj0a.onrender.com`.
+- `SMART_HEALTH_WS_PORT` defaults to `443`.
+- `SMART_HEALTH_WS_TLS` defaults to `1`, so the URL is `wss://...`.
+- The WebSocket path is `/esp?deviceId=...&secret=...`, matching backend device registration.
+- If `SMART_HEALTH_DEVICE_ID` is empty, the sketch generates `smarthealth-inmp-<chip>` from ESP efuse MAC.
+- `SMART_HEALTH_DEVICE_SECRET` is optional for demo but should be supplied from Web Admin for real devices.
+
+Example flashing flags:
+
+```ini
+build_flags =
+  -DSMART_HEALTH_WIFI_SSID=\"YourWiFi\"
+  -DSMART_HEALTH_WIFI_PASS=\"YourPassword\"
+  -DSMART_HEALTH_WS_HOST=\"smart-health-api-xj0a.onrender.com\"
+  -DSMART_HEALTH_WS_PORT=443
+  -DSMART_HEALTH_WS_TLS=1
+  -DSMART_HEALTH_DEVICE_ID=\"smarthealth-INMP441\"
+  -DSMART_HEALTH_DEVICE_SECRET=\"device-secret-issued-by-web-admin\"
+```
+
+Local development fallback only:
+
+```ini
+build_flags =
+  -DSMART_HEALTH_WIFI_SSID=\"YourWiFi\"
+  -DSMART_HEALTH_WIFI_PASS=\"YourPassword\"
+  -DSMART_HEALTH_WS_HOST=\"192.168.1.100\"
+  -DSMART_HEALTH_WS_PORT=3000
+  -DSMART_HEALTH_WS_TLS=0
+```
+
+Physical-board smoke still requires a real ESP32-S3 connected over COM, valid WiFi, and a device id/secret provisioned in Web Admin.
 
 ## 5. Firebase Admin Claims
 

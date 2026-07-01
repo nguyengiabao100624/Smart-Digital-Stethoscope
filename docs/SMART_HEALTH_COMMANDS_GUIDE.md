@@ -1781,10 +1781,13 @@ The same smoke is now also the focused Shcare Portal backend-contract suite. It 
 
 ```text
 commit: 409a3592 Fix portal backend route contract
+tooling commit: 71a38f3e Add backend production smoke tooling
 live backend: https://smart-health-api-xj0a.onrender.com
 public smoke: npm.cmd run smoke:public-deployment passed
 auth smoke: npm.cmd run smoke:production-roles passed
 route canary: doctor.viewer.smoke@smarthealth.test has workspace.devices.view, no workspace.devices.manage, and GET /api/v1/devices/lite-steth-a92/events returned HTTP 200
 ```
+
+The tooling commit changed backend `npm start` to `node scripts/start.js`. On hosts with `DATABASE_URL`, `scripts/start.js` runs `scripts/migrate.js` first, then starts `server.js`; without `DATABASE_URL`, it starts normally. Migration `006_secure_public_tables.sql` enables RLS and revokes direct Supabase `anon`/`authenticated` table access so web/mobile clients continue to use the Render backend API.
 
 In a local demo env, `check:production:strict` is still expected to fail with `BLOCKED`; pass requires real provider envs on the backend host.

@@ -61,6 +61,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Follow-up source fix completed for Web Admin/Portal backend contract: `/api/v1/devices/:id/events` is now handled in the device route with scoped read access, and single notification delete no longer crashes through an unrelated device assertion. `smoke:workspace-access` now covers device event scope and `/api/portal/notifications/:id` delete.
 - Portal backend-contract smoke was expanded and passed locally: public contact, portal status/overview/monitoring/reports/audit, patient CRUD, patient share/revoke, scan update, device assign/command, staff create/list, settings/workspace patch, account notification preferences, share-target tenant scoping, notification read/read-all/delete, device-event scoping, and cross-workspace denials.
 - Deployed the backend route-contract fix through commit `409a3592` pushed to `origin/main`. Live verification passed: `smoke:public-deployment`, `smoke:production-roles`, and a doctor view-only canary confirmed HTTP 200 for `GET /api/v1/devices/lite-steth-a92/events` without `workspace.devices.manage`.
+- Deployed production tooling through commit `71a38f3e`: Render `npm start` now applies tracked SQL migrations when `DATABASE_URL` exists, migration `006_secure_public_tables.sql` denies direct Supabase table access to `anon`/`authenticated`, public smoke covers the Shcare Portal rewrites, and repository metadata smoke is tracked.
 - Do not redo provider setup from scratch: earlier docs confirm the project already has Render backend `https://smart-health-api-xj0a.onrender.com`, Firebase Auth/Hosting, Supabase Postgres, and Supabase Storage S3-compatible config. `check:production:strict` exits nonzero in local PowerShell because local env does not include Render secret envs. Next work is authenticated mutation smoke against the existing Firebase/Supabase-backed backend plus provider/runtime hardening where env access is available.
 
 ## Recently Completed - 2026-06-06 Cloud Device Slice
@@ -953,6 +954,7 @@ Completed in this slice:
 - Live authenticated portal E2E passed for existing Firebase role accounts: workspace/facility smoke and doctor canary. Coverage was read-only: Firebase sign-in, backend Firebase auth, `/api/me`, portal status, overview, patients, devices, scans, notifications, reports, and audit log.
 - Public web hero seam was fixed and deployed to `shcare.web.app`; top of home remains dark, while the dark-to-light transition now uses a gradient/progress bridge instead of a hard boundary.
 - Backend route-contract fix was deployed through commit `409a3592`; live smoke confirmed Render/Firebase Hosting reachability, production role auth, and doctor view-only access to device event history.
+- Backend production tooling commit `71a38f3e` was pushed after the route fix; live public and production-role smoke still passed.
 
 Still blocking true production backend:
 

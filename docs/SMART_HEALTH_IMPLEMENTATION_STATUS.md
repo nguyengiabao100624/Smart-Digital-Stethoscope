@@ -916,6 +916,7 @@ KLTN report artifacts generated from this evidence set:
 - Workspace access and portal backend-contract smoke passed: `npm.cmd run smoke:workspace-access`.
 - Repository smoke passed: `npm.cmd run smoke:repositories`.
 - Deployed backend source through commit `409a3592` (`Fix portal backend route contract`) pushed to `origin/main` for Render auto-deploy.
+- Deployed production tooling through commit `71a38f3e` (`Add backend production smoke tooling`): `npm start` now runs migrations first when `DATABASE_URL` exists, migration `006_secure_public_tables.sql` enables deny-by-default RLS/revokes Supabase direct client table roles, portal rewrite checks were added to `smoke:public-deployment`, and `smoke:repositories` is tracked.
 - Public deployment smoke passed on rerun after one transient abort; this confirms live Render/Firebase Hosting health.
 - Production role smoke passed against Render/Firebase Auth: `npm.cmd run smoke:production-roles` verified platform admin and workspace admin `/api/me` role/capability separation.
 - Live route-contract canary passed: `doctor.viewer.smoke@smarthealth.test` returned backend `role=doctor`, had `workspace.devices.view`, did not have `workspace.devices.manage`, and received HTTP 200 from `GET /api/v1/devices/lite-steth-a92/events` on `https://smart-health-api-xj0a.onrender.com`.

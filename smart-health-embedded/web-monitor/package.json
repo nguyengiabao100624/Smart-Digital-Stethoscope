@@ -5,8 +5,8 @@
   "description": "Smart Health demo backend and web monitor",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "check": "node --check server.js && node --check src/audioProcessing.js && node --check src/cryptoPhi.js && node --check src/dataStore.js && node --check src/firebaseAuth.js && node --check src/mqttControlPlane.js && node --check src/productionReadiness.js && node --check src/queue.js && node --check src/repositories.js && node --check src/requestContext.js && node --check src/storageAdapter.js && node --check scripts/apiProductionSmokeTest.js && node --check scripts/createWorkspaceAdmin.js && node --check scripts/migrate.js && node --check scripts/migrateJsonToPostgres.js && node --check scripts/mqttSmokeTest.js && node --check scripts/postgresSmokeTest.js && node --check scripts/productionReadiness.js && node --check scripts/productionRoleSmokeTest.js && node --check scripts/publicDeploymentSmokeTest.js && node --check scripts/seed.js && node --check scripts/setFirebaseClaims.js && node --check scripts/smokeTest.js && node --check scripts/storageSmokeTest.js && node --check scripts/workspaceAccessSmokeTest.js && node --check scripts/worker.js",
+    "start": "node scripts/start.js",
+    "check": "node --check server.js && node --check src/audioProcessing.js && node --check src/cryptoPhi.js && node --check src/dataStore.js && node --check src/firebaseAuth.js && node --check src/mqttControlPlane.js && node --check src/productionReadiness.js && node --check src/queue.js && node --check src/repositories.js && node --check src/requestContext.js && node --check src/storageAdapter.js && node --check scripts/apiProductionSmokeTest.js && node --check scripts/createWorkspaceAdmin.js && node --check scripts/migrate.js && node --check scripts/migrateJsonToPostgres.js && node --check scripts/mqttSmokeTest.js && node --check scripts/postgresSmokeTest.js && node --check scripts/productionReadiness.js && node --check scripts/productionRoleSmokeTest.js && node --check scripts/publicDeploymentSmokeTest.js && node --check scripts/repositoriesSmokeTest.js && node --check scripts/seed.js && node --check scripts/setFirebaseClaims.js && node --check scripts/smokeTest.js && node --check scripts/start.js && node --check scripts/storageSmokeTest.js && node --check scripts/workspaceAccessSmokeTest.js && node --check scripts/worker.js",
     "check:production": "node scripts/productionReadiness.js",
     "check:production:strict": "node scripts/productionReadiness.js --strict",
     "test": "node scripts/smokeTest.js",
@@ -19,6 +19,7 @@
     "smoke:mqtt": "node scripts/mqttSmokeTest.js",
     "smoke:api-production": "node scripts/apiProductionSmokeTest.js",
     "smoke:workspace-access": "node scripts/workspaceAccessSmokeTest.js",
+    "smoke:repositories": "node scripts/repositoriesSmokeTest.js",
     "worker": "node scripts/worker.js",
     "seed": "node scripts/seed.js",
     "firebase:claims": "node scripts/setFirebaseClaims.js",

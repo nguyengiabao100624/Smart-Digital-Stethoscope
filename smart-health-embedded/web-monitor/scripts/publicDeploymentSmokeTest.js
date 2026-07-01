@@ -1,5 +1,6 @@
 const DEFAULT_BACKEND_URL = "https://smart-health-api-xj0a.onrender.com";
 const DEFAULT_ADMIN_URL = "https://shcare-admin.web.app";
+const DEFAULT_PORTAL_URL = "https://shcare.web.app";
 
 function normalizeUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
@@ -54,6 +55,7 @@ async function expectStatus(name, url, expectedStatuses, options = {}) {
 async function main() {
   const backendUrl = normalizeUrl(process.env.SMOKE_BACKEND_URL || process.env.PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL);
   const adminUrl = normalizeUrl(process.env.SMOKE_ADMIN_URL || DEFAULT_ADMIN_URL);
+  const portalUrl = normalizeUrl(process.env.SMOKE_PORTAL_URL || DEFAULT_PORTAL_URL);
   const results = [];
 
   const health = await expectJsonOk(
@@ -78,9 +80,22 @@ async function main() {
   }
   results.push(`PASS web admin /admin-actions rewrite HTTP ${adminActions.status}`);
 
+  const portalLogin = await expectStatus("Shcare Portal /login", `${portalUrl}/login`, [200]);
+  if (!/Shcare|Smart Health|root|id="root"/i.test(portalLogin.text)) {
+    throw new Error("Shcare Portal /login did not look like the Smart Health SPA shell.");
+  }
+  results.push(`PASS shcare portal /login HTTP ${portalLogin.status}`);
+
+  const portalPatients = await expectStatus("Shcare Portal /portal/patients rewrite", `${portalUrl}/portal/patients`, [200]);
+  if (!/Shcare|Smart Health|root|id="root"/i.test(portalPatients.text)) {
+    throw new Error("Shcare Portal /portal/patients did not return the SPA shell.");
+  }
+  results.push(`PASS shcare portal /portal/patients rewrite HTTP ${portalPatients.status}`);
+
   console.log("Smart Health public deployment smoke: PASS");
   console.log(`Backend: ${backendUrl}`);
   console.log(`Web Admin: ${adminUrl}`);
+  console.log(`Shcare Portal: ${portalUrl}`);
   for (const line of results) {
     console.log(`- ${line}`);
   }

@@ -8627,14 +8627,6 @@ async function handleNotificationsApi(req, res, segments) {
     return;
   }
 
-  if (segments.length === 4 && segments[3] === "events" && method === "GET") {
-    const events = db.deviceEvents.filter((event) => event.deviceId === device.id).slice(0, 100);
-    sendJson(res, 200, { events });
-    return;
-  }
-
-  assertCanManageDevice(user, device);
-
   if (segments.length === 3 && method === "DELETE") {
     if (repositories) {
       await repositories.notifications.delete(notification.id, context);
@@ -8843,12 +8835,20 @@ async function handleDevicesApi(req, res, segments) {
       ? await repositories.devices.findById(decodeURIComponent(segments[2]))
       : db.devices.find((item) => item.id === decodeURIComponent(segments[2]))
     : null;
-  if (device) {
-    assertCanManageDevice(user, device);
-  }
   if (!device) {
     throw httpError(404, "Không tìm thấy thiết bị");
   }
+
+  if (segments.length === 4 && segments[3] === "events" && method === "GET") {
+    assertCanAccessDevice(user, device);
+    const events = db.deviceEvents
+      .filter((event) => event.deviceId === device.id)
+      .slice(0, 100);
+    sendJson(res, 200, { events });
+    return;
+  }
+
+  assertCanManageDevice(user, device);
 
   if (segments.length === 3 && method === "DELETE") {
     if (repositories) {

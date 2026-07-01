@@ -792,6 +792,7 @@ function publicUser(user) {
   const { password, avatarStorage, ...safeUser } = user;
   const organization = isPlatformAdminUser(user) ? null : getClinicById(user.organizationId);
   const workspaceContext = getUserWorkspaceContext(user);
+  const surfaceInfo = getUserSurfaceInfo(user, workspaceContext);
   const isPlatformAdmin = isPlatformAdminUser(user);
   const workspace = isPlatformAdmin
     ? {
@@ -833,7 +834,10 @@ function publicUser(user) {
     currentMembership: workspaceContext.currentMembership,
     memberships: workspaceContext.memberships,
     workspace,
+    currentWorkspace: workspace,
     capabilities: workspaceContext.capabilities,
+    allowedSurfaces: surfaceInfo.allowedSurfaces,
+    defaultSurface: surfaceInfo.defaultSurface,
     workspaceType,
     accountType,
     clinicSuggestion: user.clinicSuggestion || "",
@@ -1053,6 +1057,45 @@ function getUserWorkspaceContext(user) {
       : null,
     capabilities,
   };
+}
+
+function getUserSurfaceInfo(user, context = getUserWorkspaceContext(user)) {
+  if (!user) {
+    return { allowedSurfaces: [], defaultSurface: "" };
+  }
+
+  const capabilities = context.capabilities || [];
+  if (isPlatformAdminUser(user) || capabilities.some((capability) => capability.startsWith("platform."))) {
+    return { allowedSurfaces: ["admin"], defaultSurface: "admin" };
+  }
+
+  if (isPatientUser(user)) {
+    return { allowedSurfaces: ["android"], defaultSurface: "android" };
+  }
+
+  const role = normalizeWorkspaceRole(context.currentMembership?.role || user.role);
+  const hasWorkspaceSurface =
+    ["workspace_owner", "workspace_admin", "doctor", "nurse", "technician", "billing", "viewer"].includes(role) ||
+    capabilities.some((capability) => capability.startsWith("workspace."));
+
+  if (hasWorkspaceSurface) {
+    const allowedSurfaces = role === "doctor" ? ["portal", "android"] : ["portal"];
+    return { allowedSurfaces, defaultSurface: "portal" };
+  }
+
+  return { allowedSurfaces: [], defaultSurface: "" };
+}
+
+function hasPortalSurfaceAccess(user) {
+  return getUserSurfaceInfo(user).allowedSurfaces.includes("portal");
+}
+
+function requirePortalSurfaceUser(req) {
+  const user = requireUser(req);
+  if (!hasPortalSurfaceAccess(user)) {
+    throw httpError(403, "Tài khoản không có quyền truy cập Shcare Web Portal", "PORTAL_ACCESS_DENIED");
+  }
+  return user;
 }
 
 function getCatalogClinicById(id) {
@@ -3598,7 +3641,10 @@ function setCommonHeaders(res, req = res.__smartHealthRequest) {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-File-Name");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Idempotency-Key, X-File-Name, X-Smart-Health-Surface, X-Smart-Health-Client",
+  );
   res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("X-Content-Type-Options", "nosniff");
 }
@@ -6030,6 +6076,91 @@ async function handleAuthApi(req, res, segments) {
     return;
   }
 
+  if (segments.length === 3 && segments[2] === "role-request-document" && method === "POST") {
+    const user = requireSessionUser(req);
+    const originalName = path.basename(readString(req.headers["x-file-name"], 240) || "verification-document.bin");
+    const contentType = readString(req.headers["content-type"], 160) || "application/octet-stream";
+    if (!new Set(["application/pdf", "image/jpeg", "image/png"]).has(contentType)) {
+      throw httpError(400, "Tài liệu xác minh chỉ hỗ trợ PDF, JPG hoặc PNG");
+    }
+    const buffer = await readRequestBuffer(req);
+    if (!buffer.length || buffer.length > 10 * 1024 * 1024) {
+      throw httpError(400, "Tài liệu xác minh phải có dung lượng từ 1 byte đến 10 MB");
+    }
+    const documentId = createId("doctor_doc");
+    const organizationId = user.organizationId || "org_default_clinic";
+    const objectKey = `org/${organizationId}/doctor-documents/${user.id}/${documentId}-${originalName}`;
+    const upload = await storageAdapter.putBuffer(objectKey, buffer, contentType);
+    const document = {
+      id: documentId,
+      name: originalName,
+      contentType,
+      byteSize: upload.byteSize || buffer.length,
+      objectKey,
+      storageProvider: upload.provider,
+      uploadedAt: nowIso(),
+    };
+    user.roleRequestDocuments = [...(Array.isArray(user.roleRequestDocuments) ? user.roleRequestDocuments : []), document].slice(-10);
+    await persistUserRecord(user);
+    await appendAudit("doctor.role_request.document.upload", req, {
+      actorUserId: user.id,
+      organizationId,
+      resourceType: "doctor_document",
+      resourceId: document.id,
+      metadata: { name: document.name, contentType, byteSize: document.byteSize },
+    });
+    sendJson(res, 201, { document: { id: document.id, name: document.name, contentType, byteSize: document.byteSize, uploadedAt: document.uploadedAt } });
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "workspace-request" && method === "POST") {
+    const user = requireSessionUser(req);
+    const payload = await readJsonBody(req);
+    const name = readString(payload.name || payload.clinicName, 180);
+    if (!name) throw httpError(400, "Tên cơ sở y tế là bắt buộc");
+    const existingPending = db.organizations.find((item) => item.ownerUserId === user.id && item.status === "pending");
+    const workspace = existingPending || {
+      id: createId("org"),
+      createdAt: nowIso(),
+    };
+    workspace.name = name;
+    workspace.type = normalizeWorkspaceType(payload.workspaceType || payload.clinicType, "clinic");
+    workspace.workspaceType = workspace.type;
+    workspace.address = readString(payload.address, 500);
+    workspace.phone = readString(payload.phone || payload.clinicPhone, 80);
+    workspace.email = readString(payload.email || payload.clinicEmail, 180);
+    workspace.website = readString(payload.website, 500);
+    workspace.representative = readString(payload.representative || payload.repName, 180) || user.name || "";
+    workspace.ownerUserId = user.id;
+    workspace.status = "pending";
+    workspace.requestMetadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
+    workspace.updatedAt = nowIso();
+    if (!existingPending) db.organizations.unshift(workspace);
+    user.requestedRole = "workspace_owner";
+    user.roleRequestStatus = "pending";
+    user.roleRequestedAt = nowIso();
+    user.organizationId = workspace.id;
+    user.workspaceType = workspace.workspaceType;
+    user.accountStatus = user.accountStatus || "active";
+    ensureMembershipForUser(user);
+    await persistUserRecord(user);
+    if (repositories && typeof repositories.organizations?.upsert === "function") {
+      await repositories.organizations.upsert(workspace);
+    }
+    await createBackendNotification({
+      type: "info",
+      userId: user.id,
+      organizationId: workspace.id,
+      title: "Yêu cầu duyệt workspace mới",
+      message: `${workspace.name} đang chờ Platform Admin xác minh và kích hoạt.`,
+      metadata: { actionPath: "/clinics", workspaceId: workspace.id, ownerEmail: user.email || "" },
+    });
+    await appendAudit("workspace.request", req, { actorUserId: user.id, organizationId: workspace.id, resourceType: "organization", resourceId: workspace.id });
+    await saveDb();
+    sendJson(res, 201, { workspace: publicWorkspace(workspace), user: publicUser(user) });
+    return;
+  }
+
   if (segments.length === 3 && segments[2] === "role-request" && method === "POST") {
     let user = requireSessionUser(req);
     const payload = await readJsonBody(req);
@@ -7174,10 +7305,26 @@ async function handleAdminApi(req, res, url, segments) {
             : readString(payload[field], maxLength);
         }
       }
-      if (!["active", "inactive"].includes(String(clinic.status || "active"))) {
+      if (!["active", "inactive", "pending", "rejected"].includes(String(clinic.status || "active"))) {
         clinic.status = "active";
       }
       clinic.updatedAt = nowIso();
+
+      if (isPlatformAdminUser(adminUser) && clinic.ownerUserId) {
+        const owner = db.users.find((item) => item.id === clinic.ownerUserId);
+        if (owner && clinic.status === "active" && owner.requestedRole === "workspace_owner") {
+          owner.role = "workspace_owner";
+          owner.roleRequestStatus = "approved";
+          owner.roleApprovedAt = nowIso();
+          owner.organizationId = clinic.id;
+          ensureMembershipForUser(owner);
+          await persistUserRecord(owner);
+        } else if (owner && clinic.status === "rejected" && owner.requestedRole === "workspace_owner") {
+          owner.roleRequestStatus = "rejected";
+          owner.roleRejectedAt = nowIso();
+          await persistUserRecord(owner);
+        }
+      }
 
       if (repositories) {
         await repositories.organizations.upsert(clinic);
@@ -8730,6 +8877,27 @@ async function handleDevicesApi(req, res, segments) {
         device[field] = readOptionalNumber(payload[field]) ?? device[field];
       }
     }
+    if (Object.prototype.hasOwnProperty.call(payload, "assignedPatientId")) {
+      const assignedPatientId = readString(payload.assignedPatientId, 120);
+      if (assignedPatientId) {
+        const patient = findPatient(assignedPatientId);
+        if (!patient) {
+          throw httpError(404, "Không tìm thấy bệnh nhân cần gán thiết bị");
+        }
+        assertCanAccessPatient(user, patient.id);
+        if (patient.organizationId && device.organizationId && patient.organizationId !== device.organizationId) {
+          throw httpError(403, "Không thể gán thiết bị cho bệnh nhân ngoài workspace");
+        }
+      }
+      device.assignedPatientId = assignedPatientId || "";
+      await appendAudit(assignedPatientId ? "device.assign_patient" : "device.unassign_patient", req, {
+        actorUserId: user.id,
+        organizationId: device.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
+        resourceType: "device",
+        resourceId: device.id,
+        metadata: { patientId: assignedPatientId },
+      });
+    }
     device.updatedAt = nowIso();
     if (repositories) {
       await repositories.devices.save(device);
@@ -9238,6 +9406,193 @@ async function handleDoctorPortalApi(req, res, url, segments) {
   sendJson(res, 404, { error: "Doctor route not found" });
 }
 
+async function handlePortalApi(req, res, url, segments) {
+  const method = req.method || "GET";
+  const user = requirePortalSurfaceUser(req);
+  const resource = segments[2] || "";
+
+  if (resource === "status" && segments.length === 3 && method === "GET") {
+    requireAnyCapability(user, ["workspace.dashboard.view", "workspace.devices.view", "workspace.scans.view"]);
+    const workspaceContext = getUserWorkspaceContext(user);
+    const currentWorkspaceId = workspaceContext.currentWorkspaceId || user.organizationId || "";
+    const workspace = getClinicById(currentWorkspaceId);
+    const patients = filterPatientsForUser(user, db.patients);
+    const devices = filterDevicesForUser(user, db.devices);
+    const scans = filterScansForUser(user, db.scans);
+    const onlineDevices = devices.filter((device) => publicDevice(device).online);
+    const alertsCount = devices.filter((device) => {
+      const status = String(device.status || "").toLowerCase();
+      return device.connected === false || status.includes("offline") || status.includes("error") || status.includes("fail");
+    }).length;
+    sendJson(res, 200, {
+      ok: true,
+      service: "smart-health-backend",
+      now: nowIso(),
+      mode: {
+        authMode: AUTH_MODE,
+        dataBackend: DATA_BACKEND,
+        firebaseAuth: Boolean(FIREBASE_AUTH_ENABLED),
+      },
+      workspace: {
+        id: currentWorkspaceId,
+        name: workspace?.name || user.currentWorkspace?.name || currentWorkspaceId || "Workspace",
+        type: workspace?.workspaceType || workspace?.type || user.currentWorkspace?.workspaceType || "",
+      },
+      scoped: {
+        patientsCount: patients.length,
+        devicesCount: devices.length,
+        devicesOnline: onlineDevices.length,
+        scansCount: scans.length,
+        alertsCount,
+      },
+      status: getStatusPayload(),
+    });
+    return;
+  }
+
+  if ((resource === "overview" || resource === "dashboard") && segments.length === 3 && method === "GET") {
+    await handleAdminApi(req, res, url, ["api", "admin", "overview-stats"]);
+    return;
+  }
+
+  if (resource === "patients") {
+    await handlePatientsApi(req, res, url, ["api", ...segments.slice(2)]);
+    return;
+  }
+
+  if (resource === "devices") {
+    await handleDevicesApi(req, res, ["api", ...segments.slice(2)]);
+    return;
+  }
+
+  if (resource === "scans" || resource === "monitoring") {
+    if (resource === "monitoring" && segments.length === 3 && method === "GET") {
+      requireAnyCapability(user, ["workspace.dashboard.view", "workspace.devices.view", "workspace.scans.view"]);
+      const devices = filterDevicesForUser(user, db.devices);
+      const scans = filterScansForUser(user, db.scans).slice(0, 50);
+      const attentionDevices = devices.filter((device) => {
+        const status = String(device.status || "").toLowerCase();
+        return device.connected === false || status.includes("offline") || status.includes("error") || status.includes("fail");
+      });
+      sendJson(res, 200, {
+        status: getStatusPayload(),
+        devices,
+        scans,
+        alerts: attentionDevices.map((device) => ({
+          id: device.id,
+          type: "device",
+          severity: "warning",
+          title: "Thiết bị cần kiểm tra",
+          message: `${device.name || device.id} đang mất kết nối hoặc có trạng thái bất thường.`,
+          deviceId: device.id,
+          createdAt: device.lastSeenAt || device.updatedAt || nowIso(),
+        })),
+      });
+      return;
+    }
+    await handleScansApi(req, res, url, ["api", ...(resource === "monitoring" ? ["scans", ...segments.slice(3)] : segments.slice(2))]);
+    return;
+  }
+
+  if (resource === "staff" || resource === "doctors") {
+    await handleAdminApi(req, res, url, ["api", "admin", "doctors", ...segments.slice(3)]);
+    return;
+  }
+
+  if (resource === "reports" && segments.length === 3 && method === "GET") {
+    requireAnyCapability(user, ["workspace.reports.view"]);
+    const patients = filterPatientsForUser(user, db.patients);
+    const devices = filterDevicesForUser(user, db.devices);
+    const scans = filterScansForUser(user, db.scans);
+    sendJson(res, 200, {
+      summary: {
+        patientsCount: patients.length,
+        devicesCount: devices.length,
+        scansCount: scans.length,
+        abnormalScansCount: scans.filter((scan) => String(scan.aiLabel || scan.status || "").toLowerCase().includes("abnormal")).length,
+      },
+      latestScans: scans.slice(0, 20),
+    });
+    return;
+  }
+
+  if (resource === "notifications") {
+    await handleNotificationsApi(req, res, ["api", ...segments.slice(2)]);
+    return;
+  }
+
+  if (resource === "audit-log") {
+    await handleAccessLogsApi(req, res, ["api", "access-logs", ...segments.slice(3)]);
+    return;
+  }
+
+  if (resource === "settings") {
+    if (segments[3] === "workspace" && segments.length === 4 && method === "PATCH") {
+      requireAnyCapability(user, ["workspace.settings.manage"], "Không có quyền cập nhật thông tin workspace");
+      const workspace = getClinicById(getUserWorkspaceContext(user).currentWorkspaceId);
+      if (!workspace) {
+        throw httpError(404, "Không tìm thấy workspace hiện tại");
+      }
+      const payload = await readJsonBody(req);
+      for (const field of ["name", "address", "phone", "email", "website", "representative"]) {
+        if (Object.prototype.hasOwnProperty.call(payload, field)) {
+          workspace[field] = readString(payload[field], field === "address" || field === "website" ? 500 : 180);
+        }
+      }
+      workspace.updatedAt = nowIso();
+      if (repositories && typeof repositories.organizations?.upsert === "function") {
+        await repositories.organizations.upsert(workspace);
+      }
+      await appendAudit("workspace.update", req, {
+        actorUserId: user.id,
+        organizationId: workspace.id,
+        resourceType: "workspace",
+        resourceId: workspace.id,
+      });
+      await saveDb();
+      sendJson(res, 200, { workspace: publicClinic(workspace) });
+      return;
+    }
+    await handleSettingsApi(req, res, ["api", "settings", ...segments.slice(3)]);
+    return;
+  }
+
+  if (resource === "storage") {
+    if (segments[3] === "stats" || segments.length === 3) {
+      await handleAdminApi(req, res, url, ["api", "admin", "storage-stats"]);
+      return;
+    }
+    if (segments[3] === "files") {
+      await handleAdminApi(req, res, url, ["api", "admin", "storage-files", ...segments.slice(4)]);
+      return;
+    }
+    if (segments[3] === "buckets") {
+      await handleAdminApi(req, res, url, ["api", "admin", "storage-buckets", ...segments.slice(4)]);
+      return;
+    }
+  }
+
+  if (resource === "support" && segments.length === 3 && method === "POST") {
+    const payload = await readJsonBody(req);
+    const description = readString(payload.description || payload.desc, 3000);
+    if (!description) throw httpError(400, "Vui lòng mô tả vấn đề cần hỗ trợ");
+    const notification = await createBackendNotification({
+      type: "warning",
+      userId: user.id,
+      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "",
+      title: `Yêu cầu hỗ trợ: ${readString(payload.type, 160) || "Khác"}`,
+      message: description,
+      metadata: { actionPath: "/notifications", requesterEmail: user.email || "" },
+    });
+    await appendAudit("support.request", req, { actorUserId: user.id, organizationId: notification.organizationId || "", resourceType: "notification", resourceId: notification.id });
+    await saveDb();
+    sendJson(res, 201, { ticket: { id: notification.id, status: "open", createdAt: notification.createdAt } });
+    return;
+  }
+
+  sendJson(res, 404, { error: "Portal route not found" });
+}
+
 function isActiveUserAccount(user) {
   const status = readString(user?.accountStatus || "active", 40).toLowerCase();
   return user && !user.deletedAt && !["locked", "deleted", "disabled", "inactive"].includes(status);
@@ -9352,6 +9707,34 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === "POST" && segments[1] === "contact" && segments.length === 2) {
+    const payload = await readJsonBody(req);
+    const name = readString(payload.name, 160);
+    const email = readString(payload.email, 180).toLowerCase();
+    const message = readString(payload.message, 3000);
+    if (!name || !isValidEmailAddress(email) || !message) {
+      throw httpError(400, "Họ tên, email hợp lệ và nội dung liên hệ là bắt buộc");
+    }
+    const notification = await createBackendNotification({
+      type: "info",
+      title: `Liên hệ triển khai từ ${name}`,
+      message,
+      metadata: {
+        actionPath: "/notifications",
+        contactName: name,
+        contactEmail: email,
+        contactPhone: readString(payload.phone, 80),
+        contactRole: readString(payload.role, 120),
+        clinicName: readString(payload.clinic, 180),
+        scale: readString(payload.scale, 120),
+      },
+    });
+    addAccessLog("Tiếp nhận liên hệ từ website", { ip: req.socket.remoteAddress || "" });
+    await saveDb();
+    sendJson(res, 201, { ok: true, requestId: notification.id });
+    return;
+  }
+
   if (
     method === "GET" &&
     segments[1] === "devices" &&
@@ -9372,6 +9755,11 @@ async function handleApi(req, res, url) {
 
   if (segments[1] === "admin") {
     await handleAdminApi(req, res, url, segments);
+    return;
+  }
+
+  if (segments[1] === "portal") {
+    await handlePortalApi(req, res, url, segments);
     return;
   }
 

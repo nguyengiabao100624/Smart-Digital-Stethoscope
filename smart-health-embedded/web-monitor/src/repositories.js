@@ -1508,7 +1508,10 @@ function createRepositories(options) {
         const items = hydrated[key].filter(Boolean);
         counts[key] = items.length;
         if (items.length > 0) {
-          db[key] = items;
+          // Normalized SQL rows stay authoritative for queryable columns while
+          // app_runtime_state retains forward-compatible portal metadata.
+          const runtimeItems = new Map((db[key] || []).map((item) => [item.id, item]));
+          db[key] = items.map((item) => ({ ...runtimeItems.get(item.id), ...item }));
         }
       }
       return counts;

@@ -1791,3 +1791,33 @@ route canary: doctor.viewer.smoke@smarthealth.test has workspace.devices.view, n
 The tooling commit changed backend `npm start` to `node scripts/start.js`. On hosts with `DATABASE_URL`, `scripts/start.js` runs `scripts/migrate.js` first, then starts `server.js`; without `DATABASE_URL`, it starts normally. Migration `006_secure_public_tables.sql` enables RLS and revokes direct Supabase `anon`/`authenticated` table access so web/mobile clients continue to use the Render backend API.
 
 In a local demo env, `check:production:strict` is still expected to fail with `BLOCKED`; pass requires real provider envs on the backend host.
+
+## 2026-07-01 Shcare Portal Auth API Base Hotfix
+
+Root cause for the login/register banner "Không thể kết nối backend Smart Health": the deployed `shcare.web.app` bundle had been built without `VITE_SMART_HEALTH_API_BASE_URL`, so `smart-health-web/src/lib/smart-health-api.ts` used its fallback `http://localhost:3000/api`. Browsers then tried to call the visitor's own machine instead of Render.
+
+Use this exact pattern before deploying `shcare.web.app`:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+$adminEnv = 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện\.env.production'
+Get-Content -LiteralPath $adminEnv -Encoding UTF8 | ForEach-Object {
+  if ($_ -match '^\s*(VITE_FIREBASE_[A-Z0-9_]+)=(.*)\s*$') {
+    [Environment]::SetEnvironmentVariable($matches[1], $matches[2].Trim('"').Trim("'"), 'Process')
+  }
+}
+$env:VITE_AUTH_MODE = 'production'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
+bunx tsc --noEmit --pretty false
+bun run build:firebase
+npx firebase-tools deploy --only hosting:webapp --project smart-health-stethoscope
+```
+
+Verification after deploy:
+
+```powershell
+npm.cmd run smoke:public-deployment
+```
+
+Also fetch the live main asset and confirm it has `localhostCount=0` and `renderApiCount=1` for `smart-health-api-xj0a.onrender.com/api`. The 2026-07-01 fixed release is Firebase Hosting version `projects/162993928259/sites/shcare/versions/e59c69dd22c36505`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782921251706000`.

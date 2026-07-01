@@ -38,7 +38,7 @@
 ---
 
 ## SLIDE 4: PHƯƠNG PHÁP TRIỂN KHAI PHẦN CỨNG (HARDWARE IMPLEMENTATION)
-- **Module cảm biến:** Mic MEMS (INMP441) kết nối chuẩn I2S, truyền thẳng mã nhị phân vào chip để loại bỏ 100% nhiễu Analog so với bộ chuyển ADC thông thường.
+- **Module cảm biến:** Mic MEMS MSM261S4030H0 kết nối chuẩn I2S, truyền thẳng mã nhị phân vào chip để loại bỏ 100% nhiễu Analog so với bộ chuyển ADC thông thường.
 - **Vi xử lý trung tâm đa luồng (ESP32):**
   - **Core 0** chạy luồng truy cập tự động DMA đọc sóng âm tốc độ cực đại.
   - **Core 1** chạy FreeRTOS vẽ lên màn hình OLED và gửi dữ liệu đi.

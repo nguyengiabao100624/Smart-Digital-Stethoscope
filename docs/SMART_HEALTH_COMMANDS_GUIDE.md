@@ -709,53 +709,12 @@ build_flags =
 
 - Keep the real LAN OTA password out of source. For KLTN/product demo, prefer cloud OTA from Web Admin.
 
-## 4.1. Firmware - INMP441 Display/Audio Sketch
+## 4.1. Firmware Scope
 
-Working directory:
-
-```powershell
-cd D:\Study\KLTN\smart-health-embedded\INMP441
-```
-
-Build:
+INMP441 is retired from the current product scope. Use only:
 
 ```powershell
-C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
-```
-
-Last verified on 2026-07-02: default PlatformIO build passed after syncing the sketch to the backend cloud WebSocket contract.
-
-Current production defaults:
-
-- `SMART_HEALTH_WS_HOST` defaults to `smart-health-api-xj0a.onrender.com`.
-- `SMART_HEALTH_WS_PORT` defaults to `443`.
-- `SMART_HEALTH_WS_TLS` defaults to `1`, so the URL is `wss://...`.
-- The WebSocket path is `/esp?deviceId=...&secret=...`, matching backend device registration.
-- If `SMART_HEALTH_DEVICE_ID` is empty, the sketch generates `smarthealth-inmp-<chip>` from ESP efuse MAC.
-- `SMART_HEALTH_DEVICE_SECRET` is optional for demo but should be supplied from Web Admin for real devices.
-
-Example flashing flags:
-
-```ini
-build_flags =
-  -DSMART_HEALTH_WIFI_SSID=\"YourWiFi\"
-  -DSMART_HEALTH_WIFI_PASS=\"YourPassword\"
-  -DSMART_HEALTH_WS_HOST=\"smart-health-api-xj0a.onrender.com\"
-  -DSMART_HEALTH_WS_PORT=443
-  -DSMART_HEALTH_WS_TLS=1
-  -DSMART_HEALTH_DEVICE_ID=\"smarthealth-INMP441\"
-  -DSMART_HEALTH_DEVICE_SECRET=\"device-secret-issued-by-web-admin\"
-```
-
-Local development fallback only:
-
-```ini
-build_flags =
-  -DSMART_HEALTH_WIFI_SSID=\"YourWiFi\"
-  -DSMART_HEALTH_WIFI_PASS=\"YourPassword\"
-  -DSMART_HEALTH_WS_HOST=\"192.168.1.100\"
-  -DSMART_HEALTH_WS_PORT=3000
-  -DSMART_HEALTH_WS_TLS=0
+cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
 ```
 
 Physical-board smoke still requires a real ESP32-S3 connected over COM, valid WiFi, and a device id/secret provisioned in Web Admin.

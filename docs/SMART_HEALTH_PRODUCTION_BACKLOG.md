@@ -55,12 +55,12 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Shcare Portal login now shows distinct denial messages for Android-only/patient, pending, needs-info, rejected, portal-denied, and platform-admin accounts instead of routing all non-portal accounts to admin.
 - Production smoke now covers platform admin, workspace admin, and doctor portal with real Firebase accounts. Live verification passed after backend commit `be70b551`, `shcare` release `1782922148098000`, and `shcare-admin` release `1782922169045000`.
 
-## Completed — 2026-07-02 End-to-end validation and INMP441 sync
+## Completed - 2026-07-02 MSM261 firmware-only correction
 
-- Re-ran the practical production smoke matrix across backend, live Render/Firebase Hosting, Shcare Portal, Web Admin, Android compile, and firmware compile. Backend contract, production role smoke, local API production smoke, live public deployment smoke, web builds, Android compile, MSM261 firmware, and INMP441 firmware passed.
+- Re-ran the practical production smoke matrix across backend, live Render/Firebase Hosting, Shcare Portal, Web Admin, Android compile, and firmware compile. Backend contract, production role smoke, local API production smoke, live public deployment smoke, web builds, Android compile, and MSM261 firmware passed.
 - Re-audited `baobee100624@gmail.com` through Firebase Admin custom-token sign-in and live Render `/api/me`; it now resolves to approved `doctor` portal access in `Bệnh viện Quân y 175` with no platform capabilities.
 - Confirmed `https://shcare.web.app` live main bundle contains the Render API base and no `localhost:3000` fallback. Confirmed `https://shcare-admin.web.app` fetched JS assets no longer contain the old `Tài khoản chưa có quyền quản trị` text.
-- Synced INMP441 firmware with the same backend cloud WebSocket contract: default WSS Render host/443, `/esp?deviceId=...&secret=...`, auto generated `smarthealth-inmp-<chip>` id fallback, and local `ws://` fallback only through build flags.
+- Corrected the active firmware scope: `D:\Study\KLTN\smart-health-embedded\MSM261S4030H0` is the only production firmware target. INMP441 is retired from the current product scope and should not be used for future product integration decisions.
 - Still not possible from this workspace to inspect or push Render host envs because there is no Render CLI, API key, service id, or `render.yaml`. Keep using live smoke until Render dashboard/API access is available.
 
 ## Next production slice — authenticated portal validation

@@ -48,6 +48,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verified local and live Chrome desktop/mobile QA: 1920x768 and 1536x768 hero fit, no horizontal overflow at 393px, route scroll reset to `0`, clean console, login icons visible, registration choices selectable, and live CSS asset `index-aaZfmmcI.css`.
 - Deployed Firebase Hosting site `shcare`: version `projects/162993928259/sites/shcare/versions/c200f17fb8931766`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782855884181000`.
 
+## Completed — 2026-07-01 Firebase doctor role/surface sync
+
+- Fixed the live contradiction where `baobee100624@gmail.com` was shown as a system-admin account on `shcare.web.app` but rejected on `shcare-admin.web.app`. Actual live state before the fix was Firebase claim `role=doctor`, backend `role=patient`, `allowedSurfaces=["android"]`.
+- Backend now syncs trusted Firebase custom claim `doctor` into approved doctor role, portal/android surfaces, membership role, and catalog workspace context. Catalog workspace `vn_hospital_quan_y_175` is materialized so `/api/me` can return `Bệnh viện Quân y 175`.
+- Shcare Portal login now shows distinct denial messages for Android-only/patient, pending, needs-info, rejected, portal-denied, and platform-admin accounts instead of routing all non-portal accounts to admin.
+- Production smoke now covers platform admin, workspace admin, and doctor portal with real Firebase accounts. Live verification passed after backend commit `be70b551`, `shcare` release `1782922148098000`, and `shcare-admin` release `1782922169045000`.
+
 ## Next production slice — authenticated portal validation
 
 1. Run real authenticated doctor and clinic workspace journeys against Render: sign-in, role gating, patient/device/scan/storage/notification/report actions, error states, logout, and session recovery.

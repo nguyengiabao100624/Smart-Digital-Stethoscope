@@ -10,7 +10,7 @@ All commands are for Windows PowerShell unless noted.
 
 `shcare.web.app` is built from `D:\Study\KLTN\smart-health-web` and Firebase Hosting target `webapp`. Older commands aimed at the Web Admin repository or target `admin` are for `shcare-admin.web.app`, not this portal.
 
-Latest confirmed live deploy for the public/auth UI defect and visual-fit fix: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/c200f17fb8931766`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782855884181000`. Live CSS asset observed after deploy: `https://shcare.web.app/assets/index-aaZfmmcI.css`.
+Latest confirmed live deploy for Firebase doctor role/surface sync: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/b7b7cbd5b2aa7ea4`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782922148098000`. The deployed login chunk contains distinct Android-only/patient, pending, needs-info, rejected, portal-denied, and platform-admin messages.
 
 ```powershell
 cd D:\Study\KLTN\smart-health-web
@@ -46,6 +46,8 @@ On this Windows setup use `npx.cmd`, not `npx.ps1`, because the PowerShell execu
 Invoke-WebRequest -UseBasicParsing https://shcare.web.app/login
 Invoke-WebRequest -UseBasicParsing https://smart-health-api-xj0a.onrender.com/api/health
 ```
+
+If portal/admin login screenshots disagree about the same account, do not redo Firebase/Render/Supabase setup from scratch. First inspect the Firebase custom claims and live backend `/api/auth/firebase` result for that email. A doctor account should return `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces` containing `portal`, `defaultSurface=portal`, and a workspace name. A platform admin should return `role=admin`, `allowedSurfaces=["admin"]`, and `platform.*` capabilities. The 2026-07-01 fix verified `baobee100624@gmail.com` as `doctor` in workspace `Bệnh viện Quân y 175`.
 
 Local UI QA commands used for the 2026-06-24 Signal Horizon pass:
 
@@ -175,6 +177,8 @@ If admin web login shows `Phiên đăng nhập Firebase không hợp lệ hoặc
 
 If a platform/system admin login shows the hospital-admin Workspace Portal UI, verify the Firebase custom claims first. Platform admin claims should be `role=admin` and `smartHealth.role=admin`, or `platform_admin`. Backend fix on 2026-06-07 makes those claims resolve to backend `role=admin` before workspace normalization. After pushing/deploying that fix, sign out and sign in again so Firebase sends a fresh ID token; `/api/me` should then return `role=admin` and `platform.*` capabilities.
 
+If `shcare.web.app` says an account should use admin but `shcare-admin.web.app` says it is not admin, check the backend role/surface result before changing accounts. On 2026-07-01 this happened because Firebase custom claims said `doctor` but backend returned the user as `patient/android`; backend commit `be70b551` now self-heals trusted Firebase `doctor` claims into approved portal access. After deploy, `baobee100624@gmail.com` returned `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces=["portal","android"]`, and workspace `Bệnh viện Quân y 175`.
+
 If `https://shcare-admin.web.app/` still shows the old admin shell or access-denied screen instead of redirecting to `/login` while unauthenticated, the browser is likely serving an old SPA bundle. Hosting was updated on 2026-06-08 to send `Cache-Control: no-cache, no-store, must-revalidate`; do one hard refresh (`Ctrl+F5`) or open an incognito window, then `/` should redirect to `/login`.
 
 Backend syntax/check:
@@ -217,10 +221,11 @@ $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethos
 npm.cmd run smoke:production-roles
 ```
 
-This creates or updates two Firebase smoke accounts, signs in through Firebase REST, calls the Render backend `/api/auth/firebase` and `/api/me`, and verifies:
+This creates or updates Firebase smoke accounts, signs in through Firebase REST, calls the Render backend `/api/auth/firebase` and `/api/me`, and verifies:
 
 - `platform.admin.smoke@smarthealth.test` returns backend `role=admin` and `platform.*` capabilities.
 - `workspace.admin.smoke@smarthealth.test` returns backend `role=workspace_admin` and no `platform.*` capabilities.
+- `doctor.portal.smoke@smarthealth.test` returns backend `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces=["portal","android"]`, `defaultSurface=portal`, and no `platform.*` capabilities.
 
 The generated smoke-account passwords are saved locally in ignored file `web-monitor\.test-data\production-role-smoke-credentials.json`.
 

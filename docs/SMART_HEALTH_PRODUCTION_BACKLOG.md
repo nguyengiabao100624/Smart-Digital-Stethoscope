@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-06-12
+Last updated: 2026-07-01
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -10,7 +10,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Canonical product direction is documented in `SMART_HEALTH_REMOTE_FIRST_PRODUCT_DIRECTION.md`.
 - Device quota means activated/deployed devices in a workspace, not number of patients. One activated device can measure many patient/family profiles.
 - Personal/family workspaces need dependent/family patient profiles under one account, with optional sharing to doctors/facilities.
-- Clinic/hospital administration is web-first through a Workspace Portal. The existing web admin should evolve into role-aware Platform Admin Console and Workspace Portal modes.
+- Clinic/hospital administration is web-first through `shcare.web.app` Workspace Portal. `shcare-admin.web.app` is only for Platform Admin/system administration.
 - Keep the current Node.js backend for now; do not rewrite the framework just to look cleaner.
 - Keep existing demo audio path working while production audio is added beside it.
 - Use Firebase Auth for identity.
@@ -22,6 +22,46 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
   - Audio: WSS for realtime preview, HTTPS chunk upload for durable scan storage.
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
+
+## Completed — 2026-06-24 Shcare Portal release
+
+- Deployed the doctor/clinic Workspace Portal to Firebase Hosting target `webapp -> shcare`: `https://shcare.web.app`, version `0cace76db422ed7c`, release `1782257445764000`. SPA routes do not cache the HTML entry; fingerprinted assets stay cacheable.
+- Redesigned and QA-checked the public/contact/auth journey in light and dark mode, including mobile overflow, images, links, page titles/H1s, labels, names, and password autocomplete.
+- Added the `Signal Horizon` UI layer after the initial clinical base: expressive floating pill nav, cinematic/painterly hero atmosphere, frosted cards, richer violet-blue-cyan gradients, and CSS motion inspired by the local `MẪU UI UX` references plus live Origin, Mercury, dope.security, and General Intelligence Company reads. Keep this modern direction unless the user explicitly asks to simplify it.
+- Confirmed the live portal document and the Render backend health endpoint return HTTP 200.
+- Added `.github/workflows/deploy-shcare-web.yml` for build/deploy once the required GitHub secrets are configured.
+
+## Completed — 2026-06-30 Shcare Web build/deploy hardening
+
+- Restored the missing `smart-health-web` project manifest/build files: `package.json`, `tsconfig.json`, `vite.config.ts`, `vite.firebase.config.ts`, `index.html`, `firebase.json`, `.firebaserc`, `bunfig.toml`, and `eslint.config.js`.
+- Split the React Router app at layout/page lazy boundaries. Firebase build now produces a small SPA entry (`index-e8iN3TOO.js` about 59 kB) plus route chunks; no JS chunk exceeds Vite's 500 kB warning threshold.
+- Added direct React Router `hydrateFallbackElement` on lazy route groups so local/live Chrome console has no HydrateFallback warning.
+- Extended `smoke:workspace-access` to cover `GET /api/portal/status`: workspace users receive the expected scoped counts/status, while platform admin is rejected from the portal surface.
+- Deployed Firebase Hosting site `shcare`: version `projects/162993928259/sites/shcare/versions/b4872b04beaabdec`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782803246138000`.
+
+## Completed — 2026-07-01 Shcare public/auth UI defect fix
+
+- Fixed the user-reported UI defects on `shcare.web.app`: public CTA/handoff contrast in light/dark modes, login input icon visibility, doctor registration step-2 choice selection, and top-of-home hero theme behavior.
+- Home video hero now stays dark while the visitor is at the top of `/` even if global light mode is active; after scrolling below the hero, the page smoothly returns to the active light theme.
+- Doctor registration step 2 now uses real radio inputs for `Bác sĩ Tư nhân` and `Cơ sở Y Tế / BV`, with whole-card click targets and selected-state styling.
+- Follow-up visual-fit hardening fixed the desktop-low hero crop/fit issue, kept the preview mockup within the viewport, and made the registration radio indicator follow `input:checked` directly so selected state cannot visually drift.
+- Verified local and live Chrome desktop/mobile QA: 1920x768 and 1536x768 hero fit, no horizontal overflow at 393px, route scroll reset to `0`, clean console, login icons visible, registration choices selectable, and live CSS asset `index-aaZfmmcI.css`.
+- Deployed Firebase Hosting site `shcare`: version `projects/162993928259/sites/shcare/versions/c200f17fb8931766`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782855884181000`.
+
+## Next production slice — authenticated portal validation
+
+1. Run real authenticated doctor and clinic workspace journeys against Render: sign-in, role gating, patient/device/scan/storage/notification/report actions, error states, logout, and session recovery.
+2. Verify Supabase/Postgres RLS and repository-backed tenant isolation with production-like data; do not rely on JSON/demo smoke alone.
+3. Run Lighthouse/browser performance regression on the split production bundle and tune media/font delivery if needed.
+4. Run authenticated portal visual QA with real doctor/clinic accounts so the new Signal Horizon shell is verified beyond unauthenticated redirects.
+
+## Backend audit - 2026-07-01 after Shcare UI release
+
+- Passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, and rerun `npm.cmd run smoke:public-deployment`.
+- Follow-up source fix completed for Web Admin/Portal backend contract: `/api/v1/devices/:id/events` is now handled in the device route with scoped read access, and single notification delete no longer crashes through an unrelated device assertion. `smoke:workspace-access` now covers device event scope and `/api/portal/notifications/:id` delete.
+- Portal backend-contract smoke was expanded and passed locally: public contact, portal status/overview/monitoring/reports/audit, patient CRUD, patient share/revoke, scan update, device assign/command, staff create/list, settings/workspace patch, account notification preferences, share-target tenant scoping, notification read/read-all/delete, device-event scoping, and cross-workspace denials.
+- Deployed the backend route-contract fix through commit `409a3592` pushed to `origin/main`. Live verification passed: `smoke:public-deployment`, `smoke:production-roles`, and a doctor view-only canary confirmed HTTP 200 for `GET /api/v1/devices/lite-steth-a92/events` without `workspace.devices.manage`.
+- Do not redo provider setup from scratch: earlier docs confirm the project already has Render backend `https://smart-health-api-xj0a.onrender.com`, Firebase Auth/Hosting, Supabase Postgres, and Supabase Storage S3-compatible config. `check:production:strict` exits nonzero in local PowerShell because local env does not include Render secret envs. Next work is authenticated mutation smoke against the existing Firebase/Supabase-backed backend plus provider/runtime hardening where env access is available.
 
 ## Recently Completed - 2026-06-06 Cloud Device Slice
 
@@ -58,6 +98,21 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Fixed the hosted Web Admin auth boundary: clean unauthenticated `/` now redirects to `/login`, an existing Firebase admin session opens dashboard directly, and logout signs out Firebase plus clears the stored backend token. `npm.cmd run build:firebase` passed and the fix was deployed to `https://shcare-admin.web.app`.
 - Hardened Firebase Hosting cache headers for `shcare-admin` with `Cache-Control: no-cache, no-store, must-revalidate` after Brave showed an old admin shell bundle. Fresh Chrome smoke still redirects clean unauthenticated `/` to `/login`.
 
+## Recently Completed - 2026-06-12 Web Surface Split
+
+- Chosen and implemented the product split: `shcare-admin.web.app` = Platform Admin Console only; `shcare.web.app` = doctor/clinic/facility portal; Android = patients and doctors, no clinic-admin mode.
+- Kept one backend/auth/data plane. `/api/me` now exposes `allowedSurfaces`, `defaultSurface`, and `currentWorkspace`; web login/layout uses those fields plus capabilities to block wrong-surface accounts with CTA to the correct domain.
+- Added `/api/portal/*` semantic wrappers for portal patients, devices, scans/monitoring, staff/doctors, reports, notifications, audit, settings, and storage while keeping older routes compatible.
+- Added separate Firebase Hosting build/deploy scripts for admin and portal, plus the `webapp` hosting target using `dist-firebase-portal/client`.
+- Split Figma prompts: platform-admin prompt remains in `Figma_Admin_Web_Prompt.md`; portal prompt is now `Figma_Shcare_Web_Portal_Prompt.md` with required screens and prototype flows.
+- Public deployment smoke now checks Render backend, `shcare-admin.web.app`, and `shcare.web.app` SPA rewrites after both surfaces are deployed.
+
+Remaining web-split work:
+
+- Run authenticated browser E2E for platform admin, doctor, solo doctor, and workspace admin on the two deployed domains.
+- Continue moving any workspace-operational copy/components that still say "admin" into portal-specific wording.
+- Add a dedicated GitHub Actions deploy workflow for `shcare.web.app` after Firebase secrets are configured.
+
 ## Recently Completed - 2026-06-08 CI/CD And Setup Runbook
 
 - Added root GitHub Actions workflow `Smart Health CI` for backend check, workspace smoke, production readiness report, Web Admin Firebase build, Android debug compile, and ESP32-S3 normal/OTA firmware builds.
@@ -88,7 +143,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 
 ## Recently Completed - 2026-06-11 Skills And Android Signup Catalog UX
 
-- Installed `mattpocock/skills` into `.agents/skills` and added `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` to avoid loading all skills by default.
+- Installed `mattpocock/skills` and added `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` to avoid loading all skills by default. On 2026-06-22 the filtered current set was migrated from the embedded repo to the user-wide `C:\Users\baobe\.agents\skills` directory.
 - Replaced the Android doctor-signup catalog no-op failure with a real empty/error/retry dialog. `Cơ sở y tế` and `Chuyên khoa` are now clickable even when backend catalog data cannot be loaded.
 - Verified the fix with Android compile/build, emulator install/launch, doctor signup UI tree, specialty dialog smoke, clinic dialog smoke, and logcat scan.
 - Remaining E2E gap: run the same doctor signup path against the deployed backend/Firebase with real clinic and specialty catalog rows, then submit a real doctor role request and approve it from Web Admin.
@@ -134,8 +189,11 @@ Tasks:
   - `SMART_HEALTH_COMMANDS_GUIDE.md`
 - Before opening the next production-development slice, finish the remaining physical-device KLTN evidence gap in `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`. The 2026-06-05 report evidence gate now has build/smoke logs, web admin screenshots, Android emulator screenshots, audio WAV metadata/waveform, and a final Word copy, but still lacks a same-day ESP32-S3 serial monitor/upload capture because COM6/ESP32-S3 was not detected.
 - Use CodeGraph for structure, Context7 for current docs, Chrome DevTools MCP for UI/browser verification.
+- 2026-06-23 tooling completion: `codebase-memory-mcp` is configured and `smart-health-web` is indexed; Agent Reach, filtered Matt Pocock, Academic Research, context/token skills, `impeccable`, and 11/13 Taste skills are user-wide. Every future UI task must combine `impeccable` + `gpt-taste`; add only one specialized Taste skill when relevant. Taste v1/generic base remain skipped as direct duplicates.
+- 2026-06-23 routing/token-gate completion: every future Smart Health task should map the request to the smallest relevant installed skill/tool before broad exploration. Apply lightweight `context-budget` + `strategic-compact` by default; load full ECC skill bodies for broad/long/tooling/audit/context-pressure work. The assistant should infer installed skills/tools from the registry without requiring the user to name them.
+- 2026-06-23 organization audit: `C:\Users\baobe\.codex\GLOBAL_AGENT_TOOLING.md` is the single global registry. All remaining `.ai_skills` trees were removed, stale Antigravity instruction catalogs were converted to pointers, and no shared MCP/plugin/skill payload should be stored inside a repo going forward.
 - Use the global `smart-health-project` Codex skill for project rules. The old project-local `.ai_skills` folder should not be recreated unless there is a strong reason.
-- Use `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` before choosing from the project-local `.agents/skills` set. Do not load every installed skill by default; open only the 1-2 skills needed for the current task.
+- Use `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` before choosing from the user-wide skill set. Do not load every installed skill by default; open only the 1-2 skills needed for the current task.
 - New Smart Health chats should best-effort start claude-mem if it is not running.
 
 Done when:
@@ -828,3 +886,77 @@ Next practical backlog items:
 
 - Run the deployed real doctor-account E2E loop through request-info, doctor resubmit, admin approval, and doctor dashboard unlock.
 - Add browser-level Doctor Approval smoke once the admin module is easier to test; backend API coverage for this transition is now present.
+
+## 2026-06-24 Web UI Follow-up
+
+Completed in this local UI slice:
+
+- The public header stays above content while scrolling and changes from transparent to translucent only after scroll; desktop dropdowns remain open while a user enters a child link.
+- The homepage now carries more operational context through its cinematic hero, proof cards, and handoff panel. Auth fits 1440px desktop and 500px mobile without horizontal overflow.
+- Targeted lint/build and Chrome desktop/mobile light/dark QA passed.
+
+Next practical backlog item:
+
+- Keep authenticated portal visual QA separate: the local browser pass ran without `web-monitor`, so `/api/me` was intentionally unavailable.
+
+## 2026-06-24 Public Web Visual Release
+
+Completed in this release:
+
+- Replaced the home hero surface with the local doctor video, removed the opaque color wash, and switched to masked edge-only blur so the central doctor/child area stays clear.
+- Made top-of-page header transparency and no-blur state deterministic; retained the low-opacity, 44px water-glass surface only after scrolling.
+- Added actual viewport and scroll-timeline reveal choreography across the public marketing pages while preserving `prefers-reduced-motion` support.
+- Released Firebase Hosting site `shcare`, version `7bafbc088d49e939`, at `https://shcare.web.app`.
+
+Remaining practical UI work:
+
+- Còn chưa làm / tiếp tục: run a real user visual review of the published public pages at desktop and phone breakpoints, then tune copy/media crop only from concrete feedback. The platform correctly respects device-level reduced-motion, so systems that enable it intentionally do not show animated reveals.
+- Keep bundle optimization separate from visual fidelity: the Firebase client chunk is still above the 500kB warning threshold and should be split after the visual baseline is accepted.
+
+## 2026-06-25 Web UI Fit/Motion Follow-up
+
+Completed locally in this slice:
+
+- Made desktop scroll reveals more visible by keeping public reveal targets observed and re-toggling `pending`/`visible` when elements enter or leave the viewport.
+- Updated the homepage reveal choreography to re-run on viewport entry with longer easing.
+- Removed the boxy hero trust-chip background treatment and replaced it with inline trust markers.
+- Added final CSS overrides for a non-purple teal/clinical palette, lower-opacity scrolled header glass, a clearer hero preview HUD, stronger desktop reveal offsets, smaller mobile reveal offsets, and tighter mobile hero/auth/preview fit.
+- Local verification passed: Prettier, targeted ESLint, `bun run build`, and `bun run build:firebase`.
+
+Remaining practical UI/deploy work:
+
+- Superseded by the 2026-06-30 follow-up below: Firebase deploy completed and live smoke confirmed the newer assets.
+- Bundle optimization was completed later on 2026-06-30 by route/page lazy splitting; keep only follow-up performance/Lighthouse tuning in backlog.
+
+## 2026-06-30 Web UI Mobile/Motion/Scroll Release
+
+Completed in this slice:
+
+- Fixed the phone proof-card layout regression where cards were squeezed by leftover desktop grid spans.
+- Reset scroll position on route changes across public, auth, and portal layouts.
+- Reworked homepage reveal motion to use explicit DOM state and CSS so desktop scroll animation is visible and mobile animation does not shift cards horizontally off-screen.
+- Hardened light/dark contrast for public/auth/portal text, inputs, and placeholders.
+- Added portal backend status wiring through `/api/portal/status` and a compact portal topbar status pill.
+- Built and deployed Firebase Hosting `webapp -> shcare`: version `cc264fa1be69d04a`, release `1782759036395000`, URL `https://shcare.web.app`.
+- Live smoke confirmed `/`, `/login`, latest CSS/JS assets, mobile card fit, and Render API health.
+
+Next practical backlog items:
+
+- Run authenticated portal E2E with real doctor/clinic/workspace accounts: login, wrong-surface guard, patient/device/scan/report/storage/notification actions, error states, logout/session recovery.
+- Load production envs and rerun `npm.cmd run check:production:strict`; current local shell still lacks Firebase Admin, public backend URL, Postgres, S3/R2, PHI encryption, email/SMS provider, Redis/MQTT, and firmware-signing envs.
+- Run Lighthouse/browser performance regression on the split bundle and tune media/font delivery if needed.
+
+## 2026-07-01 Production Backlog Update - Strict Env Gate And Live E2E
+
+Completed in this slice:
+
+- Live authenticated portal E2E passed for existing Firebase role accounts: workspace/facility smoke and doctor canary. Coverage was read-only: Firebase sign-in, backend Firebase auth, `/api/me`, portal status, overview, patients, devices, scans, notifications, reports, and audit log.
+- Public web hero seam was fixed and deployed to `shcare.web.app`; top of home remains dark, while the dark-to-light transition now uses a gradient/progress bridge instead of a hard boundary.
+- Backend route-contract fix was deployed through commit `409a3592`; live smoke confirmed Render/Firebase Hosting reachability, production role auth, and doctor view-only access to device event history.
+
+Still blocking true production backend:
+
+- Verify Render/backend host envs with real production providers, then rerun `npm.cmd run check:production:strict` from an environment that actually has those secrets loaded.
+- Automatic env push was not possible from the current workspace because there is no Render API key, service id, Render CLI, or render config available.
+- Required core envs: `AUTH_MODE=production`, `FIREBASE_AUTH_ENABLED=true`, `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS` or `FIREBASE_SERVICE_ACCOUNT_JSON`, `PUBLIC_BACKEND_URL`/`SMART_HEALTH_PUBLIC_URL`/`PUBLIC_API_BASE_URL`, `DATA_BACKEND=postgres`, `DATABASE_URL`, `OBJECT_STORAGE_PROVIDER=s3`, object bucket/endpoint/region/access keys, and `PHI_ENCRYPTION_KEY`.
+- Important follow-ups: restrict `CORS_ORIGIN`, configure Brevo/email, choose SMS/Zalo webhook, add Redis for multi-instance queues, add MQTT if needed, and harden firmware signing/rollback.

@@ -1,20 +1,99 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-06-12
+Last updated: 2026-07-01
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
 All commands are for Windows PowerShell unless noted.
 
-## 0. Tooling / Skills
+## Shcare Workspace Portal — current build, deploy, and smoke
 
-Project-local skills installed on 2026-06-11:
+`shcare.web.app` is built from `D:\Study\KLTN\smart-health-web` and Firebase Hosting target `webapp`. Older commands aimed at the Web Admin repository or target `admin` are for `shcare-admin.web.app`, not this portal.
+
+Latest confirmed live deploy for the public/auth UI defect and visual-fit fix: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/c200f17fb8931766`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782855884181000`. Live CSS asset observed after deploy: `https://shcare.web.app/assets/index-aaZfmmcI.css`.
 
 ```powershell
-cd D:\Study\KLTN\smart-health-embedded
-npx skills@latest add mattpocock/skills
-Get-ChildItem .\.agents\skills -Directory | Select-Object -ExpandProperty Name | Sort-Object
+cd D:\Study\KLTN\smart-health-web
+$source = 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện\.env.production'
+Get-Content -LiteralPath $source | ForEach-Object {
+  $line = $_.Trim()
+  if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
+    $idx = $line.IndexOf('=')
+    $key = $line.Substring(0, $idx).Trim()
+    $value = $line.Substring($idx + 1).Trim().Trim('"').Trim("'")
+    if ($key.StartsWith('VITE_')) { [Environment]::SetEnvironmentVariable($key, $value, 'Process') }
+  }
+}
+$env:VITE_AUTH_MODE = 'production'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
+bun run build:firebase
 ```
+
+Deploy the generated `dist-firebase` directory:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json'
+$env:npm_config_cache = 'D:\Study\KLTN\.npm-cache'
+npx.cmd firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+```
+
+On this Windows setup use `npx.cmd`, not `npx.ps1`, because the PowerShell execution policy can block the `.ps1` shim. Then smoke both the site and backend:
+
+2026-06-25 sandbox note: Codex can build `dist-firebase`, but Firebase deploy may fail inside a restricted sandbox because `npx firebase-tools` needs registry/network access and the cached CLI needs Google OAuth/configstore access. If that happens, run the same deploy command from a normal local terminal with Firebase login/service-account network access, or from CI with the Firebase service account secret. Do not report the domain as updated unless the Firebase CLI prints a successful Hosting release/version.
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://shcare.web.app/login
+Invoke-WebRequest -UseBasicParsing https://smart-health-api-xj0a.onrender.com/api/health
+```
+
+Local UI QA commands used for the 2026-06-24 Signal Horizon pass:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx prettier --write src/app/layouts/AuthLayout.tsx src/app/layouts/PortalLayout.tsx src/app/pages/public/HomePage.tsx src/app/pages/auth/RegisterDoctorPage.tsx src/app/pages/auth/RegisterClinicPage.tsx src/styles.css src/web-styles/clinical-system.css src/web-styles/signal-horizon.css
+bunx eslint src/app/layouts/PortalLayout.tsx src/app/layouts/AuthLayout.tsx src/app/pages/public/HomePage.tsx src/app/pages/auth/RegisterDoctorPage.tsx src/app/pages/auth/RegisterClinicPage.tsx
+bun run build
+```
+
+Browser QA expectation for `smart-health-web` UI work: use Chrome DevTools against `http://127.0.0.1:8080/`, check public/auth routes in light and dark mode, and include desktop (~1440px), tablet (~768-1024px), and mobile (~500px in this environment) viewports. `eslint .` can be slow after a production build because it may scan `dist`; prefer targeted ESLint for changed source files or clean generated output before a whole-repo lint.
+
+For the current contrast/register/hero class of bugs, include this focused smoke before and after deploy:
+
+```text
+- Home `/`: in light mode at scrollY=0, `.shc-public-layout[data-shc-home-hero="active"]` and hero text/video render as dark; after scrolling below the hero, data state becomes `rest` and the light page surface returns.
+- Desktop-low hero fit: at 1920x768 and 1536x768, the home H1 and `.shc-preview` should stay inside the visible viewport without the headline feeling cropped by the header/background.
+- Home CTA and handoff/workflow panel: text remains readable in both light and dark modes.
+- Login `/login`: email/password icons and password-eye button are visible over the input surface in both light and dark modes.
+- Register `/register`: fill step 1, click through to step 2, then select both `Bác sĩ Tư nhân` and `Cơ sở Y Tế / BV`; the corresponding `input[name="doctor-registration-type"]` must become `checked=true`.
+- Mobile 390-393px: `document.documentElement.scrollWidth === document.documentElement.clientWidth` on home/login/register, and registration choice cards are full-width instead of squeezed.
+- Public route links: from a scrolled page, clicking a React Router link should land on the next route at `scrollY=0`.
+- Console should have no warnings/errors on local preview and live smoke.
+```
+
+## 0. Tooling / Skills
+
+Canonical registry and mandatory use order:
+
+```text
+C:\Users\baobe\.codex\GLOBAL_AGENT_TOOLING.md
+```
+
+Canonical third-party skill directory shared by every repo:
+
+```text
+C:\Users\baobe\.agents\skills
+```
+
+Do not recreate `D:\Study\KLTN\<repo>\.agents\skills` or repo-local `skills-lock.json` files. Matt Pocock, Impeccable, Academic Research, Taste, Agent Reach, and context/token skills are installed user-wide.
+
+Workspace local-copy audit:
+
+```powershell
+rg --files --hidden D:\Study\KLTN -g 'SKILL.md' -g 'skills-lock.json' -g '!**/node_modules/**' -g '!**/.git/**'
+```
+
+Expected result: no repo-local `SKILL.md` or `skills-lock.json`. Plugin/marketplace payloads under `C:\Users\baobe\.codex` are managed global state and must not be moved.
 
 Skill selection guide:
 
@@ -22,7 +101,7 @@ Skill selection guide:
 D:\Study\KLTN\docs\SMART_HEALTH_AGENT_SKILLS_GUIDE.md
 ```
 
-Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Use the project-local `.agents\skills` set only when the task needs it. Do not load all installed skills in one turn; open only the selected skill's `SKILL.md`. Restart Codex/new chat after installing skills so the session can auto-detect them.
+Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Select only required user-wide skills from `C:\Users\baobe\.agents\skills`; do not load the whole set. Every task starts with a lightweight routing/token gate: infer the smallest relevant installed skill/tool, apply `context-budget` to scope before reading, and apply `strategic-compact` to decide whether compact/handoff is useful at the current phase. For every UI task, load `impeccable` and `gpt-taste` together, then at most one specialized Taste skill if relevant. Restart Codex/new chat after installing skills so the session can auto-detect them.
 
 ## 0.1. Current Production Runbook And GitHub Actions
 
@@ -163,7 +242,7 @@ Workspace/RBAC HTTP smoke test with real temporary accounts:
 npm run smoke:workspace-access
 ```
 
-This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share/delete, export download, package edit denial, and technician device pairing.
+This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share/delete, export download, package edit denial, technician device pairing, device-event history scope, and portal notification delete.
 
 Last verified on 2026-06-06 after the cloud-device backend changes: passed. A separate 2026-06-05 runtime smoke on temporary ports `PORT=3450` and `AUDIO_UDP_PORT=3451` also passed `/api/health`, WebSocket `/app`, and UDP audio packet checks.
 
@@ -350,7 +429,7 @@ Production CORS after Firebase Hosting domains are active:
 CORS_ORIGIN=https://shcare-admin.web.app,https://shcare.web.app
 ```
 
-Backend supports comma-separated CORS origins. `https://shcare-admin.web.app` is the deployed Web Admin; `https://shcare.web.app` is reserved for the future user-facing web app.
+Backend supports comma-separated CORS origins. `https://shcare-admin.web.app` is Platform Admin Console; `https://shcare.web.app` is Shcare Web Portal for doctors and clinics/facilities.
 
 ## 2. Web Admin
 
@@ -376,14 +455,21 @@ Last verified in this workspace on 2026-06-06 after the cloud-first Devices page
 
 Firebase Hosting production domains:
 
-- Current Web Admin: `https://shcare-admin.web.app`
-- Future Android-like Web App reservation: `https://shcare.web.app`
+- Platform Admin Console: `https://shcare-admin.web.app`
+- Shcare Web Portal: `https://shcare.web.app`
 
-Build Web Admin for Firebase Hosting:
+Build Platform Admin for Firebase Hosting:
 
 ```powershell
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
-npm.cmd run build:firebase
+npm.cmd run build:firebase:admin
+```
+
+Build Shcare Web Portal for Firebase Hosting:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build:firebase:portal
 ```
 
 Deploy Web Admin to Firebase Hosting target `admin`:
@@ -394,16 +480,27 @@ $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethos
 npx firebase-tools@latest deploy --only hosting:admin --project smart-health-stethoscope --non-interactive
 ```
 
+Deploy Shcare Web Portal to Firebase Hosting target `webapp`:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+$env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+npx firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+```
+
 HTTP smoke after deploy:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing https://shcare-admin.web.app/login
+Invoke-WebRequest -UseBasicParsing https://shcare.web.app/login
+cd "D:\Study\KLTN\smart-health-embedded\web-monitor"
+npm.cmd run smoke:public-deployment
 ```
 
 Expected state:
 
-- `shcare-admin.web.app/login` returns 200 and shows Smart Health Admin login.
-- `shcare.web.app` can return 404 until the future user-facing web app is implemented/deployed.
+- `shcare-admin.web.app/login` returns 200 and shows Smart Health Admin login; doctor/clinic accounts should be blocked with CTA to `shcare.web.app`.
+- `shcare.web.app/login` returns 200 and shows Shcare Web Portal login; platform admin accounts should be directed back to `shcare-admin.web.app`.
 - Chrome smoke on 2026-06-07 logged in with `platform.admin.smoke@smarthealth.test`, showed `Platform Admin Console`, had no console messages after hard reload, and backend calls to `/api/me`, notifications, overview stats, and devices returned 200.
 
 If the UI still shows stale data after frontend edits, restart Vite or hard-refresh the browser.
@@ -651,6 +748,7 @@ Expected MCP entries:
 
 - `chrome-devtools`
 - `codegraph`
+- `codebase-memory`
 - `context7`
 
 Best-effort claude-mem check/start for new Smart Health chats:
@@ -699,6 +797,43 @@ C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md
 
 The old `D:\Study\KLTN\docs\.ai_skills` folder was consolidated into this global Codex skill to avoid scattering duplicated skill files across the project.
 
+Selected global skills for this workspace:
+
+```text
+C:\Users\baobe\.agents\skills\academic-research-suite
+C:\Users\baobe\.agents\skills\gpt-taste
+C:\Users\baobe\.agents\skills\context-budget
+C:\Users\baobe\.agents\skills\strategic-compact
+C:\Users\baobe\.agents\skills\agent-reach
+C:\Users\baobe\.agents\skills\impeccable
+```
+
+Default routing rule: the assistant should infer the right skill/tool from the task and registry. The user does not need to name exact skills. Load full `context-budget` and `strategic-compact` only for non-trivial, broad, long-running, multi-repo, or tooling/audit work; trivial tasks use the short checklist.
+
+Impeccable global smoke/setup command pattern:
+
+```powershell
+node C:\Users\baobe\.agents\skills\impeccable\scripts\context.mjs --target D:\Study\KLTN\smart-health-web
+```
+
+If it reports `NO_PRODUCT_MD`, follow the `impeccable` `init` workflow at the start of the first real UI task. The automated detector hook remains optional and project-specific; the global skill itself requires no project-local copy.
+
+Taste routing after the mandatory `impeccable` + `gpt-taste` pair:
+
+- `redesign-existing-projects`: existing UI redesign.
+- `image-to-code`, `imagegen-frontend-web`, `imagegen-frontend-mobile`: image-first UI workflows.
+- `minimalist-ui`, `industrial-brutalist-ui`, `high-end-visual-design`: explicit visual lanes only.
+- `brandkit`: brand-system boards.
+- `stitch-design-taste`: Google Stitch work.
+- `full-output-enforcement`: only when output truncation/placeholder behavior is the problem.
+
+Agent Reach health check (restart the shell/Codex after first install so `gh` is on `PATH`):
+
+```powershell
+agent-reach doctor
+gh auth login   # only when authenticated/private GitHub access is needed
+```
+
 ## 7. CodeGraph
 
 CodeGraph is installed as MCP. It is best for structural code questions.
@@ -711,6 +846,17 @@ codegraph init -i
 ```
 
 Do not use CodeGraph for literal string search; use `rg`.
+
+### Codebase Memory MCP
+
+Use the second graph server for broad architecture, semantic/cross-repo queries, change detection, or persistent ADRs. Do not send the same question to both graph servers.
+
+```powershell
+codebase-memory-mcp --version
+codebase-memory-mcp cli list_projects '{}'
+```
+
+The `smart-health-web` cache project is `D-Study-KLTN-smart-health-web`. Re-index from an MCP client with `index_repository` after large structural changes. Keep generated `.codebase-memory/` artifacts untracked unless the team explicitly chooses to share them.
 
 ## 8. Recommended Search Commands
 
@@ -1126,21 +1272,22 @@ cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 npm.cmd run build
 ```
 
-Web admin product build for a real backend. This must use production auth and HTTPS non-local backend URLs:
+Web product build for a real backend. This must use production auth and HTTPS non-local backend URLs:
 
 ```powershell
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 cmd.exe /c "set ""VITE_AUTH_MODE=production"" && set ""VITE_SMART_HEALTH_BASE_URL=https://api.smart-health.example.com"" && set ""VITE_SMART_HEALTH_API_BASE_URL=https://api.smart-health.example.com/api"" && npm.cmd run build:product"
 ```
 
-Expected guard check:
+Firebase Hosting surface builds for the real product:
 
 ```powershell
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
-npm.cmd run build:product
+npm.cmd run build:firebase:admin
+npm.cmd run build:firebase:portal
 ```
 
-With the current local `.env.local`, the no-override product command should fail with `VITE_SMART_HEALTH_BASE_URL must use HTTPS for product builds`.
+Expected guard check: product/Firebase builds must fail if the effective backend URL is local or non-HTTPS.
 
 Android debug build for emulator/dev:
 
@@ -1380,3 +1527,264 @@ Expected startup behavior:
 - If no Firebase session exists, app lands on email login after splash health preflight.
 - Login/signup copy should not mention `demo`, `backend cloud`, or raw `doctorUserId`/`workspaceId`.
 - Records sharing should use the searchable doctor/workspace picker after login.
+
+## 2026-06-24 Web Portal UI Regression Pass
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx prettier --write src/app/layouts/PublicLayout.tsx src/app/pages/public/HomePage.tsx src/web-styles/signal-horizon.css
+bunx eslint src/app/layouts/PublicLayout.tsx src/app/pages/public/HomePage.tsx
+bun run build
+```
+
+Browser QA: verify `/` at the top and after a desktop scroll; hover `Sản phẩm` and `Giải pháp`, then move into a child link; check `/login` and `/register` at 1440x1000 and 500x900. If the console shows `http://127.0.0.1:3000/api/me` refused, start `smart-health-embedded\web-monitor`; this is local backend availability, not a portal visual regression.
+
+## 2026-06-24 Public Web Visual Release And Firebase Hosting
+
+Run the local UI checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx prettier --write src/app/layouts/PublicLayout.tsx src/app/pages/public/HomePage.tsx src/web-styles/signal-horizon.css
+bunx eslint src/app/layouts/PublicLayout.tsx src/app/pages/public/HomePage.tsx
+bun run build
+```
+
+Production build and hosting deploy require `VITE_AUTH_MODE=production`, the production API URL, Firebase web config, and `VITE_PUBLIC_SITE_URL=https://shcare.web.app` in the process environment. Do not commit secrets to the web repo:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bun run build:firebase
+npx.cmd --yes firebase-tools@13.35.1 deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+```
+
+Published site: `https://shcare.web.app`. Visual QA must confirm at the top of `/` that the header has no surface or blur, the doctor video is visible, and the hero has two video layers: `.shc-hero-video-main` sharp plus `.shc-hero-video-edge` masked/blurred only at the outer edges. After scroll, confirm the rounded low-opacity water-glass header. In a normal-motion browser, scroll public pages to confirm left/right blur-clear reveals; `prefers-reduced-motion` intentionally disables these animations.
+
+## 2026-06-25 Public Web Fit/Motion Regression Pass
+
+Use these checks after the 2026-06-25 fit/motion patch:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx prettier --write src/app/layouts/PublicLayout.tsx src/app/pages/public/HomePage.tsx src/web-styles/signal-horizon.css
+bunx eslint src/app/context/PublicMotionContext.ts src/app/layouts/PublicLayout.tsx src/app/pages/public/HomePage.tsx
+bun run build
+```
+
+Production build:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bun run build:firebase
+```
+
+Expected Firebase build assets from this patch: `dist-firebase/assets/index-BSdxiKdV.css`, `dist-firebase/assets/index-CfcxVhIe.js`, and `dist-firebase/assets/bacsi-CH0Km87A.mp4`.
+
+Live QA checklist after deploy:
+
+- Hero trust markers under the CTA are inline text/icon markers, not white square/rectangular boxes.
+- Header at top is fully transparent with no glass surface; after scroll it is lower-opacity water glass with stronger blur.
+- Desktop scroll shows visible left/right/up reveal movement on homepage and public pages. The site motion toggle defaults enabled and can disable the choreography.
+- Mobile home, product, pricing, solution, login, and register pages have no horizontal overflow; hero preview and auth forms fit within the viewport.
+
+## 2026-06-30 Public Web Mobile/Motion Release Commands
+
+Current deployed `shcare.web.app` release after the mobile proof-card, scroll-reset, motion, contrast, and portal-status fix:
+
+```text
+Firebase Hosting site: shcare
+Firebase version: projects/162993928259/sites/shcare/versions/cc264fa1be69d04a
+Live release: projects/162993928259/sites/shcare/channels/live/releases/1782759036395000
+CSS asset: /assets/index-DftUVpnd.css
+JS asset: /assets/index-DNVNrv9k.js
+Video asset: /assets/bacsi-CH0Km87A.mp4
+```
+
+Verification commands used:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx prettier --write src/app/pages/public/HomePage.tsx src/app/layouts/PublicLayout.tsx src/web-styles/signal-horizon.css
+bunx eslint src/app/pages/public/HomePage.tsx src/app/layouts/PublicLayout.tsx src/app/layouts/AuthLayout.tsx src/app/layouts/PortalLayout.tsx src/lib/smart-health-api.ts
+bun run build
+```
+
+Backend verification:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run check:production
+```
+
+Firebase build and deploy:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+$source = 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện\.env.production'
+Get-Content -LiteralPath $source -Encoding UTF8 | ForEach-Object {
+  $line = $_.Trim()
+  if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
+    $idx = $line.IndexOf('=')
+    $key = $line.Substring(0, $idx).Trim()
+    $value = $line.Substring($idx + 1).Trim().Trim('"').Trim("'")
+    if ($key.StartsWith('VITE_')) { [Environment]::SetEnvironmentVariable($key, $value, 'Process') }
+  }
+}
+$env:VITE_AUTH_MODE = 'production'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
+bun run build:firebase
+
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json'
+$env:npm_config_cache = 'D:\Study\KLTN\.npm-cache'
+$env:XDG_CONFIG_HOME = 'D:\Study\KLTN\.config'
+New-Item -ItemType Directory -Force -Path $env:XDG_CONFIG_HOME | Out-Null
+npx.cmd firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+```
+
+Live smoke:
+
+```powershell
+$home = Invoke-WebRequest -UseBasicParsing 'https://shcare.web.app/' -Headers @{ 'Cache-Control'='no-cache' }
+$home.StatusCode
+$home.Headers['Cache-Control']
+($home.Content | Select-String -Pattern 'index-[A-Za-z0-9_-]+\.css|index-[A-Za-z0-9_-]+\.js' -AllMatches).Matches.Value | Sort-Object -Unique
+
+(Invoke-WebRequest -UseBasicParsing 'https://shcare.web.app/login' -Headers @{ 'Cache-Control'='no-cache' }).StatusCode
+(Invoke-WebRequest -UseBasicParsing 'https://smart-health-api-xj0a.onrender.com/api/health').StatusCode
+```
+
+Browser QA expectations for this release:
+
+- Mobile 390px home proof cards: `document.documentElement.scrollWidth === document.documentElement.clientWidth`; each `.shc-proof-card` spans the phone width, not a skinny vertical column.
+- Route scroll reset: from a scrolled public route, clicking another internal link returns `window.scrollY` to `0`.
+- Motion: with OS reduced-motion/default, `data-shc-motion` can be `reduced`; setting `localStorage.setItem('shc-public-motion','enabled')` and reloading should make `.shc-proof-card` move from `pending` offset/opacity/blur to `visible` opacity `1`, transform `0`, blur `0`.
+- Auth mobile dark: `/login` and `/register` keep card/input widths inside the 390px viewport and use readable input text/placeholder contrast.
+
+## 2026-06-30 Public Web Build Recovery/Code-Split Release Commands
+
+Current deployed `shcare.web.app` release after restoring the missing manifest/config, route lazy splitting, HydrateFallback cleanup, and portal-status smoke coverage:
+
+```text
+Firebase Hosting site: shcare
+Firebase version: projects/162993928259/sites/shcare/versions/b4872b04beaabdec
+Live release: projects/162993928259/sites/shcare/channels/live/releases/1782803246138000
+CSS asset: /assets/index-BQJHr-Te.css
+JS asset: /assets/index-e8iN3TOO.js
+Largest JS chunk: react-core-m1p_GdN4.js (~283 kB)
+```
+
+Web verification:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx eslint src/app/routes.tsx
+bunx tsc --noEmit --pretty false
+bun run build
+```
+
+Production Firebase build:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+$source = 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện\.env.production'
+Get-Content -LiteralPath $source -Encoding UTF8 | ForEach-Object {
+  $line = $_.Trim()
+  if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
+    $idx = $line.IndexOf('=')
+    $key = $line.Substring(0, $idx).Trim()
+    $value = $line.Substring($idx + 1).Trim().Trim('"').Trim("'")
+    if ($key.StartsWith('VITE_')) { [Environment]::SetEnvironmentVariable($key, $value, 'Process') }
+  }
+}
+$env:VITE_AUTH_MODE = 'production'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
+bun run build:firebase
+```
+
+Firebase target restore/deploy if `.firebaserc` is missing:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json'
+$env:npm_config_cache = 'D:\Study\KLTN\.npm-cache'
+$env:XDG_CONFIG_HOME = 'D:\Study\KLTN\.config'
+New-Item -ItemType Directory -Force -Path $env:XDG_CONFIG_HOME | Out-Null
+npx.cmd firebase-tools@latest target:apply hosting webapp shcare --project smart-health-stethoscope --non-interactive
+npx.cmd firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+```
+
+Backend verification now includes portal-status smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run check:production
+npm.cmd run check:production:strict
+```
+
+`check:production:strict` is expected to exit nonzero in local/demo env until real production provider secrets are configured.
+
+## 2026-07-01 Shcare Hero Seam / Production Strict / Auth E2E Commands
+
+Web verification and deploy used for the hero seam release:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bunx tsc --noEmit --pretty false
+bun run build:firebase
+bun run build
+
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json'
+$env:npm_config_cache = 'D:\Study\KLTN\.npm-cache'
+$env:XDG_CONFIG_HOME = 'D:\Study\KLTN\.config'
+npx.cmd firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+```
+
+Backend production strict and smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check:production:strict
+npm.cmd run smoke:public-deployment
+```
+
+`check:production:strict` in a local PowerShell shell remains blocked unless the same secret envs from Render are loaded into that process. Do not infer from this local failure that Render/Firebase/Supabase must be created again; the project docs already record existing Render backend, Firebase Auth/Hosting, Supabase Postgres, and Supabase Storage S3-compatible setup. Authenticated E2E used Firebase Web SDK config from `firebase-tools apps:sdkconfig` and existing `.test-data` role accounts; do not print passwords, API keys, or ID tokens in logs.
+
+## 2026-07-01 Backend Contract Fix Commands
+
+Use this focused backend suite after changing routes used by Web Admin, Shcare Portal, or Android:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run check:production
+npm.cmd run check:production:strict
+npm.cmd run smoke:public-deployment
+```
+
+For the 2026-07-01 route-contract fix, `smoke:workspace-access` specifically verifies `GET /api/v1/devices/:id/events` for own/cross-workspace devices and `DELETE /api/portal/notifications/:id`.
+
+The same smoke is now also the focused Shcare Portal backend-contract suite. It covers public contact, portal status/overview/monitoring/reports/audit, patient CRUD, patient share/revoke, scan note update, device assign/command, staff create/list, settings/workspace patch, `/api/v1/me` notification preferences, share-target tenant scoping, notification read/read-all/delete, and cross-workspace denials.
+
+2026-07-01 deploy evidence for this BE route-contract fix:
+
+```text
+commit: 409a3592 Fix portal backend route contract
+live backend: https://smart-health-api-xj0a.onrender.com
+public smoke: npm.cmd run smoke:public-deployment passed
+auth smoke: npm.cmd run smoke:production-roles passed
+route canary: doctor.viewer.smoke@smarthealth.test has workspace.devices.view, no workspace.devices.manage, and GET /api/v1/devices/lite-steth-a92/events returned HTTP 200
+```
+
+In a local demo env, `check:production:strict` is still expected to fail with `BLOCKED`; pass requires real provider envs on the backend host.

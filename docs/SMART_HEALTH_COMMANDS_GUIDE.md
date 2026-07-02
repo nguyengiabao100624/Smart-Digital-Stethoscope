@@ -12,6 +12,10 @@ All commands are for Windows PowerShell unless noted.
 
 Latest confirmed live deploy for Firebase doctor role/surface sync: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/b7b7cbd5b2aa7ea4`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782922148098000`. The deployed login chunk contains distinct Android-only/patient, pending, needs-info, rejected, portal-denied, and platform-admin messages.
 
+Source tracking note: `smart-health-web` is a tracked source project. Keep `dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log` untracked; `docs/Logo.png` and `smart-health-web\MẪU UI UX\bacsi.mp4` are required runtime assets for the portal build.
+
+GitHub Actions workflow for Shcare Web: `.github/workflows/deploy-shcare-web.yml`. It runs on pushes touching `smart-health-web/**` and builds with `bun install --frozen-lockfile`, `bun run lint`, and `bun run build:firebase` before deploying Firebase Hosting target `webapp`.
+
 ```powershell
 cd D:\Study\KLTN\smart-health-web
 $source = 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện\.env.production'

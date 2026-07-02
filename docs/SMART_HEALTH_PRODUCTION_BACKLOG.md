@@ -75,6 +75,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Deployed backend commit `7ca15841` to Render and Shcare Web Hosting version `aac78c3631f574b4` to `https://shcare.web.app`.
 - Live production email canary passed: temporary unverified Firebase doctor account called `/api/auth/email-verification`, Render returned `status=sent` and `provider=brevo`, and the temporary backend user was deleted. Live CORS from `https://shcare.web.app` to the endpoint passed.
 
+## Completed - 2026-07-02 Shcare Web source and CI tracking
+
+- Moved `smart-health-web` from untracked local-only state into the Git staging set with source, config, lockfile, required runtime assets, and Firebase Hosting config.
+- Added `.github/workflows/deploy-shcare-web.yml` so future pushes touching `smart-health-web/**` can build/deploy `shcare.web.app` from GitHub Actions.
+- Updated `.gitignore` so generated web build/cache output remains untracked while the required home-page video asset is tracked.
+- Verified the tracked web project with `bun install --frozen-lockfile`, `bun run lint`, `bunx tsc --noEmit --pretty false`, and production `bun run build:firebase`.
+
 ## Next production slice — authenticated portal validation
 
 1. Run real authenticated doctor and clinic workspace journeys against Render: sign-in, role gating, patient/device/scan/storage/notification/report actions, error states, logout, and session recovery.

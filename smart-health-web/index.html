@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b5c9a" />
+    <meta
+      name="description"
+      content="Smart Health Care giúp bác sĩ và cơ sở y tế theo dõi tim phổi từ xa với thiết bị thông minh, hồ sơ lượt đo và workspace bảo mật."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Smart Health Care" />
+    <meta property="og:url" content="https://shcare.web.app/" />
+    <meta property="og:image" content="https://shcare.web.app/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://shcare.web.app/og-image.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..900&family=Nunito+Sans:ital,wght@0,300..900;1,300..900&family=Outfit:wght@400..900&display=swap"
+    />
+    <title>Smart Health Care | Workspace theo dõi tim phổi từ xa</title>
+    <script>
+      (() => {
+        try {
+          const legacy = localStorage.getItem("lovable-theme");
+          const theme = localStorage.getItem("shcare-theme") || legacy || "light";
+          const selected = theme === "dark" ? "dark" : "light";
+          document.documentElement.classList.toggle("dark", selected === "dark");
+          document.documentElement.dataset.theme = selected;
+          document.documentElement.style.colorScheme = selected;
+          localStorage.setItem("shcare-theme", selected);
+          localStorage.removeItem("lovable-theme");
+        } catch {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Bạn cần bật JavaScript để sử dụng Smart Health Care.</noscript>
+    <script type="module" src="/src/spa-main.tsx"></script>
+  </body>
+</html>

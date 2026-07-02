@@ -53,9 +53,19 @@ firebase/
 **/*.tar
 **/*.tar.bz2
 **/*.mp4
+!smart-health-web/MẪU UI UX/bacsi.mp4
 **/*.avi
 **/ServoController_Windows_*/
 **/[Hshop.vn] RC Servo Controller Software/
+
+# Smart Health Web generated/local artifacts
+smart-health-web/dist/
+smart-health-web/dist-firebase/
+smart-health-web/.firebase/
+smart-health-web/.vite/
+smart-health-web/.tanstack/
+smart-health-web/.lovable/
+smart-health-web/firebase-debug.log
 
 # VSCode Workspace
 KLTN.code-workspace

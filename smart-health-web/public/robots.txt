@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /portal/
+Disallow: /login
+Disallow: /register
+Disallow: /quen-mat-khau
+Disallow: /dat-lai-mat-khau
+Disallow: /xac-nhan-email
+Disallow: /xac-thuc-email
+Disallow: /cho-duyet
+Disallow: /can-bo-sung
+Disallow: /bi-tu-choi
+Disallow: /da-duoc-duyet
+
+Sitemap: https://shcare.web.app/sitemap.xml

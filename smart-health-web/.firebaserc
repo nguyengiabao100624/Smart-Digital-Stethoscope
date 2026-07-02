@@ -1,0 +1,13 @@
+{
+  "projects": {},
+  "targets": {
+    "smart-health-stethoscope": {
+      "hosting": {
+        "webapp": [
+          "shcare"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

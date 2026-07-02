@@ -120,6 +120,14 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Local `check:production:strict` still reports `BLOCKED` because local PowerShell does not contain Render/Supabase/S3/PHI secrets, including local Brevo envs.
 - Render accepted the production email canary through Brevo. Final human inbox confirmation still requires checking the mailbox/spam folder for the canary or a real registration email, because this workspace cannot read the user's mailbox.
 
+## 2026-07-02 Shcare Web Source / CI Tracking
+
+- `smart-health-web` source is now prepared for Git tracking instead of being only a local untracked deployed artifact.
+- The tracked set includes source, config, `bun.lock`, Firebase Hosting target config, public assets, design reference files, `docs/Logo.png`, and the `MẪU UI UX/bacsi.mp4` runtime video imported by the home page.
+- Generated/local artifacts stay untracked through `.gitignore`: `dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log`.
+- Added GitHub Actions workflow `.github/workflows/deploy-shcare-web.yml` for `shcare.web.app`; it builds with Bun, validates required Firebase secrets, then deploys Firebase Hosting target `webapp`.
+- Verification passed from `smart-health-web`: `bun install --frozen-lockfile`, `bun run lint`, `bunx tsc --noEmit --pretty false`, and production `bun run build:firebase`.
+
 ## 2026-06-09 Core Realtime Cleanup
 
 - Production backend no longer auto-seeds demo users, organizations, devices, or notifications when `AUTH_MODE=production`.

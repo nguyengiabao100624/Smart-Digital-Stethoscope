@@ -14,9 +14,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build and deploy shcare.web.app
+  build:
+    name: Build shcare.web.app
     runs-on: ubuntu-latest
+    env:
+      VITE_AUTH_MODE: production
+      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-xj0a.onrender.com/api
+      VITE_PUBLIC_SITE_URL: https://shcare.web.app
+      VITE_FIREBASE_API_KEY: ci-build-only
+      VITE_FIREBASE_AUTH_DOMAIN: smart-health-stethoscope.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: smart-health-stethoscope
+      VITE_FIREBASE_STORAGE_BUCKET: smart-health-stethoscope.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: 1:000000000000:web:0000000000000000000000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install, lint, and build portal
+        working-directory: smart-health-web
+        run: |
+          bun install --frozen-lockfile
+          bun run lint
+          bun run build:firebase
+
+  deploy:
+    name: Deploy shcare.web.app
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     env:
       VITE_AUTH_MODE: production
       VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-xj0a.onrender.com/api
@@ -27,6 +58,7 @@ jobs:
       VITE_FIREBASE_STORAGE_BUCKET: smart-health-stethoscope.appspot.com
       VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
       VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,16 +68,14 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Validate required Firebase secrets
-        env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      - name: Validate required Firebase deploy secrets
         run: |
           test -n "$FIREBASE_SERVICE_ACCOUNT_JSON" || { echo "::error::Missing FIREBASE_SERVICE_ACCOUNT_JSON"; exit 1; }
           test -n "$VITE_FIREBASE_API_KEY" || { echo "::error::Missing VITE_FIREBASE_API_KEY"; exit 1; }
           test -n "$VITE_FIREBASE_MESSAGING_SENDER_ID" || { echo "::error::Missing VITE_FIREBASE_MESSAGING_SENDER_ID"; exit 1; }
           test -n "$VITE_FIREBASE_APP_ID" || { echo "::error::Missing VITE_FIREBASE_APP_ID"; exit 1; }
 
-      - name: Install and build portal
+      - name: Install and build portal for deploy
         working-directory: smart-health-web
         run: |
           bun install --frozen-lockfile
@@ -55,7 +85,6 @@ jobs:
       - name: Deploy Firebase Hosting target webapp
         working-directory: smart-health-web
         env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"

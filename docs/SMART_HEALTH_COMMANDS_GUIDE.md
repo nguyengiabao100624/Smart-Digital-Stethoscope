@@ -14,7 +14,7 @@ Latest confirmed live deploy for Firebase doctor role/surface sync: Firebase Hos
 
 Source tracking note: `smart-health-web` is a tracked source project. Keep `dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log` untracked; `docs/Logo.png` and `smart-health-web\MẪU UI UX\bacsi.mp4` are required runtime assets for the portal build.
 
-GitHub Actions workflow for Shcare Web: `.github/workflows/deploy-shcare-web.yml`. It runs on pushes touching `smart-health-web/**` and builds with `bun install --frozen-lockfile`, `bun run lint`, and `bun run build:firebase` before deploying Firebase Hosting target `webapp`.
+GitHub Actions workflow for Shcare Web: `.github/workflows/deploy-shcare-web.yml`. Pushes touching `smart-health-web/**` run a build-only CI job with `bun install --frozen-lockfile`, `bun run lint`, and `bun run build:firebase`. Firebase Hosting deploy target `webapp` runs only from manual `workflow_dispatch` and requires `FIREBASE_SERVICE_ACCOUNT_JSON`, `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, and `VITE_FIREBASE_APP_ID` repository secrets.
 
 ```powershell
 cd D:\Study\KLTN\smart-health-web

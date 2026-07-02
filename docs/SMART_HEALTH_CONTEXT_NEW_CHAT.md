@@ -70,7 +70,7 @@ Update only the sections affected by the change. Keep the files concise, factual
 
 - `smart-health-web` is no longer left as an untracked local project. Source/config/design references needed to rebuild the deployed portal were staged for Git, including `bun.lock`, Firebase Hosting config, `docs/Logo.png`, and the runtime `MẪU UI UX/bacsi.mp4` asset imported by `HomePage.tsx`.
 - Root `.gitignore` now excludes generated/local web artifacts: `smart-health-web/dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log`, while explicitly allowing the required `bacsi.mp4`.
-- Added `.github/workflows/deploy-shcare-web.yml` so GitHub can build/deploy `shcare.web.app` from tracked source. The workflow uses GitHub Secrets for Firebase config and service account JSON.
+- Added `.github/workflows/deploy-shcare-web.yml` so GitHub can build `shcare.web.app` from tracked source on push. Firebase Hosting deploy is manual-only through `workflow_dispatch` and requires GitHub Secrets for Firebase config and service account JSON.
 - Fixed `smart-health-web/eslint.config.js` so `scripts/**/*.mjs` lint under Node globals. Verified from `D:\Study\KLTN\smart-health-web`: `bun install --frozen-lockfile`, `bun run lint`, `bunx tsc --noEmit --pretty false`, and production `bun run build:firebase` passed.
 
 Final responses after Smart Health implementation work must include a short "Còn chưa làm / tiếp tục" section listing the remaining planned work and the next practical step. This is required so future chats and the user do not have to ask what remains after each execution.

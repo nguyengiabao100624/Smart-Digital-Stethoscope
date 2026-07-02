@@ -78,7 +78,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 ## Completed - 2026-07-02 Shcare Web source and CI tracking
 
 - Moved `smart-health-web` from untracked local-only state into the Git staging set with source, config, lockfile, required runtime assets, and Firebase Hosting config.
-- Added `.github/workflows/deploy-shcare-web.yml` so future pushes touching `smart-health-web/**` can build/deploy `shcare.web.app` from GitHub Actions.
+- Added `.github/workflows/deploy-shcare-web.yml` so future pushes touching `smart-health-web/**` run Shcare Web install/lint/build checks in GitHub Actions. Deploying `shcare.web.app` from GitHub Actions is manual-only and still requires Firebase repository secrets.
 - Updated `.gitignore` so generated web build/cache output remains untracked while the required home-page video asset is tracked.
 - Verified the tracked web project with `bun install --frozen-lockfile`, `bun run lint`, `bunx tsc --noEmit --pretty false`, and production `bun run build:firebase`.
 

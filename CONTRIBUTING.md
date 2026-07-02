@@ -1,5 +1,7 @@
 # Contributing to Smart Digital Stethoscope
 
+English | [Tiếng Việt](CONTRIBUTING.vi.md)
+
 Thank you for contributing to Smart Digital Stethoscope / Smart Health. This repository spans firmware, backend, Android, web, deployment, and thesis documentation, so contributions need to stay scoped, verified, and careful with secrets and medical data.
 
 ## Project Scope

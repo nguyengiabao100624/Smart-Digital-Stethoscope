@@ -4,6 +4,8 @@
 [![Deploy Shcare Web Portal](https://github.com/nguyengiabao100624/Smart-Digital-Stethoscope/actions/workflows/deploy-shcare-web.yml/badge.svg)](https://github.com/nguyengiabao100624/Smart-Digital-Stethoscope/actions/workflows/deploy-shcare-web.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+English | [Tiếng Việt](README.vi.md)
+
 Smart Digital Stethoscope, also called Smart Health, is a graduation-thesis medical IoT platform for connected digital auscultation. The project combines ESP32-S3 firmware, a Firebase-authenticated backend, Android mobile workflows, a platform admin console, and the Shcare doctor/clinic web portal.
 
 This repository is an engineering prototype and research product. It is not a certified medical device. AI and signal-processing output must be treated as decision-support information only and must not replace clinician judgment, regulated diagnostic workflow, or emergency care.
@@ -225,6 +227,6 @@ Run the subset relevant to your change if you are working on a narrow area, and 
 
 ## License
 
-This project is released under the [MIT License](LICENSE).
+This project is released under the [MIT License](LICENSE). A Vietnamese reference translation is available at [LICENSE.vi.md](LICENSE.vi.md); the English `LICENSE` file is the canonical license text.
 
-Copyright (c) 2026 Nguyen Quang Danh and Nguyen Gia Bao.
+Copyright (c) 2026 Nguyen Gia Bao and Nguyen Quang Danh.

@@ -1,5 +1,7 @@
 # Security Policy
 
+English | [Tiếng Việt](SECURITY.vi.md)
+
 Smart Digital Stethoscope / Smart Health handles authentication, workspace access, device management, clinical audio workflows, and health-record-style data. Please report security issues privately and responsibly.
 
 ## Supported Scope
@@ -22,8 +24,8 @@ Do not open a public GitHub issue for security problems.
 
 Report privately by email:
 
-- Nguyen Quang Danh: `danhnptho.word284@gmail.com`
 - Nguyen Gia Bao: `nguyengiabao100624@gmail.com`
+- Nguyen Quang Danh: `danhnptho.word284@gmail.com`
 
 If GitHub private vulnerability reporting is enabled for the repository, you may also open a private security advisory from the repository Security tab.
 

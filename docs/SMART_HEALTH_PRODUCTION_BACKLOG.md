@@ -72,6 +72,8 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Auth/session routing was fixed so pending/needs-info/rejected onboarding accounts keep their Firebase/backend session and land on the correct status pages instead of being signed out as wrong-surface users.
 - Added `npm.cmd run smoke:firebase-email` and ran it successfully against Firebase Admin for `https://shcare.web.app/xac-nhan-email`.
 - Ran backend, web, admin, Android, and MSM261 build/smoke matrix after the change. Local strict production readiness remains blocked only because provider envs are not loaded locally, including Brevo email envs.
+- Deployed backend commit `7ca15841` to Render and Shcare Web Hosting version `aac78c3631f574b4` to `https://shcare.web.app`.
+- Live production email canary passed: temporary unverified Firebase doctor account called `/api/auth/email-verification`, Render returned `status=sent` and `provider=brevo`, and the temporary backend user was deleted. Live CORS from `https://shcare.web.app` to the endpoint passed.
 
 ## Next production slice — authenticated portal validation
 
@@ -79,7 +81,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 2. Verify Supabase/Postgres RLS and repository-backed tenant isolation with production-like data; do not rely on JSON/demo smoke alone.
 3. Run Lighthouse/browser performance regression on the split production bundle and tune media/font delivery if needed.
 4. Run authenticated portal visual QA with real doctor/clinic accounts so the new Signal Horizon shell is verified beyond unauthenticated redirects.
-5. Verify real email delivery on Render after confirming `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and `WEB_PORTAL_URL=https://shcare.web.app`; then register/resend using a real mailbox and confirm receipt plus Firebase emailVerified transition.
+5. Confirm human inbox receipt for the production email canary or a fresh real registration email, including spam/promotions folders, then click the verification link and confirm Firebase `emailVerified` transition.
 
 ## Backend audit - 2026-07-01 after Shcare UI release
 

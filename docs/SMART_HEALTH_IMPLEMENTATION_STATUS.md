@@ -112,11 +112,13 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Web Admin passed: `npm.cmd run build:firebase:admin`.
 - Android passed: `.\gradlew.bat :app:compileDebugKotlin`.
 - Firmware passed: MSM261 PlatformIO default build, including normal and OTA environments.
+- Production deploy passed: backend commit `7ca15841` reached Render and live unauthenticated `POST /api/auth/email-verification` returns 401 instead of 404. Shcare Web Firebase Hosting version `aac78c3631f574b4` is live on `https://shcare.web.app`.
+- Production canary passed: a temporary unverified Firebase doctor user authenticated against Render, called `POST /api/auth/email-verification`, and received `status=sent` with `provider=brevo`; the temporary backend user was deleted. CORS preflight from `https://shcare.web.app` to the endpoint returned 204.
 
 ### Remaining Limits
 
-- Real inbox delivery now depends on actual Render outbound email envs. Local `check:production:strict` still reports `BLOCKED` and warns that `BREVO_API_KEY`/`BREVO_FROM_EMAIL` are missing in the local shell.
-- To validate delivery end to end on production, set/verify Render env `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and `WEB_PORTAL_URL=https://shcare.web.app`, redeploy backend, deploy the Shcare Web build, then register/resend with a real mailbox.
+- Local `check:production:strict` still reports `BLOCKED` because local PowerShell does not contain Render/Supabase/S3/PHI secrets, including local Brevo envs.
+- Render accepted the production email canary through Brevo. Final human inbox confirmation still requires checking the mailbox/spam folder for the canary or a real registration email, because this workspace cannot read the user's mailbox.
 
 ## 2026-06-09 Core Realtime Cleanup
 

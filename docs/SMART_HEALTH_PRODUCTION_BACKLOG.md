@@ -63,12 +63,23 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Corrected the active firmware scope: `D:\Study\KLTN\smart-health-embedded\MSM261S4030H0` is the only production firmware target. INMP441 is retired from the current product scope and should not be used for future product integration decisions.
 - Still not possible from this workspace to inspect or push Render host envs because there is no Render CLI, API key, service id, or `render.yaml`. Keep using live smoke until Render dashboard/API access is available.
 
+## Completed - 2026-07-02 web registration email verification hardening
+
+- Replaced the weak Shcare Web registration assumption that Firebase client-side `sendEmailVerification()` request acceptance means inbox delivery succeeded.
+- Added backend `POST /api/auth/email-verification` to generate Firebase Admin verification action links and send branded verification email through the existing Brevo/SMTP outbound provider stack.
+- The backend endpoint keeps the OOB verification link server-side only, returns `verified` for already verified accounts, and returns explicit provider/Firebase configuration errors when delivery cannot happen.
+- Shcare Web registration completion now reports whether backend email delivery succeeded. If provider envs are missing, it says the profile/workspace request was saved but verification email was not sent, and routes the user to the email verification/resend page.
+- Auth/session routing was fixed so pending/needs-info/rejected onboarding accounts keep their Firebase/backend session and land on the correct status pages instead of being signed out as wrong-surface users.
+- Added `npm.cmd run smoke:firebase-email` and ran it successfully against Firebase Admin for `https://shcare.web.app/xac-nhan-email`.
+- Ran backend, web, admin, Android, and MSM261 build/smoke matrix after the change. Local strict production readiness remains blocked only because provider envs are not loaded locally, including Brevo email envs.
+
 ## Next production slice — authenticated portal validation
 
 1. Run real authenticated doctor and clinic workspace journeys against Render: sign-in, role gating, patient/device/scan/storage/notification/report actions, error states, logout, and session recovery.
 2. Verify Supabase/Postgres RLS and repository-backed tenant isolation with production-like data; do not rely on JSON/demo smoke alone.
 3. Run Lighthouse/browser performance regression on the split production bundle and tune media/font delivery if needed.
 4. Run authenticated portal visual QA with real doctor/clinic accounts so the new Signal Horizon shell is verified beyond unauthenticated redirects.
+5. Verify real email delivery on Render after confirming `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and `WEB_PORTAL_URL=https://shcare.web.app`; then register/resend using a real mailbox and confirm receipt plus Firebase emailVerified transition.
 
 ## Backend audit - 2026-07-01 after Shcare UI release
 

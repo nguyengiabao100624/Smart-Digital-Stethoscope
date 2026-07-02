@@ -4723,6 +4723,100 @@ function getWebAdminBaseUrl() {
   return (configured || "https://shcare-admin.web.app").replace(/\/+$/, "");
 }
 
+function getWebPortalBaseUrl(req) {
+  const configured = readString(
+    process.env.WEB_PORTAL_URL ||
+      process.env.SHCARE_WEB_URL ||
+      process.env.SMART_HEALTH_WEB_URL ||
+      process.env.PUBLIC_SITE_URL ||
+      process.env.VITE_PUBLIC_SITE_URL,
+    500
+  );
+  if (/^https?:\/\//i.test(configured)) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  const origin = readString(req?.headers?.origin, 500);
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) || /^https:\/\/shcare\.web\.app$/i.test(origin)) {
+    return origin.replace(/\/+$/, "");
+  }
+
+  return "https://shcare.web.app";
+}
+
+function getEmailVerificationContinueUrl(req) {
+  return `${getWebPortalBaseUrl(req)}/xac-nhan-email`;
+}
+
+function getFirebaseEmailLinkDomain() {
+  return readString(process.env.FIREBASE_AUTH_LINK_DOMAIN || process.env.FIREBASE_LINK_DOMAIN, 240);
+}
+
+function describeFirebaseEmailLinkFailure(error) {
+  const code = String(error && error.code ? error.code : "");
+  const message = String(error && error.message ? error.message : error || "");
+  const combined = `${code} ${message}`.toLowerCase();
+
+  if (combined.includes("unauthorized") || combined.includes("continue")) {
+    return "Firebase chưa cho phép domain nhận link xác minh. Hãy thêm shcare.web.app vào Firebase Authentication > Settings > Authorized domains.";
+  }
+  if (combined.includes("user-not-found")) {
+    return "Không tìm thấy tài khoản Firebase để tạo link xác minh email.";
+  }
+  return `Không thể tạo link xác minh Firebase: ${message || "lỗi không xác định"}`;
+}
+
+function buildEmailVerificationMessage({ name, email, verificationLink }) {
+  const safeName = escapeHtml(name || email || "bạn");
+  const safeEmail = escapeHtml(email);
+  const safeLink = escapeAttribute(verificationLink);
+  const text = [
+    `Xin chào ${name || email || "bạn"},`,
+    "",
+    "Bạn vừa tạo tài khoản Smart Health Care Workspace Portal.",
+    "Mở liên kết dưới đây để xác minh email:",
+    verificationLink,
+    "",
+    "Nếu bạn không tạo tài khoản này, hãy bỏ qua email.",
+  ].join("\n");
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#f5f7fa;font-family:Inter,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f7fa;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="padding:28px 28px 8px;">
+                <p style="margin:0 0 8px;color:#00a896;font-weight:700;font-size:13px;">Smart Health Care</p>
+                <h1 style="margin:0;color:#0f172a;font-size:24px;line-height:1.25;">Xác minh email Workspace Portal</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 28px 0;color:#334155;font-size:15px;line-height:1.65;">
+                <p style="margin:0 0 12px;">Xin chào <strong>${safeName}</strong>,</p>
+                <p style="margin:0 0 18px;">Hãy xác minh email <strong>${safeEmail}</strong> để hoàn tất tài khoản Smart Health Care Workspace Portal.</p>
+                <p style="margin:0 0 24px;">
+                  <a href="${safeLink}" style="display:inline-block;background:#0b5c9a;color:#ffffff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 18px;">Xác minh email</a>
+                </p>
+                <p style="margin:0;color:#64748b;font-size:13px;">Nếu nút không mở được, hãy copy liên kết này vào trình duyệt:</p>
+                <p style="margin:8px 0 0;word-break:break-all;color:#0b5c9a;font-size:12px;">${safeLink}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 28px 28px;color:#64748b;font-size:12px;line-height:1.5;">
+                Nếu bạn không tạo tài khoản này, hãy bỏ qua email.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  return { text, html };
+}
+
 function getAdminNotificationsUrl() {
   return `${getWebAdminBaseUrl()}/notifications`;
 }
@@ -6098,6 +6192,99 @@ async function handleAuthApi(req, res, segments) {
       provider: req.authSource,
       user: publicUser(user),
       session: req.authSession || null,
+    });
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "email-verification" && method === "POST") {
+    const user = requireSessionUser(req);
+    if (!FIREBASE_AUTH_ENABLED) {
+      throw httpError(503, "Firebase Auth chưa được cấu hình trên backend.", "FIREBASE_AUTH_NOT_CONFIGURED");
+    }
+    if (!user.firebaseUid) {
+      throw httpError(400, "Tài khoản chưa liên kết Firebase Auth nên không thể gửi email xác minh.", "FIREBASE_UID_MISSING");
+    }
+
+    const firebaseAdminApp = getFirebaseAdmin(process.env);
+    if (!firebaseAdminApp) {
+      throw httpError(503, "Firebase Admin chưa sẵn sàng để tạo link xác minh email.", "FIREBASE_ADMIN_NOT_READY");
+    }
+
+    let firebaseUser;
+    try {
+      firebaseUser = await firebaseAdminApp.auth().getUser(user.firebaseUid);
+    } catch (error) {
+      const code = String(error && error.code ? error.code : "");
+      if (code === "auth/user-not-found") {
+        throw httpError(404, "Không tìm thấy tài khoản Firebase để gửi email xác minh.", "FIREBASE_USER_NOT_FOUND");
+      }
+      throw error;
+    }
+
+    const email = readString(firebaseUser.email || user.email, 180).toLowerCase();
+    if (!isValidEmailAddress(email)) {
+      throw httpError(400, "Tài khoản Firebase chưa có email hợp lệ để xác minh.", "FIREBASE_EMAIL_INVALID");
+    }
+
+    if (firebaseUser.emailVerified) {
+      user.verifiedEmail = true;
+      await persistUserRecord(user);
+      sendJson(res, 200, { status: "verified", email, user: publicUser(user) });
+      return;
+    }
+
+    const actionCodeSettings = {
+      url: getEmailVerificationContinueUrl(req),
+    };
+    const linkDomain = getFirebaseEmailLinkDomain();
+    if (linkDomain) {
+      actionCodeSettings.linkDomain = linkDomain;
+    }
+
+    let verificationLink;
+    try {
+      verificationLink = await firebaseAdminApp.auth().generateEmailVerificationLink(email, actionCodeSettings);
+    } catch (error) {
+      throw httpError(400, describeFirebaseEmailLinkFailure(error), "FIREBASE_EMAIL_LINK_FAILED", {
+        providerCode: String(error && error.code ? error.code : ""),
+        continueUrl: actionCodeSettings.url,
+      });
+    }
+
+    const emailMessage = buildEmailVerificationMessage({
+      name: user.name || firebaseUser.displayName || email,
+      email,
+      verificationLink,
+    });
+    const delivery = await sendEmail({
+      to: { email, name: user.name || firebaseUser.displayName || "" },
+      subject: "Xác minh email Smart Health Care",
+      text: emailMessage.text,
+      html: emailMessage.html,
+    });
+
+    const sentAt = nowIso();
+    user.lastEmailVerificationSentAt = sentAt;
+    user.emailVerificationProvider = delivery.provider || "";
+    user.emailVerificationMessageId = delivery.messageId || "";
+    await persistUserRecord(user);
+    await appendAudit("auth.email_verification.send", req, {
+      actorUserId: user.id,
+      organizationId: user.organizationId || "",
+      resourceType: "user",
+      resourceId: user.id,
+      metadata: {
+        provider: delivery.provider || "",
+        email,
+        continueUrl: actionCodeSettings.url,
+      },
+    });
+
+    sendJson(res, 200, {
+      status: "sent",
+      email,
+      provider: delivery.provider || "",
+      sentAt,
     });
     return;
   }

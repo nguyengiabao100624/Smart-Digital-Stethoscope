@@ -229,6 +229,50 @@ This creates or updates Firebase smoke accounts, signs in through Firebase REST,
 
 The generated smoke-account passwords are saved locally in ignored file `web-monitor\.test-data\production-role-smoke-credentials.json`.
 
+Firebase email verification action-link smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+$env:FIREBASE_AUTH_ENABLED="true"
+$env:FIREBASE_PROJECT_ID="smart-health-stethoscope"
+$env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+npm.cmd run smoke:firebase-email
+```
+
+This creates a temporary Firebase user, generates an email-verification action link for `https://shcare.web.app/xac-nhan-email`, checks that the link contains an OOB verification code, then deletes the temp user. It does not send email and does not print the OOB link.
+
+Shcare Web registration email delivery now uses backend endpoint:
+
+```text
+POST /api/v1/auth/email-verification
+Authorization: Bearer <Firebase ID token>
+```
+
+Backend behavior:
+
+- If Firebase already marks the user email verified, returns `status=verified`.
+- Otherwise generates a Firebase Admin email-verification link and sends a branded email through `sendEmail()` using Brevo API or SMTP.
+- Never returns the OOB verification link to the browser.
+- Returns explicit configuration errors if Firebase authorized domains/action link settings or outbound email provider envs are missing.
+
+Render/live env required for real inbox delivery:
+
+```text
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<Brevo API key>
+BREVO_FROM_EMAIL=<verified sender email>
+BREVO_FROM_NAME=Smart Health
+WEB_PORTAL_URL=https://shcare.web.app
+```
+
+Optional:
+
+```text
+FIREBASE_AUTH_LINK_DOMAIN=<Firebase Hosting link domain>
+```
+
+`WEB_PORTAL_URL` controls the continue URL used in Firebase action-code settings. Keep `shcare.web.app` in Firebase Console > Authentication > Settings > Authorized domains. If a registration says the profile/workspace request was saved but verification email was not sent, check Render envs above first; do not claim the email was sent until the endpoint returns `status=sent`.
+
 Platform-only readiness API used by Web Admin Settings > `Triển khai`:
 
 ```text

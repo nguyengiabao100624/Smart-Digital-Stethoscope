@@ -15,7 +15,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 | Area | Status | Current reality |
 | --- | --- | --- |
-| Firebase Auth | Real/partial | Android, web admin, and Shcare Portal use Firebase. Backend verifies Firebase ID tokens and now syncs trusted custom claims for platform, workspace, and doctor portal roles into backend role/surface context. Claims/session refresh UX still needs hardening. |
+| Firebase Auth | Real/partial | Android, web admin, and Shcare Portal use Firebase. Backend verifies Firebase ID tokens and now syncs trusted custom claims for platform, workspace, and doctor portal roles into backend role/surface context. Shcare Web registration now uses backend-generated Firebase email verification links delivered through the outbound email provider instead of treating client-side Firebase request acceptance as inbox delivery. Claims/session refresh UX still needs hardening. |
 | Doctor registration and approval | Real/partial | Android doctor registration verifies email and sends role request with persisted pending metadata, searchable hospital/clinic catalog selection, missing-hospital request, specialty, license, phone, name, and reason. If backend catalog loading fails or returns empty, the clinic/specialty fields still open with an error/empty-state dialog and retry action instead of becoming dead buttons. Web admin can list/approve/reject/request-info/delete; the approve modal uses a searchable clinic picker backed by the clinic catalog. Backend exposes clinic/specialty catalogs, persists structured request-info fields, and deletes linked Firebase Auth users before deleting doctor backend data. 2026-06-12 request-info sync fix: repository-backed users now preserve required fields, `/api/auth/firebase` reloads by Firebase UID/email, Web Admin immediately moves successful request-info rows to `needs_info`, and Android polls/displays admin info requests. Pending/dashboard route edge cases should still be E2E-tested. |
 | Backend API foundation | Partial | Request/error/audit/repository foundations were started. Legacy routes still exist and must remain compatible. |
 | Backend persistence | Partial | JSON mode works for demo. PostgreSQL schema and repository foundation exist, but not every runtime handler uses normalized tables yet. |
@@ -89,6 +89,34 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 - `check:production:strict` remains blocked only in the local shell because Render/Supabase/S3/PHI/email envs are not loaded there. Workspace inspection found no Render CLI/API key/config, so host envs could not be inspected directly.
 - Physical ESP32-S3 validation still requires a connected board, real WiFi, device id/secret from Web Admin, flash/upload, serial monitor, heartbeat/audio evidence, and OTA evidence.
+
+## 2026-07-02 Web Registration Email Verification Hardening
+
+### Implemented
+
+- Added backend `POST /api/auth/email-verification` for Shcare Web registration and resend flows.
+- The endpoint requires a Firebase bearer token, reloads Firebase Auth state, returns `verified` for already verified accounts, otherwise creates a Firebase Admin email-verification action link and sends a branded email through the existing Brevo/SMTP `sendEmail()` stack.
+- The verification OOB link is never returned to the browser; only safe status/provider metadata is returned.
+- Added `WEB_PORTAL_URL`/`SHCARE_WEB_URL`/`SMART_HEALTH_WEB_URL`/`PUBLIC_SITE_URL` continue-URL resolution and optional `FIREBASE_AUTH_LINK_DOMAIN` support.
+- Shcare Web doctor/workspace registration no longer relies on Firebase Web SDK `sendEmailVerification()` inside account creation. The completion state now says whether backend email delivery succeeded or failed.
+- Email verification resend now refreshes Firebase state, authenticates to backend, then calls the backend delivery endpoint.
+- `AuthProvider` now keeps pending/needs-info/rejected onboarding sessions instead of signing them out as non-portal accounts, while `PortalLayout` continues to block non-portal access.
+- Login now routes pending/needs-info/rejected accounts to `/cho-duyet`, `/can-bo-sung`, or `/bi-tu-choi` instead of showing only a generic blocked login message.
+- Added `npm.cmd run smoke:firebase-email` to validate Firebase Admin can generate a verification link for `https://shcare.web.app/xac-nhan-email` without sending email or printing the OOB code.
+
+### Verification
+
+- Backend passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:api-production`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:public-deployment` rerun, and `npm.cmd run smoke:firebase-email`.
+- Runtime endpoint smoke passed locally with a temporary unverified Firebase user: without Brevo envs, `POST /api/v1/auth/email-verification` returns explicit email-provider configuration error instead of pretending delivery succeeded.
+- Shcare Web passed: targeted Prettier, targeted ESLint, `bunx tsc --noEmit --pretty false`, and production `bun run build:firebase`.
+- Web Admin passed: `npm.cmd run build:firebase:admin`.
+- Android passed: `.\gradlew.bat :app:compileDebugKotlin`.
+- Firmware passed: MSM261 PlatformIO default build, including normal and OTA environments.
+
+### Remaining Limits
+
+- Real inbox delivery now depends on actual Render outbound email envs. Local `check:production:strict` still reports `BLOCKED` and warns that `BREVO_API_KEY`/`BREVO_FROM_EMAIL` are missing in the local shell.
+- To validate delivery end to end on production, set/verify Render env `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, optional `BREVO_FROM_NAME`, and `WEB_PORTAL_URL=https://shcare.web.app`, redeploy backend, deploy the Shcare Web build, then register/resend with a real mailbox.
 
 ## 2026-06-09 Core Realtime Cleanup
 

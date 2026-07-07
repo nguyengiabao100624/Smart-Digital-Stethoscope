@@ -61,6 +61,7 @@ For product decisions, also read:
 - Web Admin lint is warning-free after the Fast Refresh mixed-export cleanup; PDF export font bloat was moved out of TypeScript bundles into `public/fonts/roboto-regular.ttf`.
 - Local strict production readiness can still report `BLOCKED` when Render/Supabase/Firebase/provider secrets are not loaded into the current PowerShell process.
 - Backend repository hydration now treats normalized SQL rows as authoritative even when SQL tables are empty, preventing stale runtime snapshot rows in Postgres-backed mode. `smoke:repositories` covers this plus optional FK guard SQL for user/patient/device links.
+- Commit `6d902355` deployed the repository hydration hardening. Live public deployment smoke and authenticated portal production smoke passed, and Supabase confirmed runtime/normalized counts are synced again (`organizations=10`, `users=12`).
 
 ## Safe Cleanup Rules
 
@@ -136,7 +137,7 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 
 ## Remaining Practical Work
 
-- Deploy and live-smoke the latest backend repository-hydration hardening, then continue provider/device evidence.
+- Continue provider/device evidence now that the Supabase/Postgres repository parity slice is closed.
 - Run browser performance/Lighthouse regression on the current split Shcare Web bundle.
 - Confirm real inbox receipt/click-through for production email verification.
 - Run real Android FCM delivery with a real device token against Render.

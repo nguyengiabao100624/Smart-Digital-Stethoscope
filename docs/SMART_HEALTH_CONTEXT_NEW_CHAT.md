@@ -31,6 +31,7 @@ Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_I
 - The connector found a real normalized/runtime drift: `app_runtime_state` counted `organizations=9` while normalized `public.organizations` had `10`. The missing runtime org was `org_admin_mutation_mrad8n0r`, which only had audit-log references left from the admin mutation smoke.
 - Backend repository hydration was hardened so normalized SQL rows are authoritative even when a table returns zero rows; stale runtime snapshot rows no longer survive an empty SQL table. Optional FK upserts for user `patient_id`, patient `owner_user_id`, and device `paired_user_id` now null missing references instead of throwing FK violations.
 - Verification passed locally: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access`.
+- Deployed through commit `6d902355` pushed to `origin/main`. Live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed, and Supabase confirmed `app_runtime_state` is synced again (`runtime_organizations=10`, `normalized_organizations=10`, updated at `2026-07-07 11:54:34+00`).
 
 ## 2026-07-07 - Workspace owner approval lifecycle
 

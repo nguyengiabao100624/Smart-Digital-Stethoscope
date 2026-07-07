@@ -43,7 +43,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Workspace owner approval lifecycle | Closed in deployed source | `/register/phong-kham` maps to workspace-owner request, Admin workspace approval handles pending/needs-info/rejected/approved, and approval grants portal access. |
 | Wrong-surface guard | Closed in deployed source | Production role and portal smokes verify platform-admin portal rejection plus workspace-admin/doctor portal access. |
 | Account profile tenant hardening | Closed in deployed source | `/api/v1/me` no longer allows profile self-switch or membership creation by sending display workspace text. |
-| Supabase/Postgres repository parity probe | Closed for current source and Supabase metadata | Supabase connector verified `smart-health-production`, migrations `001`-`008`, RLS-enabled public tables, no direct `anon`/`authenticated` grants, and exposed one runtime snapshot drift fixed in the repository hydration source. |
+| Supabase/Postgres repository parity probe | Closed in deployed source and Supabase metadata | Commit `6d902355` is pushed; Supabase connector verified migrations/RLS/no direct client grants, found the runtime snapshot drift, and confirmed runtime/normalized org counts are now synced after deploy. |
 | Device transfer hardening | Closed in deployed source | Backend validates target workspace and target owner membership before transfer. |
 | Selected scan sharing hardening | Closed in deployed source | Scan listing now filters with `canAccessScan`, so selected-scan grants do not leak sibling scans. |
 | Notification target scoping | Closed in deployed source | Non-platform notification creation can target only self or same-workspace users. |
@@ -64,6 +64,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Next-slice production gate probe on 2026-07-07: local PowerShell env presence check reported `MISSING` for `AUTH_MODE`, `FIREBASE_AUTH_ENABLED`, `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `FIREBASE_SERVICE_ACCOUNT_JSON`, public backend URL envs, `DATA_BACKEND`, `DATABASE_URL`, `OBJECT_STORAGE_PROVIDER`, `PHI_ENCRYPTION_KEY`, and Brevo envs. `npm.cmd run check:production:strict` returned `BLOCKED` with pass=3, warn=6, fail=7, manual=2. This is a local-shell/env access blocker, not proof that Render/Firebase/Supabase were never configured.
 - Supabase connector probe on 2026-07-07: project `smart-health-production` (`mahvymyncxszvuhlycwp`) is healthy on Postgres 17.6, migrations `001_init` through `008_notification_push_attempts` are applied, public tables have RLS enabled, `anon` and `authenticated` have no direct public table grants, and `app_runtime_state` showed one stale organization count drift (`9` runtime vs `10` normalized SQL).
 - Backend local after repository hardening: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access` passed.
+- Backend deploy/live after commit `6d902355`: `git push origin main` succeeded, `npm.cmd run smoke:public-deployment` passed, `npm.cmd run smoke:portal-production` passed, and Supabase `app_runtime_state` now reports `runtime_organizations=10` / `normalized_organizations=10`.
 
 ## Current Severity Checklist
 
@@ -92,9 +93,8 @@ Do not repeat these as unresolved unless new evidence regresses them.
 
 Recommended next non-repeated slice:
 
-1. Deploy the current backend repository-hydration hardening to Render and rerun live public/role/portal smoke without printing secrets.
-2. Then move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, storage/signed URL browser/API mutations, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
-3. Do not repeat the closed Role/Auth/Register/Approval/RBAC slice unless new regression evidence appears.
+1. Move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, storage/signed URL browser/API mutations, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
+2. Do not repeat the closed Role/Auth/Register/Approval/RBAC or Supabase/Postgres repository-parity slices unless new regression evidence appears.
 
 ## Handoff Rule
 

@@ -46,7 +46,9 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Hardened backend repository hydration so normalized SQL rows are authoritative even when a table is empty, preventing stale runtime snapshot rows from surviving in Postgres-backed mode.
 - Hardened optional FK upserts for user `patient_id`, patient `owner_user_id`, and device `paired_user_id` so missing optional references become `NULL` instead of causing Postgres FK failures.
 - Local verification passed: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access`.
-- Next non-repeated backlog is deploy/live confirmation for this backend patch, then provider/hardware evidence: real Android FCM delivery, real email inbox click-through, storage/signed URL mutation parity, and physical MSM261 ESP32-S3 validation.
+- Deployed through commit `6d902355` pushed to `origin/main`; live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed.
+- Supabase confirmed the runtime snapshot is synced after deploy: `runtime_organizations=10`, `normalized_organizations=10`, `runtime_users=12`, `normalized_users=12`, updated at `2026-07-07 11:54:34+00`.
+- Next non-repeated backlog is provider/hardware evidence: real Android FCM delivery, real email inbox click-through, storage/signed URL mutation parity, and physical MSM261 ESP32-S3 validation.
 
 ## Completed - 2026-07-07 account profile tenant hardening
 

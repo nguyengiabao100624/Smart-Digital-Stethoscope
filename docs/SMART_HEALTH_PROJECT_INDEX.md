@@ -21,6 +21,12 @@ For product decisions, also read:
 - `docs/SMART_HEALTH_THIRD_PARTY_SETUP.md`
 - `docs/SMART_HEALTH_AGENT_SKILLS_GUIDE.md`
 
+## Whole-System Scope Contract
+
+Smart Health means the full `D:\Study\KLTN` product system, not only one app or folder. Treat `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres, object storage, firmware, smoke tooling, CI/deploy scripts, and the handoff docs as one connected product.
+
+For any feature or fix, trace the user-facing workflow end to end before calling it done: backend API and repository policy, auth/role/tenant logic, web portal behavior, admin behavior, Android behavior when relevant, firmware/device behavior when relevant, live/provider data, tests/smokes, deploy impact, and docs/handoff. Do not complete isolated UI or backend changes when the adjacent client, permission model, smoke coverage, or production runbook also needs to change.
+
 ## Active Source Map
 
 | Area | Path | Notes |

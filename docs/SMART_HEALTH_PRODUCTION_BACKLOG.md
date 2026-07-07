@@ -6,6 +6,8 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 
 ## Production Direction Already Chosen
 
+- Smart Health is one connected product workspace under `D:\Study\KLTN`, spanning `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs. Do not treat future work as done in only one folder when the workflow crosses surfaces.
+- For each production slice, keep function, logic, backend policy, client behavior, device/provider side effects, verification, deploy notes, and handoff synchronized across the affected surfaces.
 - Product direction is remote-first monitoring: connected device deployment, realtime remote audio, stored clinical audio, AI support, sharing, and workspace administration. It is not positioned as an in-room replacement for a traditional stethoscope.
 - Canonical product direction is documented in `SMART_HEALTH_REMOTE_FIRST_PRODUCT_DIRECTION.md`.
 - Device quota means activated/deployed devices in a workspace, not number of patients. One activated device can measure many patient/family profiles.

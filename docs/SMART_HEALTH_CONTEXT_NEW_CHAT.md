@@ -17,6 +17,12 @@ Update only the sections affected by the change. Keep the files concise, factual
 
 Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_INDEX.md`. Use it to locate the active source folders, live URLs, handoff files, cleanup rules, and focused smoke commands without scanning the whole workspace.
 
+## Whole-System Scope Rule
+
+Smart Health is the full `D:\Study\KLTN` product workspace: `smart-health-embedded` backend/firmware, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase Auth/Hosting, Render, Supabase/Postgres/storage, CI/deploy tooling, smoke scripts, and handoff docs. Future work must develop and verify the connected workflow across the affected surfaces instead of treating one folder as the whole project.
+
+When a change touches product behavior, check the cross-surface contract: backend authorization/repository logic, client API usage, role/surface routing, tenant isolation, storage/notification/device side effects, Android/web/admin UX, firmware/device protocol if applicable, verification commands, deployment state, and handoff updates.
+
 ## 2026-07-07 - Broad prompt requirements handoff
 
 - Read and processed `C:\Users\baobe\.codex\attachments\05fe3f5d-461a-44e0-a201-f791d201f845\pasted-text.txt`, which asks for full Smart Health product hardening across role/auth/register/approval/RBAC, portal/admin/Android/backend/device/storage/notification consistency, verification, deploy, and handoff.

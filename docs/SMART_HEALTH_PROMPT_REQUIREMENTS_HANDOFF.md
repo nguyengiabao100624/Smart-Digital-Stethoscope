@@ -8,6 +8,8 @@ Purpose: preserve the requirements, closed slices, blockers, and next work from 
 
 ## Product Invariants
 
+- Smart Health is the whole `D:\Study\KLTN` system: backend/API, production firmware, Android app, Shcare Web portal, Platform Admin UI, Firebase, Render, Supabase/Postgres/storage, CI/deploy tooling, smoke tests, and docs. Do not scope future work to a single folder if the workflow depends on adjacent surfaces.
+- Every product change should preserve cross-surface consistency: backend policy and data model, Firebase role/session behavior, web/admin/Android client logic, firmware/device protocol when relevant, production provider behavior, smoke coverage, deploy notes, and handoff docs.
 - `shcare-admin.web.app` is Platform Admin only. It approves and audits platform/workspace/doctor onboarding, but it is not the daily clinic operations portal.
 - `shcare.web.app` is the Workspace Portal for workspace owners, clinics, hospitals, solo doctors, and doctors with portal membership.
 - Android remains the primary patient/personal/family app and can support doctor mobile workflows, but clinic administration is web-first.
@@ -22,6 +24,8 @@ Purpose: preserve the requirements, closed slices, blockers, and next work from 
 - `MSM261S4030H0` is the only active production firmware target. INMP441 is retired from current Smart Health product work.
 
 ## Repo Map For This Prompt
+
+This map is a product-system map. Use it to decide which adjacent apps/services must be updated together for a workflow, not as separate isolated projects.
 
 - Backend/API: `smart-health-embedded/web-monitor`
 - Firmware/device: `smart-health-embedded/MSM261S4030H0`

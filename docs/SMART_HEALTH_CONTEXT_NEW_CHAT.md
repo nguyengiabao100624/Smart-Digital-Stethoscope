@@ -17,6 +17,13 @@ Update only the sections affected by the change. Keep the files concise, factual
 
 Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_INDEX.md`. Use it to locate the active source folders, live URLs, handoff files, cleanup rules, and focused smoke commands without scanning the whole workspace.
 
+## 2026-07-07 - Broad prompt requirements handoff
+
+- Read and processed `C:\Users\baobe\.codex\attachments\05fe3f5d-461a-44e0-a201-f791d201f845\pasted-text.txt`, which asks for full Smart Health product hardening across role/auth/register/approval/RBAC, portal/admin/Android/backend/device/storage/notification consistency, verification, deploy, and handoff.
+- Added `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` as the anti-repeat ledger for that prompt. It records product invariants, repo map, closed slices, live deploy versions, smoke run ids, remaining Blocker/High/Medium/Polish work, and the next recommended non-repeated slice.
+- Treat the first requested slice, Role/Auth/Register/Approval/RBAC, as closed in the current deployed source unless new evidence regresses it: commit `88877ad5` is pushed, Firebase Hosting live versions are `fab6a2ad97c63420` for Shcare Web and `ce26044bb3730062` for Web Admin, and live portal/admin mutation smokes cleaned up run ids `portal-mutation-mrad4yzw` and `admin-mutation-mrad8n0r`.
+- Next-slice probe: `npm.cmd run check:production:strict` was rerun from the local backend shell and still reports `BLOCKED` because this PowerShell process does not have production envs such as Firebase Admin, public backend URL, `DATA_BACKEND=postgres`, `DATABASE_URL`, S3/object storage, and `PHI_ENCRYPTION_KEY`. Do not rerun this as the repository-backed tenant isolation slice unless a production-env shell or Render/Supabase access is available.
+
 ## 2026-07-07 - Workspace owner approval lifecycle
 
 - Product invariant for auth/role work: `/register/phong-kham` creates a `workspace_owner` request through `/api/auth/workspace-request`; doctor registration creates only a doctor request; `shcare-admin.web.app` approves workspace/facility owners from the workspace screen, while doctor approval remains doctor-only.
@@ -263,6 +270,7 @@ Nếu claude-mem chưa chạy, hãy tự bật bằng `npx claude-mem start` ở
 
 - `SMART_HEALTH_REMOTE_FIRST_PRODUCT_DIRECTION.md`: canonical product direction for remote-first monitoring, family/dependent profiles, package quota semantics, and clinic/hospital Workspace Portal.
 - `SMART_HEALTH_PROJECT_INDEX.md`: one-page navigation map for active source folders, handoff order, cleanup rules, live URLs, and focused smoke commands.
+- `SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md`: broad prompt ledger that prevents redoing closed slices and names the next non-repeated product-hardening slice.
 - `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`: report-first checklist derived from `PL2 (3)-IEEE references.docx`; use it to finish KLTN evidence/content before opening the next production-development slice.
 - `SMART_HEALTH_THIRD_PARTY_SETUP.md`: production setup guide for Firebase, HTTPS backend host, Postgres, S3/R2 storage, Redis, Brevo email API/SMTP fallback, SMS/Zalo webhook, Android release, and ESP provisioning secrets.
 - `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md`: Vietnamese step-by-step setup/runbook for the current deployed stack: GitHub Actions, Render env, Supabase Postgres/S3, Firebase Hosting, admin account creation, Android, ESP first flash, and cloud OTA smoke.

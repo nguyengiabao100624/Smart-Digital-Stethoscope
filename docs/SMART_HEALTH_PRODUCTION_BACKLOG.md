@@ -30,7 +30,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Firebase auth refresh preserves backend-approved workspace roles and existing workspace organization when tokens do not carry an organization claim.
 - Web Admin workspace page now exposes approval-state filters and explicit approve/request-info/reject/reopen actions instead of presenting workspace onboarding as a generic active/inactive clinic toggle.
 - Shcare Web `/can-bo-sung` now resubmits workspace-owner needs-info cases through `/auth/workspace-request`; doctor needs-info still resubmits through `/auth/role-request`.
-- Local verification passed: backend `check`, backend `test`, Web Admin lint, and Shcare Web typecheck. Production deploy/live smoke for this exact slice is still pending.
+- Local verification passed: backend `check`, backend `test`, Web Admin lint, and Shcare Web typecheck. Production deploy/live smoke for this slice was completed by the later 2026-07-07 push/deploy rerun: backend/source commit `88877ad5`, Shcare Web version `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, Web Admin version `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, live portal mutation run `portal-mutation-mrad4yzw`, and live admin mutation run `admin-mutation-mrad8n0r`.
+
+## Completed - 2026-07-07 broad prompt requirements handoff
+
+- Added `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` for the broad product-hardening prompt so future chats do not repeat completed slices.
+- The handoff records product invariants, active repo map, closed Role/Auth/Register/Approval/RBAC work, live deploy versions, smoke run ids, remaining Blocker/High/Medium/Polish checklist, and the next recommended non-repeated slice.
+- Next practical backlog item remains repository-backed tenant isolation with production-like Supabase/Postgres data; do not redo the closed role/surface/deploy slice unless new regression evidence appears. A local 2026-07-07 strict production gate probe returned `BLOCKED` because this PowerShell process lacks production envs (`DATA_BACKEND`, `DATABASE_URL`, Firebase Admin, public backend URL, S3/object storage, PHI key), so run that slice from a production-env shell or with Render/Supabase access.
 
 ## Completed - 2026-07-07 account profile tenant hardening
 

@@ -52,6 +52,14 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Web Admin `npm.cmd run lint` passed.
 - Shcare Web `bunx tsc --noEmit --pretty false` passed.
 
+## 2026-07-07 Broad Prompt Requirements Handoff
+
+- Added `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` for the broad full-system prompt stored at `C:\Users\baobe\.codex\attachments\05fe3f5d-461a-44e0-a201-f791d201f845\pasted-text.txt`.
+- The handoff records product invariants, active repo map, closed role/auth/register/approval/RBAC and live UI/deploy slices, exact Firebase Hosting versions, live smoke run ids, remaining severity checklist, and the next non-repeated slice.
+- Current deployed state for the prompt: backend/source commit `88877ad5` pushed to `origin/main`, docs commit `b12a16f6` pushed, Shcare Web Firebase version `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, Web Admin Firebase version `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, live portal mutation run `portal-mutation-mrad4yzw`, live admin mutation run `admin-mutation-mrad8n0r`.
+- Next non-repeated production slice is repository-backed tenant isolation with production-like Supabase/Postgres data, especially `/api/me`, portal patients/devices/scans, selected scan sharing, storage/signed URLs, exports, notifications, audit/access logs, and workspace admin actions.
+- Local next-slice gate on 2026-07-07: `npm.cmd run check:production:strict` returned `BLOCKED` with pass=3, warn=6, fail=7, manual=2 because the current PowerShell process lacks production envs, including Firebase Admin, public backend URL, `DATA_BACKEND=postgres`, `DATABASE_URL`, object storage, and `PHI_ENCRYPTION_KEY`.
+
 ## 2026-07-07 Account Profile Tenant Hardening
 
 ### Implemented

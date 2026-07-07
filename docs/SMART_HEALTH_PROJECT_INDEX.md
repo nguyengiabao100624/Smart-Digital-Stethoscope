@@ -9,10 +9,11 @@ This is the fastest navigation file for `D:\Study\KLTN`. Read it before opening 
 Read in this order:
 
 1. `docs/SMART_HEALTH_CONTEXT_NEW_CHAT.md` - current state, product direction, latest verified work.
-2. `docs/SMART_HEALTH_IMPLEMENTATION_STATUS.md` - what is real, partial, scaffold, or still missing.
-3. `docs/SMART_HEALTH_PRODUCTION_BACKLOG.md` - next production slices in priority order.
-4. `docs/SMART_HEALTH_COMMANDS_GUIDE.md` - commands, envs, smoke tests, deploy notes.
-5. `docs/SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` - Vietnamese operational setup checklist.
+2. `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` - broad prompt ledger, product invariants, closed slices, blockers, and next non-repeated slice.
+3. `docs/SMART_HEALTH_IMPLEMENTATION_STATUS.md` - what is real, partial, scaffold, or still missing.
+4. `docs/SMART_HEALTH_PRODUCTION_BACKLOG.md` - next production slices in priority order.
+5. `docs/SMART_HEALTH_COMMANDS_GUIDE.md` - commands, envs, smoke tests, deploy notes.
+6. `docs/SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` - Vietnamese operational setup checklist.
 
 For product decisions, also read:
 
@@ -48,7 +49,8 @@ For product decisions, also read:
 - `MSM261S4030H0` is the only active firmware target. Do not route new work to INMP441.
 - Shcare Web registration email verification now uses a backend-generated Firebase verification link delivered through the outbound email provider stack.
 - Backend notification creation now has a Firebase Cloud Messaging delivery path for direct user notifications, records push delivery status separately from platform-admin email fanout, persists per-attempt `pushAttempts` history without raw FCM tokens, and retries retryable provider failures with bounded env controls.
-- As of 2026-07-07, `shcare.web.app` is deployed at Firebase Hosting version `projects/162993928259/sites/shcare/versions/04e18dde26eedb19`, release `projects/162993928259/sites/shcare/channels/live/releases/1783360712235000`. The latest confirmed `shcare-admin.web.app` deploy is version `projects/162993928259/sites/shcare-admin/versions/4e84a69f69a916e2`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783360744436000`.
+- As of 2026-07-07, backend/source commit `88877ad5` (`Ship Smart Health tenant hardening and live smokes`) and docs commit `b12a16f6` (`Document Smart Health live deploy verification`) are pushed to `origin/main`. Render auto-deploy was verified through live health and public/role/portal/admin smokes.
+- As of 2026-07-07, `shcare.web.app` is deployed at Firebase Hosting version `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, release `projects/162993928259/sites/shcare/channels/live/releases/1783411275583000`. The latest confirmed `shcare-admin.web.app` deploy is version `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783411298455000`.
 - Shcare Portal unauthenticated deep links such as `/portal/patients` now redirect to `/login` without the previous `No QueryClient set` crash or React maximum-update-depth console failure.
 - Shcare Portal login no longer exposes raw Firebase `auth/invalid-credential` errors. Invalid credentials render safe Vietnamese guidance and platform-admin accounts are directed to `shcare-admin.web.app`.
 - Live authenticated portal API smoke is available through `npm.cmd run smoke:portal-production` after `npm.cmd run smoke:production-roles`; it verifies platform portal rejection plus workspace-admin and doctor read paths against Render.

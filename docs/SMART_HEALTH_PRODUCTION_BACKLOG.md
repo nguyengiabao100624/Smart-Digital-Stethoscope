@@ -70,11 +70,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 
 ## Provider/hardware validation re-probe - 2026-07-07
 
-- Additional doable local smokes passed: backend `npm.cmd run smoke:storage` and `npm.cmd run smoke:notification-push`.
-- Firebase service-account file exists locally, but `npm.cmd run smoke:firebase-email` could not fetch a Google OAuth token from the current restricted shell. A network-enabled shell previously passed this smoke; rerun it only where Google OAuth access is allowed.
-- Gmail inbox validation was attempted through Chrome, but Gmail opened to the Google sign-in page instead of an authenticated mailbox. Real inbox delivery/click-through still needs a signed-in Gmail session or mailbox/API credentials.
-- Current local process has no production provider envs loaded, so `npm.cmd run check:production` still reports `BLOCKED` with local-demo failures for auth mode, Firebase Admin env, public backend URL, Postgres, S3/object storage, PHI encryption, email provider, and OTA URL.
-- Hardware access remains absent in this shell: `adb.exe` is not on PATH or executable from the configured SDK path, and PlatformIO sees only Bluetooth COM5/COM6, not an ESP32-S3.
+- Network-enabled local verification passed for backend `check`, `test`, `smoke:firebase-email`, `smoke:storage`, `smoke:notification-push`, `smoke:public-deployment`, `smoke:production-roles`, `smoke:portal-production`, `smoke:workspace-access`, `smoke:repositories`, and `smoke:api-production`. `smoke:mqtt` skipped because `MQTT_URL` is not set.
+- `smoke:firebase-email` passed with `FIREBASE_PROJECT_ID=smart-health-stethoscope` and the local Firebase Admin JSON path, proving Firebase verification-link generation for `https://shcare.web.app/xac-nhan-email`. It still does not prove real Gmail inbox receipt/click-through.
+- Live Shcare/Web Admin verification passed: `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mraqouwy`, `bun run smoke:performance`, Shcare Web lint/typecheck/Firebase build, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mraqkmzo`, and Web Admin lint/Firebase build.
+- Android and firmware source/build verification passed: Android `:app:compileDebugKotlin`, `:app:assembleDebug`, and `:app:assembleRelease`; MSM261 PlatformIO `esp32-s3-devkitm-1` and `esp32-s3-ota`.
+- Gmail inbox validation still needs a signed-in Gmail session or mailbox/API credentials; the earlier browser probe opened Google sign-in, not an authenticated mailbox.
+- Current local process still lacks production provider envs, so `npm.cmd run check:production` reports `BLOCKED` with local-demo/provider failures for auth mode, Firebase Admin env, public backend URL, Postgres, S3/object storage, PHI encryption, email/SMS/Zalo/MQTT providers, and OTA URL.
+- Hardware access remains absent: Android SDK `adb.exe` exists but `adb devices` showed no attached devices, and PlatformIO returned no ESP32-S3 serial device. `render`, `supabase`, `firebase`, and `gcloud` CLIs were not on PATH.
 - Next non-repeated action is not more source work unless new failures appear. Provide the missing Gmail session/provider envs/Android device/ESP32-S3 board, then run the corresponding real validation.
 
 ## Completed - 2026-07-07 account profile tenant hardening

@@ -73,8 +73,8 @@ For any feature or fix, trace the user-facing workflow end to end before calling
 - Commit `edd419ef` pushed the storage/performance smoke follow-up. Post-push live public deployment smoke and authenticated portal production smoke passed.
 - Commit `27f309be` fixed a Web Admin live mutation regression where a background `/devices` list could drop a just-provisioned runtime device before PATCH when normalized SQL did not yet include it. Post-deploy live `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mran2ji6` and HTTP 200 cleanup for settings, notification, storage bucket, device, patient, package, and workspace.
 - Firebase Admin smoke can run locally by setting `FIREBASE_PROJECT_ID=smart-health-stethoscope` and `GOOGLE_APPLICATION_CREDENTIALS` to the JSON file under `D:\Study\KLTN\firebase`; `smoke:production-roles`, `smoke:portal-production`, `smoke:firebase-email`, and `smoke:public-deployment` passed on 2026-07-07.
-- Later 2026-07-07 restricted-shell re-probe passed `npm.cmd run smoke:storage` and `npm.cmd run smoke:notification-push`, but could not rerun `smoke:firebase-email` because Google OAuth token fetch was blocked by shell network restrictions. Gmail opened to Google sign-in, not an authenticated inbox.
-- Device probes currently show no attached Android device and no ESP32-S3 serial device. Do not claim real FCM or physical firmware validation complete until hardware/token evidence exists.
+- Later 2026-07-07 full rerun passed backend `check`, `test`, `smoke:storage`, `smoke:notification-push`, `smoke:api-production`, `smoke:workspace-access`, `smoke:repositories`, Shcare Web `smoke:portal-browser`, `smoke:portal-mutation` run `portal-mutation-mraqouwy`, `smoke:performance`, lint/typecheck/Firebase build, Web Admin `smoke:admin-mutation` run `admin-mutation-mraqkmzo`, lint/Firebase build, Android debug/release builds, and MSM261 PlatformIO normal/OTA builds. `smoke:mqtt` skipped because `MQTT_URL` is unset.
+- Gmail inbox receipt/click-through, real Android FCM, and physical ESP32-S3 validation remain unclaimed: Gmail was not signed in, `adb devices` showed no attached Android device, and PlatformIO returned no ESP32-S3 serial device.
 
 ## Safe Cleanup Rules
 
@@ -150,7 +150,7 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 
 ## Remaining Practical Work
 
-- Continue provider/device evidence now that Supabase/Postgres repository parity, local storage API contract, and live performance smoke are closed.
+- Do not repeat the closed Role/Auth/Register/Approval/RBAC, repository parity, local storage API, live performance, live portal mutation, or admin mutation slices unless new regression evidence appears.
 - Confirm real inbox receipt/click-through for production email verification after Gmail is signed in or a mailbox/API credential is available.
 - Run real Android FCM delivery with a real device token against Render after `adb.exe`/Android SDK is accessible and a device is attached.
 - Run production S3/Supabase Storage provider smoke with provider envs loaded in the shell or host running the smoke.

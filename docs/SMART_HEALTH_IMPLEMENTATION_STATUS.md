@@ -63,17 +63,17 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 ### Verification
 
-- Backend `npm.cmd run smoke:storage` passed for the local storage adapter.
-- Backend `npm.cmd run smoke:notification-push` passed for the local no-Firebase FCM fallback path and push-attempt history contract.
-- `D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json` exists, but `npm.cmd run smoke:firebase-email` could not fetch a Google OAuth token from the current restricted shell. This is an environment/network blocker for this shell, not proof that the previously passing Firebase email-link smoke regressed.
-- Chrome DevTools could open Gmail, but Gmail landed on the Google sign-in page. Real inbox receipt/click-through remains unverified until a Gmail session is signed in or a mailbox/API credential is provided.
-- Local production readiness still reports `BLOCKED` because the current process has no production provider envs loaded.
-- Android device probing remains blocked in this shell: `adb.exe` is not on PATH, and the configured SDK path under `C:\Users\baobe\AppData\Local\Android\Sdk` could not be executed from the current sandbox.
-- PlatformIO `device list` found only Bluetooth serial COM5/COM6 and no ESP32-S3 serial device.
+- Backend network-enabled verification passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:firebase-email`, `npm.cmd run smoke:storage`, `npm.cmd run smoke:notification-push`, `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, and `npm.cmd run smoke:api-production`.
+- `npm.cmd run smoke:mqtt` skipped because `MQTT_URL` is not set.
+- `smoke:firebase-email` passed after loading `FIREBASE_PROJECT_ID=smart-health-stethoscope` and `D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json`. It validates Firebase verification-link generation for `https://shcare.web.app/xac-nhan-email`; real inbox receipt/click-through remains unverified.
+- Live browser/mutation/build verification passed: Shcare Web `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mraqouwy`, `bun run smoke:performance`, `bun run lint`, `bunx tsc --noEmit --pretty false`, and `bun run build:firebase`; Web Admin `npm.cmd run smoke:admin-mutation` run `admin-mutation-mraqkmzo`, `npm.cmd run lint`, and `npm.cmd run build:firebase:admin`; Android `:app:compileDebugKotlin`, `:app:assembleDebug`, and `:app:assembleRelease`; MSM261 PlatformIO `esp32-s3-devkitm-1` and `esp32-s3-ota`.
+- Chrome/Gmail previously landed on the Google sign-in page, not an authenticated inbox.
+- Local production readiness still reports `BLOCKED` because this process does not have the Render/Supabase/S3/PHI/email/SMS/Zalo/MQTT provider env set loaded.
+- Android SDK `adb.exe` is available, but `adb devices` showed no attached devices. PlatformIO `device list` returned no ESP32-S3 serial device. `render`, `supabase`, `firebase`, and `gcloud` CLIs were not on PATH.
 
 ### Remaining Limits
 
-- Real Gmail inbox click-through, real Android FCM delivery, production S3/Supabase Storage provider smoke, and physical MSM261 ESP32-S3 WiFi/audio/command/OTA evidence still require external session/env/hardware access.
+- Real Gmail inbox click-through, real Android FCM delivery, production S3/Supabase Storage provider smoke, Brevo/SMS/Zalo/MQTT provider validation, direct Render/Supabase host management, and physical MSM261 ESP32-S3 WiFi/audio/command/OTA evidence still require external session/env/hardware access.
 
 ## 2026-07-07 Workspace Owner Approval Lifecycle
 

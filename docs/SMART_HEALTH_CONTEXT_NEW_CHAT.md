@@ -40,6 +40,7 @@ Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_I
 - Verification passed: `node --check scripts\workspaceAccessSmokeTest.js`, `npm.cmd run smoke:workspace-access`, `node --check scripts\performanceSmokeTest.mjs`, and `bun run smoke:performance`.
 - Latest live performance smoke stayed within budgets: public home transferred about 4.45 MB and loaded in about 0.8-5.1s across reruns, while authenticated portal routes loaded in about 0.4-1.3s after login.
 - Follow-up live Firebase checks passed after loading the local service account path: `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment`.
+- Commit `edd419ef` was pushed to `origin/main`; post-push live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed.
 - Hardware/device probes found no attached Android device (`adb.exe devices` empty) and no ESP32-S3 serial device (`platformio device list` empty), so real FCM delivery and physical MSM261 WiFi/audio/OTA evidence still require connected hardware and a real registered device token.
 
 ## 2026-07-07 - Workspace owner approval lifecycle

@@ -96,6 +96,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 - `node --check scripts\performanceSmokeTest.mjs` passed.
 - `bun run smoke:performance` passed against live `https://shcare.web.app`. Public home transferred about 4.45 MB and loaded in about 0.8-5.1s across reruns; authenticated portal routes loaded in about 0.4-1.3s after login.
 - With `FIREBASE_PROJECT_ID=smart-health-stethoscope` and the local Firebase Admin JSON path loaded, live Firebase/Render verification passed: `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment`.
+- Commit `edd419ef` was pushed to `origin/main`; post-push live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed.
 
 ### Remaining Limits
 

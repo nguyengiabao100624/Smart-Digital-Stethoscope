@@ -62,6 +62,10 @@ For product decisions, also read:
 - Local strict production readiness can still report `BLOCKED` when Render/Supabase/Firebase/provider secrets are not loaded into the current PowerShell process.
 - Backend repository hydration now treats normalized SQL rows as authoritative even when SQL tables are empty, preventing stale runtime snapshot rows in Postgres-backed mode. `smoke:repositories` covers this plus optional FK guard SQL for user/patient/device links.
 - Commit `6d902355` deployed the repository hydration hardening. Live public deployment smoke and authenticated portal production smoke passed, and Supabase confirmed runtime/normalized counts are synced again (`organizations=10`, `users=12`).
+- Backend workspace smoke now covers storage share URL, authenticated local-object reads, direct download content, cross-workspace signed URL/download denials, upload/list/download/delete, and post-delete 404.
+- Shcare Web has `bun run smoke:performance` for live public/portal performance regression. It passed on `https://shcare.web.app`; public home transferred about 4.45 MB and loaded in about 0.8-5.1s across reruns, while authenticated portal routes loaded in about 0.4-1.3s after login.
+- Firebase Admin smoke can run locally by setting `FIREBASE_PROJECT_ID=smart-health-stethoscope` and `GOOGLE_APPLICATION_CREDENTIALS` to the JSON file under `D:\Study\KLTN\firebase`; `smoke:production-roles`, `smoke:portal-production`, `smoke:firebase-email`, and `smoke:public-deployment` passed on 2026-07-07.
+- Device probes currently show no attached Android device and no ESP32-S3 serial device. Do not claim real FCM or physical firmware validation complete until hardware/token evidence exists.
 
 ## Safe Cleanup Rules
 
@@ -137,8 +141,8 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 
 ## Remaining Practical Work
 
-- Continue provider/device evidence now that the Supabase/Postgres repository parity slice is closed.
-- Run browser performance/Lighthouse regression on the current split Shcare Web bundle.
+- Continue provider/device evidence now that Supabase/Postgres repository parity, local storage API contract, and live performance smoke are closed.
 - Confirm real inbox receipt/click-through for production email verification.
 - Run real Android FCM delivery with a real device token against Render.
+- Run production S3/Supabase Storage provider smoke with provider envs loaded.
 - Flash the real MSM261 ESP32-S3 board and capture serial evidence for WiFi, heartbeat, audio, cloud command, and OTA.

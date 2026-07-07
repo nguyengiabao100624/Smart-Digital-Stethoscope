@@ -269,6 +269,12 @@ async function request(pathname, options = {}) {
   return { response, body };
 }
 
+async function requestRaw(pathname, options = {}) {
+  const response = await fetch(`http://127.0.0.1:${port}${pathname}`, options);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return { response, buffer, text: buffer.toString("utf8") };
+}
+
 async function login(email) {
   const { response, body } = await request("/api/v1/auth/login", {
     method: "POST",
@@ -287,6 +293,13 @@ async function expectStatus(label, session, pathname, status, options = {}) {
   const result = await request(pathname, { ...options, headers });
   assert.equal(result.response.status, status, `${label} expected ${status}, got ${result.response.status}: ${JSON.stringify(result.body)}`);
   return result.body;
+}
+
+async function expectRawStatus(label, session, pathname, status, options = {}) {
+  const headers = { ...(options.headers || {}), ...session.headers };
+  const result = await requestRaw(pathname, { ...options, headers });
+  assert.equal(result.response.status, status, `${label} expected ${status}, got ${result.response.status}: ${result.text}`);
+  return result;
 }
 
 async function expectPublicStatus(label, pathname, status, options = {}) {
@@ -585,17 +598,35 @@ async function runScenario() {
   const remainingNotifications = await expectStatus("deleted portal notification is gone", workspaceAdmin, "/api/v1/notifications", 200);
   assert.equal(remainingNotifications.notifications.some((notification) => notification.id === "notif_alpha"), false);
 
-  await expectStatus("workspace admin shares own storage", workspaceAdmin, "/api/v1/admin/storage-files/file_alpha/share", 200, { method: "POST" });
+  const sharedStorage = await expectStatus("workspace admin shares own storage", workspaceAdmin, "/api/v1/admin/storage-files/file_alpha/share", 200, { method: "POST" });
+  assert.equal(sharedStorage.expiresInSeconds, 900);
+  assert.match(sharedStorage.shareUrl, /^\/api\/v1\/objects\/local\?key=/);
+  const downloadedSeed = await expectRawStatus("workspace admin downloads own storage", workspaceAdmin, "/api/v1/admin/storage-files/file_alpha/download", 200);
+  assert.equal(downloadedSeed.text, "alpha");
+  const signedSeed = await expectRawStatus("workspace admin reads scoped local signed storage url", workspaceAdmin, sharedStorage.shareUrl, 200);
+  assert.equal(signedSeed.text, "alpha");
   await expectStatus("workspace admin cannot share cross workspace storage", workspaceAdmin, "/api/v1/admin/storage-files/file_beta/share", 403, { method: "POST" });
+  await expectStatus("workspace admin cannot download cross workspace storage", workspaceAdmin, "/api/v1/admin/storage-files/file_beta/download", 403);
+  await expectStatus("cross workspace doctor cannot read alpha signed storage url", betaDoctor, sharedStorage.shareUrl, 403);
   await expectStatus("technician cannot create signed storage url", technician, "/api/v1/admin/storage-files/file_alpha/share", 403, { method: "POST" });
   await expectStatus("viewer cannot list storage", viewer, "/api/v1/admin/storage-files", 403);
 
+  const uploadBody = "RIFF0000WAVEfmt ";
   const upload = await expectStatus("workspace admin uploads storage", workspaceAdmin, "/api/v1/admin/storage-files?bucket=heart-audio&filename=delete-me.wav", 201, {
     method: "POST",
     headers: { "Content-Type": "audio/wav" },
-    body: "RIFF0000WAVEfmt ",
+    body: uploadBody,
   });
+  assert.equal(upload.file.bucket, "heart-audio");
+  assert.equal(upload.file.name, "delete-me.wav");
+  assert.equal(upload.file.organizationId, "org_alpha");
+  const listedAfterUpload = await expectStatus("workspace admin sees uploaded storage file", workspaceAdmin, "/api/v1/admin/storage-files", 200);
+  assert.equal(listedAfterUpload.files.some((file) => file.id === upload.file.id), true);
+  const downloadedUpload = await expectRawStatus("workspace admin downloads uploaded storage", workspaceAdmin, `/api/v1/admin/storage-files/${upload.file.id}/download`, 200);
+  assert.equal(downloadedUpload.text, uploadBody);
+  await expectStatus("billing cannot download storage", billing, "/api/v1/admin/storage-files/file_alpha/download", 403);
   await expectStatus("workspace admin deletes own uploaded storage", workspaceAdmin, `/api/v1/admin/storage-files/${upload.file.id}`, 200, { method: "DELETE" });
+  await expectStatus("deleted uploaded storage is gone", workspaceAdmin, `/api/v1/admin/storage-files/${upload.file.id}/download`, 404);
   await expectStatus("billing cannot delete storage", billing, "/api/v1/admin/storage-files/file_alpha", 403, { method: "DELETE" });
 
   await expectStatus("billing cannot view platform packages", billing, "/api/v1/admin/packages", 403);

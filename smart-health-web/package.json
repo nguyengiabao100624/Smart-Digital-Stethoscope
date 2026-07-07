@@ -8,6 +8,7 @@
     "build:firebase": "node scripts/validate-production-env.mjs && vite build --config vite.firebase.config.ts",
     "preview:firebase": "vite preview --config vite.firebase.config.ts --host 127.0.0.1 --port 8080",
     "lint": "eslint .",
+    "smoke:performance": "node scripts/performanceSmokeTest.mjs",
     "smoke:portal-browser": "node scripts/portalBrowserSmokeTest.mjs",
     "smoke:portal-mutation": "node scripts/portalMutationSmokeTest.mjs"
   },

@@ -33,6 +33,15 @@ Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_I
 - Verification passed locally: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access`.
 - Deployed through commit `6d902355` pushed to `origin/main`. Live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed, and Supabase confirmed `app_runtime_state` is synced again (`runtime_organizations=10`, `normalized_organizations=10`, updated at `2026-07-07 11:54:34+00`).
 
+## 2026-07-07 - Storage contract and performance smoke follow-up
+
+- `smoke:workspace-access` now covers storage share URL generation, authenticated local-object URL read, cross-workspace signed URL denial, direct download content, upload/list/download/delete, and post-delete 404.
+- Added `smart-health-web/scripts/performanceSmokeTest.mjs` plus `bun run smoke:performance`. It signs into live `https://shcare.web.app` with the workspace smoke account, measures public home/login and portal dashboard/patients/records/devices/settings, enforces route budgets, and fails on console/page errors or blank renders.
+- Verification passed: `node --check scripts\workspaceAccessSmokeTest.js`, `npm.cmd run smoke:workspace-access`, `node --check scripts\performanceSmokeTest.mjs`, and `bun run smoke:performance`.
+- Latest live performance smoke stayed within budgets: public home transferred about 4.45 MB and loaded in about 0.8-5.1s across reruns, while authenticated portal routes loaded in about 0.4-1.3s after login.
+- Follow-up live Firebase checks passed after loading the local service account path: `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment`.
+- Hardware/device probes found no attached Android device (`adb.exe devices` empty) and no ESP32-S3 serial device (`platformio device list` empty), so real FCM delivery and physical MSM261 WiFi/audio/OTA evidence still require connected hardware and a real registered device token.
+
 ## 2026-07-07 - Workspace owner approval lifecycle
 
 - Product invariant for auth/role work: `/register/phong-kham` creates a `workspace_owner` request through `/api/auth/workspace-request`; doctor registration creates only a doctor request; `shcare-admin.web.app` approves workspace/facility owners from the workspace screen, while doctor approval remains doctor-only.

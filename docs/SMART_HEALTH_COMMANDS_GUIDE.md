@@ -83,6 +83,15 @@ bun run smoke:portal-mutation
 
 Run this command only from a terminal or CI runner with browser network access to `https://shcare.web.app` and Render. As of 2026-07-07 it passes from this workspace on live release `fab6a2ad97c63420`; if it fails later, treat the reported live data, permission, CORS, or UI failure as actionable until rerun proves cleanup and recovery.
 
+Live portal performance regression smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bun run smoke:performance
+```
+
+`smoke:performance` uses Playwright against `https://shcare.web.app`, signs in with the workspace smoke account from `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, measures public home/login plus portal dashboard, patients, records, devices, and settings, and fails on browser errors, blank renders, load-budget regressions, or transfer/script budget regressions. On 2026-07-07 it passed: public home transferred about 4.45 MB and loaded in about 0.8-5.1s across reruns, while authenticated portal routes loaded in about 0.4-1.3s after login.
+
 If portal/admin login screenshots disagree about the same account, do not redo Firebase/Render/Supabase setup from scratch. First inspect the Firebase custom claims and live backend `/api/auth/firebase` result for that email. A doctor account should return `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces` containing `portal`, `defaultSurface=portal`, and a workspace name. A platform admin should return `role=admin`, `allowedSurfaces=["admin"]`, and `platform.*` capabilities. The 2026-07-01 fix verified `baobee100624@gmail.com` as `doctor` in workspace `Bệnh viện Quân y 175`.
 
 2026-07-06 login audit note: `nguyengiabao100624@gmail.com` was verified through Firebase Admin as an enabled, email-verified password account with platform-admin claims for `org_default_clinic`. That account belongs on `shcare-admin.web.app`; an `auth/invalid-credential` result on `shcare.web.app` means Firebase rejected the credential before portal role checks.
@@ -406,9 +415,9 @@ Workspace/RBAC HTTP smoke test with real temporary accounts:
 npm run smoke:workspace-access
 ```
 
-This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share/delete, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, and portal notification delete.
+This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share URL generation, authenticated local-object URL reads, direct storage download content, cross-workspace signed URL/download denials, upload/list/download/delete cleanup, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, and portal notification delete.
 
-Last verified on 2026-06-06 after the cloud-device backend changes: passed. A separate 2026-06-05 runtime smoke on temporary ports `PORT=3450` and `AUDIO_UDP_PORT=3451` also passed `/api/health`, WebSocket `/app`, and UDP audio packet checks.
+Last verified on 2026-07-07 after the storage signed-URL/download coverage expansion: passed. A separate 2026-06-05 runtime smoke on temporary ports `PORT=3450` and `AUDIO_UDP_PORT=3451` also passed `/api/health`, WebSocket `/app`, and UDP audio packet checks.
 
 Doctor signup catalog smoke after restarting backend. `/api/catalog/clinics` includes admin-created active clinics plus the built-in hospital catalog used by Android signup search:
 
@@ -601,6 +610,8 @@ npm run smoke:mqtt
 Do not assume these smoke scripts exist; check `package.json` first.
 
 `npm run smoke:storage` passed on 2026-06-06 after storage uploads started recording firmware SHA-256/version metadata for cloud OTA.
+
+As of 2026-07-07, `npm run smoke:workspace-access` is the stronger storage API contract smoke for local JSON/local-object mode because it goes through authenticated HTTP routes instead of only the storage adapter. Real S3/Supabase Storage provider smoke still requires the provider env vars loaded into the shell or host running the smoke.
 
 Production CORS after Firebase Hosting domains are active:
 

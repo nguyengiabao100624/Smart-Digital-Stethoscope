@@ -50,6 +50,14 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Supabase confirmed the runtime snapshot is synced after deploy: `runtime_organizations=10`, `normalized_organizations=10`, `runtime_users=12`, `normalized_users=12`, updated at `2026-07-07 11:54:34+00`.
 - Next non-repeated backlog is provider/hardware evidence: real Android FCM delivery, real email inbox click-through, storage/signed URL mutation parity, and physical MSM261 ESP32-S3 validation.
 
+## Completed - 2026-07-07 storage contract and performance smoke follow-up
+
+- Expanded backend workspace smoke storage coverage: share URL, authenticated local-object URL read, direct download content, cross-workspace signed URL/download denials, upload metadata, list visibility, download of uploaded content, delete cleanup, and post-delete 404.
+- Added `bun run smoke:performance` in `smart-health-web`. It uses Playwright against live `https://shcare.web.app`, signs in with the workspace smoke account, measures public home/login plus portal dashboard/patients/records/devices/settings, and fails on browser errors, blank renders, or transfer/load budget regressions.
+- Verification passed: `node --check scripts\workspaceAccessSmokeTest.js`, `npm.cmd run smoke:workspace-access`, `node --check scripts\performanceSmokeTest.mjs`, and `bun run smoke:performance`.
+- Live Firebase/Render verification also passed after loading the local Firebase Admin JSON path: `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment`.
+- Remaining provider/hardware backlog: real Android FCM delivery with a real device token, real email inbox click-through, production S3/Supabase Storage provider smoke with provider envs, and physical MSM261 ESP32-S3 WiFi/audio/OTA evidence. Current probes found no attached Android device and no ESP32-S3 serial device.
+
 ## Completed - 2026-07-07 account profile tenant hardening
 
 - Backend `/api/v1/me` no longer lets account/profile edits self-create membership or switch tenants by sending `hospital` text.

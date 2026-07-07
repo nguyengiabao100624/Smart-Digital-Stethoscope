@@ -44,6 +44,8 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Wrong-surface guard | Closed in deployed source | Production role and portal smokes verify platform-admin portal rejection plus workspace-admin/doctor portal access. |
 | Account profile tenant hardening | Closed in deployed source | `/api/v1/me` no longer allows profile self-switch or membership creation by sending display workspace text. |
 | Supabase/Postgres repository parity probe | Closed in deployed source and Supabase metadata | Commit `6d902355` is pushed; Supabase connector verified migrations/RLS/no direct client grants, found the runtime snapshot drift, and confirmed runtime/normalized org counts are now synced after deploy. |
+| Storage/signed URL backend contract | Closed locally for JSON/API contract | `smoke:workspace-access` now covers storage share URL, download content, cross-workspace signed URL denial, upload/list/download/delete, and post-delete 404. |
+| Shcare Web performance regression smoke | Closed on live site | `bun run smoke:performance` measures public home/login and authenticated portal routes with Playwright performance budgets and passed against `https://shcare.web.app`. |
 | Device transfer hardening | Closed in deployed source | Backend validates target workspace and target owner membership before transfer. |
 | Selected scan sharing hardening | Closed in deployed source | Scan listing now filters with `canAccessScan`, so selected-scan grants do not leak sibling scans. |
 | Notification target scoping | Closed in deployed source | Non-platform notification creation can target only self or same-workspace users. |
@@ -65,6 +67,9 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Supabase connector probe on 2026-07-07: project `smart-health-production` (`mahvymyncxszvuhlycwp`) is healthy on Postgres 17.6, migrations `001_init` through `008_notification_push_attempts` are applied, public tables have RLS enabled, `anon` and `authenticated` have no direct public table grants, and `app_runtime_state` showed one stale organization count drift (`9` runtime vs `10` normalized SQL).
 - Backend local after repository hardening: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access` passed.
 - Backend deploy/live after commit `6d902355`: `git push origin main` succeeded, `npm.cmd run smoke:public-deployment` passed, `npm.cmd run smoke:portal-production` passed, and Supabase `app_runtime_state` now reports `runtime_organizations=10` / `normalized_organizations=10`.
+- Storage/performance follow-up on 2026-07-07: `node --check scripts\workspaceAccessSmokeTest.js`, `npm.cmd run smoke:workspace-access`, `node --check scripts\performanceSmokeTest.mjs`, and `bun run smoke:performance` passed. Live performance results stayed within budgets; public home transferred about 4.45 MB because of visual media, and authenticated portal routes loaded in about 0.4-1.3 seconds after login.
+- Firebase live smoke refresh on 2026-07-07: after explicitly loading `FIREBASE_PROJECT_ID=smart-health-stethoscope` and the local Firebase Admin JSON path, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment` passed.
+- Device availability probe on 2026-07-07: Android SDK `adb.exe devices` showed no attached devices, and PlatformIO `device list` showed no ESP32-S3 serial device. Real Android FCM and physical MSM261 validation remain blocked by missing connected hardware/device token, not by source code in this slice.
 
 ## Current Severity Checklist
 
@@ -75,12 +80,11 @@ Do not repeat these as unresolved unless new evidence regresses them.
 ### High
 
 - Real Android FCM delivery needs a real device token against Render. Local/no-Firebase push persistence and backend retry paths are covered, but user-visible delivery on a device is not closed.
-- Production email verification should still be checked through a real inbox click-through, not only Render/Brevo provider `sent` status.
-- Storage/signed URL/admin-only storage edge cases need deeper repository-backed parity and browser/API mutation coverage; the core Supabase schema/RLS/runtime snapshot probe is now covered.
+- Production email verification should still be checked through a real inbox click-through, not only Firebase link generation or Render/Brevo provider `sent` status.
+- Production S3/Supabase Storage provider smoke still needs the real object-storage env loaded into the process running the smoke. Local API coverage now covers signed URL/download/upload/delete/scoping behavior.
 
 ### Medium
 
-- Browser performance/Lighthouse regression should be rerun on the current split Shcare Web bundle.
 - Account settings and notification preference behavior should keep getting expanded with browser-level mutation coverage for every dialog/form field.
 - Patient/family profile and consent/share flows are implemented in slices, but should be rechecked against production-like workspace/personal/family data.
 
@@ -93,8 +97,9 @@ Do not repeat these as unresolved unless new evidence regresses them.
 
 Recommended next non-repeated slice:
 
-1. Move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, storage/signed URL browser/API mutations, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
-2. Do not repeat the closed Role/Auth/Register/Approval/RBAC or Supabase/Postgres repository-parity slices unless new regression evidence appears.
+1. Move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, production S3/Supabase Storage provider smoke, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
+2. Continue browser-level account settings, notification preference, patient/family consent/share coverage when provider/device gates are not available.
+3. Do not repeat the closed Role/Auth/Register/Approval/RBAC, Supabase/Postgres repository-parity, local storage API, or live performance slices unless new regression evidence appears.
 
 ## Handoff Rule
 

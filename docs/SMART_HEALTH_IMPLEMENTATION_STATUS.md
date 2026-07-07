@@ -59,6 +59,22 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Backend `npm.cmd test` passed.
 - Commit `27f309be` was pushed to `origin/main`; post-deploy `npm.cmd run smoke:public-deployment` passed, and live Web Admin `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mran2ji6`.
 
+## 2026-07-07 Provider And Hardware Validation Re-probe
+
+### Verification
+
+- Backend `npm.cmd run smoke:storage` passed for the local storage adapter.
+- Backend `npm.cmd run smoke:notification-push` passed for the local no-Firebase FCM fallback path and push-attempt history contract.
+- `D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json` exists, but `npm.cmd run smoke:firebase-email` could not fetch a Google OAuth token from the current restricted shell. This is an environment/network blocker for this shell, not proof that the previously passing Firebase email-link smoke regressed.
+- Chrome DevTools could open Gmail, but Gmail landed on the Google sign-in page. Real inbox receipt/click-through remains unverified until a Gmail session is signed in or a mailbox/API credential is provided.
+- Local production readiness still reports `BLOCKED` because the current process has no production provider envs loaded.
+- Android device probing remains blocked in this shell: `adb.exe` is not on PATH, and the configured SDK path under `C:\Users\baobe\AppData\Local\Android\Sdk` could not be executed from the current sandbox.
+- PlatformIO `device list` found only Bluetooth serial COM5/COM6 and no ESP32-S3 serial device.
+
+### Remaining Limits
+
+- Real Gmail inbox click-through, real Android FCM delivery, production S3/Supabase Storage provider smoke, and physical MSM261 ESP32-S3 WiFi/audio/command/OTA evidence still require external session/env/hardware access.
+
 ## 2026-07-07 Workspace Owner Approval Lifecycle
 
 ### Implemented

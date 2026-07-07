@@ -68,6 +68,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Commit `27f309be` preserves runtime-created patients/devices during SQL-backed list hydration and adds repository regression coverage.
 - Verification passed: backend `check`, backend `test`, `smoke:workspace-access`, `smoke:repositories`, public deployment smoke, and live Web Admin `smoke:admin-mutation` run `admin-mutation-mran2ji6` with HTTP 200 cleanup for settings, notification, storage bucket, device, patient, package, and workspace.
 
+## Provider/hardware validation re-probe - 2026-07-07
+
+- Additional doable local smokes passed: backend `npm.cmd run smoke:storage` and `npm.cmd run smoke:notification-push`.
+- Firebase service-account file exists locally, but `npm.cmd run smoke:firebase-email` could not fetch a Google OAuth token from the current restricted shell. A network-enabled shell previously passed this smoke; rerun it only where Google OAuth access is allowed.
+- Gmail inbox validation was attempted through Chrome, but Gmail opened to the Google sign-in page instead of an authenticated mailbox. Real inbox delivery/click-through still needs a signed-in Gmail session or mailbox/API credentials.
+- Current local process has no production provider envs loaded, so `npm.cmd run check:production` still reports `BLOCKED` with local-demo failures for auth mode, Firebase Admin env, public backend URL, Postgres, S3/object storage, PHI encryption, email provider, and OTA URL.
+- Hardware access remains absent in this shell: `adb.exe` is not on PATH or executable from the configured SDK path, and PlatformIO sees only Bluetooth COM5/COM6, not an ESP32-S3.
+- Next non-repeated action is not more source work unless new failures appear. Provide the missing Gmail session/provider envs/Android device/ESP32-S3 board, then run the corresponding real validation.
+
 ## Completed - 2026-07-07 account profile tenant hardening
 
 - Backend `/api/v1/me` no longer lets account/profile edits self-create membership or switch tenants by sending `hospital` text.

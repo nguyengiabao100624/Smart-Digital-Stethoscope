@@ -77,6 +77,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Repository/admin mutation follow-up on 2026-07-07: whole-system verification found live `smoke:admin-mutation` failing at device PATCH 404 after provisioning. Commit `27f309be` fixed repository list hydration for runtime-created patients/devices, then `npm.cmd run smoke:public-deployment` and live Web Admin `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mran2ji6`.
 - Firebase live smoke refresh on 2026-07-07: after explicitly loading `FIREBASE_PROJECT_ID=smart-health-stethoscope` and the local Firebase Admin JSON path, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment` passed.
 - Device availability probe on 2026-07-07: Android SDK `adb.exe devices` showed no attached devices, and PlatformIO `device list` showed no ESP32-S3 serial device. Real Android FCM and physical MSM261 validation remain blocked by missing connected hardware/device token, not by source code in this slice.
+- Provider/hardware re-probe on 2026-07-07: restricted local shell passed `npm.cmd run smoke:storage` and `npm.cmd run smoke:notification-push`. `npm.cmd run smoke:firebase-email` failed only because the shell could not fetch a Google OAuth token; Gmail opened to the Google sign-in page, not an authenticated inbox. `npm.cmd run check:production` still reports local env `BLOCKED`, `adb.exe` was unavailable, and PlatformIO saw only Bluetooth COM5/COM6.
 
 ## Current Severity Checklist
 
@@ -86,9 +87,9 @@ Do not repeat these as unresolved unless new evidence regresses them.
 
 ### High
 
-- Real Android FCM delivery needs a real device token against Render. Local/no-Firebase push persistence and backend retry paths are covered, but user-visible delivery on a device is not closed.
-- Production email verification should still be checked through a real inbox click-through, not only Firebase link generation or Render/Brevo provider `sent` status.
-- Production S3/Supabase Storage provider smoke still needs the real object-storage env loaded into the process running the smoke. Local API coverage now covers signed URL/download/upload/delete/scoping behavior.
+- Real Android FCM delivery needs a real device token against Render. Local/no-Firebase push persistence and backend retry paths are covered, but user-visible delivery on a device is not closed; this shell currently lacks usable `adb.exe`/attached Android device access.
+- Production email verification should still be checked through a real inbox click-through, not only Firebase link generation or Render/Brevo provider `sent` status. Gmail was not signed in during the latest browser probe.
+- Production S3/Supabase Storage provider smoke still needs the real object-storage env loaded into the process running the smoke. Local API coverage now covers signed URL/download/upload/delete/scoping behavior, and local `smoke:storage` still passes.
 
 ### Medium
 

@@ -56,6 +56,14 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Commit `27f309be` preserves runtime-created patients/devices during repository list hydration while keeping startup `hydrateCoreState()` authoritative for stale snapshot cleanup. Regression coverage was added in `scripts/repositoriesSmokeTest.js`.
 - Post-deploy live `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mran2ji6`; device PATCH returned 200 and cleanup returned HTTP 200 for settings, notification, storage bucket, device, patient, package, and workspace.
 
+## 2026-07-07 - Provider and hardware validation re-probe
+
+- Continued the remaining provider/device slice from a restricted local shell. `npm.cmd run smoke:storage` and `npm.cmd run smoke:notification-push` passed, confirming the local storage adapter and no-Firebase FCM fallback path still work.
+- The Firebase service-account JSON exists under `D:\Study\KLTN\firebase`, but this shell could not fetch a Google OAuth token for `npm.cmd run smoke:firebase-email` because outbound network is restricted. Treat this as a current shell/network blocker, not a regression in the email-link smoke that passed earlier from a network-enabled shell.
+- Chrome opened Gmail to the Google sign-in page instead of an authenticated inbox, so real Gmail inbox receipt/click-through could not be verified without the user signing into Gmail in the browser. Do not claim inbox delivery complete from Firebase link generation alone.
+- Current process envs for production providers remain unset (`AUTH_MODE`, Firebase Admin envs, public backend URL, `DATA_BACKEND`, `DATABASE_URL`, S3/Supabase Storage envs, `PHI_ENCRYPTION_KEY`, Brevo/SMTP envs), so local `npm.cmd run check:production` still reports `BLOCKED`.
+- `adb.exe` is not on PATH and the sandbox could not execute the SDK copy from `C:\Users\baobe\AppData\Local\Android\Sdk\platform-tools`; PlatformIO `device list` found only Bluetooth serial COM5/COM6, not an ESP32-S3 board. Real Android FCM and physical MSM261 validation still require accessible Android SDK/device and a connected ESP32-S3.
+
 ## 2026-07-07 - Workspace owner approval lifecycle
 
 - Product invariant for auth/role work: `/register/phong-kham` creates a `workspace_owner` request through `/api/auth/workspace-request`; doctor registration creates only a doctor request; `shcare-admin.web.app` approves workspace/facility owners from the workspace screen, while doctor approval remains doctor-only.

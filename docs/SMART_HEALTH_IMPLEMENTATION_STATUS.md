@@ -382,17 +382,19 @@ This file records the real project state. Keep it factual: implemented, partial,
 ### Implemented
 
 - Deployed the portal/admin device-claim and needs-info source follow-up to Firebase Hosting for both surfaces.
+- Pushed backend tenant-hardening commit `88877ad5` to `origin/main` for Render auto-deploy. The commit includes tighter `/api/v1/me` workspace switching, scan row filtering, notification direct-user target checks, device-transfer target validation, and export organization scoping.
 - Added `method="post"` to all Shcare Web and Web Admin React forms touched by auth, registration, portal actions, and admin dialogs. This prevents pre-hydration/native form submission from leaking email/password or other form fields through a GET query string if a user submits before React takes over.
 - Kept the existing Shcare Portal device claim flow, `/can-bo-sung` needs-info resubmit flow, Platform Admin `/devices` navigation exposure, and portal popover blur hardening from the 2026-07-06 source entry.
 - Android UI source keeps the successful `HorizontalDivider` migration where supported. Compose AutoMirrored icon replacement was not kept because the current dependency set did not resolve those symbols.
 
 ### Verification
 
-- Deployed Shcare Web live: `projects/162993928259/sites/shcare/versions/04e18dde26eedb19`, release `projects/162993928259/sites/shcare/channels/live/releases/1783360712235000`.
-- Deployed Web Admin live: `projects/162993928259/sites/shcare-admin/versions/4e84a69f69a916e2`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783360744436000`.
+- Deployed Shcare Web live: `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, release `projects/162993928259/sites/shcare/channels/live/releases/1783411275583000`.
+- Deployed Web Admin live: `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783411298455000`.
 - Live public/API smoke passed: `npm.cmd run smoke:public-deployment`.
 - Live authenticated portal smoke passed: `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, and `bun run smoke:portal-mutation`.
 - Live role smoke passed: `npm.cmd run smoke:production-roles` for platform admin, workspace admin, and doctor portal/android roles.
+- Live mutation run ids: portal `portal-mutation-mrad4yzw`; Web Admin `admin-mutation-mrad8n0r`, with cleanup HTTP 200 for settings, notification, storage bucket, device, patient, package, and workspace.
 - Custom Playwright form/auth smoke passed: admin no-JS form submitted without credential query leakage; portal no-JS login form was not rendered; hydrated admin and portal logins both reached Devices pages.
 - Backend passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:notification-push`, and `npm.cmd run smoke:storage`.
 - Shcare Web passed: `bun run lint`, `bunx tsc --noEmit --pretty false`, and `bun run build:firebase`.
@@ -413,7 +415,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 ### Verification
 
 - Passed: `node --check scripts\adminMutationSmokeTest.mjs`, Web Admin `npm.cmd run lint`, backend `npm.cmd run check`, backend `npm.cmd run smoke:production-roles`, and live `npm.cmd run smoke:admin-mutation`.
-- Live run id `admin-mutation-mr9lnk7o` created and patched workspace `org_admin_mutation_mr9lnk7o`, package `pkg_admin_mutation_mr9lnk7o`, patient `pat_20260706191558_a5b4c1c4`, device `dev_admin_mutation_mr9lnk7o`, notification `noti_20260706191610_dd02c7ea`, and bucket `bucket-admin-mutation-mr9lnk7o`; cleanup returned HTTP 200 for settings restore, notification, storage bucket, device, patient, package, and workspace.
+- Latest live run id `admin-mutation-mrad8n0r` created and patched workspace `org_admin_mutation_mrad8n0r`, package `pkg_admin_mutation_mrad8n0r`, patient `pat_20260707080746_903bb54d`, device `dev_admin_mutation_mrad8n0r`, notification `noti_20260707080759_3f965a2a`, and bucket `bucket-admin-mutation-mrad8n0r`; cleanup returned HTTP 200 for settings restore, notification, storage bucket, device, patient, package, and workspace.
 
 ### Remaining Limits
 

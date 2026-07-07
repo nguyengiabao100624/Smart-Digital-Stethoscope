@@ -1,4 +1,4 @@
-package com.example.smart_health_android.ui.screens
+﻿package com.example.smart_health_android.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -128,7 +128,7 @@ fun SettingsScreen(
 
             SettingsGroup("TÀI KHOẢN") {
                 SettingsItem(Icons.Default.Person, "Thông tin cá nhân", Color(0xFF3B82F6), onClick = onNavigateToProfile)
-                Divider(color = Border)
+                HorizontalDivider(color = Border)
                 SettingsItem(Icons.Default.Lock, "Bảo mật & Quyền riêng tư", Color(0xFF10B981), onClick = onNavigateToPrivacy)
             }
 
@@ -136,9 +136,9 @@ fun SettingsScreen(
 
             SettingsGroup("THIẾT BỊ & AI") {
                 SettingsItem(Icons.Default.Build, "Cài đặt ống nghe", Color(0xFFA855F7), onClick = onNavigateToStethoscopeSettings)
-                Divider(color = Border)
+                HorizontalDivider(color = Border)
                 SettingsItem(Icons.Default.Settings, "Hiệu chuẩn mô hình AI", Color(0xFFF97316), onClick = onNavigateToAICalibration)
-                Divider(color = Border)
+                HorizontalDivider(color = Border)
                 SettingsItem(Icons.Default.Share, "Lưu trữ dữ liệu cục bộ", PrimaryBlue, onClick = onNavigateToDataStorage)
             }
 

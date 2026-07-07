@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Clock, DollarSign, Loader2, Package, X } from "lucide-react";
 import { toast } from "sonner";
@@ -157,7 +157,7 @@ export function CreatePackageDialog({
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 p-6">
+          <form method="post" onSubmit={handleSubmit} className="space-y-6 p-6">
             <section className="space-y-4">
               <h3 className="font-medium text-foreground">Thông tin cơ bản</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -217,7 +217,9 @@ export function CreatePackageDialog({
                     placeholder="0"
                     className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-14 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">VND</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    VND
+                  </span>
                 </Field>
               </div>
             </section>
@@ -225,14 +227,38 @@ export function CreatePackageDialog({
             <section className="space-y-4 border-t border-border pt-4">
               <h3 className="font-medium text-foreground">Giới hạn sử dụng</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <NumberField label="Thiết bị kích hoạt" value={formData.maxDevices} onChange={(value) => setFormData({ ...formData, maxDevices: value })} />
+                <NumberField
+                  label="Thiết bị kích hoạt"
+                  value={formData.maxDevices}
+                  onChange={(value) => setFormData({ ...formData, maxDevices: value })}
+                />
                 {formData.segment !== "personal" && (
-                  <NumberField label="Số bác sĩ" value={formData.maxDoctors} onChange={(value) => setFormData({ ...formData, maxDoctors: value })} />
+                  <NumberField
+                    label="Số bác sĩ"
+                    value={formData.maxDoctors}
+                    onChange={(value) => setFormData({ ...formData, maxDoctors: value })}
+                  />
                 )}
-                <NumberField label={formData.segment === "personal" ? "Hồ sơ gia đình" : "Bệnh nhân theo dõi"} value={formData.maxPatients} onChange={(value) => setFormData({ ...formData, maxPatients: value })} />
-                <NumberField label="Dung lượng GB" value={formData.storageGb} onChange={(value) => setFormData({ ...formData, storageGb: value })} />
-                <NumberField label="Lượt AI/tháng" value={formData.aiMonthly} onChange={(value) => setFormData({ ...formData, aiMonthly: value })} />
-                <NumberField label="Retention ngày" value={formData.retentionDays} onChange={(value) => setFormData({ ...formData, retentionDays: value })} />
+                <NumberField
+                  label={formData.segment === "personal" ? "Hồ sơ gia đình" : "Bệnh nhân theo dõi"}
+                  value={formData.maxPatients}
+                  onChange={(value) => setFormData({ ...formData, maxPatients: value })}
+                />
+                <NumberField
+                  label="Dung lượng GB"
+                  value={formData.storageGb}
+                  onChange={(value) => setFormData({ ...formData, storageGb: value })}
+                />
+                <NumberField
+                  label="Lượt AI/tháng"
+                  value={formData.aiMonthly}
+                  onChange={(value) => setFormData({ ...formData, aiMonthly: value })}
+                />
+                <NumberField
+                  label="Retention ngày"
+                  value={formData.retentionDays}
+                  onChange={(value) => setFormData({ ...formData, retentionDays: value })}
+                />
               </div>
             </section>
 
@@ -240,7 +266,10 @@ export function CreatePackageDialog({
               <h3 className="font-medium text-foreground">Tính năng</h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {featureOptions.map((feature) => (
-                  <label key={feature.id} className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-3 transition-colors hover:bg-muted/50">
+                  <label
+                    key={feature.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-3 transition-colors hover:bg-muted/50"
+                  >
                     <input
                       type="checkbox"
                       checked={formData.features[feature.id]}
@@ -256,7 +285,10 @@ export function CreatePackageDialog({
 
             <div className="flex gap-3 pt-4">
               <Dialog.Close asChild>
-                <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                >
                   Hủy
                 </button>
               </Dialog.Close>
@@ -276,7 +308,15 @@ export function CreatePackageDialog({
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function NumberField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <Field label={label}>
       <input
@@ -310,7 +350,9 @@ function Field({
       </label>
       {icon ? (
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            {icon}
+          </span>
           {children}
         </div>
       ) : (

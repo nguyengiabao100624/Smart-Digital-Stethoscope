@@ -83,6 +83,8 @@ export default function PatientImportPage() {
       </div>
       <label className="glass-panel rounded-2xl p-10 text-center block cursor-pointer border-dashed">
         <input
+          id="patient-import-file"
+          name="patientImportFile"
           type="file"
           accept=".csv,text/csv"
           className="hidden"

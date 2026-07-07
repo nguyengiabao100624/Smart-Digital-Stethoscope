@@ -16,7 +16,11 @@ import {
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
-import { smartHealthApi, type SmartHealthProductionReadiness, type SmartHealthReadinessItem } from "@/lib/smart-health-api";
+import {
+  smartHealthApi,
+  type SmartHealthProductionReadiness,
+  type SmartHealthReadinessItem,
+} from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 
 type SettingsState = {
@@ -360,8 +364,14 @@ function normalizeSettings(raw: Record<string, unknown>): SettingsState {
     },
     notifications: {
       enabled: asBool(notifications.enabled, defaults.notifications.enabled),
-      abnormalResults: asBool(notifications.abnormalResults, defaults.notifications.abnormalResults),
-      deviceConnection: asBool(notifications.deviceConnection, defaults.notifications.deviceConnection),
+      abnormalResults: asBool(
+        notifications.abnormalResults,
+        defaults.notifications.abnormalResults,
+      ),
+      deviceConnection: asBool(
+        notifications.deviceConnection,
+        defaults.notifications.deviceConnection,
+      ),
       appointments: asBool(notifications.appointments, defaults.notifications.appointments),
       aiUpdates: asBool(notifications.aiUpdates, defaults.notifications.aiUpdates),
       messages: asBool(notifications.messages, defaults.notifications.messages),
@@ -404,9 +414,15 @@ function normalizeSettings(raw: Record<string, unknown>): SettingsState {
         enabled: asBool(webhook.enabled, defaults.outbound.webhook.enabled),
         url: asString(webhook.url),
         events: {
-          deviceOffline: asBool(events.deviceOffline, defaults.outbound.webhook.events.deviceOffline),
+          deviceOffline: asBool(
+            events.deviceOffline,
+            defaults.outbound.webhook.events.deviceOffline,
+          ),
           aiJobFailed: asBool(events.aiJobFailed, defaults.outbound.webhook.events.aiJobFailed),
-          doctorRegistered: asBool(events.doctorRegistered, defaults.outbound.webhook.events.doctorRegistered),
+          doctorRegistered: asBool(
+            events.doctorRegistered,
+            defaults.outbound.webhook.events.doctorRegistered,
+          ),
         },
       },
       sms: {
@@ -447,7 +463,10 @@ function normalizeSettings(raw: Record<string, unknown>): SettingsState {
       lastBackupStatus: asString(securityPolicy.lastBackupStatus),
       apiKeys,
       passwordRules: {
-        minLength: asNumber(passwordRules.minLength, defaults.securityPolicy.passwordRules.minLength),
+        minLength: asNumber(
+          passwordRules.minLength,
+          defaults.securityPolicy.passwordRules.minLength,
+        ),
         requireMixedCase: asBool(
           passwordRules.requireMixedCase,
           defaults.securityPolicy.passwordRules.requireMixedCase,
@@ -460,7 +479,10 @@ function normalizeSettings(raw: Record<string, unknown>): SettingsState {
           passwordRules.requireSpecial,
           defaults.securityPolicy.passwordRules.requireSpecial,
         ),
-        expireDays: asNumber(passwordRules.expireDays, defaults.securityPolicy.passwordRules.expireDays),
+        expireDays: asNumber(
+          passwordRules.expireDays,
+          defaults.securityPolicy.passwordRules.expireDays,
+        ),
       },
     },
   };
@@ -481,7 +503,8 @@ function normalizeRuntime(raw: Record<string, unknown>): RuntimeState {
   };
   const hasEmailRuntime = Object.keys(email).length > 0;
   const emailState = {
-    provider: asString(email.provider) || (smtpState.configured ? "smtp" : runtimeDefaults.email.provider),
+    provider:
+      asString(email.provider) || (smtpState.configured ? "smtp" : runtimeDefaults.email.provider),
     configured: hasEmailRuntime ? asBool(email.configured, false) : smtpState.configured,
     missing: Array.isArray(email.missing)
       ? email.missing.map(String)
@@ -724,7 +747,9 @@ export function Settings() {
 
   const testOutbound = async (channel: "sms" | "zalo") => {
     const recipient =
-      channel === "sms" ? settings.outbound.sms.testRecipient : settings.outbound.zalo.testRecipient;
+      channel === "sms"
+        ? settings.outbound.sms.testRecipient
+        : settings.outbound.zalo.testRecipient;
     if (!recipient.trim()) {
       toast.error(`Nhập người nhận test ${channel.toUpperCase()} trước khi gửi.`);
       return;
@@ -732,7 +757,9 @@ export function Settings() {
     setOutboundTesting(channel);
     try {
       if (settings.outbound.webhook.url && !runtime.outboundWebhook.configured) {
-        const { settings: raw } = await smartHealthApi.updateSettings({ outbound: settings.outbound });
+        const { settings: raw } = await smartHealthApi.updateSettings({
+          outbound: settings.outbound,
+        });
         setSettings(normalizeSettings(raw));
         setRuntime(normalizeRuntime(raw));
         setScope(normalizeScope(raw));
@@ -777,7 +804,9 @@ export function Settings() {
       });
       refreshSettingsFromResponse(raw);
       if (secret) await navigator.clipboard.writeText(secret).catch(() => undefined);
-      toast.success(secret ? "Đã tạo API key mới và sao chép secret một lần." : "Đã tạo API key mới.");
+      toast.success(
+        secret ? "Đã tạo API key mới và sao chép secret một lần." : "Đã tạo API key mới.",
+      );
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể tạo API key."));
     } finally {
@@ -832,11 +861,16 @@ export function Settings() {
   };
 
   const emailProviderLabel =
-    runtime.email.provider === "brevo" ? "Brevo API" : runtime.email.provider === "smtp" ? "SMTP fallback" : runtime.email.provider || "email";
+    runtime.email.provider === "brevo"
+      ? "Brevo API"
+      : runtime.email.provider === "smtp"
+        ? "SMTP fallback"
+        : runtime.email.provider || "email";
   const emailReason = runtime.email.configured
     ? ""
     : `Thiếu cấu hình env: ${runtime.email.missing.join(", ")}. Render Free nên dùng Brevo API qua HTTPS; SMTP/Gmail chỉ là fallback khi hosting cho phép SMTP.`;
-  const webhookReady = runtime.outboundWebhook.configured || Boolean(settings.outbound.webhook.url.trim());
+  const webhookReady =
+    runtime.outboundWebhook.configured || Boolean(settings.outbound.webhook.url.trim());
   const webhookReason = webhookReady
     ? ""
     : "Chưa có OUTBOUND_WEBHOOK_URL hoặc Webhook URL trong settings.";
@@ -860,9 +894,7 @@ export function Settings() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-foreground">{settingsTitle}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {settingsDescription}
-          </p>
+          <p className="text-muted-foreground mt-1 text-sm">{settingsDescription}</p>
         </div>
         <button
           onClick={() => void saveSettings()}
@@ -870,7 +902,11 @@ export function Settings() {
           className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
-          {saveStatus === "saving" ? "Đang lưu..." : saveStatus === "success" ? "Đã lưu" : "Lưu thay đổi"}
+          {saveStatus === "saving"
+            ? "Đang lưu..."
+            : saveStatus === "success"
+              ? "Đã lưu"
+              : "Lưu thay đổi"}
         </button>
       </div>
 
@@ -940,7 +976,8 @@ export function Settings() {
               />
               <div className="flex-1 space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Logo upload qua bucket avatars, sau đó lưu logoFileId/logoUrl vào settings.branding.
+                  Logo upload qua bucket avatars, sau đó lưu logoFileId/logoUrl vào
+                  settings.branding.
                 </p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <TextField
@@ -966,7 +1003,8 @@ export function Settings() {
                     disabled={logoUploading}
                     className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
                   >
-                    <UploadCloud className="h-4 w-4" /> {logoUploading ? "Đang tải..." : "Chọn file"}
+                    <UploadCloud className="h-4 w-4" />{" "}
+                    {logoUploading ? "Đang tải..." : "Chọn file"}
                   </button>
                   <button
                     onClick={clearLogo}
@@ -986,7 +1024,9 @@ export function Settings() {
                 title="Tự động đồng bộ dữ liệu"
                 description="Cho phép app đồng bộ metadata khi có mạng"
                 checked={settings.storage.autoSync}
-                onChange={(autoSync) => patchSettings({ storage: { ...settings.storage, autoSync } })}
+                onChange={(autoSync) =>
+                  patchSettings({ storage: { ...settings.storage, autoSync } })
+                }
               />
               <ToggleRow
                 title="Cloud backup"
@@ -1038,14 +1078,18 @@ export function Settings() {
               <SelectField
                 label="Chế độ AI"
                 value={settings.ai.selectedModel}
-                onChange={(selectedModel) => patchSettings({ ai: { ...settings.ai, selectedModel } })}
+                onChange={(selectedModel) =>
+                  patchSettings({ ai: { ...settings.ai, selectedModel } })
+                }
                 options={["fast", "balanced", "high_accuracy"]}
               />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <NumberField
                   label="Độ tin cậy tối thiểu (%)"
                   value={settings.ai.minConfidence}
-                  onChange={(minConfidence) => patchSettings({ ai: { ...settings.ai, minConfidence } })}
+                  onChange={(minConfidence) =>
+                    patchSettings({ ai: { ...settings.ai, minConfidence } })
+                  }
                 />
                 <NumberField
                   label="Độ nhiễu tối đa (dB)"
@@ -1101,7 +1145,9 @@ export function Settings() {
 
         <Tabs.Content value="notifications" className="space-y-6">
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
-            Email gửi thật ưu tiên Brevo API qua HTTPS để chạy được trên Render Free. SMS/Zalo không có gói production miễn phí ổn định nên dùng webhook tự cấu hình hoặc để hướng phát triển.
+            Email gửi thật ưu tiên Brevo API qua HTTPS để chạy được trên Render Free. SMS/Zalo không
+            có gói production miễn phí ổn định nên dùng webhook tự cấu hình hoặc để hướng phát
+            triển.
           </div>
 
           <Panel title="Email thông báo / Brevo API">
@@ -1111,7 +1157,8 @@ export function Settings() {
               failText={emailReason}
             />
             <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Brevo API key và sender được lưu bằng env trên backend Render. Các ô SMTP bên dưới chỉ là thông tin hiển thị/fallback cho hosting cho phép SMTP.
+              Brevo API key và sender được lưu bằng env trên backend Render. Các ô SMTP bên dưới chỉ
+              là thông tin hiển thị/fallback cho hosting cho phép SMTP.
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <TextField
@@ -1171,11 +1218,16 @@ export function Settings() {
             </div>
             <button
               onClick={testEmail}
-              disabled={!runtime.email.configured || emailTesting || !settings.outbound.email.testRecipient.trim()}
+              disabled={
+                !runtime.email.configured ||
+                emailTesting ||
+                !settings.outbound.email.testRecipient.trim()
+              }
               title={emailReason || undefined}
               className="mt-4 inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
             >
-              <RefreshCw className="h-3.5 w-3.5" /> {emailTesting ? "Đang gửi..." : "Gửi email kiểm tra"}
+              <RefreshCw className="h-3.5 w-3.5" />{" "}
+              {emailTesting ? "Đang gửi..." : "Gửi email kiểm tra"}
             </button>
           </Panel>
 
@@ -1197,7 +1249,10 @@ export function Settings() {
                 mono
                 onChange={(url) =>
                   patchSettings({
-                    outbound: { ...settings.outbound, webhook: { ...settings.outbound.webhook, url } },
+                    outbound: {
+                      ...settings.outbound,
+                      webhook: { ...settings.outbound.webhook, url },
+                    },
                   })
                 }
               />
@@ -1259,11 +1314,16 @@ export function Settings() {
                 value={settings.outbound.sms.testRecipient}
                 provider={settings.outbound.sms.provider}
                 onProviderChange={(provider) =>
-                  patchSettings({ outbound: { ...settings.outbound, sms: { ...settings.outbound.sms, provider } } })
+                  patchSettings({
+                    outbound: { ...settings.outbound, sms: { ...settings.outbound.sms, provider } },
+                  })
                 }
                 onRecipientChange={(testRecipient) =>
                   patchSettings({
-                    outbound: { ...settings.outbound, sms: { ...settings.outbound.sms, testRecipient } },
+                    outbound: {
+                      ...settings.outbound,
+                      sms: { ...settings.outbound.sms, testRecipient },
+                    },
                   })
                 }
                 onTest={() => void testOutbound("sms")}
@@ -1277,12 +1337,18 @@ export function Settings() {
                 provider={settings.outbound.zalo.provider}
                 onProviderChange={(provider) =>
                   patchSettings({
-                    outbound: { ...settings.outbound, zalo: { ...settings.outbound.zalo, provider } },
+                    outbound: {
+                      ...settings.outbound,
+                      zalo: { ...settings.outbound.zalo, provider },
+                    },
                   })
                 }
                 onRecipientChange={(testRecipient) =>
                   patchSettings({
-                    outbound: { ...settings.outbound, zalo: { ...settings.outbound.zalo, testRecipient } },
+                    outbound: {
+                      ...settings.outbound,
+                      zalo: { ...settings.outbound.zalo, testRecipient },
+                    },
                   })
                 }
                 onTest={() => void testOutbound("zalo")}
@@ -1347,12 +1413,16 @@ export function Settings() {
                 label="Số thiết bị đăng nhập tối đa / tài khoản"
                 value={settings.securityPolicy.maxSessionsPerUser}
                 onChange={(maxSessionsPerUser) =>
-                  patchSettings({ securityPolicy: { ...settings.securityPolicy, maxSessionsPerUser } })
+                  patchSettings({
+                    securityPolicy: { ...settings.securityPolicy, maxSessionsPerUser },
+                  })
                 }
               />
               <ToggleRow
                 title="Bắt buộc 2FA cho admin"
-                description={runtime.twoFactorAvailable ? "Áp dụng cho mọi tài khoản admin" : unavailableReason}
+                description={
+                  runtime.twoFactorAvailable ? "Áp dụng cho mọi tài khoản admin" : unavailableReason
+                }
                 checked={settings.securityPolicy.requireAdmin2fa}
                 disabled={!runtime.twoFactorAvailable}
                 onChange={(requireAdmin2fa) =>
@@ -1438,7 +1508,10 @@ export function Settings() {
                   value={settings.securityPolicy.ipWhitelist}
                   onChange={(event) =>
                     patchSettings({
-                      securityPolicy: { ...settings.securityPolicy, ipWhitelist: event.target.value },
+                      securityPolicy: {
+                        ...settings.securityPolicy,
+                        ipWhitelist: event.target.value,
+                      },
                     })
                   }
                   rows={3}
@@ -1468,7 +1541,9 @@ export function Settings() {
                 title="Mã hóa dữ liệu nhạy cảm"
                 description="Giữ bật để hiển thị cảnh báo vận hành"
                 checked={settings.privacy.encryption}
-                onChange={(encryption) => patchSettings({ privacy: { ...settings.privacy, encryption } })}
+                onChange={(encryption) =>
+                  patchSettings({ privacy: { ...settings.privacy, encryption } })
+                }
               />
             </div>
           </Panel>
@@ -1498,7 +1573,9 @@ export function Settings() {
                   <div
                     key={apiKey.id}
                     className={`flex items-center justify-between gap-4 rounded-lg border p-4 ${
-                      isRevoked ? "border-border bg-muted/10 opacity-70" : "border-border bg-muted/20"
+                      isRevoked
+                        ? "border-border bg-muted/10 opacity-70"
+                        : "border-border bg-muted/20"
                     }`}
                   >
                     <div>
@@ -1508,7 +1585,9 @@ export function Settings() {
                           {apiKey.status}
                         </span>
                       </div>
-                      <div className="mt-1 font-mono text-xs text-muted-foreground">{apiKey.keyPreview}</div>
+                      <div className="mt-1 font-mono text-xs text-muted-foreground">
+                        {apiKey.keyPreview}
+                      </div>
                       <div className="mt-1 text-xs text-muted-foreground">
                         Scope: {apiKey.scope || "workspace"}
                         {apiKey.lastRotatedAt ? ` • Rotate: ${apiKey.lastRotatedAt}` : ""}
@@ -1528,7 +1607,9 @@ export function Settings() {
                       </button>
                       <button
                         onClick={() => void rotateApiKey(apiKey.id)}
-                        disabled={!runtime.apiKeyRotationAvailable || isRevoked || apiKeyAction !== null}
+                        disabled={
+                          !runtime.apiKeyRotationAvailable || isRevoked || apiKeyAction !== null
+                        }
                         title="Rotate API key"
                         className="rounded border border-border p-1.5 hover:bg-muted disabled:opacity-50"
                       >
@@ -1552,7 +1633,8 @@ export function Settings() {
                 title={runtime.apiKeyRotationAvailable ? undefined : unavailableReason}
                 className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
               >
-                <KeyRound className="w-4 h-4" /> {apiKeyAction === "create" ? "Đang tạo..." : "Tạo API Key mới"}
+                <KeyRound className="w-4 h-4" />{" "}
+                {apiKeyAction === "create" ? "Đang tạo..." : "Tạo API Key mới"}
               </button>
             </div>
           </Panel>
@@ -1563,15 +1645,22 @@ export function Settings() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="text-sm text-muted-foreground">
-                  Checklist này kiểm tra cấu hình hạ tầng qua backend, chỉ hiển thị tên biến môi trường và trạng thái, không hiển thị secret.
+                  Checklist này kiểm tra cấu hình hạ tầng qua backend, chỉ hiển thị tên biến môi
+                  trường và trạng thái, không hiển thị secret.
                 </div>
                 {readiness ? (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <StatusBadge status={readiness.ok ? "pass" : "fail"} label={readiness.ok ? "Đủ cấu hình bắt buộc" : "Còn thiếu cấu hình bắt buộc"} />
+                    <StatusBadge
+                      status={readiness.ok ? "pass" : "fail"}
+                      label={readiness.ok ? "Đủ cấu hình bắt buộc" : "Còn thiếu cấu hình bắt buộc"}
+                    />
                     <StatusBadge status="pass" label={`Pass ${readiness.counts?.pass || 0}`} />
                     <StatusBadge status="warn" label={`Warn ${readiness.counts?.warn || 0}`} />
                     <StatusBadge status="fail" label={`Fail ${readiness.counts?.fail || 0}`} />
-                    <StatusBadge status="manual" label={`Manual ${readiness.counts?.manual || 0}`} />
+                    <StatusBadge
+                      status="manual"
+                      label={`Manual ${readiness.counts?.manual || 0}`}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -1593,17 +1682,31 @@ export function Settings() {
 
             {!readiness && !readinessLoading && !readinessError ? (
               <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                Tài khoản hiện tại không có quyền xem checklist hạ tầng toàn hệ thống hoặc backend chưa trả dữ liệu checklist.
+                Tài khoản hiện tại không có quyền xem checklist hạ tầng toàn hệ thống hoặc backend
+                chưa trả dữ liệu checklist.
               </div>
             ) : null}
 
             {readiness ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <ReadinessMeta label="Auth mode" value={readiness.environment?.authMode || "--"} />
-                  <ReadinessMeta label="Data backend" value={readiness.environment?.dataBackend || "--"} />
-                  <ReadinessMeta label="Storage" value={readiness.environment?.storageProvider || "--"} />
-                  <ReadinessMeta label="Public API" value={readiness.environment?.publicBackendUrl || "--"} mono />
+                  <ReadinessMeta
+                    label="Auth mode"
+                    value={readiness.environment?.authMode || "--"}
+                  />
+                  <ReadinessMeta
+                    label="Data backend"
+                    value={readiness.environment?.dataBackend || "--"}
+                  />
+                  <ReadinessMeta
+                    label="Storage"
+                    value={readiness.environment?.storageProvider || "--"}
+                  />
+                  <ReadinessMeta
+                    label="Public API"
+                    value={readiness.environment?.publicBackendUrl || "--"}
+                    mono
+                  />
                 </div>
 
                 {groupReadinessItems(readiness.items).map((group) => (
@@ -1695,37 +1798,62 @@ function statusClass(status: string) {
 
 function StatusBadge({ status, label }: { status: string; label: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass(status)}`}>
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass(status)}`}
+    >
       {label}
     </span>
   );
 }
 
-function ReadinessMeta({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function ReadinessMeta({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`mt-1 break-all text-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}>{value}</div>
+      <div
+        className={`mt-1 break-all text-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}
+      >
+        {value}
+      </div>
     </div>
   );
 }
 
 function ReadinessRow({ item }: { item: SmartHealthReadinessItem }) {
   const label =
-    item.status === "pass" ? "PASS" : item.status === "fail" ? "FAIL" : item.status === "manual" ? "MANUAL" : "WARN";
+    item.status === "pass"
+      ? "PASS"
+      : item.status === "fail"
+        ? "FAIL"
+        : item.status === "manual"
+          ? "MANUAL"
+          : "WARN";
   return (
     <div className="space-y-2 px-4 py-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-sm font-medium text-foreground">{item.label}</div>
-          {item.detail ? <div className="mt-1 text-xs text-muted-foreground">{item.detail}</div> : null}
+          {item.detail ? (
+            <div className="mt-1 text-xs text-muted-foreground">{item.detail}</div>
+          ) : null}
         </div>
         <StatusBadge status={item.status} label={label} />
       </div>
       {item.env?.length ? (
         <div className="flex flex-wrap gap-1.5">
           {item.env.map((name) => (
-            <code key={name} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            <code
+              key={name}
+              className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+            >
               {name}
             </code>
           ))}
@@ -1843,7 +1971,15 @@ function ToggleRow({
   );
 }
 
-function RuntimeNotice({ ok, okText, failText }: { ok: boolean; okText: string; failText: string }) {
+function RuntimeNotice({
+  ok,
+  okText,
+  failText,
+}: {
+  ok: boolean;
+  okText: string;
+  failText: string;
+}) {
   return (
     <div
       className={`rounded-lg border px-3 py-2 text-sm ${
@@ -1883,7 +2019,12 @@ function ChannelTester({
       <div className="flex items-center gap-2 text-sm font-semibold">
         <MessageSquare className="h-4 w-4 text-primary" /> {title}
       </div>
-      <SelectField label="Provider" value={provider} onChange={onProviderChange} options={["webhook"]} />
+      <SelectField
+        label="Provider"
+        value={provider}
+        onChange={onProviderChange}
+        options={["webhook"]}
+      />
       <TextField label="Người nhận test" value={value} onChange={onRecipientChange} />
       <button
         onClick={onTest}

@@ -21,10 +21,17 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
-import { smartHealthApi, type SmartHealthAuthUser, type SmartHealthClinic } from "@/lib/smart-health-api";
-import { PageHeader, StatusBadge, Timeline, itemMotion, listMotion } from "./design-system";
-import { ADMIN_TABLE_PAGE_SIZE, PaginationFooter, paginateItems } from "./PaginationFooter";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
+import {
+  smartHealthApi,
+  type SmartHealthAuthUser,
+  type SmartHealthClinic,
+} from "@/lib/smart-health-api";
+import { PageHeader, StatusBadge, Timeline } from "./design-system";
+import { itemMotion, listMotion } from "./motion-presets";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import { DOCTOR_REQUEST_MANAGE_CAPABILITIES } from "./action-permissions";
 
 type RequestStatus = "pending" | "needs_info" | "approved" | "rejected";
@@ -165,7 +172,14 @@ function formatDateTime(value?: string) {
 }
 
 function getDoctorWorkspaceType(user: SmartHealthAuthUser, clinic?: SmartHealthClinic) {
-  return user.workspaceType || user.workspace?.workspaceType || user.workspace?.type || clinic?.workspaceType || clinic?.type || "";
+  return (
+    user.workspaceType ||
+    user.workspace?.workspaceType ||
+    user.workspace?.type ||
+    clinic?.workspaceType ||
+    clinic?.type ||
+    ""
+  );
 }
 
 function getDoctorRequestTypeLabel(accountType?: string, workspaceType?: string) {
@@ -178,18 +192,27 @@ function getDoctorRequestTypeLabel(accountType?: string, workspaceType?: string)
   return "Bác sĩ";
 }
 
-function toDoctorRequest(user: SmartHealthAuthUser, clinicMap: Map<string, SmartHealthClinic> = new Map()): DoctorRequest {
+function toDoctorRequest(
+  user: SmartHealthAuthUser,
+  clinicMap: Map<string, SmartHealthClinic> = new Map(),
+): DoctorRequest {
   const hasLicense = Boolean(user.license?.trim());
   const clinic = user.organizationId ? clinicMap.get(user.organizationId) : undefined;
   const workspaceType = getDoctorWorkspaceType(user, clinic);
   const accountType =
-    user.accountType || (workspaceType === "solo_practice" ? "solo_doctor" : user.requestedRole === "doctor" ? "doctor" : "");
+    user.accountType ||
+    (workspaceType === "solo_practice"
+      ? "solo_doctor"
+      : user.requestedRole === "doctor"
+        ? "doctor"
+        : "");
   return {
     id: user.id,
     name: user.name || user.email || "Bác sĩ chưa cập nhật tên",
     email: user.email || "Chưa có email",
     phone: user.phone || "Chưa cung cấp",
-    clinic: user.clinicName || user.hospital || user.clinicSuggestion || clinic?.name || "Chưa xác định",
+    clinic:
+      user.clinicName || user.hospital || user.clinicSuggestion || clinic?.name || "Chưa xác định",
     requestType: getDoctorRequestTypeLabel(accountType, workspaceType),
     specialty: user.specialty || user.department || "Chưa cung cấp",
     date: formatDateTime(user.requestedAt || user.roleRequestedAt || user.createdAt),
@@ -353,7 +376,11 @@ export function DoctorApproval() {
 
     setActionLoading(true);
     try {
-      const response = await smartHealthApi.requestDoctorRoleMoreInfo(selectedDoc.id, infoMessage.trim(), infoFields);
+      const response = await smartHealthApi.requestDoctorRoleMoreInfo(
+        selectedDoc.id,
+        infoMessage.trim(),
+        infoFields,
+      );
       const clinicMap = new Map(clinics.map((clinic) => [clinic.id, clinic]));
       const updatedRequest = toDoctorRequest(response.request, clinicMap);
       setDoctorRequests((current) =>
@@ -663,8 +690,16 @@ export function DoctorApproval() {
                       <div className="grid gap-3">
                         <InfoRow icon={Mail} label="Email" value={selectedDoc.email} />
                         <InfoRow icon={Phone} label="Số điện thoại" value={selectedDoc.phone} />
-                        <InfoRow icon={UserRoundCheck} label="Loại đăng ký" value={selectedDoc.requestType} />
-                        <InfoRow icon={Building2} label="Phòng khám/cơ sở" value={selectedDoc.clinic} />
+                        <InfoRow
+                          icon={UserRoundCheck}
+                          label="Loại đăng ký"
+                          value={selectedDoc.requestType}
+                        />
+                        <InfoRow
+                          icon={Building2}
+                          label="Phòng khám/cơ sở"
+                          value={selectedDoc.clinic}
+                        />
                         <InfoRow
                           icon={FileText}
                           label="Số giấy phép hành nghề"
@@ -777,7 +812,11 @@ export function DoctorApproval() {
                       </button>
                       <button
                         onClick={() => {
-                          setInfoFields(selectedDoc.requiredFields?.length ? selectedDoc.requiredFields : ["license", "clinic", "specialty"]);
+                          setInfoFields(
+                            selectedDoc.requiredFields?.length
+                              ? selectedDoc.requiredFields
+                              : ["license", "clinic", "specialty"],
+                          );
                           setInfoOpen(true);
                         }}
                         className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"

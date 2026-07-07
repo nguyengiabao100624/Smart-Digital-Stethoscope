@@ -1,16 +1,30 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-07-02
+Last updated: 2026-07-07
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
 All commands are for Windows PowerShell unless noted.
 
+Project navigation entrypoint:
+
+```text
+D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_INDEX.md
+```
+
+Use that file first for active source folders, handoff order, live URLs, cleanup rules, and focused smoke commands.
+
 ## Shcare Workspace Portal — current build, deploy, and smoke
 
 `shcare.web.app` is built from `D:\Study\KLTN\smart-health-web` and Firebase Hosting target `webapp`. Older commands aimed at the Web Admin repository or target `admin` are for `shcare-admin.web.app`, not this portal.
 
-Latest confirmed live deploy for Firebase doctor role/surface sync: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/b7b7cbd5b2aa7ea4`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782922148098000`. The deployed login chunk contains distinct Android-only/patient, pending, needs-info, rejected, portal-denied, and platform-admin messages.
+Latest confirmed live deploy after the 2026-07-07 portal/admin sync and form hardening: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/04e18dde26eedb19`, release `projects/162993928259/sites/shcare/channels/live/releases/1783360712235000`. The deployed login flow keeps distinct Android-only/patient, pending, needs-info, rejected, portal-denied, platform-admin, and invalid-credential messages without exposing raw Firebase `auth/*` text. `bun run smoke:portal-browser` confirms live Firebase login, portal API reads, records filters, sidebar route buttons, avatar menu, notification menu, device claim route, and audit navigation. `bun run smoke:portal-mutation` passes live controlled patient/device claim/device assignment/notification/settings/report/support/logout mutation coverage with cleanup.
+
+Web Admin current live deploy after the same sync: Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/4e84a69f69a916e2`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783360744436000`. Platform Admin navigation exposes `/devices` for full-right accounts. Shcare Web and Web Admin forms now use `method="post"` so native/pre-hydration submit does not leak credentials through URL query strings; a custom Playwright smoke verified no-query-leak behavior plus hydrated admin/portal logins.
+
+Web Admin now has controlled live destructive mutation coverage through `npm.cmd run smoke:admin-mutation` in `smart-health-admin\thiết kế giao diện`. It signs into `https://shcare-admin.web.app`, mutates live Render data with unique test IDs, and cleans up settings, notification, storage bucket, device, patient, package, and workspace records.
+
+2026-07-07 continuation QA: after refreshing credentials with `npm.cmd run smoke:production-roles`, `bun run smoke:portal-browser`, `node scripts/portalMutationSmokeTest.mjs`, and `npm.cmd run smoke:admin-mutation` all passed against the live Render/Firebase surfaces. A custom 390x844 Playwright pass also found no horizontal overflow or console/page errors on public/auth, authenticated portal, and authenticated admin key routes.
 
 Source tracking note: `smart-health-web` is a tracked source project. Keep `dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log` untracked; `docs/Logo.png` and `smart-health-web\MẪU UI UX\bacsi.mp4` are required runtime assets for the portal build.
 
@@ -18,21 +32,10 @@ GitHub Actions workflow for Shcare Web: `.github/workflows/deploy-shcare-web.yml
 
 ```powershell
 cd D:\Study\KLTN\smart-health-web
-$source = 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện\.env.production'
-Get-Content -LiteralPath $source | ForEach-Object {
-  $line = $_.Trim()
-  if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
-    $idx = $line.IndexOf('=')
-    $key = $line.Substring(0, $idx).Trim()
-    $value = $line.Substring($idx + 1).Trim().Trim('"').Trim("'")
-    if ($key.StartsWith('VITE_')) { [Environment]::SetEnvironmentVariable($key, $value, 'Process') }
-  }
-}
-$env:VITE_AUTH_MODE = 'production'
-$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
-$env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
 bun run build:firebase
 ```
+
+As of 2026-07-05, `bun run build:firebase` loads production web env through `scripts/production-env.js` before validation and Vite config execution. Override with explicit process envs or `SHCARE_WEB_ENV_FILE` only when you intentionally need a different backend/site. The default fallback uses the existing Web Admin `.env.production` and safe public defaults for Render API and `https://shcare.web.app`; it must not print secret values.
 
 Deploy the generated `dist-firebase` directory:
 
@@ -51,7 +54,45 @@ Invoke-WebRequest -UseBasicParsing https://shcare.web.app/login
 Invoke-WebRequest -UseBasicParsing https://smart-health-api-xj0a.onrender.com/api/health
 ```
 
+Authenticated browser smoke for the live portal:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bun run smoke:portal-browser
+```
+
+Prerequisite: refresh temporary smoke credentials first when needed:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+$env:FIREBASE_PROJECT_ID="smart-health-stethoscope"
+$env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+npm.cmd run smoke:production-roles
+```
+
+`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
+
+Controlled live portal mutation smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+bun run smoke:portal-mutation
+```
+
+`smoke:portal-mutation` uses the same credential file and workspace smoke account. It creates a unique test patient through the UI, saves patient notes, assigns a device if one exists and restores the previous assignment, provisions and claims a device through `/portal/devices/claim` with cleanup, creates/reads/deletes a notification, saves/restores workspace settings and notification preferences, exports reports CSV, submits a support ticket and deletes the resulting notification, verifies a missing-patient 404, deletes the test patient through the UI, logs out, and logs back in. The script records cleanup state immediately after each mutation so failure paths still attempt restore/delete, and it redacts auth headers without printing passwords or ID tokens.
+
+Run this command only from a terminal or CI runner with browser network access to `https://shcare.web.app` and Render. As of 2026-07-07 it passes from this workspace on live release `04e18dde26eedb19`; if it fails later, treat the reported live data, permission, CORS, or UI failure as actionable until rerun proves cleanup and recovery.
+
 If portal/admin login screenshots disagree about the same account, do not redo Firebase/Render/Supabase setup from scratch. First inspect the Firebase custom claims and live backend `/api/auth/firebase` result for that email. A doctor account should return `role=doctor`, `roleRequestStatus=approved`, `allowedSurfaces` containing `portal`, `defaultSurface=portal`, and a workspace name. A platform admin should return `role=admin`, `allowedSurfaces=["admin"]`, and `platform.*` capabilities. The 2026-07-01 fix verified `baobee100624@gmail.com` as `doctor` in workspace `Bệnh viện Quân y 175`.
+
+2026-07-06 login audit note: `nguyengiabao100624@gmail.com` was verified through Firebase Admin as an enabled, email-verified password account with platform-admin claims for `org_default_clinic`. That account belongs on `shcare-admin.web.app`; an `auth/invalid-credential` result on `shcare.web.app` means Firebase rejected the credential before portal role checks.
+
+Focused invalid-credential UI smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+node -e "const { chromium } = require('playwright'); (async()=>{ const b=await chromium.launch({channel:'chrome',headless:true}); const p=await b.newPage({viewport:{width:390,height:844}}); await p.goto('https://shcare.web.app/login?smoke=invalid-credential-ui',{waitUntil:'domcontentloaded'}); await p.locator('#login-email').fill('invalid-login-smoke@smarthealth.test'); await p.locator('#login-password').fill('definitely-not-a-valid-password'); await p.locator('form button[type=\"submit\"]').click({force:true}); const a=p.locator('#login-error[role=\"alert\"]').first(); await a.waitFor({timeout:20000}); const t=(await a.innerText()).trim(); if(/Firebase:|auth\\//.test(t)||!t.includes('shcare-admin.web.app')) throw new Error(t); console.log(t); await b.close(); })().catch(e=>{ console.error(e.message||e); process.exit(1); })"
+```
 
 Local UI QA commands used for the 2026-06-24 Signal Horizon pass:
 
@@ -100,6 +141,46 @@ rg --files --hidden D:\Study\KLTN -g 'SKILL.md' -g 'skills-lock.json' -g '!**/no
 ```
 
 Expected result: no repo-local `SKILL.md` or `skills-lock.json`. Plugin/marketplace payloads under `C:\Users\baobe\.codex` are managed global state and must not be moved.
+
+Local Codex Telegram bridge checks:
+
+```powershell
+cd D:\Study\KLTN\codex-telegram-bridge
+npm.cmd run windows:check
+npm.cmd run typecheck
+npx.cmd vitest run tests/app.test.ts
+npx.cmd vitest run tests/workerRuntime.test.ts tests/codexRunner.test.ts
+npm.cmd test
+npm.cmd run build
+```
+
+`tests/app.test.ts` covers the rich terminal notification contract: concurrent Telegram jobs, concurrent standalone sessions, duplicate replay suppression, done-without-final reported as `Failed`, and repeated failed/cancelled status dedupe. Completion notifications must include task name, request summary, Session ID, Task ID when available, start/end/duration, final status, result summary, output/file references when detected, and account/profile details.
+
+If Codex account notifications stop after changing accounts, check recent bridge events for `telegram_account_current` and restart only after the current Telegram-launched Codex job has finished:
+
+```powershell
+cd D:\Study\KLTN\codex-telegram-bridge
+npm.cmd run windows:stop
+npm.cmd run windows:start-all
+```
+
+The 2026-07-04 bridge fix sends a Telegram account notification on first detected account heartbeat and on later account-hash changes. `windows:start-all` can still fail to open the mini-app tunnel if Cloudflare Quick Tunnel is blocked locally with `connectex: An attempt was made to access a socket in a way forbidden by its access permissions`; that tunnel failure does not mean the local worker/transcript watcher is stopped.
+
+Codex Telegram bridge full-access is opt-in and applies only to new bridge-launched Codex tasks:
+
+```text
+CODEX_BRIDGE_ALLOW_FULL_ACCESS=true
+```
+
+After changing it, restart bridge server/worker:
+
+```powershell
+cd D:\Study\KLTN\codex-telegram-bridge
+npm.cmd run windows:stop
+npm.cmd run windows:start-all
+```
+
+With the env opt-in enabled, Telegram/dashboard `Chạy toàn quyền` runs `codex exec -s danger-full-access --ask-for-approval never`. The bridge still does not use `--dangerously-bypass-approvals-and-sandbox`; `full` resume jobs are refused because `codex exec resume` does not expose the same sandbox flag.
 
 Skill selection guide:
 
@@ -204,9 +285,11 @@ Defaults:
 ```text
 SMOKE_BACKEND_URL=https://smart-health-api-xj0a.onrender.com
 SMOKE_ADMIN_URL=https://shcare-admin.web.app
+SMOKE_PORTAL_URL=https://shcare.web.app
+SMOKE_REQUEST_TIMEOUT_MS=60000
 ```
 
-This checks Render `/api/health`, verifies unauthenticated `/api/me` returns `401`, and verifies Firebase Hosting rewrites `/login` and `/admin-actions` to the Web Admin SPA shell.
+This checks Render `/api/health`, verifies unauthenticated `/api/me` returns `401`, verifies Firebase Hosting rewrites `/login` and `/admin-actions` to the Web Admin SPA shell, and verifies Shcare Portal `/login` plus `/portal/patients` rewrites. The default timeout is 60 seconds to avoid false failures when the Render backend cold-starts.
 
 Production readiness check:
 
@@ -233,6 +316,16 @@ This creates or updates Firebase smoke accounts, signs in through Firebase REST,
 
 The generated smoke-account passwords are saved locally in ignored file `web-monitor\.test-data\production-role-smoke-credentials.json`.
 
+Authenticated portal production API smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:production-roles
+npm.cmd run smoke:portal-production
+```
+
+Run `smoke:production-roles` first so the temporary smoke credentials are current. `smoke:portal-production` signs into Firebase with those smoke accounts, verifies live Render blocks platform admins from the portal, and checks workspace-admin/doctor portal read paths. It does not print passwords or ID tokens. This is an API-level live smoke; pair it with Shcare Web `bun run smoke:portal-browser` for browser-level live portal coverage. Mutation browser E2E still needs a controlled test plan that creates and restores/deletes test data.
+
 Firebase email verification action-link smoke:
 
 ```powershell
@@ -244,6 +337,24 @@ npm.cmd run smoke:firebase-email
 ```
 
 This creates a temporary Firebase user, generates an email-verification action link for `https://shcare.web.app/xac-nhan-email`, checks that the link contains an OOB verification code, then deletes the temp user. It does not send email and does not print the OOB link.
+
+Notification push delivery smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:notification-push
+```
+
+This starts a temporary JSON backend, logs in a seeded demo user, registers a fake Android FCM token, creates a direct user notification, and verifies the local no-Firebase case records `pushStatus=skipped` plus `pushAttempts[0].status=skipped` instead of crashing. Real FCM delivery still requires the deployed backend to have Firebase Admin configured and a real Android device token registered through `/api/v1/notifications/register-device`.
+
+Optional retry tuning for real provider delivery:
+
+```powershell
+$env:PUSH_NOTIFICATION_MAX_RETRIES="1" # default 1, capped 0-3
+$env:PUSH_NOTIFICATION_RETRY_MS="30000" # default 30000, bounded 1000-300000
+```
+
+`pushAttempts` stores provider attempt history without raw FCM tokens; token references are short SHA-256 hashes.
 
 Shcare Web registration email delivery now uses backend endpoint:
 
@@ -295,7 +406,7 @@ Workspace/RBAC HTTP smoke test with real temporary accounts:
 npm run smoke:workspace-access
 ```
 
-This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share/delete, export download, package edit denial, technician device pairing, device-event history scope, and portal notification delete.
+This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share/delete, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, and portal notification delete.
 
 Last verified on 2026-06-06 after the cloud-device backend changes: passed. A separate 2026-06-05 runtime smoke on temporary ports `PORT=3450` and `AUDIO_UDP_PORT=3451` also passed `/api/health`, WebSocket `/app`, and UDP audio packet checks.
 
@@ -319,6 +430,22 @@ npm.cmd run build
 cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:compileDebugKotlin
 ```
+
+Workspace owner approval lifecycle checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run lint
+
+cd D:\Study\KLTN\smart-health-web
+bunx tsc --noEmit --pretty false
+```
+
+`npm.cmd test` now covers workspace-owner registration through `/api/auth/workspace-request`, admin `needs_info`, workspace resubmit, rejection, second resubmit, approval, and final portal surface access.
 
 Doctor profile resubmit and solo-practice regression checks:
 
@@ -504,7 +631,7 @@ Build check:
 npm run build
 ```
 
-Last verified in this workspace on 2026-06-06 after the cloud-first Devices page rewrite, storage-backed firmware selector, and admin copy cleanup. Build passed; Vite warned that some export-related chunks are larger than 500 kB. After Chrome DevTools previously found an Overview crash, `src/components/admin/Overview.tsx` was fixed by importing `Users` from `lucide-react`.
+Last verified in this workspace on 2026-07-07 after the portal/admin sync, form hardening, and Admin mutation smoke follow-up. `npm.cmd run lint` passed, `npm.cmd run build:firebase:admin` passed, `npm.cmd run smoke:admin-mutation` passed against live Render/Admin, and Firebase Hosting site `shcare-admin` was deployed as version `projects/162993928259/sites/shcare-admin/versions/4e84a69f69a916e2`. The remaining TanStack build messages are dependency unused-import warnings from `node_modules`; the remaining large `xlsx` asset is a lazy export-library chunk.
 
 Firebase Hosting production domains:
 
@@ -530,7 +657,8 @@ Deploy Web Admin to Firebase Hosting target `admin`:
 ```powershell
 cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
-npx firebase-tools@latest deploy --only hosting:admin --project smart-health-stethoscope --non-interactive
+$env:npm_config_cache="D:\Study\KLTN\.npm-cache"
+npm.cmd run deploy:firebase:admin
 ```
 
 Deploy Shcare Web Portal to Firebase Hosting target `webapp`:
@@ -549,6 +677,20 @@ Invoke-WebRequest -UseBasicParsing https://shcare.web.app/login
 cd "D:\Study\KLTN\smart-health-embedded\web-monitor"
 npm.cmd run smoke:public-deployment
 ```
+
+Controlled live Web Admin mutation smoke:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+$env:FIREBASE_PROJECT_ID="smart-health-stethoscope"
+$env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+npm.cmd run smoke:production-roles
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run smoke:admin-mutation
+```
+
+`smoke:admin-mutation` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json` by default and uses the `platform` account. Optional overrides are `SMOKE_ADMIN_URL`, `SMART_HEALTH_API_BASE_URL` or `SMOKE_API_BASE_URL`, `SMOKE_CREDENTIALS_FILE`, and `SMOKE_ACCOUNT_KEY`. It does not print passwords or bearer tokens. Coverage includes platform workspace/package/patient/device/notification/storage/settings mutations with cleanup, plus route checks for overview, devices, patients, clinics, packages, notifications, storage, settings, admin accounts, and audit log. Last live pass from this workspace used run id `admin-mutation-mr9lnk7o` and cleaned all created/restored resources with HTTP 200 cleanup responses.
 
 Expected state:
 
@@ -1884,3 +2026,50 @@ npm.cmd run smoke:public-deployment
 ```
 
 Also fetch the live main asset and confirm it has `localhostCount=0` and `renderApiCount=1` for `smart-health-api-xj0a.onrender.com/api`. The 2026-07-01 fixed release is Firebase Hosting version `projects/162993928259/sites/shcare/versions/e59c69dd22c36505`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782921251706000`.
+
+## 2026-07-07 Codex Telegram Bridge Account Sync Commands
+
+Local verification for account quota sync/default-account and worker concurrency:
+
+```powershell
+cd D:\Study\KLTN\codex-telegram-bridge
+npm.cmd run windows:check
+npm.cmd run typecheck
+npx.cmd vitest run tests/db.test.ts tests/app.test.ts tests/workerRuntime.test.ts
+npx.cmd vitest run tests/codexRunner.test.ts
+npm.cmd test
+npm.cmd run build
+```
+
+For the completion-notification slice, `tests/app.test.ts` is the focused practical smoke. It drives the real Fastify route/SQLite event/Telegram-client path with multiple jobs and sessions in one batch, then replays the same events to confirm no duplicate final messages are sent.
+
+Real account/quota smoke should not restart the live bridge while a Telegram-launched Codex job is running. Use a copied DB, a temporary port, and Telegram polling disabled:
+
+```powershell
+cd D:\Study\KLTN\codex-telegram-bridge
+$env:PORT="8798"
+$env:DATABASE_PATH="./data/smoke-account-switch.sqlite"
+$env:BRIDGE_SERVER_URL="http://127.0.0.1:8798"
+$env:TELEGRAM_POLLING_ENABLED="0"
+Start-Process -FilePath node -ArgumentList "dist/server/index.js" -WorkingDirectory (Get-Location) -WindowStyle Hidden -RedirectStandardOutput "data/smoke-server.out.log" -RedirectStandardError "data/smoke-server.err.log"
+Start-Process -FilePath node -ArgumentList "dist/worker/index.js" -WorkingDirectory (Get-Location) -WindowStyle Hidden -RedirectStandardOutput "data/smoke-worker.out.log" -RedirectStandardError "data/smoke-worker.err.log"
+```
+
+The 2026-07-07 smoke used a copied live DB on port `8798`. It verified switching between accounts, fallback away from exhausted `.codex`, correct active/default display, and default persistence after server restart. It did not prove real quota refresh because tested Codex profiles returned out-of-credit/usage-limit errors or no `token_count` event, so keep the bridge account/quota item IN PROGRESS until a real profile produces a quota snapshot after switching.
+
+Worker concurrency is configured in `.env`:
+
+```powershell
+WORKER_CONCURRENCY=2
+```
+
+Valid range is `1-4`; default is `2`. The DB still blocks two resume jobs for the same `target_session_id`, so parallel execution is for separate sessions/new tasks.
+
+After changing `.env` or pulling this bridge update, restart the local bridge:
+
+```powershell
+cd D:\Study\KLTN\codex-telegram-bridge
+npm.cmd run windows:restart
+```
+
+Do this only after active bridge-launched jobs finish; otherwise the running task can be interrupted.

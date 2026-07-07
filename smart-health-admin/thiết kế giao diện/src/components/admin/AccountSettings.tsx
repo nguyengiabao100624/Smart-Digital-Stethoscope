@@ -128,7 +128,9 @@ function sessionDevice(session: SmartHealthAuthSession) {
 
 function sessionIcon(session: SmartHealthAuthSession) {
   const userAgent = (session.userAgent || "").toLowerCase();
-  return userAgent.includes("iphone") || userAgent.includes("android") || userAgent.includes("mobile")
+  return userAgent.includes("iphone") ||
+    userAgent.includes("android") ||
+    userAgent.includes("mobile")
     ? Smartphone
     : Monitor;
 }
@@ -211,7 +213,9 @@ export function AccountSettings() {
       })
       .catch(() => {
         if (!cancelled) {
-          setAvatarPreview(profile.avatarUrl && !profile.avatarUrl.includes("/me/avatar") ? profile.avatarUrl : "");
+          setAvatarPreview(
+            profile.avatarUrl && !profile.avatarUrl.includes("/me/avatar") ? profile.avatarUrl : "",
+          );
         }
       });
     return () => {
@@ -227,7 +231,10 @@ export function AccountSettings() {
     };
   }, []);
 
-  const activeSessions = useMemo(() => sessions.filter((session) => !session.revokedAt), [sessions]);
+  const activeSessions = useMemo(
+    () => sessions.filter((session) => !session.revokedAt),
+    [sessions],
+  );
   const otherSessions = useMemo(
     () => activeSessions.filter((session) => !session.current),
     [activeSessions],
@@ -334,7 +341,8 @@ export function AccountSettings() {
     setConfirmError("");
     setConfirmTask({
       title: "Gỡ ảnh đại diện",
-      description: "Ảnh đại diện sẽ được gỡ khỏi hồ sơ tài khoản và file avatar hiện tại sẽ bị xóa khỏi storage nếu còn tồn tại.",
+      description:
+        "Ảnh đại diện sẽ được gỡ khỏi hồ sơ tài khoản và file avatar hiện tại sẽ bị xóa khỏi storage nếu còn tồn tại.",
       confirmLabel: "Gỡ ảnh",
       run: async () => {
         const { user } = await smartHealthApi.deleteMyAvatar();
@@ -364,7 +372,10 @@ export function AccountSettings() {
     }
     try {
       if (hasFirebaseWebConfig()) {
-        const idToken = await changeFirebasePassword(passwordForm.currentPassword, passwordForm.newPassword);
+        const idToken = await changeFirebasePassword(
+          passwordForm.currentPassword,
+          passwordForm.newPassword,
+        );
         await smartHealthApi.authenticateFirebase(idToken);
         await smartHealthApi.changePassword({ firebaseClientUpdated: true });
       } else {
@@ -386,7 +397,8 @@ export function AccountSettings() {
       title: "Đăng xuất phiên đăng nhập",
       description: (
         <span>
-          Đăng xuất phiên <strong>{sessionDevice(session)}</strong> tại IP {session.ip || "không rõ"}? Người dùng trên thiết bị đó sẽ phải đăng nhập lại.
+          Đăng xuất phiên <strong>{sessionDevice(session)}</strong> tại IP{" "}
+          {session.ip || "không rõ"}? Người dùng trên thiết bị đó sẽ phải đăng nhập lại.
         </span>
       ),
       confirmLabel: "Đăng xuất phiên",
@@ -470,19 +482,32 @@ export function AccountSettings() {
           className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
-          {saveStatus === "saving" ? "Đang lưu..." : saveStatus === "success" ? "Đã lưu" : "Lưu thay đổi"}
+          {saveStatus === "saving"
+            ? "Đang lưu..."
+            : saveStatus === "success"
+              ? "Đã lưu"
+              : "Lưu thay đổi"}
         </button>
       </div>
 
       <Tabs.Root defaultValue="profile" className="flex-1 flex flex-col">
         <Tabs.List className="flex space-x-6 border-b border-border mb-6 overflow-x-auto">
-          <Tabs.Trigger value="profile" className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all flex items-center gap-2 whitespace-nowrap">
+          <Tabs.Trigger
+            value="profile"
+            className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all flex items-center gap-2 whitespace-nowrap"
+          >
             <User className="w-4 h-4" /> Thông tin cá nhân
           </Tabs.Trigger>
-          <Tabs.Trigger value="security" className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all flex items-center gap-2 whitespace-nowrap">
+          <Tabs.Trigger
+            value="security"
+            className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all flex items-center gap-2 whitespace-nowrap"
+          >
             <Shield className="w-4 h-4" /> Bảo mật tài khoản
           </Tabs.Trigger>
-          <Tabs.Trigger value="notifications" className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all flex items-center gap-2 whitespace-nowrap">
+          <Tabs.Trigger
+            value="notifications"
+            className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all flex items-center gap-2 whitespace-nowrap"
+          >
             <Bell className="w-4 h-4" /> Thông báo cá nhân
           </Tabs.Trigger>
         </Tabs.List>
@@ -511,8 +536,16 @@ export function AccountSettings() {
                   </button>
                 </div>
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">Kích thước tối đa 2MB. Hỗ trợ JPG, PNG, WebP.</p>
-                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleAvatarFile} />
+                  <p className="text-sm text-muted-foreground">
+                    Kích thước tối đa 2MB. Hỗ trợ JPG, PNG, WebP.
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    hidden
+                    onChange={handleAvatarFile}
+                  />
                   <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
@@ -520,7 +553,8 @@ export function AccountSettings() {
                       disabled={avatarUploading}
                       className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
                     >
-                      <UploadCloud className="h-4 w-4" /> {avatarUploading ? "Đang tải..." : "Tải ảnh lên"}
+                      <UploadCloud className="h-4 w-4" />{" "}
+                      {avatarUploading ? "Đang tải..." : "Tải ảnh lên"}
                     </button>
                     <button
                       type="button"
@@ -540,14 +574,49 @@ export function AccountSettings() {
             <div>
               <h3 className="text-base font-semibold mb-4">Thông tin cơ bản</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Field label="Họ và tên" value={profile.name} onChange={(value) => updateProfile({ name: value })} />
-                <Field label="Chức vụ" value={profile.title} onChange={(value) => updateProfile({ title: value })} />
-                <IconField label="Email" icon={Mail} value={profile.email} readOnly note="Email do Firebase Auth quản lý, không đổi trong admin." />
-                <IconField label="Số điện thoại" icon={Phone} value={profile.phone} onChange={(value) => updateProfile({ phone: value })} />
-                <Field label="Mã chứng chỉ / license" value={profile.license} onChange={(value) => updateProfile({ license: value })} />
-                <Field label="Bệnh viện / đơn vị" value={profile.hospital} onChange={(value) => updateProfile({ hospital: value })} />
-                <Field label="Khoa / phòng ban" value={profile.department} onChange={(value) => updateProfile({ department: value })} />
-                <Field label="Chuyên môn" value={profile.specialty} onChange={(value) => updateProfile({ specialty: value })} />
+                <Field
+                  label="Họ và tên"
+                  value={profile.name}
+                  onChange={(value) => updateProfile({ name: value })}
+                />
+                <Field
+                  label="Chức vụ"
+                  value={profile.title}
+                  onChange={(value) => updateProfile({ title: value })}
+                />
+                <IconField
+                  label="Email"
+                  icon={Mail}
+                  value={profile.email}
+                  readOnly
+                  note="Email do Firebase Auth quản lý, không đổi trong admin."
+                />
+                <IconField
+                  label="Số điện thoại"
+                  icon={Phone}
+                  value={profile.phone}
+                  onChange={(value) => updateProfile({ phone: value })}
+                />
+                <Field
+                  label="Mã chứng chỉ / license"
+                  value={profile.license}
+                  onChange={(value) => updateProfile({ license: value })}
+                />
+                <Field
+                  label="Bệnh viện / đơn vị"
+                  value={profile.hospital}
+                  onChange={(value) => updateProfile({ hospital: value })}
+                />
+                <Field
+                  label="Khoa / phòng ban"
+                  value={profile.department}
+                  onChange={(value) => updateProfile({ department: value })}
+                />
+                <Field
+                  label="Chuyên môn"
+                  value={profile.specialty}
+                  onChange={(value) => updateProfile({ specialty: value })}
+                />
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-foreground">Địa chỉ</label>
                   <textarea
@@ -564,17 +633,45 @@ export function AccountSettings() {
 
         <Tabs.Content value="security" className="space-y-6">
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
-            Cài đặt bảo mật trong tab này chỉ áp dụng cho tài khoản của bạn. Chính sách toàn hệ thống nằm ở Cài đặt hệ thống.
+            Cài đặt bảo mật trong tab này chỉ áp dụng cho tài khoản của bạn. Chính sách toàn hệ
+            thống nằm ở Cài đặt hệ thống.
           </div>
 
           <div className="bg-card border border-border rounded-xl shadow-sm p-6 space-y-6">
             <div>
               <h3 className="text-base font-semibold mb-4">Đổi mật khẩu</h3>
               <div className="space-y-4 max-w-md">
-                <PasswordField label="Mật khẩu hiện tại" value={passwordForm.currentPassword} show={showCurrentPw} onToggle={() => setShowCurrentPw((value) => !value)} onChange={(value) => setPasswordForm((current) => ({ ...current, currentPassword: value }))} />
-                <PasswordField label="Mật khẩu mới" value={passwordForm.newPassword} show={showNewPw} onToggle={() => setShowNewPw((value) => !value)} onChange={(value) => setPasswordForm((current) => ({ ...current, newPassword: value }))} />
-                <PasswordField label="Xác nhận mật khẩu mới" value={passwordForm.confirmPassword} show={showConfirmPw} onToggle={() => setShowConfirmPw((value) => !value)} onChange={(value) => setPasswordForm((current) => ({ ...current, confirmPassword: value }))} />
-                <button onClick={handlePasswordChange} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                <PasswordField
+                  label="Mật khẩu hiện tại"
+                  value={passwordForm.currentPassword}
+                  show={showCurrentPw}
+                  onToggle={() => setShowCurrentPw((value) => !value)}
+                  onChange={(value) =>
+                    setPasswordForm((current) => ({ ...current, currentPassword: value }))
+                  }
+                />
+                <PasswordField
+                  label="Mật khẩu mới"
+                  value={passwordForm.newPassword}
+                  show={showNewPw}
+                  onToggle={() => setShowNewPw((value) => !value)}
+                  onChange={(value) =>
+                    setPasswordForm((current) => ({ ...current, newPassword: value }))
+                  }
+                />
+                <PasswordField
+                  label="Xác nhận mật khẩu mới"
+                  value={passwordForm.confirmPassword}
+                  show={showConfirmPw}
+                  onToggle={() => setShowConfirmPw((value) => !value)}
+                  onChange={(value) =>
+                    setPasswordForm((current) => ({ ...current, confirmPassword: value }))
+                  }
+                />
+                <button
+                  onClick={handlePasswordChange}
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
                   Cập nhật mật khẩu
                 </button>
               </div>
@@ -586,19 +683,32 @@ export function AccountSettings() {
               <h3 className="text-base font-semibold mb-4">Xác thực hai yếu tố (2FA)</h3>
               <div className="space-y-3">
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
-                  Trạng thái: {profile.twoFactorEnabled ? `Đã bật (${profile.twoFactorMethod || "app"})` : "Chưa bật"}. Trạng thái 2FA và recovery code được backend ghi nhận; OTP provider có thể nối thêm theo môi trường triển khai.
+                  Trạng thái:{" "}
+                  {profile.twoFactorEnabled
+                    ? `Đã bật (${profile.twoFactorMethod || "app"})`
+                    : "Chưa bật"}
+                  . Trạng thái 2FA và recovery code được backend ghi nhận; OTP provider có thể nối
+                  thêm theo môi trường triển khai.
                 </div>
                 <ActionRow
                   title="Xác thực qua ứng dụng"
                   description="Bật 2FA bằng ứng dụng và tạo recovery codes trên backend"
-                  button={profile.twoFactorEnabled && profile.twoFactorMethod === "app" ? "Đang bật" : "Bật app 2FA"}
+                  button={
+                    profile.twoFactorEnabled && profile.twoFactorMethod === "app"
+                      ? "Đang bật"
+                      : "Bật app 2FA"
+                  }
                   disabled={profile.twoFactorEnabled && profile.twoFactorMethod === "app"}
                   onClick={() => void updateTwoFactor("app")}
                 />
                 <ActionRow
                   title="Xác thực qua SMS"
                   description="Bật 2FA qua SMS; yêu cầu tài khoản có số điện thoại"
-                  button={profile.twoFactorEnabled && profile.twoFactorMethod === "sms" ? "Đang bật" : "Bật SMS 2FA"}
+                  button={
+                    profile.twoFactorEnabled && profile.twoFactorMethod === "sms"
+                      ? "Đang bật"
+                      : "Bật SMS 2FA"
+                  }
                   disabled={profile.twoFactorEnabled && profile.twoFactorMethod === "sms"}
                   onClick={() => void updateTwoFactor("sms")}
                 />
@@ -617,34 +727,53 @@ export function AccountSettings() {
             <div>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold">Phiên đăng nhập hiện tại</h3>
-                <button onClick={loadSessions} disabled={sessionsLoading} className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60">
+                <button
+                  onClick={loadSessions}
+                  disabled={sessionsLoading}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
+                >
                   {sessionsLoading ? "Đang tải..." : "Tải lại"}
                 </button>
               </div>
               <div className="space-y-3">
                 {activeSessions.length === 0 ? (
-                  <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">Chưa có phiên đăng nhập nào được backend ghi nhận.</div>
+                  <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                    Chưa có phiên đăng nhập nào được backend ghi nhận.
+                  </div>
                 ) : (
                   activeSessions.map((session) => {
                     const Icon = sessionIcon(session);
                     return (
-                      <div key={session.id} className={`flex items-center justify-between gap-4 rounded-lg border p-4 ${session.current ? "border-primary/30 bg-primary/5" : "border-border bg-muted/20"}`}>
+                      <div
+                        key={session.id}
+                        className={`flex items-center justify-between gap-4 rounded-lg border p-4 ${session.current ? "border-primary/30 bg-primary/5" : "border-border bg-muted/20"}`}
+                      >
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${session.current ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${session.current ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
+                          >
                             <Icon className="h-4 w-4" />
                           </div>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                               <span>{sessionDevice(session)}</span>
-                              {session.current && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">Phiên này</span>}
+                              {session.current && (
+                                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                                  Phiên này
+                                </span>
+                              )}
                             </div>
                             <div className="mt-0.5 text-xs text-muted-foreground">
-                              {session.ip || "IP không rõ"} • {session.provider || "nội bộ"} • {formatSessionTime(session.lastSeenAt || session.createdAt)}
+                              {session.ip || "IP không rõ"} • {session.provider || "nội bộ"} •{" "}
+                              {formatSessionTime(session.lastSeenAt || session.createdAt)}
                             </div>
                           </div>
                         </div>
                         {!session.current && (
-                          <button onClick={() => revokeSession(session)} className="inline-flex shrink-0 items-center gap-1.5 rounded border border-destructive/30 px-2.5 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10">
+                          <button
+                            onClick={() => revokeSession(session)}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-destructive/30 px-2.5 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
+                          >
                             <LogOut className="h-3.5 w-3.5" /> Đăng xuất
                           </button>
                         )}
@@ -671,17 +800,36 @@ export function AccountSettings() {
           <div className="bg-card border border-border rounded-xl shadow-sm p-6 space-y-4">
             {[
               ["doctorRequests", "Bác sĩ mới đăng ký", "Thông báo khi có bác sĩ cần duyệt"],
-              ["abnormalResults", "Cảnh báo AI bất thường", "Thông báo khi AI phát hiện kết quả bất thường"],
-              ["deviceOffline", "Thiết bị offline", "Thông báo khi thiết bị mất kết nối quá 30 phút"],
-              ["newLogin", "Đăng nhập từ thiết bị lạ", "Thông báo khi tài khoản có phiên đăng nhập mới"],
+              [
+                "abnormalResults",
+                "Cảnh báo AI bất thường",
+                "Thông báo khi AI phát hiện kết quả bất thường",
+              ],
+              [
+                "deviceOffline",
+                "Thiết bị offline",
+                "Thông báo khi thiết bị mất kết nối quá 30 phút",
+              ],
+              [
+                "newLogin",
+                "Đăng nhập từ thiết bị lạ",
+                "Thông báo khi tài khoản có phiên đăng nhập mới",
+              ],
             ].map(([key, title, description]) => (
-              <div key={title} className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
+              <div
+                key={title}
+                className="flex items-center justify-between gap-4 rounded-lg border border-border p-3"
+              >
                 <div>
                   <div className="text-sm font-medium">{title}</div>
                   <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
                 </div>
                 <Switch
-                  checked={profile.notificationPreferences[key as keyof ProfileState["notificationPreferences"]]}
+                  checked={
+                    profile.notificationPreferences[
+                      key as keyof ProfileState["notificationPreferences"]
+                    ]
+                  }
                   onCheckedChange={(checked) =>
                     void updateNotificationPreference(
                       key as keyof ProfileState["notificationPreferences"],
@@ -699,11 +847,23 @@ export function AccountSettings() {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <div className="space-y-2">
       <label className="text-sm font-medium text-foreground">{label}</label>
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring" />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+      />
     </div>
   );
 }
@@ -758,8 +918,17 @@ function PasswordField({
       <label className="text-sm font-medium text-foreground">{label}</label>
       <div className="relative">
         <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input type={show ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-10 text-sm outline-none focus:border-ring" />
-        <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-10 text-sm outline-none focus:border-ring"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </div>

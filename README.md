@@ -10,6 +10,8 @@ Smart Digital Stethoscope, also called Smart Health, is a graduation-thesis medi
 
 This repository is an engineering prototype and research product. It is not a certified medical device. AI and signal-processing output must be treated as decision-support information only and must not replace clinician judgment, regulated diagnostic workflow, or emergency care.
 
+For fast navigation, start with `docs/SMART_HEALTH_PROJECT_INDEX.md`, then the four handoff files listed there.
+
 ## Live Surfaces
 
 | Surface | URL | Purpose |

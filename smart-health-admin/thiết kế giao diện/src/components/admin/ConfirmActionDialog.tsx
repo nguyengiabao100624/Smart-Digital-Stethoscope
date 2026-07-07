@@ -60,9 +60,13 @@ export function ConfirmActionDialog({
             <div className={`flex h-10 w-10 items-center justify-center rounded-full ${iconClass}`}>
               <Icon className="h-5 w-5" />
             </div>
-            <AlertDialogTitle className="text-left text-lg text-foreground">{title}</AlertDialogTitle>
+            <AlertDialogTitle className="text-left text-lg text-foreground">
+              {title}
+            </AlertDialogTitle>
           </div>
-          <AlertDialogDescription className="text-left leading-6">{description}</AlertDialogDescription>
+          <AlertDialogDescription className="text-left leading-6">
+            {description}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (
           <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">

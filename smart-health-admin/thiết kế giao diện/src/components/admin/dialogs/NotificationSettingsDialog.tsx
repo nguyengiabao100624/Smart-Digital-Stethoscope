@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Bell, Mail, Smartphone, AlertCircle, MessageSquare, Activity } from "lucide-react";
 import { toast } from "sonner";
@@ -86,7 +86,7 @@ export function NotificationSettingsDialog({
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSave} className="p-6 space-y-6">
+          <form method="post" onSubmit={handleSave} className="p-6 space-y-6">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

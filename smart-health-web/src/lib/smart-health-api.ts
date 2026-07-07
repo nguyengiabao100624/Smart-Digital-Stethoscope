@@ -23,6 +23,7 @@ export interface WorkspaceSummary {
   phone?: string;
   email?: string;
   website?: string;
+  legalName?: string;
   representative?: string;
   settings?: Record<string, unknown>;
 }
@@ -394,6 +395,16 @@ export const smartHealthApi = {
   updateDevice: (id: string, payload: Partial<Device>) =>
     request<{ device: Device }>(`/portal/devices/${encodeURIComponent(id)}`, {
       method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  activateDeviceByClaim: (payload: {
+    deviceId: string;
+    claimCode?: string;
+    name?: string;
+    connectionMethod?: string;
+  }) =>
+    request<{ device: Device }>("/portal/devices/pair", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   sendDeviceCommand: (

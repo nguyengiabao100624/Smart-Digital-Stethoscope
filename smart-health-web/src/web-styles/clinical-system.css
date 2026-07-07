@@ -527,6 +527,7 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .clinical-portal-shell {
+  isolation: isolate;
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
   min-height: 100dvh;
@@ -690,6 +691,8 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .clinical-topbar {
+  position: relative;
+  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -698,6 +701,7 @@ html.dark .shc-public-layout > .shc-announcement {
   padding: 0.75rem clamp(1rem, 3vw, 2rem);
   border-bottom: 1px solid var(--clinical-line);
   background: color-mix(in srgb, var(--clinical-surface) 96%, transparent);
+  overflow: visible;
 }
 
 .clinical-topbar-title {
@@ -722,6 +726,8 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .clinical-top-actions {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -770,7 +776,7 @@ html.dark .shc-public-layout > .shc-announcement {
   position: absolute;
   right: 0;
   top: calc(100% + 0.5rem);
-  z-index: 60;
+  z-index: 120;
   width: min(22rem, calc(100vw - 2rem));
   overflow: hidden;
   border: 1px solid var(--clinical-line);
@@ -855,6 +861,8 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .clinical-content {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   overflow: auto;
   padding: clamp(1rem, 3vw, 2rem);

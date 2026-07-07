@@ -1,4 +1,5 @@
 import { toVietnameseErrorMessage } from "./error-messages";
+import { WEB_SURFACE, IS_PORTAL_SURFACE } from "./surface";
 
 type QueryValue = string | number | boolean | null | undefined;
 
@@ -58,7 +59,10 @@ export type SmartHealthAuthUser = {
   currentMembership?: SmartHealthMembership | null;
   memberships?: SmartHealthMembership[];
   workspace?: SmartHealthWorkspaceSummary | null;
+  currentWorkspace?: SmartHealthWorkspaceSummary | null;
   capabilities?: string[];
+  allowedSurfaces?: string[];
+  defaultSurface?: string;
   firebaseUid?: string;
   verifiedEmail?: boolean;
   verifiedPhone?: boolean;
@@ -84,7 +88,11 @@ export type SmartHealthAuthUser = {
   updatedAt?: string;
 };
 
-export type SmartHealthAdminAccountRole = "admin" | "platform_admin" | "workspace_admin" | "workspace_owner";
+export type SmartHealthAdminAccountRole =
+  | "admin"
+  | "platform_admin"
+  | "workspace_admin"
+  | "workspace_owner";
 
 export type SmartHealthAdminAccount = SmartHealthAuthUser & {
   managedAdmin?: boolean;
@@ -259,6 +267,7 @@ export type SmartHealthChartSlice = {
 
 export type SmartHealthOverviewStats = {
   clinics: number;
+  patientsCount?: number;
   pendingDoctors: number;
   devicesOnline: number;
   scansCount: number;
@@ -352,6 +361,7 @@ export type SmartHealthClinic = {
   status?: string;
   legalName?: string;
   representative?: string;
+  requestMetadata?: Record<string, unknown>;
   ownerUserId?: string;
   packageId?: string;
   subscriptionStatus?: string;
@@ -418,10 +428,7 @@ function normalizeBaseUrl(value: string | undefined, fallback: string) {
 }
 
 function assertProductionBackendUrl(label: string, value: string) {
-  if (
-    !import.meta.env.PROD ||
-    import.meta.env.VITE_SMART_HEALTH_ALLOW_LOCAL_BACKEND === "true"
-  ) {
+  if (!import.meta.env.PROD || import.meta.env.VITE_SMART_HEALTH_ALLOW_LOCAL_BACKEND === "true") {
     return;
   }
 
@@ -442,7 +449,10 @@ function assertProductionBackendUrl(label: string, value: string) {
 }
 
 function getHttpBaseUrl() {
-  const baseUrl = normalizeBaseUrl(import.meta.env.VITE_SMART_HEALTH_BASE_URL, DEFAULT_HTTP_BASE_URL);
+  const baseUrl = normalizeBaseUrl(
+    import.meta.env.VITE_SMART_HEALTH_BASE_URL,
+    DEFAULT_HTTP_BASE_URL,
+  );
   assertProductionBackendUrl("VITE_SMART_HEALTH_BASE_URL", baseUrl);
   return baseUrl;
 }
@@ -524,6 +534,14 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
   if (body && typeof body === "string" && !requestHeaders.has("Content-Type")) {
     requestHeaders.set("Content-Type", "application/json");
+  }
+
+  if (!requestHeaders.has("X-Smart-Health-Surface")) {
+    requestHeaders.set("X-Smart-Health-Surface", WEB_SURFACE);
+  }
+
+  if (!requestHeaders.has("X-Smart-Health-Client")) {
+    requestHeaders.set("X-Smart-Health-Client", "web");
   }
 
   let response: Response;
@@ -697,7 +715,11 @@ export const smartHealthApi = {
     });
   },
 
-  async changePassword(payload: { currentPassword?: string; newPassword?: string; firebaseClientUpdated?: boolean }) {
+  async changePassword(payload: {
+    currentPassword?: string;
+    newPassword?: string;
+    firebaseClientUpdated?: boolean;
+  }) {
     return requestJson<{ ok: boolean; provider?: string }>("/me/password", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -732,11 +754,17 @@ export const smartHealthApi = {
   },
 
   async listPatients(q?: string) {
-    return requestJson<{ patients: SmartHealthPatient[] }>("/patients", { query: { q } });
+    return requestJson<{ patients: SmartHealthPatient[] }>(
+      IS_PORTAL_SURFACE ? "/portal/patients" : "/patients",
+      { query: { q } },
+    );
   },
 
   async listScans(params: { patientId?: string; status?: string; limit?: number } = {}) {
-    return requestJson<{ scans: SmartHealthScan[] }>("/scans", { query: params });
+    return requestJson<{ scans: SmartHealthScan[] }>(
+      IS_PORTAL_SURFACE ? "/portal/scans" : "/scans",
+      { query: params },
+    );
   },
 
   async downloadScanAudio(audioUrl: string) {
@@ -744,7 +772,9 @@ export const smartHealthApi = {
   },
 
   async listDevices() {
-    return requestJson<{ devices: SmartHealthDevice[] }>("/devices");
+    return requestJson<{ devices: SmartHealthDevice[] }>(
+      IS_PORTAL_SURFACE ? "/portal/devices" : "/devices",
+    );
   },
 
   async patchDevice(id: string, payload: Partial<SmartHealthDevice>) {
@@ -809,16 +839,21 @@ export const smartHealthApi = {
     id: string,
     payload: { firmwareVersion?: string; url?: string; checksum?: string; firmwareFileId?: string },
   ) {
-    return requestJson<{ device: SmartHealthDevice; ota?: unknown; command?: unknown; delivery?: { delivered?: boolean } }>(
-      `/devices/${encodeURIComponent(id)}/ota`,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    );
+    return requestJson<{
+      device: SmartHealthDevice;
+      ota?: unknown;
+      command?: unknown;
+      delivery?: { delivered?: boolean };
+    }>(`/devices/${encodeURIComponent(id)}/ota`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
-  async sendDeviceCommand(id: string, payload: { type: string; payload?: Record<string, unknown> }) {
+  async sendDeviceCommand(
+    id: string,
+    payload: { type: string; payload?: Record<string, unknown> },
+  ) {
     return requestJson<{
       device: SmartHealthDevice;
       command: { id: string; type: string; payload?: Record<string, unknown>; createdAt?: string };
@@ -887,7 +922,9 @@ export const smartHealthApi = {
   },
 
   async listApprovedDoctors() {
-    return requestJson<{ doctors: SmartHealthAuthUser[] }>("/admin/doctors");
+    return requestJson<{ doctors: SmartHealthAuthUser[] }>(
+      IS_PORTAL_SURFACE ? "/portal/staff" : "/admin/doctors",
+    );
   },
 
   async createDoctor(payload: {
@@ -903,10 +940,13 @@ export const smartHealthApi = {
     license?: string;
     organizationId?: string;
   }) {
-    return requestJson<{ doctor: SmartHealthAuthUser }>("/admin/doctors", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return requestJson<{ doctor: SmartHealthAuthUser }>(
+      IS_PORTAL_SURFACE ? "/portal/staff" : "/admin/doctors",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   async createAdminAccount(payload: CreateAdminAccountPayload) {
@@ -932,7 +972,12 @@ export const smartHealthApi = {
 
   async updateAdminAccount(
     userId: string,
-    payload: Partial<Pick<SmartHealthAdminAccount, "name" | "phone" | "title" | "role" | "organizationId" | "accountStatus">>,
+    payload: Partial<
+      Pick<
+        SmartHealthAdminAccount,
+        "name" | "phone" | "title" | "role" | "organizationId" | "accountStatus"
+      >
+    >,
   ) {
     return requestJson<{ user: SmartHealthAdminAccount }>(
       `/admin/admin-users/${encodeURIComponent(userId)}`,
@@ -1000,12 +1045,9 @@ export const smartHealthApi = {
       demoSessionsRevoked?: number;
       firebaseSessionsRevoked?: number;
       warning?: string;
-    }>(
-      `/admin/doctors/${encodeURIComponent(userId)}/lock`,
-      {
-        method: "PATCH",
-      },
-    );
+    }>(`/admin/doctors/${encodeURIComponent(userId)}/lock`, {
+      method: "PATCH",
+    });
   },
 
   async approveDoctorRoleRequest(
@@ -1047,7 +1089,7 @@ export const smartHealthApi = {
       measureData: SmartHealthChartPoint[];
       deviceData: SmartHealthChartSlice[];
       aiJobData: SmartHealthChartSlice[];
-    }>("/admin/overview-stats");
+    }>(IS_PORTAL_SURFACE ? "/portal/overview" : "/admin/overview-stats");
   },
 
   async syncFirebase() {
@@ -1059,7 +1101,9 @@ export const smartHealthApi = {
   },
 
   async getProductionReadiness() {
-    return requestJson<{ readiness: SmartHealthProductionReadiness }>("/settings/production-readiness");
+    return requestJson<{ readiness: SmartHealthProductionReadiness }>(
+      "/settings/production-readiness",
+    );
   },
 
   async updateSettings(payload: Record<string, unknown>) {
@@ -1097,20 +1141,24 @@ export const smartHealthApi = {
   },
 
   async createApiKey(payload: { name?: string }) {
-    return requestJson<{ ok: boolean; apiKey: unknown; secret?: string; settings: Record<string, unknown> }>(
-      "/settings/api-keys",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    );
+    return requestJson<{
+      ok: boolean;
+      apiKey: unknown;
+      secret?: string;
+      settings: Record<string, unknown>;
+    }>("/settings/api-keys", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   async rotateApiKey(keyId: string) {
-    return requestJson<{ ok: boolean; apiKey: unknown; secret?: string; settings: Record<string, unknown> }>(
-      `/settings/api-keys/${encodeURIComponent(keyId)}/rotate`,
-      { method: "POST" },
-    );
+    return requestJson<{
+      ok: boolean;
+      apiKey: unknown;
+      secret?: string;
+      settings: Record<string, unknown>;
+    }>(`/settings/api-keys/${encodeURIComponent(keyId)}/rotate`, { method: "POST" });
   },
 
   async revokeApiKey(keyId: string) {
@@ -1140,12 +1188,9 @@ export const smartHealthApi = {
       firebaseAlreadyMissing?: boolean;
       firebaseClaims?: unknown;
       warning?: string;
-    }>(
-      `/admin/doctors/${encodeURIComponent(userId)}/unlock`,
-      {
-        method: "PATCH",
-      },
-    );
+    }>(`/admin/doctors/${encodeURIComponent(userId)}/unlock`, {
+      method: "PATCH",
+    });
   },
 
   async listClinics() {
@@ -1195,6 +1240,11 @@ export const smartHealthApi = {
       packageId?: string;
       subscriptionStatus?: string;
       billingCycle?: string;
+      reason?: string;
+      rejectReason?: string;
+      message?: string;
+      requestInfoMessage?: string;
+      requiredFields?: string[];
     },
   ) {
     return requestJson<{ clinic: SmartHealthClinic }>(
@@ -1224,10 +1274,13 @@ export const smartHealthApi = {
     patientCode?: string;
     organizationId?: string;
   }) {
-    return requestJson<{ patient: SmartHealthPatient }>("/patients", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return requestJson<{ patient: SmartHealthPatient }>(
+      IS_PORTAL_SURFACE ? "/portal/patients" : "/patients",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   async createDeviceProvision(payload: {
@@ -1341,11 +1394,13 @@ export const smartHealthApi = {
       topBuckets: SmartHealthTopBucket[];
       recentActivity: SmartHealthStorageActivity[];
       topClinicUsage: SmartHealthClinicUsage[];
-    }>("/admin/storage-stats");
+    }>(IS_PORTAL_SURFACE ? "/portal/storage/stats" : "/admin/storage-stats");
   },
 
   async listStorageFiles() {
-    return requestJson<{ files: SmartHealthStorageFile[] }>("/admin/storage-files");
+    return requestJson<{ files: SmartHealthStorageFile[] }>(
+      IS_PORTAL_SURFACE ? "/portal/storage/files" : "/admin/storage-files",
+    );
   },
 
   async createStorageBucket(payload: {

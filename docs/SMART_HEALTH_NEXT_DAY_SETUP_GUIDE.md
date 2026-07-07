@@ -1,8 +1,16 @@
 # Smart Health - Hướng Dẫn Setup Ngày Mai
 
-Last updated: 2026-06-08
+Last updated: 2026-07-04
 
 Tài liệu này dùng cho buổi setup tiếp theo sau khi code đã được push lên GitHub. Mục tiêu là đưa hệ thống vào trạng thái có thể demo thực tế: Web Admin chạy trên Firebase Hosting, backend chạy trên Render, database và object storage dùng Supabase, đăng nhập dùng Firebase Auth, Android trỏ về backend HTTPS, và ESP32-S3 có thể kết nối cloud để gửi trạng thái, audio và nhận lệnh OTA.
+
+Trước khi làm setup, đọc nhanh file điều hướng:
+
+```text
+D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_INDEX.md
+```
+
+Skills/tools hiện dùng theo policy global: Smart Health skill ở `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md`, third-party skills ở `C:\Users\baobe\.agents\skills`. Không cài lại skills vào repo-local `.agents`, `.ai_skills`, hoặc `skills-lock.json`.
 
 ## Nguyên Tắc Trước Khi Làm
 
@@ -129,8 +137,6 @@ BREVO_API_KEY=<Brevo API key>
 BREVO_FROM_EMAIL=<email gửi đi đã xác minh trong Brevo>
 BREVO_FROM_NAME=Smart Health
 BREVO_API_URL=https://api.brevo.com/v3/smtp/email
-WEB_ADMIN_URL=https://shcare-admin.web.app
-NOTIFICATION_EMAIL_ENABLED=true
 ```
 
 SMTP/Gmail chỉ là fallback nếu hosting cho phép SMTP. Render Free đang chặn các cổng SMTP phổ biến, nên không dùng Gmail SMTP làm hướng chính:
@@ -312,20 +318,17 @@ BREVO_API_KEY=<Brevo API key>
 BREVO_FROM_EMAIL=<email đã xác minh trong Brevo>
 BREVO_FROM_NAME=Smart Health
 BREVO_API_URL=https://api.brevo.com/v3/smtp/email
-WEB_ADMIN_URL=https://shcare-admin.web.app
-NOTIFICATION_EMAIL_ENABLED=true
 ```
 
 6. Bấm `Save Changes` để Render redeploy backend.
 7. Vào Web Admin:
 
+Không ghi API key vào tài liệu. Đặt `BREVO_API_KEY` trong Render Environment hoặc file env local bị ignore, rồi chạy lại test email.
 ```text
 Cài đặt -> Thông báo/Outbound -> Email thông báo / Brevo API -> Gửi email kiểm tra
 ```
 
 Nếu thiếu env, Web Admin sẽ báo thiếu `BREVO_API_KEY` hoặc `BREVO_FROM_EMAIL`. Nếu Brevo báo lỗi sender/from, hãy kiểm tra lại email gửi đi đã được xác minh trong Brevo chưa.
-
-Sau khi Brevo hoạt động, mọi thông báo được tạo trong Web Admin cũng sẽ gửi kèm email HTML đến tất cả quản trị viên toàn hệ thống đang hoạt động. `WEB_ADMIN_URL` là link nút mở trang thông báo trong email. Chỉ đặt `NOTIFICATION_EMAIL_ENABLED=false` khi cần tắt khẩn cấp việc gửi email thông báo.
 
 Gmail SMTP vẫn được giữ trong code làm fallback cho hosting trả phí hoặc chạy local. Chỉ dùng fallback này khi bạn chắc chắn server cho phép SMTP:
 

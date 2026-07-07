@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Archive,
@@ -264,7 +264,9 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                 <FolderPlus className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <Dialog.Title className="font-semibold text-foreground">Tạo bucket mới</Dialog.Title>
+                <Dialog.Title className="font-semibold text-foreground">
+                  Tạo bucket mới
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Chọn biểu tượng, quota và chính sách lưu trữ cho bucket production.
                 </Dialog.Description>
@@ -275,13 +277,15 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
             </Dialog.Close>
           </div>
 
-          <form onSubmit={submit} className="space-y-5 p-6">
+          <form method="post" onSubmit={submit} className="space-y-5 p-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium">Tên bucket</label>
                 <input
                   value={name}
-                  onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+                  onChange={(e) =>
+                    setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))
+                  }
                   placeholder="vd: clinic-reports"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring"
                 />
@@ -321,7 +325,9 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                       key={item.key}
                       onClick={() => applyType(item.key)}
                       className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                        active ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"
+                        active
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:bg-muted"
                       }`}
                     >
                       <Icon className="h-4 w-4" />
@@ -341,7 +347,9 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                     key={color.key}
                     onClick={() => setColorKey(color.key)}
                     className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      colorKey === color.key ? "border-primary bg-primary/10" : "border-border hover:bg-muted"
+                      colorKey === color.key
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:bg-muted"
                     }`}
                   >
                     <span className={`h-5 w-5 rounded-md bg-gradient-to-br ${color.className}`} />
@@ -359,7 +367,9 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                     type="button"
                     onClick={() => setVisibility("private")}
                     className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border"
+                      visibility === "private"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border"
                     }`}
                   >
                     <Lock className="h-4 w-4" /> Riêng tư
@@ -368,7 +378,9 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                     type="button"
                     onClick={() => setVisibility("public")}
                     className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border"
+                      visibility === "public"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border"
                     }`}
                   >
                     <Globe2 className="h-4 w-4" /> Công khai

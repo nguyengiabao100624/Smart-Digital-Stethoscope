@@ -23,14 +23,13 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { AddPatientDialog } from "./dialogs/AddPatientDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
-import { ADMIN_TABLE_PAGE_SIZE, PaginationFooter, paginateItems } from "./PaginationFooter";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
 import { smartHealthApi, type SmartHealthPatient } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
-import {
-  PATIENT_MANAGE_CAPABILITIES,
-  REPORT_EXPORT_CAPABILITIES,
-} from "./action-permissions";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
+import { PATIENT_MANAGE_CAPABILITIES, REPORT_EXPORT_CAPABILITIES } from "./action-permissions";
 
 type Patient = {
   id: string;
@@ -121,7 +120,8 @@ function mapBackendPatient(patient: SmartHealthPatient): Patient {
     condition: conditionFromAiLabel(patient.lastAiLabel),
     riskLevel: riskFromPatient(patient),
     clinic: patient.organizationId || "Smart Health Clinic",
-    doctor: patient.doctorName || patient.primaryDoctorId || patient.ownerUserId || "Chưa gán bác sĩ",
+    doctor:
+      patient.doctorName || patient.primaryDoctorId || patient.ownerUserId || "Chưa gán bác sĩ",
   };
 }
 
@@ -234,7 +234,8 @@ export function Patients() {
 
       {backendError && (
         <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          Chưa tải được dữ liệu bệnh nhân từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị sai: {backendError}
+          Chưa tải được dữ liệu bệnh nhân từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị
+          sai: {backendError}
         </div>
       )}
 

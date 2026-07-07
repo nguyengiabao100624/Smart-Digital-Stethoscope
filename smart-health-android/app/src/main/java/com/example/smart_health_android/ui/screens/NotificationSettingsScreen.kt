@@ -1,4 +1,4 @@
-package com.example.smart_health_android.ui.screens
+﻿package com.example.smart_health_android.ui.screens
 
 import android.Manifest
 import android.app.Activity

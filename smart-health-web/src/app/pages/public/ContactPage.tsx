@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { cloneElement, type ReactElement } from "react";
 import { Link } from "react-router";
 import { CheckCircle2, Loader2, Mail, MapPin, Phone, ShieldAlert } from "lucide-react";
@@ -96,7 +96,7 @@ export default function ContactPage() {
 
       <section className="shc-section">
         <div className="shc-container shc-contact-grid">
-          <form onSubmit={handleSubmit} className="shc-contact-form">
+          <form method="post" onSubmit={handleSubmit} className="shc-contact-form">
             <div className="shc-form-grid">
               <Field label="Họ và tên" error={errors.name}>
                 <input

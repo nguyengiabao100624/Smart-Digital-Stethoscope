@@ -23,7 +23,6 @@ export default function WorkspaceSettings() {
     phone: "",
     email: "",
     website: "",
-    representative: "",
   });
   const [preferences, setPreferences] = useState({
     abnormalResults: true,
@@ -39,7 +38,6 @@ export default function WorkspaceSettings() {
         phone: workspace.phone || "",
         email: workspace.email || "",
         website: workspace.website || "",
-        representative: workspace.representative || "",
       });
     const current = user?.raw.notificationPreferences || {};
     setPreferences({
@@ -58,7 +56,8 @@ export default function WorkspaceSettings() {
     onError: (error) => toast.error(error.message),
   });
   const savePreferences = useMutation({
-    mutationFn: () => smartHealthApi.updateMe({ notificationPreferences: preferences }),
+    mutationFn: () =>
+      smartHealthApi.updateMe({ notificationPreferences: preferences }),
     onSuccess: async () => {
       toast.success("Đã lưu cài đặt thông báo");
       await refreshUser();
@@ -92,10 +91,11 @@ export default function WorkspaceSettings() {
                   phone: "Điện thoại",
                   email: "Email",
                   website: "Website",
-                  representative: "Người đại diện",
                 }[key]
               }
               <input
+                id={`workspace-${key}`}
+                name={`workspace-${key}`}
                 disabled={!canManageWorkspace}
                 value={form[key]}
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
@@ -106,6 +106,7 @@ export default function WorkspaceSettings() {
         </div>
         {canManageWorkspace && (
           <button
+            id="workspace-save"
             onClick={() => saveWorkspace.mutate()}
             disabled={saveWorkspace.isPending}
             className="premium-button mt-4 flex gap-2 items-center"
@@ -118,26 +119,36 @@ export default function WorkspaceSettings() {
       <div className="glass-panel rounded-2xl p-6">
         <h2 className="text-white font-semibold mb-4">Thông báo cá nhân</h2>
         <div className="space-y-3">
-          {(Object.keys(preferences) as Array<keyof typeof preferences>).map((key) => (
-            <label key={key} className="flex justify-between gap-3 text-sm text-[#94b8d0]">
-              <span>
-                {
+          {(Object.keys(preferences) as Array<keyof typeof preferences>).map(
+            (key) => (
+              <label
+                key={key}
+                className="flex justify-between gap-3 text-sm text-[#94b8d0]"
+              >
+                <span>
                   {
-                    abnormalResults: "Kết quả bất thường",
-                    deviceOffline: "Thiết bị offline",
-                    newLogin: "Đăng nhập mới",
-                  }[key]
-                }
-              </span>
-              <input
-                type="checkbox"
-                checked={preferences[key]}
-                onChange={(e) => setPreferences({ ...preferences, [key]: e.target.checked })}
-              />
-            </label>
-          ))}
+                    {
+                      abnormalResults: "Kết quả bất thường",
+                      deviceOffline: "Thiết bị offline",
+                      newLogin: "Đăng nhập mới",
+                    }[key]
+                  }
+                </span>
+                <input
+                  id={`notification-${key}`}
+                  name={`notification-${key}`}
+                  type="checkbox"
+                  checked={preferences[key]}
+                  onChange={(e) =>
+                    setPreferences({ ...preferences, [key]: e.target.checked })
+                  }
+                />
+              </label>
+            ),
+          )}
         </div>
         <button
+          id="workspace-save-notifications"
           onClick={() => savePreferences.mutate()}
           className="premium-button mt-4 flex gap-2 items-center"
         >

@@ -43,7 +43,13 @@ interface FileDetailDialogProps {
   onDelete?: (file: StorageFile) => Promise<void> | void;
 }
 
-export function FileDetailDialog({ file, onClose, onDownload, onShare, onDelete }: FileDetailDialogProps) {
+export function FileDetailDialog({
+  file,
+  onClose,
+  onDownload,
+  onShare,
+  onDelete,
+}: FileDetailDialogProps) {
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -86,168 +92,181 @@ export function FileDetailDialog({ file, onClose, onDownload, onShare, onDelete 
 
   return (
     <>
-    <Dialog.Root open={!!file} onOpenChange={(open) => !open && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[92vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                <FileText className="h-5 w-5 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <Dialog.Title className="truncate font-semibold text-foreground">{file.name}</Dialog.Title>
-                <Dialog.Description className="text-xs text-muted-foreground">
-                  {file.bucket} • {file.type.toUpperCase()} • {file.size}
-                </Dialog.Description>
-              </div>
-            </div>
-            <Dialog.Close className="text-muted-foreground hover:text-foreground">
-              <X className="h-5 w-5" />
-            </Dialog.Close>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-5">
-            <div className="flex min-h-[260px] items-center justify-center border-b border-border bg-muted/20 p-5 md:col-span-3 md:border-b-0 md:border-r">
-              {file.previewUrl ? (
-                <img
-                  src={file.previewUrl}
-                  alt={file.name}
-                  className="max-h-[360px] w-auto rounded-lg object-contain shadow-md"
-                />
-              ) : (
-                <div className="text-center">
-                  <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-2xl bg-primary/10">
-                    <FileText className="h-12 w-12 text-primary" />
-                  </div>
-                  <div className="text-sm font-medium uppercase">{file.type}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Không có bản xem trước</div>
+      <Dialog.Root open={!!file} onOpenChange={(open) => !open && onClose()}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[92vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <FileText className="h-5 w-5 text-primary" />
                 </div>
-              )}
+                <div className="min-w-0">
+                  <Dialog.Title className="truncate font-semibold text-foreground">
+                    {file.name}
+                  </Dialog.Title>
+                  <Dialog.Description className="text-xs text-muted-foreground">
+                    {file.bucket} • {file.type.toUpperCase()} • {file.size}
+                  </Dialog.Description>
+                </div>
+              </div>
+              <Dialog.Close className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </Dialog.Close>
             </div>
 
-            <div className="space-y-5 p-5 md:col-span-2">
-              <section>
-                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Thông tin
-                </h3>
-                <div className="space-y-2.5 text-sm">
-                  <Row icon={HardDrive} label="Bucket" value={file.bucket} />
-                  <Row icon={UserIcon} label="Người tải" value={file.uploader} />
-                  <Row icon={Clock} label="Ngày tải" value={file.uploadedAt} />
-                  <Row
-                    icon={file.visibility === "public" ? Globe2 : file.visibility === "encrypted" ? Shield : Lock}
-                    label="Quyền"
-                    value={
-                      file.visibility === "public"
-                        ? "Công khai"
-                        : file.visibility === "encrypted"
-                          ? "Mã hóa AES-256"
-                          : "Riêng tư"
-                    }
+            <div className="grid grid-cols-1 md:grid-cols-5">
+              <div className="flex min-h-[260px] items-center justify-center border-b border-border bg-muted/20 p-5 md:col-span-3 md:border-b-0 md:border-r">
+                {file.previewUrl ? (
+                  <img
+                    src={file.previewUrl}
+                    alt={file.name}
+                    className="max-h-[360px] w-auto rounded-lg object-contain shadow-md"
                   />
-                </div>
-              </section>
+                ) : (
+                  <div className="text-center">
+                    <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-2xl bg-primary/10">
+                      <FileText className="h-12 w-12 text-primary" />
+                    </div>
+                    <div className="text-sm font-medium uppercase">{file.type}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Không có bản xem trước</div>
+                  </div>
+                )}
+              </div>
 
-              {file.tags && file.tags.length > 0 ? (
+              <div className="space-y-5 p-5 md:col-span-2">
+                <section>
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Thông tin
+                  </h3>
+                  <div className="space-y-2.5 text-sm">
+                    <Row icon={HardDrive} label="Bucket" value={file.bucket} />
+                    <Row icon={UserIcon} label="Người tải" value={file.uploader} />
+                    <Row icon={Clock} label="Ngày tải" value={file.uploadedAt} />
+                    <Row
+                      icon={
+                        file.visibility === "public"
+                          ? Globe2
+                          : file.visibility === "encrypted"
+                            ? Shield
+                            : Lock
+                      }
+                      label="Quyền"
+                      value={
+                        file.visibility === "public"
+                          ? "Công khai"
+                          : file.visibility === "encrypted"
+                            ? "Mã hóa AES-256"
+                            : "Riêng tư"
+                      }
+                    />
+                  </div>
+                </section>
+
+                {file.tags && file.tags.length > 0 ? (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Tags
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {file.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
                 <section>
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Tags
+                    Liên kết chia sẻ
                   </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {file.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs text-primary"
-                      >
-                        {tag}
-                      </span>
+                  <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+                    <span className="flex-1 truncate font-mono text-xs text-muted-foreground">
+                      {visibleShareUrl || "Bấm Chia sẻ để tạo liên kết"}
+                    </span>
+                    <button
+                      onClick={copyLink}
+                      className="text-muted-foreground hover:text-primary"
+                      title="Sao chép"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {copied ? <p className="mt-1 text-xs text-success">Đã sao chép!</p> : null}
+                </section>
+
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Lịch sử truy cập
+                  </h3>
+                  <div className="relative ml-1.5 space-y-2.5 border-l-2 border-border pl-4">
+                    {[
+                      { t: "Vừa xong", d: "Quản trị viên mở chi tiết tệp" },
+                      { t: "Gần đây", d: "Hệ thống kiểm tra quyền truy cập" },
+                      { t: file.uploadedAt, d: "Tệp được ghi nhận trong storage" },
+                    ].map((event, index) => (
+                      <div key={index} className="relative">
+                        <div className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-card" />
+                        <div className="text-xs text-muted-foreground">{event.t}</div>
+                        <div className="text-sm">{event.d}</div>
+                      </div>
                     ))}
                   </div>
                 </section>
-              ) : null}
-
-              <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Liên kết chia sẻ
-                </h3>
-                <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
-                  <span className="flex-1 truncate font-mono text-xs text-muted-foreground">
-                    {visibleShareUrl || "Bấm Chia sẻ để tạo liên kết"}
-                  </span>
-                  <button onClick={copyLink} className="text-muted-foreground hover:text-primary" title="Sao chép">
-                    <Copy className="h-4 w-4" />
-                  </button>
-                </div>
-                {copied ? <p className="mt-1 text-xs text-success">Đã sao chép!</p> : null}
-              </section>
-
-              <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Lịch sử truy cập
-                </h3>
-                <div className="relative ml-1.5 space-y-2.5 border-l-2 border-border pl-4">
-                  {[
-                    { t: "Vừa xong", d: "Quản trị viên mở chi tiết tệp" },
-                    { t: "Gần đây", d: "Hệ thống kiểm tra quyền truy cập" },
-                    { t: file.uploadedAt, d: "Tệp được ghi nhận trong storage" },
-                  ].map((event, index) => (
-                    <div key={index} className="relative">
-                      <div className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-card" />
-                      <div className="text-xs text-muted-foreground">{event.t}</div>
-                      <div className="text-sm">{event.d}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/20 p-4">
-            <button
-              onClick={copyLink}
-              className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-            >
-              <Share2 className="h-4 w-4" /> Chia sẻ
-            </button>
-            <button
-              onClick={() => onDownload?.(file)}
-              className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-            >
-              <Download className="h-4 w-4" /> Tải xuống
-            </button>
-            <button
-              onClick={() => {
-                setDeleteError("");
-                setConfirmDeleteOpen(true);
-              }}
-              disabled={deleting}
-              className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
-            >
-              <Trash2 className="h-4 w-4" /> {deleting ? "Đang xóa..." : "Xóa tệp"}
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-    <ConfirmActionDialog
-      open={confirmDeleteOpen}
-      onOpenChange={(open) => {
-        setConfirmDeleteOpen(open);
-        if (!open) setDeleteError("");
-      }}
-      title="Xóa tệp lưu trữ"
-      description={
-        <span>
-          Bạn có chắc chắn muốn xóa <strong>{file.name}</strong>? Hành động này không thể hoàn tác.
-        </span>
-      }
-      confirmLabel="Xóa tệp"
-      tone="danger"
-      loading={deleting}
-      error={deleteError}
-      onConfirm={deleteFile}
-    />
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/20 p-4">
+              <button
+                onClick={copyLink}
+                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+              >
+                <Share2 className="h-4 w-4" /> Chia sẻ
+              </button>
+              <button
+                onClick={() => onDownload?.(file)}
+                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+              >
+                <Download className="h-4 w-4" /> Tải xuống
+              </button>
+              <button
+                onClick={() => {
+                  setDeleteError("");
+                  setConfirmDeleteOpen(true);
+                }}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" /> {deleting ? "Đang xóa..." : "Xóa tệp"}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <ConfirmActionDialog
+        open={confirmDeleteOpen}
+        onOpenChange={(open) => {
+          setConfirmDeleteOpen(open);
+          if (!open) setDeleteError("");
+        }}
+        title="Xóa tệp lưu trữ"
+        description={
+          <span>
+            Bạn có chắc chắn muốn xóa <strong>{file.name}</strong>? Hành động này không thể hoàn
+            tác.
+          </span>
+        }
+        confirmLabel="Xóa tệp"
+        tone="danger"
+        loading={deleting}
+        error={deleteError}
+        onConfirm={deleteFile}
+      />
     </>
   );
 }

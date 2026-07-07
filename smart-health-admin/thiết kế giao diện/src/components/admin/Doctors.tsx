@@ -27,14 +27,13 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { AddDoctorDialog } from "./dialogs/AddDoctorDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
-import { ADMIN_TABLE_PAGE_SIZE, PaginationFooter, paginateItems } from "./PaginationFooter";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
 import { smartHealthApi, type SmartHealthAuthUser } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
-import {
-  PLATFORM_USER_MANAGE_CAPABILITIES,
-  STAFF_MANAGE_CAPABILITIES,
-} from "./action-permissions";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
+import { PLATFORM_USER_MANAGE_CAPABILITIES, STAFF_MANAGE_CAPABILITIES } from "./action-permissions";
 
 type Doctor = {
   id: string;
@@ -127,7 +126,9 @@ export function Doctors() {
     }
     try {
       const { deletedCount } = await smartHealthApi.syncFirebase();
-      toast.success(`Đã đồng bộ Firebase. Xóa ${deletedCount} tài khoản không còn tồn tại trên Firebase.`);
+      toast.success(
+        `Đã đồng bộ Firebase. Xóa ${deletedCount} tài khoản không còn tồn tại trên Firebase.`,
+      );
       void loadDoctors();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Có lỗi khi đồng bộ Firebase");
@@ -154,7 +155,9 @@ export function Doctors() {
           } else if (result.firebaseDeleted) {
             toast.success("Đã xóa bác sĩ và tài khoản Firebase Auth.");
           } else if (result.firebaseAlreadyMissing) {
-            toast.success("Đã xóa dữ liệu bác sĩ. Tài khoản Firebase Auth không còn tồn tại trước đó.");
+            toast.success(
+              "Đã xóa dữ liệu bác sĩ. Tài khoản Firebase Auth không còn tồn tại trước đó.",
+            );
           } else {
             toast.success("Đã xóa bác sĩ.");
           }
@@ -277,7 +280,8 @@ export function Doctors() {
 
       {loadError && (
         <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          Chưa tải được danh sách bác sĩ đã duyệt từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị sai: {loadError}
+          Chưa tải được danh sách bác sĩ đã duyệt từ backend. Trang không dùng dữ liệu mẫu để tránh
+          hiển thị sai: {loadError}
         </div>
       )}
 
@@ -756,6 +760,3 @@ function DoctorInfo({
     </div>
   );
 }
-
-
-

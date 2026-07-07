@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "@/components/admin/router-shim";
 import { ExportReportDialog } from "./dialogs/ExportReportDialog";
-import { useAdminAccess } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import { AnimatedCard, PageHeader, StatusBadge } from "./design-system";
 import {
   smartHealthApi,
@@ -51,6 +51,7 @@ type OverviewStatsData = {
 const DEFAULT_OVERVIEW_DATA: OverviewStatsData = {
   stats: {
     clinics: 0,
+    patientsCount: 0,
     pendingDoctors: 0,
     devicesOnline: 0,
     scansCount: 0,
@@ -107,31 +108,31 @@ export function Overview() {
   const roleLabel = currentUser?.currentMembership?.role || currentUser?.role || "";
   const portalModules = [
     {
-      label: "Overview",
+      label: "Tổng quan",
       icon: ShieldCheck,
       path: "/",
       enabled: true,
     },
     {
-      label: "Staff",
+      label: "Bác sĩ/nhân sự",
       icon: UserCheck,
       path: "/doctors",
       enabled: hasAnyCapability(["platform.users.manage", "workspace.staff.manage"]),
     },
     {
-      label: "Patients / family groups",
+      label: "Bệnh nhân",
       icon: Users,
       path: "/patients",
       enabled: hasAnyCapability(["platform.patients.view", "workspace.patients.view"]),
     },
     {
-      label: "Devices",
+      label: "Thiết bị",
       icon: MonitorSpeaker,
       path: "/devices",
       enabled: hasAnyCapability(["platform.devices.view", "workspace.devices.view"]),
     },
     {
-      label: "Live monitoring",
+      label: "Theo dõi trực tiếp",
       icon: RadioTower,
       path: "/ai-measurements",
       enabled: hasAnyCapability(["platform.scans.view", "workspace.scans.view"]),
@@ -162,13 +163,14 @@ export function Overview() {
     0,
   );
   const recentAlerts = [
-    stats.pendingDoctors > 0 && {
-      type: "info" as const,
-      title: "Bác sĩ mới chờ duyệt",
-      desc: `${stats.pendingDoctors} yêu cầu cần kiểm tra hồ sơ và cấp quyền.`,
-      time: "Cập nhật theo dữ liệu thật",
-      onClick: () => navigate("/doctor-approval"),
-    },
+    isPlatformAdmin &&
+      stats.pendingDoctors > 0 && {
+        type: "info" as const,
+        title: "Bác sĩ mới chờ duyệt",
+        desc: `${stats.pendingDoctors} yêu cầu cần kiểm tra hồ sơ và cấp quyền.`,
+        time: "Cập nhật theo dữ liệu thật",
+        onClick: () => navigate("/doctor-approval"),
+      },
     offlineDevices > 0 && {
       type: "error" as const,
       title: "Thiết bị mất kết nối",
@@ -207,7 +209,7 @@ export function Overview() {
         description={
           isPlatformAdmin
             ? "Theo dõi workspaces, gói dịch vụ, thiết bị, storage, lượt đo và AI trên toàn nền tảng."
-            : `Vai trò ${roleLabel || "workspace"} đang xem dữ liệu trong workspace hiện tại.`
+            : `Theo dõi bệnh nhân, thiết bị, cảnh báo và lượt đo trong workspace hiện tại.`
         }
         action={
           <>
@@ -259,22 +261,43 @@ export function Overview() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <KPICard
-          title="Phòng khám"
-          value={isLoading ? "..." : String(stats.clinics)}
-          icon={Building2}
+          title={isPlatformAdmin ? "Phòng khám" : "Bệnh nhân"}
+          value={
+            isLoading ? "..." : String(isPlatformAdmin ? stats.clinics : stats.patientsCount || 0)
+          }
+          icon={isPlatformAdmin ? Building2 : Users}
           trend="+1"
           trendUp={true}
-          onClick={() => navigate("/clinics")}
+          onClick={() => navigate(isPlatformAdmin ? "/clinics" : "/patients")}
         />
-        <KPICard
-          title="Bác sĩ chờ duyệt"
-          value={isLoading ? "..." : String(stats.pendingDoctors)}
-          icon={UserCheck}
-          trend="Mới"
-          trendUp={true}
-          alert={!isLoading && stats.pendingDoctors > 0}
-          onClick={() => navigate("/doctor-approval")}
-        />
+        {isPlatformAdmin ? (
+          <KPICard
+            title="Bác sĩ chờ duyệt"
+            value={isLoading ? "..." : String(stats.pendingDoctors)}
+            icon={UserCheck}
+            trend="Mới"
+            trendUp={true}
+            alert={!isLoading && stats.pendingDoctors > 0}
+            onClick={() => navigate("/doctor-approval")}
+          />
+        ) : (
+          <KPICard
+            title="Bác sĩ/nhân sự"
+            value={
+              isLoading
+                ? "..."
+                : String(portalModules.some((item) => item.path === "/doctors") ? "Mở" : "Giới hạn")
+            }
+            icon={UserCheck}
+            trend="Workspace"
+            trendUp={true}
+            onClick={() =>
+              navigate(
+                portalModules.some((item) => item.path === "/doctors") ? "/doctors" : "/patients",
+              )
+            }
+          />
+        )}
         <KPICard
           title="Thiết bị online"
           value={isLoading ? "..." : String(stats.devicesOnline)}

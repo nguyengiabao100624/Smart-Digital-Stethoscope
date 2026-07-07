@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+﻿import React, { useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, FileText, Globe2, Lock, Tag, Trash2, UploadCloud, X } from "lucide-react";
@@ -123,7 +123,9 @@ export function UploadFileDialog({
     setSubmitting(true);
     try {
       for (const item of readyFiles) {
-        setFiles((prev) => prev.map((file) => (file.id === item.id ? { ...file, progress: 35 } : file)));
+        setFiles((prev) =>
+          prev.map((file) => (file.id === item.id ? { ...file, progress: 35 } : file)),
+        );
         if (onUpload) {
           await onUpload({
             bucket,
@@ -169,7 +171,7 @@ export function UploadFileDialog({
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          <form method="post" onSubmit={handleSubmit} className="space-y-5 p-6">
             <div>
               <label className="mb-2 block text-sm font-medium text-foreground">Bucket đích</label>
               <select
@@ -202,7 +204,9 @@ export function UploadFileDialog({
                 onDrop={onDrop}
                 onClick={() => inputRef.current?.click()}
                 className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-                  dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30"
+                  dragOver
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/40 hover:bg-muted/30"
                 }`}
               >
                 <UploadCloud className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
@@ -234,7 +238,13 @@ export function UploadFileDialog({
                         <FileText className="h-5 w-5 flex-shrink-0 text-primary" />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium">{item.file.name}</div>
-                          <div className={item.error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+                          <div
+                            className={
+                              item.error
+                                ? "text-xs text-destructive"
+                                : "text-xs text-muted-foreground"
+                            }
+                          >
                             {item.error || formatSize(item.file.size)}
                           </div>
                         </div>
@@ -247,7 +257,9 @@ export function UploadFileDialog({
                         )}
                         <button
                           type="button"
-                          onClick={() => setFiles((prev) => prev.filter((file) => file.id !== item.id))}
+                          onClick={() =>
+                            setFiles((prev) => prev.filter((file) => file.id !== item.id))
+                          }
                           className="text-muted-foreground hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -267,13 +279,17 @@ export function UploadFileDialog({
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-2 block text-sm font-medium text-foreground">Quyền truy cập</label>
+                <label className="mb-2 block text-sm font-medium text-foreground">
+                  Quyền truy cập
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setVisibility("private")}
                     className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "private" ? "border-primary bg-primary/10 text-primary" : "border-border"
+                      visibility === "private"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border"
                     }`}
                   >
                     <Lock className="h-4 w-4" /> Riêng tư
@@ -282,7 +298,9 @@ export function UploadFileDialog({
                     type="button"
                     onClick={() => setVisibility("public")}
                     className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "public" ? "border-primary bg-primary/10 text-primary" : "border-border"
+                      visibility === "public"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border"
                     }`}
                   >
                     <Globe2 className="h-4 w-4" /> Công khai

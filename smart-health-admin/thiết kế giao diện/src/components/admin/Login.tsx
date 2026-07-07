@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "@/components/admin/router-shim";
 import { Stethoscope, ShieldCheck, Mail, Lock } from "lucide-react";
@@ -9,25 +9,20 @@ import {
   signInWithFirebaseEmail,
 } from "@/lib/firebase-client";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import {
+  getSurfaceAccessTargetUrl,
+  getWrongSurfaceMessage,
+  hasCurrentWebSurfaceAccess,
+  IS_PORTAL_SURFACE,
+} from "@/lib/surface";
 
-function assertAdminAccess(user?: SmartHealthAuthUser) {
+function assertSurfaceAccess(user?: SmartHealthAuthUser) {
   if (!isProductionAuthMode()) {
     return;
   }
 
-  const capabilities = user?.capabilities || [];
-  const hasAdminAccess =
-    user?.role === "admin" ||
-    capabilities.some(
-      (capability) =>
-        capability.startsWith("platform.") ||
-        capability === "workspace.dashboard.view" ||
-        capability === "workspace.staff.manage" ||
-        capability === "workspace.settings.manage",
-    );
-
-  if (!hasAdminAccess) {
-    throw new Error("Tài khoản chưa có quyền quản trị.");
+  if (!hasCurrentWebSurfaceAccess(user)) {
+    throw new Error(getWrongSurfaceMessage());
   }
 }
 
@@ -47,10 +42,10 @@ export function Login() {
       if (hasFirebaseWebConfig()) {
         const idToken = await signInWithFirebaseEmail(email, password);
         const result = await smartHealthApi.authenticateFirebase(idToken);
-        assertAdminAccess(result.user);
+        assertSurfaceAccess(result.user);
       } else if (!isProductionAuthMode()) {
         const result = await smartHealthApi.login(email, password);
-        assertAdminAccess(result.user);
+        assertSurfaceAccess(result.user);
       } else {
         throw new Error("Chưa cấu hình Firebase Web Auth cho môi trường production.");
       }
@@ -77,8 +72,14 @@ export function Login() {
           <div className="float-soft w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
             <Stethoscope className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Cổng quản trị Smart Health</h1>
-          <p className="text-muted-foreground mt-2">Đăng nhập để truy cập hệ thống quản lý</p>
+          <h1 className="text-2xl font-bold text-foreground">
+            {IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Smart Health Admin"}
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            {IS_PORTAL_SURFACE
+              ? "Đăng nhập để vận hành bệnh nhân, thiết bị và lượt đo"
+              : "Đăng nhập để quản trị nền tảng Smart Health"}
+          </p>
         </div>
 
         {error && (
@@ -87,9 +88,11 @@ export function Login() {
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form method="post" onSubmit={handleLogin} className="space-y-5">
           <div className="space-y-1.5">
-            <label htmlFor="admin-email" className="text-sm font-medium text-foreground">Email quản trị</label>
+            <label htmlFor="admin-email" className="text-sm font-medium text-foreground">
+              {IS_PORTAL_SURFACE ? "Email tài khoản" : "Email quản trị"}
+            </label>
             <div className="relative">
               <Mail className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -107,7 +110,9 @@ export function Login() {
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="admin-password" className="text-sm font-medium text-foreground">Mật khẩu</label>
+            <label htmlFor="admin-password" className="text-sm font-medium text-foreground">
+              Mật khẩu
+            </label>
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -143,7 +148,20 @@ export function Login() {
 
         <div className="mt-8 pt-6 border-t border-border flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <ShieldCheck className="w-4 h-4 text-success" />
-          <span>Xác thực quản trị bằng Firebase</span>
+          <span>
+            {IS_PORTAL_SURFACE
+              ? "Xác thực tài khoản bằng Firebase"
+              : "Xác thực quản trị bằng Firebase"}
+          </span>
+        </div>
+        <div className="mt-4 text-center text-xs text-muted-foreground">
+          {IS_PORTAL_SURFACE ? "Platform Admin dùng " : "Bác sĩ/phòng khám dùng "}
+          <a
+            href={getSurfaceAccessTargetUrl()}
+            className="font-medium text-primary hover:underline"
+          >
+            {IS_PORTAL_SURFACE ? "Smart Health Admin" : "Shcare Web Portal"}
+          </a>
         </div>
       </motion.div>
     </div>

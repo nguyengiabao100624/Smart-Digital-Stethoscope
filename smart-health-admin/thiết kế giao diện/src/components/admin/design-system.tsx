@@ -2,25 +2,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-export const pageMotion = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.28, ease: "easeOut" },
-};
-
-export const listMotion = {
-  hidden: { opacity: 1 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.055, delayChildren: 0.04 },
-  },
-};
-
-export const itemMotion = {
-  hidden: { opacity: 0, y: 10 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.24, ease: "easeOut" } },
-};
+import { pageMotion } from "./motion-presets";
 
 export function PageHeader({
   eyebrow,

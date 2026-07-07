@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   X,
@@ -106,9 +106,9 @@ export function ExportReportDialog({ open, onOpenChange }: ExportReportDialogPro
       const kind = `BaoCao-${(REPORT_LABEL[formData.reportType] ?? "TongHop").replace(/\s+/g, "")}`;
 
       if (formData.format === "pdf") {
-        exportPDF(buildFilename(kind, period, "pdf"), ctx, sheets);
+        await exportPDF(buildFilename(kind, period, "pdf"), ctx, sheets);
       } else if (formData.format === "excel") {
-        exportExcel(buildFilename(kind, period, "xlsx"), ctx, sheets);
+        await exportExcel(buildFilename(kind, period, "xlsx"), ctx, sheets);
       } else {
         exportCSV(buildFilename(kind, period, "csv"), ctx, sheets[0]);
       }
@@ -145,7 +145,7 @@ export function ExportReportDialog({ open, onOpenChange }: ExportReportDialogPro
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleExport} className="p-6 space-y-4">
+          <form method="post" onSubmit={handleExport} className="p-6 space-y-4">
             <div>
               <label className="text-sm font-medium text-foreground block mb-2">
                 Loại báo cáo <span className="text-destructive">*</span>

@@ -33,6 +33,8 @@ export default function AuditLogPage() {
       <div className="glass-panel rounded-2xl p-4 relative max-w-md">
         <Search size={15} className="absolute left-7 top-1/2 -translate-y-1/2 text-[#94b8d0]" />
         <input
+          id="portal-audit-search"
+          name="portalAuditSearch"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="portal-input pl-10"

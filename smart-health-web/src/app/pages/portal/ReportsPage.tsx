@@ -49,7 +49,7 @@ export default function ReportsPage() {
           </h1>
           <p className="text-sm text-[#94b8d0]">{user?.currentWorkspace.name}</p>
         </div>
-        <button onClick={downloadCsv} className="premium-button flex gap-2 items-center">
+        <button id="portal-export-csv" onClick={downloadCsv} className="premium-button flex gap-2 items-center">
           <Download size={15} />
           Xuất CSV
         </button>

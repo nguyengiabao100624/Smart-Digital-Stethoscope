@@ -149,6 +149,7 @@ export const createAppRouter = () =>
 
         // Devices
         { path: "devices", lazy: lazyPage(() => import("./pages/portal/DevicesPage")) },
+        { path: "devices/claim", lazy: lazyPage(() => import("./pages/portal/ClaimDevicePage")) },
         { path: "devices/assign", lazy: lazyPage(() => import("./pages/portal/AssignDevicePage")) },
 
         // Invitations & Consent

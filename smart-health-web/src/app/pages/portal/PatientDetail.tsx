@@ -62,6 +62,7 @@ export default function PatientDetail() {
           <p className="text-sm text-[#94b8d0]">{data.patientCode || data.id}</p>
         </div>
         <button
+          id="patient-delete"
           onClick={() => {
             if (window.confirm("Xóa hồ sơ bệnh nhân này?")) remove.mutate();
           }}
@@ -90,6 +91,8 @@ export default function PatientDetail() {
         <div className="lg:col-span-2 glass-panel rounded-2xl p-5">
           <h2 className="text-white font-semibold mb-3">Ghi chú lâm sàng</h2>
           <textarea
+            id="patient-clinical-notes"
+            name="patientClinicalNotes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={6}
@@ -97,6 +100,7 @@ export default function PatientDetail() {
             placeholder="Nhập ghi chú..."
           />
           <button
+            id="patient-save-notes"
             onClick={() => save.mutate()}
             disabled={save.isPending}
             className="premium-button mt-3 flex gap-2 items-center"

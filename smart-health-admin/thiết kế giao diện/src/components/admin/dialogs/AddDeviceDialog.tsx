@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Building2, Calendar, Hash, Loader2, Stethoscope, Wifi, X } from "lucide-react";
 import { toast } from "sonner";
 import { smartHealthApi } from "@/lib/smart-health-api";
-import { useAdminAccess } from "../AdminAccessContext";
+import { useAdminAccess } from "../useAdminAccess";
 
 type DeviceFormData = {
   deviceId: string;
@@ -92,11 +92,13 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 p-6">
+          <form method="post" onSubmit={handleSubmit} className="space-y-6 p-6">
             {claimCode && (
               <div className="rounded-lg border border-success/20 bg-success/10 p-4 text-sm text-success">
                 <div className="font-semibold">Thiết bị đã được tạo</div>
-                <div className="mt-1 font-mono text-base tracking-wide">Claim code: {claimCode}</div>
+                <div className="mt-1 font-mono text-base tracking-wide">
+                  Claim code: {claimCode}
+                </div>
               </div>
             )}
 
@@ -187,14 +189,18 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               <div className="flex items-start gap-3">
                 <Wifi className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
                 <p className="text-sm text-muted-foreground">
-                  QR/claim code chỉ chứa Device ID và claim code. Secret thiết bị sẽ do backend cấp sau khi claim thành công.
+                  QR/claim code chỉ chứa Device ID và claim code. Secret thiết bị sẽ do backend cấp
+                  sau khi claim thành công.
                 </p>
               </div>
             </div>
 
             <div className="flex gap-3 pt-4">
               <Dialog.Close asChild>
-                <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                >
                   Đóng
                 </button>
               </Dialog.Close>
@@ -232,7 +238,9 @@ function Field({
       </label>
       {icon ? (
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            {icon}
+          </span>
           {children}
         </div>
       ) : (

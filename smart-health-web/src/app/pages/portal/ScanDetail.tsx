@@ -72,6 +72,8 @@ export default function ScanDetail() {
         <div className="glass-panel rounded-2xl p-5">
           <h2 className="text-white font-semibold mb-3">Nhận xét bác sĩ</h2>
           <textarea
+            id="scan-review-notes"
+            name="scanReviewNotes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={6}

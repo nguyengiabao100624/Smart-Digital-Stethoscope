@@ -56,7 +56,8 @@ import { CreateBucketDialog } from "./dialogs/CreateBucketDialog";
 import { ExportReportDialog } from "./dialogs/ExportReportDialog";
 import { FileDetailDialog, type StorageFile } from "./dialogs/FileDetailDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
-import { ADMIN_TABLE_PAGE_SIZE, PaginationFooter, paginateItems } from "./PaginationFooter";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
 import {
   smartHealthApi,
   type SmartHealthChartPoint,
@@ -70,11 +71,9 @@ import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { buildSmartHealthFilename } from "@/lib/filename-utils";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
-import {
-  REPORT_EXPORT_CAPABILITIES,
-  STORAGE_MANAGE_CAPABILITIES,
-} from "./action-permissions";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
+import { REPORT_EXPORT_CAPABILITIES, STORAGE_MANAGE_CAPABILITIES } from "./action-permissions";
 
 type IconComponent = React.ComponentType<{ className?: string }>;
 
@@ -192,14 +191,46 @@ const ICON_STYLES: Record<string, { label: string; icon: IconComponent }> = {
 };
 
 const COLOR_STYLES: Record<string, { gradient: string; soft: string; accent: string }> = {
-  blue: { gradient: "linear-gradient(135deg, #0B5C9A 0%, #0EA5E9 100%)", soft: "rgba(14, 165, 233, 0.10)", accent: "#0B5C9A" },
-  emerald: { gradient: "linear-gradient(135deg, #00A896 0%, #10B981 100%)", soft: "rgba(0, 168, 150, 0.10)", accent: "#00A896" },
-  amber: { gradient: "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", soft: "rgba(245, 158, 11, 0.12)", accent: "#B45309" },
-  rose: { gradient: "linear-gradient(135deg, #EF4444 0%, #F97316 100%)", soft: "rgba(239, 68, 68, 0.10)", accent: "#EF4444" },
-  violet: { gradient: "linear-gradient(135deg, #7C3AED 0%, #0B5C9A 100%)", soft: "rgba(124, 58, 237, 0.10)", accent: "#7C3AED" },
-  slate: { gradient: "linear-gradient(135deg, #334155 0%, #0B5C9A 100%)", soft: "rgba(15, 23, 42, 0.08)", accent: "#334155" },
-  teal: { gradient: "linear-gradient(135deg, #0F766E 0%, #00A896 100%)", soft: "rgba(15, 118, 110, 0.10)", accent: "#0F766E" },
-  cyan: { gradient: "linear-gradient(135deg, #0EA5E9 0%, #00A896 100%)", soft: "rgba(14, 165, 233, 0.10)", accent: "#0EA5E9" },
+  blue: {
+    gradient: "linear-gradient(135deg, #0B5C9A 0%, #0EA5E9 100%)",
+    soft: "rgba(14, 165, 233, 0.10)",
+    accent: "#0B5C9A",
+  },
+  emerald: {
+    gradient: "linear-gradient(135deg, #00A896 0%, #10B981 100%)",
+    soft: "rgba(0, 168, 150, 0.10)",
+    accent: "#00A896",
+  },
+  amber: {
+    gradient: "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)",
+    soft: "rgba(245, 158, 11, 0.12)",
+    accent: "#B45309",
+  },
+  rose: {
+    gradient: "linear-gradient(135deg, #EF4444 0%, #F97316 100%)",
+    soft: "rgba(239, 68, 68, 0.10)",
+    accent: "#EF4444",
+  },
+  violet: {
+    gradient: "linear-gradient(135deg, #7C3AED 0%, #0B5C9A 100%)",
+    soft: "rgba(124, 58, 237, 0.10)",
+    accent: "#7C3AED",
+  },
+  slate: {
+    gradient: "linear-gradient(135deg, #334155 0%, #0B5C9A 100%)",
+    soft: "rgba(15, 23, 42, 0.08)",
+    accent: "#334155",
+  },
+  teal: {
+    gradient: "linear-gradient(135deg, #0F766E 0%, #00A896 100%)",
+    soft: "rgba(15, 118, 110, 0.10)",
+    accent: "#0F766E",
+  },
+  cyan: {
+    gradient: "linear-gradient(135deg, #0EA5E9 0%, #00A896 100%)",
+    soft: "rgba(14, 165, 233, 0.10)",
+    accent: "#0EA5E9",
+  },
 };
 
 function getBucketStyleForBucket(bucket: SmartHealthStorageBucket) {
@@ -317,7 +348,9 @@ export function Storage() {
     }
   };
 
-  const createBucket = async (payload: Parameters<typeof smartHealthApi.createStorageBucket>[0]) => {
+  const createBucket = async (
+    payload: Parameters<typeof smartHealthApi.createStorageBucket>[0],
+  ) => {
     if (!canManageStorage) {
       toast.error("Tai khoan khong co quyen quan ly luu tru.");
       return;
@@ -327,7 +360,9 @@ export function Storage() {
     await loadStorage(false);
   };
 
-  const uploadStorageFile = async (payload: Parameters<typeof smartHealthApi.uploadStorageFile>[0]) => {
+  const uploadStorageFile = async (
+    payload: Parameters<typeof smartHealthApi.uploadStorageFile>[0],
+  ) => {
     if (!canManageStorage) {
       toast.error("Tai khoan khong co quyen quan ly luu tru.");
       return;
@@ -390,7 +425,8 @@ export function Storage() {
       title: "Xóa bucket lưu trữ",
       description: (
         <span>
-          Bạn có chắc chắn muốn xóa bucket <strong>{bucket.id}</strong>? Chỉ bucket rỗng mới xóa được.
+          Bạn có chắc chắn muốn xóa bucket <strong>{bucket.id}</strong>? Chỉ bucket rỗng mới xóa
+          được.
         </span>
       ),
       confirmLabel: "Xóa bucket",
@@ -410,7 +446,8 @@ export function Storage() {
       title: "Xóa các tệp đã chọn",
       description: (
         <span>
-          Bạn có chắc chắn muốn xóa {selectedFiles.length} tệp đã chọn? Hành động này không thể hoàn tác.
+          Bạn có chắc chắn muốn xóa {selectedFiles.length} tệp đã chọn? Hành động này không thể hoàn
+          tác.
         </span>
       ),
       confirmLabel: "Xóa tệp đã chọn",
@@ -874,7 +911,8 @@ export function Storage() {
                     <input
                       type="checkbox"
                       checked={
-                        pagedFiles.length > 0 && pagedFiles.every((file) => selectedIds.includes(file.id))
+                        pagedFiles.length > 0 &&
+                        pagedFiles.every((file) => selectedIds.includes(file.id))
                       }
                       onChange={toggleSelectAll}
                       className="rounded border-border"
@@ -1181,4 +1219,3 @@ function KPI({
     </div>
   );
 }
-

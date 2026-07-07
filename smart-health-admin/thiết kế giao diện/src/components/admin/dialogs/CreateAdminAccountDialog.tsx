@@ -1,6 +1,16 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Building2, CheckCircle2, KeyRound, Loader2, Mail, Phone, ShieldCheck, UserPlus, X } from "lucide-react";
+import {
+  Building2,
+  CheckCircle2,
+  KeyRound,
+  Loader2,
+  Mail,
+  Phone,
+  ShieldCheck,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   smartHealthApi,
@@ -53,7 +63,11 @@ const roleOptions = [
   },
 ];
 
-export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: CreateAdminAccountDialogProps) {
+export function CreateAdminAccountDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: CreateAdminAccountDialogProps) {
   const [formData, setFormData] = useState<FormData>(emptyForm);
   const [clinics, setClinics] = useState<SmartHealthClinic[]>([]);
   const [isLoadingClinics, setIsLoadingClinics] = useState(false);
@@ -64,7 +78,8 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
     () => roleOptions.find((item) => item.value === formData.role) || roleOptions[0],
     [formData.role],
   );
-  const requiresWorkspace = formData.role === "workspace_admin" || formData.role === "workspace_owner";
+  const requiresWorkspace =
+    formData.role === "workspace_admin" || formData.role === "workspace_owner";
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +88,9 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
     smartHealthApi
       .listClinics()
       .then((response) => {
-        const activeClinics = response.clinics.filter((clinic) => String(clinic.status || "active") === "active");
+        const activeClinics = response.clinics.filter(
+          (clinic) => String(clinic.status || "active") === "active",
+        );
         setClinics(activeClinics);
         setFormData((current) => ({
           ...current,
@@ -145,7 +162,8 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
       await onCreated?.(response.user);
     } catch (error) {
       toast.error("Không thể tạo tài khoản admin", {
-        description: error instanceof Error ? error.message : "Vui lòng kiểm tra backend và Firebase Admin.",
+        description:
+          error instanceof Error ? error.message : "Vui lòng kiểm tra backend và Firebase Admin.",
       });
     } finally {
       setIsSubmitting(false);
@@ -163,7 +181,9 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
                 <ShieldCheck className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <Dialog.Title className="font-semibold text-foreground">Tạo tài khoản admin</Dialog.Title>
+                <Dialog.Title className="font-semibold text-foreground">
+                  Tạo tài khoản admin
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Tạo Firebase user và cấp quyền quản trị trực tiếp từ Web Admin.
                 </Dialog.Description>
@@ -190,12 +210,19 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
               </div>
               <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <InfoCard label="Email" value={createdUser.email || ""} />
-                <InfoCard label="Vai trò" value={createdUser.role === "admin" ? "Admin toàn hệ thống" : "Admin bệnh viện"} />
-                <InfoCard label="Workspace" value={createdUser.workspace?.name || createdUser.hospital || "Smart Health"} />
+                <InfoCard
+                  label="Vai trò"
+                  value={createdUser.role === "admin" ? "Admin toàn hệ thống" : "Admin bệnh viện"}
+                />
+                <InfoCard
+                  label="Workspace"
+                  value={createdUser.workspace?.name || createdUser.hospital || "Smart Health"}
+                />
                 <InfoCard label="Firebase UID" value={createdUser.firebaseUid || ""} />
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                Mật khẩu tạm thời không được lưu trong backend. Hãy gửi mật khẩu cho người dùng qua kênh riêng và yêu cầu đổi mật khẩu sau khi đăng nhập.
+                Mật khẩu tạm thời không được lưu trong backend. Hãy gửi mật khẩu cho người dùng qua
+                kênh riêng và yêu cầu đổi mật khẩu sau khi đăng nhập.
               </div>
               <div className="flex justify-end gap-3">
                 <button
@@ -209,14 +236,17 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
                   Tạo thêm tài khoản
                 </button>
                 <Dialog.Close asChild>
-                  <button type="button" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                  <button
+                    type="button"
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  >
                     Hoàn tất
                   </button>
                 </Dialog.Close>
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-6 p-6">
+            <form method="post" onSubmit={handleSubmit} className="space-y-6 p-6">
               <section className="space-y-4">
                 <h3 className="font-medium text-foreground">Quyền quản trị</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -235,7 +265,9 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
                         <ShieldCheck className="h-4 w-4 text-primary" />
                         <span className="font-medium">{option.label}</span>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{option.description}</p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {option.description}
+                      </p>
                     </button>
                   ))}
                 </div>
@@ -244,15 +276,23 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
               {requiresWorkspace && (
                 <section className="space-y-4 border-t border-border pt-4">
                   <h3 className="font-medium text-foreground">Workspace được quản lý</h3>
-                  <Field label="Bệnh viện / phòng khám" required icon={<Building2 className="h-4 w-4" />}>
+                  <Field
+                    label="Bệnh viện / phòng khám"
+                    required
+                    icon={<Building2 className="h-4 w-4" />}
+                  >
                     <select
                       required
                       disabled={isLoadingClinics}
                       value={formData.organizationId}
-                      onChange={(event) => setFormData({ ...formData, organizationId: event.target.value })}
+                      onChange={(event) =>
+                        setFormData({ ...formData, organizationId: event.target.value })
+                      }
                       className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring disabled:opacity-60"
                     >
-                      <option value="">{isLoadingClinics ? "Đang tải workspace..." : "Chọn workspace"}</option>
+                      <option value="">
+                        {isLoadingClinics ? "Đang tải workspace..." : "Chọn workspace"}
+                      </option>
                       {clinics.map((clinic) => (
                         <option key={clinic.id} value={clinic.id}>
                           {clinic.name}
@@ -266,7 +306,12 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
               <section className="space-y-4 border-t border-border pt-4">
                 <h3 className="font-medium text-foreground">Thông tin đăng nhập</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field label="Họ và tên" required className="sm:col-span-2" icon={<UserPlus className="h-4 w-4" />}>
+                  <Field
+                    label="Họ và tên"
+                    required
+                    className="sm:col-span-2"
+                    icon={<UserPlus className="h-4 w-4" />}
+                  >
                     <input
                       required
                       value={formData.name}
@@ -300,7 +345,9 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
                       minLength={8}
                       type="password"
                       value={formData.password}
-                      onChange={(event) => setFormData({ ...formData, password: event.target.value })}
+                      onChange={(event) =>
+                        setFormData({ ...formData, password: event.target.value })
+                      }
                       placeholder="Tối thiểu 8 ký tự"
                       className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                     />
@@ -311,7 +358,9 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
                       minLength={8}
                       type="password"
                       value={formData.confirmPassword}
-                      onChange={(event) => setFormData({ ...formData, confirmPassword: event.target.value })}
+                      onChange={(event) =>
+                        setFormData({ ...formData, confirmPassword: event.target.value })
+                      }
                       placeholder="Nhập lại mật khẩu"
                       className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                     />
@@ -320,12 +369,17 @@ export function CreateAdminAccountDialog({ open, onOpenChange, onCreated }: Crea
               </section>
 
               <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-                Đang tạo quyền: <span className="font-medium text-foreground">{selectedRole.label}</span>. Email đã tạo sẽ đăng nhập bằng Firebase Auth và nhận quyền qua custom claims.
+                Đang tạo quyền:{" "}
+                <span className="font-medium text-foreground">{selectedRole.label}</span>. Email đã
+                tạo sẽ đăng nhập bằng Firebase Auth và nhận quyền qua custom claims.
               </div>
 
               <div className="flex gap-3 pt-2">
                 <Dialog.Close asChild>
-                  <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                  <button
+                    type="button"
+                    className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                  >
                     Hủy
                   </button>
                 </Dialog.Close>
@@ -366,7 +420,9 @@ function Field({
       </label>
       {icon ? (
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            {icon}
+          </span>
           {children}
         </div>
       ) : (

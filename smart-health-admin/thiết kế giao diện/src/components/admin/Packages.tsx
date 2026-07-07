@@ -19,9 +19,14 @@ import { toast } from "sonner";
 import { CreatePackageDialog } from "./dialogs/CreatePackageDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { AnimatedCard, PageHeader, StatusBadge } from "./design-system";
-import { smartHealthApi, type SmartHealthClinic, type SmartHealthServicePackage } from "@/lib/smart-health-api";
+import {
+  smartHealthApi,
+  type SmartHealthClinic,
+  type SmartHealthServicePackage,
+} from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import { PACKAGE_MANAGE_CAPABILITIES } from "./action-permissions";
 
 const segmentLabels: Record<string, string> = {
@@ -202,8 +207,8 @@ export function Packages() {
               </div>
               <p className="mt-2 max-w-2xl text-sm text-white/85">
                 {workspaces.length} workspace đang quản lý: {segmentCounts.hospital || 0} bệnh viện,{" "}
-                {segmentCounts.clinic || 0} phòng khám, {segmentCounts.solo_practice || 0} bác sĩ tư,{" "}
-                {segmentCounts.personal || 0} cá nhân/gia đình.
+                {segmentCounts.clinic || 0} phòng khám, {segmentCounts.solo_practice || 0} bác sĩ
+                tư, {segmentCounts.personal || 0} cá nhân/gia đình.
               </p>
             </div>
             <div className="rounded-md bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/30">
@@ -254,7 +259,9 @@ export function Packages() {
                 )}
 
                 <div className="mb-4 flex items-center justify-between">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${isPopular ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  <div
+                    className={`flex h-11 w-11 items-center justify-center rounded-lg ${isPopular ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
+                  >
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="text-right">
@@ -264,7 +271,10 @@ export function Packages() {
                 </div>
 
                 <div className="mb-3">
-                  <StatusBadge label={segmentLabels[pkg.segment || "organization"] || "Khác"} tone="muted" />
+                  <StatusBadge
+                    label={segmentLabels[pkg.segment || "organization"] || "Khác"}
+                    tone="muted"
+                  />
                 </div>
                 <h3 className="text-xl font-bold text-foreground">{pkg.name}</h3>
                 <p className="mt-2 min-h-12 text-sm leading-5 text-muted-foreground">
@@ -272,8 +282,13 @@ export function Packages() {
                 </p>
 
                 <div className="my-5 border-b border-border pb-5">
-                  <span className="text-3xl font-bold text-foreground">{formatMoney(pkg.price, pkg.currency)}</span>
-                  <span className="text-muted-foreground"> / {durationLabels[pkg.duration || "monthly"] || pkg.duration}</span>
+                  <span className="text-3xl font-bold text-foreground">
+                    {formatMoney(pkg.price, pkg.currency)}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    / {durationLabels[pkg.duration || "monthly"] || pkg.duration}
+                  </span>
                 </div>
 
                 <div className="flex-1 space-y-3 text-sm">
@@ -329,7 +344,8 @@ export function Packages() {
               {deleteAssignedCount > 0 ? (
                 <>
                   <br />
-                  Đang có {deleteAssignedCount} workspace dùng gói này. Backend có thể từ chối nếu gói còn được gán.
+                  Đang có {deleteAssignedCount} workspace dùng gói này. Backend có thể từ chối nếu
+                  gói còn được gán.
                 </>
               ) : null}
             </span>

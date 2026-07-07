@@ -32,6 +32,7 @@ export default function NotificationsPage() {
           </p>
         </div>
         <button
+          id="notifications-mark-all-read"
           disabled={markAll.isPending || !list.length}
           onClick={() => markAll.mutate()}
           className="rounded-xl border border-white/10 px-3 text-sm text-[#00FFD1] flex gap-2 items-center"
@@ -54,6 +55,7 @@ export default function NotificationsPage() {
               className={`p-4 flex gap-3 ${item.read ? "opacity-70" : "bg-[#00FFD1]/5"}`}
             >
               <button
+                data-notification-read={item.id}
                 onClick={() => !item.read && mark.mutate(item.id)}
                 className="flex-1 text-left"
               >
@@ -65,6 +67,7 @@ export default function NotificationsPage() {
               </button>
               <button
                 aria-label="Xóa thông báo"
+                data-notification-delete={item.id}
                 onClick={() => remove.mutate(item.id)}
                 className="text-[#FF6B6B] p-2"
               >

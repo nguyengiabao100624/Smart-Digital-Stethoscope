@@ -65,7 +65,12 @@ const emptyDraft: AccountDraft = {
 };
 
 function normalizeRole(role?: string): SmartHealthAdminAccountRole {
-  if (role === "admin" || role === "platform_admin" || role === "workspace_admin" || role === "workspace_owner") {
+  if (
+    role === "admin" ||
+    role === "platform_admin" ||
+    role === "workspace_admin" ||
+    role === "workspace_owner"
+  ) {
     return role;
   }
   return "workspace_admin";
@@ -91,7 +96,8 @@ function draftFromAccount(account: SmartHealthAdminAccount | null): AccountDraft
     phone: account.phone || "",
     title: account.title || "",
     role: normalizeRole(account.role),
-    organizationId: account.organizationId || account.workspaceId || account.currentWorkspaceId || "",
+    organizationId:
+      account.organizationId || account.workspaceId || account.currentWorkspaceId || "",
     accountStatus: account.accountStatus || "active",
   };
 }
@@ -136,7 +142,8 @@ export function AdminAccounts() {
       setAccounts(accountResponse.users);
       setClinics(clinicResponse.clinics);
       setSelectedId((current) => {
-        if (current && accountResponse.users.some((account) => account.id === current)) return current;
+        if (current && accountResponse.users.some((account) => account.id === current))
+          return current;
         return accountResponse.users[0]?.id || "";
       });
     } catch (error) {
@@ -172,7 +179,10 @@ export function AdminAccounts() {
       const nextTitle = draft.title.trim();
       const currentRole = normalizeRole(selectedAccount.role);
       const currentOrganizationId =
-        selectedAccount.organizationId || selectedAccount.workspaceId || selectedAccount.currentWorkspaceId || "";
+        selectedAccount.organizationId ||
+        selectedAccount.workspaceId ||
+        selectedAccount.currentWorkspaceId ||
+        "";
 
       if (nextName !== (selectedAccount.name || "")) payload.name = nextName;
       if (nextPhone !== (selectedAccount.phone || "")) payload.phone = nextPhone;
@@ -256,7 +266,8 @@ export function AdminAccounts() {
       title: "Đặt lại mật khẩu admin",
       description: (
         <span>
-          Nhập mật khẩu tạm thời mới cho <strong>{account.email}</strong>. Sau khi đặt lại, các phiên cũ sẽ bị thu hồi.
+          Nhập mật khẩu tạm thời mới cho <strong>{account.email}</strong>. Sau khi đặt lại, các
+          phiên cũ sẽ bị thu hồi.
         </span>
       ),
       confirmLabel: "Đặt lại mật khẩu",
@@ -279,7 +290,8 @@ export function AdminAccounts() {
       title: "Xóa tài khoản admin",
       description: (
         <span>
-          Xóa tài khoản <strong>{account.email}</strong>? Backend sẽ xóa user backend, membership, phiên đăng nhập và tài khoản Firebase liên kết nếu có. Hành động này không thể hoàn tác.
+          Xóa tài khoản <strong>{account.email}</strong>? Backend sẽ xóa user backend, membership,
+          phiên đăng nhập và tài khoản Firebase liên kết nếu có. Hành động này không thể hoàn tác.
         </span>
       ),
       confirmLabel: "Xóa tài khoản",
@@ -429,10 +441,19 @@ export function AdminAccounts() {
                     const active = account.id === selectedId;
                     const locked = account.accountStatus === "locked";
                     return (
-                      <tr key={account.id} className={active ? "bg-primary/5" : "hover:bg-muted/30"}>
+                      <tr
+                        key={account.id}
+                        className={active ? "bg-primary/5" : "hover:bg-muted/30"}
+                      >
                         <td className="px-4 py-3">
-                          <button type="button" onClick={() => setSelectedId(account.id)} className="text-left">
-                            <div className="font-medium text-foreground">{account.name || "Chưa đặt tên"}</div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedId(account.id)}
+                            className="text-left"
+                          >
+                            <div className="font-medium text-foreground">
+                              {account.name || "Chưa đặt tên"}
+                            </div>
                             <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                               <Mail className="h-3.5 w-3.5" /> {account.email || "Chưa có email"}
                             </div>
@@ -445,15 +466,21 @@ export function AdminAccounts() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-                            <ShieldCheck className="h-3.5 w-3.5" /> {roleLabels[account.role || ""] || account.role}
+                            <ShieldCheck className="h-3.5 w-3.5" />{" "}
+                            {roleLabels[account.role || ""] || account.role}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
-                          {account.role === "admin" ? "Toàn hệ thống" : account.workspaceName || account.hospital || "Chưa gán"}
+                          {account.role === "admin"
+                            ? "Toàn hệ thống"
+                            : account.workspaceName || account.hospital || "Chưa gán"}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`rounded-md px-2 py-1 text-xs font-semibold ${locked ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
-                            {statusLabels[account.accountStatus || "active"] || account.accountStatus}
+                          <span
+                            className={`rounded-md px-2 py-1 text-xs font-semibold ${locked ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}
+                          >
+                            {statusLabels[account.accountStatus || "active"] ||
+                              account.accountStatus}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
@@ -476,7 +503,11 @@ export function AdminAccounts() {
                               className="rounded-md border border-border p-2 text-muted-foreground hover:text-foreground"
                               title={locked ? "Mở khóa" : "Khóa"}
                             >
-                              {locked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                              {locked ? (
+                                <Unlock className="h-4 w-4" />
+                              ) : (
+                                <Lock className="h-4 w-4" />
+                              )}
                             </button>
                             <button
                               type="button"
@@ -504,7 +535,9 @@ export function AdminAccounts() {
             </div>
             <div>
               <h2 className="font-semibold text-foreground">Chi tiết tài khoản</h2>
-              <p className="text-xs text-muted-foreground">Chọn một tài khoản để chỉnh thông tin và quyền.</p>
+              <p className="text-xs text-muted-foreground">
+                Chọn một tài khoản để chỉnh thông tin và quyền.
+              </p>
             </div>
           </div>
 
@@ -515,43 +548,63 @@ export function AdminAccounts() {
           ) : (
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Email
+                </label>
                 <input
                   value={selectedAccount.email || ""}
                   readOnly
                   className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">Email là định danh Firebase Auth, không đổi tại đây.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Email là định danh Firebase Auth, không đổi tại đây.
+                </p>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Họ tên</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Họ tên
+                </label>
                 <input
                   value={draft.name}
-                  onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, name: event.target.value }))
+                  }
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Chức vụ</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Chức vụ
+                </label>
                 <input
                   value={draft.title}
-                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, title: event.target.value }))
+                  }
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Số điện thoại</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Số điện thoại
+                </label>
                 <input
                   value={draft.phone}
-                  onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, phone: event.target.value }))
+                  }
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Vai trò</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Vai trò
+                </label>
                 <select
                   value={draft.role}
-                  onChange={(event) => setDraft((current) => ({ ...current, role: normalizeRole(event.target.value) }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, role: normalizeRole(event.target.value) }))
+                  }
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                 >
                   <option value="admin">Admin toàn hệ thống</option>
@@ -561,10 +614,14 @@ export function AdminAccounts() {
               </div>
               {isWorkspaceRole(draft.role) ? (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Workspace/Bệnh viện</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Workspace/Bệnh viện
+                  </label>
                   <select
                     value={draft.organizationId}
-                    onChange={(event) => setDraft((current) => ({ ...current, organizationId: event.target.value }))}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, organizationId: event.target.value }))
+                    }
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                   >
                     <option value="">Chọn workspace</option>
@@ -577,10 +634,14 @@ export function AdminAccounts() {
                 </div>
               ) : null}
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Trạng thái</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Trạng thái
+                </label>
                 <select
                   value={draft.accountStatus}
-                  onChange={(event) => setDraft((current) => ({ ...current, accountStatus: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, accountStatus: event.target.value }))
+                  }
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                 >
                   <option value="active">Đang hoạt động</option>
@@ -591,9 +652,12 @@ export function AdminAccounts() {
               <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <Building2 className="h-4 w-4" />
-                  Workspace hiện tại: {selectedAccount.workspaceName || selectedAccount.hospital || "Chưa gán"}
+                  Workspace hiện tại:{" "}
+                  {selectedAccount.workspaceName || selectedAccount.hospital || "Chưa gán"}
                 </div>
-                <div className="mt-1">Cập nhật cuối: {formatDateTime(selectedAccount.updatedAt)}</div>
+                <div className="mt-1">
+                  Cập nhật cuối: {formatDateTime(selectedAccount.updatedAt)}
+                </div>
               </div>
 
               <button
@@ -602,7 +666,11 @@ export function AdminAccounts() {
                 disabled={saving}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
                 {saving ? "Đang lưu..." : "Lưu thay đổi"}
               </button>
             </div>

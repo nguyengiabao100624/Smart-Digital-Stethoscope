@@ -7,7 +7,8 @@ const EXACT_ERROR_MESSAGES: Record<string, string> = {
   "Missing bearer token": "Thiếu token đăng nhập. Vui lòng đăng nhập lại.",
   "Invalid or expired session":
     "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.",
-  "Internal server error": "Backend Smart Health đang gặp lỗi nội bộ. Vui lòng kiểm tra log backend.",
+  "Internal server error":
+    "Backend Smart Health đang gặp lỗi nội bộ. Vui lòng kiểm tra log backend.",
   "Request body is too large": "Dữ liệu gửi lên quá lớn.",
   "Request body must be valid JSON": "Dữ liệu gửi lên không đúng định dạng JSON.",
   "Auth route not found": "Không tìm thấy API xác thực trên backend.",
@@ -45,7 +46,8 @@ const FIREBASE_AUTH_MESSAGES: Record<string, string> = {
     "Domain web admin chưa được cho phép trong Firebase Auth. Vào Firebase Console > Authentication > Settings > Authorized domains và thêm shcare-admin.web.app.",
   "auth/unauthorized-continue-uri":
     "Đường dẫn quay lại của email đặt lại mật khẩu chưa được Firebase cho phép. Hãy thêm domain web admin vào Authorized domains trong Firebase Authentication.",
-  "auth/expired-action-code": "Link đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu gửi lại link mới.",
+  "auth/expired-action-code":
+    "Link đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu gửi lại link mới.",
   "auth/invalid-action-code": "Link đặt lại mật khẩu không hợp lệ hoặc đã được sử dụng.",
 };
 
@@ -118,7 +120,10 @@ function looksLikeEnglishError(message: string) {
   return /^[A-Za-z0-9\s._:;,'"()[\]{}!?/-]+$/.test(message);
 }
 
-export function toVietnameseErrorMessage(error: unknown, fallback = "Đã xảy ra lỗi. Vui lòng thử lại.") {
+export function toVietnameseErrorMessage(
+  error: unknown,
+  fallback = "Đã xảy ra lỗi. Vui lòng thử lại.",
+) {
   const rawMessage = getRawMessage(error).trim();
   const directCode = getErrorCode(error).toLowerCase();
   const firebaseCode = directCode || extractFirebaseAuthCode(rawMessage);

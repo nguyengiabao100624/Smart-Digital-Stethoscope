@@ -1,9 +1,10 @@
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import XLSX from "xlsx-js-style";
-import { RobotoRegularBase64 } from "./fonts/roboto-regular";
-import { RobotoBoldBase64 } from "./fonts/roboto-bold";
 import { buildSmartHealthFilename } from "./filename-utils";
+
+type PdfDocument = InstanceType<typeof import("jspdf").jsPDF>;
+type AutoTableFn = typeof import("jspdf-autotable").default;
+type XlsxModule = typeof import("xlsx-js-style");
+type XlsxWorkSheet = import("xlsx-js-style").WorkSheet;
+type XlsxCellObject = import("xlsx-js-style").CellObject;
 
 // ─── Brand ──────────────────────────────────────────────────────────────────
 const BRAND = {
@@ -69,7 +70,8 @@ function nowVN() {
 export function buildFilename(kind: string, period?: string, ext = "pdf") {
   const normalizedKind = kind.toLowerCase();
   const isData = normalizedKind.includes("du-lieu") || normalizedKind.includes("data");
-  const isNotification = normalizedKind.includes("thong-bao") || normalizedKind.includes("notification");
+  const isNotification =
+    normalizedKind.includes("thong-bao") || normalizedKind.includes("notification");
   return buildSmartHealthFilename({
     kind: isNotification ? "notification" : isData ? "data" : "report",
     ext,
@@ -83,6 +85,33 @@ export function buildFilename(kind: string, period?: string, ext = "pdf") {
 
 // ─── jsPDF font registration (Vietnamese support) ──────────────────────────
 let pdfFontReady = false;
+let pdfFontBase64Promise: Promise<string> | null = null;
+
+async function loadFontAssetBase64() {
+  const response = await fetch("/fonts/roboto-regular.ttf");
+  if (!response.ok) {
+    throw new Error(`Không thể tải font PDF tiếng Việt (${response.status}).`);
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  if (typeof globalThis.btoa !== "function") {
+    throw new Error("Trình duyệt không hỗ trợ mã hóa font PDF.");
+  }
+
+  return globalThis.btoa(binary);
+}
+
+async function loadPdfFonts() {
+  pdfFontBase64Promise ??= loadFontAssetBase64();
+  const RobotoRegularBase64 = await pdfFontBase64Promise;
+  return { RobotoRegularBase64, RobotoBoldBase64: RobotoRegularBase64 };
+}
 
 function getFontSignature(base64: string) {
   try {
@@ -109,10 +138,12 @@ function assertValidPdfFont(fontName: string, base64: string) {
   }
 }
 
-function ensurePdfFonts(doc: jsPDF) {
+async function ensurePdfFonts(doc: PdfDocument) {
   if (pdfFontReady) {
     // jsPDF instances are independent — must re-register on every doc.
   }
+
+  const { RobotoRegularBase64, RobotoBoldBase64 } = await loadPdfFonts();
 
   assertValidPdfFont("Roboto-Regular.ttf", RobotoRegularBase64);
   assertValidPdfFont("Roboto-Bold.ttf", RobotoBoldBase64);
@@ -131,7 +162,7 @@ function ensurePdfFonts(doc: jsPDF) {
 }
 
 // ─── PDF: header / footer / cover ──────────────────────────────────────────
-function drawLogo(doc: jsPDF, x: number, y: number, size = 22) {
+function drawLogo(doc: PdfDocument, x: number, y: number, size = 22) {
   // Rounded square with stylized stethoscope-ish glyph
   doc.setFillColor(...BRAND.primary);
   doc.roundedRect(x, y, size, size, 5, 5, "F");
@@ -147,7 +178,7 @@ function drawLogo(doc: jsPDF, x: number, y: number, size = 22) {
   doc.line(cx + 4, cy, x + size - 4, cy);
 }
 
-function drawHeader(doc: jsPDF, ctx: ExportContext) {
+function drawHeader(doc: PdfDocument, ctx: ExportContext) {
   const w = doc.internal.pageSize.getWidth();
   // top band
   doc.setFillColor(...BRAND.primary);
@@ -166,7 +197,7 @@ function drawHeader(doc: jsPDF, ctx: ExportContext) {
   doc.setTextColor(15, 23, 42);
 }
 
-function drawFooter(doc: jsPDF) {
+function drawFooter(doc: PdfDocument) {
   const w = doc.internal.pageSize.getWidth();
   const h = doc.internal.pageSize.getHeight();
   doc.setDrawColor(...BRAND.border);
@@ -182,7 +213,7 @@ function drawFooter(doc: jsPDF) {
   doc.setTextColor(15, 23, 42);
 }
 
-function drawCover(doc: jsPDF, ctx: ExportContext) {
+function drawCover(doc: PdfDocument, ctx: ExportContext, autoTable: AutoTableFn) {
   const w = doc.internal.pageSize.getWidth();
   let y = 90;
 
@@ -288,7 +319,7 @@ function drawCover(doc: jsPDF, ctx: ExportContext) {
   }
 }
 
-function drawSectionHeading(doc: jsPDF, text: string, y: number) {
+function drawSectionHeading(doc: PdfDocument, text: string, y: number) {
   doc.setDrawColor(...BRAND.primary);
   doc.setLineWidth(3);
   doc.line(40, y, 48, y);
@@ -300,12 +331,16 @@ function drawSectionHeading(doc: jsPDF, text: string, y: number) {
 }
 
 // ─── PDF: main builder ─────────────────────────────────────────────────────
-export function exportPDF(filename: string, ctx: ExportContext, sheets: ExportSheet[]) {
+export async function exportPDF(filename: string, ctx: ExportContext, sheets: ExportSheet[]) {
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-  ensurePdfFonts(doc);
+  await ensurePdfFonts(doc);
 
   // Cover
-  drawCover(doc, ctx);
+  drawCover(doc, ctx, autoTable);
 
   // Data sheets — one section per sheet
   sheets.forEach((sheet) => {
@@ -366,7 +401,7 @@ export function exportPDF(filename: string, ctx: ExportContext, sheets: ExportSh
 }
 
 // ─── Excel ─────────────────────────────────────────────────────────────────
-type CellStyle = NonNullable<XLSX.CellObject["s"]>;
+type CellStyle = NonNullable<XlsxCellObject["s"]>;
 
 const STYLE_TITLE: CellStyle = {
   font: { name: "Calibri", sz: 18, bold: true, color: { rgb: BRAND.primaryDarkHex } },
@@ -424,8 +459,12 @@ function colLetter(n: number) {
   return s;
 }
 
-function buildSummarySheet(ctx: ExportContext, sheets: ExportSheet[]): XLSX.WorkSheet {
-  const ws: XLSX.WorkSheet = {};
+function buildSummarySheet(
+  ctx: ExportContext,
+  sheets: ExportSheet[],
+  XLSX: XlsxModule,
+): XlsxWorkSheet {
+  const ws: XlsxWorkSheet = {};
   const data: (string | number)[][] = [];
 
   data.push([BRAND.name]); // A1
@@ -456,12 +495,12 @@ function buildSummarySheet(ctx: ExportContext, sheets: ExportSheet[]): XLSX.Work
   });
 
   // Style
-  (ws["A1"] as XLSX.CellObject).s = {
+  (ws["A1"] as XlsxCellObject).s = {
     font: { name: "Calibri", sz: 22, bold: true, color: { rgb: BRAND.primaryHex } },
   };
-  (ws["A2"] as XLSX.CellObject).s = STYLE_TITLE;
-  if (ws["A3"]) (ws["A3"] as XLSX.CellObject).s = STYLE_SUBTITLE;
-  if (ws["A4"]) (ws["A4"] as XLSX.CellObject).s = STYLE_SUBTITLE;
+  (ws["A2"] as XlsxCellObject).s = STYLE_TITLE;
+  if (ws["A3"]) (ws["A3"] as XlsxCellObject).s = STYLE_SUBTITLE;
+  if (ws["A4"]) (ws["A4"] as XlsxCellObject).s = STYLE_SUBTITLE;
 
   // Section headers
   ["A6", `A${metaStart + Object.keys(ctx.meta ?? {}).length + 2}`].forEach(() => {});
@@ -471,8 +510,8 @@ function buildSummarySheet(ctx: ExportContext, sheets: ExportSheet[]): XLSX.Work
     const r = metaStart + i;
     const kA = XLSX.utils.encode_cell({ r, c: 0 });
     const vA = XLSX.utils.encode_cell({ r, c: 1 });
-    if (ws[kA]) (ws[kA] as XLSX.CellObject).s = STYLE_META_KEY;
-    if (ws[vA]) (ws[vA] as XLSX.CellObject).s = STYLE_META_VAL;
+    if (ws[kA]) (ws[kA] as XlsxCellObject).s = STYLE_META_KEY;
+    if (ws[vA]) (ws[vA] as XlsxCellObject).s = STYLE_META_VAL;
   });
 
   // Style section titles (uppercase rows we manually added)
@@ -481,7 +520,7 @@ function buildSummarySheet(ctx: ExportContext, sheets: ExportSheet[]): XLSX.Work
     if (v === v.toUpperCase() && v.length > 3 && row.length === 1) {
       const a = XLSX.utils.encode_cell({ r, c: 0 });
       if (ws[a]) {
-        (ws[a] as XLSX.CellObject).s = {
+        (ws[a] as XlsxCellObject).s = {
           font: { name: "Calibri", sz: 11, bold: true, color: { rgb: BRAND.primaryDarkHex } },
         };
       }
@@ -503,8 +542,8 @@ function buildSummarySheet(ctx: ExportContext, sheets: ExportSheet[]): XLSX.Work
   return ws;
 }
 
-function buildDataSheet(ctx: ExportContext, sheet: ExportSheet): XLSX.WorkSheet {
-  const ws: XLSX.WorkSheet = {};
+function buildDataSheet(ctx: ExportContext, sheet: ExportSheet, XLSX: XlsxModule): XlsxWorkSheet {
+  const ws: XlsxWorkSheet = {};
   // Row 0: title, Row 1: period, Row 2: empty, Row 3: header, Row 4+: data
   const titleAddr = "A1";
   ws[titleAddr] = { t: "s", v: `${sheet.name} — ${ctx.title}`, s: STYLE_TITLE };
@@ -587,11 +626,12 @@ function buildDataSheet(ctx: ExportContext, sheet: ExportSheet): XLSX.WorkSheet 
   return ws;
 }
 
-export function exportExcel(filename: string, ctx: ExportContext, sheets: ExportSheet[]) {
+export async function exportExcel(filename: string, ctx: ExportContext, sheets: ExportSheet[]) {
+  const XLSX = (await import("xlsx-js-style")).default;
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, buildSummarySheet(ctx, sheets), "Tóm tắt");
+  XLSX.utils.book_append_sheet(wb, buildSummarySheet(ctx, sheets, XLSX), "Tóm tắt");
   sheets.forEach((s) => {
-    XLSX.utils.book_append_sheet(wb, buildDataSheet(ctx, s), s.name.substring(0, 31));
+    XLSX.utils.book_append_sheet(wb, buildDataSheet(ctx, s, XLSX), s.name.substring(0, 31));
   });
   XLSX.writeFile(wb, filename);
 }

@@ -1,4 +1,4 @@
-package com.example.smart_health_android.ui.screens
+﻿package com.example.smart_health_android.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -219,7 +219,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
             )
 
             Spacer(modifier = Modifier.height(24.dp))
-            Divider(color = Border)
+            HorizontalDivider(color = Border)
             Spacer(modifier = Modifier.height(24.dp))
 
             Text("THIẾT BỊ ỐNG NGHE", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -292,7 +292,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            Divider(color = Border)
+            HorizontalDivider(color = Border)
             Spacer(modifier = Modifier.height(24.dp))
 
             Text("LOẠI KIỂM TRA", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -354,7 +354,7 @@ fun NewScanScreen(onNavigateBack: () -> Unit, onScanStarted: (String) -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            Divider(color = Border)
+            HorizontalDivider(color = Border)
             Spacer(modifier = Modifier.height(24.dp))
 
             Text("GHI CHÚ LÂM SÀNG (TÙY CHỌN)", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)

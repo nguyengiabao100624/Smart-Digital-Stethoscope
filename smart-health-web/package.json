@@ -7,7 +7,9 @@
     "build": "vite build",
     "build:firebase": "node scripts/validate-production-env.mjs && vite build --config vite.firebase.config.ts",
     "preview:firebase": "vite preview --config vite.firebase.config.ts --host 127.0.0.1 --port 8080",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "smoke:portal-browser": "node scripts/portalBrowserSmokeTest.mjs",
+    "smoke:portal-mutation": "node scripts/portalMutationSmokeTest.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.12",
@@ -72,6 +74,7 @@
     "eslint": "9.39.4",
     "eslint-config-prettier": "10.1.8",
     "globals": "15.15.0",
+    "playwright": "1.61.1",
     "prettier": "3.8.3",
     "tailwindcss": "4.2.4",
     "typescript": "5.9.3",

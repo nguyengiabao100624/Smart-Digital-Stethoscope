@@ -38,13 +38,52 @@ function auth() {
   );
 }
 
+function firebaseAuthErrorMessage(error: unknown) {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+  if (
+    [
+      "auth/invalid-credential",
+      "auth/user-not-found",
+      "auth/wrong-password",
+    ].includes(code)
+  ) {
+    return "Email hoặc mật khẩu không đúng. Nếu đây là tài khoản quản trị hệ thống, hãy dùng shcare-admin.web.app hoặc đặt lại mật khẩu.";
+  }
+  if (code === "auth/user-disabled") {
+    return "Tài khoản Firebase này đang bị khóa. Vui lòng liên hệ quản trị viên Smart Health.";
+  }
+  if (code === "auth/invalid-email") {
+    return "Email đăng nhập không đúng định dạng.";
+  }
+  if (code === "auth/too-many-requests") {
+    return "Firebase tạm khóa đăng nhập do thử sai quá nhiều lần. Vui lòng đợi một lúc hoặc đặt lại mật khẩu.";
+  }
+  if (code === "auth/network-request-failed") {
+    return "Không kết nối được Firebase Auth. Hãy kiểm tra mạng rồi thử lại.";
+  }
+  return error instanceof Error
+    ? error.message
+    : "Đăng nhập Firebase thất bại.";
+}
+
 export const onFirebaseAuthStateChange = (
   callback: (user: User | null) => void,
 ) => onAuthStateChanged(auth(), callback);
 
 export async function signInWithFirebaseEmail(email: string, password: string) {
-  const credential = await signInWithEmailAndPassword(auth(), email, password);
-  return credential.user.getIdToken(true);
+  try {
+    const credential = await signInWithEmailAndPassword(
+      auth(),
+      email.trim(),
+      password,
+    );
+    return credential.user.getIdToken(true);
+  } catch (error) {
+    throw new Error(firebaseAuthErrorMessage(error));
+  }
 }
 
 export async function createFirebaseAccount(email: string, password: string) {

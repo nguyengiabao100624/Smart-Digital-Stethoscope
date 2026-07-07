@@ -50,7 +50,7 @@ function getEffectiveEnv() {
 function requireHttpsNonLocalUrl(env, key) {
   const value = (env[key] || "").trim().replace(/\/+$/, "");
   if (!value) {
-    throw new Error(`${key} is required for product web-admin builds.`);
+    throw new Error(`${key} is required for product web builds.`);
   }
 
   let parsed;
@@ -73,12 +73,12 @@ function requireHttpsNonLocalUrl(env, key) {
 
 const env = getEffectiveEnv();
 if (env.VITE_AUTH_MODE !== "production") {
-  throw new Error("VITE_AUTH_MODE must be production for product web-admin builds.");
+  throw new Error("VITE_AUTH_MODE must be production for product web builds.");
 }
 
 const httpBaseUrl = requireHttpsNonLocalUrl(env, "VITE_SMART_HEALTH_BASE_URL");
 const apiBaseUrl = requireHttpsNonLocalUrl(env, "VITE_SMART_HEALTH_API_BASE_URL");
 
-console.log("Product web-admin env OK");
+console.log("Product web env OK");
 console.log(`- VITE_SMART_HEALTH_BASE_URL=${httpBaseUrl}`);
 console.log(`- VITE_SMART_HEALTH_API_BASE_URL=${apiBaseUrl}`);

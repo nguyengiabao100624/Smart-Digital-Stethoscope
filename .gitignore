@@ -7,6 +7,12 @@
 .codegraph/
 **/node_modules/
 
+# Local agent/tooling caches
+/.config/
+/.impeccable/
+/.npm-cache/
+/codex-telegram-bridge/
+
 # Android App (smart-health-android)
 smart-health-android/build/
 smart-health-android/.gradle/

@@ -916,6 +916,8 @@ html.dark .shc-public-layout .shc-hero::before {
 }
 
 .clinical-topbar {
+  position: relative;
+  z-index: 80;
   border-bottom-color: var(--signal-line) !important;
   background: color-mix(
     in srgb,
@@ -924,9 +926,12 @@ html.dark .shc-public-layout .shc-hero::before {
   ) !important;
   box-shadow: 0 8px 28px rgba(58, 42, 132, 0.05);
   backdrop-filter: blur(20px) saturate(135%);
+  overflow: visible;
 }
 
 .clinical-content {
+  position: relative;
+  z-index: 1;
   background: transparent !important;
 }
 
@@ -939,6 +944,10 @@ html.dark .shc-public-layout .shc-hero::before {
   background: var(--signal-card) !important;
   box-shadow: var(--signal-shadow-tight) !important;
   backdrop-filter: blur(16px) saturate(125%);
+}
+
+.clinical-popover {
+  z-index: 120 !important;
 }
 
 .clinical-side-nav a::before {
@@ -5028,4 +5037,26 @@ html.dark
   > div {
   background: #5eead4 !important;
   box-shadow: 0 0 12px rgba(94, 234, 212, 0.72) !important;
+}
+
+html body .clinical-portal .clinical-popover {
+  border-color: rgba(15, 118, 110, 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(248, 253, 252, 0.58)),
+    rgba(248, 253, 252, 0.9) !important;
+  box-shadow:
+    0 24px 64px rgba(4, 55, 64, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86) !important;
+  backdrop-filter: blur(28px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(150%) !important;
+}
+
+html.dark body .clinical-portal .clinical-popover {
+  border-color: rgba(94, 234, 212, 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(9, 31, 42, 0.84), rgba(5, 20, 30, 0.74)),
+    rgba(5, 20, 30, 0.9) !important;
+  box-shadow:
+    0 24px 68px rgba(0, 0, 0, 0.44),
+    inset 0 1px 0 rgba(189, 248, 240, 0.12) !important;
 }

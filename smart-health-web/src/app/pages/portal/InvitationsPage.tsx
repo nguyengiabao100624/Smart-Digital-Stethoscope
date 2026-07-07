@@ -60,6 +60,8 @@ export default function InvitationsPage() {
       </div>
       <div className="glass-panel rounded-2xl p-5 grid md:grid-cols-4 gap-3">
         <select
+          id="share-patient-id"
+          name="sharePatientId"
           value={patientId}
           onChange={(e) => {
             setPatientId(e.target.value);
@@ -75,6 +77,8 @@ export default function InvitationsPage() {
           ))}
         </select>
         <select
+          id="share-target-type"
+          name="shareTargetType"
           value={targetType}
           onChange={(e) => {
             setTargetType(e.target.value as "doctor" | "workspace");
@@ -86,6 +90,8 @@ export default function InvitationsPage() {
           <option value="workspace">Workspace</option>
         </select>
         <select
+          id="share-target-id"
+          name="shareTargetId"
           value={targetId}
           onChange={(e) => setTargetId(e.target.value)}
           className="portal-input"

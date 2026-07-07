@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, CheckCircle2, Loader2, Wifi, X } from "lucide-react";
 import { toast } from "sonner";
@@ -10,7 +10,11 @@ interface ActivateDeviceDialogProps {
   onActivated?: () => void | Promise<void>;
 }
 
-export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: ActivateDeviceDialogProps) {
+export function ActivateDeviceDialog({
+  open,
+  onOpenChange,
+  onActivated,
+}: ActivateDeviceDialogProps) {
   const [step, setStep] = useState<"input" | "activating" | "success">("input");
   const [deviceId, setDeviceId] = useState("");
   const [claimCode, setClaimCode] = useState("");
@@ -38,7 +42,8 @@ export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: Activa
     } catch (error) {
       setStep("input");
       toast.error("Không thể kích hoạt thiết bị", {
-        description: error instanceof Error ? error.message : "Vui lòng kiểm tra Device ID và claim code.",
+        description:
+          error instanceof Error ? error.message : "Vui lòng kiểm tra Device ID và claim code.",
       });
     }
   };
@@ -54,7 +59,9 @@ export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: Activa
                 <Wifi className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <Dialog.Title className="font-semibold text-foreground">Kích hoạt thiết bị</Dialog.Title>
+                <Dialog.Title className="font-semibold text-foreground">
+                  Kích hoạt thiết bị
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Nhập Device ID và claim code được tạo từ màn thêm thiết bị.
                 </Dialog.Description>
@@ -65,7 +72,7 @@ export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: Activa
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleActivate} className="space-y-6 p-6">
+          <form method="post" onSubmit={handleActivate} className="space-y-6 p-6">
             {step === "input" && (
               <>
                 <div className="rounded-lg border border-border bg-muted/30 p-4">
@@ -105,7 +112,10 @@ export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: Activa
 
                 <div className="flex gap-3">
                   <Dialog.Close asChild>
-                    <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                    <button
+                      type="button"
+                      className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                    >
                       Hủy
                     </button>
                   </Dialog.Close>
@@ -127,7 +137,9 @@ export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: Activa
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Đang kích hoạt thiết bị...</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Backend đang xác minh claim code.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Backend đang xác minh claim code.
+                  </p>
                 </div>
               </div>
             )}
@@ -139,7 +151,9 @@ export function ActivateDeviceDialog({ open, onOpenChange, onActivated }: Activa
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Kích hoạt thành công</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Thiết bị đã được kết nối với hệ thống.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Thiết bị đã được kết nối với hệ thống.
+                  </p>
                 </div>
               </div>
             )}

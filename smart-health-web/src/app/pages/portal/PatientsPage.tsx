@@ -39,6 +39,7 @@ export default function PatientsPage() {
           <p className="text-sm text-[#94b8d0]">Hồ sơ thuộc {user?.currentWorkspace.name}</p>
         </div>
         <button
+          id="portal-add-patient"
           onClick={() => setShowCreate((value) => !value)}
           className="premium-button flex gap-2 items-center"
         >
@@ -48,6 +49,7 @@ export default function PatientsPage() {
       </div>
       {showCreate && (
         <form
+          method="post"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate();
@@ -55,6 +57,8 @@ export default function PatientsPage() {
           className="glass-panel rounded-2xl p-5 grid md:grid-cols-5 gap-3"
         >
           <input
+            id="portal-patient-name"
+            name="patientName"
             required
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -62,12 +66,16 @@ export default function PatientsPage() {
             className="portal-input"
           />
           <input
+            id="portal-patient-phone"
+            name="patientPhone"
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
             placeholder="Số điện thoại"
             className="portal-input"
           />
           <input
+            id="portal-patient-email"
+            name="patientEmail"
             type="email"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -75,6 +83,8 @@ export default function PatientsPage() {
             className="portal-input"
           />
           <input
+            id="portal-patient-age"
+            name="patientAge"
             type="number"
             min="0"
             value={form.age}
@@ -82,7 +92,7 @@ export default function PatientsPage() {
             placeholder="Tuổi"
             className="portal-input"
           />
-          <button disabled={create.isPending} className="premium-button">
+          <button id="portal-save-patient" disabled={create.isPending} className="premium-button">
             {create.isPending ? "Đang lưu..." : "Lưu hồ sơ"}
           </button>
         </form>
@@ -91,6 +101,8 @@ export default function PatientsPage() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94b8d0]" size={15} />
           <input
+            id="portal-patient-search"
+            name="portalPatientSearch"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Tìm theo tên, mã, số điện thoại..."

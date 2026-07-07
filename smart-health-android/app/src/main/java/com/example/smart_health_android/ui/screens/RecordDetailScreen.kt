@@ -1,4 +1,4 @@
-package com.example.smart_health_android.ui.screens
+﻿package com.example.smart_health_android.ui.screens
 
 import android.media.MediaPlayer
 import androidx.compose.foundation.Canvas

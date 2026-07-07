@@ -1,19 +1,63 @@
 import { useState } from "react";
-import { Search, MessageCircle, CheckCircle, Loader2, HelpCircle } from "lucide-react";
+import {
+  Search,
+  MessageCircle,
+  CheckCircle,
+  Loader2,
+  HelpCircle,
+  UserPlus,
+  Link2,
+  WifiOff,
+  MailWarning,
+  ShieldMinus,
+  FileText,
+  Phone,
+  Mail,
+} from "lucide-react";
 import { smartHealthApi } from "../../../lib/smart-health-api";
 
 const guides = [
-  { icon: "👤", title: "Mời bệnh nhân", desc: "Cách tạo bệnh nhân và gửi lời mời consent" },
-  { icon: "🔗", title: "Gán thiết bị", desc: "Cách gán ống nghe thông minh cho bệnh nhân" },
-  { icon: "📴", title: "Thiết bị offline", desc: "Xử lý khi thiết bị mất kết nối" },
-  { icon: "📩", title: "BN chưa nhận email", desc: "Kiểm tra và gửi lại lời mời" },
-  { icon: "🛡️", title: "Thu hồi consent", desc: "Cách thu hồi quyền theo dõi bệnh nhân" },
-  { icon: "📋", title: "Xem scan & waveform", desc: "Cách đọc kết quả lượt đo" },
+  {
+    icon: UserPlus,
+    title: "Mời bệnh nhân",
+    desc: "Cách tạo bệnh nhân và gửi lời mời consent",
+    issueType: "Lỗi tài khoản / quyền truy cập",
+  },
+  {
+    icon: Link2,
+    title: "Gán thiết bị",
+    desc: "Cách gán ống nghe thông minh cho bệnh nhân",
+    issueType: "Thiết bị không kết nối",
+  },
+  {
+    icon: WifiOff,
+    title: "Thiết bị offline",
+    desc: "Xử lý khi thiết bị mất kết nối",
+    issueType: "Thiết bị không kết nối",
+  },
+  {
+    icon: MailWarning,
+    title: "BN chưa nhận email",
+    desc: "Kiểm tra và gửi lại lời mời",
+    issueType: "Lỗi tài khoản / quyền truy cập",
+  },
+  {
+    icon: ShieldMinus,
+    title: "Thu hồi consent",
+    desc: "Cách thu hồi quyền theo dõi bệnh nhân",
+    issueType: "Khác",
+  },
+  {
+    icon: FileText,
+    title: "Xem scan & waveform",
+    desc: "Cách đọc kết quả lượt đo",
+    issueType: "Không nhận được lượt đo",
+  },
 ];
 
 export default function HelpPage() {
   const [search, setSearch] = useState("");
-  const [ticketForm, setTicketForm] = useState({ type: "", desc: "", file: false });
+  const [ticketForm, setTicketForm] = useState({ type: "", desc: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -49,6 +93,8 @@ export default function HelpPage() {
       <div className="flex items-center gap-2 px-4 h-11 rounded-xl border border-white/10 bg-white/8 max-w-lg">
         <Search size={16} className="text-[#8aa5ba]" />
         <input
+          id="portal-help-search"
+          name="portalHelpSearch"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Tìm câu hỏi, hướng dẫn..."
@@ -62,20 +108,36 @@ export default function HelpPage() {
           <div className="grid grid-cols-2 gap-3">
             {guides
               .filter((g) => !search || g.title.toLowerCase().includes(search.toLowerCase()))
-              .map((guide) => (
-                <div key={guide.title} className="premium-card p-4 cursor-pointer">
-                  <div className="text-2xl mb-2">{guide.icon}</div>
+              .map((guide) => {
+                const GuideIcon = guide.icon;
+                return (
+                  <button
+                    key={guide.title}
+                    type="button"
+                    data-support-guide={guide.title}
+                    onClick={() =>
+                      setTicketForm((current) => ({
+                        type: guide.issueType,
+                        desc: current.desc || guide.desc,
+                      }))
+                    }
+                    className="premium-card p-4 text-left transition hover:border-[#00FFD1]/30"
+                  >
+                  <div className="mb-2 text-[#00FFD1]">
+                    <GuideIcon size={22} aria-hidden="true" />
+                  </div>
                   <div className="text-sm font-semibold text-[#eefbff] mb-1">{guide.title}</div>
                   <div className="text-xs text-[#8aa5ba] leading-relaxed">{guide.desc}</div>
-                </div>
-              ))}
+                  </button>
+                );
+              })}
           </div>
         </div>
 
         <div>
           <h2 className="text-sm font-semibold text-[#eefbff] mb-3">Gửi yêu cầu hỗ trợ</h2>
           {submitted ? (
-            <div className="glass-panel rounded-2xl p-8 text-center">
+            <div id="support-ticket-success" className="glass-panel rounded-2xl p-8 text-center">
               <CheckCircle
                 size={32}
                 className="mx-auto mb-3 text-[#00FFD1] drop-shadow-[0_0_10px_rgba(0,255,209,0.5)]"
@@ -99,6 +161,8 @@ export default function HelpPage() {
                     Loại vấn đề
                   </label>
                   <select
+                    id="support-ticket-type"
+                    name="supportTicketType"
                     value={ticketForm.type}
                     onChange={(e) => setTicketForm({ ...ticketForm, type: e.target.value })}
                     className="w-full px-3 h-10 rounded-xl border border-white/10 bg-[#04111f] text-[#eefbff] outline-none text-sm focus:border-[#00FFD1]/50 transition"
@@ -116,6 +180,8 @@ export default function HelpPage() {
                     Mô tả vấn đề
                   </label>
                   <textarea
+                    id="support-ticket-description"
+                    name="supportTicketDescription"
                     value={ticketForm.desc}
                     onChange={(e) => setTicketForm({ ...ticketForm, desc: e.target.value })}
                     rows={4}
@@ -126,6 +192,7 @@ export default function HelpPage() {
                 {submitError && <p className="text-xs text-[#FF6B6B]">{submitError}</p>}
               </div>
               <button
+                id="support-ticket-submit"
                 onClick={handleSubmit}
                 disabled={submitting || !ticketForm.type || !ticketForm.desc}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
@@ -153,8 +220,14 @@ export default function HelpPage() {
           )}
           <div className="mt-4 p-4 rounded-2xl border border-[#0B5C9A]/30 bg-[#0B5C9A]/10">
             <div className="text-sm font-semibold text-[#4AA4E0] mb-2">Liên hệ trực tiếp</div>
-            <div className="text-sm text-[#8aa5ba]">📞 Hotline: 1800 1234 (T2-T6, 8:00-18:00)</div>
-            <div className="text-sm text-[#8aa5ba] mt-1">📧 support@smarthealth.vn</div>
+            <div className="flex items-center gap-2 text-sm text-[#8aa5ba]">
+              <Phone size={14} aria-hidden="true" />
+              <span>Hotline: 1800 1234 (T2-T6, 8:00-18:00)</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-sm text-[#8aa5ba]">
+              <Mail size={14} aria-hidden="true" />
+              <span>support@smarthealth.vn</span>
+            </div>
           </div>
         </div>
       </div>

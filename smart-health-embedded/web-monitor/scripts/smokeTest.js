@@ -72,6 +72,14 @@ async function patchJson(url, headers = {}) {
   });
 }
 
+async function patchJsonBody(url, body, headers = {}) {
+  return fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
 async function testDemoAuth() {
   const port = "3410";
   await withServer(
@@ -116,6 +124,161 @@ async function testProductionLocksDemoAuth() {
       });
       assert.equal(response.status, 403);
     }
+  );
+}
+
+async function testWorkspaceOwnerApprovalLifecycle() {
+  const port = "3416";
+  const suffix = Date.now();
+  await withServer(
+    {
+      PORT: port,
+      AUDIO_UDP_PORT: "3417",
+      DATA_BACKEND: "json",
+      DATA_DIR: `.test-data/smoke-workspace-owner-${suffix}`,
+      AUTH_MODE: "demo",
+      FIREBASE_AUTH_ENABLED: "false",
+    },
+    async () => {
+      const adminResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/register`, {
+        role: "admin",
+        name: "Workspace Lifecycle Admin",
+        email: `workspace-admin-${suffix}@smarthealth.test`,
+        password: "12345678",
+      });
+      assert.equal(adminResponse.status, 201);
+      const admin = await adminResponse.json();
+      const adminHeaders = { Authorization: `Bearer ${admin.token}` };
+
+      const ownerResponse = await postJson(`http://127.0.0.1:${port}/api/v1/auth/register`, {
+        role: "patient",
+        name: "Workspace Owner",
+        email: `workspace-owner-${suffix}@smarthealth.test`,
+        password: "12345678",
+      });
+      assert.equal(ownerResponse.status, 201);
+      const owner = await ownerResponse.json();
+      const ownerHeaders = { Authorization: `Bearer ${owner.token}` };
+
+      const firstRequestResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/workspace-request`,
+        {
+          name: "Smoke Heart Clinic",
+          workspaceType: "clinic",
+          address: "1 Smoke Street",
+          phone: "0909000000",
+          email: `clinic-${suffix}@smarthealth.test`,
+          representative: "Workspace Owner",
+          legalName: "MST-SMOKE-001",
+        },
+        ownerHeaders,
+      );
+      assert.equal(firstRequestResponse.status, 201);
+      const firstRequest = await firstRequestResponse.json();
+      assert.equal(firstRequest.workspace.status, "pending");
+      assert.equal(firstRequest.workspace.legalName, "MST-SMOKE-001");
+      assert.equal(firstRequest.user.requestedRole, "workspace_owner");
+      assert.equal(firstRequest.user.roleRequestStatus, "pending");
+      assert.equal(firstRequest.user.role, "patient");
+      assert.equal(firstRequest.user.allowedSurfaces.includes("portal"), false);
+
+      const workspaceId = firstRequest.workspace.id;
+      const infoResponse = await patchJsonBody(
+        `http://127.0.0.1:${port}/api/v1/admin/clinics/${encodeURIComponent(workspaceId)}`,
+        {
+          status: "needs_info",
+          message: "Please add legal address and representative details.",
+          requiredFields: ["workspaceName", "address", "representative", "phone"],
+        },
+        adminHeaders,
+      );
+      assert.equal(infoResponse.status, 200);
+      const info = await infoResponse.json();
+      assert.equal(info.workspace.status, "needs_info");
+
+      const infoPoll = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, ownerHeaders);
+      assert.equal(infoPoll.response.status, 200);
+      assert.equal(infoPoll.data.user.roleRequestStatus, "needs_info");
+      assert.deepEqual(infoPoll.data.user.roleInfoRequiredFields, [
+        "workspaceName",
+        "address",
+        "representative",
+        "phone",
+      ]);
+      assert.equal(infoPoll.data.user.allowedSurfaces.includes("portal"), false);
+
+      const resubmitResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/workspace-request`,
+        {
+          name: "Smoke Heart Clinic Updated",
+          workspaceType: "clinic",
+          address: "2 Smoke Street",
+          phone: "0911000000",
+          email: `clinic-updated-${suffix}@smarthealth.test`,
+          representative: "Workspace Owner Updated",
+          legalName: "MST-SMOKE-UPDATED",
+          metadata: { resubmissionReason: "Updated workspace proof" },
+        },
+        ownerHeaders,
+      );
+      assert.equal(resubmitResponse.status, 201);
+      const resubmit = await resubmitResponse.json();
+      assert.equal(resubmit.workspace.id, workspaceId);
+      assert.equal(resubmit.workspace.status, "pending");
+      assert.equal(resubmit.workspace.legalName, "MST-SMOKE-UPDATED");
+      assert.equal(resubmit.user.roleRequestStatus, "pending");
+      assert.deepEqual(resubmit.user.roleInfoRequiredFields, []);
+
+      const rejectResponse = await patchJsonBody(
+        `http://127.0.0.1:${port}/api/v1/admin/clinics/${encodeURIComponent(workspaceId)}`,
+        { status: "rejected", reason: "Legal entity could not be verified." },
+        adminHeaders,
+      );
+      assert.equal(rejectResponse.status, 200);
+      const rejectPoll = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, ownerHeaders);
+      assert.equal(rejectPoll.response.status, 200);
+      assert.equal(rejectPoll.data.user.role, "patient");
+      assert.equal(rejectPoll.data.user.roleRequestStatus, "rejected");
+      assert.equal(rejectPoll.data.user.roleRejectReason, "Legal entity could not be verified.");
+      assert.equal(rejectPoll.data.user.allowedSurfaces.includes("portal"), false);
+
+      const secondResubmitResponse = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/workspace-request`,
+        {
+          name: "Smoke Heart Clinic Final",
+          workspaceType: "clinic",
+          address: "3 Smoke Street",
+          phone: "0922000000",
+          email: `clinic-final-${suffix}@smarthealth.test`,
+          representative: "Workspace Owner Final",
+          legalName: "MST-SMOKE-FINAL",
+        },
+        ownerHeaders,
+      );
+      assert.equal(secondResubmitResponse.status, 201);
+      const secondResubmit = await secondResubmitResponse.json();
+      assert.equal(secondResubmit.workspace.id, workspaceId);
+      assert.equal(secondResubmit.workspace.status, "pending");
+      assert.equal(secondResubmit.user.roleRequestStatus, "pending");
+
+      const approveResponse = await patchJsonBody(
+        `http://127.0.0.1:${port}/api/v1/admin/clinics/${encodeURIComponent(workspaceId)}`,
+        { status: "active" },
+        adminHeaders,
+      );
+      assert.equal(approveResponse.status, 200);
+      const approved = await approveResponse.json();
+      assert.equal(approved.workspace.status, "active");
+
+      const approvedPoll = await getJson(`http://127.0.0.1:${port}/api/v1/auth/firebase`, ownerHeaders);
+      assert.equal(approvedPoll.response.status, 200);
+      assert.equal(approvedPoll.data.user.role, "workspace_owner");
+      assert.equal(approvedPoll.data.user.requestedRole, "workspace_owner");
+      assert.equal(approvedPoll.data.user.roleRequestStatus, "approved");
+      assert.equal(approvedPoll.data.user.organizationId, workspaceId);
+      assert.equal(approvedPoll.data.user.defaultSurface, "portal");
+      assert.equal(approvedPoll.data.user.allowedSurfaces.includes("portal"), true);
+    },
   );
 }
 
@@ -386,6 +549,7 @@ async function testDoctorRequestNeedsInfoResubmit() {
 async function main() {
   await testDemoAuth();
   await testProductionLocksDemoAuth();
+  await testWorkspaceOwnerApprovalLifecycle();
   await testDoctorRequestNeedsInfoResubmit();
   console.log("backend smoke tests passed");
 }

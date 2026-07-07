@@ -13,6 +13,7 @@ export default defineConfig({
     build: {
       outDir: "dist-firebase",
       emptyOutDir: true,
+      chunkSizeWarningLimit: 1200,
     },
   },
 });

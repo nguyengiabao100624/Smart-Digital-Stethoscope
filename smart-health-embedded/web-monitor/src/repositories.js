@@ -117,6 +117,17 @@ function rowToUser(row) {
 
 function rowToNotification(row) {
   if (!row) return null;
+  let pushAttempts = [];
+  if (Array.isArray(row.push_attempts)) {
+    pushAttempts = row.push_attempts;
+  } else if (typeof row.push_attempts === "string") {
+    try {
+      const parsed = JSON.parse(row.push_attempts || "[]");
+      pushAttempts = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      pushAttempts = [];
+    }
+  }
   return {
     id: row.id,
     userId: row.user_id || "",
@@ -130,6 +141,11 @@ function rowToNotification(row) {
     failedAt: toIso(row.failed_at),
     retryCount: row.retry_count || 0,
     errorMessage: row.error_message || "",
+    pushStatus: row.push_status || "ready",
+    pushSentAt: toIso(row.push_sent_at),
+    pushFailedAt: toIso(row.push_failed_at),
+    pushErrorMessage: row.push_error_message || "",
+    pushAttempts,
     read: Boolean(row.read_at),
     readAt: toIso(row.read_at),
     createdAt: toIso(row.created_at),
@@ -469,8 +485,11 @@ function createRepositories(options) {
     await withSql((pool) =>
       pool.query(
         `
-          INSERT INTO notifications (id, user_id, organization_id, type, title, message, channel, delivery_status, read_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+          INSERT INTO notifications (
+            id, user_id, organization_id, type, title, message, channel, delivery_status,
+            push_status, push_sent_at, push_failed_at, push_error_message, push_attempts, read_at, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz, $12, $13::jsonb, $14, now())
           ON CONFLICT (id)
           DO UPDATE SET
             user_id = EXCLUDED.user_id,
@@ -480,6 +499,11 @@ function createRepositories(options) {
             message = EXCLUDED.message,
             channel = EXCLUDED.channel,
             delivery_status = EXCLUDED.delivery_status,
+            push_status = EXCLUDED.push_status,
+            push_sent_at = EXCLUDED.push_sent_at,
+            push_failed_at = EXCLUDED.push_failed_at,
+            push_error_message = EXCLUDED.push_error_message,
+            push_attempts = EXCLUDED.push_attempts,
             read_at = EXCLUDED.read_at,
             updated_at = now()
         `,
@@ -492,6 +516,11 @@ function createRepositories(options) {
           notification.message || "",
           notification.channel || "in_app",
           notification.deliveryStatus || "ready",
+          notification.pushStatus || "ready",
+          optionalTimestamp(notification.pushSentAt),
+          optionalTimestamp(notification.pushFailedAt),
+          optional(notification.pushErrorMessage || ""),
+          JSON.stringify(Array.isArray(notification.pushAttempts) ? notification.pushAttempts : []),
           notification.read || notification.readAt ? notification.readAt || nowIso() : null,
         ]
       )
@@ -1117,6 +1146,11 @@ function createRepositories(options) {
         message: input.message || "",
         channel: input.channel || "in_app",
         deliveryStatus: input.deliveryStatus || "ready",
+        pushStatus: input.pushStatus || "ready",
+        pushSentAt: input.pushSentAt || "",
+        pushFailedAt: input.pushFailedAt || "",
+        pushErrorMessage: input.pushErrorMessage || "",
+        pushAttempts: Array.isArray(input.pushAttempts) ? input.pushAttempts : [],
         read: Boolean(input.read),
         readAt: input.readAt || "",
         createdAt: input.createdAt || nowIso(),
@@ -1417,6 +1451,38 @@ function createRepositories(options) {
       await upsertNotificationDeviceSql(item);
       await saveDb();
       return item;
+    },
+
+    async listForUser(userId) {
+      const id = String(userId || "");
+      if (!id) return [];
+      const sqlDevices = await withSql(async (pool) => {
+        const result = await pool.query(
+          "SELECT * FROM notification_devices WHERE user_id = $1 AND enabled = true ORDER BY updated_at DESC",
+          [id]
+        );
+        return result.rows.map(rowToNotificationDevice);
+      });
+      if (sqlDevices) {
+        for (const device of sqlDevices) {
+          syncArrayItem(getDb().notificationDevices, device);
+        }
+        return sqlDevices;
+      }
+      return getDb().notificationDevices.filter((item) => item.userId === id && item.enabled !== false);
+    },
+
+    async disableToken(userId, fcmToken) {
+      const id = String(userId || "");
+      const token = String(fcmToken || "");
+      if (!id || !token) return null;
+      const device = getDb().notificationDevices.find((item) => item.userId === id && item.fcmToken === token);
+      if (!device) return null;
+      device.enabled = false;
+      device.updatedAt = nowIso();
+      await upsertNotificationDeviceSql(device);
+      await saveDb();
+      return device;
     },
   };
 

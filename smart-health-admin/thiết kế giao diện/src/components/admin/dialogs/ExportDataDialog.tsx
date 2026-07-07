@@ -1,13 +1,8 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Database, Download, Calendar, Users, Building2, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
-import {
-  exportCSV,
-  exportExcel,
-  buildFilename,
-  type ExportContext,
-} from "@/lib/export-utils";
+import { exportCSV, exportExcel, buildFilename, type ExportContext } from "@/lib/export-utils";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import {
   DATA_LABELS,
@@ -69,7 +64,9 @@ export function ExportDataDialog({ open, onOpenChange }: ExportDataDialogProps) 
       }
 
       const sheetMap = await buildLiveExportSheets(keys);
-      const sheets = keys.map((key) => sheetMap[key]).filter((sheet): sheet is NonNullable<typeof sheet> => Boolean(sheet));
+      const sheets = keys
+        .map((key) => sheetMap[key])
+        .filter((sheet): sheet is NonNullable<typeof sheet> => Boolean(sheet));
       const ctx: ExportContext = {
         title: "Xuất dữ liệu hệ thống",
         period,
@@ -87,7 +84,7 @@ export function ExportDataDialog({ open, onOpenChange }: ExportDataDialogProps) 
           exportCSV(buildFilename(`Du-Lieu-${s.name.replace(/\s+/g, "")}`, period, "csv"), ctx, s),
         );
       } else if (formData.format === "excel") {
-        exportExcel(buildFilename("Du-Lieu-HeThong", period, "xlsx"), ctx, sheets);
+        await exportExcel(buildFilename("Du-Lieu-HeThong", period, "xlsx"), ctx, sheets);
       } else if (formData.format === "json") {
         const json = {
           _meta: { ...ctx, exportedAt: new Date().toISOString() },
@@ -162,7 +159,7 @@ export function ExportDataDialog({ open, onOpenChange }: ExportDataDialogProps) 
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleExport} className="p-6 space-y-4">
+          <form method="post" onSubmit={handleExport} className="p-6 space-y-4">
             <div>
               <label className="text-sm font-medium text-foreground block mb-3">
                 Chọn dữ liệu cần xuất <span className="text-destructive">*</span>

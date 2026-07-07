@@ -39,6 +39,4 @@ export const NOTIFICATION_MANAGE_CAPABILITIES = [
   "workspace.settings.manage",
 ] as const;
 
-export const DOCTOR_REQUEST_MANAGE_CAPABILITIES = [
-  "platform.doctorRequests.manage",
-] as const;
+export const DOCTOR_REQUEST_MANAGE_CAPABILITIES = ["platform.doctorRequests.manage"] as const;

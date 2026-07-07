@@ -14,7 +14,8 @@ import {
   Code2,
 } from "lucide-react";
 import { PageHeader } from "./design-system";
-import { ADMIN_TABLE_PAGE_SIZE, PaginationFooter, paginateItems } from "./PaginationFooter";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
 import { smartHealthApi, type SmartHealthAccessLog } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 
@@ -149,7 +150,8 @@ export function AuditLog() {
 
       {backendError && (
         <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          Chưa tải được audit log từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị sai: {backendError}
+          Chưa tải được audit log từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị sai:{" "}
+          {backendError}
         </div>
       )}
 

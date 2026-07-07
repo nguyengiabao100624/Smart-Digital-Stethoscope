@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { IS_PORTAL_SURFACE, WEB_SURFACE_DESCRIPTION, WEB_SURFACE_TITLE } from "@/lib/surface";
 
 import appCss from "../styles.css?url";
 
@@ -10,7 +11,8 @@ function NotFoundComponent() {
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold text-foreground">Không tìm thấy trang</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Đường dẫn này không tồn tại hoặc đã được di chuyển trong cổng quản trị.
+          Đường dẫn này không tồn tại hoặc đã được di chuyển trong{" "}
+          {IS_PORTAL_SURFACE ? "Shcare Web Portal" : "cổng quản trị"}.
         </p>
         <div className="mt-6">
           <Link
@@ -30,13 +32,13 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Smart Health Admin" },
-      { name: "description", content: "Cổng quản trị hệ thống Edge AI Smart Digital Stethoscope" },
+      { title: WEB_SURFACE_TITLE },
+      { name: "description", content: WEB_SURFACE_DESCRIPTION },
       { name: "author", content: "Smart Health" },
-      { property: "og:title", content: "Smart Health Admin" },
+      { property: "og:title", content: WEB_SURFACE_TITLE },
       {
         property: "og:description",
-        content: "Dashboard quản trị phòng khám, bác sĩ, bệnh nhân, thiết bị và AI",
+        content: WEB_SURFACE_DESCRIPTION,
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

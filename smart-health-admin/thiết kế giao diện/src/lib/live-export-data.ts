@@ -78,7 +78,9 @@ function statusLabel(value?: string) {
 
 export async function buildLiveExportSheets(keys: DataKey[]) {
   const uniqueKeys = Array.from(new Set(keys));
-  const entries = await Promise.all(uniqueKeys.map(async (key) => [key, await buildSheet(key)] as const));
+  const entries = await Promise.all(
+    uniqueKeys.map(async (key) => [key, await buildSheet(key)] as const),
+  );
   return Object.fromEntries(entries) as Partial<Record<DataKey, ExportSheet>>;
 }
 
@@ -88,7 +90,15 @@ async function buildSheet(key: DataKey): Promise<ExportSheet> {
       const { scans } = await smartHealthApi.listScans({ limit: 500 });
       return {
         name: DATA_LABELS.measurements,
-        headers: ["Scan ID", "Bệnh nhân", "Thiết bị", "Vùng nghe", "Trạng thái", "Độ tin cậy", "Thời gian"],
+        headers: [
+          "Scan ID",
+          "Bệnh nhân",
+          "Thiết bị",
+          "Vùng nghe",
+          "Trạng thái",
+          "Độ tin cậy",
+          "Thời gian",
+        ],
         rows: scans.map((scan) => [
           scan.id,
           scan.patient?.name || scan.patientId || "--",
@@ -105,7 +115,16 @@ async function buildSheet(key: DataKey): Promise<ExportSheet> {
       const { patients } = await smartHealthApi.listPatients();
       return {
         name: DATA_LABELS.patients,
-        headers: ["Mã bệnh nhân", "Họ tên", "Giới tính", "Tuổi", "Số điện thoại", "Phòng khám", "Lượt đo", "Lần đo gần nhất"],
+        headers: [
+          "Mã bệnh nhân",
+          "Họ tên",
+          "Giới tính",
+          "Tuổi",
+          "Số điện thoại",
+          "Phòng khám",
+          "Lượt đo",
+          "Lần đo gần nhất",
+        ],
         rows: patients.map((patient) => [
           patient.patientCode || patient.id,
           text(patient.name),
@@ -123,7 +142,16 @@ async function buildSheet(key: DataKey): Promise<ExportSheet> {
       const { doctors } = await smartHealthApi.listApprovedDoctors();
       return {
         name: DATA_LABELS.doctors,
-        headers: ["UID", "Họ tên", "Email", "Số điện thoại", "Chuyên khoa", "Phòng khám", "Trạng thái", "Ngày duyệt"],
+        headers: [
+          "UID",
+          "Họ tên",
+          "Email",
+          "Số điện thoại",
+          "Chuyên khoa",
+          "Phòng khám",
+          "Trạng thái",
+          "Ngày duyệt",
+        ],
         rows: doctors.map((doctor) => [
           doctor.firebaseUid || doctor.id,
           doctor.name || doctor.email || "--",
@@ -141,7 +169,16 @@ async function buildSheet(key: DataKey): Promise<ExportSheet> {
       const { clinics } = await smartHealthApi.listClinics();
       return {
         name: DATA_LABELS.clinics,
-        headers: ["Mã phòng khám", "Tên phòng khám", "Loại", "Địa chỉ", "Số bác sĩ", "Số bệnh nhân", "Số thiết bị", "Trạng thái"],
+        headers: [
+          "Mã phòng khám",
+          "Tên phòng khám",
+          "Loại",
+          "Địa chỉ",
+          "Số bác sĩ",
+          "Số bệnh nhân",
+          "Số thiết bị",
+          "Trạng thái",
+        ],
         rows: clinics.map((clinic) => [
           clinic.id,
           clinic.name,
@@ -159,7 +196,16 @@ async function buildSheet(key: DataKey): Promise<ExportSheet> {
       const { devices } = await smartHealthApi.listDevices();
       return {
         name: DATA_LABELS.devices,
-        headers: ["Device ID", "Tên thiết bị", "Phòng khám", "Người dùng", "Kết nối", "Pin", "Trạng thái", "Heartbeat cuối"],
+        headers: [
+          "Device ID",
+          "Tên thiết bị",
+          "Phòng khám",
+          "Người dùng",
+          "Kết nối",
+          "Pin",
+          "Trạng thái",
+          "Heartbeat cuối",
+        ],
         rows: devices.map((device) => [
           device.id,
           text(device.name, "Ống nghe Smart Health"),
@@ -183,8 +229,14 @@ export function buildLiveKpis(key: DataKey, sheet: ExportSheet) {
     case "measurements":
       return [
         { label: "Tổng lượt đo", value: count.toLocaleString("vi-VN") },
-        { label: "Hoàn tất", value: String(rows.filter((row) => String(row[4]).includes("Hoạt động")).length) },
-        { label: "Thất bại", value: String(rows.filter((row) => String(row[4]).includes("Thất bại")).length) },
+        {
+          label: "Hoàn tất",
+          value: String(rows.filter((row) => String(row[4]).includes("Hoạt động")).length),
+        },
+        {
+          label: "Thất bại",
+          value: String(rows.filter((row) => String(row[4]).includes("Thất bại")).length),
+        },
         { label: "Thiết bị", value: String(new Set(rows.map((row) => row[2])).size) },
       ];
     case "patients":
@@ -197,22 +249,47 @@ export function buildLiveKpis(key: DataKey, sheet: ExportSheet) {
     case "doctors":
       return [
         { label: "Tổng bác sĩ", value: count.toLocaleString("vi-VN") },
-        { label: "Đã duyệt", value: String(rows.filter((row) => String(row[6]).includes("Hoạt động")).length) },
-        { label: "Chưa có chuyên khoa", value: String(rows.filter((row) => String(row[4]).includes("Chưa")).length) },
+        {
+          label: "Đã duyệt",
+          value: String(rows.filter((row) => String(row[6]).includes("Hoạt động")).length),
+        },
+        {
+          label: "Chưa có chuyên khoa",
+          value: String(rows.filter((row) => String(row[4]).includes("Chưa")).length),
+        },
         { label: "Dữ liệu", value: "Backend" },
       ];
     case "clinics":
       return [
         { label: "Tổng phòng khám", value: count.toLocaleString("vi-VN") },
-        { label: "Bác sĩ", value: rows.reduce((sum, row) => sum + Number(row[4] || 0), 0).toLocaleString("vi-VN") },
-        { label: "Bệnh nhân", value: rows.reduce((sum, row) => sum + Number(row[5] || 0), 0).toLocaleString("vi-VN") },
-        { label: "Thiết bị", value: rows.reduce((sum, row) => sum + Number(row[6] || 0), 0).toLocaleString("vi-VN") },
+        {
+          label: "Bác sĩ",
+          value: rows.reduce((sum, row) => sum + Number(row[4] || 0), 0).toLocaleString("vi-VN"),
+        },
+        {
+          label: "Bệnh nhân",
+          value: rows.reduce((sum, row) => sum + Number(row[5] || 0), 0).toLocaleString("vi-VN"),
+        },
+        {
+          label: "Thiết bị",
+          value: rows.reduce((sum, row) => sum + Number(row[6] || 0), 0).toLocaleString("vi-VN"),
+        },
       ];
     case "devices":
       return [
         { label: "Tổng thiết bị", value: count.toLocaleString("vi-VN") },
-        { label: "Đang hoạt động", value: String(rows.filter((row) => String(row[6]).includes("Đang")).length) },
-        { label: "Mất kết nối", value: String(rows.filter((row) => String(row[6]).includes("offline") || String(row[6]).includes("Offline")).length) },
+        {
+          label: "Đang hoạt động",
+          value: String(rows.filter((row) => String(row[6]).includes("Đang")).length),
+        },
+        {
+          label: "Mất kết nối",
+          value: String(
+            rows.filter(
+              (row) => String(row[6]).includes("offline") || String(row[6]).includes("Offline"),
+            ).length,
+          ),
+        },
         { label: "Phòng khám", value: String(new Set(rows.map((row) => row[2])).size) },
       ];
   }

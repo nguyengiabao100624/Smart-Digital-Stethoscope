@@ -2,6 +2,9 @@ import tailwindcss from "@tailwindcss/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { loadProductionEnv } from "./scripts/production-env.js";
+
+loadProductionEnv();
 
 export default defineConfig({
   server: {

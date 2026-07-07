@@ -33,7 +33,8 @@ import {
   type SmartHealthStorageFile,
 } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import { DEVICE_MANAGE_CAPABILITIES } from "./action-permissions";
 
 type DangerKind = "revoke" | "unpair" | "delete" | "restart";
@@ -84,7 +85,11 @@ function formatBattery(value?: number) {
 }
 
 function deviceSuffix(device: SmartHealthDevice) {
-  return String(device.id || "xxxxxx").replace(/[^a-zA-Z0-9]/g, "").slice(-6) || "xxxxxx";
+  return (
+    String(device.id || "xxxxxx")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(-6) || "xxxxxx"
+  );
 }
 
 function eventTone(eventType: string): "success" | "warning" | "error" | "primary" | "muted" {
@@ -110,7 +115,12 @@ export function Devices() {
   const [dangerLoading, setDangerLoading] = useState(false);
   const [dangerError, setDangerError] = useState("");
   const [actionLoading, setActionLoading] = useState("");
-  const [otaForm, setOtaForm] = useState({ firmwareVersion: "", url: "", checksum: "", firmwareFileId: "" });
+  const [otaForm, setOtaForm] = useState({
+    firmwareVersion: "",
+    url: "",
+    checksum: "",
+    firmwareFileId: "",
+  });
   const [firmwareFiles, setFirmwareFiles] = useState<SmartHealthStorageFile[]>([]);
   const [firmwareLoading, setFirmwareLoading] = useState(false);
   const [firmwareError, setFirmwareError] = useState("");
@@ -148,7 +158,9 @@ export function Devices() {
       setFirmwareFiles(
         (result.files || [])
           .filter((file) => file.bucket === "device-firmware" && file.type?.toLowerCase() === "bin")
-          .sort((a, b) => String(b.createdAt || b.uploadedAt).localeCompare(String(a.createdAt || a.uploadedAt))),
+          .sort((a, b) =>
+            String(b.createdAt || b.uploadedAt).localeCompare(String(a.createdAt || a.uploadedAt)),
+          ),
       );
       setFirmwareError("");
     } catch (error) {
@@ -349,7 +361,11 @@ export function Devices() {
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <div className="text-xs font-medium uppercase text-muted-foreground">OTA đang chờ</div>
           <div className="mt-2 text-2xl font-bold text-warning">
-            {devices.filter((device) => ["pending", "queued", "sent"].includes(String(device.otaStatus))).length}
+            {
+              devices.filter((device) =>
+                ["pending", "queued", "sent"].includes(String(device.otaStatus)),
+              ).length
+            }
           </div>
         </div>
       </div>
@@ -407,7 +423,9 @@ export function Devices() {
                         <MonitorSpeaker className="h-4 w-4 text-primary" />
                         {device.name || "Ống nghe Smart Health"}
                       </div>
-                      <div className="mt-0.5 font-mono text-xs text-muted-foreground">{device.id}</div>
+                      <div className="mt-0.5 font-mono text-xs text-muted-foreground">
+                        {device.id}
+                      </div>
                     </td>
                     <td className="px-5 py-4 text-muted-foreground">
                       {device.organizationId || "Chưa gán workspace"}
@@ -511,7 +529,9 @@ export function Devices() {
                       <Stethoscope className="h-5 w-5 text-primary" />
                       {selectedDevice.name || "Ống nghe Smart Health"}
                     </h2>
-                    <div className="mt-1 font-mono text-xs text-muted-foreground">{selectedDevice.id}</div>
+                    <div className="mt-1 font-mono text-xs text-muted-foreground">
+                      {selectedDevice.id}
+                    </div>
                   </div>
                   <button
                     onClick={() => setSelectedDevice(null)}
@@ -544,19 +564,27 @@ export function Devices() {
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <div className="text-xs text-muted-foreground">Heartbeat cuối</div>
-                        <div className="font-medium">{formatDateTime(selectedDevice.lastSeenAt)}</div>
+                        <div className="font-medium">
+                          {formatDateTime(selectedDevice.lastSeenAt)}
+                        </div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Realtime audio</div>
-                        <div className="font-medium">{selectedDevice.audioStatus || "Chưa báo cáo"}</div>
+                        <div className="font-medium">
+                          {selectedDevice.audioStatus || "Chưa báo cáo"}
+                        </div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">WiFi</div>
-                        <div className="font-medium">{selectedDevice.wifiSsid || "Chưa báo cáo"}</div>
+                        <div className="font-medium">
+                          {selectedDevice.wifiSsid || "Chưa báo cáo"}
+                        </div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">IP thiết bị</div>
-                        <div className="font-medium">{selectedDevice.ipAddress || "Chưa báo cáo"}</div>
+                        <div className="font-medium">
+                          {selectedDevice.ipAddress || "Chưa báo cáo"}
+                        </div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Firmware</div>
@@ -568,7 +596,9 @@ export function Devices() {
                         <div className="text-xs text-muted-foreground">Lệnh cuối</div>
                         <div className="font-medium">
                           {selectedDevice.lastCommand?.type || "Chưa có lệnh"}
-                          {selectedDevice.lastCommand?.status ? ` / ${selectedDevice.lastCommand.status}` : ""}
+                          {selectedDevice.lastCommand?.status
+                            ? ` / ${selectedDevice.lastCommand.status}`
+                            : ""}
                         </div>
                       </div>
                     </div>
@@ -585,9 +615,9 @@ export function Devices() {
                         SmartHealth-{deviceSuffix(selectedDevice)}
                       </span>
                       . Người dùng kết nối AP đó, mở{" "}
-                      <span className="font-mono text-foreground">http://192.168.4.1</span> và chỉ nhập
-                      SSID/password WiFi mới. Trang local không cho đổi OTA, backend host, secret hay quyền
-                      quản trị.
+                      <span className="font-mono text-foreground">http://192.168.4.1</span> và chỉ
+                      nhập SSID/password WiFi mới. Trang local không cho đổi OTA, backend host,
+                      secret hay quyền quản trị.
                     </p>
                   </div>
 
@@ -623,7 +653,9 @@ export function Devices() {
                             disabled={firmwareLoading}
                             className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
                           >
-                            <RefreshCw className={`h-4 w-4 ${firmwareLoading ? "animate-spin" : ""}`} />
+                            <RefreshCw
+                              className={`h-4 w-4 ${firmwareLoading ? "animate-spin" : ""}`}
+                            />
                           </button>
                         </div>
                         {firmwareError ? (
@@ -633,11 +665,13 @@ export function Devices() {
                         ) : null}
                         {otaForm.firmwareFileId ? (
                           <div className="rounded-md border border-success/20 bg-success/10 px-3 py-2 text-xs text-success">
-                            Backend sẽ tạo URL OTA có token riêng cho ESP tải firmware, không cần đăng nhập admin trên thiết bị.
+                            Backend sẽ tạo URL OTA có token riêng cho ESP tải firmware, không cần
+                            đăng nhập admin trên thiết bị.
                           </div>
                         ) : (
                           <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                            Chưa có file trong storage thì có thể nhập URL thủ công ở dưới. URL phải truy cập được từ ESP qua Internet.
+                            Chưa có file trong storage thì có thể nhập URL thủ công ở dưới. URL phải
+                            truy cập được từ ESP qua Internet.
                           </div>
                         )}
                         <input
@@ -673,7 +707,9 @@ export function Devices() {
                           className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <FileCode2 className="h-4 w-4" />
-                          {actionLoading === `ota-${selectedDevice.id}` ? "Đang gửi OTA..." : "Gửi OTA qua cloud"}
+                          {actionLoading === `ota-${selectedDevice.id}`
+                            ? "Đang gửi OTA..."
+                            : "Gửi OTA qua cloud"}
                         </button>
                       </div>
                     </div>

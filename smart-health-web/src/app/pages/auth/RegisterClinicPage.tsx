@@ -233,6 +233,7 @@ export default function RegisterClinicPage() {
       </div>
 
       <form
+        method="post"
         onSubmit={(event) => {
           event.preventDefault();
           void next();

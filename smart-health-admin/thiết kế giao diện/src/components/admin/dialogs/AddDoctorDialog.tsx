@@ -1,8 +1,12 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Building2, Calendar, Loader2, Mail, Phone, Stethoscope, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
-import { smartHealthApi, type SmartHealthClinic, type SmartHealthSpecialty } from "@/lib/smart-health-api";
+import {
+  smartHealthApi,
+  type SmartHealthClinic,
+  type SmartHealthSpecialty,
+} from "@/lib/smart-health-api";
 
 type DoctorFormData = {
   fullName: string;
@@ -103,7 +107,7 @@ export function AddDoctorDialog({ open, onOpenChange, onCreated }: AddDoctorDial
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 p-6">
+          <form method="post" onSubmit={handleSubmit} className="space-y-6 p-6">
             <section className="space-y-4">
               <h3 className="font-medium text-foreground">Thông tin cá nhân</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -194,7 +198,10 @@ export function AddDoctorDialog({ open, onOpenChange, onCreated }: AddDoctorDial
 
             <div className="flex gap-3 pt-4">
               <Dialog.Close asChild>
-                <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                >
                   Hủy
                 </button>
               </Dialog.Close>
@@ -234,7 +241,9 @@ function Field({
       </label>
       {icon ? (
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            {icon}
+          </span>
           {children}
         </div>
       ) : (

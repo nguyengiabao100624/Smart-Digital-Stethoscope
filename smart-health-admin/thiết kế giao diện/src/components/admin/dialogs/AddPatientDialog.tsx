@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Calendar, CreditCard, Loader2, Mail, MapPin, Phone, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -93,7 +93,9 @@ export function AddPatientDialog({ open, onOpenChange, onCreated }: AddPatientDi
                 <UserPlus className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <Dialog.Title className="font-semibold text-foreground">Thêm hồ sơ bệnh nhân</Dialog.Title>
+                <Dialog.Title className="font-semibold text-foreground">
+                  Thêm hồ sơ bệnh nhân
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Tạo hồ sơ bệnh nhân và lưu vào backend Smart Health.
                 </Dialog.Description>
@@ -104,7 +106,7 @@ export function AddPatientDialog({ open, onOpenChange, onCreated }: AddPatientDi
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 p-6">
+          <form method="post" onSubmit={handleSubmit} className="space-y-6 p-6">
             <section className="space-y-4">
               <h3 className="font-medium text-foreground">Thông tin cơ bản</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -154,7 +156,9 @@ export function AddPatientDialog({ open, onOpenChange, onCreated }: AddPatientDi
                   >
                     <option value="">Chọn nhóm máu</option>
                     {["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map((item) => (
-                      <option key={item} value={item}>{item}</option>
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -183,7 +187,11 @@ export function AddPatientDialog({ open, onOpenChange, onCreated }: AddPatientDi
                     className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
-                <Field label="Địa chỉ" className="sm:col-span-2" icon={<MapPin className="h-4 w-4" />}>
+                <Field
+                  label="Địa chỉ"
+                  className="sm:col-span-2"
+                  icon={<MapPin className="h-4 w-4" />}
+                >
                   <textarea
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -207,7 +215,10 @@ export function AddPatientDialog({ open, onOpenChange, onCreated }: AddPatientDi
 
             <div className="flex gap-3 pt-4">
               <Dialog.Close asChild>
-                <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                >
                   Hủy
                 </button>
               </Dialog.Close>

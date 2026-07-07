@@ -219,47 +219,55 @@ export function NotificationDetailDialog({ notification, open, onOpenChange }: P
                 {meta.action && (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const a = meta.action!;
                       if (a.download) {
-                        exportPDF(
-                          buildFilename("BaoCao-DoanhThu", "042026", "pdf"),
-                          {
-                            title: "Báo cáo doanh thu",
-                            period: "Tháng 04/2026",
-                            author: "Quản trị viên Smart Health",
-                            meta: {
-                              "Kỳ báo cáo": "Tháng 04/2026",
-                              "Tổng lượt đo": "12.845",
-                              "Phòng khám đối tác": "23",
-                            },
-                            kpis: [
-                              {
-                                label: "Doanh thu",
-                                value: "₫1.24 tỷ",
-                                hint: "+18% so với kỳ trước",
-                              },
-                              { label: "Lượt đo", value: "12.845" },
-                              { label: "Phòng khám", value: "23" },
-                              { label: "Bệnh nhân", value: "4.218" },
-                            ],
-                          },
-                          [
+                        try {
+                          await exportPDF(
+                            buildFilename("BaoCao-DoanhThu", "042026", "pdf"),
                             {
-                              name: "Chi tiết thông báo",
-                              headers: ["Trường", "Giá trị"],
-                              rows: [
-                                ["Tiêu đề", notification.title],
-                                ["Nội dung", notification.message],
-                                ["Loại sự kiện", getNotificationTypeLabel(notification.type)],
-                                ["Thời gian", notification.time],
-                                ["Trạng thái đọc", notification.isRead ? "Đã đọc" : "Chưa đọc"],
+                              title: "Báo cáo doanh thu",
+                              period: "Tháng 04/2026",
+                              author: "Quản trị viên Smart Health",
+                              meta: {
+                                "Kỳ báo cáo": "Tháng 04/2026",
+                                "Tổng lượt đo": "12.845",
+                                "Phòng khám đối tác": "23",
+                              },
+                              kpis: [
+                                {
+                                  label: "Doanh thu",
+                                  value: "₫1.24 tỷ",
+                                  hint: "+18% so với kỳ trước",
+                                },
+                                { label: "Lượt đo", value: "12.845" },
+                                { label: "Phòng khám", value: "23" },
+                                { label: "Bệnh nhân", value: "4.218" },
                               ],
-                              align: ["left", "left"],
                             },
-                          ],
-                        );
-                        toast.success("Đã tải báo cáo PDF");
+                            [
+                              {
+                                name: "Chi tiết thông báo",
+                                headers: ["Trường", "Giá trị"],
+                                rows: [
+                                  ["Tiêu đề", notification.title],
+                                  ["Nội dung", notification.message],
+                                  ["Loại sự kiện", getNotificationTypeLabel(notification.type)],
+                                  ["Thời gian", notification.time],
+                                  ["Trạng thái đọc", notification.isRead ? "Đã đọc" : "Chưa đọc"],
+                                ],
+                                align: ["left", "left"],
+                              },
+                            ],
+                          );
+                          toast.success("Đã tải báo cáo PDF");
+                        } catch (error) {
+                          toast.error("Không thể tải báo cáo PDF", {
+                            description:
+                              error instanceof Error ? error.message : "Vui lòng thử lại.",
+                          });
+                          return;
+                        }
                       } else if (a.to) {
                         navigate({ to: a.to });
                       }

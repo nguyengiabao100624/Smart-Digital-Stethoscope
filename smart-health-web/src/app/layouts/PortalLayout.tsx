@@ -60,11 +60,15 @@ const footerNav = [
 
 function isActive(pathname: string, target: string) {
   return (
-    pathname === target || (target !== "/portal/dashboard" && pathname.startsWith(`${target}/`))
+    pathname === target ||
+    (target !== "/portal/dashboard" && pathname.startsWith(`${target}/`))
   );
 }
 
-function pageTitle(pathname: string, items: Array<{ to: string; label: string }>) {
+function pageTitle(
+  pathname: string,
+  items: Array<{ to: string; label: string }>,
+) {
   const match = items.find((item) => isActive(pathname, item.to));
   if (match) return match.label;
   if (pathname.includes("/workspace")) return "Workspace";
@@ -101,7 +105,8 @@ export default function PortalLayout() {
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) setNotifOpen(false);
+      if (notifRef.current && !notifRef.current.contains(event.target as Node))
+        setNotifOpen(false);
       if (userRef.current && !userRef.current.contains(event.target as Node))
         setUserMenuOpen(false);
     };
@@ -126,7 +131,7 @@ export default function PortalLayout() {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!user) return <Navigate to="/login" replace />;
 
   if (
     user.allowedSurfaces.length > 0 &&
@@ -141,7 +146,9 @@ export default function PortalLayout() {
     user.capabilities.includes("workspace.staff.manage");
   const navigation = isClinic ? clinicNav : doctorNav;
   const notifications = notificationsQuery.data?.notifications || [];
-  const unread = notifications.filter((notification) => !notification.read).length;
+  const unread = notifications.filter(
+    (notification) => !notification.read,
+  ).length;
   const recentNotifications = notifications.slice(0, 4);
   const workspaceName = user.currentWorkspace.name;
   const roleLabel = isClinic ? "Quản lý cơ sở" : "Bác sĩ";
@@ -223,7 +230,9 @@ export default function PortalLayout() {
                   <Icon size={17} />
                   <span>{label}</span>
                   {badge && unread > 0 && (
-                    <span className="clinical-notification-count">{unread}</span>
+                    <span className="clinical-notification-count">
+                      {unread}
+                    </span>
                   )}
                 </Link>
               );
@@ -285,9 +294,12 @@ export default function PortalLayout() {
 
               <div ref={notifRef} className="relative">
                 <button
+                  id="portal-notifications-trigger"
                   type="button"
                   className="clinical-top-action"
-                  aria-label={unread > 0 ? `${unread} thông báo chưa đọc` : "Thông báo"}
+                  aria-label={
+                    unread > 0 ? `${unread} thông báo chưa đọc` : "Thông báo"
+                  }
                   aria-expanded={notifOpen}
                   onClick={() => {
                     setNotifOpen((open) => !open);
@@ -314,7 +326,9 @@ export default function PortalLayout() {
                       <header>
                         <strong>Thông báo gần đây</strong>
                         {unread > 0 && (
-                          <span className="clinical-notification-count">{unread}</span>
+                          <span className="clinical-notification-count">
+                            {unread}
+                          </span>
                         )}
                       </header>
                       {recentNotifications.length > 0 ? (
@@ -327,7 +341,9 @@ export default function PortalLayout() {
                             <p>{notification.title || "Thông báo workspace"}</p>
                             {notification.createdAt && (
                               <time>
-                                {new Date(notification.createdAt).toLocaleString("vi-VN")}
+                                {new Date(
+                                  notification.createdAt,
+                                ).toLocaleString("vi-VN")}
                               </time>
                             )}
                           </Link>
@@ -337,7 +353,10 @@ export default function PortalLayout() {
                           <p>Chưa có thông báo mới trong workspace.</p>
                         </div>
                       )}
-                      <Link className="clinical-popover-footer" to="/portal/notifications">
+                      <Link
+                        className="clinical-popover-footer"
+                        to="/portal/notifications"
+                      >
                         Xem tất cả thông báo
                       </Link>
                     </motion.div>
@@ -347,6 +366,7 @@ export default function PortalLayout() {
 
               <div ref={userRef} className="relative">
                 <button
+                  id="portal-user-menu-trigger"
                   type="button"
                   className="clinical-user-trigger"
                   aria-label="Mở menu tài khoản"
@@ -357,7 +377,9 @@ export default function PortalLayout() {
                   }}
                 >
                   <span className="clinical-user-avatar" aria-hidden="true">
-                    {user.name.charAt(user.name.lastIndexOf(" ") + 1) || <User size={16} />}
+                    {user.name.charAt(user.name.lastIndexOf(" ") + 1) || (
+                      <User size={16} />
+                    )}
                   </span>
                   <ChevronDown size={15} />
                 </button>
@@ -378,13 +400,23 @@ export default function PortalLayout() {
                         </span>
                       </header>
                       <div className="clinical-popover-menu">
-                        <Link className="clinical-popover-link" to="/portal/settings">
+                        <Link
+                          className="clinical-popover-link"
+                          to="/portal/settings"
+                        >
                           <Fingerprint size={16} /> Hồ sơ & bảo mật
                         </Link>
-                        <Link className="clinical-popover-link" to="/portal/audit">
+                        <Link
+                          className="clinical-popover-link"
+                          to="/portal/audit"
+                        >
                           <Shield size={16} /> Nhật ký audit
                         </Link>
-                        <button type="button" onClick={handleLogout}>
+                        <button
+                          id="portal-logout"
+                          type="button"
+                          onClick={handleLogout}
+                        >
                           <LogOut size={16} /> Đăng xuất
                         </button>
                       </div>

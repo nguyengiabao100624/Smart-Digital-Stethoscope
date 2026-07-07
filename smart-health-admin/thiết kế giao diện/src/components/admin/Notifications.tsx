@@ -29,7 +29,8 @@ import {
   getNotificationTypeLabel,
   NOTIFICATION_SYNC_EVENT,
 } from "@/lib/notification-events";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import { NOTIFICATION_MANAGE_CAPABILITIES } from "./action-permissions";
 
 function formatNotificationTime(value?: string | null) {
@@ -451,76 +452,76 @@ export function Notifications() {
           animate={{ opacity: 1, y: 0 }}
           className="rounded-xl border border-border bg-card p-5 shadow-sm"
         >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Tạo thông báo</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Gửi đến người nhận, phòng khám hoặc toàn hệ thống.
-            </p>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Tạo thông báo</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Gửi đến người nhận, phòng khám hoặc toàn hệ thống.
+              </p>
+            </div>
+            <StatusBadge label="Chờ gửi" tone="warning" />
           </div>
-          <StatusBadge label="Chờ gửi" tone="warning" />
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium">Tiêu đề</span>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-              placeholder="Ví dụ: Thiết bị mất kết nối"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium">Người nhận</span>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring">
-              <option>Phòng khám Đa khoa Tâm Anh</option>
-              <option>Tất cả admin phòng khám</option>
-              <option>Một bác sĩ cụ thể</option>
-            </select>
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium">Loại sự kiện</span>
-            <select
-              value={eventType}
-              onChange={(event) => setEventType(event.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-            >
-              <option value="info">{getNotificationTypeLabel("info")}</option>
-              <option value="warning">{getNotificationTypeLabel("warning")}</option>
-              <option value="success">{getNotificationTypeLabel("success")}</option>
-              <option value="error">{getNotificationTypeLabel("error")}</option>
-            </select>
-          </label>
-          <label className="space-y-1.5 md:col-span-3">
-            <span className="text-sm font-medium">Nội dung</span>
-            <textarea
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              className="min-h-[88px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-              placeholder="Nhập nội dung thông báo bằng tiếng Việt..."
-            />
-          </label>
-        </div>
-        <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
-              <Bell className="h-3.5 w-3.5" /> in-app
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2.5 py-1 text-secondary">
-              <Smartphone className="h-3.5 w-3.5" /> FCM
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
-              <Mail className="h-3.5 w-3.5" /> email
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
-              <Users className="h-3.5 w-3.5" /> nhóm người nhận
-            </span>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="space-y-1.5">
+              <span className="text-sm font-medium">Tiêu đề</span>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                placeholder="Ví dụ: Thiết bị mất kết nối"
+              />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-sm font-medium">Người nhận</span>
+              <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring">
+                <option>Phòng khám Đa khoa Tâm Anh</option>
+                <option>Tất cả admin phòng khám</option>
+                <option>Một bác sĩ cụ thể</option>
+              </select>
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-sm font-medium">Loại sự kiện</span>
+              <select
+                value={eventType}
+                onChange={(event) => setEventType(event.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+              >
+                <option value="info">{getNotificationTypeLabel("info")}</option>
+                <option value="warning">{getNotificationTypeLabel("warning")}</option>
+                <option value="success">{getNotificationTypeLabel("success")}</option>
+                <option value="error">{getNotificationTypeLabel("error")}</option>
+              </select>
+            </label>
+            <label className="space-y-1.5 md:col-span-3">
+              <span className="text-sm font-medium">Nội dung</span>
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                className="min-h-[88px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                placeholder="Nhập nội dung thông báo bằng tiếng Việt..."
+              />
+            </label>
           </div>
-          <button className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
-            <Send className="h-4 w-4" />
-            Tạo thông báo
-          </button>
-        </div>
+          <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+                <Bell className="h-3.5 w-3.5" /> in-app
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2.5 py-1 text-secondary">
+                <Smartphone className="h-3.5 w-3.5" /> FCM
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
+                <Mail className="h-3.5 w-3.5" /> email
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
+                <Users className="h-3.5 w-3.5" /> nhóm người nhận
+              </span>
+            </div>
+            <button className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
+              <Send className="h-4 w-4" />
+              Tạo thông báo
+            </button>
+          </div>
         </motion.form>
       </CapabilityGate>
 
@@ -591,7 +592,8 @@ export function Notifications() {
         title="Xóa tất cả thông báo"
         description={
           <span>
-            Bạn có chắc chắn muốn xóa toàn bộ {items.length} thông báo đang hiển thị? Hành động này không thể hoàn tác.
+            Bạn có chắc chắn muốn xóa toàn bộ {items.length} thông báo đang hiển thị? Hành động này
+            không thể hoàn tác.
           </span>
         }
         confirmLabel="Xóa tất cả"
@@ -603,6 +605,3 @@ export function Notifications() {
     </div>
   );
 }
-
-
-

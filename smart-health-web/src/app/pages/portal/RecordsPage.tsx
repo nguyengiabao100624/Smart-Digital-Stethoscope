@@ -34,6 +34,8 @@ export default function RecordsPage() {
         <div className="relative flex-1 min-w-60">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94b8d0]" />
           <input
+            id="portal-record-search"
+            name="portalRecordSearch"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="portal-input pl-10"
@@ -41,6 +43,8 @@ export default function RecordsPage() {
           />
         </div>
         <select
+          id="portal-record-status"
+          name="portalRecordStatus"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           className="portal-input max-w-52"

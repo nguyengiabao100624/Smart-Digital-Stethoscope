@@ -1,62 +1,255 @@
-# THE ULTIMATE FIGMA/AI PROMPT CHO ỨNG DỤNG SMART STETHOSCOPE
-*(Bạn hãy bôi đen toàn bộ nội dung tiếng Anh bên dưới để dán vào các công cụ tạo UI bằng AI trên Figma như: v0.dev, Relume, Uizard, Wireframe Designer, hoặc gửi trực tiếp cho Designer).*
+# PROMPT FIGMA ỨNG DỤNG ANDROID - SMART HEALTH STETHOSCOPE
+
+**[COPY PHẦN BÊN DƯỚI ĐỂ DÁN VÀO FIGMA AI / RELUME / UIZARD / DESIGN TOOL]**
+
+## Vai Trò & Mục Tiêu
+
+Hãy đóng vai một Senior UI/UX Designer chuyên về HealthTech, IoT medical device và ứng dụng y khoa đạt chuẩn FDA. Thiết kế giao diện Android cho hệ thống "Edge AI Smart Digital Stethoscope" dùng cho bác sĩ và bệnh nhân.
+
+Ứng dụng phải tạo cảm giác chuyên nghiệp, đáng tin cậy, hiện đại, phù hợp môi trường y tế. Không thiết kế như landing page; màn hình đầu tiên phải là trải nghiệm sử dụng thật của app.
+
+Ngôn ngữ hiển thị: tiếng Việt y khoa chuyên nghiệp, rõ ràng, dễ hiểu.
+
+## Design System Chung
+
+- Font: Inter.
+- Spacing: 8dp/16dp.
+- Primary Medical Blue: `#0B5C9A`.
+- Turquoise: `#00A896`.
+- Success/Emerald: `#10B981`.
+- Warning/Amber: `#F59E0B`.
+- Error/Medical Red: `#EF4444`.
+- Background: `#F5F7FA` hoặc `#F5F7FF`.
+- Card: `#FFFFFF`.
+- Border: `#E2E8F0`.
+- Text chính: `#0F172A`.
+- Text phụ: `#64748B`.
+- Live/Dark background: `#0F1419`.
+- Live/Dark card: `#1A202C`.
+- Live/Dark border: `#334155`.
+- Waveform: `#0EA5E9` hoặc `#00A896`.
+- Button/card/input radius: 12-16dp.
+- Icon style: line icon giống lucide/material, nét rõ, không dùng icon quá nặng.
+- Không dùng neon cyberpunk, glassmorphism, gradient orb, minh họa trang trí rườm rà.
+
+## Màn Hình Bắt Buộc
+
+### 1. Splash & Onboarding
+
+Mục tiêu: giới thiệu thương hiệu và định vị hệ thống ống nghe AI.
+
+Thành phần:
+
+- Logo ống nghe số kết hợp sóng âm/AI.
+- Tên: "Smart Health Stethoscope".
+- Badge nhỏ: "Powered by Edge AI".
+- Loading indicator mượt.
+- 2-3 màn onboarding ngắn:
+  - "Nghe tim phổi thời gian thực".
+  - "Phân tích AI hỗ trợ bác sĩ".
+  - "Quản lý hồ sơ và thiết bị an toàn".
+
+### 2. Đăng Nhập / Đăng Ký
+
+Mục tiêu: đăng nhập cho bác sĩ và bệnh nhân bằng Firebase Auth.
+
+Thành phần:
+
+- Toggle vai trò: "Bác sĩ" / "Bệnh nhân".
+- Email, mật khẩu.
+- Nút "Đăng nhập".
+- Link "Quên mật khẩu".
+- Link "Tạo tài khoản".
+- Form đăng ký bác sĩ có thêm:
+  - Họ tên.
+  - Cơ sở y tế.
+  - Số điện thoại.
+  - Email.
+  - Mật khẩu.
+  - Xác nhận mật khẩu.
+  - Checkbox đồng ý điều khoản.
+- Nếu bác sĩ đăng ký xong nhưng chưa được duyệt, hiển thị text tiếng Việt:
+  - "Tài khoản bác sĩ đang chờ quản trị viên phê duyệt."
+- Tất cả lỗi phải Việt hóa:
+  - "Email này đã được sử dụng bởi một tài khoản khác."
+  - "Email hoặc mật khẩu không đúng."
+  - "Mật khẩu phải có ít nhất 6 ký tự."
+
+### 3. Dashboard
+
+Mục tiêu: bác sĩ hoặc bệnh nhân xem nhanh trạng thái hệ thống.
+
+Thành phần:
+
+- Header chào người dùng, ví dụ: "Xin chào, BS. Nguyễn".
+- Notification bell.
+- Search bệnh nhân hoặc hồ sơ.
+- Card trạng thái thiết bị:
+  - Tên thiết bị: "Stetho-AI-Pro".
+  - Pin: "85%".
+  - Phương thức: "Bluetooth" hoặc "Quét mã QR".
+  - Dot xanh pulsing khi thiết bị đang hoạt động.
+- Quick actions:
+  - "Bắt đầu lượt đo".
+  - "Hồ sơ bệnh nhân".
+  - "Kết nối thiết bị".
+  - "Trợ lý AI".
+- Danh sách lượt đo gần đây:
+  - Thời gian.
+  - Bệnh nhân.
+  - Vùng nghe: tim/phổi.
+  - Trạng thái AI: bình thường/cần xem lại.
+
+### 4. Luồng Kết Nối & Quản Lý Thiết Bị
+
+#### 4.1 Bluetooth Radar Scan
+
+Mục tiêu: tìm thiết bị ống nghe gần đó.
+
+UI:
+
+- Nền sáng đồng bộ app.
+- Radar tròn ở giữa, vòng quét turquoise/blue.
+- Danh sách thiết bị tìm thấy.
+- Mỗi thiết bị có tên, RSSI, pin nếu có, trạng thái "Sẵn sàng ghép nối".
+- Khi đang quét: hiển thị "Đang quét thiết bị gần bạn...".
+
+Logic UI:
+
+- Sau timeout khoảng 2.5-3 giây nếu không có thiết bị, hiển thị empty state:
+  - "Chưa tìm thấy thiết bị nào."
+  - Nút "Quét lại" có icon Refresh.
+- Khi bấm "Quét lại":
+  - Clear danh sách thiết bị.
+  - Reset trạng thái `isScanning = true`.
+  - Chạy lại animation radar 2.5-3 giây.
+- Người dùng cũng có thể bấm "Quét lại" khi muốn làm mới danh sách.
+
+#### 4.2 Kết Nối Thành Công
+
+Mục tiêu: tránh cảm giác app nhảy thẳng về Dashboard sau khi kết nối xong.
+
+UI:
+
+- Chính giữa là vòng tròn Emerald `#10B981`.
+- Bên trong có icon check màu trắng.
+- Animation pop-up scale/spring mượt.
+- Text:
+  - "Kết nối thành công!"
+  - "Thiết bị [Tên_Thiết_Bị] đã sẵn sàng để sử dụng."
+- Nút primary ở cuối màn hình:
+  - "Đến Bảng điều khiển".
+
+Logic UI:
+
+- Tự động chuyển về Dashboard sau 2.5 giây.
+- Nếu người dùng bấm nút thì chuyển ngay lập tức.
+
+#### 4.3 Cài Đặt & Quản Lý Thiết Bị
+
+Mục tiêu: quản lý thiết bị đã kết nối và lịch sử ghép nối.
+
+Yêu cầu:
+
+- Không hiển thị toggle bật/tắt Bluetooth hệ thống.
+- Section trên cùng: "Thiết Bị Đang Kết Nối".
+- Card thiết bị hiện tại:
+  - Icon ống nghe.
+  - Tên: "Stetho-AI-Pro".
+  - Dot xanh pulsing + text "Đang hoạt động".
+  - Pin: "85%".
+  - Phương thức: "Quét mã QR" hoặc "Bluetooth".
+  - Nút "Ngắt kết nối" có background đỏ nhạt, text đỏ, icon Power.
+- Section bên dưới: "Lịch Sử Ghép Nối".
+- Danh sách thiết bị đã lưu.
+- Nút "+ Thêm thiết bị" mở lại luồng quét/kết nối.
+
+### 5. Live Monitoring
+
+Mục tiêu: màn hình chính khi nghe tim/phổi thời gian thực.
+
+UI:
+
+- Dark mode để waveform nổi bật.
+- Waveform realtime lớn ở giữa màn hình.
+- Chỉ số:
+  - BPM.
+  - Mức tín hiệu.
+  - Trạng thái AI.
+- Toggle chế độ:
+  - "Tim".
+  - "Phổi".
+  - "Raw".
+- Control dưới cùng:
+  - Record.
+  - Stop.
+  - Lưu lượt đo.
+- AI alert pill:
+  - Bình thường: xanh.
+  - Cần xem lại: cam/đỏ.
+  - Text ví dụ: "AI phát hiện âm bất thường, cần bác sĩ xác nhận."
+
+### 6. Hồ Sơ & Lịch Sử Lượt Đo
+
+Mục tiêu: quản lý dữ liệu y khoa của bệnh nhân.
+
+Thành phần:
+
+- Danh sách hồ sơ bệnh nhân.
+- Search/filter.
+- Tabs:
+  - "Gần đây".
+  - "Tim".
+  - "Phổi".
+  - "Bất thường".
+- Card lượt đo:
+  - Ngày giờ.
+  - Bệnh nhân.
+  - Thời lượng.
+  - Kết luận AI.
+  - Trạng thái xử lý: "Đang tải lên", "Đang xử lý", "Hoàn tất", "Thất bại".
+
+### 7. Chi Tiết Lượt Đo & Phát Lại
+
+Thành phần:
+
+- Waveform preview.
+- Audio playback:
+  - Play/pause.
+  - Timeline.
+  - Tua 10 giây.
+- Kết quả AI:
+  - Model version.
+  - Confidence.
+  - Nhãn kết quả.
+  - Ghi chú: "AI chỉ hỗ trợ tham khảo, bác sĩ chịu trách nhiệm kết luận cuối cùng."
+- Ghi chú bác sĩ.
+- Nút chia sẻ hồ sơ có kiểm soát quyền.
+
+### 8. Trợ Lý AI Y Khoa
+
+Mục tiêu: hỗ trợ bác sĩ đọc kết quả và giải thích dữ liệu.
+
+UI:
+
+- Chat interface sạch, chuyên nghiệp.
+- Bubble người dùng màu xanh.
+- Bubble AI nền trắng/xám nhạt.
+- Nút: "Đính kèm lượt đo gần nhất".
+- AI trả lời có cấu trúc:
+  - Tóm tắt.
+  - Dấu hiệu đáng chú ý.
+  - Khuyến nghị bác sĩ kiểm tra thêm.
+
+## Output Mong Muốn
+
+Tạo high-fidelity Android mobile mockup đầy đủ các màn hình trên. Thiết kế phải đồng bộ toàn hệ thống Smart Health: app bác sĩ, app bệnh nhân, web admin và màn hình phần cứng. Ưu tiên giao diện y khoa chuyên nghiệp, dễ đọc, thao tác nhanh, có thể đưa vào production.
+
+**[END MOBILE APP PROMPT]**
 
 ---
 
-**[COPY THE TEXT BELOW THIS LINE]**
+## Prompt Đã Tách Riêng
 
-**Role & Goal:**
-Act as a Senior UI/UX Designer specializing in Healthcare and IoT applications. Your task is to design a high-fidelity, professional, and visually stunning Android mobile application for a "Real-time Smart-Digital Stethoscope System powered by Edge AI". 
-
-**Design Concept & Aesthetics:**
-*   **Theme:** Medical, Clean, Trustworthy, Modern, and High-tech.
-*   **Color Palette:** Standard Healthcare Colors. 
-    *   Primary: Deep Medical Blue (#0B5C9A) or Turquoise Green (#00A896).
-    *   Secondary: Crisp White (#FFFFFF) and Light Gray (#F5F7FA) for background to ensure high readability.
-    *   Alerts (Edge AI): Warning Orange/Yellow for "Abnormalities detected" and Clean Green for "Normal".
-*   **Typography:** Modern and legible sans-serif fonts (e.g., Inter, Roboto, or SF Pro). Large, readable numbers for vital signs.
-*   **Vibe:** Should feel like an expensive, FDA-approved medical-grade application, combined with modern software smoothness (subtle shadows, rounded corners, soft gradients).
-
-**Required Screens & Detailed Features:**
-
-**1. Splash Screen & Onboarding:**
-*   **Visuals:** A minimalist logo of a digital stethoscope merging with an AI brain or soundwave. Soft glowing gradient background.
-*   **Elements:** The text "Smart Health Stethoscope", a small "Powered by Edge AI" badge, and a smooth loading indicator.
-
-**2. Authentication (Login / Sign Up):**
-*   **Visuals:** Clean, trustworthy white background.
-*   **Elements:** Email/Password input fields with soft rounded borders. "Login via Google / Apple" social buttons. A toggle switch between "Doctor Mode" and "Patient Mode".
-
-**3. Dashboard (Home Screen):**
-*   **Header:** Welcome back message (e.g., "Dr. Nguyen"). Search bar for finding patients. Notification bell.
-*   **Status Card:** A prominent, high-tech looking card showing the connected hardware status (e.g., "Device Connected", "Battery: 85%", Bluetooth/Wi-Fi Icon).
-*   **Quick Actions:** Large, easy-to-tap grid buttons: "Start New Scan", "Patient Records", "AI Assistant".
-*   **Recent Scans List:** A preview list of the 3 most recent patient recordings with their AI diagnosis label (e.g., normal, abnormal heart murmur).
-
-**4. Live Monitoring Screen (CRITICAL / MAIN SCREEN):**
-*   *Note: This screen must look incredibly high-tech and dynamic.*
-*   **Background:** Consider a Dark Mode UI specifically for this screen to make the live waveform pop and reduce eye strain when looking at bright lines.
-*   **Main Element:** A large, real-time scrolling audio waveform graph (Oscilloscope style) taking up the center 40% of the screen. The waveform line should glow.
-*   **Vital Signs Panel:** Large digital numbers showing real-time Heart Rate (BPM - Beats Per Minute) and SpO2 (if applicable).
-*   **Edge AI Alert Box:** A floating or sticky notification pill that dynamically changes color. If an abnormal sound is detected, it flashes Orange/Red with text: "⚠️ AI Alert: Crackle/Rale Detected in Lungs".
-*   **Bottom Controls:** A prominent floating action button (FAB) for "Record" (Red circle), a "Stop" button, and slider toggles to switch between "Heart Mode" (Low pass filter) and "Lung Mode" (High pass filter).
-
-**5. Medical Records (History List):**
-*   **Visuals:** A clean, organized list view.
-*   **Elements:** Tab switcher at the top ("Recent", "Heart Scans", "Lung Scans", "Abnormal Only"). Cards showing Date, Time, Patient ID, Duration of scan, and the Edge AI Conclusion badge.
-
-**6. Record Detail & Playback:**
-*   **Elements:** 
-    *   A static, high-resolution snapshot of the recorded waveform.
-    *   Audio Playback Controls: Timeline slider, Play/Pause/Rewind 10s.
-    *   Doctor's Notes Section: A large text field indicating the final diagnosis.
-    *   AI Analysis Summary: Detailed text block explaining why the AI flagged the sound as abnormal.
-
-**7. Medical AI Assistant (Chatbot):**
-*   **Visuals:** A chat interface similar to ChatGPT but with a clinical feel.
-*   **Elements:** Chat bubbles (Blue for User, Gray/White for AI Assistant). A button at the bottom: "Attach latest scan data to chat". The AI responses should look structured, occasionally using bullet points or bold text to explain medical insights.
-
-**Output instructions for Generator:** 
-Generate the UI wireframes/high-fidelity mockups for all 7 screens described. Ensure UI components (buttons, cards, inputs) are consistent across all screens. Use 8dp/16dp standard grid spacing.
-
-**[END OF PROMPT]**
+- Web admin dashboard: `Figma_Admin_Web_Prompt.md`
+- Màn hình phần cứng 4 inch 320x480: `Figma_Hardware_Display_Prompt.md`

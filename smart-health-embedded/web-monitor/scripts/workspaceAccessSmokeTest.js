@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
@@ -6,6 +7,11 @@ const { spawn } = require("node:child_process");
 const rootDir = path.join(__dirname, "..");
 const dataDir = path.join(rootDir, ".test-data", "workspace-access");
 const port = "3432";
+const seededClaimCode = "ALPHA12345678";
+
+function hashValue(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,9 +114,22 @@ function writeSeedDb() {
     devices: [
       { id: "dev_alpha", name: "Alpha Device", type: "stethoscope", status: "available", organizationId: "org_alpha", connected: false, createdAt, updatedAt: createdAt },
       { id: "dev_beta", name: "Beta Device", type: "stethoscope", status: "available", organizationId: "org_beta", connected: false, createdAt, updatedAt: createdAt },
+      {
+        id: "dev_claim_alpha",
+        name: "Alpha Claim Device",
+        type: "stethoscope",
+        status: "unclaimed",
+        organizationId: "org_alpha",
+        connected: false,
+        claimCodeHash: hashValue(`dev_claim_alpha:${seededClaimCode}`),
+        claimCodeExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        createdAt,
+        updatedAt: createdAt,
+      },
     ],
     scans: [
       { id: "scan_alpha", patientId: "pat_alpha", patientName: "Alpha Patient", organizationId: "org_alpha", status: "completed", createdAt, updatedAt: createdAt },
+      { id: "scan_alpha_extra", patientId: "pat_alpha", patientName: "Alpha Patient", organizationId: "org_alpha", status: "completed", createdAt, updatedAt: createdAt },
       { id: "scan_beta", patientId: "pat_beta", patientName: "Beta Patient", organizationId: "org_beta", status: "completed", createdAt, updatedAt: createdAt },
     ],
     storageFiles: [
@@ -152,7 +171,19 @@ function writeSeedDb() {
     ],
     audioFiles: [],
     aiResults: [],
-    doctorPatientAccess: [],
+    doctorPatientAccess: [
+      {
+        id: "share_beta_selected_alpha",
+        patientId: "pat_alpha",
+        doctorUserId: "usr_beta_doctor",
+        doctorId: "usr_beta_doctor",
+        organizationId: "",
+        scope: "selected_scans",
+        scanIds: ["scan_alpha"],
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
     notifications: [
       {
         id: "notif_alpha",
@@ -268,6 +299,7 @@ async function runScenario() {
   const platform = await login("platform@smarthealth.test");
   const workspaceAdmin = await login("workspace-admin@alpha.test");
   const doctor = await login("doctor@alpha.test");
+  const betaDoctor = await login("doctor@beta.test");
   const technician = await login("technician@alpha.test");
   const billing = await login("billing@alpha.test");
   const viewer = await login("viewer@alpha.test");
@@ -306,9 +338,9 @@ async function runScenario() {
   assert.equal(portalStatus.service, "smart-health-backend");
   assert.equal(portalStatus.workspace.id, "org_alpha");
   assert.equal(portalStatus.scoped.patientsCount, 1);
-  assert.equal(portalStatus.scoped.devicesCount, 1);
-  assert.equal(portalStatus.scoped.scansCount, 1);
-  assert.equal(portalStatus.scoped.alertsCount, 1);
+  assert.equal(portalStatus.scoped.devicesCount, 2);
+  assert.equal(portalStatus.scoped.scansCount, 2);
+  assert.equal(portalStatus.scoped.alertsCount, 2);
   assert.equal(portalStatus.mode.authMode, "demo");
   assert.equal(portalStatus.mode.dataBackend, "json");
   await expectStatus("platform admin is not a portal surface user", platform, "/api/portal/status", 403, {
@@ -322,13 +354,16 @@ async function runScenario() {
   const portalMonitoring = await expectStatus("portal monitoring resolves scoped devices and scans", workspaceAdmin, "/api/portal/monitoring", 200, {
     headers: portalHeaders,
   });
-  assert.deepEqual(portalMonitoring.devices.map((device) => device.id), ["dev_alpha"]);
-  assert.deepEqual(portalMonitoring.scans.map((scan) => scan.id), ["scan_alpha"]);
+  assert.deepEqual(
+    portalMonitoring.devices.map((device) => device.id),
+    ["dev_alpha", "dev_claim_alpha"],
+  );
+  assert.deepEqual(portalMonitoring.scans.map((scan) => scan.id), ["scan_alpha", "scan_alpha_extra"]);
   const portalReports = await expectStatus("portal reports resolve workspace summary", workspaceAdmin, "/api/portal/reports", 200, {
     headers: portalHeaders,
   });
   assert.equal(portalReports.summary.patientsCount, 1);
-  assert.equal(portalReports.summary.devicesCount, 1);
+  assert.equal(portalReports.summary.devicesCount, 2);
   const portalAuditLog = await expectStatus("portal audit log resolves", workspaceAdmin, "/api/portal/audit-log", 200, {
     headers: portalHeaders,
   });
@@ -396,7 +431,11 @@ async function runScenario() {
   const portalScans = await expectStatus("portal lists only scoped scans", workspaceAdmin, "/api/portal/scans", 200, {
     headers: portalHeaders,
   });
-  assert.deepEqual(portalScans.scans.map((scan) => scan.id), ["scan_alpha"]);
+  assert.deepEqual(portalScans.scans.map((scan) => scan.id), ["scan_alpha", "scan_alpha_extra"]);
+  const selectedGrantScans = await expectStatus("selected-scan grant only lists granted scans", betaDoctor, "/api/v1/scans", 200);
+  assert.deepEqual(selectedGrantScans.scans.map((scan) => scan.id), ["scan_alpha", "scan_beta"]);
+  assert.equal(selectedGrantScans.scans.some((scan) => scan.id === "scan_alpha_extra"), false);
+  await expectStatus("selected-scan grant cannot read sibling scan detail", betaDoctor, "/api/v1/scans/scan_alpha_extra", 403);
   await expectStatus("portal cannot read cross workspace scan", workspaceAdmin, "/api/portal/scans/scan_beta", 403, {
     headers: portalHeaders,
   });
@@ -410,7 +449,10 @@ async function runScenario() {
   const portalDevices = await expectStatus("portal lists only scoped devices", workspaceAdmin, "/api/portal/devices", 200, {
     headers: portalHeaders,
   });
-  assert.deepEqual(portalDevices.devices.map((device) => device.id), ["dev_alpha"]);
+  assert.deepEqual(
+    portalDevices.devices.map((device) => device.id),
+    ["dev_alpha", "dev_claim_alpha"],
+  );
   await expectStatus("viewer cannot update portal device", viewer, "/api/portal/devices/dev_alpha", 403, {
     method: "PATCH",
     headers: portalJsonHeaders,
@@ -471,6 +513,22 @@ async function runScenario() {
   });
   assert.equal(updatedAccount.user.notificationPreferences.aiUpdates, true);
   assert.equal(updatedAccount.user.notificationPreferences.messages, false);
+  const accountAfterHospitalText = await expectStatus("profile hospital text does not switch workspace", workspaceAdmin, "/api/v1/me", 200, {
+    method: "PATCH",
+    headers: portalJsonHeaders,
+    body: JSON.stringify({ hospital: "Beta Hospital" }),
+  });
+  assert.equal(accountAfterHospitalText.user.organizationId, "org_alpha");
+  assert.equal(accountAfterHospitalText.user.hospital, "Beta Hospital");
+  await expectStatus("portal cannot self-join another workspace via account profile", workspaceAdmin, "/api/v1/me", 403, {
+    method: "PATCH",
+    headers: portalJsonHeaders,
+    body: JSON.stringify({ organizationId: "org_beta" }),
+  });
+  const accountAfterDeniedSwitch = await expectStatus("account workspace remains unchanged after denied profile switch", workspaceAdmin, "/api/v1/me", 200, {
+    headers: portalHeaders,
+  });
+  assert.equal(accountAfterDeniedSwitch.user.organizationId, "org_alpha");
 
   const supportTicket = await expectStatus("portal creates support ticket", workspaceAdmin, "/api/portal/support", 201, {
     method: "POST",
@@ -499,6 +557,26 @@ async function runScenario() {
     headers: portalHeaders,
   });
   assert.equal(readAllNotifications.notifications.every((notification) => notification.read), true);
+  const sameWorkspaceNotification = await expectStatus("workspace admin creates direct notification for same workspace user", workspaceAdmin, "/api/v1/notifications", 201, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: "Same workspace notice",
+      message: "Notification smoke",
+      userId: "usr_doctor",
+    }),
+  });
+  assert.equal(sameWorkspaceNotification.notification.userId, "usr_doctor");
+  assert.equal(sameWorkspaceNotification.notification.organizationId, "org_alpha");
+  await expectStatus("workspace admin cannot target notification outside workspace", workspaceAdmin, "/api/v1/notifications", 403, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: "Cross workspace notice",
+      message: "Notification smoke",
+      userId: "usr_beta_doctor",
+    }),
+  });
 
   await expectStatus("portal user deletes scoped notification", workspaceAdmin, "/api/portal/notifications/notif_alpha", 200, {
     method: "DELETE",
@@ -531,6 +609,43 @@ async function runScenario() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ deviceId: "dev_pair_by_tech", name: "Tech Pair Device" }),
   });
+  await expectStatus("workspace admin cannot transfer device between workspaces", workspaceAdmin, "/api/v1/devices/dev_pair_by_tech/transfer", 403, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId: "org_beta" }),
+  });
+  await expectStatus("platform cannot transfer device to missing workspace", platform, "/api/v1/devices/dev_pair_by_tech/transfer", 404, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId: "org_missing" }),
+  });
+  await expectStatus("platform cannot transfer device to owner outside target workspace", platform, "/api/v1/devices/dev_pair_by_tech/transfer", 403, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId: "org_beta", ownerUserId: "usr_workspace_admin" }),
+  });
+  const transferredDevice = await expectStatus("platform can transfer device to matching workspace owner", platform, "/api/v1/devices/dev_pair_by_tech/transfer", 200, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId: "org_beta", ownerUserId: "usr_beta_doctor" }),
+  });
+  assert.equal(transferredDevice.device.organizationId, "org_beta");
+  assert.equal(transferredDevice.device.pairedUserId, "usr_beta_doctor");
+  const doctorClaim = await expectStatus("doctor can claim provisioned workspace device", doctor, "/api/v1/devices/pair", 200, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: "dev_claim_alpha",
+      claimCode: seededClaimCode,
+      connectionMethod: "QR",
+    }),
+  });
+  assert.equal(doctorClaim.device.pairedUserId, "usr_doctor");
+  await expectStatus("doctor cannot create unprovisioned device without claim", doctor, "/api/v1/devices/pair", 403, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deviceId: "dev_doctor_unprovisioned", name: "Doctor Unprovisioned Device" }),
+  });
   await expectStatus("technician cannot edit package", technician, "/api/v1/admin/packages/pkg_test", 403, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -539,6 +654,17 @@ async function runScenario() {
 
   await expectStatus("doctor can read assigned workspace patients", doctor, "/api/v1/patients/pat_alpha", 200);
   await expectStatus("doctor cannot read cross workspace patient", doctor, "/api/v1/patients/pat_beta", 403);
+  const workspaceExport = await expectStatus("workspace export ignores cross workspace payload", workspaceAdmin, "/api/v1/exports", 201, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ format: "json", organizationId: "org_beta" }),
+  });
+  assert.equal(workspaceExport.export.organizationId, "org_alpha");
+  await expectStatus("platform export rejects missing workspace", platform, "/api/v1/exports", 404, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ format: "json", organizationId: "org_missing" }),
+  });
   await expectStatus("workspace admin downloads own export", workspaceAdmin, "/api/v1/exports/download/export_alpha", 200);
   await expectStatus("workspace admin cannot download cross workspace export", workspaceAdmin, "/api/v1/exports/download/export_beta", 403);
   await expectStatus("viewer can open overview", viewer, "/api/v1/admin/overview-stats", 200);

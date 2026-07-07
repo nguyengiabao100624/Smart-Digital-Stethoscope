@@ -1,7 +1,13 @@
 node_modules
 dist
+dist-firebase
+.firebase
+.lovable
 .output
+.tanstack
+.vite
 .vinxi
+.wrangler
 pnpm-lock.yaml
 package-lock.json
 routeTree.gen.ts

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BatteryWarning, RotateCw, Stethoscope, WifiOff } from "lucide-react";
+import { BatteryWarning, Plus, RotateCw, Stethoscope, WifiOff } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { PortalEmpty, PortalError, PortalLoading } from "../../components/PortalState";
@@ -11,6 +11,12 @@ export default function DevicesPage() {
   const canManage = Boolean(
     user?.capabilities.includes("workspace.devices.manage") ||
     user?.capabilities.includes("platform.devices.manage"),
+  );
+  const canClaim = Boolean(
+    user?.capabilities.includes("workspace.devices.view") ||
+      user?.capabilities.includes("workspace.devices.manage") ||
+      user?.capabilities.includes("platform.devices.manage") ||
+      user?.capabilities.includes("personal.devices.manage"),
   );
   const queryClient = useQueryClient();
   const devices = useQuery({
@@ -40,6 +46,12 @@ export default function DevicesPage() {
             Heartbeat và trạng thái cloud được làm mới mỗi 15 giây.
           </p>
         </div>
+        {canClaim && (
+          <Link to="/portal/devices/claim" className="premium-button flex items-center gap-2">
+            <Plus size={15} />
+            Thêm thiết bị
+          </Link>
+        )}
         {canManage && (
           <Link to="/portal/devices/assign" className="premium-button">
             Gán thiết bị

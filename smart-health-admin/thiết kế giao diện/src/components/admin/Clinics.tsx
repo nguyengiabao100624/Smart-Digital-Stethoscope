@@ -16,17 +16,26 @@ import {
   Unlock,
   X,
   ShieldCheck,
+  Send,
+  AlertCircle,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { toast } from "sonner";
 import { AddClinicDialog } from "./dialogs/AddClinicDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
-import { ADMIN_TABLE_PAGE_SIZE, PaginationFooter, paginateItems } from "./PaginationFooter";
-import { smartHealthApi, type SmartHealthApiError, type SmartHealthClinic } from "@/lib/smart-health-api";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
+import {
+  smartHealthApi,
+  type SmartHealthApiError,
+  type SmartHealthClinic,
+} from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
-import { CapabilityGate, useAdminAccess } from "./AdminAccessContext";
+import { CapabilityGate } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import { WORKSPACE_MANAGE_CAPABILITIES } from "./action-permissions";
 
 type Clinic = {
@@ -45,9 +54,13 @@ type Clinic = {
   deviceCount: number;
   doctorCount: number;
   patientCount: number;
+  storageGb: number;
   joinDate: string;
   rawType: string;
   website: string;
+  legalName: string;
+  representative: string;
+  requestMetadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 };
@@ -83,7 +96,11 @@ function mapBackendClinic(clinic: SmartHealthClinic): Clinic {
     deviceCount: clinic.deviceCount || 0,
     doctorCount: clinic.doctorCount || 0,
     patientCount: clinic.patientCount || 0,
+    storageGb: clinic.usage?.storageGb || 0,
     website: clinic.website || "",
+    legalName: clinic.legalName || "",
+    representative: clinic.representative || "",
+    requestMetadata: clinic.requestMetadata || {},
     createdAt: clinic.createdAt || "",
     updatedAt: clinic.updatedAt || "",
     joinDate: clinic.createdAt
@@ -118,6 +135,27 @@ function formatClinicLinks(summary: ClinicDeleteDetails) {
   return `${accounts} tài khoản (${doctors} bác sĩ), ${patients} bệnh nhân, ${devices} thiết bị`;
 }
 
+const WORKSPACE_INFO_FIELDS = ["workspaceName", "address", "representative", "phone"];
+
+function getWorkspaceStatusLabel(status: string) {
+  if (status === "active") return "Đã duyệt";
+  if (status === "pending") return "Chờ duyệt";
+  if (status === "needs_info") return "Cần bổ sung";
+  if (status === "rejected") return "Từ chối";
+  if (status === "inactive") return "Tạm khóa";
+  return status || "Không rõ";
+}
+
+function getWorkspaceStatusTone(
+  status: string,
+): "success" | "warning" | "error" | "muted" | "info" {
+  if (status === "active") return "success";
+  if (status === "pending") return "info";
+  if (status === "needs_info") return "warning";
+  if (status === "rejected") return "error";
+  return "muted";
+}
+
 export function Clinics() {
   const { hasAnyCapability } = useAdminAccess();
   const canManageWorkspaces = hasAnyCapability(WORKSPACE_MANAGE_CAPABILITIES);
@@ -134,6 +172,12 @@ export function Clinics() {
   const [deleteAction, setDeleteAction] = useState<Clinic | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [statusActionLoading, setStatusActionLoading] = useState(false);
+  const [statusActionError, setStatusActionError] = useState("");
+  const [infoAction, setInfoAction] = useState<Clinic | null>(null);
+  const [infoMessage, setInfoMessage] = useState("");
+  const [rejectAction, setRejectAction] = useState<Clinic | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const loadClinics = useCallback(async () => {
     setIsLoading(true);
@@ -147,7 +191,7 @@ export function Clinics() {
       setBackendError("");
     } catch (error) {
       setClinics([]);
-      setBackendError(toVietnameseErrorMessage(error, "Không thể tải danh sách phòng khám."));
+      setBackendError(toVietnameseErrorMessage(error, "Không thể tải danh sách workspace."));
     } finally {
       setIsLoading(false);
     }
@@ -202,26 +246,65 @@ export function Clinics() {
     setAddDialogOpen(true);
   };
 
-  const handleToggleStatus = async (clinic: Clinic) => {
+  const handleSetStatus = async (
+    clinic: Clinic,
+    status: "active" | "inactive" | "pending" | "needs_info" | "rejected",
+    payload: Record<string, unknown> = {},
+  ) => {
     if (!canManageWorkspaces) {
       toast.error("Tai khoan khong co quyen quan ly workspace.");
       return;
     }
-    const nextStatus = clinic.status === "active" ? "inactive" : "active";
+    setStatusActionLoading(true);
+    setStatusActionError("");
     try {
-      await smartHealthApi.updateClinic(clinic.id, { status: nextStatus });
-      toast.success(nextStatus === "active" ? "Đã mở khóa phòng khám" : "Đã tạm khóa phòng khám", {
-        description:
-          nextStatus === "active"
-            ? `${clinic.name} đã xuất hiện lại trong catalog đăng ký.`
-            : `${clinic.name} đã bị ẩn khỏi catalog đăng ký của bác sĩ.`,
+      await smartHealthApi.updateClinic(clinic.id, { status, ...payload });
+      toast.success(`Đã cập nhật workspace: ${getWorkspaceStatusLabel(status)}`, {
+        description: `${clinic.name} đã chuyển sang trạng thái ${getWorkspaceStatusLabel(status).toLowerCase()}.`,
       });
       await loadClinics();
+      return true;
     } catch (error) {
-      toast.error(nextStatus === "active" ? "Không thể mở khóa phòng khám" : "Không thể tạm khóa phòng khám", {
-        description: toVietnameseErrorMessage(error, "Vui lòng kiểm tra backend."),
-      });
+      const message = toVietnameseErrorMessage(error, "Vui lòng kiểm tra backend.");
+      setStatusActionError(message);
+      toast.error("Không thể cập nhật workspace", { description: message });
+      return false;
+    } finally {
+      setStatusActionLoading(false);
     }
+  };
+
+  const handleRequestInfo = async () => {
+    const clinic = infoAction;
+    if (!clinic) return;
+    const message = infoMessage.trim();
+    if (!message) {
+      setStatusActionError("Nhập nội dung cần bổ sung trước khi gửi.");
+      return;
+    }
+    const updated = await handleSetStatus(clinic, "needs_info", {
+      message,
+      requiredFields: WORKSPACE_INFO_FIELDS,
+    });
+    if (!updated) return;
+    setInfoAction(null);
+    setInfoMessage("");
+    setStatusActionError("");
+  };
+
+  const handleRejectWorkspace = async () => {
+    const clinic = rejectAction;
+    if (!clinic) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setStatusActionError("Nhập lý do từ chối trước khi gửi.");
+      return;
+    }
+    const updated = await handleSetStatus(clinic, "rejected", { reason });
+    if (!updated) return;
+    setRejectAction(null);
+    setRejectReason("");
+    setStatusActionError("");
   };
 
   const handleDelete = (clinic: Clinic) => {
@@ -240,7 +323,7 @@ export function Clinics() {
     setDeleteError("");
     try {
       await smartHealthApi.deleteClinic(clinic.id);
-      toast.success("Đã xóa phòng khám", {
+      toast.success("Đã xóa workspace", {
         description: `${clinic.name} đã được gỡ khỏi hệ thống.`,
       });
       setSelectedClinic((current) => (current?.id === clinic.id ? null : current));
@@ -249,14 +332,14 @@ export function Clinics() {
     } catch (error) {
       const apiMessage = toVietnameseErrorMessage(
         error,
-        "Phòng khám có thể đang còn tài khoản, bệnh nhân hoặc thiết bị liên kết.",
+        "Workspace có thể đang còn tài khoản, bệnh nhân hoặc thiết bị liên kết.",
       );
       const deleteDetails = getClinicDeleteDetails(error);
       const message = deleteDetails
         ? `${apiMessage}. Backend đang ghi nhận: ${formatClinicLinks(deleteDetails)}.`
         : apiMessage;
       setDeleteError(message);
-      toast.error("Không thể xóa phòng khám", { description: message });
+      toast.error("Không thể xóa workspace", { description: message });
     } finally {
       setIsDeleting(false);
     }
@@ -271,15 +354,17 @@ export function Clinics() {
       }
     : null;
   const deleteResourceCount = deleteResourceSummary
-    ? deleteResourceSummary.accounts + deleteResourceSummary.patients + deleteResourceSummary.devices
+    ? deleteResourceSummary.accounts +
+      deleteResourceSummary.patients +
+      deleteResourceSummary.devices
     : 0;
 
   return (
     <div className="space-y-6 h-full flex flex-col relative">
       <PageHeader
         eyebrow="Tổ chức B2B"
-        title="Quản lý phòng khám"
-        description="Quản lý thông tin pháp lý, người đại diện, thành viên, thiết bị được gán, subscription và audit log."
+        title="Duyệt workspace/cơ sở"
+        description="Xác minh hồ sơ cơ sở y tế, cấp quyền workspace owner, xử lý yêu cầu bổ sung và ghi lại quyết định vào audit log."
         action={
           <CapabilityGate capabilities={WORKSPACE_MANAGE_CAPABILITIES}>
             <button
@@ -287,7 +372,7 @@ export function Clinics() {
               className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
             >
               <Plus className="w-4 h-4" />
-              Tạo phòng khám
+              Tạo workspace
             </button>
           </CapabilityGate>
         }
@@ -305,7 +390,7 @@ export function Clinics() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Tìm tên, mã phòng khám, SDT..."
+              placeholder="Tìm tên, mã workspace, SDT..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-card border border-border rounded-md text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-shadow"
@@ -354,8 +439,11 @@ export function Clinics() {
                         className="w-full border border-border rounded-md px-3 py-2 text-sm outline-none focus:border-ring bg-background"
                       >
                         <option value="all">Tất cả trạng thái</option>
-                        <option value="active">Đang hoạt động</option>
-                        <option value="inactive">Ngừng hoạt động</option>
+                        <option value="pending">Chờ duyệt</option>
+                        <option value="needs_info">Cần bổ sung</option>
+                        <option value="rejected">Từ chối</option>
+                        <option value="active">Đã duyệt</option>
+                        <option value="inactive">Tạm khóa</option>
                       </select>
                     </div>
                   </div>
@@ -387,7 +475,7 @@ export function Clinics() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="px-5 py-3 font-medium">Thông tin phòng khám</th>
+                <th className="px-5 py-3 font-medium">Thông tin workspace</th>
                 <th className="px-5 py-3 font-medium">Liên hệ</th>
                 <th className="px-5 py-3 font-medium text-center">Tài nguyên</th>
                 <th className="px-5 py-3 font-medium">Trạng thái</th>
@@ -444,17 +532,11 @@ export function Clinics() {
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    {clinic.status === "active" ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
-                        <span className="w-1.5 h-1.5 rounded-full bg-success mr-1.5"></span>
-                        Đang hoạt động
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-border">
-                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground mr-1.5"></span>
-                        Ngừng hoạt động
-                      </span>
-                    )}
+                    <StatusBadge
+                      label={getWorkspaceStatusLabel(clinic.status)}
+                      tone={getWorkspaceStatusTone(clinic.status)}
+                      pulse={clinic.status === "pending"}
+                    />
                   </td>
                   <td className="px-5 py-4 text-muted-foreground">{clinic.joinDate}</td>
                   <td className="px-5 py-4 text-right">
@@ -482,7 +564,10 @@ export function Clinics() {
                               </DropdownMenu.Item>
                               <DropdownMenu.Item
                                 onSelect={() => {
-                                  void handleToggleStatus(clinic);
+                                  void handleSetStatus(
+                                    clinic,
+                                    clinic.status === "active" ? "inactive" : "active",
+                                  );
                                 }}
                                 className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground rounded-sm flex items-center gap-2"
                               >
@@ -492,10 +577,47 @@ export function Clinics() {
                                   </>
                                 ) : (
                                   <>
-                                    <Unlock className="w-4 h-4" /> Mở khóa
+                                    <Unlock className="w-4 h-4" />
+                                    {clinic.status === "inactive"
+                                      ? "Mở khóa"
+                                      : "Phê duyệt workspace"}
                                   </>
                                 )}
                               </DropdownMenu.Item>
+                              {(clinic.status === "pending" || clinic.status === "needs_info") && (
+                                <>
+                                  <DropdownMenu.Item
+                                    onSelect={() => {
+                                      setStatusActionError("");
+                                      setInfoMessage("");
+                                      setInfoAction(clinic);
+                                    }}
+                                    className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground rounded-sm flex items-center gap-2"
+                                  >
+                                    <Send className="w-4 h-4" /> Yêu cầu bổ sung
+                                  </DropdownMenu.Item>
+                                  <DropdownMenu.Item
+                                    onSelect={() => {
+                                      setStatusActionError("");
+                                      setRejectReason("");
+                                      setRejectAction(clinic);
+                                    }}
+                                    className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-destructive/10 text-destructive hover:text-destructive rounded-sm flex items-center gap-2"
+                                  >
+                                    <AlertCircle className="w-4 h-4" /> Từ chối yêu cầu
+                                  </DropdownMenu.Item>
+                                </>
+                              )}
+                              {clinic.status === "rejected" && (
+                                <DropdownMenu.Item
+                                  onSelect={() => {
+                                    void handleSetStatus(clinic, "pending");
+                                  }}
+                                  className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground rounded-sm flex items-center gap-2"
+                                >
+                                  <Unlock className="w-4 h-4" /> Đưa về chờ duyệt
+                                </DropdownMenu.Item>
+                              )}
                               <DropdownMenu.Separator className="h-px bg-border my-1" />
                               <DropdownMenu.Item
                                 onSelect={() => {
@@ -523,7 +645,7 @@ export function Clinics() {
               {!isLoading && visibleClinics.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">
-                    Không tìm thấy phòng khám phù hợp.
+                    Không tìm thấy workspace phù hợp.
                   </td>
                 </tr>
               )}
@@ -535,7 +657,7 @@ export function Clinics() {
           page={page}
           totalItems={visibleClinics.length}
           sourceTotalItems={clinics.length}
-          itemLabel="phòng khám"
+          itemLabel="workspace"
           onPageChange={setPage}
         />
       </div>
@@ -574,16 +696,17 @@ export function Clinics() {
           if (!open) setDeleteAction(null);
           setDeleteError("");
         }}
-        title="Xóa phòng khám"
+        title="Xóa workspace"
         description={
           deleteAction ? (
             <span>
-              Bạn có chắc chắn muốn xóa <strong>{deleteAction.name}</strong>? Hành động này không thể hoàn tác.
+              Bạn có chắc chắn muốn xóa <strong>{deleteAction.name}</strong>? Hành động này không
+              thể hoàn tác.
               {deleteResourceCount > 0 ? (
                 <>
                   <br />
-                  Hệ thống đang ghi nhận: {formatClinicLinks(deleteResourceSummary || {})}. Backend sẽ từ chối xóa
-                  cho đến khi các liên kết này được chuyển hoặc gỡ.
+                  Hệ thống đang ghi nhận: {formatClinicLinks(deleteResourceSummary || {})}. Backend
+                  sẽ từ chối xóa cho đến khi các liên kết này được chuyển hoặc gỡ.
                 </>
               ) : null}
             </span>
@@ -591,12 +714,132 @@ export function Clinics() {
             ""
           )
         }
-        confirmLabel="Xóa phòng khám"
+        confirmLabel="Xóa workspace"
         tone="danger"
         loading={isDeleting}
         error={deleteError}
         onConfirm={confirmDelete}
       />
+
+      <Dialog.Root
+        open={canManageWorkspaces && Boolean(infoAction)}
+        onOpenChange={(open) => {
+          if (!open && !statusActionLoading) {
+            setInfoAction(null);
+            setInfoMessage("");
+            setStatusActionError("");
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[60] bg-slate-900/45" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3 text-primary">
+              <Send className="h-6 w-6" />
+              <Dialog.Title className="text-lg font-bold">
+                Yêu cầu bổ sung hồ sơ workspace
+              </Dialog.Title>
+            </div>
+            <Dialog.Description className="mb-6 text-sm leading-6 text-muted-foreground">
+              Nội dung này sẽ hiển thị trên màn chờ duyệt của chủ workspace và hồ sơ sẽ quay lại
+              trạng thái chờ duyệt sau khi họ gửi bổ sung.
+            </Dialog.Description>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">Thông tin cần bổ sung</span>
+              <textarea
+                value={infoMessage}
+                onChange={(event) => setInfoMessage(event.target.value)}
+                className="min-h-[112px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                placeholder="Ví dụ: Vui lòng bổ sung giấy phép hoạt động, địa chỉ pháp lý và thông tin người đại diện."
+              />
+            </label>
+            {statusActionError ? (
+              <div className="mt-4 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {statusActionError}
+              </div>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setInfoAction(null);
+                  setInfoMessage("");
+                  setStatusActionError("");
+                }}
+                disabled={statusActionLoading}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleRequestInfo}
+                disabled={!infoMessage.trim() || statusActionLoading}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
+              >
+                Gửi yêu cầu bổ sung
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={canManageWorkspaces && Boolean(rejectAction)}
+        onOpenChange={(open) => {
+          if (!open && !statusActionLoading) {
+            setRejectAction(null);
+            setRejectReason("");
+            setStatusActionError("");
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[60] bg-slate-900/45" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3 text-destructive">
+              <AlertCircle className="h-6 w-6" />
+              <Dialog.Title className="text-lg font-bold">Từ chối yêu cầu workspace</Dialog.Title>
+            </div>
+            <Dialog.Description className="mb-6 text-sm leading-6 text-muted-foreground">
+              Chủ workspace sẽ không được cấp quyền portal. Lý do từ chối được lưu vào backend và
+              hiển thị trên màn trạng thái của người đăng ký.
+            </Dialog.Description>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">Lý do từ chối</span>
+              <textarea
+                value={rejectReason}
+                onChange={(event) => setRejectReason(event.target.value)}
+                className="min-h-[112px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-destructive focus:ring-1 focus:ring-destructive"
+                placeholder="Ví dụ: Hồ sơ pháp lý chưa khớp hoặc thiếu giấy phép hoạt động hợp lệ."
+              />
+            </label>
+            {statusActionError ? (
+              <div className="mt-4 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {statusActionError}
+              </div>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setRejectAction(null);
+                  setRejectReason("");
+                  setStatusActionError("");
+                }}
+                disabled={statusActionLoading}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleRejectWorkspace}
+                disabled={!rejectReason.trim() || statusActionLoading}
+                className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground shadow-sm hover:bg-destructive/90 disabled:opacity-50"
+              >
+                Từ chối yêu cầu
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <AnimatePresence>
         {selectedClinic && (
@@ -626,11 +869,11 @@ export function Clinics() {
                       {selectedClinic.id} • {selectedClinic.type}
                     </p>
                     <div className="mt-2">
-                      {selectedClinic.status === "active" ? (
-                        <StatusBadge label="Đang hoạt động" tone="success" pulse />
-                      ) : (
-                        <StatusBadge label="Ngừng hoạt động" tone="muted" />
-                      )}
+                      <StatusBadge
+                        label={getWorkspaceStatusLabel(selectedClinic.status)}
+                        tone={getWorkspaceStatusTone(selectedClinic.status)}
+                        pulse={selectedClinic.status === "pending"}
+                      />
                     </div>
                   </div>
                 </div>
@@ -647,18 +890,22 @@ export function Clinics() {
                   <ClinicMetric label="Số bác sĩ" value={selectedClinic.doctorCount} />
                   <ClinicMetric label="Số bệnh nhân" value={selectedClinic.patientCount} />
                   <ClinicMetric label="Số thiết bị" value={selectedClinic.deviceCount} />
-                  <ClinicMetric label="Dung lượng audio" value="824 GB" />
+                  <ClinicMetric label="Dung lượng audio" value={`${selectedClinic.storageGb} GB`} />
                 </section>
 
                 <section className="rounded-xl border border-border p-4">
                   <h3 className="mb-3 text-sm font-semibold text-foreground">Thông tin pháp lý</h3>
                   <div className="space-y-3 text-sm">
-                    <InfoLine icon={ShieldCheck} label="Mã số pháp lý" value="MST-0312-889-221" />
+                    <InfoLine
+                      icon={ShieldCheck}
+                      label="Mã số pháp lý"
+                      value={selectedClinic.legalName || "--"}
+                    />
                     <InfoLine icon={MapPin} label="Địa chỉ" value={selectedClinic.address} />
                     <InfoLine
                       icon={Phone}
                       label="Người đại diện"
-                      value="Nguyễn Gia Bảo / 0909 888 777"
+                      value={selectedClinic.representative || selectedClinic.phone}
                     />
                     <InfoLine icon={Mail} label="Email" value={selectedClinic.email} />
                   </div>
@@ -668,10 +915,11 @@ export function Clinics() {
                   <h3 className="mb-3 text-sm font-semibold text-foreground">Subscription</h3>
                   <div className="flex items-center justify-between rounded-lg bg-primary/5 px-3 py-2">
                     <span className="text-sm text-muted-foreground">Gói hiện tại</span>
-                    <StatusBadge label="Clinic Pro" tone="info" />
+                    <StatusBadge label={selectedClinic.packageId || "Chưa gán"} tone="info" />
                   </div>
                   <div className="mt-3 text-sm text-muted-foreground">
-                    Chu kỳ thanh toán kế tiếp: 01/06/2026
+                    Chu kỳ: {selectedClinic.billingCycle || "--"} · Trạng thái:{" "}
+                    {selectedClinic.subscriptionStatus || "--"}
                   </div>
                 </section>
 
@@ -680,22 +928,36 @@ export function Clinics() {
                   <Timeline
                     items={[
                       {
-                        title: "Tạo phòng khám",
+                        title: "Tạo workspace",
                         time: selectedClinic.joinDate,
-                        description: "Admin hệ thống tạo tổ chức và gán gói dịch vụ.",
+                        description: "Backend ghi nhận hồ sơ workspace trong hệ thống.",
                         tone: "primary",
                       },
                       {
-                        title: "Gán thiết bị",
-                        time: "18/05/2026",
-                        description: `${selectedClinic.deviceCount} thiết bị đang thuộc phòng khám.`,
-                        tone: "success",
+                        title: "Trạng thái hiện tại",
+                        time: selectedClinic.updatedAt
+                          ? new Intl.DateTimeFormat("vi-VN").format(
+                              new Date(selectedClinic.updatedAt),
+                            )
+                          : selectedClinic.joinDate,
+                        description: getWorkspaceStatusLabel(selectedClinic.status),
+                        tone:
+                          selectedClinic.status === "rejected"
+                            ? "error"
+                            : selectedClinic.status === "pending" ||
+                                selectedClinic.status === "needs_info"
+                              ? "warning"
+                              : "success",
                       },
                       {
-                        title: "Cập nhật subscription",
-                        time: "01/05/2026",
-                        description: "Nâng cấp lên Clinic Pro.",
-                        tone: "warning",
+                        title: "Thiết bị liên kết",
+                        time: selectedClinic.updatedAt
+                          ? new Intl.DateTimeFormat("vi-VN").format(
+                              new Date(selectedClinic.updatedAt),
+                            )
+                          : selectedClinic.joinDate,
+                        description: `${selectedClinic.deviceCount} thiết bị đang thuộc workspace.`,
+                        tone: selectedClinic.deviceCount > 0 ? "success" : "muted",
                       },
                     ]}
                   />

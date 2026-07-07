@@ -238,6 +238,7 @@ export default function RegisterDoctorPage() {
       </div>
 
       <form
+        method="post"
         onSubmit={(event) => {
           event.preventDefault();
           next();

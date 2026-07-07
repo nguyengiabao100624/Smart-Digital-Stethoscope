@@ -11,7 +11,7 @@ export default [
       "node_modules/**",
       ".tanstack/**",
       ".vite/**",
-      "src/routeTree.gen.ts"
+      "src/routeTree.gen.ts",
     ],
   },
   js.configs.recommended,
@@ -45,7 +45,7 @@ export default [
     },
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["scripts/**/*.{js,mjs}"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

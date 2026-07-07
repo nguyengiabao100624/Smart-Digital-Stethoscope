@@ -140,7 +140,19 @@ const DEFAULT_CLINIC_CATALOG = [
   { id: "vn_hospital_hue_central", name: "Bệnh viện Trung ương Huế", type: "hospital", address: "Thừa Thiên Huế", status: "active" },
   { id: "vn_hospital_can_tho_central", name: "Bệnh viện Đa khoa Trung ương Cần Thơ", type: "hospital", address: "Cần Thơ", status: "active" },
 ];
-const ROLE_INFO_FIELDS = new Set(["name", "phone", "license", "clinic", "specialty", "reason"]);
+const ROLE_INFO_FIELDS = new Set([
+  "name",
+  "phone",
+  "license",
+  "clinic",
+  "specialty",
+  "reason",
+  "workspaceName",
+  "address",
+  "representative",
+  "legalName",
+  "email",
+]);
 const WORKSPACE_TYPES = new Set(["hospital", "clinic", "solo_practice", "personal"]);
 const PACKAGE_SEGMENTS = new Set(["organization", "solo_practice", "personal"]);
 
@@ -871,6 +883,16 @@ function isApprovedDoctorRole(user) {
   return user && user.requestedRole === "doctor" && user.roleRequestStatus === "approved" && user.role === "doctor";
 }
 
+function isApprovedWorkspaceRole(user) {
+  const role = normalizeWorkspaceRole(user?.role || "");
+  return (
+    user &&
+    ["workspace_owner", "workspace_admin", "nurse", "technician", "billing", "viewer"].includes(role) &&
+    user.roleRequestStatus === "approved" &&
+    user.role === role
+  );
+}
+
 function normalizeLookup(value) {
   return readString(value, 240).toLowerCase();
 }
@@ -1050,6 +1072,12 @@ function getUserWorkspaceContext(user) {
           name: workspace.name,
           type: workspace.type || "",
           workspaceType: workspace.workspaceType || workspace.type || "",
+          address: workspace.address || "",
+          phone: workspace.phone || "",
+          email: workspace.email || "",
+          website: workspace.website || "",
+          legalName: workspace.legalName || "",
+          representative: workspace.representative || "",
           packageId: workspace.packageId || "",
           subscriptionStatus: workspace.subscriptionStatus || "",
           billingCycle: workspace.billingCycle || "",
@@ -1117,6 +1145,28 @@ function getClinicFromPayload(payload) {
     db.organizations.find((item) => normalizeLookup(item.name) === requestedName) ||
     DEFAULT_CLINIC_CATALOG.find((item) => normalizeLookup(item.name) === requestedName) ||
     null
+  );
+}
+
+function getExplicitWorkspaceSelectionFromPayload(payload = {}) {
+  if (
+    !Object.prototype.hasOwnProperty.call(payload, "organizationId") &&
+    !Object.prototype.hasOwnProperty.call(payload, "clinicId") &&
+    !Object.prototype.hasOwnProperty.call(payload, "clinic")
+  ) {
+    return null;
+  }
+  const requestedId = readString(payload.organizationId || payload.clinicId || payload.clinic, 120);
+  if (!requestedId) return null;
+  return getCatalogClinicById(requestedId);
+}
+
+function hasWorkspaceMembership(user, organizationId) {
+  const nextOrganizationId = readString(organizationId, 120);
+  if (!user || !nextOrganizationId) return false;
+  return db.memberships.some(
+    (membership) =>
+      membership.userId === user.id && membership.organizationId === nextOrganizationId,
   );
 }
 
@@ -1212,6 +1262,9 @@ function publicClinic(org) {
     email: org.email || "",
     website: org.website || "",
     status: org.status || "active",
+    legalName: org.legalName || "",
+    representative: org.representative || "",
+    requestMetadata: org.requestMetadata && typeof org.requestMetadata === "object" ? org.requestMetadata : {},
     packageId: org.packageId || "",
     subscriptionStatus: org.subscriptionStatus || "trial",
     billingCycle: org.billingCycle || "monthly",
@@ -1400,6 +1453,7 @@ function createNotification(type, title, message, metadata = {}) {
     organizationId: readString(metadata.organizationId, 120),
     channel: readString(metadata.channel, 40) || "in_app",
     metadata: sanitizeNotificationMetadata(metadata),
+    pushAttempts: [],
     read: false,
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -1407,6 +1461,7 @@ function createNotification(type, title, message, metadata = {}) {
   db.notifications.unshift(notification);
   db.notifications = db.notifications.slice(0, 200);
   queuePlatformAdminNotificationEmail(notification);
+  queueNotificationPush(notification);
   return notification;
 }
 
@@ -1432,6 +1487,7 @@ async function createBackendNotification(input) {
     const notification = await repositories.notifications.create(input);
     notification.metadata = sanitizeNotificationMetadata(input.metadata || input);
     queuePlatformAdminNotificationEmail(notification);
+    queueNotificationPush(notification);
     return notification;
   }
   return createNotification(input.type, input.title, input.message, input);
@@ -2848,7 +2904,7 @@ function filterScansForUser(user, scans) {
   if (isPlatformAdminUser(user)) {
     return scans;
   }
-  return scans.filter((scan) => canAccessPatient(user, scan.patientId));
+  return scans.filter((scan) => canAccessScan(user, scan));
 }
 
 function getWritableWorkspaceIdForUser(user, requestedWorkspaceId = "") {
@@ -3043,6 +3099,23 @@ function canAccessNotification(user, notification) {
     return isSameCurrentWorkspace(user, notification.organizationId) && hasCapability(user, "notifications.view");
   }
   return !notification.userId && !notification.organizationId;
+}
+
+function canTargetNotificationUser(actorUser, targetUser, organizationId = "") {
+  if (!actorUser || !targetUser) {
+    return false;
+  }
+  if (isPlatformAdminUser(actorUser)) {
+    return true;
+  }
+  if (targetUser.id === actorUser.id) {
+    return true;
+  }
+  const workspaceId = readString(organizationId, 120) || getUserWorkspaceContext(actorUser).currentWorkspaceId || "";
+  return Boolean(
+    workspaceId &&
+      (targetUser.organizationId === workspaceId || hasWorkspaceMembership(targetUser, workspaceId)),
+  );
 }
 
 function filterNotificationsForUser(user, notifications) {
@@ -3950,13 +4023,13 @@ async function upsertFirebaseUser(decodedToken, req) {
   const email = readString(decodedToken.email, 160).toLowerCase();
   const phone = readString(decodedToken.phone_number || decodedToken.phoneNumber, 40);
   const claimedRole = normalizeFirebaseRole(decodedToken);
-  const organizationId =
+  const tokenOrganizationId =
     readString(decodedToken.organizationId, 120) ||
     (decodedToken.smartHealth && typeof decodedToken.smartHealth === "object"
       ? readString(decodedToken.smartHealth.organizationId, 120)
-      : "") ||
-    "org_default_clinic";
-  const claimedWorkspace = ensureOrganizationFromCatalog(getCatalogClinicById(organizationId));
+      : "");
+  const organizationId = tokenOrganizationId || "org_default_clinic";
+  const claimedWorkspace = tokenOrganizationId ? ensureOrganizationFromCatalog(getCatalogClinicById(tokenOrganizationId)) : null;
 
   let matchedByEmail = false;
   let user = repositories ? await repositories.users.findByIdOrFirebaseUid(firebaseUid) : null;
@@ -4008,6 +4081,10 @@ async function upsertFirebaseUser(decodedToken, req) {
       user.role = "admin";
     } else if (claimedRole === "workspace_admin" || claimedRole === "workspace_owner") {
       user.role = claimedRole;
+      user.requestedRole = claimedRole;
+      user.roleRequestStatus = "approved";
+      user.roleApprovedAt = user.roleApprovedAt || now;
+      user.accountStatus = user.accountStatus || "active";
     } else if (claimedRole === "doctor") {
       user.role = "doctor";
       user.requestedRole = "doctor";
@@ -4018,10 +4095,12 @@ async function upsertFirebaseUser(decodedToken, req) {
       user.role = claimedRole;
     } else if (isApprovedDoctorRole(user)) {
       user.role = "doctor";
+    } else if (isApprovedWorkspaceRole(user)) {
+      user.role = normalizeWorkspaceRole(user.role);
     } else {
       user.role = "patient";
     }
-    user.organizationId = organizationId || user.organizationId || "org_default_clinic";
+    user.organizationId = tokenOrganizationId || user.organizationId || "org_default_clinic";
     if (email && user.email !== email) {
       user.email = email;
     }
@@ -4039,6 +4118,13 @@ async function upsertFirebaseUser(decodedToken, req) {
     user.roleApprovedAt = user.roleApprovedAt || now;
     user.accountStatus = user.accountStatus || "active";
     user.accountType = user.accountType && user.accountType !== "personal" ? user.accountType : "doctor";
+  }
+  if (["workspace_admin", "workspace_owner"].includes(claimedRole)) {
+    user.requestedRole = claimedRole;
+    user.roleRequestStatus = "approved";
+    user.roleApprovedAt = user.roleApprovedAt || now;
+    user.accountStatus = user.accountStatus || "active";
+    user.accountType = user.accountType || claimedRole;
   }
   if (claimedWorkspace) {
     user.hospital = user.hospital || claimedWorkspace.name || "";
@@ -5085,6 +5171,278 @@ function queuePlatformAdminNotificationEmail(notification) {
       });
       void saveDb();
       console.error(`Notification email failed (${notification.id}): ${notification.errorMessage}`);
+    });
+  }, 0);
+}
+
+const notificationPushDispatchIds = new Set();
+
+function isPushNotificationEnabled() {
+  return String(process.env.PUSH_NOTIFICATIONS_ENABLED || "true").toLowerCase() !== "false";
+}
+
+function buildPushNotificationPayload(notification) {
+  const title = readString(notification.title, 120) || "Smart Health";
+  const body = readString(notification.message, 240) || "Bạn có thông báo mới từ Smart Health.";
+  const data = {
+    notificationId: readString(notification.id, 120),
+    type: readString(notification.type, 40) || "info",
+    channel: readString(notification.channel, 40) || "in_app",
+    organizationId: readString(notification.organizationId, 120),
+    userId: readString(notification.userId, 120),
+    createdAt: readString(notification.createdAt, 80) || nowIso(),
+  };
+  return {
+    notification: { title, body },
+    data: Object.fromEntries(Object.entries(data).filter(([, value]) => value !== "")),
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "smart_health_alerts",
+        sound: "default",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+        },
+      },
+    },
+  };
+}
+
+function isInvalidFcmTokenError(error) {
+  const code = readString(error && error.code, 160);
+  return [
+    "messaging/invalid-registration-token",
+    "messaging/registration-token-not-registered",
+    "messaging/invalid-argument",
+  ].includes(code);
+}
+
+function hashPushToken(token) {
+  const value = readString(token, 4096);
+  if (!value) return "";
+  return crypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+function getPushRetryMax() {
+  const value = Number(process.env.PUSH_NOTIFICATION_MAX_RETRIES || 1);
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(0, Math.min(3, Math.trunc(value)));
+}
+
+function getPushRetryDelayMs() {
+  const value = Number(process.env.PUSH_NOTIFICATION_RETRY_MS || 30000);
+  if (!Number.isFinite(value)) return 30000;
+  return Math.max(1000, Math.min(300000, Math.trunc(value)));
+}
+
+function buildNotificationPushAttempt(notification, detail = {}) {
+  const attemptNumber = Number(detail.attemptNumber || 1);
+  return {
+    id: createId("push_attempt"),
+    notificationId: readString(notification && notification.id, 120),
+    userId: readString(notification && notification.userId, 120),
+    organizationId: readString(notification && notification.organizationId, 120),
+    attemptNumber: Number.isFinite(attemptNumber) ? Math.max(1, Math.trunc(attemptNumber)) : 1,
+    tokenHash: hashPushToken(detail.token),
+    status: readString(detail.status, 40) || "failed",
+    provider: "fcm",
+    retryable: Boolean(detail.retryable),
+    invalidToken: Boolean(detail.invalidToken),
+    errorMessage: readString(detail.errorMessage || (detail.error && detail.error.message) || "", 500),
+    createdAt: nowIso(),
+  };
+}
+
+function appendNotificationPushAttempts(notification, attempts = []) {
+  const existing = Array.isArray(notification && notification.pushAttempts) ? notification.pushAttempts : [];
+  const nextAttempts = attempts.filter((attempt) => attempt && typeof attempt === "object");
+  return [...existing, ...nextAttempts].slice(-50);
+}
+
+async function saveNotificationPushStatus(notification, patch) {
+  Object.assign(notification, patch, { updatedAt: nowIso() });
+  if (repositories && repositories.notifications) {
+    await repositories.notifications.create(notification);
+  } else {
+    const existing = db.notifications.find((item) => item.id === notification.id);
+    if (existing) Object.assign(existing, notification);
+    await saveDb();
+  }
+}
+
+async function sendNotificationPush(notification, options = {}) {
+  if (!notification || !notification.id || !notification.userId) {
+    return null;
+  }
+  const attemptNumber = Number.isFinite(Number(options.attemptNumber))
+    ? Math.max(1, Math.trunc(Number(options.attemptNumber)))
+    : 1;
+  if (!isPushNotificationEnabled()) {
+    const attempts = [
+      buildNotificationPushAttempt(notification, {
+        attemptNumber,
+        status: "disabled",
+        errorMessage: "",
+      }),
+    ];
+    await saveNotificationPushStatus(notification, {
+      pushStatus: "disabled",
+      pushErrorMessage: "",
+      pushAttempts: appendNotificationPushAttempts(notification, attempts),
+    });
+    return null;
+  }
+  const admin = getFirebaseAdmin(process.env);
+  if (!admin || typeof admin.messaging !== "function") {
+    const errorMessage = "Firebase Admin messaging is not configured";
+    const attempts = [
+      buildNotificationPushAttempt(notification, {
+        attemptNumber,
+        status: "skipped",
+        errorMessage,
+      }),
+    ];
+    await saveNotificationPushStatus(notification, {
+      pushStatus: "skipped",
+      pushErrorMessage: errorMessage,
+      pushAttempts: appendNotificationPushAttempts(notification, attempts),
+    });
+    return null;
+  }
+  let tokens = Array.isArray(options.tokens)
+    ? options.tokens.map((token) => readString(token, 4096)).filter(Boolean)
+    : [];
+  if (tokens.length === 0) {
+    const devices = repositories && repositories.notificationDevices
+      ? await repositories.notificationDevices.listForUser(notification.userId)
+      : db.notificationDevices.filter((device) => device.userId === notification.userId && device.enabled !== false);
+    tokens = devices.map((device) => readString(device.fcmToken, 4096)).filter(Boolean);
+  }
+  tokens = Array.from(new Set(tokens));
+  if (tokens.length === 0) {
+    const attempts = [
+      buildNotificationPushAttempt(notification, {
+        attemptNumber,
+        status: "no_devices",
+        errorMessage: "",
+      }),
+    ];
+    await saveNotificationPushStatus(notification, {
+      pushStatus: "no_devices",
+      pushErrorMessage: "",
+      pushAttempts: appendNotificationPushAttempts(notification, attempts),
+    });
+    return null;
+  }
+
+  const messaging = admin.messaging();
+  const payload = buildPushNotificationPayload(notification);
+  let successCount = 0;
+  const failures = [];
+  const retryableFailedTokens = [];
+  const attempts = [];
+  for (const token of tokens) {
+    try {
+      await messaging.send({ ...payload, token });
+      successCount += 1;
+      attempts.push(
+        buildNotificationPushAttempt(notification, {
+          attemptNumber,
+          token,
+          status: "sent",
+        })
+      );
+    } catch (error) {
+      const message = readString(error && error.message ? error.message : String(error), 500);
+      const invalidToken = isInvalidFcmTokenError(error);
+      const retryable = !invalidToken;
+      failures.push(message);
+      attempts.push(
+        buildNotificationPushAttempt(notification, {
+          attemptNumber,
+          token,
+          status: "failed",
+          retryable,
+          invalidToken,
+          errorMessage: message,
+        })
+      );
+      if (invalidToken && repositories && repositories.notificationDevices) {
+        await repositories.notificationDevices.disableToken(notification.userId, token);
+      } else if (retryable) {
+        retryableFailedTokens.push(token);
+      }
+    }
+  }
+
+  const pushAttempts = appendNotificationPushAttempts(notification, attempts);
+  if (successCount > 0) {
+    await saveNotificationPushStatus(notification, {
+      pushStatus: failures.length ? "partial" : "sent",
+      pushSentAt: nowIso(),
+      pushFailedAt: failures.length ? nowIso() : "",
+      pushErrorMessage: failures.slice(0, 3).join("; "),
+      pushAttempts,
+    });
+  } else {
+    await saveNotificationPushStatus(notification, {
+      pushStatus: ["sent", "partial"].includes(notification.pushStatus) ? "partial" : "failed",
+      pushFailedAt: nowIso(),
+      pushErrorMessage: failures.slice(0, 3).join("; ") || "FCM send failed",
+      pushAttempts,
+    });
+  }
+
+  if (retryableFailedTokens.length > 0 && attemptNumber <= getPushRetryMax()) {
+    setTimeout(() => {
+      sendNotificationPush(notification, {
+        tokens: retryableFailedTokens,
+        attemptNumber: attemptNumber + 1,
+      }).catch((error) => {
+        const message = readString(error && error.message ? error.message : String(error), 500);
+        console.error(`Notification push retry failed (${notification.id}): ${message}`);
+      });
+    }, getPushRetryDelayMs());
+  }
+  return { successCount, failureCount: failures.length };
+}
+
+function queueNotificationPush(notification) {
+  if (!notification || !notification.id || !notification.userId) {
+    return;
+  }
+  if (notificationPushDispatchIds.has(notification.id)) {
+    return;
+  }
+  notificationPushDispatchIds.add(notification.id);
+  if (notificationPushDispatchIds.size > 1000) {
+    const stale = Array.from(notificationPushDispatchIds).slice(0, 300);
+    for (const id of stale) notificationPushDispatchIds.delete(id);
+  }
+
+  setTimeout(() => {
+    sendNotificationPush(notification).catch((error) => {
+      notification.pushStatus = "failed";
+      notification.pushFailedAt = nowIso();
+      notification.pushErrorMessage = readString(error && error.message ? error.message : String(error), 500);
+      const attempts = [
+        buildNotificationPushAttempt(notification, {
+          attemptNumber: 1,
+          status: "failed",
+          errorMessage: notification.pushErrorMessage,
+        }),
+      ];
+      void saveNotificationPushStatus(notification, {
+        pushStatus: notification.pushStatus,
+        pushFailedAt: notification.pushFailedAt,
+        pushErrorMessage: notification.pushErrorMessage,
+        pushAttempts: appendNotificationPushAttempts(notification, attempts),
+      });
+      console.error(`Notification push failed (${notification.id}): ${notification.pushErrorMessage}`);
     });
   }, 0);
 }
@@ -6331,8 +6689,10 @@ async function handleAuthApi(req, res, segments) {
     const payload = await readJsonBody(req);
     const name = readString(payload.name || payload.clinicName, 180);
     if (!name) throw httpError(400, "Tên cơ sở y tế là bắt buộc");
-    const existingPending = db.organizations.find((item) => item.ownerUserId === user.id && item.status === "pending");
-    const workspace = existingPending || {
+    const existingRequest = db.organizations.find(
+      (item) => item.ownerUserId === user.id && ["pending", "needs_info", "rejected"].includes(String(item.status || ""))
+    );
+    const workspace = existingRequest || {
       id: createId("org"),
       createdAt: nowIso(),
     };
@@ -6343,15 +6703,25 @@ async function handleAuthApi(req, res, segments) {
     workspace.phone = readString(payload.phone || payload.clinicPhone, 80);
     workspace.email = readString(payload.email || payload.clinicEmail, 180);
     workspace.website = readString(payload.website, 500);
+    workspace.legalName = readString(payload.legalName || payload.taxCode || payload.licenseCode, 200);
     workspace.representative = readString(payload.representative || payload.repName, 180) || user.name || "";
     workspace.ownerUserId = user.id;
     workspace.status = "pending";
     workspace.requestMetadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
     workspace.updatedAt = nowIso();
-    if (!existingPending) db.organizations.unshift(workspace);
+    if (!existingRequest) db.organizations.unshift(workspace);
+    if (user.role !== "admin") {
+      user.role = "patient";
+    }
     user.requestedRole = "workspace_owner";
     user.roleRequestStatus = "pending";
     user.roleRequestedAt = nowIso();
+    user.roleApprovedAt = "";
+    user.roleRejectedAt = "";
+    user.roleRejectReason = "";
+    user.roleInfoRequestAt = "";
+    user.roleInfoRequestMessage = "";
+    user.roleInfoRequiredFields = [];
     user.organizationId = workspace.id;
     user.workspaceType = workspace.workspaceType;
     user.accountStatus = user.accountStatus || "active";
@@ -7518,24 +7888,143 @@ async function handleAdminApi(req, res, url, segments) {
             : readString(payload[field], maxLength);
         }
       }
-      if (!["active", "inactive", "pending", "rejected"].includes(String(clinic.status || "active"))) {
+      if (!["active", "inactive", "pending", "needs_info", "rejected"].includes(String(clinic.status || "active"))) {
         clinic.status = "active";
       }
       clinic.updatedAt = nowIso();
 
+      let ownerTransition = null;
       if (isPlatformAdminUser(adminUser) && clinic.ownerUserId) {
         const owner = db.users.find((item) => item.id === clinic.ownerUserId);
-        if (owner && clinic.status === "active" && owner.requestedRole === "workspace_owner") {
-          owner.role = "workspace_owner";
-          owner.roleRequestStatus = "approved";
-          owner.roleApprovedAt = nowIso();
-          owner.organizationId = clinic.id;
-          ensureMembershipForUser(owner);
-          await persistUserRecord(owner);
-        } else if (owner && clinic.status === "rejected" && owner.requestedRole === "workspace_owner") {
-          owner.roleRequestStatus = "rejected";
-          owner.roleRejectedAt = nowIso();
-          await persistUserRecord(owner);
+        if (owner && owner.requestedRole === "workspace_owner") {
+          const nextStatus = String(clinic.status || "active");
+          const rejectReason = readString(payload.reason || payload.rejectReason, 1000);
+          const infoMessage = readString(payload.message || payload.requestInfoMessage || payload.reason, 1000);
+          const requiredFields = normalizeRoleInfoFields(payload.requiredFields);
+          let firebaseClaims = { updated: false };
+
+          const setOwnerClaims = async (role) => {
+            try {
+              return await setFirebaseRoleClaimsForUser(owner, role, clinic.id);
+            } catch (err) {
+              return {
+                updated: false,
+                warning: "Khong the cap nhat Firebase custom claims cho workspace owner.",
+                error: err && err.message ? err.message : String(err),
+              };
+            }
+          };
+
+          if (nextStatus === "active") {
+            owner.role = "workspace_owner";
+            owner.requestedRole = "workspace_owner";
+            owner.roleRequestStatus = "approved";
+            owner.accountStatus = "active";
+            owner.roleApprovedAt = nowIso();
+            owner.roleRejectedAt = "";
+            owner.roleRejectReason = "";
+            owner.roleInfoRequestAt = "";
+            owner.roleInfoRequestMessage = "";
+            owner.roleInfoRequiredFields = [];
+            owner.organizationId = clinic.id;
+            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
+            owner.accountType = owner.accountType || "workspace_owner";
+            ensureMembershipForUser(owner);
+            firebaseClaims = await setOwnerClaims("workspace_owner");
+            owner.firebaseClaims = firebaseClaims;
+            await createBackendNotification({
+              type: "success",
+              userId: owner.id,
+              organizationId: clinic.id,
+              title: "Workspace đã được phê duyệt",
+              message: `${clinic.name} đã được kích hoạt. Tài khoản chủ workspace có thể truy cập portal.`,
+              metadata: { actionPath: "/portal", workspaceId: clinic.id },
+            });
+          } else if (nextStatus === "rejected") {
+            owner.role = owner.role === "admin" ? "admin" : "patient";
+            owner.requestedRole = "workspace_owner";
+            owner.roleRequestStatus = "rejected";
+            owner.accountStatus = "active";
+            owner.roleApprovedAt = "";
+            owner.roleRejectedAt = nowIso();
+            owner.roleRejectReason = rejectReason || owner.roleRejectReason || "Workspace request rejected.";
+            owner.roleInfoRequestAt = "";
+            owner.roleInfoRequestMessage = "";
+            owner.roleInfoRequiredFields = [];
+            owner.organizationId = clinic.id;
+            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
+            ensureMembershipForUser(owner);
+            firebaseClaims = await setOwnerClaims("patient");
+            owner.firebaseClaims = firebaseClaims;
+            await createBackendNotification({
+              type: "warning",
+              userId: owner.id,
+              organizationId: clinic.id,
+              title: "Workspace bị từ chối",
+              message: owner.roleRejectReason,
+              metadata: { actionPath: "/bi-tu-choi", workspaceId: clinic.id },
+            });
+          } else if (nextStatus === "needs_info") {
+            if (!infoMessage) {
+              throw httpError(400, "Additional information message is required");
+            }
+            owner.role = owner.role === "admin" ? "admin" : "patient";
+            owner.requestedRole = "workspace_owner";
+            owner.roleRequestStatus = "needs_info";
+            owner.accountStatus = "active";
+            owner.roleApprovedAt = "";
+            owner.roleRejectedAt = "";
+            owner.roleRejectReason = "";
+            owner.roleInfoRequestAt = nowIso();
+            owner.roleInfoRequestMessage = infoMessage;
+            owner.roleInfoRequiredFields = requiredFields.length
+              ? requiredFields
+              : ["workspaceName", "address", "representative", "phone"];
+            owner.organizationId = clinic.id;
+            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
+            ensureMembershipForUser(owner);
+            firebaseClaims = await setOwnerClaims("patient");
+            owner.firebaseClaims = firebaseClaims;
+            await createBackendNotification({
+              type: "warning",
+              userId: owner.id,
+              organizationId: clinic.id,
+              title: "Cần bổ sung hồ sơ workspace",
+              message: infoMessage,
+              metadata: {
+                actionPath: "/can-bo-sung",
+                workspaceId: clinic.id,
+                requiredFields: owner.roleInfoRequiredFields,
+              },
+            });
+          } else if (nextStatus === "pending") {
+            owner.role = owner.role === "admin" ? "admin" : "patient";
+            owner.requestedRole = "workspace_owner";
+            owner.roleRequestStatus = "pending";
+            owner.accountStatus = "active";
+            owner.roleApprovedAt = "";
+            owner.roleRejectedAt = "";
+            owner.roleRejectReason = "";
+            owner.roleInfoRequestAt = "";
+            owner.roleInfoRequestMessage = "";
+            owner.roleInfoRequiredFields = [];
+            owner.organizationId = clinic.id;
+            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
+            ensureMembershipForUser(owner);
+            firebaseClaims = await setOwnerClaims("patient");
+            owner.firebaseClaims = firebaseClaims;
+          }
+
+          if (["active", "pending", "needs_info", "rejected"].includes(nextStatus)) {
+            await persistUserRecord(owner);
+            ownerTransition = {
+              userId: owner.id,
+              role: owner.role,
+              requestedRole: owner.requestedRole,
+              roleRequestStatus: owner.roleRequestStatus,
+              firebaseClaims,
+            };
+          }
         }
       }
 
@@ -7549,7 +8038,7 @@ async function handleAdminApi(req, res, url, segments) {
         organizationId: clinic.id,
         resourceType: "organization",
         resourceId: clinic.id,
-        metadata: { status: clinic.status || "active" },
+        metadata: { status: clinic.status || "active", ownerTransition },
       });
       addAccessLog(`Cập nhật phòng khám ${clinic.name}`, { severity: "success", userId: adminUser.id });
       await saveDb();
@@ -8211,7 +8700,7 @@ async function handleMeApi(req, res, segments) {
 
   if (segments.length === 2 && method === "PATCH") {
     const payload = await readJsonBody(req);
-    const selectedClinic = getClinicFromPayload(payload);
+    const selectedClinic = getExplicitWorkspaceSelectionFromPayload(payload);
     for (const field of [
       "name",
       "title",
@@ -8236,9 +8725,11 @@ async function handleMeApi(req, res, segments) {
       user.notificationPreferences = normalizeNotificationPreferences(payload.notificationPreferences);
     }
     if (selectedClinic) {
+      if (!isPlatformAdminUser(user) && !hasWorkspaceMembership(user, selectedClinic.id)) {
+        throw httpError(403, "Không thể tự chuyển sang workspace khi chưa có membership", "WORKSPACE_MEMBERSHIP_REQUIRED");
+      }
       user.organizationId = selectedClinic.id;
       user.hospital = selectedClinic.name;
-      ensureMembershipForUser(user);
     }
     user.updatedAt = nowIso();
     addAccessLog("Cập nhật thông tin cá nhân");
@@ -8735,13 +9226,27 @@ async function handleNotificationsApi(req, res, segments) {
     const organizationId = isPlatformAdminUser(user)
       ? readString(payload.organizationId, 120) || context.organizationId || ""
       : getUserWorkspaceContext(user).currentWorkspaceId || "";
+    const requestedUserId = readString(payload.userId, 120);
+    let targetUserId = "";
+    if (requestedUserId) {
+      const targetUser = db.users.find(
+        (candidate) => candidate.id === requestedUserId || candidate.firebaseUid === requestedUserId,
+      );
+      if (!targetUser) {
+        throw httpError(404, "Target notification user not found");
+      }
+      if (!canTargetNotificationUser(user, targetUser, organizationId)) {
+        throw httpError(403, "Target notification user is outside current workspace");
+      }
+      targetUserId = targetUser.id;
+    }
     const input = {
       type: readString(payload.type, 40) || "info",
       title: readString(payload.title, 180),
       message: readString(payload.message, 2000),
       channel: readString(payload.channel, 40) || "in_app",
       organizationId,
-      userId: readString(payload.userId, 120),
+      userId: targetUserId,
       read: false,
     };
     if (!input.title || !input.message) {
@@ -8978,15 +9483,28 @@ async function handleDevicesApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "pair" && method === "POST") {
-    requireAnyCapability(user, ["platform.devices.manage", "workspace.devices.manage", "personal.devices.manage"]);
     const payload = await readJsonBody(req);
     const deviceId = readString(payload.deviceId, 120) || createId("dev");
     const claimCode = readString(payload.claimCode, 80);
     const connectionMethod = readString(payload.connectionMethod, 60);
+    const canManageDevices = hasAnyCapability(user, [
+      "platform.devices.manage",
+      "workspace.devices.manage",
+      "personal.devices.manage",
+    ]);
+    const canClaimDevice = hasAnyCapability(user, [
+      "platform.devices.manage",
+      "workspace.devices.manage",
+      "workspace.devices.view",
+      "personal.devices.manage",
+    ]);
     let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
     if (!device) {
       if (claimCode) {
         throw httpError(404, "Không tìm thấy thiết bị để claim");
+      }
+      if (!canManageDevices) {
+        throw httpError(403, "Không có quyền tạo thiết bị mới trong workspace này");
       }
       device = {
         id: deviceId,
@@ -9009,9 +9527,12 @@ async function handleDevicesApi(req, res, segments) {
     }
 
     device.organizationId = device.organizationId || getWritableWorkspaceIdForUser(user, payload.organizationId);
-    assertCanManageDevice(user, device);
 
     if (device.claimCodeHash) {
+      if (!canClaimDevice) {
+        throw httpError(403, "Không có quyền claim thiết bị trong workspace này");
+      }
+      assertCanAccessDevice(user, device);
       if (!claimCode || hashValue(`${device.id}:${claimCode}`) !== device.claimCodeHash) {
         throw httpError(403, "Claim code không hợp lệ");
       }
@@ -9025,6 +9546,9 @@ async function handleDevicesApi(req, res, segments) {
         claim.claimedByUserId = user.id;
       }
       delete device.claimCodeHash;
+      delete device.claimCodeExpiresAt;
+    } else {
+      assertCanManageDevice(user, device);
     }
 
     device.pairedUserId = user.id;
@@ -9194,8 +9718,33 @@ async function handleDevicesApi(req, res, segments) {
       throw httpError(403, "Only platform admin can transfer devices between workspaces");
     }
     const payload = await readJsonBody(req);
-    device.organizationId = readString(payload.organizationId, 120) || device.organizationId;
-    device.pairedUserId = readString(payload.ownerUserId, 120) || device.pairedUserId;
+    const nextOrganizationId = readString(payload.organizationId, 120);
+    const nextOwnerUserId = readString(payload.ownerUserId, 120);
+    let nextOwner = null;
+    if (nextOrganizationId && !getClinicById(nextOrganizationId)) {
+      throw httpError(404, "Target workspace not found");
+    }
+    const transferOrganizationId = nextOrganizationId || device.organizationId || "";
+    if (nextOwnerUserId) {
+      nextOwner = db.users.find(
+        (candidate) => candidate.id === nextOwnerUserId || candidate.firebaseUid === nextOwnerUserId,
+      );
+      if (!nextOwner) {
+        throw httpError(404, "Target device owner user not found");
+      }
+      if (
+        transferOrganizationId &&
+        !isPlatformAdminUser(nextOwner) &&
+        nextOwner.organizationId !== transferOrganizationId &&
+        !hasWorkspaceMembership(nextOwner, transferOrganizationId)
+      ) {
+        throw httpError(403, "Target device owner is outside the target workspace");
+      }
+    }
+    device.organizationId = transferOrganizationId || device.organizationId;
+    if (nextOwner) {
+      device.pairedUserId = nextOwner.id;
+    }
     device.updatedAt = nowIso();
     await saveDeviceRecord(device);
     await appendDeviceEvent(device.id, "transfer", { organizationId: device.organizationId, ownerUserId: device.pairedUserId });
@@ -9384,8 +9933,12 @@ async function handleExportsApi(req, res, segments) {
     requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền tạo bản xuất dữ liệu");
     const payload = await readJsonBody(req);
     const scopedScans = filterScansForUser(user, db.scans);
+    const requestedOrganizationId = isPlatformAdminUser(user) ? readString(payload.organizationId, 120) : "";
+    if (requestedOrganizationId && !getClinicById(requestedOrganizationId)) {
+      throw httpError(404, "Target export workspace not found");
+    }
     const organizationId = isPlatformAdminUser(user)
-      ? readString(payload.organizationId, 120) || getUserWorkspaceContext(user).currentWorkspaceId || ""
+      ? requestedOrganizationId || getUserWorkspaceContext(user).currentWorkspaceId || ""
       : getUserWorkspaceContext(user).currentWorkspaceId || "";
     const exportJob = {
       id: createId("export"),

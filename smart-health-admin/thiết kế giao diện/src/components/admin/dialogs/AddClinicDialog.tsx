@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Building2, Globe, Loader2, Mail, MapPin, Phone, X } from "lucide-react";
 import { toast } from "sonner";
@@ -92,7 +92,9 @@ export function AddClinicDialog({ open, onOpenChange, onCreated, clinic }: AddCl
                   {isEditing ? "Chỉnh sửa phòng khám" : "Tạo phòng khám"}
                 </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
-                  {isEditing ? "Cập nhật thông tin tổ chức hoặc cơ sở y tế." : "Nhập thông tin tổ chức hoặc cơ sở y tế."}
+                  {isEditing
+                    ? "Cập nhật thông tin tổ chức hoặc cơ sở y tế."
+                    : "Nhập thông tin tổ chức hoặc cơ sở y tế."}
                 </Dialog.Description>
               </div>
             </div>
@@ -101,7 +103,7 @@ export function AddClinicDialog({ open, onOpenChange, onCreated, clinic }: AddCl
             </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4 p-6">
+          <form method="post" onSubmit={handleSubmit} className="space-y-4 p-6">
             <Field label="Tên phòng khám" required>
               <input
                 required
@@ -174,7 +176,10 @@ export function AddClinicDialog({ open, onOpenChange, onCreated, clinic }: AddCl
 
             <div className="flex gap-3 pt-4">
               <Dialog.Close asChild>
-                <button type="button" className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                >
                   Hủy
                 </button>
               </Dialog.Close>
@@ -212,7 +217,9 @@ function Field({
       </label>
       {icon ? (
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            {icon}
+          </span>
           {children}
         </div>
       ) : (

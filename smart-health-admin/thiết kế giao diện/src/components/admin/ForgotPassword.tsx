@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { Link } from "@/components/admin/router-shim";
 import { ArrowLeft, CheckCircle2, Mail, Stethoscope } from "lucide-react";
 import { sendFirebasePasswordReset } from "@/lib/firebase-client";
@@ -42,8 +42,9 @@ export function ForgotPassword() {
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
               <p className="text-muted-foreground">
-                <strong className="text-foreground">Lưu ý:</strong> Link đặt lại mật khẩu do Firebase Auth gửi và sẽ
-                hết hạn theo cấu hình Firebase. Nếu chưa thấy email, hãy kiểm tra mục spam hoặc gửi lại sau vài phút.
+                <strong className="text-foreground">Lưu ý:</strong> Link đặt lại mật khẩu do
+                Firebase Auth gửi và sẽ hết hạn theo cấu hình Firebase. Nếu chưa thấy email, hãy
+                kiểm tra mục spam hoặc gửi lại sau vài phút.
               </p>
             </div>
 
@@ -73,7 +74,7 @@ export function ForgotPassword() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form method="post" onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground">Email quản trị</label>
             <div className="relative">

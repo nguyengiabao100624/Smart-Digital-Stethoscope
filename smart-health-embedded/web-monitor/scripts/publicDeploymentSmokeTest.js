@@ -1,13 +1,14 @@
 const DEFAULT_BACKEND_URL = "https://smart-health-api-xj0a.onrender.com";
 const DEFAULT_ADMIN_URL = "https://shcare-admin.web.app";
 const DEFAULT_PORTAL_URL = "https://shcare.web.app";
+const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 
 function normalizeUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
 async function fetchWithTimeout(url, options = {}) {
-  const timeoutMs = Number(options.timeoutMs || 15000);
+  const timeoutMs = Number(options.timeoutMs || process.env.SMOKE_REQUEST_TIMEOUT_MS || DEFAULT_REQUEST_TIMEOUT_MS);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -19,6 +20,11 @@ async function fetchWithTimeout(url, options = {}) {
         ...(options.headers || {}),
       },
     });
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

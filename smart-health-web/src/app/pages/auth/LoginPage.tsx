@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -86,7 +86,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <form onSubmit={handleLogin} className="space-y-5">
+      <form method="post" onSubmit={handleLogin} className="space-y-5">
         <div className="space-y-2 relative">
           <label
             htmlFor="login-email"
@@ -157,6 +157,9 @@ export default function LoginPage() {
 
         {error && (
           <motion.div
+            id="login-error"
+            role="alert"
+            aria-live="polite"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-[#FF4B4B]/10 border border-[#FF4B4B]/30 rounded-xl px-4 py-3 text-xs text-[#FF4B4B] flex items-center gap-2 font-medium"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link } from "react-router";
 import { CheckCircle, Loader2, Mail, ShieldAlert } from "lucide-react";
 import { motion } from "motion/react";
@@ -55,7 +55,7 @@ export default function ForgotPasswordPage() {
           {error}
         </div>
       )}
-      <form onSubmit={submit} className="space-y-5">
+      <form method="post" onSubmit={submit} className="space-y-5">
         <div className="relative">
           <Mail size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50" />
           <input

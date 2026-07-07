@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-07-02
+Last updated: 2026-07-07
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -21,19 +21,112 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Backend persistence | Partial | JSON mode works for demo. PostgreSQL schema and repository foundation exist, but not every runtime handler uses normalized tables yet. |
 | Workspace/Organization/RBAC | Partial | `organizations` is now treated as workspace source of truth in JSON mode, with `workspaceType` (`hospital`, `clinic`, `solo_practice`, `personal`), subscription/package fields, usage/quota summary, `/api/admin/workspaces` alias, and package assignment endpoint. `/api/me` returns workspace context, `currentWorkspace`, backend-derived capabilities, `allowedSurfaces`, and `defaultSurface` for role-aware UI/domain gating. `/api/portal/*` semantic routes now expose portal patients/devices/scans/monitoring/staff/reports/storage wrappers while legacy routes remain compatible. Firebase custom claim `doctor` now self-heals backend user/membership/surface drift and materializes catalog workspaces such as `vn_hospital_quan_y_175`. Patients/family profiles, devices, scans, storage/signed URLs, exports, packages, workspace CRUD, doctor/staff actions, settings/AI updates, data delete, and sharing have first-pass backend enforcement and workspace scoping in JSON/demo mode. `npm run smoke:workspace-access` verifies six roles and cross-workspace failures; `npm run smoke:production-roles` verifies platform admin, workspace admin, and doctor portal surfaces against live Firebase/Render. Repository-backed parity and complete OpenAPI coverage are still pending. |
 | Service packages and billing | Partial | Backend service packages are real JSON data with segment, quota, CRUD update/delete, default clinic/solo/personal packages, and workspace package assignment. Web admin Packages page reads backend data and now labels device quota as activated devices; personal package patient quota is presented as family profiles, not one device per patient. Payment provider, invoices, and quota enforcement are not done. |
-| Web admin and portal UI | Partial production | The same web codebase now builds two surfaces: admin mode for `shcare-admin.web.app` and portal mode for `shcare.web.app`. Admin mode keeps platform-only navigation/guard for Platform Admin Console; doctor/clinic accounts are blocked with CTA to `shcare.web.app`. Portal mode shows doctor/clinic workspace navigation for patients, devices, scans/monitoring, staff, storage, notifications, audit, and workspace settings; platform admins are directed back to `shcare-admin.web.app`. Shcare Portal login now reports distinct denial reasons for admin, Android-only/patient, pending, needs-info, rejected, and portal-denied accounts instead of sending every non-portal user to the admin domain. Firebase Hosting has separate `admin` and `webapp` targets and build scripts. Full browser E2E for every portal flow remains pending. |
+| Web admin and portal UI | Partial production | The same web codebase now builds two surfaces: admin mode for `shcare-admin.web.app` and portal mode for `shcare.web.app`. Admin mode keeps platform-only navigation/guard for Platform Admin Console; doctor/clinic accounts are blocked with CTA to `shcare.web.app`. Platform Admin navigation now exposes the Devices page for accounts with `platform.devices.view` / `platform.devices.manage`. Portal mode shows doctor/clinic workspace navigation for patients, devices, scans/monitoring, staff, storage, notifications, audit, and workspace settings; platform admins are directed back to `shcare-admin.web.app`. Shcare Portal login now reports distinct denial reasons for admin, Android-only/patient, pending, needs-info, rejected, portal-denied, and invalid Firebase credentials without exposing raw `auth/*` errors. `/can-bo-sung` now has a real needs-info resubmit form, and `/portal/devices/claim` lets workspace users self-claim provisioned devices. Firebase Hosting has separate `admin` and `webapp` targets and build scripts. Live authenticated portal API smoke covers platform/admin surface rejection plus workspace-admin and doctor read paths on Render; `bun run smoke:portal-browser` covers live Firebase login, key portal API responses, sidebar route buttons, records filters, avatar menu, notification menu, and audit navigation on `shcare.web.app`; `bun run smoke:portal-mutation` now passes live controlled patient/device/notification/settings/report/support/logout mutation E2E with cleanup. A 2026-07-07 mobile pass found no horizontal overflow or console/page errors at 390x844 across public/auth, authenticated portal, and authenticated admin key routes. |
 | Storage admin | Partial | Storage API/work has been planned and partly implemented. Verify current backend routes before relying on upload/share/delete/download as production-ready. |
-| Notifications | Partial | Notification list/read/delete works in app/admin/portal. Android now registers FCM tokens to backend notification devices and saves per-user notification preferences. 2026-07-01 source fix removed a misplaced device-management assertion that could break single-notification delete. Actual Firebase Admin push delivery, retry, and failure tracking are still incomplete. |
+| Notifications | Partial production | Notification list/read/delete works in app/admin/portal. Android registers FCM tokens to backend notification devices and saves per-user notification preferences. Backend now queues Firebase Cloud Messaging delivery for direct user notifications, records `pushStatus` separately from platform-admin email fanout, disables invalid/unregistered tokens, persists per-attempt `pushAttempts` history without raw tokens, and retries retryable FCM failures with bounded env controls. Real device/provider delivery smoke and workspace recipient policy are still incomplete. |
 | Android motion/animation | Real | Shared Compose motion layer is applied through `AppNavGraph.kt`, giving all routes consistent fade/slide/scale screen transitions. Element-level micro-interactions can still be expanded screen by screen later. |
 | Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Medical Records has a first share action for a scan/profile to a doctor/workspace. Full workspace switcher, dashboard-by-workspace, and polished family management screens are not complete. |
-| Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. 2026-07-01 source fix wires `GET /api/v1/devices/:id/events` in the device route and tests own/cross-workspace access. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
+| Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. 2026-07-01 source fix wires `GET /api/v1/devices/:id/events` in the device route and tests own/cross-workspace access. 2026-07-06 source follow-up allows workspace users to self-claim provisioned same-workspace devices with claim codes while keeping arbitrary no-code creation behind device-management capability; Shcare Portal has a `/portal/devices/claim` route and mutation smoke coverage. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
 | Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. No real queue/model pipeline yet. |
 | Object storage | Scaffold/partial | MinIO/S3 direction is chosen. Local storage fallback remains important. Signed URL and quota/retention need verification/completion. |
 | Firmware production | Partial cloud-first | `MSM261S4030H0` is the only active production firmware target. ESP32 code avoids committed secrets, has WiFi recovery AP, outbound backend WebSocket telemetry/audio, backend command handling, and HTTPS cloud OTA with SHA-256 verification. MSM261 builds normal/OTA firmware. INMP441 is retired from the current product scope. LAN ArduinoOTA is dev-only and disabled by default. Secure NVS/certificate provisioning, signed firmware, rollback, buffering, and real-board validation remain pending. |
 | CI/CD and monitoring | Partial | GitHub Actions now checks backend, workspace access smoke, production readiness report, Web Admin Firebase build, Shcare Web push build-only CI, Android debug compile, and ESP32-S3 normal/OTA firmware builds. Manual Firebase Hosting deploy workflows exist for `shcare-admin` and `shcare.web.app` once GitHub secrets are configured. Metrics, alerts, backups, and full release automation are still pending. |
 | Production readiness gate | Real/checker | Backend has a readiness CLI, strict deploy gate, platform-only readiness API, Web Admin deployment tab, production env example, and third-party setup runbook. The current local/demo env is intentionally blocked until real Firebase/Postgres/S3/HTTPS/secret setup is supplied. |
-| Context/new-chat handoff | Real | Context docs and AI skill docs exist. Third-party skills are user-wide under `C:\Users\baobe\.agents\skills`; project-local skill copies were removed on 2026-06-22. `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` documents selective routing, automatic installed skill/tool selection, and the every-task `context-budget` + `strategic-compact` token gate. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
+| Context/new-chat handoff | Real | Context docs and AI skill docs exist. `SMART_HEALTH_PROJECT_INDEX.md` is now the one-page entrypoint for active source folders, handoff order, cleanup rules, and focused smoke commands. Third-party skills are user-wide under `C:\Users\baobe\.agents\skills`; project-local skill copies were removed on 2026-06-22. `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` documents selective routing, automatic installed skill/tool selection, and the every-task `context-budget` + `strategic-compact` token gate. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
+
+## 2026-07-07 Workspace Owner Approval Lifecycle
+
+### Implemented
+
+- Backend `/api/auth/workspace-request` remains the only registration path for facility/workspace-owner accounts; doctor registration remains on `/api/auth/role-request`.
+- Backend admin workspace updates now handle workspace-owner `pending`, `needs_info`, `rejected`, and approved (`active`) transitions. Approval grants `workspace_owner`, sets/preserves Firebase custom claims when available, and gives portal surface access. Non-approved states keep the owner as `patient` for surface gating.
+- Firebase auth upsert now preserves backend-approved workspace roles and does not overwrite an existing workspace organization with `org_default_clinic` when a token has no organization claim.
+- Web Admin workspace management now presents workspace approval states and actions instead of only generic active/inactive clinic toggles.
+- Shcare Web `/can-bo-sung` resubmits workspace-owner requests through `/api/auth/workspace-request`; doctor needs-info resubmission still uses `/api/auth/role-request`.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd test` passed and now covers workspace-owner pending -> needs_info -> resubmit -> rejected -> resubmit -> approved lifecycle plus portal surface assertions.
+- Web Admin `npm.cmd run lint` passed.
+- Shcare Web `bunx tsc --noEmit --pretty false` passed.
+
+## 2026-07-07 Account Profile Tenant Hardening
+
+### Implemented
+
+- Backend `/api/v1/me` now separates profile display fields from workspace switching. Editing `hospital` text no longer changes `organizationId`.
+- Explicit workspace switch fields (`organizationId`, `clinicId`, `clinic`) now require an existing membership unless the caller is a platform admin. Self-service profile updates no longer create workspace membership.
+- The workspace-access smoke suite now covers the denied self-switch path and verifies the account stays in its original workspace.
+- `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` was sanitized to remove an inline Brevo/API key and instruct using ignored environment variables instead.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed with the new self-switch denial assertion.
+- Backend `npm.cmd test` passed.
+
+## 2026-07-07 Device Transfer Hardening
+
+### Implemented
+
+- Device transfer remains restricted to platform admins, and now rejects missing target workspaces before changing `device.organizationId`.
+- Device transfer now validates optional `ownerUserId`: the user must exist and belong to the target workspace or have membership there.
+- Workspace contract smoke now covers non-platform transfer denial, missing-workspace transfer denial, mismatched-owner denial, and valid transfer to a matching workspace user.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed with the new device transfer assertions.
+
+## 2026-07-07 Selected Scan Sharing Hardening
+
+### Implemented
+
+- Backend scan list filtering now uses `canAccessScan` per scan, matching scan detail/audio access. This prevents `selected_scans` grants from exposing sibling scan metadata for the same patient.
+- Workspace contract smoke seeds two scans for one patient and a selected-scan grant to an external doctor; the doctor can list the granted scan plus own-workspace scans, but not the sibling scan.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed with the new selected-scan list/detail assertions.
+
+## 2026-07-07 Notification Target Scoping
+
+### Implemented
+
+- Backend notification creation now validates optional `userId` targets. Non-platform users can target only themselves or users in the current workspace/membership; cross-workspace targets return 403 and missing users return 404.
+- Target ids are normalized to backend user ids before notification creation so Firebase UID aliases do not leak inconsistent ids.
+- Workspace contract smoke covers same-workspace direct notification creation and cross-workspace target denial.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed with the new notification target assertions.
+
+## 2026-07-07 Export Workspace Validation
+
+### Implemented
+
+- Platform export creation now validates requested `organizationId` and rejects missing workspaces with 404.
+- Workspace export creation continues to ignore cross-workspace `organizationId` payloads and uses the caller current workspace.
+- Workspace contract smoke now covers both the forced-workspace behavior and missing target workspace rejection.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed with the new export assertions.
+
+## 2026-07-07 Live UI Dead-Control And Mobile Overflow Verification
+
+### Verification
+
+- `npm.cmd run smoke:production-roles` passed against live Render/Firebase and refreshed the smoke credential file.
+- `bun run smoke:portal-browser` passed against `https://shcare.web.app` for live login, key portal API reads, route buttons, records filters, avatar/notification popovers, device claim, and audit navigation.
+- `node scripts/portalMutationSmokeTest.mjs` passed against `https://shcare.web.app` with controlled live patient/device/notification/settings/report/support/logout mutations and cleanup.
+- `npm.cmd run smoke:admin-mutation` passed against `https://shcare-admin.web.app` with controlled live workspace/package/patient/device/notification/storage/settings mutations and cleanup.
+- A custom Playwright 390x844 overflow/console pass reported `overflow=0` on public home, login, doctor registration, workspace registration, portal unauth redirect, authenticated portal dashboard/patients/devices/records/settings, admin login, and authenticated admin overview/devices/clinics/settings.
 
 ## Product Direction
 
@@ -127,6 +220,204 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Generated/local artifacts stay untracked through `.gitignore`: `dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log`.
 - Added GitHub Actions workflow `.github/workflows/deploy-shcare-web.yml` for `shcare.web.app`; pushes run Bun install/lint/build with CI-safe Firebase placeholders, while manual `workflow_dispatch` validates required Firebase secrets and deploys Firebase Hosting target `webapp`.
 - Verification passed from `smart-health-web`: `bun install --frozen-lockfile`, `bun run lint`, `bunx tsc --noEmit --pretty false`, and production `bun run build:firebase`.
+
+## 2026-07-04 Notification Push Delivery Backend Path
+
+### Implemented
+
+- Backend `createBackendNotification(...)` and legacy `createNotification(...)` now queue Firebase Cloud Messaging delivery for direct user notifications that include `userId`.
+- Push delivery uses registered enabled FCM tokens from `notification_devices`, records `pushStatus`/timestamps/error text on the notification, and does not overwrite platform-admin email `deliveryStatus`.
+- Invalid or unregistered Firebase registration tokens are disabled through the repository after Firebase Messaging rejects them.
+- Added migration `007_notification_push_delivery.sql` for `push_status`, `push_sent_at`, `push_failed_at`, and `push_error_message`.
+- Added migration `008_notification_push_attempts.sql` for `push_attempts` JSONB.
+- Push delivery now appends per-attempt `pushAttempts` entries without raw FCM tokens; each token is represented by a short SHA-256 hash.
+- Retryable FCM failures are retried through `PUSH_NOTIFICATION_MAX_RETRIES` and `PUSH_NOTIFICATION_RETRY_MS`; invalid/unregistered tokens are disabled and not retried.
+- Added `npm.cmd run smoke:notification-push`.
+
+### Verification
+
+- `npm.cmd run smoke:notification-push` passed.
+- `npm.cmd run check` passed.
+- `npm.cmd run smoke:workspace-access` passed.
+- `npm.cmd run smoke:repositories` passed.
+- 2026-07-05 follow-up: `npm.cmd run smoke:notification-push` now asserts `pushAttempts[0]` for the local no-Firebase `skipped` path, and `check`, `smoke:repositories`, and `smoke:workspace-access` passed again.
+
+### Remaining Limits
+
+- Local smoke runs with Firebase Admin messaging disabled and verifies graceful `pushStatus=skipped`; real FCM delivery still requires a Firebase-enabled backend env and a real Android device/token.
+- Workspace/hospital admin recipient policy remains future work.
+
+## 2026-07-04 Project Cleanup And Handoff Navigation
+
+### Implemented
+
+- Added `docs/SMART_HEALTH_PROJECT_INDEX.md` as the concise project map: active source paths, live URLs, current latest state, safe cleanup rules, and focused checks.
+- Added local tooling/cache ignores for `.config/`, `.impeccable/`, `.npm-cache/`, and `codex-telegram-bridge/`.
+- README now points readers to the project index before the detailed handoff docs.
+- Cleaned the start of `SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` to reflect the current global skill policy instead of the old raw install note.
+
+### Remaining Limits
+
+- Several unrelated pre-existing/uncommitted Web Admin, report, and local workspace files remain in the working tree. They were not moved or deleted because they may contain user work.
+- `.git` is read-only in the current Telegram Bridge sandbox, so changes can be verified but not staged/committed from this session.
+
+## 2026-07-05 Web Build Env And Admin Export Bundle Cleanup
+
+### Implemented
+
+- Added `smart-health-web/scripts/production-env.js` and `.d.ts` so Shcare Web production/Firebase builds load the effective production web env before validation and Vite config execution.
+- Env resolution now prefers explicit process variables, then `SHCARE_WEB_ENV_FILE`, then web-local production env files, then the existing Web Admin `.env.production` as a fallback. The helper fills safe non-secret defaults for production auth mode, Render API base, and public site URL.
+- `smart-health-web/scripts/validate-production-env.mjs` reports only safe env source paths and effective public URLs; it does not print secret values.
+- `smart-health-web/vite.firebase.config.ts` now calls the production-env helper so `bun run build:firebase` no longer falls back to local API settings when the web project has no `.env.production`.
+- Web Admin PDF export font delivery moved from generated TS base64 modules to `public/fonts/roboto-regular.ttf`.
+- `smart-health-admin/thiết kế giao diện/src/lib/export-utils.ts` now lazy-loads and caches the PDF font only when PDF export runs. Excel/CSV/JSON/report entry chunks no longer inherit the font payload.
+- Removed the old generated `src/lib/fonts/roboto-regular.ts` and `src/lib/fonts/roboto-bold.ts` modules. The previous bold module was only an alias to the regular font, so PDF output keeps the same effective font behavior.
+- Set `chunkSizeWarningLimit: 1200` in both regular and Firebase Web Admin Vite configs so the intentionally lazy Excel library chunk is not reported as the old export-font bloat.
+- Cleaned Web Admin `react-refresh/only-export-components` warnings by moving non-component exports into helper modules for admin access context, hook access, pagination, motion presets, button/toggle variants, and router default error UI.
+- Hardened `scripts/publicDeploymentSmokeTest.js` for live Render cold starts: default request timeout is now 60s, `SMOKE_REQUEST_TIMEOUT_MS` can override it, and abort errors include the timed-out URL.
+
+### Verification
+
+- Shcare Web: `bun run lint` passed.
+- Shcare Web: `bunx tsc --noEmit --pretty false` passed.
+- Shcare Web: `bun run build:firebase` passed; `dist-firebase` contains `https://smart-health-api-xj0a.onrender.com/api` and no `localhost:3000` API fallback. Deployed to Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/82dea8d245b9eee7`.
+- Shcare Web: live browser smoke caught and fixed a portal deep-link crash (`No QueryClient set`) by wrapping the React Router SPA in `QueryClientProvider` at `src/app/App.tsx`; cache-bypassed Chrome smoke confirmed unauthenticated `/portal/patients` redirects to `/login` with no console warnings.
+- Browser smoke also confirmed `/portal/devices`, `/portal/records/review`, `/portal/settings`, and Web Admin `/admin-actions` redirect unauthenticated users to login with no console warnings.
+- Authenticated live Chrome smoke confirmed workspace-admin login plus `/portal/dashboard`, `/portal/patients`, `/portal/devices`, `/portal/records`, `/portal/settings`, `/portal/reports`, and `/portal/notifications`; doctor login plus `/portal`, `/portal/patients`, and `/portal/records`. A Chrome form-field issue on portal filter/forms was fixed by adding stable `id`/`name` attributes across portal inputs/selects/textareas and redeployed in `shcare` version `82dea8d245b9eee7`.
+- Web Admin: `npm.cmd run lint` passed warning-free.
+- Web Admin: `npm.cmd run build` passed without the old large export chunk warning.
+- Web Admin: `npm.cmd run build:firebase:admin` passed. Firebase output includes `dist-firebase\client\fonts\roboto-regular.ttf`; `export-utils` is about 13 KB in the client assets.
+- Web Admin: deployed to Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/eb467019efffe1b4`.
+- Backend/live smoke passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:notification-push`, `npm.cmd run smoke:storage`, `npm.cmd run smoke:api-production`, `npm.cmd run smoke:public-deployment`, and credentialed `npm.cmd run smoke:production-roles`.
+- Authenticated portal production smoke passed: `npm.cmd run smoke:portal-production` verified platform-admin portal rejection, workspace-admin portal reads, and doctor portal reads against live Render using the temporary credentials from `smoke:production-roles`.
+- Android passed: `.\gradlew.bat :app:compileDebugKotlin --console=plain` and `.\gradlew.bat :app:assembleDebug -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com --console=plain`.
+- Firmware passed: MSM261 PlatformIO `esp32-s3-devkitm-1` and `esp32-s3-ota` builds, both about RAM 15.7% and flash 29.7%.
+
+### Remaining Limits
+
+- Full authenticated browser E2E for Shcare Portal and Admin mutation flows remains the next product-completeness slice; local smoke covers backend contracts but does not visually click every deployed authenticated workflow.
+- Local shell still lacks `DATABASE_URL`, Brevo, MQTT, and S3/R2 envs, so `smoke:postgres`, real provider email, real MQTT, and real object-storage smoke are blocked by provider configuration rather than source code.
+- Physical ESP32-S3 validation remains blocked: `platformio device list` saw only COM5/COM6 Bluetooth serial links, so flash, serial-monitor, heartbeat/audio, and OTA evidence need a connected/provisioned board.
+
+## 2026-07-05 Portal Browser Smoke And Popover Layering
+
+### Implemented
+
+- Fixed the Shcare Portal avatar/notification popover stacking bug by isolating the portal shell, raising `.clinical-topbar` above `.clinical-content`, and setting `.clinical-popover` above portal filter/table/card content in both `clinical-system.css` and the final `signal-horizon.css` layer.
+- Added Playwright as a Shcare Web dev dependency and added `scripts/portalBrowserSmokeTest.mjs` plus `bun run smoke:portal-browser`.
+- The browser smoke signs into the live `https://shcare.web.app` with the workspace smoke account generated by backend `smoke:production-roles`, checks Firebase auth, portal API responses, records search/status controls, avatar dropdown, notification dropdown, sidebar route navigation, and the audit link inside the avatar menu. It redacts auth headers and never prints passwords or ID tokens.
+- Follow-up route coverage in `portalBrowserSmokeTest.mjs` now also visits live monitoring, consent, staff, alerts, onboarding, help, workspace switcher, billing, review queue, and device assignment routes.
+- Deployed the popover fix to Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/245f0489b45b35dc`.
+
+### Verification
+
+- `bun run smoke:portal-browser` passed against `https://shcare.web.app`.
+- The smoke observed `/api/auth/firebase`, `/api/portal/status`, `/api/portal/notifications`, `/api/portal/scans`, `/api/portal/overview`, `/api/portal/devices`, and `/api/portal/patients` as HTTP 200.
+- The smoke measured the avatar menu and notification menu as unoccluded: popover `z-index=120`, topbar `z-index=80`, content `z-index=1`; the avatar menu overlaps the records filter panel without being hidden under it.
+- Shcare Web `bun run lint`, `bunx tsc --noEmit --pretty false`, and `bun run build:firebase` passed.
+- Backend `npm.cmd run smoke:portal-production` passed again against live Render/Firebase.
+
+### Remaining Limits
+
+- The browser smoke remains read-only/non-destructive. Mutation coverage is handled by `bun run smoke:portal-mutation`; provider/RLS, real-device, and physical hardware validation remain separate production slices.
+
+## 2026-07-05 Portal Mutation Smoke Tooling
+
+### Implemented
+
+- Added stable IDs/data attributes for portal mutation QA controls: patient create/search/detail notes/delete, device assignment selects/submit, notification read/delete, reports CSV export, workspace settings save, notification preferences save, help/support ticket, topbar notification trigger, user menu trigger, and logout.
+- Reworked the Help page quick-guide cards from emoji/cursor-only cards into lucide-icon buttons that prefill the support-ticket form. Hotline/email rows now use the same icon set instead of emoji so the portal avoids mojibake-prone symbols.
+- Added `scripts/portalMutationSmokeTest.mjs` and `bun run smoke:portal-mutation`.
+- The mutation smoke uses the existing workspace smoke account, creates a unique patient through the UI, updates clinical notes, assigns one available device if present and restores its original assignment, creates/reads/deletes a notification, saves/restores workspace settings and notification preferences, exports reports CSV, submits a support ticket and deletes the resulting notification, deletes the test patient through the UI, verifies a missing-patient 404, logs out, and logs back in. Cleanup state is recorded immediately after each mutation so failure paths still attempt restore/delete.
+
+### Verification
+
+- Passed locally: `node --check scripts\portalMutationSmokeTest.mjs`, `node --check scripts\portalBrowserSmokeTest.mjs`, targeted ESLint, `bunx tsc --noEmit --pretty false`, `bun run build:firebase`, and targeted `git diff --check`.
+- 2026-07-06 live follow-up passed on final Shcare Web release `projects/162993928259/sites/shcare/versions/f9ca61aea825f375`: `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, invalid-credential browser UI smoke, and `bun run smoke:portal-mutation`.
+- Final live mutation run id `portal-mutation-mr93wui5` created patient `pat_20260706105903_3cb70e09`, updated notes, assigned/restored device `lite-steth-a92`, created/read/deleted notification `noti_20260706105935_65dae457`, saved/restored workspace settings and notification preferences, exported `smart-health-report-2026-07-06.csv`, submitted/cleaned support notification `noti_20260706110031_709e1b8d`, verified expected 404 states, logged out, and logged back in.
+
+### Remaining Limits
+
+- Live portal mutation E2E is complete for the covered controlled workspace flows. Web Admin mutation coverage is now handled by `npm.cmd run smoke:admin-mutation`. Remaining production limits are outside this browser slice: Supabase/Postgres RLS parity, real provider email inbox confirmation, real Android FCM delivery, physical ESP32-S3 flash/heartbeat/audio/OTA, and performance/Lighthouse.
+
+## 2026-07-06 Shcare Web Login And Live Portal E2E Hardening
+
+### Implemented
+
+- Mapped Firebase Auth failures in `smart-health-web/src/lib/firebase-client.ts` to safe Vietnamese messages. Raw `Firebase: Error (auth/invalid-credential)` is no longer shown on `shcare.web.app`.
+- Added `#login-error[role="alert"][aria-live="polite"]` so login failures are accessible and directly testable.
+- Removed the unstable unauthenticated portal redirect state from `PortalLayout.tsx`, fixing the live React maximum-update-depth console failure on protected deep links.
+- Removed the unsupported `representative` workspace input from `WorkspaceSettings.tsx`; the portal now only edits fields the live backend returns and persists.
+- Hardened `portalMutationSmokeTest.mjs` for live behavior: direct-user notification creation, persistable workspace `website` update/restore, and expected 404 filtering for intentional delete/missing-patient checks.
+
+### Verification
+
+- Final deployed `shcare.web.app` Hosting version: `projects/162993928259/sites/shcare/versions/f9ca61aea825f375`, release `projects/162993928259/sites/shcare/channels/live/releases/1783335390544000`.
+- Passed: targeted Prettier, targeted ESLint, `bunx tsc --noEmit --pretty false`, `bun run build:firebase`, Firebase Admin account audit for `nguyengiabao100624@gmail.com`, invalid-credential browser UI smoke, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, and `bun run smoke:portal-mutation`.
+- Firebase Admin audit for `nguyengiabao100624@gmail.com`: account exists, not disabled, email verified, password provider, platform-admin claims, workspace `org_default_clinic`, last sign-in `Wed, 01 Jul 2026 15:59:11 GMT`. That account belongs on `shcare-admin.web.app`; wrong-password/invalid-credential on `shcare.web.app` is a Firebase credential failure, not proof that backend/Firebase setup is missing.
+
+## 2026-07-06 Portal/Admin Device And Needs-Info Sync Follow-up
+
+### Implemented
+
+- Backend `/devices/pair` now distinguishes device management from claim-code activation. Users with workspace device visibility can claim an existing same-workspace provisioned device only with a valid non-expired claim code; creating/pairing an arbitrary new device without a code still requires device-management capability.
+- `scripts/workspaceAccessSmokeTest.js` now seeds `dev_claim_alpha`, verifies doctor claim-code pairing succeeds, and verifies doctor no-code arbitrary device creation is rejected with 403.
+- Shcare Portal API wrapper added `activateDeviceByClaim(...)`; Devices page now links to `/portal/devices/claim`; the new Claim Device page collects device id, claim code, display name, and connection method with stable QA selectors.
+- `ApprovalPendingPage.tsx` now renders a needs-info resubmit form on `/can-bo-sung`, using backend-requested fields where present, posting the updated role request, optionally uploading the document, refreshing the user, and routing back to `/cho-duyet`.
+- Web Admin sidebar now includes the existing `/devices` page for `platform.devices.view` / `platform.devices.manage`, so Platform Admin can reach add/activate/manage device functionality.
+- `signal-horizon.css` now applies final scoped blur/translucency to `.clinical-popover`; `portalBrowserSmokeTest.mjs` asserts `backdrop-filter` includes `blur(...)`.
+- `portalBrowserSmokeTest.mjs` route coverage now includes `/portal/devices/claim`; `portalMutationSmokeTest.mjs` provisions, claims, and cleans up a device through the claim route.
+
+### Verification
+
+- Backend passed: `npm.cmd run check` and `npm.cmd run smoke:workspace-access`.
+- Shcare Web passed: `bun run lint`, `bunx tsc --noEmit --pretty false`, `bun run build:firebase`, `node --check scripts\portalBrowserSmokeTest.mjs`, and `node --check scripts\portalMutationSmokeTest.mjs`.
+- Local browser smoke passed against a local demo backend plus local web dev server: workspace admin provisioned a device, doctor opened `/portal/devices`, saw `/portal/devices/claim`, avatar menu had `backdrop-filter: blur(...)`, doctor claimed the device with the generated claim code, and `/api/portal/devices/pair` returned `pairedUserId=usr_doctor`.
+- Web Admin passed: `npm.cmd run lint` and `npm.cmd run build:firebase:admin`; prerender included `/devices`.
+- Android passed: `.\gradlew.bat :app:compileDebugKotlin`.
+- Superseded by the 2026-07-07 live sync below: this follow-up is now deployed to `shcare.web.app` and `shcare-admin.web.app` and verified with live browser/API smoke.
+
+## 2026-07-07 Live Portal/Admin Sync And Form Hardening
+
+### Implemented
+
+- Deployed the portal/admin device-claim and needs-info source follow-up to Firebase Hosting for both surfaces.
+- Added `method="post"` to all Shcare Web and Web Admin React forms touched by auth, registration, portal actions, and admin dialogs. This prevents pre-hydration/native form submission from leaking email/password or other form fields through a GET query string if a user submits before React takes over.
+- Kept the existing Shcare Portal device claim flow, `/can-bo-sung` needs-info resubmit flow, Platform Admin `/devices` navigation exposure, and portal popover blur hardening from the 2026-07-06 source entry.
+- Android UI source keeps the successful `HorizontalDivider` migration where supported. Compose AutoMirrored icon replacement was not kept because the current dependency set did not resolve those symbols.
+
+### Verification
+
+- Deployed Shcare Web live: `projects/162993928259/sites/shcare/versions/04e18dde26eedb19`, release `projects/162993928259/sites/shcare/channels/live/releases/1783360712235000`.
+- Deployed Web Admin live: `projects/162993928259/sites/shcare-admin/versions/4e84a69f69a916e2`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783360744436000`.
+- Live public/API smoke passed: `npm.cmd run smoke:public-deployment`.
+- Live authenticated portal smoke passed: `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, and `bun run smoke:portal-mutation`.
+- Live role smoke passed: `npm.cmd run smoke:production-roles` for platform admin, workspace admin, and doctor portal/android roles.
+- Custom Playwright form/auth smoke passed: admin no-JS form submitted without credential query leakage; portal no-JS login form was not rendered; hydrated admin and portal logins both reached Devices pages.
+- Backend passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:notification-push`, and `npm.cmd run smoke:storage`.
+- Shcare Web passed: `bun run lint`, `bunx tsc --noEmit --pretty false`, and `bun run build:firebase`.
+- Web Admin passed: `npm.cmd run lint` and `npm.cmd run build:firebase:admin`. Remaining TanStack messages are dependency unused-import warnings from `node_modules`, not source failures.
+- Android passed: `.\gradlew.bat :app:compileDebugKotlin` and release `.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com`. Release still emits deprecated `Icons.Filled.*` warnings.
+- Firmware passed: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run` for `esp32-s3-devkitm-1` and `esp32-s3-ota`.
+- Local `npm.cmd run check:production` still reports `BLOCKED` because the local terminal lacks production host envs and reads demo/json/local defaults. This is not evidence that the already-used Render/Firebase/Supabase services need to be recreated.
+
+## 2026-07-07 Web Admin Mutation Smoke Coverage
+
+### Implemented
+
+- Added Playwright as a Web Admin dev dependency and added `scripts/adminMutationSmokeTest.mjs` plus package script `npm.cmd run smoke:admin-mutation`.
+- The smoke signs into live `https://shcare-admin.web.app` with the platform smoke account generated by backend `npm.cmd run smoke:production-roles`, waits for a stored admin/backend token, then reloads into the admin shell so route checks are not blocked by login hydration timing.
+- Mutation coverage uses authenticated browser `fetch` against Render and performs deterministic cleanup: `/me` capability check, settings patch/restore, platform clinic/workspace create/patch/delete, package create/patch/assign/delete, patient create/patch/delete, device provision/patch/delete, notification create/read/delete, and storage bucket create/delete.
+- Route coverage checks overview, devices, patients, clinics, packages, notifications, storage, settings, admin accounts, and audit log after the mutation phase.
+
+### Verification
+
+- Passed: `node --check scripts\adminMutationSmokeTest.mjs`, Web Admin `npm.cmd run lint`, backend `npm.cmd run check`, backend `npm.cmd run smoke:production-roles`, and live `npm.cmd run smoke:admin-mutation`.
+- Live run id `admin-mutation-mr9lnk7o` created and patched workspace `org_admin_mutation_mr9lnk7o`, package `pkg_admin_mutation_mr9lnk7o`, patient `pat_20260706191558_a5b4c1c4`, device `dev_admin_mutation_mr9lnk7o`, notification `noti_20260706191610_dd02c7ea`, and bucket `bucket-admin-mutation-mr9lnk7o`; cleanup returned HTTP 200 for settings restore, notification, storage bucket, device, patient, package, and workspace.
+
+### Remaining Limits
+
+- Covered Web Admin platform mutations are automated with cleanup. Provider/hardware/performance production limits remain separate: Supabase/Postgres RLS parity, real email inbox verification, real Android FCM delivery, Lighthouse/browser performance regression, and physical ESP32-S3 flash/heartbeat/audio/OTA evidence.
 
 ## 2026-06-09 Core Realtime Cleanup
 
@@ -270,7 +561,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Cloud OTA currently accepts manual firmware URL/checksum or a `device-firmware` storage file with backend-generated tokenized download URL, and firmware verifies SHA-256. Production still needs signed firmware, trusted CA certificate handling instead of demo `setInsecure()`, rollback policy, and physical-board OTA evidence.
 - Audio download/open-in-tab can return 401 if the frontend opens a protected URL without passing a bearer token. Prefer authenticated fetch/download wrappers or signed URL endpoints.
 - Object storage routes should be tested before calling them production-ready.
-- FCM delivery, notification retry, preferences, and failure tracking are incomplete.
+- Real FCM provider/device smoke, workspace recipient policy, notification-channel display polish, and preference enforcement still need production validation.
 - Rate limit, PHI encryption, immutable audit, consent expiry, and export/download audit need hardening.
 
 ## Web Admin: `smart-health-admin\thiết kế giao diện`
@@ -357,7 +648,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Doctor profile clinic/specialty edit is connected to canonical fields, but the profile UX still needs a full visual polish pass.
 - Some older Compose screens may still contain mojibake text; fix strings as UTF-8 when touched.
 - Live WebSocket sends the Android bearer token when available, but backend listener/device WebSocket auth enforcement still needs a full production pass.
-- FCM token registration is complete, but actual push delivery still needs Firebase Admin Cloud Messaging send logic, provider-side smoke, notification-channel/local display polish, and retry/failure tracking.
+- FCM token registration is complete, and backend Cloud Messaging send logic now records retry/failure history; actual device delivery still needs provider-side smoke plus notification-channel/local display polish.
 - No production scan upload/offline queue.
 - No BLE/captive portal provisioning UI for ESP32.
 
@@ -996,3 +1287,44 @@ KLTN report artifacts generated from this evidence set:
 
 - Strict local production check remains blocked until real provider envs are loaded into the process running the check. Existing project docs say Render/Firebase/Supabase/Postgres/S3-compatible storage were configured previously; do not restart provider setup from scratch.
 - Remaining BE production hardening is provider/runtime completeness: verify the actual Render env values through Render access, restrict CORS if still broad, finish Brevo/SMS/Zalo/Redis/MQTT decisions as needed, and add deeper browser/API mutation smoke for storage/audio/scan flows.
+
+## 2026-07-07 Codex Telegram Bridge Account Sync And Parallel Jobs
+
+### Implemented locally
+
+- 2026-07-07 follow-up: overview quota now reads the active/default account usage snapshot instead of stale worker/global usage; switching any account to default queues a quota probe when usage is missing; runtime fallback after a quota failure promotes the fallback account to default; quota probe claiming prioritizes the default account.
+- Added account quota probe requests and worker endpoints so account profile checks, worker account changes, and job profile selection trigger an immediate lightweight Codex run to capture `token_count`/rate-limit data.
+- Account selection now marks the active/selected Codex profile as default in both account rows and run config, preventing stale quota/status from the previous account from remaining primary in the dashboard.
+- Worker runtime now supports configurable job concurrency (`WORKER_CONCURRENCY`, default `2`, range `1-4`) while DB claiming blocks concurrent resume jobs for the same target session.
+- Dashboard account usage now shows `đang đồng bộ quota` for CODEX_HOME profiles that are awaiting the first usage snapshot.
+
+### Verification
+
+- `npm run windows:check` passed against the local `.env` without printing secrets.
+- Real environment smoke is IN PROGRESS, not ready to mark closed. A copied live DB/server/worker smoke on port `8798` verified account switching, exhausted-account fallback, correct active/default display, and persistence after server restart. Quota refresh after switching could not be proven because the real Codex profiles tested returned out-of-credit/usage-limit errors or produced no `token_count` event. The real bridge on port `8788` was not restarted while an active Telegram-launched Codex job was running.
+- In `D:\Study\KLTN\codex-telegram-bridge`: `npm run typecheck`, `npx vitest run tests/db.test.ts tests/app.test.ts tests/workerRuntime.test.ts`, full `npm test`, and `npm run build` passed.
+
+## 2026-07-07 Codex Telegram Bridge Completion Notification Hardening
+
+### Implemented locally
+
+- Reworked job terminal notifications so each completion clearly identifies the task: title, request summary, Session ID, Task ID, start/end time, duration, final status, result summary, output/file references, account/profile, and CODEX_HOME when known.
+- Reworked standalone session final notifications with the same metadata shape; Task ID is shown as `khong co` when the completion is not tied to a Telegram job.
+- Success is only sent after `job_done` when a final assistant answer has been persisted. A done event without a final answer is converted to a failed job and reported as `Failed` with the missing-final-result reason.
+- Failed and cancelled job states now use the same rich terminal message path, including reason/status detail.
+- Added anti-spam guards for running and terminal job notifications plus content-hash session final markers, preventing duplicated completion notifications when events are replayed.
+- Tightened the worker success gate so a blocking Codex/runtime error without a confirmed completion is not treated as a successful job.
+
+### Verification
+
+- `npm.cmd run windows:check` passed against the local bridge env without printing secrets.
+- `npm.cmd run typecheck` passed.
+- `npx.cmd vitest run tests/app.test.ts` passed and covers concurrent rich notifications for multiple Telegram jobs and standalone sessions, duplicate replay suppression, done-without-final failure, and failed/cancelled dedupe.
+- `npx.cmd vitest run tests/workerRuntime.test.ts tests/codexRunner.test.ts` passed for worker/runtime behavior.
+- Full `npm.cmd test` passed.
+- `npm.cmd run build` passed.
+
+### Remaining Limits
+
+- This notification hardening is implemented and verified locally. The live bridge process still needs a restart after active Telegram-launched jobs finish so the rebuilt `dist` is loaded.
+- The separate account/quota refresh item remains IN PROGRESS until a real Codex profile emits a `token_count` quota snapshot after switching.

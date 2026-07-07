@@ -1,29 +1,7 @@
-import fs from "node:fs";
 import path from "node:path";
+import { loadProductionEnv } from "./production-env.js";
 
-function readEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) return {};
-  return Object.fromEntries(
-    fs
-      .readFileSync(filePath, "utf8")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#") && line.includes("="))
-      .map((line) => {
-        const index = line.indexOf("=");
-        return [
-          line.slice(0, index).trim(),
-          line
-            .slice(index + 1)
-            .trim()
-            .replace(/^['"]|['"]$/g, ""),
-        ];
-      }),
-  );
-}
-
-const fileEnv = readEnvFile(path.resolve(".env.production"));
-const env = { ...fileEnv, ...process.env };
+const { env, files } = loadProductionEnv();
 const required = [
   "VITE_SMART_HEALTH_API_BASE_URL",
   "VITE_PUBLIC_SITE_URL",
@@ -51,6 +29,13 @@ for (const key of ["VITE_SMART_HEALTH_API_BASE_URL", "VITE_PUBLIC_SITE_URL"]) {
 }
 
 console.log("Production environment hợp lệ");
+console.log(
+  `- Env files: ${
+    files.length
+      ? files.map((file) => path.relative(process.cwd(), file) || ".").join(", ")
+      : "process environment only"
+  }`,
+);
 console.log(`- API: ${env.VITE_SMART_HEALTH_API_BASE_URL}`);
 console.log(`- Site: ${env.VITE_PUBLIC_SITE_URL}`);
 console.log(`- Firebase project: ${env.VITE_FIREBASE_PROJECT_ID}`);

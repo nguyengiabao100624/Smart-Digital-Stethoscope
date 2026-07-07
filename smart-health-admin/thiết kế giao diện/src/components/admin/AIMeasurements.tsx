@@ -17,14 +17,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ExportDataDialog } from "./dialogs/ExportDataDialog";
-import {
-  PageHeader,
-  StatusBadge,
-  Timeline,
-  WaveformPreview,
-  itemMotion,
-  listMotion,
-} from "./design-system";
+import { PageHeader, StatusBadge, Timeline, WaveformPreview } from "./design-system";
+import { itemMotion, listMotion } from "./motion-presets";
 import { smartHealthApi, smartHealthAudioUrl, type SmartHealthScan } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { buildSmartHealthFilename } from "@/lib/filename-utils";
@@ -251,7 +245,8 @@ export function AIMeasurements() {
 
       {backendError && (
         <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          Chưa tải được dữ liệu lượt đo từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị sai: {backendError}
+          Chưa tải được dữ liệu lượt đo từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị
+          sai: {backendError}
         </div>
       )}
 

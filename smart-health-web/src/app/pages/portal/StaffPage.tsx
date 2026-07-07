@@ -42,6 +42,7 @@ export default function StaffPage() {
       </div>
       {show && (
         <form
+          method="post"
           onSubmit={(e) => {
             e.preventDefault();
             create.mutate();
@@ -51,6 +52,8 @@ export default function StaffPage() {
           {(["name", "email", "phone", "specialty", "license"] as const).map((key) => (
             <input
               key={key}
+              id={`staff-${key}`}
+              name={`staff-${key}`}
               required={key === "name" || key === "email"}
               type={key === "email" ? "email" : "text"}
               value={form[key]}

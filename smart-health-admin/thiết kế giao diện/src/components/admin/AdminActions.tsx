@@ -24,7 +24,7 @@ import { ExportReportDialog } from "./dialogs/ExportReportDialog";
 import { ExportDataDialog } from "./dialogs/ExportDataDialog";
 import { CreatePackageDialog } from "./dialogs/CreatePackageDialog";
 import { NotificationSettingsDialog } from "./dialogs/NotificationSettingsDialog";
-import { useAdminAccess } from "./AdminAccessContext";
+import { useAdminAccess } from "./useAdminAccess";
 import {
   DEVICE_MANAGE_CAPABILITIES,
   NOTIFICATION_MANAGE_CAPABILITIES,

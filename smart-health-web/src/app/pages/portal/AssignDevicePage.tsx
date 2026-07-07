@@ -58,6 +58,7 @@ export default function AssignDevicePage() {
         </p>
       </div>
       <form
+        method="post"
         onSubmit={(e) => {
           e.preventDefault();
           assign.mutate();
@@ -67,6 +68,8 @@ export default function AssignDevicePage() {
         <label className="block text-sm text-white">
           Thiết bị
           <select
+            id="assign-device-id"
+            name="assignDeviceId"
             required
             value={deviceId}
             onChange={(e) => setDeviceId(e.target.value)}
@@ -83,6 +86,8 @@ export default function AssignDevicePage() {
         <label className="block text-sm text-white">
           Bệnh nhân
           <select
+            id="assign-patient-id"
+            name="assignPatientId"
             required
             value={patientId}
             onChange={(e) => setPatientId(e.target.value)}
@@ -96,7 +101,7 @@ export default function AssignDevicePage() {
             ))}
           </select>
         </label>
-        <button disabled={assign.isPending} className="premium-button w-full">
+        <button id="assign-device-submit" disabled={assign.isPending} className="premium-button w-full">
           {assign.isPending ? "Đang gán..." : "Xác nhận gán thiết bị"}
         </button>
       </form>

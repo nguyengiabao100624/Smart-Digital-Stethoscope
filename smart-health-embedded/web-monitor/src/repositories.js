@@ -349,6 +349,17 @@ function syncArrayItem(items, item) {
   return items[index];
 }
 
+function mergeSqlListWithRuntime(runtimeItems, sqlItems) {
+  const merged = [...sqlItems];
+  const seen = new Set(sqlItems.map((item) => item.id));
+  for (const item of runtimeItems) {
+    if (item?.id && !seen.has(item.id)) {
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
 function matchesDoctorRequestStatus(user, status) {
   return (
     user &&
@@ -1242,8 +1253,8 @@ function createRepositories(options) {
         return result.rows.map(rowToPatient);
       });
       if (sqlPatients && sqlPatients.length > 0) {
-        getDb().patients = sqlPatients;
-        return sqlPatients;
+        getDb().patients = mergeSqlListWithRuntime(getDb().patients, sqlPatients);
+        return getDb().patients;
       }
       return getDb().patients;
     },
@@ -1286,8 +1297,8 @@ function createRepositories(options) {
         return result.rows.map(rowToDevice);
       });
       if (sqlDevices && sqlDevices.length > 0) {
-        getDb().devices = sqlDevices;
-        return sqlDevices;
+        getDb().devices = mergeSqlListWithRuntime(getDb().devices, sqlDevices);
+        return getDb().devices;
       }
       return getDb().devices;
     },

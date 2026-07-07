@@ -107,6 +107,13 @@ async function main() {
     name: "Device With Missing User",
     pairedUserId: "missing_user",
   });
+  rows.patients = [{ id: "patient_sql", patient_code: "SQL-1", name: "SQL Patient" }];
+  const listedPatients = await repositories.patients.list();
+  assert.equal(listedPatients.some((patient) => patient.id === "patient_sql"), true);
+  assert.equal(listedPatients.some((patient) => patient.id === "patient_stale_owner"), true);
+  const listedDevices = await repositories.devices.list();
+  assert.equal(listedDevices.some((device) => device.id === "device_portal"), true);
+  assert.equal(listedDevices.some((device) => device.id === "device_stale_user"), true);
   assert.equal(guardChecks.userPatientFk, true);
   assert.equal(guardChecks.patientOwnerFk, true);
   assert.equal(guardChecks.devicePairedUserFk, true);

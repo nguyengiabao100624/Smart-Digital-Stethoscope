@@ -18,9 +18,9 @@ const db = {
     },
   ],
   memberships: [],
-  patients: [],
+  patients: [{ id: "patient_stale", name: "Stale Patient", organizationId: "org_stale" }],
   devices: [{ id: "device_portal", assignedPatientId: "patient_portal" }],
-  scans: [],
+  scans: [{ id: "scan_stale", patientId: "patient_stale", organizationId: "org_stale" }],
   audioFiles: [],
   aiResults: [],
   deviceEvents: [],
@@ -44,9 +44,25 @@ const rows = {
   audit_logs: [],
 };
 
+const guardChecks = {
+  userPatientFk: false,
+  patientOwnerFk: false,
+  devicePairedUserFk: false,
+};
+
 const pool = {
   async query(sql) {
-    const match = String(sql).match(/FROM\s+([a-z_]+)/i);
+    const text = String(sql);
+    if (text.includes("INSERT INTO users")) {
+      guardChecks.userPatientFk = text.includes("EXISTS (SELECT 1 FROM patients WHERE id = $13)");
+    }
+    if (text.includes("INSERT INTO patients")) {
+      guardChecks.patientOwnerFk = text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3)");
+    }
+    if (text.includes("INSERT INTO devices")) {
+      guardChecks.devicePairedUserFk = text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3)");
+    }
+    const match = text.match(/FROM\s+([a-z_]+)/i);
     return { rows: match ? rows[match[1]] || [] : [] };
   },
 };
@@ -68,8 +84,32 @@ async function main() {
   assert.deepEqual(db.organizations[0].requestMetadata, { doctorCount: 4 });
   assert.equal(db.users[0].email, "doctor@example.com");
   assert.equal(db.users[0].roleRequestDocuments[0].id, "doctor_doc_1");
+  assert.deepEqual(db.patients, []);
+  assert.deepEqual(db.scans, []);
   assert.equal(db.devices[0].status, "active");
   assert.equal(db.devices[0].assignedPatientId, "patient_portal");
+
+  await repositories.users.save({
+    id: "user_stale_patient",
+    email: "stale-patient@example.com",
+    role: "patient",
+    name: "Stale Patient User",
+    patientId: "missing_patient",
+  });
+  await repositories.patients.save({
+    id: "patient_stale_owner",
+    patientCode: "STALE-OWNER",
+    name: "Patient With Missing Owner",
+    ownerUserId: "missing_user",
+  });
+  await repositories.devices.save({
+    id: "device_stale_user",
+    name: "Device With Missing User",
+    pairedUserId: "missing_user",
+  });
+  assert.equal(guardChecks.userPatientFk, true);
+  assert.equal(guardChecks.patientOwnerFk, true);
+  assert.equal(guardChecks.devicePairedUserFk, true);
   console.log("Repository portal metadata smoke passed");
 }
 

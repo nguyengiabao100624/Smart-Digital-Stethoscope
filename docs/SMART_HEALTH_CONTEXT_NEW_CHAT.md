@@ -24,6 +24,14 @@ Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_I
 - Treat the first requested slice, Role/Auth/Register/Approval/RBAC, as closed in the current deployed source unless new evidence regresses it: commit `88877ad5` is pushed, Firebase Hosting live versions are `fab6a2ad97c63420` for Shcare Web and `ce26044bb3730062` for Web Admin, and live portal/admin mutation smokes cleaned up run ids `portal-mutation-mrad4yzw` and `admin-mutation-mrad8n0r`.
 - Next-slice probe: `npm.cmd run check:production:strict` was rerun from the local backend shell and still reports `BLOCKED` because this PowerShell process does not have production envs such as Firebase Admin, public backend URL, `DATA_BACKEND=postgres`, `DATABASE_URL`, S3/object storage, and `PHI_ENCRYPTION_KEY`. Do not rerun this as the repository-backed tenant isolation slice unless a production-env shell or Render/Supabase access is available.
 
+## 2026-07-07 - Supabase/Postgres repository parity probe
+
+- The installed Supabase connector is usable for Smart Health. It confirmed project `smart-health-production` (`mahvymyncxszvuhlycwp`) is healthy on Postgres 17.6, with migrations `001_init` through `008_notification_push_attempts` applied.
+- Direct DB checks showed public tables have RLS enabled, `anon` and `authenticated` have no direct public table grants, and there are no permissive public policies in `pg_policies`.
+- The connector found a real normalized/runtime drift: `app_runtime_state` counted `organizations=9` while normalized `public.organizations` had `10`. The missing runtime org was `org_admin_mutation_mrad8n0r`, which only had audit-log references left from the admin mutation smoke.
+- Backend repository hydration was hardened so normalized SQL rows are authoritative even when a table returns zero rows; stale runtime snapshot rows no longer survive an empty SQL table. Optional FK upserts for user `patient_id`, patient `owner_user_id`, and device `paired_user_id` now null missing references instead of throwing FK violations.
+- Verification passed locally: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access`.
+
 ## 2026-07-07 - Workspace owner approval lifecycle
 
 - Product invariant for auth/role work: `/register/phong-kham` creates a `workspace_owner` request through `/api/auth/workspace-request`; doctor registration creates only a doctor request; `shcare-admin.web.app` approves workspace/facility owners from the workspace screen, while doctor approval remains doctor-only.
@@ -360,11 +368,11 @@ These tools are installed globally for future Codex chats. New chats should use 
   - Use for deliberate code review or risk review.
 - Selective global skills installed on 2026-06-22:
   - `academic-research-suite`: Codex-native research-to-thesis router; prefer it for the KLTN literature review, drafting, citation checks, review, and revision pipeline.
-  - Taste suite: 11 of 13 skills are installed user-wide. The base `gpt-taste` skill is always paired with `impeccable`; specialized skills cover brand kits, image-to-code, web/mobile image references, redesign, minimalist/brutalist/premium styles, Stitch, and full-output enforcement. `design-taste-frontend` and legacy v1 are skipped because they duplicate the Codex-specific base skill.
+  - UI/UX skill pool: the base `gpt-taste` skill is always paired with `impeccable`; every materially applicable UI/UX skill should be added for interface work, including specialized Taste skills, frontend implementation/testing, Figma/design-source, platform UI, emulator/browser QA, UI performance, and visual-asset skills. `design-taste-frontend` and legacy v1 remain skipped because they duplicate the Codex-specific base skill.
   - `context-budget` and `strategic-compact`: selected from `affaan-m/ECC` for context/token budgeting; the full ECC skill pack was not installed because it overlaps existing tools.
   - The assistant should infer and select the relevant installed skill/tool from the registry and `SMART_HEALTH_AGENT_SKILLS_GUIDE.md`; the user does not need to remember exact skill names.
   - 26 current, non-deprecated/non-duplicate skills from `mattpocock/skills`; all live user-wide under `C:\Users\baobe\.agents\skills`.
-  - `impeccable` v3.8.0: always combined with `gpt-taste` for future web/admin/Android interface work. Impeccable owns UX/accessibility/production quality; Taste owns visual direction. Existing Smart Health tokens and product/native conventions override incompatible generic marketing rules.
+  - `impeccable` v3.8.0: always combined with `gpt-taste` for future web/admin/Android interface work, then expanded with all applicable UI/UX skills from the global registry. Impeccable owns UX/accessibility/production quality; Taste owns visual direction. Existing Smart Health tokens and product/native conventions override incompatible generic marketing rules.
 - Agent Reach v1.5.0:
   - CLI and `agent-reach` skill are installed. Core web, YouTube, RSS, Exa search, V2EX, and basic Bilibili checks pass; GitHub CLI is installed but needs `gh auth login` for authenticated/private operations.
   - Optional Twitter/Reddit/Xiaohongshu/etc. channels require user login/cookies or provider credentials and are not enabled by default.

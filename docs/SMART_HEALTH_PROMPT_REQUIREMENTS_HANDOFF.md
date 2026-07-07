@@ -43,6 +43,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Workspace owner approval lifecycle | Closed in deployed source | `/register/phong-kham` maps to workspace-owner request, Admin workspace approval handles pending/needs-info/rejected/approved, and approval grants portal access. |
 | Wrong-surface guard | Closed in deployed source | Production role and portal smokes verify platform-admin portal rejection plus workspace-admin/doctor portal access. |
 | Account profile tenant hardening | Closed in deployed source | `/api/v1/me` no longer allows profile self-switch or membership creation by sending display workspace text. |
+| Supabase/Postgres repository parity probe | Closed for current source and Supabase metadata | Supabase connector verified `smart-health-production`, migrations `001`-`008`, RLS-enabled public tables, no direct `anon`/`authenticated` grants, and exposed one runtime snapshot drift fixed in the repository hydration source. |
 | Device transfer hardening | Closed in deployed source | Backend validates target workspace and target owner membership before transfer. |
 | Selected scan sharing hardening | Closed in deployed source | Scan listing now filters with `canAccessScan`, so selected-scan grants do not leak sibling scans. |
 | Notification target scoping | Closed in deployed source | Non-platform notification creation can target only self or same-workspace users. |
@@ -61,20 +62,20 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Live Web Admin: `npm.cmd run smoke:admin-mutation` with run id `admin-mutation-mrad8n0r`; cleanup succeeded.
 - Live mobile/overflow: custom Playwright 390x844 pass reported `overflow=0` and no console/page errors across public/auth, authenticated portal, and authenticated admin key routes.
 - Next-slice production gate probe on 2026-07-07: local PowerShell env presence check reported `MISSING` for `AUTH_MODE`, `FIREBASE_AUTH_ENABLED`, `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `FIREBASE_SERVICE_ACCOUNT_JSON`, public backend URL envs, `DATA_BACKEND`, `DATABASE_URL`, `OBJECT_STORAGE_PROVIDER`, `PHI_ENCRYPTION_KEY`, and Brevo envs. `npm.cmd run check:production:strict` returned `BLOCKED` with pass=3, warn=6, fail=7, manual=2. This is a local-shell/env access blocker, not proof that Render/Firebase/Supabase were never configured.
+- Supabase connector probe on 2026-07-07: project `smart-health-production` (`mahvymyncxszvuhlycwp`) is healthy on Postgres 17.6, migrations `001_init` through `008_notification_push_attempts` are applied, public tables have RLS enabled, `anon` and `authenticated` have no direct public table grants, and `app_runtime_state` showed one stale organization count drift (`9` runtime vs `10` normalized SQL).
+- Backend local after repository hardening: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access` passed.
 
 ## Current Severity Checklist
 
 ### Blocker
 
-- Repository-backed tenant isolation with production-like Supabase/Postgres data still needs a dedicated parity run. JSON/demo enforcement is covered, but normalized SQL/RLS/runtime parity is not fully proven from this local shell.
-- The current local PowerShell process cannot run that parity slice as production because required production envs are not loaded (`DATA_BACKEND`, `DATABASE_URL`, Firebase Admin, S3/object storage, PHI key, public URL). Use Render dashboard/API access or a production-env shell before repeating the strict gate.
 - Real physical MSM261 ESP32-S3 board validation still requires connected hardware for WiFi, heartbeat, audio, cloud command, and OTA serial evidence.
 
 ### High
 
 - Real Android FCM delivery needs a real device token against Render. Local/no-Firebase push persistence and backend retry paths are covered, but user-visible delivery on a device is not closed.
 - Production email verification should still be checked through a real inbox click-through, not only Render/Brevo provider `sent` status.
-- Storage/signed URL/admin-only storage edge cases need deeper repository-backed parity and browser/API mutation coverage.
+- Storage/signed URL/admin-only storage edge cases need deeper repository-backed parity and browser/API mutation coverage; the core Supabase schema/RLS/runtime snapshot probe is now covered.
 
 ### Medium
 
@@ -91,10 +92,9 @@ Do not repeat these as unresolved unless new evidence regresses them.
 
 Recommended next non-repeated slice:
 
-1. Verify repository-backed tenant isolation with production-like Supabase/Postgres data.
-2. Focus routes: `/api/me`, portal patients, devices, scans, selected scan sharing, storage/signed URLs, exports, notifications, audit/access logs, workspace admin actions.
-3. Run local/static checks first, then any available live Render smoke without printing secrets.
-4. If Render/Supabase env inspection is needed, record it as a blocker unless a Render API key/service id/dashboard access is available.
+1. Deploy the current backend repository-hydration hardening to Render and rerun live public/role/portal smoke without printing secrets.
+2. Then move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, storage/signed URL browser/API mutations, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
+3. Do not repeat the closed Role/Auth/Register/Approval/RBAC slice unless new regression evidence appears.
 
 ## Handoff Rule
 

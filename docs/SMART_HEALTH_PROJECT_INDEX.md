@@ -46,6 +46,7 @@ For product decisions, also read:
 
 - Firebase Auth is the identity provider across Android, Web Admin, and Shcare Portal.
 - Render, Firebase Hosting/Auth, Supabase Postgres, and Supabase S3-compatible storage were already set up earlier; do not ask to recreate them from scratch.
+- Supabase connector access is available for production-like DB inspection. On 2026-07-07 it confirmed project `smart-health-production` (`mahvymyncxszvuhlycwp`), applied migrations `001`-`008`, RLS-enabled public tables, no direct `anon`/`authenticated` grants, and no permissive public policies.
 - `MSM261S4030H0` is the only active firmware target. Do not route new work to INMP441.
 - Shcare Web registration email verification now uses a backend-generated Firebase verification link delivered through the outbound email provider stack.
 - Backend notification creation now has a Firebase Cloud Messaging delivery path for direct user notifications, records push delivery status separately from platform-admin email fanout, persists per-attempt `pushAttempts` history without raw FCM tokens, and retries retryable provider failures with bounded env controls.
@@ -59,6 +60,7 @@ For product decisions, also read:
 - Live `npm.cmd run smoke:admin-mutation` passes from `smart-health-admin\thiết kế giao diện` after refreshing production role credentials. It covers controlled Web Admin workspace/package/patient/device/notification/storage/settings mutations against live Render/Admin and cleans up every created/restored resource.
 - Web Admin lint is warning-free after the Fast Refresh mixed-export cleanup; PDF export font bloat was moved out of TypeScript bundles into `public/fonts/roboto-regular.ttf`.
 - Local strict production readiness can still report `BLOCKED` when Render/Supabase/Firebase/provider secrets are not loaded into the current PowerShell process.
+- Backend repository hydration now treats normalized SQL rows as authoritative even when SQL tables are empty, preventing stale runtime snapshot rows in Postgres-backed mode. `smoke:repositories` covers this plus optional FK guard SQL for user/patient/device links.
 
 ## Safe Cleanup Rules
 
@@ -134,7 +136,7 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 
 ## Remaining Practical Work
 
-- Verify repository-backed tenant isolation with production-like Supabase/Postgres data.
+- Deploy and live-smoke the latest backend repository-hydration hardening, then continue provider/device evidence.
 - Run browser performance/Lighthouse regression on the current split Shcare Web bundle.
 - Confirm real inbox receipt/click-through for production email verification.
 - Run real Android FCM delivery with a real device token against Render.

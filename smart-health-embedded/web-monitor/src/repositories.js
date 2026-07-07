@@ -390,7 +390,9 @@ function createRepositories(options) {
           )
           VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16,
+            $11, $12,
+            CASE WHEN $13 IS NOT NULL AND EXISTS (SELECT 1 FROM patients WHERE id = $13) THEN $13 ELSE NULL END,
+            $14, $15, $16,
             $17, $18, $19, $20, $21,
             $22, $23, $24, $25::jsonb, now()
           )
@@ -535,7 +537,9 @@ function createRepositories(options) {
             id, organization_id, owner_user_id, patient_code, name, age, gender, phone, email, address, notes, created_at, updated_at
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $1, $2,
+            CASE WHEN $3 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $3) THEN $3 ELSE NULL END,
+            $4, $5, $6, $7, $8, $9, $10, $11,
             COALESCE($12::timestamptz, now()), COALESCE($13::timestamptz, now())
           )
           ON CONFLICT (id)
@@ -580,7 +584,9 @@ function createRepositories(options) {
             connection_method, secret_hash, firmware_version, last_seen_at, revoked_at, created_at, updated_at
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9,
+            $1, $2,
+            CASE WHEN $3 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $3) THEN $3 ELSE NULL END,
+            $4, $5, $6, $7, $8, $9,
             $10, $11, $12, $13, $14, COALESCE($15::timestamptz, now()), COALESCE($16::timestamptz, now())
           )
           ON CONFLICT (id)
@@ -1573,12 +1579,11 @@ function createRepositories(options) {
       for (const key of ["organizations", "users", "memberships", "patients", "devices", "scans", "audioFiles", "aiResults", "deviceEvents", "notificationDevices", "notifications", "auditLogs"]) {
         const items = hydrated[key].filter(Boolean);
         counts[key] = items.length;
-        if (items.length > 0) {
-          // Normalized SQL rows stay authoritative for queryable columns while
-          // app_runtime_state retains forward-compatible portal metadata.
-          const runtimeItems = new Map((db[key] || []).map((item) => [item.id, item]));
-          db[key] = items.map((item) => ({ ...runtimeItems.get(item.id), ...item }));
-        }
+        // Normalized SQL rows stay authoritative for queryable collections.
+        // Keep forward-compatible runtime metadata only for rows that still
+        // exist in SQL; an empty SQL table must clear stale runtime rows.
+        const runtimeItems = new Map((db[key] || []).map((item) => [item.id, item]));
+        db[key] = items.map((item) => ({ ...runtimeItems.get(item.id), ...item }));
       }
       return counts;
     },

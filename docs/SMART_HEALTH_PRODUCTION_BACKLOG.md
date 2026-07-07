@@ -36,7 +36,17 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 
 - Added `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` for the broad product-hardening prompt so future chats do not repeat completed slices.
 - The handoff records product invariants, active repo map, closed Role/Auth/Register/Approval/RBAC work, live deploy versions, smoke run ids, remaining Blocker/High/Medium/Polish checklist, and the next recommended non-repeated slice.
-- Next practical backlog item remains repository-backed tenant isolation with production-like Supabase/Postgres data; do not redo the closed role/surface/deploy slice unless new regression evidence appears. A local 2026-07-07 strict production gate probe returned `BLOCKED` because this PowerShell process lacks production envs (`DATA_BACKEND`, `DATABASE_URL`, Firebase Admin, public backend URL, S3/object storage, PHI key), so run that slice from a production-env shell or with Render/Supabase access.
+- Next practical backlog item was repository-backed tenant isolation with production-like Supabase/Postgres data; do not redo the closed role/surface/deploy slice unless new regression evidence appears. A local 2026-07-07 strict production gate probe returned `BLOCKED` because this PowerShell process lacks production envs (`DATA_BACKEND`, `DATABASE_URL`, Firebase Admin, public backend URL, S3/object storage, PHI key), so the follow-up used the Supabase connector instead of repeating the local gate.
+
+## Completed - 2026-07-07 Supabase/Postgres repository parity probe
+
+- Used the installed Supabase connector for project `smart-health-production` (`mahvymyncxszvuhlycwp`) and confirmed the production-like database is healthy on Postgres 17.6.
+- Confirmed migrations `001_init` through `008_notification_push_attempts` are applied, public tables have RLS enabled, `anon` and `authenticated` have no direct public table grants, and `pg_policies` has no permissive public policies.
+- Found and recorded one normalized/runtime drift: `app_runtime_state` had `organizations=9` while normalized `public.organizations` had `10`; the missing runtime org was the audit-linked admin mutation smoke artifact `org_admin_mutation_mrad8n0r`.
+- Hardened backend repository hydration so normalized SQL rows are authoritative even when a table is empty, preventing stale runtime snapshot rows from surviving in Postgres-backed mode.
+- Hardened optional FK upserts for user `patient_id`, patient `owner_user_id`, and device `paired_user_id` so missing optional references become `NULL` instead of causing Postgres FK failures.
+- Local verification passed: `node --check src\repositories.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, and `npm.cmd run smoke:workspace-access`.
+- Next non-repeated backlog is deploy/live confirmation for this backend patch, then provider/hardware evidence: real Android FCM delivery, real email inbox click-through, storage/signed URL mutation parity, and physical MSM261 ESP32-S3 validation.
 
 ## Completed - 2026-07-07 account profile tenant hardening
 
@@ -367,11 +377,11 @@ Tasks:
   - `SMART_HEALTH_COMMANDS_GUIDE.md`
 - Before opening the next production-development slice, finish the remaining physical-device KLTN evidence gap in `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`. The 2026-06-05 report evidence gate now has build/smoke logs, web admin screenshots, Android emulator screenshots, audio WAV metadata/waveform, and a final Word copy, but still lacks a same-day ESP32-S3 serial monitor/upload capture because COM6/ESP32-S3 was not detected.
 - Use CodeGraph for structure, Context7 for current docs, Chrome DevTools MCP for UI/browser verification.
-- 2026-06-23 tooling completion: `codebase-memory-mcp` is configured and `smart-health-web` is indexed; Agent Reach, filtered Matt Pocock, Academic Research, context/token skills, `impeccable`, and 11/13 Taste skills are user-wide. Every future UI task must combine `impeccable` + `gpt-taste`; add only one specialized Taste skill when relevant. Taste v1/generic base remain skipped as direct duplicates.
+- 2026-06-23 tooling completion, updated 2026-07-07: `codebase-memory-mcp` is configured and `smart-health-web` is indexed; Agent Reach, filtered Matt Pocock, Academic Research, context/token skills, `impeccable`, and 11/13 Taste skills are user-wide. Every future UI task must combine `impeccable` + `gpt-taste`, then load every materially applicable UI/UX skill from the registry pool. Taste v1/generic base remain skipped as direct duplicates.
 - 2026-06-23 routing/token-gate completion: every future Smart Health task should map the request to the smallest relevant installed skill/tool before broad exploration. Apply lightweight `context-budget` + `strategic-compact` by default; load full ECC skill bodies for broad/long/tooling/audit/context-pressure work. The assistant should infer installed skills/tools from the registry without requiring the user to name them.
 - 2026-06-23 organization audit: `C:\Users\baobe\.codex\GLOBAL_AGENT_TOOLING.md` is the single global registry. All remaining `.ai_skills` trees were removed, stale Antigravity instruction catalogs were converted to pointers, and no shared MCP/plugin/skill payload should be stored inside a repo going forward.
 - Use the global `smart-health-project` Codex skill for project rules. The old project-local `.ai_skills` folder should not be recreated unless there is a strong reason.
-- Use `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` before choosing from the user-wide skill set. Do not load every installed skill by default; open only the 1-2 skills needed for the current task.
+- Use `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` before choosing from the user-wide skill set. Do not load every installed skill by default; outside UI/UX, open only the smallest relevant skill set. For UI/UX, load the base pair plus every materially applicable UI/UX skill from the registry pool.
 - New Smart Health chats should best-effort start claude-mem if it is not running.
 
 Done when:

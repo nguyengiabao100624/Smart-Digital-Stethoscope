@@ -61,6 +61,13 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Commit `edd419ef` was pushed to `origin/main`; post-push live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed.
 - Remaining provider/hardware backlog: real Android FCM delivery with a real device token, real email inbox click-through, production S3/Supabase Storage provider smoke with provider envs, and physical MSM261 ESP32-S3 WiFi/audio/OTA evidence. Current probes found no attached Android device and no ESP32-S3 serial device.
 
+## Completed - 2026-07-07 repository list hydration and admin mutation follow-up
+
+- A whole-system verification pass found one live regression: Web Admin `npm.cmd run smoke:admin-mutation` failed because PATCH `/devices/dev_admin_mutation_*` returned 404 after device provisioning.
+- Root cause: repository list hydration could replace runtime devices/patients with the SQL list and drop rows created in the current process when normalized SQL did not yet contain them. A background `/devices` list in Web Admin could therefore remove the smoke device before PATCH.
+- Commit `27f309be` preserves runtime-created patients/devices during SQL-backed list hydration and adds repository regression coverage.
+- Verification passed: backend `check`, backend `test`, `smoke:workspace-access`, `smoke:repositories`, public deployment smoke, and live Web Admin `smoke:admin-mutation` run `admin-mutation-mran2ji6` with HTTP 200 cleanup for settings, notification, storage bucket, device, patient, package, and workspace.
+
 ## Completed - 2026-07-07 account profile tenant hardening
 
 - Backend `/api/v1/me` no longer lets account/profile edits self-create membership or switch tenants by sending `hospital` text.

@@ -41,6 +41,24 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Clarified that Smart Health means the full `D:\Study\KLTN` product system: `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs.
 - Future feature/fix slices should verify the workflow across affected surfaces before being marked complete: backend policy/data, client API calls, role/surface routing, tenant isolation, device/storage/notification side effects, Android/web/admin UX, firmware protocol when relevant, tests/smokes, deploy status, and docs.
 
+## 2026-07-07 Repository List Hydration And Admin Mutation Follow-up
+
+### Implemented
+
+- Fixed repository list hydration for runtime-created patients/devices. SQL list rows are still synced into runtime, but rows created in the current process that are not yet present in SQL are preserved instead of being dropped by a list request.
+- Added regression coverage in `scripts/repositoriesSmokeTest.js` so a runtime-only patient/device survives a later SQL-backed list response.
+- This closes the live Web Admin mutation regression where `/devices/provision-qr` returned 201 but a background `/devices` list could remove the new device before the smoke PATCHed it.
+
+### Verification
+
+- Backend `node --check src\repositories.js` passed.
+- Backend `node --check scripts\repositoriesSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:repositories` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd test` passed.
+- Commit `27f309be` was pushed to `origin/main`; post-deploy `npm.cmd run smoke:public-deployment` passed, and live Web Admin `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mran2ji6`.
+
 ## 2026-07-07 Workspace Owner Approval Lifecycle
 
 ### Implemented

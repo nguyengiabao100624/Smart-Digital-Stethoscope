@@ -49,6 +49,13 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Commit `edd419ef` was pushed to `origin/main`; post-push live `npm.cmd run smoke:public-deployment` and `npm.cmd run smoke:portal-production` passed.
 - Hardware/device probes found no attached Android device (`adb.exe devices` empty) and no ESP32-S3 serial device (`platformio device list` empty), so real FCM delivery and physical MSM261 WiFi/audio/OTA evidence still require connected hardware and a real registered device token.
 
+## 2026-07-07 - Whole-system verification and admin device mutation hydration fix
+
+- Whole-system verification rerun passed across backend `check`, backend `test`, `smoke:workspace-access`, `smoke:repositories`, Shcare Web lint/typecheck/Firebase build/performance smoke/portal browser smoke, Web Admin lint/Firebase build, Android `:app:compileDebugKotlin`, MSM261 normal/OTA PlatformIO build, public deployment smoke, production role smoke, and authenticated portal production smoke.
+- Live Web Admin mutation smoke initially failed when PATCH `/devices/dev_admin_mutation_*` returned 404 after `/devices/provision-qr` returned 201. Browser-context debug showed a background `/devices` list could hydrate from normalized SQL and drop a new runtime device before PATCH when the SQL list did not yet contain the just-created device.
+- Commit `27f309be` preserves runtime-created patients/devices during repository list hydration while keeping startup `hydrateCoreState()` authoritative for stale snapshot cleanup. Regression coverage was added in `scripts/repositoriesSmokeTest.js`.
+- Post-deploy live `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mran2ji6`; device PATCH returned 200 and cleanup returned HTTP 200 for settings, notification, storage bucket, device, patient, package, and workspace.
+
 ## 2026-07-07 - Workspace owner approval lifecycle
 
 - Product invariant for auth/role work: `/register/phong-kham` creates a `workspace_owner` request through `/api/auth/workspace-request`; doctor registration creates only a doctor request; `shcare-admin.web.app` approves workspace/facility owners from the workspace screen, while doctor approval remains doctor-only.

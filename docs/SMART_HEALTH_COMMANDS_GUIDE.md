@@ -701,7 +701,7 @@ cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
 npm.cmd run smoke:admin-mutation
 ```
 
-`smoke:admin-mutation` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json` by default and uses the `platform` account. Optional overrides are `SMOKE_ADMIN_URL`, `SMART_HEALTH_API_BASE_URL` or `SMOKE_API_BASE_URL`, `SMOKE_CREDENTIALS_FILE`, and `SMOKE_ACCOUNT_KEY`. It does not print passwords or bearer tokens. Coverage includes platform workspace/package/patient/device/notification/storage/settings mutations with cleanup, plus route checks for overview, devices, patients, clinics, packages, notifications, storage, settings, admin accounts, and audit log. Last live pass from this workspace used run id `admin-mutation-mrad8n0r` and cleaned all created/restored resources with HTTP 200 cleanup responses.
+`smoke:admin-mutation` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json` by default and uses the `platform` account. Optional overrides are `SMOKE_ADMIN_URL`, `SMART_HEALTH_API_BASE_URL` or `SMOKE_API_BASE_URL`, `SMOKE_CREDENTIALS_FILE`, and `SMOKE_ACCOUNT_KEY`. It does not print passwords or bearer tokens. Coverage includes platform workspace/package/patient/device/notification/storage/settings mutations with cleanup, plus route checks for overview, devices, patients, clinics, packages, notifications, storage, settings, admin accounts, and audit log. Last live pass from this workspace used run id `admin-mutation-mran2ji6` after repository list hydration fix commit `27f309be`; device PATCH returned 200 and all created/restored resources cleaned up with HTTP 200 responses.
 
 Expected state:
 

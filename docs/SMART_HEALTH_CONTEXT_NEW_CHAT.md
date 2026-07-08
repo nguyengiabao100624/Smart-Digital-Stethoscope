@@ -35,6 +35,13 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Post-deploy live verification passed: `npm.cmd run smoke:public-deployment`, direct share create/list canary run `direct-share-mrcphdbi-1` saw share `share_20260708232540_f6af5d2b` in immediate `GET /shares`, `npm.cmd run smoke:portal-production`, and `bun run smoke:portal-mutation` run `portal-mutation-mrcpi0yj` created/revoked share `share_20260708232751_88243994` with full cleanup.
 - Render CLI, Supabase CLI/psql, and local `DATABASE_URL` are not present in this PowerShell process. The live API/UI create-list-revoke path is verified, but row-level proof that a newly-created live share lands in normalized Supabase `doctor_patient_access` still needs Supabase query access or Render DB/log access.
 
+## 2026-07-09 - Android patient Data Access consent history
+
+- Follow-up after the broad completeness checklist identified patient/family consent history as a remaining software slice. `smart-health-android/app/src/main/java/com/example/smart_health_android/ui/screens/DataAccessScreen.kt` no longer uses local-only privacy switches; it now loads real patient profiles, share targets, and `PatientShare` grants from the backend.
+- Android Data Access now shows the selected profile, active share count, consent history, full-profile vs selected-scan scope, expiry, active/revoked state, target labels, loading/error/empty/retry states, and can revoke an active consent through the backend.
+- `SmartHealthApi.kt` now exposes `revokePatientShare(patientId, shareId)` using `DELETE /api/patients/:id/shares/:shareId`, and `PatientShare` now carries `doctorId`, `revokedAt`, `createdAt`, and `updatedAt` metadata for the UI.
+- Verification passed: `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug`. Physical Android device/FCM delivery remains separate provider-device validation because this shell has no attached Android device.
+
 ## 2026-07-09 - Shcare Portal consent/share live follow-up
 
 - Source follow-up after the broader completeness audit found `/portal/consent` had backend share APIs but weak browser workflow coverage. `smart-health-web/src/app/pages/portal/InvitationsPage.tsx` now supports patient selection, doctor/workspace target selection, full-profile vs selected-scan scope, optional expiry, friendly target labels, active share list, and revoke controls backed by `/api/share-targets` plus `/api/portal/patients/:id/shares`.

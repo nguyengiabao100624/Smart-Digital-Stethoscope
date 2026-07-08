@@ -26,7 +26,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Storage admin | Partial production | Storage API supports bucket/file listing, upload, share URL, download, delete, audit, and workspace scoping. `smoke:workspace-access` now verifies share URL, authenticated local-object read, cross-workspace signed URL denial, direct download content, upload/list/download/delete, and post-delete 404 in JSON/local-object mode. Real S3/Supabase Storage provider smoke still needs provider envs loaded where the smoke runs. |
 | Notifications | Partial production | Notification list/read/delete works in app/admin/portal. Android registers FCM tokens to backend notification devices and saves per-user notification preferences. Backend now queues Firebase Cloud Messaging delivery for direct user notifications, records `pushStatus` separately from platform-admin email fanout, disables invalid/unregistered tokens, persists per-attempt `pushAttempts` history without raw tokens, and retries retryable FCM failures with bounded env controls. AI update notifications from both Android-facing and admin-facing settings endpoints are scoped to caller user/workspace. Real device/provider delivery smoke and workspace recipient policy are still incomplete. |
 | Android motion/animation | Real | Shared Compose motion layer is applied through `AppNavGraph.kt`, giving all routes consistent fade/slide/scale screen transitions. Element-level micro-interactions can still be expanded screen by screen later. |
-| Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Medical Records has a first share action for a scan/profile to a doctor/workspace. Full workspace switcher, dashboard-by-workspace, and polished family management screens are not complete. |
+| Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Medical Records can share a scan/profile to a doctor/workspace, and Data Access now reads backend patient-share consent history and can revoke active grants. Full workspace switcher, dashboard-by-workspace, and polished family management screens are not complete. |
 | Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. 2026-07-01 source fix wires `GET /api/v1/devices/:id/events` in the device route and tests own/cross-workspace access. 2026-07-06 source follow-up allows workspace users to self-claim provisioned same-workspace devices with claim codes while keeping arbitrary no-code creation behind device-management capability; Shcare Portal has a `/portal/devices/claim` route and mutation smoke coverage. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
 | Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. Android-facing AI chat/settings/update endpoints are now workspace-aware for history, settings persistence, and notifications. No real queue/model pipeline yet. |
@@ -86,6 +86,22 @@ This file records the real project state. Keep it factual: implemented, partial,
 ### Remaining Risk
 
 - Local PowerShell still does not expose Render CLI, Supabase CLI/psql, or `DATABASE_URL`, so the production DB migration was applied via connector and live deploy status was inferred from API/smoke behavior. The live create-list-revoke path is verified, but row-level proof that newly-created live shares are inserted into normalized Supabase `doctor_patient_access` still needs Supabase query access or Render DB/log access.
+
+## 2026-07-09 Android Patient Data Access Consent History
+
+### Implemented
+
+- Replaced the old Android Data Access local-only switches with a backend-backed consent/access ledger.
+- The screen now loads real patient/family profiles, share targets, and patient-share grants, shows active/revoked state, scope, selected-scan count, expiry, target label, and profile selector state.
+- Added Android API support for `DELETE /api/patients/:id/shares/:shareId` through `SmartHealthApi.revokePatientShare`, and extended `PatientShare` metadata for doctor/workspace labels and history sorting.
+
+### Verification
+
+- Android `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug` passed. The existing Compose `Icons.Filled.ArrowBack` deprecation warning remains in `MedicalRecordsScreen.kt` and is unrelated to this slice.
+
+### Remaining Limits
+
+- This is source/build verification plus backend contract reuse. Real Android device UI validation and user-visible FCM delivery still require an attached Android device/token.
 
 ## 2026-07-09 Shcare Portal Account Settings Live Follow-up
 

@@ -99,11 +99,15 @@ data class PatientShare(
     val id: String,
     val patientId: String,
     val doctorUserId: String = "",
+    val doctorId: String = "",
     val organizationId: String = "",
     val scope: String = "",
     val scanIds: List<String> = emptyList(),
     val expiresAt: String? = null,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val revokedAt: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null
 )
 
 data class ShareTargets(

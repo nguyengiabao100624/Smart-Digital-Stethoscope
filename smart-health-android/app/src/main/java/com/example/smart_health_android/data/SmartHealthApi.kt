@@ -375,6 +375,11 @@ class SmartHealthApi(
             .map(::parsePatientShare)
     }
 
+    suspend fun revokePatientShare(patientId: String, shareId: String): Boolean = withContext(Dispatchers.IO) {
+        deleteJson("$baseUrl/patients/${patientId.urlEncode()}/shares/${shareId.urlEncode()}")
+        true
+    }
+
     suspend fun sharePatientRecord(
         patientId: String,
         targetDoctorUserId: String = "",
@@ -727,11 +732,15 @@ class SmartHealthApi(
             id = json.optString("id"),
             patientId = json.optString("patientId"),
             doctorUserId = json.optString("doctorUserId"),
+            doctorId = json.optString("doctorId"),
             organizationId = json.optString("organizationId"),
             scope = json.optString("scope"),
             scanIds = json.optJSONArray("scanIds").toStringList(),
             expiresAt = json.stringOrNull("expiresAt"),
-            active = json.optBoolean("active", true)
+            active = json.optBoolean("active", true),
+            revokedAt = json.stringOrNull("revokedAt"),
+            createdAt = json.stringOrNull("createdAt"),
+            updatedAt = json.stringOrNull("updatedAt")
         )
     }
 

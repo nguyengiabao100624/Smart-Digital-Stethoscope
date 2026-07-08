@@ -61,6 +61,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Shcare Portal account settings | Closed in deployed source | `/portal/settings` now covers profile/avatar/password/2FA/sessions/notifications/workspace settings and live mutation run `portal-mutation-mrclugrb` passed with cleanup. |
 | Shcare Portal consent/share workflow | Closed in deployed source | `/portal/consent` now creates and revokes real patient-share grants with full-profile/selected-scan scope and optional expiry. Live Firebase version `projects/162993928259/sites/shcare/versions/87657f16c15d9fc5`; live mutation run `portal-mutation-mrcnnzcg` created/revoked share `share_20260708223625_e69f019e`. |
 | Patient-share repository persistence | Closed for source/API live consistency; DB row proof pending | Backend source now has SQL-backed `repositories.patientShares`; portal share routes use repository list/find/save/revoke when available; Supabase project `mahvymyncxszvuhlycwp` has app migration `009_doctor_patient_access_runtime_parity` applied and verified. Follow-up `c00f35f3` is pushed, live API direct canary and portal mutation smoke verify create-list-revoke consistency, but row-level proof for newly-created live Supabase rows still needs DB/log access. |
+| Android Data Access consent history | Closed in source/build | Android `/settings -> privacy -> data-access` no longer uses local-only switches; it loads backend patient profiles/share grants/share targets, shows active/revoked consent history, and can revoke active grants through `DELETE /api/patients/:id/shares/:shareId`. Kotlin compile and debug assemble passed. |
 
 ## Verification Ledger
 
@@ -87,6 +88,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Patient-share repository follow-up on 2026-07-09: Supabase schema inspection before migration showed the old `doctor_patient_access` shape; Supabase migration `doctor_patient_access_runtime_parity` then applied successfully and app `schema_migrations` now includes `009_doctor_patient_access_runtime_parity`. Post-migration inspection confirmed nullable `doctor_user_id`, `doctor_id`, `scope`, JSONB `scan_ids`, `revoked_by_user_id`, `updated_at`, revoke FK, and patient/doctor/workspace indexes. Backend local verification passed with `node --check src\repositories.js`, `node --check server.js`, `node --check scripts\migrateJsonToPostgres.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
 - Share create/list regression caught on 2026-07-09 after commit `18534eba`: live portal mutation smoke timed out on new share row `share_20260708230629_cd3483bf`, and direct API canary showed POST-created share `share_20260708230839_6f6a3512` was not returned by immediate `GET /shares`. The source fix merges runtime shares with SQL rows in `patientShares.listForPatient`, adds a create-then-list repository smoke assertion, and optimistically inserts created shares into the portal cache.
 - Share create/list deploy follow-up on 2026-07-09: commit `c00f35f3` was pushed to `origin/main`, Shcare Web deployed version `projects/162993928259/sites/shcare/versions/9109e5cb08b4fd0d`, and live verification passed with `npm.cmd run smoke:public-deployment`, direct canary `direct-share-mrcphdbi-1` (`share_20260708232540_f6af5d2b` visible in immediate `GET /shares`), `npm.cmd run smoke:portal-production`, and `bun run smoke:portal-mutation` run `portal-mutation-mrcpi0yj` (`share_20260708232751_88243994` created/revoked).
+- Android Data Access consent history on 2026-07-09: `DataAccessScreen.kt` now uses backend `listPatients`, `listPatientShares`, `listShareTargets`, and new `revokePatientShare`; `PatientShare` carries history metadata; `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug` passed.
 
 ## Current Severity Checklist
 
@@ -103,7 +105,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 ### Medium
 
 - Account settings and notification preference behavior should keep getting expanded with browser-level mutation coverage for every dialog/form field. Backend source-level AI settings/update notification scope is covered locally; remaining work here is browser-level UX breadth, not the AI/data endpoint contract fixed on 2026-07-07.
-- Patient/family profile and patient-facing consent history flows still need production-like workspace/personal/family data checks. The workspace portal grant/revoke workflow itself is covered by live browser/mutation smoke as of 2026-07-09.
+- Patient/family profile flows still need production-like workspace/personal/family data checks. Android patient-facing consent history is source/build closed; real device UI proof remains tied to attached Android hardware. The workspace portal grant/revoke workflow itself is covered by live browser/mutation smoke as of 2026-07-09.
 
 ### Polish
 

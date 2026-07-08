@@ -106,6 +106,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Backend `npm.cmd run check` passed.
 - Backend `npm.cmd run smoke:repositories` passed.
 - Backend `npm.cmd test` passed.
+- Commit `fde6ae4c` was pushed to `origin/main`; live `npm.cmd run smoke:public-deployment` passed, and live `npm.cmd run smoke:portal-production` passed on rerun after one transient Render 502.
 
 ### Remaining Limits
 

@@ -63,6 +63,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Backend `GET /api/v1/patients/:id/shares` now includes revoked grants through repository `includeRevoked` and JSON fallback parity so the consent ledger can show active and revoked history.
 - Expanded `smoke:workspace-access` to seed a personal patient account and verify self/dependent profile isolation, dependent creation, share-target lookup, consent create/list/revoke, revoked-history visibility, and denial of workspace-owned patient profiles.
 - Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, backend `npm.cmd run smoke:repositories`, and backend `npm.cmd test`.
+- Commit `fde6ae4c` was pushed to `origin/main`; live `npm.cmd run smoke:public-deployment` passed, and live `npm.cmd run smoke:portal-production` passed on rerun after one transient Render 502.
 - Remaining validation requires hardware/app runtime access: run this screen on a real Android device or emulator with patient/workspace credentials, verify the patient-facing UI visually, and continue separate real FCM delivery validation.
 
 ## Completed - 2026-07-07 Android/backend AI and data contract sync

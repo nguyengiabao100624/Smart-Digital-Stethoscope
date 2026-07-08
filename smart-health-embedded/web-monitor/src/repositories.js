@@ -1386,6 +1386,9 @@ function createRepositories(options) {
       const id = String(patientId || "");
       if (!id) return [];
       const includeRevoked = Boolean(options.includeRevoked);
+      const runtimeShares = patientShareItems().filter(
+        (grant) => grant.patientId === id && (includeRevoked || !grant.revokedAt)
+      );
       const sqlShares = await withSql(async (pool) => {
         const result = await pool.query(
           `
@@ -1399,14 +1402,16 @@ function createRepositories(options) {
         return result.rows.map(rowToPatientShare);
       });
       if (sqlShares) {
+        const merged = new Map(runtimeShares.map((share) => [share.id, share]));
         for (const share of sqlShares) {
-          syncArrayItem(patientShareItems(), share);
+          const synced = syncArrayItem(patientShareItems(), share);
+          merged.set(synced.id, synced);
         }
-        return sqlShares;
+        return Array.from(merged.values()).sort(
+          (left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || ""))
+        );
       }
-      return patientShareItems().filter(
-        (grant) => grant.patientId === id && (includeRevoked || !grant.revokedAt)
-      );
+      return runtimeShares;
     },
 
     async findForPatient(patientId, shareId) {

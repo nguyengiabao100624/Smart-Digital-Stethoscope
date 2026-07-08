@@ -81,7 +81,15 @@ export default function InvitationsPage() {
         ...(scope === "selected_scans" ? { scanIds: selectedScanIds } : {}),
         ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
       }),
-    onSuccess: () => {
+    onSuccess: (payload) => {
+      if (payload.share) {
+        client.setQueryData<{ shares: PatientShare[] }>(
+          ["portal", "patient-shares", patientId],
+          (current) => ({
+            shares: [payload.share, ...(current?.shares || []).filter((share) => share.id !== payload.share.id)],
+          }),
+        );
+      }
       toast.success("Đã cấp quyền chia sẻ hồ sơ");
       setTargetId("");
       setSelectedScanIds([]);
@@ -92,7 +100,15 @@ export default function InvitationsPage() {
 
   const revoke = useMutation({
     mutationFn: (shareId: string) => smartHealthApi.revokePatientShare(patientId, shareId),
-    onSuccess: () => {
+    onSuccess: (payload, shareId) => {
+      client.setQueryData<{ shares: PatientShare[] }>(
+        ["portal", "patient-shares", patientId],
+        (current) => ({
+          shares: (current?.shares || []).map((share) =>
+            share.id === shareId ? { ...share, ...payload.share, active: false } : share,
+          ),
+        }),
+      );
       toast.success("Đã thu hồi quyền chia sẻ");
       client.invalidateQueries({ queryKey: ["portal", "patient-shares", patientId] });
     },

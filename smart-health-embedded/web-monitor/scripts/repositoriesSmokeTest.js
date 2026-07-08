@@ -149,6 +149,8 @@ async function main() {
     scanIds: ["scan_sql"],
     grantedByUserId: "user_portal",
   });
+  const runtimeFallbackShares = await repositories.patientShares.listForPatient("patient_sql");
+  assert.equal(runtimeFallbackShares.some((item) => item.id === "share_repo"), true);
   rows.doctor_patient_access.unshift({
     id: share.id,
     doctor_user_id: share.doctorUserId,

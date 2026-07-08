@@ -49,6 +49,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Added migration `009_doctor_patient_access_runtime_parity.sql` with nullable `doctor_user_id`, `doctor_id`, `scope`, JSONB `scan_ids`, revoke actor metadata, `updated_at`, and patient/doctor/workspace indexes.
 - Applied and verified the production Supabase schema change in project `smart-health-production` (`mahvymyncxszvuhlycwp`) and inserted the app `schema_migrations` row `009_doctor_patient_access_runtime_parity` so Render startup migration will not replay duplicate constraints.
 - Expanded JSON-to-Postgres migration and repository smoke coverage for share hydration, selected-scan persistence, guarded optional FKs, save, and revoke.
+- Added a follow-up fix after live canary caught `POST /shares` returning a new share while immediate `GET /shares` returned zero rows. The repository list path now merges SQL and runtime shares, and the portal consent page optimistically inserts the created share into its cache before refetch.
 - Verification passed locally: backend syntax checks, `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
 - Remaining step before marking the source path live: push the backend source and run post-Render live smoke. This is separate from the already-live portal consent UI and already-applied Supabase schema.
 

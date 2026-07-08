@@ -72,12 +72,14 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Updated portal patient-share routes to use the repository path when available while preserving existing runtime fallback behavior.
 - Updated JSON-to-Postgres migration support so existing runtime `doctorPatientAccess` grants are carried into the normalized table when they still point to valid patients and valid doctor/workspace targets.
 - Expanded `repositoriesSmokeTest.js` to prove SQL hydration clears stale runtime shares, preserves selected `scanIds`, uses guarded optional FK SQL, and can save/revoke a repository-backed share.
+- Hardened the share list path after live canary found that a created share could be returned by `POST /shares` but hidden by an immediate SQL-empty `GET /shares`. The repository now merges normalized SQL rows with runtime shares, and the portal page writes the new share into React Query cache before invalidating.
 
 ### Verification
 
 - Supabase production project `smart-health-production` (`mahvymyncxszvuhlycwp`) was migrated through the Supabase connector. App `schema_migrations` now includes `009_doctor_patient_access_runtime_parity`, and schema inspection confirms the new columns, nullable `doctor_user_id`, removed old unique constraint, revoke FK, and patient/doctor/workspace indexes.
 - Backend syntax checks passed: `node --check src\repositories.js`, `node --check server.js`, `node --check scripts\migrateJsonToPostgres.js`, and `node --check scripts\repositoriesSmokeTest.js`.
 - Backend local regression checks passed: `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
+- Live regression evidence before this fix: `bun run smoke:portal-mutation` failed while waiting for `[data-share-row="share_20260708230629_cd3483bf"]`, and a direct API canary created share `share_20260708230839_6f6a3512` but immediate `GET /shares` returned `listCount=0`. That evidence is why this slice must not be considered complete from POST-only checks.
 
 ### Remaining Risk
 

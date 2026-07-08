@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-07-07
+Last updated: 2026-07-09
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -22,14 +22,14 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Backend persistence | Partial | JSON mode works for demo. PostgreSQL schema and repository foundation exist, but not every runtime handler uses normalized tables yet. As of 2026-07-07, Supabase connector checks verified migrations/RLS/no direct client grants, and repository hydration treats normalized SQL rows as authoritative even when a table is empty so stale runtime snapshot rows are cleared. |
 | Workspace/Organization/RBAC | Partial | `organizations` is now treated as workspace source of truth in JSON mode, with `workspaceType` (`hospital`, `clinic`, `solo_practice`, `personal`), subscription/package fields, usage/quota summary, `/api/admin/workspaces` alias, and package assignment endpoint. `/api/me` returns workspace context, `currentWorkspace`, backend-derived capabilities, `allowedSurfaces`, and `defaultSurface` for role-aware UI/domain gating. `/api/portal/*` semantic routes now expose portal patients/devices/scans/monitoring/staff/reports/storage wrappers while legacy routes remain compatible. Firebase custom claim `doctor` now self-heals backend user/membership/surface drift and materializes catalog workspaces such as `vn_hospital_quan_y_175`. Patients/family profiles, devices, scans, storage/signed URLs, exports, packages, workspace CRUD, doctor/staff actions, settings/AI updates, data delete, and sharing have first-pass backend enforcement and workspace scoping in JSON/demo mode. `npm run smoke:workspace-access` verifies six roles and cross-workspace failures; live portal smoke verifies platform rejection plus workspace-admin/doctor portal reads. Repository-backed Supabase schema/RLS/runtime hydration parity was checked on 2026-07-07; deeper OpenAPI and storage/signed-URL mutation coverage is still pending. |
 | Service packages and billing | Partial | Backend service packages are real JSON data with segment, quota, CRUD update/delete, default clinic/solo/personal packages, and workspace package assignment. Web admin Packages page reads backend data and now labels device quota as activated devices; personal package patient quota is presented as family profiles, not one device per patient. Payment provider, invoices, and quota enforcement are not done. |
-| Web admin and portal UI | Partial production | The same web codebase now builds two surfaces: admin mode for `shcare-admin.web.app` and portal mode for `shcare.web.app`. Admin mode keeps platform-only navigation/guard for Platform Admin Console; doctor/clinic accounts are blocked with CTA to `shcare.web.app`. Platform Admin navigation now exposes the Devices page for accounts with `platform.devices.view` / `platform.devices.manage`. Portal mode shows doctor/clinic workspace navigation for patients, devices, scans/monitoring, staff, storage, notifications, audit, and workspace settings; platform admins are directed back to `shcare-admin.web.app`. Shcare Portal login now reports distinct denial reasons for admin, Android-only/patient, pending, needs-info, rejected, portal-denied, and invalid Firebase credentials without exposing raw `auth/*` errors. `/can-bo-sung` now has a real needs-info resubmit form, and `/portal/devices/claim` lets workspace users self-claim provisioned devices. Firebase Hosting has separate `admin` and `webapp` targets and build scripts. Live authenticated portal API smoke covers platform/admin surface rejection plus workspace-admin and doctor read paths on Render; `bun run smoke:portal-browser` covers live Firebase login, key portal API responses, sidebar route buttons, records filters, avatar menu, notification menu, and audit navigation on `shcare.web.app`; `bun run smoke:portal-mutation` now passes live controlled patient/device/notification/settings/report/support/logout mutation E2E with cleanup. A 2026-07-07 mobile pass found no horizontal overflow or console/page errors at 390x844 across public/auth, authenticated portal, and authenticated admin key routes. |
+| Web admin and portal UI | Partial production | The same web codebase now builds two surfaces: admin mode for `shcare-admin.web.app` and portal mode for `shcare.web.app`. Admin mode keeps platform-only navigation/guard for Platform Admin Console; doctor/clinic accounts are blocked with CTA to `shcare.web.app`. Platform Admin navigation now exposes the Devices page for accounts with `platform.devices.view` / `platform.devices.manage`. Portal mode shows doctor/clinic workspace navigation for patients, devices, scans/monitoring, staff, storage, notifications, audit, workspace settings, and source-level account settings for profile/avatar/password/2FA/sessions. Platform admins are directed back to `shcare-admin.web.app`. Shcare Portal login now reports distinct denial reasons for admin, Android-only/patient, pending, needs-info, rejected, portal-denied, and invalid Firebase credentials without exposing raw `auth/*` errors. `/can-bo-sung` now has a real needs-info resubmit form, and `/portal/devices/claim` lets workspace users self-claim provisioned devices. Firebase Hosting has separate `admin` and `webapp` targets and build scripts. Live authenticated portal API smoke covers platform/admin surface rejection plus workspace-admin and doctor read paths on Render; `bun run smoke:portal-browser` covers live Firebase login, key portal API responses, sidebar route buttons, records filters, avatar menu, notification menu, and audit navigation on `shcare.web.app`; source smoke now also asserts profile/security/notification/workspace controls on settings. `bun run smoke:portal-mutation` now covers live controlled patient/device/notification/settings/report/support/logout mutation E2E with cleanup, and source smoke now adds profile title mutation/restore plus security-control validation. A 2026-07-07 mobile pass found no horizontal overflow or console/page errors at 390x844 across public/auth, authenticated portal, and authenticated admin key routes. |
 | Storage admin | Partial production | Storage API supports bucket/file listing, upload, share URL, download, delete, audit, and workspace scoping. `smoke:workspace-access` now verifies share URL, authenticated local-object read, cross-workspace signed URL denial, direct download content, upload/list/download/delete, and post-delete 404 in JSON/local-object mode. Real S3/Supabase Storage provider smoke still needs provider envs loaded where the smoke runs. |
-| Notifications | Partial production | Notification list/read/delete works in app/admin/portal. Android registers FCM tokens to backend notification devices and saves per-user notification preferences. Backend now queues Firebase Cloud Messaging delivery for direct user notifications, records `pushStatus` separately from platform-admin email fanout, disables invalid/unregistered tokens, persists per-attempt `pushAttempts` history without raw tokens, and retries retryable FCM failures with bounded env controls. Real device/provider delivery smoke and workspace recipient policy are still incomplete. |
+| Notifications | Partial production | Notification list/read/delete works in app/admin/portal. Android registers FCM tokens to backend notification devices and saves per-user notification preferences. Backend now queues Firebase Cloud Messaging delivery for direct user notifications, records `pushStatus` separately from platform-admin email fanout, disables invalid/unregistered tokens, persists per-attempt `pushAttempts` history without raw tokens, and retries retryable FCM failures with bounded env controls. AI update notifications from both Android-facing and admin-facing settings endpoints are scoped to caller user/workspace. Real device/provider delivery smoke and workspace recipient policy are still incomplete. |
 | Android motion/animation | Real | Shared Compose motion layer is applied through `AppNavGraph.kt`, giving all routes consistent fade/slide/scale screen transitions. Element-level micro-interactions can still be expanded screen by screen later. |
 | Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Medical Records has a first share action for a scan/profile to a doctor/workspace. Full workspace switcher, dashboard-by-workspace, and polished family management screens are not complete. |
 | Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. 2026-07-01 source fix wires `GET /api/v1/devices/:id/events` in the device route and tests own/cross-workspace access. 2026-07-06 source follow-up allows workspace users to self-claim provisioned same-workspace devices with claim codes while keeping arbitrary no-code creation behind device-management capability; Shcare Portal has a `/portal/devices/claim` route and mutation smoke coverage. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
 | Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
-| AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. No real queue/model pipeline yet. |
+| AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. Android-facing AI chat/settings/update endpoints are now workspace-aware for history, settings persistence, and notifications. No real queue/model pipeline yet. |
 | Object storage | Scaffold/partial | MinIO/S3 direction is chosen. Local storage fallback remains important and now has API-level signed URL/download/upload/delete/scoping coverage. Production S3/Supabase Storage provider behavior, quota, retention, and restore still need provider-env verification. |
 | Firmware production | Partial cloud-first | `MSM261S4030H0` is the only active production firmware target. ESP32 code avoids committed secrets, has WiFi recovery AP, outbound backend WebSocket telemetry/audio, backend command handling, and HTTPS cloud OTA with SHA-256 verification. MSM261 builds normal/OTA firmware. INMP441 is retired from the current product scope. LAN ArduinoOTA is dev-only and disabled by default. Secure NVS/certificate provisioning, signed firmware, rollback, buffering, and real-board validation remain pending. |
 | CI/CD and monitoring | Partial | GitHub Actions now checks backend, workspace access smoke, production readiness report, Web Admin Firebase build, Shcare Web push build-only CI, Android debug compile, and ESP32-S3 normal/OTA firmware builds. Manual Firebase Hosting deploy workflows exist for `shcare-admin` and `shcare.web.app` once GitHub secrets are configured. Metrics, alerts, backups, and full release automation are still pending. |
@@ -40,6 +40,76 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 - Clarified that Smart Health means the full `D:\Study\KLTN` product system: `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs.
 - Future feature/fix slices should verify the workflow across affected surfaces before being marked complete: backend policy/data, client API calls, role/surface routing, tenant isolation, device/storage/notification side effects, Android/web/admin UX, firmware protocol when relevant, tests/smokes, deploy status, and docs.
+
+## 2026-07-09 Render Backend Migration And Firebase Redeploy
+
+### Implemented
+
+- Recreated the Render backend service under the new Render account/workspace and switched the active backend URL from `https://smart-health-api-xj0a.onrender.com` to `https://smart-health-api-r5is.onrender.com`.
+- Updated runtime defaults and deployment configuration in Shcare Web, Web Admin smoke tooling, backend smoke defaults, Android debug builds, GitHub Actions, README files, and the project index.
+- Rebuilt and redeployed `shcare.web.app` to Firebase Hosting version `projects/162993928259/sites/shcare/versions/ad466c939950664e`.
+- Rebuilt and redeployed `shcare-admin.web.app` to Firebase Hosting version `projects/162993928259/sites/shcare-admin/versions/35d5d0458143d1b4`.
+
+### Verification
+
+- Live backend `GET /api/health` and `GET /api/v1/health` returned HTTP 200 from `smart-health-api-r5is`; unauthenticated `GET /api/me` returned the expected HTTP 401.
+- Backend `npm.cmd run check` and `npm.cmd run smoke:public-deployment` passed against `https://smart-health-api-r5is.onrender.com`.
+- Shcare Web `bun run build:firebase` passed and the generated bundle contained `smart-health-api-r5is`, with no `smart-health-api-xj0a` or `localhost:3000` API fallback.
+- Web Admin `npm.cmd run build:firebase:admin` passed and the runtime production API URL points to `smart-health-api-r5is`.
+- Live Firebase asset scans found the new Render URL in `shcare.web.app` and `shcare-admin.web.app`, and no old `smart-health-api-xj0a` string.
+- Credentialed live smokes passed: `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrce7zqs`, and `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`.
+
+### Remaining Risk
+
+- Render availability is restored, but the old workspace suspension was caused by outbound/service-initiated bandwidth. The same traffic pattern can exhaust the new free workspace unless backend-initiated storage/provider traffic is reduced or moved off the backend path.
+
+## 2026-07-09 Shcare Portal Account Settings Live Follow-up
+
+### Implemented
+
+- Replaced the old workspace-only `/portal/settings` page with a portal account/settings surface covering personal profile, avatar upload/download/delete, password change, 2FA controls, auth sessions/revoke controls, notification preferences, and workspace settings.
+- Extended `smart-health-web/src/lib/smart-health-api.ts` with account/security API methods for `/me/avatar`, `/me/password`, `/me/2fa`, `/auth/sessions`, and session revoke.
+- Added Firebase Web password-change support in `smart-health-web/src/lib/firebase-client.ts` through current-password reauthentication, `updatePassword`, and refreshed ID token handoff to the backend audit endpoint.
+- Extended `portalBrowserSmokeTest.mjs` so settings must expose profile, security, notifications, and workspace controls.
+- Extended `portalMutationSmokeTest.mjs` to mutate/restore account profile title, mutate/restore notification preferences and workspace website, and check password/2FA/session controls without changing the smoke account password.
+- Added `SMOKE_DISABLE_WEB_SECURITY=1` as an explicit local-only Playwright flag for testing local dev frontend against the production Render backend when CORS only allows deployed Firebase origins.
+
+### Verification
+
+- Shcare Web `bunx tsc --noEmit` passed.
+- Shcare Web `bun run lint` passed.
+- Shcare Web `bun run build` passed.
+- Shcare Web `bun run build:firebase` passed.
+- Local browser smoke passed against `http://127.0.0.1:8080` and `https://smart-health-api-r5is.onrender.com/api` with `SMOKE_DISABLE_WEB_SECURITY=1`; settings checks included profile, security, notifications, and workspace.
+- Local mutation smoke passed against the same local frontend/production-like backend with run id `portal-mutation-mrclhqx7`; cleanup restored account profile, workspace settings, notification preferences, device assignment, claimed device, support notification, and patient data.
+- Firebase Hosting deploy target `webapp` passed for `https://shcare.web.app`: version `projects/162993928259/sites/shcare/versions/56a468bd5b4c852d`, live release `projects/162993928259/sites/shcare/channels/live/releases/1783546949244000`.
+- Live `bun run smoke:portal-browser` passed against `https://shcare.web.app` without `SMOKE_DISABLE_WEB_SECURITY`; settings checks included profile, security, notifications, and workspace, with Render API 200 responses.
+- Live `bun run smoke:portal-mutation` passed against `https://shcare.web.app` without `SMOKE_DISABLE_WEB_SECURITY`, run id `portal-mutation-mrclugrb`; cleanup restored account profile, workspace settings, notification preferences, device assignment, claimed device, support notification, and patient data.
+- Targeted repo `git diff --check` passed for the changed Smart Health files.
+
+### Remaining Risk
+
+- Hardware/provider proofs remain separate from this web/account slice: real Android FCM device delivery, real email inbox receipt, and physical ESP32-S3 firmware/audio/OTA evidence still require the matching device/provider access.
+
+## 2026-07-07 Android/Backend AI And Data Contract Sync
+
+### Implemented
+
+- `/api/v1/ai/chat` now returns only chat messages for the current backend user and current workspace instead of the global `db.chatMessages` tail.
+- `/api/v1/ai/chat` writes user and assistant messages with `userId` and `organizationId`, and the response history is filtered through the same scope.
+- `/api/v1/ai/settings` and `/api/v1/ai/update` now persist through `getMutableSettingsForUser()` / `persistMutableSettings()` so workspace callers update workspace settings, matching the admin settings API behavior.
+- AI update notifications from `/api/v1/ai/update` and `/api/v1/settings/ai/update` now carry caller `userId` and `organizationId`.
+- `/api/v1/data/cache` now returns `getStorageSummaryForUser(user)` instead of the global storage summary after clearing cache.
+- `scripts/workspaceAccessSmokeTest.js` seeds beta-only AI chat history and verifies AI chat isolation, AI settings/update behavior, scoped AI update notifications, Android data summary/cache scoping, and destructive data reset denial for workspace users.
+
+### Verification
+
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+- Backend `npm.cmd test` passed.
+- Shcare Web `npm.cmd run build` passed.
+- Web Admin `npm.cmd run build` passed.
+- Android `.\gradlew.bat :app:assembleDebug` passed.
 
 ## 2026-07-07 Repository List Hydration And Admin Mutation Follow-up
 

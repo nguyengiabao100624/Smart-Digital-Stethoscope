@@ -23,6 +23,7 @@ const credentialsPath =
     "production-role-smoke-credentials.json",
   );
 const accountKey = process.env.SMOKE_ACCOUNT_KEY || "workspace";
+const disableWebSecurity = process.env.SMOKE_DISABLE_WEB_SECURITY === "1";
 
 const sensitiveHeaderNames = new Set(["authorization", "cookie", "set-cookie"]);
 const watchPatterns = [
@@ -181,12 +182,54 @@ async function visitRoute(page, href, label) {
   return { label, path: new URL(page.url()).pathname };
 }
 
+async function verifySettingsSurface(page) {
+  const checks = [];
+  await page.waitForSelector("#portal-settings-profile-tab", {
+    timeout: 20_000,
+  });
+  await page.waitForSelector("#account-save-profile", { timeout: 20_000 });
+  checks.push("profile");
+
+  await page.locator("#portal-settings-security-tab").click();
+  await page.waitForSelector("#account-current-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-new-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-change-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-2fa-app", { timeout: 20_000 });
+  await page.waitForSelector("#account-revoke-other-sessions", {
+    timeout: 20_000,
+  });
+  checks.push("security");
+
+  await page.locator("#portal-settings-notifications-tab").click();
+  await page.waitForSelector("#notification-newLogin", { timeout: 20_000 });
+  await page.waitForSelector("#workspace-save-notifications", {
+    timeout: 20_000,
+  });
+  checks.push("notifications");
+
+  await page.locator("#portal-settings-workspace-tab").click();
+  await page.waitForSelector("#workspace-website", { timeout: 20_000 });
+  checks.push("workspace");
+
+  return {
+    label: "settings account/security controls",
+    path: new URL(page.url()).pathname,
+    checks,
+  };
+}
+
 async function main() {
   const account = readSmokeAccount();
   const checkedResponses = [];
   const requestFailures = [];
   const consoleMessages = [];
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({
+    channel: "chrome",
+    headless: true,
+    args: disableWebSecurity
+      ? ["--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"]
+      : [],
+  });
   const context = await browser.newContext({ viewport: { width: 1280, height: 820 } });
   const page = await context.newPage();
 
@@ -263,7 +306,11 @@ async function main() {
     ["/portal/onboarding", "onboarding"],
     ["/portal/help", "help"],
   ]) {
-    routeChecks.push(await clickRoute(page, href, label));
+    const routeCheck = await clickRoute(page, href, label);
+    routeChecks.push(routeCheck);
+    if (href === "/portal/settings") {
+      routeChecks.push(await verifySettingsSurface(page));
+    }
   }
 
   for (const [href, label] of [

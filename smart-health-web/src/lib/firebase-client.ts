@@ -1,11 +1,14 @@
 import { initializeApp, getApps, type FirebaseOptions } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   getAuth,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   type User,
 } from "firebase/auth";
 
@@ -58,6 +61,12 @@ function firebaseAuthErrorMessage(error: unknown) {
   if (code === "auth/invalid-email") {
     return "Email đăng nhập không đúng định dạng.";
   }
+  if (code === "auth/weak-password") {
+    return "Mật khẩu mới quá yếu. Vui lòng dùng ít nhất 8 ký tự, có chữ và số.";
+  }
+  if (code === "auth/requires-recent-login") {
+    return "Phiên Firebase đã quá cũ. Vui lòng đăng xuất, đăng nhập lại rồi đổi mật khẩu.";
+  }
   if (code === "auth/too-many-requests") {
     return "Firebase tạm khóa đăng nhập do thử sai quá nhiều lần. Vui lòng đợi một lúc hoặc đặt lại mật khẩu.";
   }
@@ -103,6 +112,28 @@ export const sendFirebasePasswordReset = (email: string) =>
   sendPasswordResetEmail(auth(), email.trim(), {
     url: `${window.location.origin}/login`,
   });
+
+export async function changeFirebasePassword(
+  currentPassword: string,
+  newPassword: string,
+) {
+  const user = auth().currentUser;
+  if (!user || !user.email) {
+    throw new Error("Không tìm thấy phiên Firebase. Vui lòng đăng nhập lại.");
+  }
+
+  try {
+    const credential = EmailAuthProvider.credential(
+      user.email,
+      currentPassword,
+    );
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPassword);
+    return user.getIdToken(true);
+  } catch (error) {
+    throw new Error(firebaseAuthErrorMessage(error));
+  }
+}
 
 export async function refreshFirebaseVerification() {
   const user = auth().currentUser;

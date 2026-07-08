@@ -1,6 +1,6 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-07-07
+Last updated: 2026-07-09
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
@@ -18,13 +18,15 @@ Use that file first for active source folders, handoff order, live URLs, cleanup
 
 `shcare.web.app` is built from `D:\Study\KLTN\smart-health-web` and Firebase Hosting target `webapp`. Older commands aimed at the Web Admin repository or target `admin` are for `shcare-admin.web.app`, not this portal.
 
-Latest confirmed live deploy after the 2026-07-07 backend tenant-hardening push `88877ad5`: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, release `projects/162993928259/sites/shcare/channels/live/releases/1783411275583000`. The deployed login flow keeps distinct Android-only/patient, pending, needs-info, rejected, portal-denied, platform-admin, and invalid-credential messages without exposing raw Firebase `auth/*` text. `bun run smoke:portal-browser` confirms live Firebase login, portal API reads, records filters, sidebar route buttons, avatar menu, notification menu, device claim route, and audit navigation. `bun run smoke:portal-mutation` passes live controlled patient/device claim/device assignment/notification/settings/report/support/logout mutation coverage with cleanup.
+Current active backend after the 2026-07-09 Render account migration is `https://smart-health-api-r5is.onrender.com` with API base `https://smart-health-api-r5is.onrender.com/api`. The previous `smart-health-api-xj0a` URL belongs to the old Render workspace that exhausted the free outbound bandwidth allocation.
 
-Web Admin current live deploy after the same push: Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783411298455000`. Platform Admin navigation exposes `/devices` for full-right accounts. Shcare Web and Web Admin forms now use `method="post"` so native/pre-hydration submit does not leak credentials through URL query strings; a custom Playwright smoke verified no-query-leak behavior plus hydrated admin/portal logins.
+Latest confirmed live deploy after the 2026-07-09 Render migration and portal settings follow-up: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/56a468bd5b4c852d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783546949244000`. The deployed login flow keeps distinct Android-only/patient, pending, needs-info, rejected, portal-denied, platform-admin, and invalid-credential messages without exposing raw Firebase `auth/*` text. `bun run smoke:portal-browser` confirms live Firebase login, portal API reads, records filters, sidebar route buttons, avatar menu, notification menu, device claim route, audit navigation, and portal settings profile/security/notification/workspace controls. `bun run smoke:portal-mutation` passed against the new backend with run id `portal-mutation-mrclugrb`, including account profile, workspace settings, and notification-preference restore cleanup.
+
+Web Admin current live deploy after the same migration: Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/35d5d0458143d1b4`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783534018473000`. Platform Admin navigation exposes `/devices` for full-right accounts. Shcare Web and Web Admin forms now use `method="post"` so native/pre-hydration submit does not leak credentials through URL query strings; a custom Playwright smoke verified no-query-leak behavior plus hydrated admin/portal logins.
 
 Web Admin now has controlled live destructive mutation coverage through `npm.cmd run smoke:admin-mutation` in `smart-health-admin\thiết kế giao diện`. It signs into `https://shcare-admin.web.app`, mutates live Render data with unique test IDs, and cleans up settings, notification, storage bucket, device, patient, package, and workspace records.
 
-2026-07-07 deploy/push QA: commit `88877ad5` was pushed to `origin/main`, triggering Render backend auto-deploy from GitHub. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrad4yzw`, and `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrad8n0r`. A custom 390x844 Playwright pass before the push also found no horizontal overflow or console/page errors on public/auth, authenticated portal, and authenticated admin key routes.
+2026-07-09 migration QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrclugrb` after the settings follow-up, and `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`.
 
 Source tracking note: `smart-health-web` is a tracked source project. Keep `dist/`, `dist-firebase/`, `.firebase/`, `.vite/`, `.tanstack/`, `.lovable/`, and `firebase-debug.log` untracked; `docs/Logo.png` and `smart-health-web\MẪU UI UX\bacsi.mp4` are required runtime assets for the portal build.
 
@@ -51,7 +53,7 @@ On this Windows setup use `npx.cmd`, not `npx.ps1`, because the PowerShell execu
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing https://shcare.web.app/login
-Invoke-WebRequest -UseBasicParsing https://smart-health-api-xj0a.onrender.com/api/health
+Invoke-WebRequest -UseBasicParsing https://smart-health-api-r5is.onrender.com/api/health
 ```
 
 Authenticated browser smoke for the live portal:
@@ -70,7 +72,7 @@ $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethos
 npm.cmd run smoke:production-roles
 ```
 
-`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
+`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. The settings route smoke now also asserts profile, security/password/session/2FA, notification, and workspace controls. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
 
 Controlled live portal mutation smoke:
 
@@ -79,9 +81,25 @@ cd D:\Study\KLTN\smart-health-web
 bun run smoke:portal-mutation
 ```
 
-`smoke:portal-mutation` uses the same credential file and workspace smoke account. It creates a unique test patient through the UI, saves patient notes, assigns a device if one exists and restores the previous assignment, provisions and claims a device through `/portal/devices/claim` with cleanup, creates/reads/deletes a notification, saves/restores workspace settings and notification preferences, exports reports CSV, submits a support ticket and deletes the resulting notification, verifies a missing-patient 404, deletes the test patient through the UI, logs out, and logs back in. The script records cleanup state immediately after each mutation so failure paths still attempt restore/delete, and it redacts auth headers without printing passwords or ID tokens.
+`smoke:portal-mutation` uses the same credential file and workspace smoke account. It creates a unique test patient through the UI, saves patient notes, assigns a device if one exists and restores the previous assignment, provisions and claims a device through `/portal/devices/claim` with cleanup, creates/reads/deletes a notification, saves/restores account profile title, workspace settings, and notification preferences, checks password/2FA/session controls without changing the smoke account password, exports reports CSV, submits a support ticket and deletes the resulting notification, verifies a missing-patient 404, deletes the test patient through the UI, logs out, and logs back in. The script records cleanup state immediately after each mutation so failure paths still attempt restore/delete, and it redacts auth headers without printing passwords or ID tokens.
 
-Run this command only from a terminal or CI runner with browser network access to `https://shcare.web.app` and Render. As of 2026-07-07 it passes from this workspace on live release `fab6a2ad97c63420`; if it fails later, treat the reported live data, permission, CORS, or UI failure as actionable until rerun proves cleanup and recovery.
+Run this command only from a terminal or CI runner with browser network access to `https://shcare.web.app` and Render. As of 2026-07-09 it passes from this workspace on live release `projects/162993928259/sites/shcare/channels/live/releases/1783546949244000` with run id `portal-mutation-mrclugrb`; if it fails later, treat the reported live data, permission, CORS, or UI failure as actionable until rerun proves cleanup and recovery.
+
+Local dev smoke against the production-like Render backend can hit CORS because Render is configured for Firebase Hosting origins, not `http://127.0.0.1:8080`. Use the local-only Playwright bypass flag only for source verification before deploy:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+$env:VITE_SMART_HEALTH_API_BASE_URL='https://smart-health-api-r5is.onrender.com/api'
+node -e "import('./scripts/production-env.js').then(({loadProductionEnv})=>{loadProductionEnv({cwd:process.cwd(),applyToProcess:true}); process.env.VITE_SMART_HEALTH_API_BASE_URL='https://smart-health-api-r5is.onrender.com/api'; const {spawn}=require('child_process'); const child=spawn('bun',['run','dev'],{stdio:'inherit',env:process.env,shell:true}); child.on('exit',(code)=>process.exit(code ?? 0));})"
+
+$env:SMART_HEALTH_WEB_URL='http://127.0.0.1:8080'
+$env:SMART_HEALTH_API_BASE_URL='https://smart-health-api-r5is.onrender.com/api'
+$env:SMOKE_DISABLE_WEB_SECURITY='1'
+bun run smoke:portal-browser
+bun run smoke:portal-mutation
+```
+
+Do not set `SMOKE_DISABLE_WEB_SECURITY=1` for live `https://shcare.web.app` verification. Live smoke should exercise real browser CORS.
 
 Live portal performance regression smoke:
 
@@ -197,7 +215,7 @@ Skill selection guide:
 D:\Study\KLTN\docs\SMART_HEALTH_AGENT_SKILLS_GUIDE.md
 ```
 
-Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Select only required user-wide skills from `C:\Users\baobe\.agents\skills`; do not load the whole set. Every task starts with a lightweight routing/token gate: infer the smallest relevant installed skill/tool, apply `context-budget` to scope before reading, and apply `strategic-compact` to decide whether compact/handoff is useful at the current phase. For every UI task, load `impeccable` and `gpt-taste` together, then at most one specialized Taste skill if relevant. Restart Codex/new chat after installing skills so the session can auto-detect them.
+Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Select only required user-wide skills from `C:\Users\baobe\.agents\skills`; do not load the whole set. Every task starts with a lightweight routing/token gate: infer the smallest relevant installed skill/tool, apply `context-budget` to scope before reading, and apply `strategic-compact` to decide whether compact/handoff is useful at the current phase. For every UI task, load `impeccable` and `gpt-taste` together, then consult the registry UI/UX Skill Pool and load every additional UI/UX skill that materially applies to visual design, frontend implementation, accessibility, responsiveness, motion, Figma/image-to-code, platform UI, UI QA, or UI performance. Restart Codex/new chat after installing skills so the session can auto-detect them.
 
 ## 0.1. Current Production Runbook And GitHub Actions
 
@@ -292,7 +310,7 @@ npm.cmd run smoke:public-deployment
 Defaults:
 
 ```text
-SMOKE_BACKEND_URL=https://smart-health-api-xj0a.onrender.com
+SMOKE_BACKEND_URL=https://smart-health-api-r5is.onrender.com
 SMOKE_ADMIN_URL=https://shcare-admin.web.app
 SMOKE_PORTAL_URL=https://shcare.web.app
 SMOKE_REQUEST_TIMEOUT_MS=60000
@@ -415,7 +433,7 @@ Workspace/RBAC HTTP smoke test with real temporary accounts:
 npm run smoke:workspace-access
 ```
 
-This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share URL generation, authenticated local-object URL reads, direct storage download content, cross-workspace signed URL/download denials, upload/list/download/delete cleanup, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, and portal notification delete.
+This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share URL generation, authenticated local-object URL reads, direct storage download content, cross-workspace signed URL/download denials, upload/list/download/delete cleanup, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, portal notification delete, AI chat tenant isolation, workspace-scoped AI settings/update notifications, and Android data summary/cache scoping.
 
 Last verified on 2026-07-07 after the storage signed-URL/download coverage expansion: passed. A separate 2026-06-05 runtime smoke on temporary ports `PORT=3450` and `AUDIO_UDP_PORT=3451` also passed `/api/health`, WebSocket `/app`, and UDP audio packet checks.
 
@@ -555,7 +573,7 @@ Manual E2E expectation for `request-info`:
 
 - Git commit pushed for backend/Web Admin source: `4e8548e Fix doctor request info sync`.
 - Firebase Hosting Web Admin release: `projects/162993928259/sites/shcare-admin/versions/f13b8b22666bc3cd`.
-- Render canary after auto-deploy: unauthenticated `GET https://smart-health-api-xj0a.onrender.com/api/share-targets?q=test` returns `401` instead of old `404`.
+- Render canary after auto-deploy: unauthenticated `GET https://smart-health-api-r5is.onrender.com/api/share-targets?q=test` returns `401` instead of old `404`.
 - Final public smoke: `npm.cmd run smoke:public-deployment` passed.
 - Stale-profile/solo-practice follow-up deploy: Git commit `72b0f3d Fix doctor resubmit profile flow` pushed to `origin/main`, Firebase Hosting release `projects/162993928259/sites/shcare-admin/versions/7de2656be1036977`, public deployment smoke passed, and authenticated Render doctor-request schema canary confirmed `workspaceType`, `accountType`, `clinicSuggestion`, `registrationReason`, `phone`, and `hospital`.
 - Follow-up commits after live stale-pending report: `951c82c Persist doctor info requests in postgres` and `7f1cdef Fix doctor request timestamp persistence`.
@@ -1034,14 +1052,13 @@ node C:\Users\baobe\.agents\skills\impeccable\scripts\context.mjs --target D:\St
 
 If it reports `NO_PRODUCT_MD`, follow the `impeccable` `init` workflow at the start of the first real UI task. The automated detector hook remains optional and project-specific; the global skill itself requires no project-local copy.
 
-Taste routing after the mandatory `impeccable` + `gpt-taste` pair:
+UI/UX Skill Pool routing after the mandatory `impeccable` + `gpt-taste` pair:
 
-- `redesign-existing-projects`: existing UI redesign.
-- `image-to-code`, `imagegen-frontend-web`, `imagegen-frontend-mobile`: image-first UI workflows.
-- `minimalist-ui`, `industrial-brutalist-ui`, `high-end-visual-design`: explicit visual lanes only.
-- `brandkit`: brand-system boards.
-- `stitch-design-taste`: Google Stitch work.
-- `full-output-enforcement`: only when output truncation/placeholder behavior is the problem.
+- Web/frontend implementation and UI QA: Build Web Apps `frontend-app-builder`, `frontend-testing-debugging`, `react-best-practices`, `shadcn`; global `frontend-design`, `design-html`, `design-review`, `design-consultation`, `design-shotgun`, `plan-design-review`, `prototype`, and Browser/Chrome checks.
+- Specialized visual/Taste workflows: `redesign-existing-projects`, `image-to-code`, `imagegen-frontend-web`, `imagegen-frontend-mobile`, `minimalist-ui`, `industrial-brutalist-ui`, `high-end-visual-design`, `brandkit`, `stitch-design-taste`, `full-output-enforcement`.
+- Figma/design-source workflows: `figma-use`, `figma-generate-design`, `figma-generate-library`, `figma-code-connect`, `figma-implement-motion`, `figma-use-motion`, `figma-swiftui`, and related Figma artifact skills.
+- Native/mobile UI workflows: `ios-design-review`, `ios-qa`, Build iOS Apps SwiftUI skills, `ios-simulator-browser`, Test Android Apps `android-emulator-qa`, and `android-performance`.
+- Visual assets for UI: system `imagegen`, `generate-image`, and `infographics` when the interface needs generated imagery or presentation-grade visuals.
 
 Agent Reach health check (restart the shell/Codex after first install so `gh` is on `PATH`):
 
@@ -1268,13 +1285,13 @@ RATE_LIMIT_PER_MINUTE=300
 Current Render backend created on 2026-06-06:
 
 ```text
-https://smart-health-api-xj0a.onrender.com
+https://smart-health-api-r5is.onrender.com
 ```
 
 Health check:
 
 ```text
-https://smart-health-api-xj0a.onrender.com/api/health
+https://smart-health-api-r5is.onrender.com/api/health
 ```
 
 Generate a `PHI_ENCRYPTION_KEY` locally:
@@ -1698,7 +1715,7 @@ npm.cmd run check
 Android debug default now targets the public Render API:
 
 ```text
-https://smart-health-api-xj0a.onrender.com
+https://smart-health-api-r5is.onrender.com
 ```
 
 Use the local emulator backend only when `web-monitor` is actually running on the host:
@@ -1713,8 +1730,8 @@ Normal cloud-backed Android build checks:
 ```powershell
 cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:compileDebugKotlin
-.\gradlew.bat :app:assembleDebug -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com
-.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com
+.\gradlew.bat :app:assembleDebug -PSMART_HEALTH_BASE_URL=https://smart-health-api-r5is.onrender.com
+.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-r5is.onrender.com
 ```
 
 Backend syntax check for the Android share-target endpoint:
@@ -1851,7 +1868,7 @@ Get-Content -LiteralPath $source -Encoding UTF8 | ForEach-Object {
   }
 }
 $env:VITE_AUTH_MODE = 'production'
-$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-r5is.onrender.com/api'
 $env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
 bun run build:firebase
 
@@ -1871,7 +1888,7 @@ $home.Headers['Cache-Control']
 ($home.Content | Select-String -Pattern 'index-[A-Za-z0-9_-]+\.css|index-[A-Za-z0-9_-]+\.js' -AllMatches).Matches.Value | Sort-Object -Unique
 
 (Invoke-WebRequest -UseBasicParsing 'https://shcare.web.app/login' -Headers @{ 'Cache-Control'='no-cache' }).StatusCode
-(Invoke-WebRequest -UseBasicParsing 'https://smart-health-api-xj0a.onrender.com/api/health').StatusCode
+(Invoke-WebRequest -UseBasicParsing 'https://smart-health-api-r5is.onrender.com/api/health').StatusCode
 ```
 
 Browser QA expectations for this release:
@@ -1918,7 +1935,7 @@ Get-Content -LiteralPath $source -Encoding UTF8 | ForEach-Object {
   }
 }
 $env:VITE_AUTH_MODE = 'production'
-$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-r5is.onrender.com/api'
 $env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
 bun run build:firebase
 ```
@@ -1998,7 +2015,7 @@ The same smoke is now also the focused Shcare Portal backend-contract suite. It 
 ```text
 commit: 409a3592 Fix portal backend route contract
 tooling commit: 71a38f3e Add backend production smoke tooling
-live backend: https://smart-health-api-xj0a.onrender.com
+live backend: https://smart-health-api-r5is.onrender.com
 public smoke: npm.cmd run smoke:public-deployment passed
 auth smoke: npm.cmd run smoke:production-roles passed
 route canary: doctor.viewer.smoke@smarthealth.test has workspace.devices.view, no workspace.devices.manage, and GET /api/v1/devices/lite-steth-a92/events returned HTTP 200
@@ -2023,7 +2040,7 @@ Get-Content -LiteralPath $adminEnv -Encoding UTF8 | ForEach-Object {
   }
 }
 $env:VITE_AUTH_MODE = 'production'
-$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-xj0a.onrender.com/api'
+$env:VITE_SMART_HEALTH_API_BASE_URL = 'https://smart-health-api-r5is.onrender.com/api'
 $env:VITE_PUBLIC_SITE_URL = 'https://shcare.web.app'
 bunx tsc --noEmit --pretty false
 bun run build:firebase
@@ -2036,7 +2053,7 @@ Verification after deploy:
 npm.cmd run smoke:public-deployment
 ```
 
-Also fetch the live main asset and confirm it has `localhostCount=0` and `renderApiCount=1` for `smart-health-api-xj0a.onrender.com/api`. The 2026-07-01 fixed release is Firebase Hosting version `projects/162993928259/sites/shcare/versions/e59c69dd22c36505`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782921251706000`.
+Also fetch the live main asset and confirm it has `localhostCount=0` and `renderApiCount=1` for `smart-health-api-r5is.onrender.com/api`. The 2026-07-01 fixed release was Firebase Hosting version `projects/162993928259/sites/shcare/versions/e59c69dd22c36505`, live release `projects/162993928259/sites/shcare/channels/live/releases/1782921251706000`; the current live backend is the 2026-07-09 Render migration URL.
 
 ## 2026-07-07 Codex Telegram Bridge Account Sync Commands
 

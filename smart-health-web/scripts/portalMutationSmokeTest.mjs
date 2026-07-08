@@ -14,7 +14,7 @@ const siteUrl = (
 ).replace(/\/+$/, "");
 const apiBase = (
   process.env.SMART_HEALTH_API_BASE_URL ||
-  "https://smart-health-api-xj0a.onrender.com/api"
+  "https://smart-health-api-r5is.onrender.com/api"
 ).replace(/\/+$/, "");
 const credentialsPath =
   process.env.SMOKE_CREDENTIALS_FILE ||
@@ -27,6 +27,7 @@ const credentialsPath =
   );
 const accountKey = process.env.SMOKE_ACCOUNT_KEY || "workspace";
 const runId = `portal-mutation-${Date.now().toString(36)}`;
+const disableWebSecurity = process.env.SMOKE_DISABLE_WEB_SECURITY === "1";
 
 const sensitiveHeaderNames = new Set(["authorization", "cookie", "set-cookie"]);
 const watchPatterns = [
@@ -449,8 +450,85 @@ async function exerciseSettings(page, state) {
     waitUntil: "domcontentloaded",
   });
   await waitSettled(page);
-  await page.waitForSelector("#workspace-website", { timeout: 20_000 });
+  await page.waitForSelector("#account-save-profile", { timeout: 20_000 });
 
+  const meBefore = await apiFetch(page, "/me");
+  const originalUser = meBefore.payload?.user || {};
+  const originalProfile = {
+    name: originalUser.name || "",
+    title: originalUser.title || "",
+    phone: originalUser.phone || "",
+    license: originalUser.license || "",
+    hospital: originalUser.hospital || "",
+    department: originalUser.department || "",
+    specialty: originalUser.specialty || "",
+    address: originalUser.address || "",
+  };
+  const originalPreferences =
+    originalUser.notificationPreferences &&
+    typeof originalUser.notificationPreferences === "object"
+      ? { ...originalUser.notificationPreferences }
+      : {};
+  state.settings = {
+    originalProfile,
+    originalPreferences,
+    originalWorkspace: {},
+    profileSaved: false,
+    workspaceSaved: false,
+    preferencesSaved: false,
+    restoredProfile: false,
+    restoredWorkspace: false,
+    restoredPreferences: false,
+  };
+
+  const nextTitle = `Smoke title ${runId}`;
+  await page.locator("#account-title").fill(nextTitle);
+  const profileResponse = waitForApiResponse(page, "/api/me", "PATCH");
+  await page.locator("#account-save-profile").click();
+  const profilePayload = await readResponsePayload(
+    await profileResponse,
+    "update account profile",
+  );
+  if (profilePayload?.user?.title !== nextTitle) {
+    throw new Error("update account profile: title did not persist");
+  }
+  state.settings.profileSaved = true;
+
+  await page.locator("#portal-settings-security-tab").click();
+  await page.waitForSelector("#account-current-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-new-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-confirm-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-change-password", { timeout: 20_000 });
+  await page.waitForSelector("#account-2fa-app", { timeout: 20_000 });
+  await page.waitForSelector("#account-2fa-disable", { timeout: 20_000 });
+  await page.waitForSelector("#account-revoke-other-sessions", {
+    timeout: 20_000,
+  });
+  await page.locator("#account-current-password").fill("not-used-by-smoke");
+  await page.locator("#account-new-password").fill("short");
+  await page.locator("#account-confirm-password").fill("short");
+  await page.locator("#account-change-password").click();
+  await page.waitForTimeout(300);
+
+  await page.locator("#portal-settings-notifications-tab").click();
+  await page.waitForSelector("#notification-newLogin", { timeout: 20_000 });
+  const newLoginCheckbox = page.locator("#notification-newLogin");
+  let preferencesSaved = false;
+  if ((await newLoginCheckbox.count()) > 0) {
+    const previous = await newLoginCheckbox.isChecked();
+    await newLoginCheckbox.setChecked(!previous);
+    const prefResponse = waitForApiResponse(page, "/api/me", "PATCH");
+    await page.locator("#workspace-save-notifications").click();
+    await readResponsePayload(
+      await prefResponse,
+      "update notification preferences",
+    );
+    preferencesSaved = true;
+    state.settings.preferencesSaved = true;
+  }
+
+  await page.locator("#portal-settings-workspace-tab").click();
+  await page.waitForSelector("#workspace-website", { timeout: 20_000 });
   const workspaceSaveCount = await page.locator("#workspace-save").count();
   const originalWorkspace = {};
   for (const field of ["name", "address", "phone", "email", "website"]) {
@@ -458,14 +536,7 @@ async function exerciseSettings(page, state) {
       .locator(`#workspace-${field}`)
       .inputValue();
   }
-  state.settings = {
-    originalWorkspace,
-    originalPreferences: {},
-    workspaceSaved: false,
-    preferencesSaved: false,
-    restoredWorkspace: false,
-    restoredPreferences: false,
-  };
+  state.settings.originalWorkspace = originalWorkspace;
 
   let workspaceSaved = false;
   if (workspaceSaveCount > 0) {
@@ -488,33 +559,14 @@ async function exerciseSettings(page, state) {
     state.settings.workspaceSaved = true;
   }
 
-  const meBefore = await apiFetch(page, "/me");
-  const originalPreferences =
-    meBefore.payload?.user?.notificationPreferences &&
-    typeof meBefore.payload.user.notificationPreferences === "object"
-      ? { ...meBefore.payload.user.notificationPreferences }
-      : {};
-  state.settings.originalPreferences = originalPreferences;
-  const newLoginCheckbox = page.locator("#notification-newLogin");
-  let preferencesSaved = false;
-  if ((await newLoginCheckbox.count()) > 0) {
-    const previous = await newLoginCheckbox.isChecked();
-    await newLoginCheckbox.setChecked(!previous);
-    const prefResponse = waitForApiResponse(page, "/api/me", "PATCH");
-    await page.locator("#workspace-save-notifications").click();
-    await readResponsePayload(
-      await prefResponse,
-      "update notification preferences",
-    );
-    preferencesSaved = true;
-    state.settings.preferencesSaved = true;
-  }
-
   return {
+    profileSaved: true,
     originalWorkspace,
+    originalProfile,
     originalPreferences,
     workspaceSaved,
     preferencesSaved,
+    securityControlsChecked: true,
   };
 }
 
@@ -652,6 +704,24 @@ async function logoutAndRecover(page, account) {
 }
 
 async function restoreIfNeeded(page, state, cleanupResults) {
+  if (state.settings?.profileSaved && state.settings.restoredProfile !== true) {
+    await apiFetch(page, "/me", {
+      method: "PATCH",
+      body: state.settings.originalProfile,
+    })
+      .then(() =>
+        cleanupResults.push({ target: "account profile", ok: true }),
+      )
+      .catch((error) =>
+        cleanupResults.push({
+          target: "account profile",
+          ok: false,
+          error: error.message,
+        }),
+      );
+    state.settings.restoredProfile = true;
+  }
+
   if (
     state.deviceAssignment?.deviceId &&
     state.deviceAssignment.restored !== true
@@ -837,7 +907,13 @@ async function main() {
   const expectedFailureFragments = [`${runId}-missing-patient`];
   const state = {};
 
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({
+    channel: "chrome",
+    headless: true,
+    args: disableWebSecurity
+      ? ["--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"]
+      : [],
+  });
   const context = await browser.newContext({
     viewport: { width: 1366, height: 850 },
     acceptDownloads: true,
@@ -888,6 +964,19 @@ async function main() {
     const notification = await createReadDeleteNotification(page, state);
 
     const settings = await exerciseSettings(page, state);
+
+    if (state.settings?.profileSaved) {
+      await apiFetch(page, "/me", {
+        method: "PATCH",
+        body: state.settings.originalProfile,
+      });
+      state.settings.restoredProfile = true;
+      cleanupResults.push({
+        target: "account profile",
+        ok: true,
+        phase: "main",
+      });
+    }
 
     if (state.deviceAssignment) {
       await apiFetch(
@@ -1038,6 +1127,8 @@ async function main() {
           deviceAssignment,
           notification,
           settings: {
+            profileSaved: settings.profileSaved,
+            securityControlsChecked: settings.securityControlsChecked,
             workspaceSaved: settings.workspaceSaved,
             preferencesSaved: settings.preferencesSaved,
           },

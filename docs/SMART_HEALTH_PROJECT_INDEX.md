@@ -1,6 +1,6 @@
 # Smart Health - Project Index
 
-Last updated: 2026-07-07
+Last updated: 2026-07-09
 
 This is the fastest navigation file for `D:\Study\KLTN`. Read it before opening broad folders or scanning the whole workspace.
 
@@ -45,19 +45,21 @@ For any feature or fix, trace the user-facing workflow end to end before calling
 | --- | --- |
 | Shcare Workspace Portal | `https://shcare.web.app` |
 | Platform Admin Console | `https://shcare-admin.web.app` |
-| Backend API | `https://smart-health-api-xj0a.onrender.com/api` |
+| Backend API | `https://smart-health-api-r5is.onrender.com/api` |
 | Firebase project | `smart-health-stethoscope` |
 
 ## Current Latest State
 
 - Firebase Auth is the identity provider across Android, Web Admin, and Shcare Portal.
-- Render, Firebase Hosting/Auth, Supabase Postgres, and Supabase S3-compatible storage were already set up earlier; do not ask to recreate them from scratch.
+- Current Render backend is `https://smart-health-api-r5is.onrender.com` (`/api` base `https://smart-health-api-r5is.onrender.com/api`). The previous `smart-health-api-xj0a` workspace hit the free outbound bandwidth limit and is no longer the active production URL.
+- Render, Firebase Hosting/Auth, Supabase Postgres, and Supabase S3-compatible storage were already set up earlier; do not ask to recreate Firebase/Supabase from scratch. Render was recreated in the new workspace on 2026-07-09 because Render does not support direct service transfer between workspaces.
 - Supabase connector access is available for production-like DB inspection. On 2026-07-07 it confirmed project `smart-health-production` (`mahvymyncxszvuhlycwp`), applied migrations `001`-`008`, RLS-enabled public tables, no direct `anon`/`authenticated` grants, and no permissive public policies.
 - `MSM261S4030H0` is the only active firmware target. Do not route new work to INMP441.
 - Shcare Web registration email verification now uses a backend-generated Firebase verification link delivered through the outbound email provider stack.
 - Backend notification creation now has a Firebase Cloud Messaging delivery path for direct user notifications, records push delivery status separately from platform-admin email fanout, persists per-attempt `pushAttempts` history without raw FCM tokens, and retries retryable provider failures with bounded env controls.
 - As of 2026-07-07, backend/source commit `88877ad5` (`Ship Smart Health tenant hardening and live smokes`) and docs commit `b12a16f6` (`Document Smart Health live deploy verification`) are pushed to `origin/main`. Render auto-deploy was verified through live health and public/role/portal/admin smokes.
-- As of 2026-07-07, `shcare.web.app` is deployed at Firebase Hosting version `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, release `projects/162993928259/sites/shcare/channels/live/releases/1783411275583000`. The latest confirmed `shcare-admin.web.app` deploy is version `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783411298455000`.
+- As of 2026-07-09, `shcare.web.app` is deployed at Firebase Hosting version `projects/162993928259/sites/shcare/versions/56a468bd5b4c852d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783546949244000`, built against `https://smart-health-api-r5is.onrender.com/api`. `shcare-admin.web.app` is deployed at version `projects/162993928259/sites/shcare-admin/versions/35d5d0458143d1b4`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783534018473000`, built against the same backend.
+- The 2026-07-09 Render/Firebase migration verification passed: backend `/api/health` and `/api/v1/health` returned 200, `/api/me` returned expected 401 unauthenticated, backend `check`, public deployment smoke, production-role smoke, portal production smoke, Shcare portal browser smoke, portal mutation smoke run `portal-mutation-mrce7zqs`, and admin mutation smoke run `admin-mutation-mrcebq30`.
 - Shcare Portal unauthenticated deep links such as `/portal/patients` now redirect to `/login` without the previous `No QueryClient set` crash or React maximum-update-depth console failure.
 - Shcare Portal login no longer exposes raw Firebase `auth/invalid-credential` errors. Invalid credentials render safe Vietnamese guidance and platform-admin accounts are directed to `shcare-admin.web.app`.
 - Live authenticated portal API smoke is available through `npm.cmd run smoke:portal-production` after `npm.cmd run smoke:production-roles`; it verifies platform portal rejection plus workspace-admin and doctor read paths against Render.
@@ -65,6 +67,8 @@ For any feature or fix, trace the user-facing workflow end to end before calling
 - Live `bun run smoke:portal-browser` and `bun run smoke:portal-mutation` pass against `https://shcare.web.app`. Mutation coverage creates/updates/deletes a controlled patient, provisions/claims/assigns/restores/cleans a device, creates/reads/deletes a notification, saves/restores workspace settings and notification preferences, exports CSV, submits/cleans a support ticket, checks expected 404 states, logs out, and logs back in. A custom no-query-leak smoke also confirms pre-hydration/native form submit does not expose credentials in URL query strings.
 - Live `npm.cmd run smoke:admin-mutation` passes from `smart-health-admin\thiết kế giao diện` after refreshing production role credentials. It covers controlled Web Admin workspace/package/patient/device/notification/storage/settings mutations against live Render/Admin and cleans up every created/restored resource.
 - Web Admin lint is warning-free after the Fast Refresh mixed-export cleanup; PDF export font bloat was moved out of TypeScript bundles into `public/fonts/roboto-regular.ttf`.
+- Follow-up on 2026-07-09 filled the Shcare Portal `/portal/settings` gap and is now live on `shcare.web.app`: the route includes profile, avatar, password, 2FA, sessions, notification preferences, and workspace settings backed by `/me/*` and `/auth/sessions`. Verification passed locally with `bunx tsc --noEmit`, `bun run lint`, `bun run build`, `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`, and local mutation run `portal-mutation-mrclhqx7`; then `bun run build:firebase`, Firebase Hosting deploy target `webapp`, live `bun run smoke:portal-browser`, and live `bun run smoke:portal-mutation` run `portal-mutation-mrclugrb` passed without the local CORS bypass flag.
+- Global/project rules now require a Smart Health skill bundle for broad work: `smart-health-project` plus context-budget/strategic-compact, then every materially useful UI/UX, implementation, QA, security/auth/data, deploy, and handoff skill for the touched surfaces. Do not collapse future "complete everything" requests to one route or one skill.
 - Local strict production readiness can still report `BLOCKED` when Render/Supabase/Firebase/provider secrets are not loaded into the current PowerShell process.
 - Backend repository hydration now treats normalized SQL rows as authoritative even when SQL tables are empty, preventing stale runtime snapshot rows in Postgres-backed mode. `smoke:repositories` covers this plus optional FK guard SQL for user/patient/device links.
 - Commit `6d902355` deployed the repository hydration hardening. Live public deployment smoke and authenticated portal production smoke passed, and Supabase confirmed runtime/normalized counts are synced again (`organizations=10`, `users=12`).

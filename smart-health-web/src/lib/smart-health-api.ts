@@ -36,6 +36,16 @@ export interface ApiUser {
   email?: string;
   phone?: string;
   avatarUrl?: string;
+  avatarFileId?: string | null;
+  license?: string;
+  hospital?: string;
+  clinicName?: string;
+  department?: string;
+  specialty?: string;
+  address?: string;
+  twoFactorEnabled?: boolean;
+  twoFactorMethod?: string | null;
+  twoFactorSecretPreview?: string | null;
   organizationId?: string;
   currentWorkspaceId?: string;
   currentMembership?: WorkspaceMembership | null;
@@ -130,6 +140,19 @@ export interface AccessLog {
   userId?: string;
   createdAt?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface AuthSession {
+  id: string;
+  provider?: string;
+  current?: boolean;
+  revokedAt?: string | null;
+  createdAt?: string;
+  lastSeenAt?: string;
+  ip?: string;
+  userAgent?: string;
+  deviceLabel?: string;
+  [key: string]: unknown;
 }
 
 export interface OverviewPayload {
@@ -259,6 +282,44 @@ async function request<T>(
   return payload as T;
 }
 
+async function requestBlob(
+  path: string,
+  init: RequestInit & { query?: Record<string, QueryValue> } = {},
+) {
+  const { query, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("X-Smart-Health-Surface", "portal");
+  headers.set("X-Smart-Health-Client", "web");
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, query), { ...requestInit, headers });
+  } catch {
+    throw new Error(
+      "Không thể kết nối backend Smart Health. Hãy kiểm tra backend và cấu hình CORS.",
+    );
+  }
+  if (!response.ok) {
+    if (response.status === 401) setToken("");
+    let payload: unknown = null;
+    const text = await response.text();
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = text;
+      }
+    }
+    const error = new Error(errorMessage(payload, response.status)) as ApiError;
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return response.blob();
+}
+
 export const smartHealthApi = {
   hasToken: () => Boolean(getToken()),
   clearToken: () => setToken(""),
@@ -305,6 +366,47 @@ export const smartHealthApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  uploadMyAvatar: (file: File) =>
+    request<{ user: ApiUser; file: { id: string; name: string } }>(
+      "/me/avatar",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": file.name,
+        },
+        body: file,
+      },
+    ),
+  downloadMyAvatar: () => requestBlob("/me/avatar"),
+  deleteMyAvatar: () =>
+    request<{ user: ApiUser; deleted: boolean }>("/me/avatar", {
+      method: "DELETE",
+    }),
+  changePassword: (payload: {
+    currentPassword?: string;
+    newPassword?: string;
+    firebaseClientUpdated?: boolean;
+  }) =>
+    request<{ ok: boolean; user: ApiUser }>("/me/password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateTwoFactor: (payload: {
+    action: "enable" | "disable";
+    method?: "app" | "sms";
+  }) =>
+    request<{ user: ApiUser; recoveryCodes?: string[] }>("/me/2fa", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listSessions: () =>
+    request<{ sessions: AuthSession[] }>("/auth/sessions"),
+  revokeSession: (sessionId: string) =>
+    request<{ session: AuthSession; revoked: boolean }>(
+      `/auth/sessions/${encodeURIComponent(sessionId)}/revoke`,
+      { method: "POST" },
+    ),
   requestRole: (payload: Record<string, unknown>) =>
     request<{ user: ApiUser; roleRequest: { status: string } }>(
       "/auth/role-request",

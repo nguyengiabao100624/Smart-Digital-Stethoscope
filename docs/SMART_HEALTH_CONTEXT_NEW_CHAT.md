@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-07-07
+Last updated: 2026-07-09
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
 
@@ -22,6 +22,33 @@ Fast project navigation now starts at `D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_I
 Smart Health is the full `D:\Study\KLTN` product workspace: `smart-health-embedded` backend/firmware, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase Auth/Hosting, Render, Supabase/Postgres/storage, CI/deploy tooling, smoke scripts, and handoff docs. Future work must develop and verify the connected workflow across the affected surfaces instead of treating one folder as the whole project.
 
 When a change touches product behavior, check the cross-surface contract: backend authorization/repository logic, client API usage, role/surface routing, tenant isolation, storage/notification/device side effects, Android/web/admin UX, firmware/device protocol if applicable, verification commands, deployment state, and handoff updates.
+
+## 2026-07-09 - Shcare Portal account settings and skill-routing hardening
+
+- Source follow-up after discovering `/portal/settings` only covered workspace fields: `smart-health-web/src/app/pages/portal/WorkspaceSettings.tsx` now covers personal profile, avatar upload/download/delete, password change, 2FA enable/disable, auth sessions/revoke controls, notification preferences, and workspace settings in one portal settings surface.
+- `smart-health-web/src/lib/smart-health-api.ts` now exposes the same account/security backend contract already used by Web Admin: `/me/avatar`, `/me/password`, `/me/2fa`, `/auth/sessions`, and session revoke. `smart-health-web/src/lib/firebase-client.ts` now supports Firebase reauthentication plus password update before the backend audit call.
+- Shcare Portal smoke coverage was expanded so `smoke:portal-browser` fails if settings lacks profile/security/notification/workspace controls, and `smoke:portal-mutation` now mutates/restores account profile title, notification preferences, workspace website, and validates security controls without changing the smoke account password.
+- Local verification passed against local `http://127.0.0.1:8080` frontend and production-like Render backend `https://smart-health-api-r5is.onrender.com/api`: `bunx tsc --noEmit`, `bun run lint`, `bun run build`, `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`, and `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-mutation` run `portal-mutation-mrclhqx7` with profile/workspace/preferences cleanup all OK.
+- Live completion also passed: `bun run build:firebase`, Firebase Hosting deploy target `webapp`, `shcare.web.app` version `projects/162993928259/sites/shcare/versions/56a468bd5b4c852d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783546949244000`, live `bun run smoke:portal-browser`, and live `bun run smoke:portal-mutation` run `portal-mutation-mrclugrb` without `SMOKE_DISABLE_WEB_SECURITY`.
+- Global/project routing rules were updated to use a task skill bundle for broad Smart Health work, not a single minimal skill: `smart-health-project` + context gates, then UI/UX, React/web, QA/browser, security/auth/data, deploy, and handoff skills as materially applicable.
+
+## 2026-07-09 - Render backend account migration and Firebase redeploy
+
+- Recreated the Render backend in the new Render account/workspace because the old `smart-health-api-xj0a` workspace exceeded the free outbound bandwidth limit and Render does not support direct service transfer between workspaces.
+- Current active backend is `https://smart-health-api-r5is.onrender.com` with API base `https://smart-health-api-r5is.onrender.com/api`. Render logs showed Postgres migrations skipped/applied, normalized state loaded from Postgres, Firebase auth enabled, production auth mode, UDP audio on port 3001, and HTTP on Render port 10000.
+- Updated operational defaults and CI/deploy wiring from `smart-health-api-xj0a` to `smart-health-api-r5is` in Shcare Web production env, backend smoke defaults, Web Admin mutation smoke, Android debug default, GitHub workflows, README files, and the project index.
+- Rebuilt and redeployed Firebase Hosting: `shcare.web.app` version `projects/162993928259/sites/shcare/versions/ad466c939950664e`, release `projects/162993928259/sites/shcare/channels/live/releases/1783533994996000`; `shcare-admin.web.app` version `projects/162993928259/sites/shcare-admin/versions/35d5d0458143d1b4`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783534018473000`.
+- Verification passed against the new backend: `/api/health` 200, `/api/v1/health` 200, `/api/me` expected 401 unauthenticated, backend `npm.cmd run check`, `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, Shcare Web `bun run build:firebase`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrce7zqs`, Web Admin `npm.cmd run build:firebase:admin`, and `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`.
+- Live asset scan after deploy found `smart-health-api-r5is` in the served bundles and no `smart-health-api-xj0a`. The Web Admin bundle still contains a guarded `localhost:3000` fallback constant, but runtime production env points at `smart-health-api-r5is`.
+- This migration restores service availability but does not solve the underlying Render outbound bandwidth risk. The prior Render usage showed most bandwidth under Service-Initiated traffic, so a follow-up should inspect backend-initiated storage/provider traffic and reduce or bypass backend egress where possible.
+
+## 2026-07-07 - Android/backend AI and data contract sync
+
+- Rerouted the remaining Android-facing backend AI/data drift in `smart-health-embedded/web-monitor/server.js`: `/api/v1/ai/chat` is now user+workspace scoped instead of returning global chat history, `/api/v1/ai/settings` and `/api/v1/ai/update` persist through the same mutable workspace settings path as the admin settings API, and `/api/v1/data/cache` returns a scoped storage summary after clearing cache.
+- Scoped AI update notifications from both `/api/v1/ai/update` and `/api/v1/settings/ai/update` with `userId` and `organizationId`, so workspace users do not create global AI-update notices visible across tenants.
+- Expanded `npm.cmd run smoke:workspace-access` to seed cross-tenant AI chat history and verify AI chat isolation, AI settings/update persistence, scoped AI update notifications, Android data summary/cache scoping, and workspace denial for destructive Android data reset.
+- Local verification for this slice passed: backend `npm.cmd run check`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd test`, Shcare Web `npm.cmd run build`, Web Admin `npm.cmd run build`, and Android `.\gradlew.bat :app:assembleDebug`.
+- This closes the local source-level mismatch where Android global utility endpoints could read/update shared runtime state while portal/admin paths were already workspace-aware. Provider/hardware validations remain separate blockers and should not be confused with this source-contract slice.
 
 ## 2026-07-07 - Broad prompt requirements handoff
 

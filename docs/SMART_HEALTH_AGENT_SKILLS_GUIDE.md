@@ -1,6 +1,16 @@
 # Smart Health - Hướng Dẫn Dùng Skills Và Handoff
 
-Last updated: 2026-06-23
+Last updated: 2026-07-09
+
+## 2026-07-09 Skill Bundle Rule
+
+For broad Smart Health work such as "complete everything", "sync the whole system", "audit all functions", or cross-repo parity, do not stop at one project skill. Use the smallest effective bundle:
+
+- Always start with `smart-health-project`, `context-budget`, and `strategic-compact`.
+- Add implementation skills for each touched surface: web/React, Android, embedded, Supabase/Postgres, backend/API, deployment, docs, or handoff.
+- For UI/UX changes, load `impeccable` and `gpt-taste`, then every materially relevant UI/UX skill from the global registry.
+- For auth, account, session, tenant isolation, password, or production data changes, include security-aware validation and runnable smoke evidence.
+- Do not claim Smart Health is complete from navigation-only checks. Account settings, password/security flows, notification preferences, workspace settings, write paths, backend contracts, and adjacent surface parity need fresh verification.
 
 File này dùng để chọn đúng skill khi làm Smart Health mà không phải đọc toàn bộ bộ skill mỗi lần. Quy tắc chính: chỉ mở `SKILL.md` của skill đang cần cho nhiệm vụ hiện tại, không tải hàng loạt.
 
@@ -24,8 +34,8 @@ Mặc định mọi task đều có routing gate nhẹ cho toàn bộ skill/tool
 | QA Android/app | `test-android-apps` plugin nếu cần, kèm `diagnosing-bugs` | Ưu tiên build Gradle, ADB/emulator, UI tree, logcat. |
 | QA web/admin | Chrome/Browser plugin, `build-web-apps:frontend-testing-debugging` khi cần | Không chỉ build, phải smoke giao diện nếu sửa UI quan trọng. |
 | Handoff ngắn sau phiên dài | `handoff` | Chỉ dùng để tạo ghi chú tạm/compact; nguồn trạng thái chính vẫn là các file `SMART_HEALTH_*`. Không ghi secret. |
-| Mọi công việc giao diện | `impeccable` + `gpt-taste` | Luôn dùng cùng nhau: Impeccable quản UX/accessibility/production quality; Taste quản visual direction/composition/motion. Design system và yêu cầu sản phẩm có quyền ưu tiên khi quy tắc chung xung đột. |
-| Style/workflow UI chuyên biệt | Một Taste skill phù hợp | Chỉ thêm tối đa một trong `redesign-existing-projects`, `image-to-code`, imagegen web/mobile, minimalist, brutalist, premium, brandkit, Stitch hoặc output enforcement. |
+| Mọi công việc giao diện | UI/UX Skill Pool trong global registry | Luôn mở `impeccable` + `gpt-taste`, rồi mở mọi skill UI/UX phù hợp với surface: visual design, frontend implementation, accessibility, responsive, motion, Figma/image-to-code, platform UI, UI QA hoặc UI performance. Design system và yêu cầu sản phẩm có quyền ưu tiên khi quy tắc chung xung đột. |
+| Style/workflow UI chuyên biệt | Mọi Taste/UI skill phù hợp | Không còn giới hạn tối đa một skill. Thêm tất cả skill phù hợp trong `redesign-existing-projects`, `image-to-code`, imagegen web/mobile, minimalist, brutalist, premium, brandkit, Stitch, output enforcement, frontend/testing, Figma, Android/iOS UI QA hoặc visual asset khi task cần. |
 | Review code theo checklist | `code-reviewer` hoặc `gstack-review` | Dùng khi user yêu cầu review; findings trước, summary sau. |
 | Tạo PRD/issue từ yêu cầu | `to-prd`, `to-issues` | Chỉ dùng khi cần biến yêu cầu dài thành tài liệu backlog/issue. |
 | Supabase/Postgres | `supabase:supabase` hoặc `supabase:supabase-postgres-best-practices` | Dùng plugin Supabase hiện hành; bản project-local trùng đã được bỏ khỏi discovery. |
@@ -40,7 +50,7 @@ Mặc định mọi task đều có routing gate nhẹ cho toàn bộ skill/tool
 - Không tạo lại `.ai_skills`, `.agents/skills`, hoặc `skills-lock.json` trong từng repo Smart Health. Skill bên thứ ba dùng bản user-wide ở `C:\Users\baobe\.agents\skills`.
 - Bộ Matt Pocock global đã lọc bỏ deprecated/trùng/Claude-only: `design-an-interface`, `qa`, `review`, `request-refactor-plan`, `ubiquitous-language`, `git-guardrails-claude-code`, `setup-matt-pocock-skills`, và `migrate-to-shoehorn`.
 - Taste global giữ 11 skill có vai trò riêng; bỏ `design-taste-frontend-v1` vì cũ và bỏ `design-taste-frontend` vì trùng trực tiếp với `gpt-taste` dành cho Codex.
-- Mục tiêu tiết kiệm token là chọn đúng 1-2 skill cho từng việc, không phải xóa sạch mọi skill dự phòng.
+- Mục tiêu tiết kiệm token là chọn đúng skill cho từng việc, không phải xóa sạch mọi skill dự phòng. Riêng UI/UX là ngoại lệ: mở base pair và mọi skill UI/UX thật sự phù hợp, không dừng ở 1-2 skill nếu task cần nhiều hơn.
 
 Kết quả so sánh nhanh:
 

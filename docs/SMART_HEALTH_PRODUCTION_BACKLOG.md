@@ -43,7 +43,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed: Shcare Web typecheck, lint, production build, Firebase build, targeted `git diff --check`, local preview browser/mutation smokes with `SMOKE_DISABLE_WEB_SECURITY=1`, Firebase Hosting deploy version `projects/162993928259/sites/shcare/versions/87657f16c15d9fc5`, live browser smoke, and live mutation run `portal-mutation-mrcnnzcg` creating/revoking share `share_20260708223625_e69f019e`.
 - Remaining share backlog is now outside this workspace portal slice: patient/personal/family-facing consent history UX, production Postgres/RLS proof for every repository-backed share path, and cross-device/user acceptance flows should be handled as separate slices unless this portal workflow regresses.
 
-## Completed locally plus production schema - 2026-07-09 patient-share repository persistence
+## Completed source/live API plus production schema - 2026-07-09 patient-share repository persistence
 
 - Added backend repository support for patient-share grants so `GET/POST/DELETE /api/portal/patients/:id/shares` can use normalized `doctor_patient_access` rows instead of only the runtime JSON array.
 - Added migration `009_doctor_patient_access_runtime_parity.sql` with nullable `doctor_user_id`, `doctor_id`, `scope`, JSONB `scan_ids`, revoke actor metadata, `updated_at`, and patient/doctor/workspace indexes.
@@ -51,7 +51,9 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Expanded JSON-to-Postgres migration and repository smoke coverage for share hydration, selected-scan persistence, guarded optional FKs, save, and revoke.
 - Added a follow-up fix after live canary caught `POST /shares` returning a new share while immediate `GET /shares` returned zero rows. The repository list path now merges SQL and runtime shares, and the portal consent page optimistically inserts the created share into its cache before refetch.
 - Verification passed locally: backend syntax checks, `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
-- Remaining step before marking the source path live: push the backend source and run post-Render live smoke. This is separate from the already-live portal consent UI and already-applied Supabase schema.
+- Deployed source follow-up `c00f35f3` to `origin/main` and redeployed Shcare Web to Firebase Hosting version `projects/162993928259/sites/shcare/versions/9109e5cb08b4fd0d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783553006684000`.
+- Post-deploy live verification passed: public deployment smoke, direct API canary `direct-share-mrcphdbi-1` proving immediate create/list consistency for share `share_20260708232540_f6af5d2b`, authenticated portal production smoke, and Playwright portal mutation run `portal-mutation-mrcpi0yj` creating/revoking share `share_20260708232751_88243994`.
+- Remaining proof gap: this shell still lacks Render CLI, Supabase CLI/psql, and local `DATABASE_URL`, so newly-created live share row insertion into normalized Supabase `doctor_patient_access` is not yet row-level proven. Use Supabase query access or Render DB/log access for that final persistence proof.
 
 ## Completed - 2026-07-07 Android/backend AI and data contract sync
 

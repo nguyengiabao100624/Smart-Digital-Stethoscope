@@ -44,6 +44,13 @@ When a change touches product behavior, check the cross-surface contract: backen
 - `smart-health-embedded/web-monitor/scripts/workspaceAccessSmokeTest.js` now seeds a personal patient account, self/dependent family profiles, and verifies patient login capabilities, personal profile isolation, dependent profile creation, share-target lookup, consent create/list/revoke, revoked-history visibility, and denial of a workspace-owned patient profile.
 - Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug`; backend `node --check server.js`, `node --check scripts\workspaceAccessSmokeTest.js`, `npm.cmd run smoke:workspace-access`, `npm.cmd run check`, `npm.cmd run smoke:repositories`, and `npm.cmd test`. Commit `fde6ae4c` was pushed to `origin/main`; live `npm.cmd run smoke:public-deployment` passed and `npm.cmd run smoke:portal-production` passed on rerun after one transient Render 502. Physical Android device/FCM delivery remains separate provider-device validation because this shell has no attached Android device.
 
+## 2026-07-09 - Android account password backend bridge
+
+- Follow-up in Android settings/account security found `ChangePasswordScreen.kt` only updated Firebase locally and did not call the backend `/api/v1/me/password` audit/notification contract.
+- `SmartHealthApi.changePassword` now accepts `firebaseClientUpdated`, and `ChangePasswordScreen.kt` updates Firebase when a Firebase user exists, refreshes the ID token into `SmartHealthRepository.api`, then records the change through the backend with `firebaseClientUpdated=true`. Demo/backend-password sessions still call the backend with current/new password directly.
+- `workspaceAccessSmokeTest.js` now also verifies the backend password endpoint by changing the seeded patient password, rejecting the old password, and accepting the new password in the temporary JSON backend.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`. Real Android UI execution still needs an attached emulator/device.
+
 ## 2026-07-09 - Shcare Portal consent/share live follow-up
 
 - Source follow-up after the broader completeness audit found `/portal/consent` had backend share APIs but weak browser workflow coverage. `smart-health-web/src/app/pages/portal/InvitationsPage.tsx` now supports patient selection, doctor/workspace target selection, full-profile vs selected-scan scope, optional expiry, friendly target labels, active share list, and revoke controls backed by `/api/share-targets` plus `/api/portal/patients/:id/shares`.

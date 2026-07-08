@@ -87,6 +87,27 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 - Local PowerShell still does not expose Render CLI, Supabase CLI/psql, or `DATABASE_URL`, so the production DB migration was applied via connector and live deploy status was inferred from API/smoke behavior. The live create-list-revoke path is verified, but row-level proof that newly-created live shares are inserted into normalized Supabase `doctor_patient_access` still needs Supabase query access or Render DB/log access.
 
+## 2026-07-09 Android Account Password Backend Bridge
+
+### Implemented
+
+- Fixed `ChangePasswordScreen.kt` so Android account password changes no longer stop at Firebase-only local state.
+- The screen now changes Firebase when a Firebase session exists, refreshes the ID token into `SmartHealthRepository.api`, and calls backend `/api/v1/me/password` with `firebaseClientUpdated=true` so backend audit, password timestamp, and notifications stay in sync.
+- Demo/backend-password sessions still use `SmartHealthRepository.api.changePassword(currentPassword, newPassword)` directly.
+- `SmartHealthApi.changePassword` now carries the `firebaseClientUpdated` flag needed by the production Firebase backend branch.
+- Expanded `scripts/workspaceAccessSmokeTest.js` to change the seeded patient password, verify the old password is rejected, and verify the new password can log in.
+
+### Verification
+
+- Android `.\gradlew.bat :app:compileDebugKotlin` passed.
+- Android `.\gradlew.bat :app:assembleDebug` passed.
+- Backend `node --check scripts\workspaceAccessSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+
+### Remaining Limits
+
+- This closes source/build/backend-contract coverage. Real Android UI execution still needs an attached emulator or physical device.
+
 ## 2026-07-09 Android Patient Data Access Consent History
 
 ### Implemented

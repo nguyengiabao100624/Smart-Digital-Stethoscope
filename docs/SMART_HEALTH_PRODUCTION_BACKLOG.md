@@ -55,6 +55,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Post-deploy live verification passed: public deployment smoke, direct API canary `direct-share-mrcphdbi-1` proving immediate create/list consistency for share `share_20260708232540_f6af5d2b`, authenticated portal production smoke, and Playwright portal mutation run `portal-mutation-mrcpi0yj` creating/revoking share `share_20260708232751_88243994`.
 - Remaining proof gap: this shell still lacks Render CLI, Supabase CLI/psql, and local `DATABASE_URL`, so newly-created live share row insertion into normalized Supabase `doctor_patient_access` is not yet row-level proven. Use Supabase query access or Render DB/log access for that final persistence proof.
 
+## Completed source/build/backend smoke - 2026-07-09 Android account password backend bridge
+
+- Fixed Android `ChangePasswordScreen.kt` so change password updates Firebase when available, refreshes the ID token, and records the change through backend `/api/v1/me/password` with `firebaseClientUpdated=true`.
+- Kept demo/backend-password compatibility by calling the backend with current/new password when no Firebase current user is present.
+- Updated `SmartHealthApi.changePassword` to send the production Firebase acknowledgement flag expected by the backend.
+- Expanded `smoke:workspace-access` to verify patient backend password change, old-password rejection, and new-password login in the temporary JSON backend.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`.
+- Remaining validation requires running the Android screen on an emulator or physical device with real Firebase credentials.
+
 ## Completed source/build/backend smoke - 2026-07-09 Android Data Access consent history
 
 - Replaced Android Data Access local-only privacy switches with a backend-backed consent ledger.

@@ -323,6 +323,16 @@ async function login(email) {
   };
 }
 
+async function expectLoginPassword(label, email, password, status) {
+  const { response, body } = await request("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: email, password }),
+  });
+  assert.equal(response.status, status, `${label} expected ${status}, got ${response.status}: ${JSON.stringify(body)}`);
+  return body;
+}
+
 async function expectStatus(label, session, pathname, status, options = {}) {
   const headers = { ...(options.headers || {}), ...session.headers };
   const result = await request(pathname, { ...options, headers });
@@ -524,6 +534,13 @@ async function runScenario() {
     200,
   );
   assert.ok(patientSharesAfterRevoke.shares.some((item) => item.id === patientShare.share.id && item.active === false));
+  await expectStatus("patient changes backend account password", patient, "/api/v1/me/password", 200, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentPassword: "12345678", newPassword: "PatientPass123" }),
+  });
+  await expectLoginPassword("old patient password is rejected after password change", "patient@alpha.test", "12345678", 401);
+  await expectLoginPassword("patient can sign in with changed backend password", "patient@alpha.test", "PatientPass123", 200);
 
   const portalScans = await expectStatus("portal lists only scoped scans", workspaceAdmin, "/api/portal/scans", 200, {
     headers: portalHeaders,

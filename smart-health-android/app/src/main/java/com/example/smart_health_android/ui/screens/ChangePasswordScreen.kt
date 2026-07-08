@@ -26,6 +26,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.FirebaseAuthService
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -151,14 +153,36 @@ fun ChangePasswordScreen(onNavigateBack: () -> Unit) {
                     isSubmitting = true
                     successMessage = null
                     coroutineScope.launch {
+                        var firebaseUpdated = false
                         try {
-                            FirebaseAuthService.changePassword(current, next)
+                            if (FirebaseAuthService.currentEmail().isNotBlank()) {
+                                FirebaseAuthService.changePassword(current, next)
+                                firebaseUpdated = true
+                                val refreshedToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
+                                SmartHealthRepository.api.setAuthToken(refreshedToken)
+                                SmartHealthRepository.api.changePassword(
+                                    currentPassword = current,
+                                    newPassword = next,
+                                    firebaseClientUpdated = true
+                                )
+                            } else {
+                                SmartHealthRepository.api.changePassword(
+                                    currentPassword = current,
+                                    newPassword = next
+                                )
+                            }
                             currentPassword = ""
                             newPassword = ""
                             confirmPassword = ""
                             successMessage = "Đã cập nhật mật khẩu"
                         } catch (error: Exception) {
-                            errorMessage = error.message ?: "Không thể đổi mật khẩu trên Firebase"
+                            errorMessage = if (firebaseUpdated) {
+                                "Mật khẩu đã đổi trên Firebase nhưng backend chưa ghi nhận được: ${
+                                    error.toVietnameseMessage("Không thể ghi nhận đổi mật khẩu trên backend")
+                                }"
+                            } else {
+                                error.toVietnameseMessage("Không thể đổi mật khẩu")
+                            }
                         } finally {
                             isSubmitting = false
                         }

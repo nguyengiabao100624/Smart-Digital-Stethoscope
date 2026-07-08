@@ -140,12 +140,17 @@ class SmartHealthApi(
         parseAuthUser(patchJson("$baseUrl/me", fields).getJSONObject("user"))
     }
 
-    suspend fun changePassword(currentPassword: String, newPassword: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        firebaseClientUpdated: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
         postJson(
             "$baseUrl/me/password",
             JSONObject()
                 .put("currentPassword", currentPassword)
                 .put("newPassword", newPassword)
+                .put("firebaseClientUpdated", firebaseClientUpdated)
         )
         true
     }

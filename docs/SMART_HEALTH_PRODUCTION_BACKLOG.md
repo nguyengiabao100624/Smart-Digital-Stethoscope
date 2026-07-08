@@ -55,13 +55,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Post-deploy live verification passed: public deployment smoke, direct API canary `direct-share-mrcphdbi-1` proving immediate create/list consistency for share `share_20260708232540_f6af5d2b`, authenticated portal production smoke, and Playwright portal mutation run `portal-mutation-mrcpi0yj` creating/revoking share `share_20260708232751_88243994`.
 - Remaining proof gap: this shell still lacks Render CLI, Supabase CLI/psql, and local `DATABASE_URL`, so newly-created live share row insertion into normalized Supabase `doctor_patient_access` is not yet row-level proven. Use Supabase query access or Render DB/log access for that final persistence proof.
 
-## Completed source/build - 2026-07-09 Android Data Access consent history
+## Completed source/build/backend smoke - 2026-07-09 Android Data Access consent history
 
 - Replaced Android Data Access local-only privacy switches with a backend-backed consent ledger.
 - The screen now loads patient/family profiles, share targets, and patient-share grants; shows selected profile, active count, target label, active/revoked state, scope, selected-scan count, expiry, loading/error/empty/retry states; and revokes active grants through `DELETE /api/patients/:id/shares/:shareId`.
 - Added `SmartHealthApi.revokePatientShare` and extended `PatientShare` with doctor/history metadata used by the UI.
-- Verification passed: `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug`.
-- Remaining validation requires hardware/app runtime access: run this screen on a real Android device or emulator with patient/workspace credentials, and continue separate real FCM delivery validation.
+- Backend `GET /api/v1/patients/:id/shares` now includes revoked grants through repository `includeRevoked` and JSON fallback parity so the consent ledger can show active and revoked history.
+- Expanded `smoke:workspace-access` to seed a personal patient account and verify self/dependent profile isolation, dependent creation, share-target lookup, consent create/list/revoke, revoked-history visibility, and denial of workspace-owned patient profiles.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, backend `npm.cmd run smoke:repositories`, and backend `npm.cmd test`.
+- Remaining validation requires hardware/app runtime access: run this screen on a real Android device or emulator with patient/workspace credentials, verify the patient-facing UI visually, and continue separate real FCM delivery validation.
 
 ## Completed - 2026-07-07 Android/backend AI and data contract sync
 

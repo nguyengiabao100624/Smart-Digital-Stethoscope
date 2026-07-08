@@ -31,6 +31,7 @@ function writeSeedDb() {
     ["usr_workspace_admin", "workspace_admin", "workspace-admin@alpha.test", "Workspace Admin", "org_alpha"],
     ["usr_doctor", "doctor", "doctor@alpha.test", "Doctor", "org_alpha"],
     ["usr_beta_doctor", "doctor", "doctor@beta.test", "Beta Doctor", "org_beta"],
+    ["usr_patient", "patient", "patient@alpha.test", "Patient Owner", "org_personal_patient"],
     ["usr_technician", "technician", "technician@alpha.test", "Technician", "org_alpha"],
     ["usr_billing", "billing", "billing@alpha.test", "Billing", "org_alpha"],
     ["usr_viewer", "viewer", "viewer@alpha.test", "Viewer", "org_alpha"],
@@ -110,6 +111,31 @@ function writeSeedDb() {
     patients: [
       { id: "pat_alpha", patientCode: "ALPHA-001", name: "Alpha Patient", organizationId: "org_alpha", createdAt, updatedAt: createdAt },
       { id: "pat_beta", patientCode: "BETA-001", name: "Beta Patient", organizationId: "org_beta", createdAt, updatedAt: createdAt },
+      {
+        id: "pat_patient_self",
+        patientCode: "SELF-001",
+        name: "Patient Owner",
+        email: "patient@alpha.test",
+        organizationId: "org_personal_patient",
+        ownerUserId: "usr_patient",
+        accountUserId: "usr_patient",
+        profileType: "self",
+        relationship: "self",
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "pat_patient_child",
+        patientCode: "FAMILY-001",
+        name: "Patient Child",
+        organizationId: "org_personal_patient",
+        ownerUserId: "usr_patient",
+        guardianUserId: "usr_patient",
+        profileType: "dependent",
+        relationship: "child",
+        createdAt,
+        updatedAt: createdAt,
+      },
     ],
     devices: [
       { id: "dev_alpha", name: "Alpha Device", type: "stethoscope", status: "available", organizationId: "org_alpha", connected: false, createdAt, updatedAt: createdAt },
@@ -322,6 +348,7 @@ async function runScenario() {
   const workspaceAdmin = await login("workspace-admin@alpha.test");
   const doctor = await login("doctor@alpha.test");
   const betaDoctor = await login("doctor@beta.test");
+  const patient = await login("patient@alpha.test");
   const technician = await login("technician@alpha.test");
   const billing = await login("billing@alpha.test");
   const viewer = await login("viewer@alpha.test");
@@ -330,6 +357,9 @@ async function runScenario() {
 
   assert.ok(platform.user.capabilities.includes("platform.workspaces.manage"));
   assert.ok(workspaceAdmin.user.capabilities.includes("workspace.storage.manage"));
+  assert.ok(patient.user.capabilities.includes("personal.profiles.manage"));
+  assert.ok(patient.user.capabilities.includes("personal.sharing.manage"));
+  assert.deepEqual(patient.user.allowedSurfaces, ["android"]);
   assert.ok(technician.user.capabilities.includes("workspace.devices.manage"));
   assert.ok(!technician.user.capabilities.includes("billing.view"));
 
@@ -449,6 +479,51 @@ async function runScenario() {
       headers: portalHeaders,
     },
   );
+
+  const patientProfiles = await expectStatus("patient lists own family profiles", patient, "/api/v1/patients", 200);
+  assert.deepEqual(
+    patientProfiles.patients.map((item) => item.id).sort(),
+    ["pat_patient_child", "pat_patient_self"].sort(),
+  );
+  await expectStatus("patient cannot read workspace-owned patient profile", patient, "/api/v1/patients/pat_alpha", 403);
+  const patientCreatedProfile = await expectStatus("patient creates dependent family profile", patient, "/api/v1/patients", 201, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      patientCode: "FAMILY-NEW",
+      name: "Patient Created Dependent",
+      profileType: "dependent",
+      relationship: "parent",
+    }),
+  });
+  assert.equal(patientCreatedProfile.patient.ownerUserId, "usr_patient");
+  assert.equal(patientCreatedProfile.patient.guardianUserId, "usr_patient");
+  assert.equal(patientCreatedProfile.patient.profileType, "dependent");
+  const patientShareTargets = await expectStatus("patient resolves doctor share targets", patient, "/api/v1/share-targets", 200);
+  assert.ok(patientShareTargets.doctors.some((target) => target.id === "usr_doctor"));
+  const patientShare = await expectStatus("patient shares dependent profile", patient, "/api/v1/patients/pat_patient_child/shares", 201, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doctorUserId: "usr_doctor", scope: "patient_profile" }),
+  });
+  assert.equal(patientShare.share.patientId, "pat_patient_child");
+  assert.equal(patientShare.share.doctorUserId, "usr_doctor");
+  const patientShares = await expectStatus("patient lists active consent history", patient, "/api/v1/patients/pat_patient_child/shares", 200);
+  assert.ok(patientShares.shares.some((item) => item.id === patientShare.share.id && item.active === true));
+  await expectStatus(
+    "patient revokes dependent profile consent",
+    patient,
+    `/api/v1/patients/pat_patient_child/shares/${patientShare.share.id}`,
+    200,
+    { method: "DELETE" },
+  );
+  const patientSharesAfterRevoke = await expectStatus(
+    "patient consent history includes revoked grant",
+    patient,
+    "/api/v1/patients/pat_patient_child/shares",
+    200,
+  );
+  assert.ok(patientSharesAfterRevoke.shares.some((item) => item.id === patientShare.share.id && item.active === false));
 
   const portalScans = await expectStatus("portal lists only scoped scans", workspaceAdmin, "/api/portal/scans", 200, {
     headers: portalHeaders,

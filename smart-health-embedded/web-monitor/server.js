@@ -10691,8 +10691,8 @@ async function handlePatientsApi(req, res, url, segments) {
     assertCanAccessPatient(user, patient.id);
     assertCanManagePatientSharing(user, patient);
     const grants = repositories && repositories.patientShares
-      ? await repositories.patientShares.listForPatient(patient.id)
-      : db.doctorPatientAccess.filter((grant) => grant.patientId === patient.id && !grant.revokedAt);
+      ? await repositories.patientShares.listForPatient(patient.id, { includeRevoked: true })
+      : db.doctorPatientAccess.filter((grant) => grant.patientId === patient.id);
     const shares = grants
       .map((grant) => ({
         ...grant,

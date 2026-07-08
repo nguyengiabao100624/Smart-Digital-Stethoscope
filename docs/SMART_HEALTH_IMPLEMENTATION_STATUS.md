@@ -94,14 +94,22 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Replaced the old Android Data Access local-only switches with a backend-backed consent/access ledger.
 - The screen now loads real patient/family profiles, share targets, and patient-share grants, shows active/revoked state, scope, selected-scan count, expiry, target label, and profile selector state.
 - Added Android API support for `DELETE /api/patients/:id/shares/:shareId` through `SmartHealthApi.revokePatientShare`, and extended `PatientShare` metadata for doctor/workspace labels and history sorting.
+- Updated backend `GET /api/v1/patients/:id/shares` to return revoked grants for consent history through repository `includeRevoked` and JSON fallback parity.
+- Expanded `scripts/workspaceAccessSmokeTest.js` with a personal patient account and family profiles. The smoke now verifies patient capabilities/surface, self/dependent profile isolation, dependent creation, doctor share-target lookup, consent create/list/revoke, revoked-history visibility, and denial of a workspace-owned patient profile.
 
 ### Verification
 
 - Android `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug` passed. The existing Compose `Icons.Filled.ArrowBack` deprecation warning remains in `MedicalRecordsScreen.kt` and is unrelated to this slice.
+- Backend `node --check server.js` passed.
+- Backend `node --check scripts\workspaceAccessSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:repositories` passed.
+- Backend `npm.cmd test` passed.
 
 ### Remaining Limits
 
-- This is source/build verification plus backend contract reuse. Real Android device UI validation and user-visible FCM delivery still require an attached Android device/token.
+- This is source/build plus local backend contract verification. Real Android device UI validation, emulator/browser-level patient-facing UX proof, and user-visible FCM delivery still require an attached Android device/token or equivalent interactive runtime.
 
 ## 2026-07-09 Shcare Portal Account Settings Live Follow-up
 

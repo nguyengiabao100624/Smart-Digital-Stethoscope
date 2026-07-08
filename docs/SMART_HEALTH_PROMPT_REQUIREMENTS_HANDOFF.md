@@ -61,7 +61,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Shcare Portal account settings | Closed in deployed source | `/portal/settings` now covers profile/avatar/password/2FA/sessions/notifications/workspace settings and live mutation run `portal-mutation-mrclugrb` passed with cleanup. |
 | Shcare Portal consent/share workflow | Closed in deployed source | `/portal/consent` now creates and revokes real patient-share grants with full-profile/selected-scan scope and optional expiry. Live Firebase version `projects/162993928259/sites/shcare/versions/87657f16c15d9fc5`; live mutation run `portal-mutation-mrcnnzcg` created/revoked share `share_20260708223625_e69f019e`. |
 | Patient-share repository persistence | Closed for source/API live consistency; DB row proof pending | Backend source now has SQL-backed `repositories.patientShares`; portal share routes use repository list/find/save/revoke when available; Supabase project `mahvymyncxszvuhlycwp` has app migration `009_doctor_patient_access_runtime_parity` applied and verified. Follow-up `c00f35f3` is pushed, live API direct canary and portal mutation smoke verify create-list-revoke consistency, but row-level proof for newly-created live Supabase rows still needs DB/log access. |
-| Android Data Access consent history | Closed in source/build | Android `/settings -> privacy -> data-access` no longer uses local-only switches; it loads backend patient profiles/share grants/share targets, shows active/revoked consent history, and can revoke active grants through `DELETE /api/patients/:id/shares/:shareId`. Kotlin compile and debug assemble passed. |
+| Android Data Access consent history | Closed in source/build/backend-smoke | Android `/settings -> privacy -> data-access` no longer uses local-only switches; it loads backend patient profiles/share grants/share targets, shows active/revoked consent history, and can revoke active grants through `DELETE /api/patients/:id/shares/:shareId`. Backend `GET /patients/:id/shares` now includes revoked grants for history, and `smoke:workspace-access` covers patient/family profile isolation plus consent create/list/revoke. Kotlin compile and debug assemble passed. |
 
 ## Verification Ledger
 
@@ -89,6 +89,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Share create/list regression caught on 2026-07-09 after commit `18534eba`: live portal mutation smoke timed out on new share row `share_20260708230629_cd3483bf`, and direct API canary showed POST-created share `share_20260708230839_6f6a3512` was not returned by immediate `GET /shares`. The source fix merges runtime shares with SQL rows in `patientShares.listForPatient`, adds a create-then-list repository smoke assertion, and optimistically inserts created shares into the portal cache.
 - Share create/list deploy follow-up on 2026-07-09: commit `c00f35f3` was pushed to `origin/main`, Shcare Web deployed version `projects/162993928259/sites/shcare/versions/9109e5cb08b4fd0d`, and live verification passed with `npm.cmd run smoke:public-deployment`, direct canary `direct-share-mrcphdbi-1` (`share_20260708232540_f6af5d2b` visible in immediate `GET /shares`), `npm.cmd run smoke:portal-production`, and `bun run smoke:portal-mutation` run `portal-mutation-mrcpi0yj` (`share_20260708232751_88243994` created/revoked).
 - Android Data Access consent history on 2026-07-09: `DataAccessScreen.kt` now uses backend `listPatients`, `listPatientShares`, `listShareTargets`, and new `revokePatientShare`; `PatientShare` carries history metadata; `.\gradlew.bat :app:compileDebugKotlin` and `.\gradlew.bat :app:assembleDebug` passed.
+- Patient/family backend contract follow-up on 2026-07-09: backend `GET /api/v1/patients/:id/shares` now returns revoked grants through repository `includeRevoked` and JSON fallback parity; `smoke:workspace-access` now logs in a personal patient account, verifies self/dependent profile isolation, dependent creation, share-target lookup, patient consent create/list/revoke, revoked consent history, and denial of workspace-owned patient profiles. Verification passed with `node --check server.js`, `node --check scripts\workspaceAccessSmokeTest.js`, `npm.cmd run smoke:workspace-access`, `npm.cmd run check`, `npm.cmd run smoke:repositories`, and `npm.cmd test`.
 
 ## Current Severity Checklist
 
@@ -105,7 +106,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 ### Medium
 
 - Account settings and notification preference behavior should keep getting expanded with browser-level mutation coverage for every dialog/form field. Backend source-level AI settings/update notification scope is covered locally; remaining work here is browser-level UX breadth, not the AI/data endpoint contract fixed on 2026-07-07.
-- Patient/family profile flows still need production-like workspace/personal/family data checks. Android patient-facing consent history is source/build closed; real device UI proof remains tied to attached Android hardware. The workspace portal grant/revoke workflow itself is covered by live browser/mutation smoke as of 2026-07-09.
+- Patient/family profile flows now have local backend contract coverage for personal profile isolation, dependent creation, and consent history create/list/revoke. Remaining work is browser/emulator/device-level patient/family UX proof and live production-provider evidence, not another local backend contract pass unless new regression evidence appears.
 
 ### Polish
 
@@ -117,7 +118,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 Recommended next non-repeated slice:
 
 1. Move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, production S3/Supabase Storage provider smoke, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
-2. Continue browser-level patient/family profile, patient-facing consent history, and notification-preference breadth when provider/device gates are not available.
+2. Continue browser/emulator-level patient/family profile UX, patient-facing consent history UI proof, and notification-preference breadth when provider/device gates are not available.
 3. Do not repeat the closed Role/Auth/Register/Approval/RBAC, Supabase/Postgres repository-parity, local storage API, or live performance slices unless new regression evidence appears.
 
 ## Handoff Rule

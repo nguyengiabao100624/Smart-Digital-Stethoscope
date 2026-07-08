@@ -3,9 +3,11 @@ import path from "node:path";
 
 const DEFAULT_ENV = {
   VITE_AUTH_MODE: "production",
-  VITE_SMART_HEALTH_API_BASE_URL: "https://smart-health-api-xj0a.onrender.com/api",
+  VITE_SMART_HEALTH_API_BASE_URL: "https://smart-health-api-r5is.onrender.com/api",
   VITE_PUBLIC_SITE_URL: "https://shcare.web.app",
 };
+const RETIRED_API_BASE_URLS = new Set(["https://smart-health-api-xj0a.onrender.com/api"]);
+const RETIRED_BASE_URLS = new Set(["https://smart-health-api-xj0a.onrender.com"]);
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -57,6 +59,18 @@ export function loadProductionEnv({ cwd = process.cwd(), applyToProcess = true }
   const files = getProductionEnvFiles(cwd);
   const fileEnv = files.reduce((env, file) => ({ ...env, ...parseEnvFile(file) }), {});
   const env = { ...DEFAULT_ENV, ...fileEnv, ...process.env };
+  if (
+    process.env.VITE_SMART_HEALTH_API_BASE_URL === undefined &&
+    RETIRED_API_BASE_URLS.has(env.VITE_SMART_HEALTH_API_BASE_URL)
+  ) {
+    env.VITE_SMART_HEALTH_API_BASE_URL = DEFAULT_ENV.VITE_SMART_HEALTH_API_BASE_URL;
+  }
+  if (
+    process.env.VITE_SMART_HEALTH_BASE_URL === undefined &&
+    RETIRED_BASE_URLS.has(env.VITE_SMART_HEALTH_BASE_URL)
+  ) {
+    env.VITE_SMART_HEALTH_BASE_URL = DEFAULT_ENV.VITE_SMART_HEALTH_API_BASE_URL.replace(/\/api$/, "");
+  }
 
   if (applyToProcess) {
     for (const [key, value] of Object.entries(env)) {

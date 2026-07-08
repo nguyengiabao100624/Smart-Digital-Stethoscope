@@ -210,6 +210,37 @@ function rowToPatient(row) {
   };
 }
 
+function rowToPatientShare(row) {
+  if (!row) return null;
+  let scanIds = [];
+  if (Array.isArray(row.scan_ids)) {
+    scanIds = row.scan_ids;
+  } else if (typeof row.scan_ids === "string") {
+    try {
+      const parsed = JSON.parse(row.scan_ids || "[]");
+      scanIds = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      scanIds = [];
+    }
+  }
+  return {
+    id: row.id,
+    doctorUserId: row.doctor_user_id || "",
+    doctorId: row.doctor_id || row.doctor_user_id || "",
+    patientId: row.patient_id || "",
+    organizationId: row.organization_id || "",
+    accessLevel: row.access_level || "read",
+    scope: row.scope || (scanIds.length ? "selected_scans" : "patient_profile"),
+    scanIds,
+    grantedByUserId: row.granted_by_user_id || "",
+    expiresAt: toIso(row.expires_at),
+    revokedAt: toIso(row.revoked_at),
+    revokedByUserId: row.revoked_by_user_id || "",
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
 function rowToDevice(row) {
   if (!row) return null;
   return {
@@ -387,6 +418,12 @@ function createRepositories(options) {
       onSqlError(err);
       return null;
     }
+  }
+
+  function patientShareItems() {
+    const db = getDb();
+    db.doctorPatientAccess = Array.isArray(db.doctorPatientAccess) ? db.doctorPatientAccess : [];
+    return db.doctorPatientAccess;
   }
 
   async function upsertUserSql(user) {
@@ -581,6 +618,60 @@ function createRepositories(options) {
           optional(patient.notes),
           optional(patient.createdAt),
           patient.updatedAt || nowIso(),
+        ]
+      )
+    );
+  }
+
+  async function upsertPatientShareSql(grant) {
+    await withSql((pool) =>
+      pool.query(
+        `
+          INSERT INTO doctor_patient_access (
+            id, doctor_user_id, doctor_id, patient_id, organization_id, access_level, scope, scan_ids,
+            granted_by_user_id, expires_at, revoked_at, revoked_by_user_id, created_at, updated_at
+          )
+          VALUES (
+            $1,
+            CASE WHEN $2 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $2) THEN $2 ELSE NULL END,
+            $3, $4,
+            CASE WHEN $5 IS NOT NULL AND EXISTS (SELECT 1 FROM organizations WHERE id = $5) THEN $5 ELSE NULL END,
+            $6, $7, $8::jsonb,
+            CASE WHEN $9 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $9) THEN $9 ELSE NULL END,
+            $10::timestamptz, $11::timestamptz,
+            CASE WHEN $12 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12) THEN $12 ELSE NULL END,
+            COALESCE($13::timestamptz, now()), COALESCE($14::timestamptz, now())
+          )
+          ON CONFLICT (id)
+          DO UPDATE SET
+            doctor_user_id = EXCLUDED.doctor_user_id,
+            doctor_id = EXCLUDED.doctor_id,
+            patient_id = EXCLUDED.patient_id,
+            organization_id = EXCLUDED.organization_id,
+            access_level = EXCLUDED.access_level,
+            scope = EXCLUDED.scope,
+            scan_ids = EXCLUDED.scan_ids,
+            granted_by_user_id = EXCLUDED.granted_by_user_id,
+            expires_at = EXCLUDED.expires_at,
+            revoked_at = EXCLUDED.revoked_at,
+            revoked_by_user_id = EXCLUDED.revoked_by_user_id,
+            updated_at = EXCLUDED.updated_at
+        `,
+        [
+          grant.id,
+          optional(grant.doctorUserId || grant.doctorId),
+          optional(grant.doctorId || grant.doctorUserId),
+          grant.patientId,
+          optional(grant.organizationId),
+          grant.accessLevel || "read",
+          grant.scope || (Array.isArray(grant.scanIds) && grant.scanIds.length ? "selected_scans" : "patient_profile"),
+          JSON.stringify(Array.isArray(grant.scanIds) ? grant.scanIds : []),
+          optional(grant.grantedByUserId),
+          optionalTimestamp(grant.expiresAt),
+          optionalTimestamp(grant.revokedAt),
+          optional(grant.revokedByUserId),
+          optional(grant.createdAt),
+          grant.updatedAt || nowIso(),
         ]
       )
     );
@@ -1290,6 +1381,79 @@ function createRepositories(options) {
     },
   };
 
+  const patientShares = {
+    async listForPatient(patientId, options = {}) {
+      const id = String(patientId || "");
+      if (!id) return [];
+      const includeRevoked = Boolean(options.includeRevoked);
+      const sqlShares = await withSql(async (pool) => {
+        const result = await pool.query(
+          `
+            SELECT * FROM doctor_patient_access
+            WHERE patient_id = $1
+              AND ($2::boolean = true OR revoked_at IS NULL)
+            ORDER BY created_at DESC
+          `,
+          [id, includeRevoked]
+        );
+        return result.rows.map(rowToPatientShare);
+      });
+      if (sqlShares) {
+        for (const share of sqlShares) {
+          syncArrayItem(patientShareItems(), share);
+        }
+        return sqlShares;
+      }
+      return patientShareItems().filter(
+        (grant) => grant.patientId === id && (includeRevoked || !grant.revokedAt)
+      );
+    },
+
+    async findForPatient(patientId, shareId) {
+      const id = String(patientId || "");
+      const grantId = String(shareId || "");
+      if (!id || !grantId) return null;
+      const sqlShare = await withSql(async (pool) => {
+        const result = await pool.query(
+          "SELECT * FROM doctor_patient_access WHERE id = $1 AND patient_id = $2 LIMIT 1",
+          [grantId, id]
+        );
+        return result.rows[0] ? rowToPatientShare(result.rows[0]) : null;
+      });
+      if (sqlShare) {
+        return syncArrayItem(patientShareItems(), sqlShare);
+      }
+      return patientShareItems().find((grant) => grant.id === grantId && grant.patientId === id) || null;
+    },
+
+    async save(grant) {
+      grant.doctorUserId = grant.doctorUserId || grant.doctorId || "";
+      grant.doctorId = grant.doctorId || grant.doctorUserId || "";
+      grant.accessLevel = grant.accessLevel || "read";
+      grant.scope = grant.scope || (Array.isArray(grant.scanIds) && grant.scanIds.length ? "selected_scans" : "patient_profile");
+      grant.scanIds = Array.isArray(grant.scanIds) ? grant.scanIds : [];
+      grant.createdAt = grant.createdAt || nowIso();
+      grant.updatedAt = grant.updatedAt || nowIso();
+      syncArrayItem(patientShareItems(), grant);
+      getDb().doctorPatientAccess = patientShareItems().slice(0, 1000);
+      await upsertPatientShareSql(grant);
+      await saveDb();
+      return grant;
+    },
+
+    async revoke(patientId, shareId, actorUserId = "") {
+      const grant = await this.findForPatient(patientId, shareId);
+      if (!grant) return null;
+      grant.revokedAt = grant.revokedAt || nowIso();
+      grant.revokedByUserId = actorUserId || grant.revokedByUserId || "";
+      grant.updatedAt = nowIso();
+      syncArrayItem(patientShareItems(), grant);
+      await upsertPatientShareSql(grant);
+      await saveDb();
+      return grant;
+    },
+  };
+
   const devices = {
     async list() {
       const sqlDevices = await withSql(async (pool) => {
@@ -1551,11 +1715,12 @@ function createRepositories(options) {
     auditLogs,
     async hydrateCoreState() {
       const hydrated = await withSql(async (pool) => {
-        const [organizationResult, userResult, membershipResult, patientResult, deviceResult, scanResult, audioResult, aiResult, deviceEventResult, notificationDeviceResult, notificationResult, auditResult] = await Promise.all([
+        const [organizationResult, userResult, membershipResult, patientResult, patientShareResult, deviceResult, scanResult, audioResult, aiResult, deviceEventResult, notificationDeviceResult, notificationResult, auditResult] = await Promise.all([
           pool.query("SELECT * FROM organizations ORDER BY created_at ASC"),
           pool.query("SELECT * FROM users ORDER BY created_at ASC"),
           pool.query("SELECT * FROM memberships ORDER BY created_at ASC"),
           pool.query("SELECT * FROM patients ORDER BY updated_at DESC, created_at DESC"),
+          pool.query("SELECT * FROM doctor_patient_access ORDER BY created_at DESC LIMIT 1000"),
           pool.query("SELECT * FROM devices ORDER BY updated_at DESC, created_at DESC"),
           pool.query("SELECT * FROM scan_sessions ORDER BY COALESCE(started_at, created_at) DESC LIMIT 500"),
           pool.query("SELECT * FROM audio_files ORDER BY created_at DESC LIMIT 500"),
@@ -1570,6 +1735,7 @@ function createRepositories(options) {
           users: userResult.rows.map(rowToUser),
           memberships: membershipResult.rows.map(rowToMembership),
           patients: patientResult.rows.map(rowToPatient),
+          doctorPatientAccess: patientShareResult.rows.map(rowToPatientShare),
           devices: deviceResult.rows.map(rowToDevice),
           scans: scanResult.rows.map(rowToScan),
           audioFiles: audioResult.rows.map(rowToAudioFile),
@@ -1587,7 +1753,7 @@ function createRepositories(options) {
 
       const db = getDb();
       const counts = {};
-      for (const key of ["organizations", "users", "memberships", "patients", "devices", "scans", "audioFiles", "aiResults", "deviceEvents", "notificationDevices", "notifications", "auditLogs"]) {
+      for (const key of ["organizations", "users", "memberships", "patients", "doctorPatientAccess", "devices", "scans", "audioFiles", "aiResults", "deviceEvents", "notificationDevices", "notifications", "auditLogs"]) {
         const items = hydrated[key].filter(Boolean);
         counts[key] = items.length;
         // Normalized SQL rows stay authoritative for queryable collections.
@@ -1601,6 +1767,7 @@ function createRepositories(options) {
     memberships,
     notifications,
     patients,
+    patientShares,
     devices,
     scans,
     audioFiles,

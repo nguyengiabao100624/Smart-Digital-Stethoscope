@@ -40,6 +40,7 @@ const watchPatterns = [
   "/api/portal/settings",
   "/api/portal/reports",
   "/api/portal/support",
+  "/api/share-targets",
 ];
 
 function readSmokeAccount() {
@@ -443,6 +444,82 @@ async function createReadDeleteNotification(page, state) {
   });
   state.notificationId = "";
   return { notificationId: notification.id, deleted: true };
+}
+
+async function exerciseConsentSharing(page, patientId, state) {
+  const targetsResult = await apiFetch(page, "/share-targets");
+  const doctors = Array.isArray(targetsResult.payload?.doctors)
+    ? targetsResult.payload.doctors
+    : [];
+  const workspaces = Array.isArray(targetsResult.payload?.workspaces)
+    ? targetsResult.payload.workspaces
+    : [];
+  const targetType = doctors[0]?.id ? "doctor" : "workspace";
+  const target = targetType === "doctor" ? doctors[0] : workspaces[0];
+  if (!target?.id) {
+    return { skipped: true, reason: "workspace has no consent share targets" };
+  }
+
+  await page.goto(`${siteUrl}/portal/consent?smoke=${runId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await waitSettled(page);
+  await page.waitForSelector("#share-patient-id", { timeout: 20_000 });
+  await page.locator("#share-patient-id").selectOption(patientId);
+  await page.locator("#share-target-type").selectOption(targetType);
+  await page.locator("#share-target-id").selectOption(target.id);
+  await page.locator("#share-scope").selectOption("patient_profile");
+
+  const createResponse = waitForApiResponse(
+    page,
+    `/api/portal/patients/${encodeURIComponent(patientId)}/shares`,
+    "POST",
+  );
+  await page.locator("#share-create-submit").click();
+  const createPayload = await readResponsePayload(
+    await createResponse,
+    "create patient share",
+  );
+  const share = createPayload?.share;
+  if (!share?.id || share.patientId !== patientId) {
+    throw new Error("create patient share: backend did not return the new share");
+  }
+
+  state.patientShare = {
+    patientId,
+    shareId: share.id,
+    revoked: false,
+  };
+  const shareIdSelector = cssAttributeValue(share.id);
+  await page.waitForSelector(`[data-share-row="${shareIdSelector}"]`, {
+    timeout: 20_000,
+  });
+  await page.waitForSelector(`[data-share-revoke="${shareIdSelector}"]`, {
+    timeout: 20_000,
+  });
+
+  const revokeResponse = waitForApiResponse(
+    page,
+    `/api/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(share.id)}`,
+    "DELETE",
+  );
+  await page.locator(`[data-share-revoke="${shareIdSelector}"]`).click();
+  const revokePayload = await readResponsePayload(
+    await revokeResponse,
+    "revoke patient share",
+  );
+  if (revokePayload?.revoked !== true) {
+    throw new Error("revoke patient share: backend did not confirm revoke");
+  }
+  state.patientShare.revoked = true;
+
+  return {
+    shareId: share.id,
+    targetType,
+    targetId: target.id,
+    scope: share.scope || "patient_profile",
+    revoked: true,
+  };
 }
 
 async function exerciseSettings(page, state) {
@@ -871,6 +948,32 @@ async function restoreIfNeeded(page, state, cleanupResults) {
     state.claimedDevice.deleted = true;
   }
 
+  if (state.patientShare?.shareId && state.patientShare.revoked !== true) {
+    await apiFetch(
+      page,
+      `/portal/patients/${encodeURIComponent(state.patientShare.patientId)}/shares/${encodeURIComponent(state.patientShare.shareId)}`,
+      {
+        method: "DELETE",
+        allowFailure: true,
+      },
+    )
+      .then((result) =>
+        cleanupResults.push({
+          target: "patient share",
+          ok: result.ok || result.status === 404,
+          status: result.status,
+        }),
+      )
+      .catch((error) =>
+        cleanupResults.push({
+          target: "patient share",
+          ok: false,
+          error: error.message,
+        }),
+      );
+    state.patientShare.revoked = true;
+  }
+
   if (state.patientId) {
     await apiFetch(
       page,
@@ -962,6 +1065,7 @@ async function main() {
     );
 
     const notification = await createReadDeleteNotification(page, state);
+    const consentShare = await exerciseConsentSharing(page, state.patientId, state);
 
     const settings = await exerciseSettings(page, state);
 
@@ -1126,6 +1230,7 @@ async function main() {
           deviceClaim,
           deviceAssignment,
           notification,
+          consentShare,
           settings: {
             profileSaved: settings.profileSaved,
             securityControlsChecked: settings.securityControlsChecked,

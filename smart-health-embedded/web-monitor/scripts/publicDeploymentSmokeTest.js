@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_URL = "https://smart-health-api-xj0a.onrender.com";
+const DEFAULT_BACKEND_URL = "https://smart-health-api-r5is.onrender.com";
 const DEFAULT_ADMIN_URL = "https://shcare-admin.web.app";
 const DEFAULT_PORTAL_URL = "https://shcare.web.app";
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;

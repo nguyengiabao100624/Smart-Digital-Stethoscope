@@ -23,6 +23,24 @@ Smart Health is the full `D:\Study\KLTN` product workspace: `smart-health-embedd
 
 When a change touches product behavior, check the cross-surface contract: backend authorization/repository logic, client API usage, role/surface routing, tenant isolation, storage/notification/device side effects, Android/web/admin UX, firmware/device protocol if applicable, verification commands, deployment state, and handoff updates.
 
+## 2026-07-09 - Patient-share repository persistence and Supabase schema follow-up
+
+- Follow-up after the portal consent workflow found a backend data gap: patient-share grants were still primarily runtime/JSON-backed even though `doctor_patient_access` exists in Postgres. `smart-health-embedded/web-monitor/src/repositories.js` now has a `patientShares` repository with SQL-backed list/find/save/revoke, runtime fallback, `scan_ids` JSONB mapping, `scope`, expiry, revoked metadata, and core-state hydration from normalized SQL.
+- `smart-health-embedded/web-monitor/server.js` now routes `GET/POST/DELETE /api/portal/patients/:id/shares` through `repositories.patientShares` when repositories are available, while preserving the JSON fallback.
+- Added migration `smart-health-embedded/web-monitor/db/migrations/009_doctor_patient_access_runtime_parity.sql` and JSON-to-Postgres migration support for existing `db.doctorPatientAccess` grants.
+- Supabase production project `smart-health-production` (`mahvymyncxszvuhlycwp`) has app `schema_migrations` entry `009_doctor_patient_access_runtime_parity` applied at `2026-07-08 22:51:36+00`. Verified schema now has nullable `doctor_user_id`, `doctor_id`, `scope`, `scan_ids`, `revoked_by_user_id`, `updated_at`, no old `(doctor_user_id, patient_id)` unique constraint, and patient/doctor/workspace indexes.
+- Local backend verification passed after the repository change: `node --check src\repositories.js`, `node --check server.js`, `node --check scripts\migrateJsonToPostgres.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
+- Render CLI and local `DATABASE_URL` are not present in this PowerShell process. Production schema was applied through the Supabase connector; source still needs Git push/Render auto-deploy evidence before calling the live backend code path deployed.
+
+## 2026-07-09 - Shcare Portal consent/share live follow-up
+
+- Source follow-up after the broader completeness audit found `/portal/consent` had backend share APIs but weak browser workflow coverage. `smart-health-web/src/app/pages/portal/InvitationsPage.tsx` now supports patient selection, doctor/workspace target selection, full-profile vs selected-scan scope, optional expiry, friendly target labels, active share list, and revoke controls backed by `/api/share-targets` plus `/api/portal/patients/:id/shares`.
+- `smart-health-web/src/lib/smart-health-api.ts` now has typed `ShareTarget` and `PatientShare` contracts so the portal uses the backend share shape instead of raw records.
+- Shcare Portal smoke coverage was expanded so `smoke:portal-browser` asserts the consent/share controls and selected-scan scope UI, while `smoke:portal-mutation` creates a patient share through the deployed portal UI, verifies backend `POST /shares` 201, revokes it with `DELETE /shares/:shareId` 200, and keeps cleanup fallback if the run aborts.
+- Verification passed locally: `bunx tsc --noEmit --pretty false`, `bun run lint`, `bun run build`, `bun run build:firebase`, local preview `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`, and local preview mutation run `portal-mutation-mrcnhpos` with share `share_20260708223119_d7cd23c4` created and revoked.
+- Live completion passed: Firebase Hosting deploy target `webapp` released `shcare.web.app` version `projects/162993928259/sites/shcare/versions/87657f16c15d9fc5`, release `projects/162993928259/sites/shcare/channels/live/releases/1783550011942000`; live `bun run smoke:portal-browser` and live `bun run smoke:portal-mutation` run `portal-mutation-mrcnnzcg` passed without `SMOKE_DISABLE_WEB_SECURITY`, creating and revoking share `share_20260708223625_e69f019e`.
+- Local preview without `SMOKE_DISABLE_WEB_SECURITY=1` is still blocked by backend CORS because Render allows Firebase Hosting origins, not `localhost:8080`; this is expected for local source QA and live smoke must continue to run without the bypass flag.
+
 ## 2026-07-09 - Shcare Portal account settings and skill-routing hardening
 
 - Source follow-up after discovering `/portal/settings` only covered workspace fields: `smart-health-web/src/app/pages/portal/WorkspaceSettings.tsx` now covers personal profile, avatar upload/download/delete, password change, 2FA enable/disable, auth sessions/revoke controls, notification preferences, and workspace settings in one portal settings surface.

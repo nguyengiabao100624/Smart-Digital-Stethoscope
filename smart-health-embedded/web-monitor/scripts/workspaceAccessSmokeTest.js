@@ -231,7 +231,16 @@ function writeSeedDb() {
       },
     ],
     notificationDevices: [],
-    chatMessages: [],
+    chatMessages: [
+      {
+        id: "msg_beta_seed",
+        role: "user",
+        content: "Beta private AI history",
+        userId: "usr_beta_doctor",
+        organizationId: "org_beta",
+        createdAt,
+      },
+    ],
     settings: {
       storage: { audioQuotaGb: 1, quotaGb: 1, cacheMb: 0 },
       privacy: {},
@@ -685,6 +694,51 @@ async function runScenario() {
 
   await expectStatus("doctor can read assigned workspace patients", doctor, "/api/v1/patients/pat_alpha", 200);
   await expectStatus("doctor cannot read cross workspace patient", doctor, "/api/v1/patients/pat_beta", 403);
+  const alphaAiHistory = await expectStatus("workspace admin does not see beta AI chat history", workspaceAdmin, "/api/v1/ai/chat", 200);
+  assert.equal(alphaAiHistory.messages.some((message) => message.content === "Beta private AI history"), false);
+  const alphaAiReply = await expectStatus("workspace admin creates scoped AI chat history", workspaceAdmin, "/api/v1/ai/chat", 200, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "Summarize alpha workspace signals" }),
+  });
+  assert.equal(alphaAiReply.message.userId, "usr_workspace_admin");
+  assert.equal(alphaAiReply.message.organizationId, "org_alpha");
+  assert.equal(alphaAiReply.messages.every((message) => message.userId === "usr_workspace_admin" && message.organizationId === "org_alpha"), true);
+  const betaAiHistory = await expectStatus("beta doctor sees only beta AI chat history", betaDoctor, "/api/v1/ai/chat", 200);
+  assert.equal(betaAiHistory.messages.some((message) => message.content === "Beta private AI history"), true);
+  assert.equal(betaAiHistory.messages.some((message) => message.organizationId === "org_alpha"), false);
+  const updatedAiSettings = await expectStatus("workspace admin updates Android AI settings in workspace scope", workspaceAdmin, "/api/v1/ai/settings", 200, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ offlineMode: true, confidenceThreshold: 0.82 }),
+  });
+  assert.equal(updatedAiSettings.settings.offlineMode, true);
+  assert.equal(updatedAiSettings.settings.confidenceThreshold, 0.82);
+  const aiApiUpdate = await expectStatus("workspace admin runs Android AI model update in workspace scope", workspaceAdmin, "/api/v1/ai/update", 200, {
+    method: "POST",
+  });
+  assert.equal(aiApiUpdate.settings.lastUpdateStatus, "updated");
+  const settingsAiUpdate = await expectStatus("workspace admin runs shared AI settings update in workspace scope", workspaceAdmin, "/api/v1/settings/ai/update", 200, {
+    method: "POST",
+  });
+  assert.equal(settingsAiUpdate.ai.lastUpdateStatus, "updated");
+  const alphaNotificationsAfterAiUpdate = await expectStatus("workspace admin sees AI update notifications scoped to own workspace", workspaceAdmin, "/api/v1/notifications", 200);
+  const alphaAiNotifications = alphaNotificationsAfterAiUpdate.notifications.filter((notification) => notification.title === "Đã cập nhật mô hình AI");
+  assert.equal(alphaAiNotifications.length >= 2, true);
+  assert.equal(alphaAiNotifications.every((notification) => notification.organizationId === "org_alpha"), true);
+  const betaNotificationsAfterAiUpdate = await expectStatus("beta doctor does not see alpha AI update notifications", betaDoctor, "/api/v1/notifications", 200);
+  assert.equal(betaNotificationsAfterAiUpdate.notifications.some((notification) => notification.title === "Đã cập nhật mô hình AI"), false);
+  const dataSummary = await expectStatus("workspace admin sees scoped Android data summary", workspaceAdmin, "/api/v1/data/summary", 200);
+  assert.equal(dataSummary.storage.patientCount, 1);
+  const clearedCache = await expectStatus("workspace admin clears Android data cache with scoped summary", workspaceAdmin, "/api/v1/data/cache", 200, {
+    method: "DELETE",
+  });
+  assert.equal(clearedCache.storage.patientCount, 1);
+  await expectStatus("workspace admin cannot delete all Android data", workspaceAdmin, "/api/v1/data/all", 403, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: "XOA DU LIEU" }),
+  });
   const workspaceExport = await expectStatus("workspace export ignores cross workspace payload", workspaceAdmin, "/api/v1/exports", 201, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

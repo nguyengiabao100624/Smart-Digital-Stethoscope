@@ -28,6 +28,10 @@ for (const key of ["VITE_SMART_HEALTH_API_BASE_URL", "VITE_PUBLIC_SITE_URL"]) {
   }
 }
 
+if (String(env.VITE_SMART_HEALTH_API_BASE_URL || "").includes("smart-health-api-xj0a")) {
+  throw new Error("VITE_SMART_HEALTH_API_BASE_URL points to retired backend smart-health-api-xj0a");
+}
+
 console.log("Production environment hợp lệ");
 console.log(
   `- Env files: ${

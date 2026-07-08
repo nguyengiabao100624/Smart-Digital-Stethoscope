@@ -155,6 +155,33 @@ export interface AuthSession {
   [key: string]: unknown;
 }
 
+export interface ShareTarget {
+  id: string;
+  name?: string;
+  email?: string;
+  specialty?: string;
+  organizationId?: string;
+  clinicName?: string;
+  type?: string;
+  address?: string;
+}
+
+export interface PatientShare {
+  id: string;
+  patientId?: string;
+  doctorUserId?: string;
+  doctorId?: string;
+  organizationId?: string;
+  scope?: "patient_profile" | "selected_scans" | string;
+  scanIds?: string[];
+  expiresAt?: string;
+  active?: boolean;
+  revokedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+}
+
 export interface OverviewPayload {
   stats: {
     patientsCount?: number;
@@ -471,16 +498,16 @@ export const smartHealthApi = {
       },
     ),
   listPatientShares: (id: string) =>
-    request<{ shares: Array<Record<string, unknown>> }>(
+    request<{ shares: PatientShare[] }>(
       `/portal/patients/${encodeURIComponent(id)}/shares`,
     ),
   createPatientShare: (id: string, payload: Record<string, unknown>) =>
-    request<{ share: Record<string, unknown> }>(
+    request<{ share: PatientShare }>(
       `/portal/patients/${encodeURIComponent(id)}/shares`,
       { method: "POST", body: JSON.stringify(payload) },
     ),
   revokePatientShare: (patientId: string, shareId: string) =>
-    request<{ revoked: boolean }>(
+    request<{ revoked: boolean; share?: PatientShare }>(
       `/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(shareId)}`,
       { method: "DELETE" },
     ),
@@ -571,7 +598,7 @@ export const smartHealthApi = {
       body: JSON.stringify(payload),
     }),
   shareTargets: (q?: string) =>
-    request<{ doctors: ApiUser[]; workspaces: WorkspaceSummary[] }>(
+    request<{ doctors: ShareTarget[]; workspaces: ShareTarget[] }>(
       "/share-targets",
       {
         query: { q },

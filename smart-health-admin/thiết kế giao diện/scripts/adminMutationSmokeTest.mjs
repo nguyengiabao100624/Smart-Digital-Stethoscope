@@ -16,7 +16,7 @@ const adminUrl = (process.env.SMOKE_ADMIN_URL || "https://shcare-admin.web.app")
 const apiBase = (
   process.env.SMART_HEALTH_API_BASE_URL ||
   process.env.SMOKE_API_BASE_URL ||
-  "https://smart-health-api-xj0a.onrender.com/api"
+  "https://smart-health-api-r5is.onrender.com/api"
 ).replace(/\/+$/, "");
 const credentialsPath =
   process.env.SMOKE_CREDENTIALS_FILE ||

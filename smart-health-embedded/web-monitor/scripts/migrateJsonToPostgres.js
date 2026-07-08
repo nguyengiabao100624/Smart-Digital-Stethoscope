@@ -238,6 +238,53 @@ async function upsertPatient(client, patient) {
   );
 }
 
+async function upsertDoctorPatientAccess(client, grant) {
+  const scanIds = Array.isArray(grant.scanIds) ? grant.scanIds : [];
+  await client.query(
+    `
+      INSERT INTO doctor_patient_access (
+        id, doctor_user_id, doctor_id, patient_id, organization_id, access_level, scope, scan_ids,
+        granted_by_user_id, expires_at, revoked_at, revoked_by_user_id, created_at, updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8::jsonb,
+        $9, $10::timestamptz, $11::timestamptz, $12,
+        COALESCE($13::timestamptz, now()), COALESCE($14::timestamptz, now())
+      )
+      ON CONFLICT (id)
+      DO UPDATE SET
+        doctor_user_id = EXCLUDED.doctor_user_id,
+        doctor_id = EXCLUDED.doctor_id,
+        patient_id = EXCLUDED.patient_id,
+        organization_id = EXCLUDED.organization_id,
+        access_level = EXCLUDED.access_level,
+        scope = EXCLUDED.scope,
+        scan_ids = EXCLUDED.scan_ids,
+        granted_by_user_id = EXCLUDED.granted_by_user_id,
+        expires_at = EXCLUDED.expires_at,
+        revoked_at = EXCLUDED.revoked_at,
+        revoked_by_user_id = EXCLUDED.revoked_by_user_id,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      grant.id,
+      valueOrNull(grant.doctorUserId || grant.doctorId),
+      valueOrNull(grant.doctorId || grant.doctorUserId),
+      grant.patientId,
+      valueOrNull(grant.organizationId),
+      grant.accessLevel || "read",
+      grant.scope || (scanIds.length ? "selected_scans" : "patient_profile"),
+      JSON.stringify(scanIds),
+      valueOrNull(grant.grantedByUserId),
+      toIso(grant.expiresAt),
+      toIso(grant.revokedAt),
+      valueOrNull(grant.revokedByUserId),
+      toIso(grant.createdAt),
+      toIso(grant.updatedAt),
+    ]
+  );
+}
+
 async function upsertDevice(client, device) {
   await client.query(
     `
@@ -452,6 +499,7 @@ async function main() {
       users: 0,
       memberships: 0,
       patients: 0,
+      patientShares: 0,
       devices: 0,
       scans: 0,
       audioFiles: 0,
@@ -501,6 +549,24 @@ async function main() {
       const patientIds = new Set((db.patients || []).map((patient) => patient.id));
       const deviceIds = new Set((db.devices || []).map((device) => device.id));
       const scanIds = new Set((db.scans || []).map((scan) => scan.id));
+
+      for (const grant of db.doctorPatientAccess || []) {
+        if (!patientIds.has(grant.patientId)) continue;
+        const doctorUserId = userIds.has(grant.doctorUserId || grant.doctorId)
+          ? grant.doctorUserId || grant.doctorId
+          : "";
+        const organizationId = organizationIds.has(grant.organizationId) ? grant.organizationId : "";
+        if (!doctorUserId && !organizationId) continue;
+        await upsertDoctorPatientAccess(client, {
+          ...grant,
+          doctorUserId,
+          doctorId: doctorUserId,
+          organizationId,
+          grantedByUserId: userIds.has(grant.grantedByUserId) ? grant.grantedByUserId : "",
+          revokedByUserId: userIds.has(grant.revokedByUserId) ? grant.revokedByUserId : "",
+        });
+        counters.patientShares += 1;
+      }
 
       for (const scan of db.scans || []) {
         if (!patientIds.has(scan.patientId)) continue;

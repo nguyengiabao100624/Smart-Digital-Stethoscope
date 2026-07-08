@@ -1,6 +1,6 @@
 # Smart Health - Hướng Dẫn Setup Ngày Mai
 
-Last updated: 2026-07-04
+Last updated: 2026-07-09
 
 Tài liệu này dùng cho buổi setup tiếp theo sau khi code đã được push lên GitHub. Mục tiêu là đưa hệ thống vào trạng thái có thể demo thực tế: Web Admin chạy trên Firebase Hosting, backend chạy trên Render, database và object storage dùng Supabase, đăng nhập dùng Firebase Auth, Android trỏ về backend HTTPS, và ESP32-S3 có thể kết nối cloud để gửi trạng thái, audio và nhận lệnh OTA.
 
@@ -19,7 +19,7 @@ Skills/tools hiện dùng theo policy global: Smart Health skill ở `C:\Users\b
 - Nếu lệnh nào yêu cầu secret, chạy trên máy local của bạn hoặc nhập vào dashboard của dịch vụ, không ghi vào source.
 - Web Admin production hiện tại: `https://shcare-admin.web.app`.
 - Web app cho người dùng/app Android dạng web sau này: `https://shcare.web.app`.
-- Backend Render hiện tại: `https://smart-health-api-xj0a.onrender.com`.
+- Backend Render hiện tại: `https://smart-health-api-r5is.onrender.com`.
 - Supabase project ref đang dùng: `mahvymyncxszvuhlycwp`.
 - Nếu thấy giao diện cũ sau khi deploy, dùng `Ctrl+F5` hoặc mở trình duyệt ẩn danh để loại cache.
 
@@ -102,7 +102,7 @@ Nếu workflow báo thiếu secret, quay lại phần Secrets và thêm đúng s
 
 ## Bước 4 - Kiểm Tra Render Backend Environment
 
-Vào Render service backend `smart-health-api-xj0a`, mở tab `Environment`.
+Vào Render service backend `smart-health-api-r5is`, mở tab `Environment`.
 
 Các biến bắt buộc nên có:
 
@@ -114,9 +114,9 @@ FIREBASE_PROJECT_ID=smart-health-stethoscope
 FIREBASE_SERVICE_ACCOUNT_JSON=<dán toàn bộ service account JSON>
 DATA_BACKEND=postgres
 DATABASE_URL=<Supabase pooler connection string, không dùng direct IPv6>
-PUBLIC_BACKEND_URL=https://smart-health-api-xj0a.onrender.com
-SMART_HEALTH_PUBLIC_URL=https://smart-health-api-xj0a.onrender.com
-PUBLIC_API_BASE_URL=https://smart-health-api-xj0a.onrender.com/api/v1
+PUBLIC_BACKEND_URL=https://smart-health-api-r5is.onrender.com
+SMART_HEALTH_PUBLIC_URL=https://smart-health-api-r5is.onrender.com
+PUBLIC_API_BASE_URL=https://smart-health-api-r5is.onrender.com/api/v1
 CORS_ORIGIN=https://shcare-admin.web.app,https://shcare.web.app
 OBJECT_STORAGE_PROVIDER=s3
 OBJECT_STORAGE_BUCKET=smart-health-production
@@ -173,7 +173,7 @@ Sau khi sửa env trên Render:
 4. Mở health check:
 
 ```powershell
-Invoke-RestMethod https://smart-health-api-xj0a.onrender.com/api/health
+Invoke-RestMethod https://smart-health-api-r5is.onrender.com/api/health
 ```
 
 Kết quả đúng cần có:
@@ -397,7 +397,7 @@ D:\Study\KLTN\smart-health-android\app\build\outputs\apk\debug\app-debug.apk
 Build release trỏ về backend Render:
 
 ```powershell
-.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-xj0a.onrender.com
+.\gradlew.bat :app:assembleRelease -PSMART_HEALTH_BASE_URL=https://smart-health-api-r5is.onrender.com
 ```
 
 Nếu release fail vì thiếu signing config thì đó là phần ký APK. Khi cần phát hành thật, tạo keystore riêng và không commit keystore lên GitHub.
@@ -421,7 +421,7 @@ Tạm thời thêm build flags local để flash. Không commit secret này:
 build_flags =
   -DSMART_HEALTH_WIFI_SSID=\"TenWiFi\"
   -DSMART_HEALTH_WIFI_PASS=\"MatKhauWiFi\"
-  -DSMART_HEALTH_BACKEND_HOST=\"smart-health-api-xj0a.onrender.com\"
+  -DSMART_HEALTH_BACKEND_HOST=\"smart-health-api-r5is.onrender.com\"
   -DSMART_HEALTH_BACKEND_PORT=443
   -DSMART_HEALTH_BACKEND_TLS=1
   -DSMART_HEALTH_DEVICE_ID=\"smarthealth-ABCDEF\"
@@ -495,7 +495,7 @@ npm.cmd run smoke:public-deployment
 
 Checklist Web Admin:
 
-- `https://smart-health-api-xj0a.onrender.com/api/health` trả `ok: true`.
+- `https://smart-health-api-r5is.onrender.com/api/health` trả `ok: true`.
 - `https://shcare-admin.web.app` chưa đăng nhập thì tự về login.
 - Platform admin vào đúng giao diện quản trị toàn hệ thống.
 - Platform admin thấy `Nền tảng: Toàn hệ thống`, không còn `Smart Health Clinic` ở topbar/sidebar.

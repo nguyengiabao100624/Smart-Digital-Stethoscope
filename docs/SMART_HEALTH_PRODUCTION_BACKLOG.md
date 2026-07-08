@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-07-07
+Last updated: 2026-07-09
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -24,6 +24,43 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
   - Audio: WSS for realtime preview, HTTPS chunk upload for durable scan storage.
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
+
+## Completed - 2026-07-09 Render backend account migration and Firebase redeploy
+
+- Recreated the backend on the new Render workspace because the previous `smart-health-api-xj0a` workspace hit the free outbound bandwidth limit and direct Render service transfer between workspaces is not supported.
+- Current active backend is `https://smart-health-api-r5is.onrender.com` with API base `https://smart-health-api-r5is.onrender.com/api`.
+- Updated the operational URL defaults in Shcare Web, backend smoke scripts, Web Admin mutation smoke, Android debug config, GitHub workflows, README files, and the project index.
+- Redeployed `shcare.web.app` to Firebase Hosting version `projects/162993928259/sites/shcare/versions/ad466c939950664e` and `shcare-admin.web.app` to version `projects/162993928259/sites/shcare-admin/versions/35d5d0458143d1b4`.
+- Verification passed: backend health/API checks, backend `check`, public deployment smoke, production-role smoke, portal production smoke, Shcare Web Firebase build and browser/mutation smokes, and Web Admin Firebase build/admin mutation smoke.
+- Remaining risk: this is a successful host migration, not a bandwidth fix. The next infrastructure hardening slice should identify the Service-Initiated outbound traffic source and reduce backend egress, especially storage/audio/provider calls that can be handled by signed direct client/device upload/download paths.
+
+## Completed - 2026-07-09 Shcare Portal consent/share workflow and smoke
+
+- Reworked `shcare.web.app` `/portal/consent` so workspace users can create and revoke real patient-share grants instead of only seeing a minimal share shell.
+- The portal now supports patient selection, doctor/workspace targets from `/api/share-targets`, full-profile vs selected-scan scope, optional expiry, active-share list, friendly target labels, and revoke buttons backed by `/api/portal/patients/:id/shares`.
+- Added typed `ShareTarget` and `PatientShare` API contracts in `smart-health-web` and stable QA selectors for share rows, revoke buttons, and selected-scan scope.
+- Expanded `bun run smoke:portal-browser` to assert consent/share controls and expanded `bun run smoke:portal-mutation` to create a share, verify backend 201, revoke it, verify backend 200, and clean up any unreverted share on failure.
+- Verification passed: Shcare Web typecheck, lint, production build, Firebase build, targeted `git diff --check`, local preview browser/mutation smokes with `SMOKE_DISABLE_WEB_SECURITY=1`, Firebase Hosting deploy version `projects/162993928259/sites/shcare/versions/87657f16c15d9fc5`, live browser smoke, and live mutation run `portal-mutation-mrcnnzcg` creating/revoking share `share_20260708223625_e69f019e`.
+- Remaining share backlog is now outside this workspace portal slice: patient/personal/family-facing consent history UX, production Postgres/RLS proof for every repository-backed share path, and cross-device/user acceptance flows should be handled as separate slices unless this portal workflow regresses.
+
+## Completed locally plus production schema - 2026-07-09 patient-share repository persistence
+
+- Added backend repository support for patient-share grants so `GET/POST/DELETE /api/portal/patients/:id/shares` can use normalized `doctor_patient_access` rows instead of only the runtime JSON array.
+- Added migration `009_doctor_patient_access_runtime_parity.sql` with nullable `doctor_user_id`, `doctor_id`, `scope`, JSONB `scan_ids`, revoke actor metadata, `updated_at`, and patient/doctor/workspace indexes.
+- Applied and verified the production Supabase schema change in project `smart-health-production` (`mahvymyncxszvuhlycwp`) and inserted the app `schema_migrations` row `009_doctor_patient_access_runtime_parity` so Render startup migration will not replay duplicate constraints.
+- Expanded JSON-to-Postgres migration and repository smoke coverage for share hydration, selected-scan persistence, guarded optional FKs, save, and revoke.
+- Verification passed locally: backend syntax checks, `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
+- Remaining step before marking the source path live: push the backend source and run post-Render live smoke. This is separate from the already-live portal consent UI and already-applied Supabase schema.
+
+## Completed - 2026-07-07 Android/backend AI and data contract sync
+
+- Fixed Android-facing AI chat history so `/api/v1/ai/chat` is scoped by caller user and workspace instead of exposing the global chat tail.
+- Persisted `/api/v1/ai/settings` and `/api/v1/ai/update` through the same workspace-aware settings path used by admin settings, so workspace callers no longer mutate shared global AI settings.
+- Scoped AI update notifications from both Android-facing `/api/v1/ai/update` and shared `/api/v1/settings/ai/update` with caller `userId` and `organizationId`.
+- Fixed `/api/v1/data/cache` to return a caller-scoped storage summary after clearing cache.
+- Expanded `smoke:workspace-access` to verify cross-tenant AI chat isolation, AI settings/update behavior, AI notification scoping, Android data summary/cache scoping, and workspace denial for destructive data reset.
+- Local verification passed: backend `check`, backend `smoke:workspace-access`, backend `test`, Shcare Web build, Web Admin build, and Android debug assemble.
+- Remaining items after this slice are provider/device evidence and production env validation, not another local source-level AI/data endpoint pass unless new regression evidence appears.
 
 ## Completed - 2026-07-07 workspace owner approval lifecycle
 
@@ -838,7 +875,7 @@ Tasks:
 - Encrypt sensitive PHI fields where appropriate.
 - Mask secrets in UI and logs.
 - Add immutable/append-only audit strategy.
-- Add consent/shared-record expiry.
+- Enforce and audit consent/shared-record expiry across portal, Android, patient-facing history, and repository-backed runtime. The 2026-07-09 portal grant UI already accepts optional expiry for workspace patient shares.
 - Audit every export/download/signed URL.
 - Add retention policies.
 - Review CORS, headers, object storage ACLs, Firebase rules.

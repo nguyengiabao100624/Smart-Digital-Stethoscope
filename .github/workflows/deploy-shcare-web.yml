@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_AUTH_MODE: production
-      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-xj0a.onrender.com/api
+      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-r5is.onrender.com/api
       VITE_PUBLIC_SITE_URL: https://shcare.web.app
       VITE_FIREBASE_API_KEY: ci-build-only
       VITE_FIREBASE_AUTH_DOMAIN: smart-health-stethoscope.firebaseapp.com
@@ -50,7 +50,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     env:
       VITE_AUTH_MODE: production
-      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-xj0a.onrender.com/api
+      VITE_SMART_HEALTH_API_BASE_URL: https://smart-health-api-r5is.onrender.com/api
       VITE_PUBLIC_SITE_URL: https://shcare.web.app
       VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
       VITE_FIREBASE_AUTH_DOMAIN: smart-health-stethoscope.firebaseapp.com

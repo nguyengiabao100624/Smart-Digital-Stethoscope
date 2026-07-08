@@ -8,7 +8,7 @@ val requestedTasks = gradle.startParameter.taskNames.joinToString(" ").lowercase
 val releaseBuildRequested = requestedTasks.contains("release")
 val smartHealthBaseUrl = providers
     .gradleProperty("SMART_HEALTH_BASE_URL")
-    .orElse(if (releaseBuildRequested) "" else "https://smart-health-api-xj0a.onrender.com")
+    .orElse(if (releaseBuildRequested) "" else "https://smart-health-api-r5is.onrender.com")
     .get()
     .trimEnd('/')
 

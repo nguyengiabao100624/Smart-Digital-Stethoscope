@@ -1,6 +1,6 @@
 # Smart Health - Prompt Requirements Handoff
 
-Last updated: 2026-07-07
+Last updated: 2026-07-09
 
 Source prompt: `C:\Users\baobe\.codex\attachments\05fe3f5d-461a-44e0-a201-f791d201f845\pasted-text.txt`
 
@@ -55,8 +55,12 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Selected scan sharing hardening | Closed in deployed source | Scan listing now filters with `canAccessScan`, so selected-scan grants do not leak sibling scans. |
 | Notification target scoping | Closed in deployed source | Non-platform notification creation can target only self or same-workspace users. |
 | Export workspace validation | Closed in deployed source | Platform exports reject missing target workspaces; workspace exports stay forced to caller workspace. |
+| Android/backend AI and data contract sync | Closed locally in source | `/api/v1/ai/chat`, `/api/v1/ai/settings`, `/api/v1/ai/update`, `/api/v1/settings/ai/update`, and `/api/v1/data/cache` now use caller user/workspace scope, and `smoke:workspace-access` covers the regression cases. |
 | Live UI dead-control/mobile overflow pass | Closed in deployed source | Live portal/admin mutation smokes passed and a 390x844 no-overflow pass found no console/page errors on key surfaces. |
 | Firebase Hosting deploy | Closed | Shcare Web version `projects/162993928259/sites/shcare/versions/fab6a2ad97c63420`, release `projects/162993928259/sites/shcare/channels/live/releases/1783411275583000`; Web Admin version `projects/162993928259/sites/shcare-admin/versions/ce26044bb3730062`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783411298455000`. |
+| Shcare Portal account settings | Closed in deployed source | `/portal/settings` now covers profile/avatar/password/2FA/sessions/notifications/workspace settings and live mutation run `portal-mutation-mrclugrb` passed with cleanup. |
+| Shcare Portal consent/share workflow | Closed in deployed source | `/portal/consent` now creates and revokes real patient-share grants with full-profile/selected-scan scope and optional expiry. Live Firebase version `projects/162993928259/sites/shcare/versions/87657f16c15d9fc5`; live mutation run `portal-mutation-mrcnnzcg` created/revoked share `share_20260708223625_e69f019e`. |
+| Patient-share repository persistence | Closed locally plus production schema | Backend source now has SQL-backed `repositories.patientShares`; portal share routes use repository list/find/save/revoke when available; Supabase project `mahvymyncxszvuhlycwp` has app migration `009_doctor_patient_access_runtime_parity` applied and verified. Source push/Render live smoke still needed before marking this code path deployed. |
 
 ## Verification Ledger
 
@@ -78,6 +82,9 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Firebase live smoke refresh on 2026-07-07: after explicitly loading `FIREBASE_PROJECT_ID=smart-health-stethoscope` and the local Firebase Admin JSON path, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:firebase-email`, and `npm.cmd run smoke:public-deployment` passed.
 - Device availability probe on 2026-07-07: Android SDK `adb.exe devices` showed no attached devices, and PlatformIO `device list` showed no ESP32-S3 serial device. Real Android FCM and physical MSM261 validation remain blocked by missing connected hardware/device token, not by source code in this slice.
 - Provider/hardware re-probe on 2026-07-07: network-enabled local verification passed backend `check`, `test`, `smoke:firebase-email`, `smoke:storage`, `smoke:notification-push`, `smoke:public-deployment`, `smoke:production-roles`, `smoke:portal-production`, `smoke:workspace-access`, `smoke:repositories`, and `smoke:api-production`; `smoke:mqtt` skipped because `MQTT_URL` is unset. `smoke:firebase-email` proves Firebase link generation for `https://shcare.web.app/xac-nhan-email`, not Gmail inbox click-through. Live Shcare/Web Admin mutation/build verification passed with `portal-mutation-mraqouwy` and `admin-mutation-mraqkmzo`. Android debug/release builds and MSM261 PlatformIO normal/OTA builds passed. `npm.cmd run check:production` still reports local env `BLOCKED`; Gmail was not signed in, `adb devices` showed no attached device, and PlatformIO returned no ESP32-S3 serial device.
+- Android/backend AI and data contract sync on 2026-07-07: backend `npm.cmd run check`, `npm.cmd run smoke:workspace-access`, and `npm.cmd test` passed after adding regression coverage for AI chat tenant isolation, AI settings/update workspace persistence, scoped AI update notifications, scoped Android data cache summary, and destructive data reset denial. Cross-surface builds also passed: Shcare Web `npm.cmd run build`, Web Admin `npm.cmd run build`, and Android `.\gradlew.bat :app:assembleDebug`.
+- Portal consent/share follow-up on 2026-07-09: Shcare Web `bunx tsc --noEmit --pretty false`, `bun run lint`, `bun run build`, `bun run build:firebase`, targeted `git diff --check`, local preview browser/mutation smokes with `SMOKE_DISABLE_WEB_SECURITY=1`, Firebase deploy target `webapp`, live `bun run smoke:portal-browser`, and live `bun run smoke:portal-mutation` run `portal-mutation-mrcnnzcg` all passed. The live mutation run created patient `pat_20260708223500_794d8928`, created share `share_20260708223625_e69f019e`, revoked it, deleted the patient, and restored device/settings/notification/support side effects.
+- Patient-share repository follow-up on 2026-07-09: Supabase schema inspection before migration showed the old `doctor_patient_access` shape; Supabase migration `doctor_patient_access_runtime_parity` then applied successfully and app `schema_migrations` now includes `009_doctor_patient_access_runtime_parity`. Post-migration inspection confirmed nullable `doctor_user_id`, `doctor_id`, `scope`, JSONB `scan_ids`, `revoked_by_user_id`, `updated_at`, revoke FK, and patient/doctor/workspace indexes. Backend local verification passed with `node --check src\repositories.js`, `node --check server.js`, `node --check scripts\migrateJsonToPostgres.js`, `node --check scripts\repositoriesSmokeTest.js`, `npm.cmd run smoke:repositories`, `npm.cmd run check`, `npm.cmd test`, and `npm.cmd run smoke:workspace-access`.
 
 ## Current Severity Checklist
 
@@ -93,8 +100,8 @@ Do not repeat these as unresolved unless new evidence regresses them.
 
 ### Medium
 
-- Account settings and notification preference behavior should keep getting expanded with browser-level mutation coverage for every dialog/form field.
-- Patient/family profile and consent/share flows are implemented in slices, but should be rechecked against production-like workspace/personal/family data.
+- Account settings and notification preference behavior should keep getting expanded with browser-level mutation coverage for every dialog/form field. Backend source-level AI settings/update notification scope is covered locally; remaining work here is browser-level UX breadth, not the AI/data endpoint contract fixed on 2026-07-07.
+- Patient/family profile and patient-facing consent history flows still need production-like workspace/personal/family data checks. The workspace portal grant/revoke workflow itself is covered by live browser/mutation smoke as of 2026-07-09.
 
 ### Polish
 
@@ -106,7 +113,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 Recommended next non-repeated slice:
 
 1. Move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, production S3/Supabase Storage provider smoke, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
-2. Continue browser-level account settings, notification preference, patient/family consent/share coverage when provider/device gates are not available.
+2. Continue browser-level patient/family profile, patient-facing consent history, and notification-preference breadth when provider/device gates are not available.
 3. Do not repeat the closed Role/Auth/Register/Approval/RBAC, Supabase/Postgres repository-parity, local storage API, or live performance slices unless new regression evidence appears.
 
 ## Handoff Rule

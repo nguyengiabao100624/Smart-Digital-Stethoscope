@@ -9175,7 +9175,10 @@ async function handleSettingsApi(req, res, segments) {
       resourceId: "ai",
       metadata: { version: settings.ai.version },
     });
-    createNotification("success", "Đã cập nhật mô hình AI", "Metadata model AI local vừa được cập nhật.");
+    createNotification("success", "Đã cập nhật mô hình AI", "Metadata model AI local vừa được cập nhật.", {
+      userId: user.id,
+      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "",
+    });
     sendJson(res, 200, { ok: true, settings: publicSettings(user), ai: settings.ai });
     return;
   }
@@ -9865,9 +9868,15 @@ async function handleDevicesApi(req, res, segments) {
 async function handleAiApi(req, res, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
+  const workspaceContext = getUserWorkspaceContext(user);
+  const organizationId = workspaceContext.currentWorkspaceId || user.organizationId || "";
+  const scopedMessages = () =>
+    db.chatMessages
+      .filter((message) => message.userId === user.id && message.organizationId === organizationId)
+      .slice(-100);
 
   if (segments.length === 3 && segments[2] === "chat" && method === "GET") {
-    sendJson(res, 200, { messages: db.chatMessages.slice(-100) });
+    sendJson(res, 200, { messages: scopedMessages() });
     return;
   }
 
@@ -9877,42 +9886,55 @@ async function handleAiApi(req, res, segments) {
       id: createId("msg"),
       role: "user",
       content: readString(payload.message, 2000),
+      userId: user.id,
+      organizationId,
       createdAt: nowIso(),
     };
     const assistantMessage = {
       id: createId("msg"),
       role: "assistant",
       content: buildAiReply(userMessage.content),
+      userId: user.id,
+      organizationId,
       createdAt: nowIso(),
     };
     db.chatMessages.push(userMessage, assistantMessage);
-    db.chatMessages = db.chatMessages.slice(-200);
+    db.chatMessages = db.chatMessages.slice(-500);
     addAccessLog("Sử dụng trợ lý AI");
     saveDb();
-    sendJson(res, 200, { message: assistantMessage, messages: db.chatMessages.slice(-100) });
+    sendJson(res, 200, { message: assistantMessage, messages: scopedMessages() });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "settings" && method === "PATCH") {
     requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
     const payload = await readJsonBody(req);
-    db.settings.ai = {
-      ...db.settings.ai,
+    const { settings, workspace } = getMutableSettingsForUser(user);
+    settings.ai = {
+      ...(settings.ai || {}),
       ...payload,
       updatedAt: nowIso(),
     };
     addAccessLog("Cập nhật cấu hình AI");
-    saveDb();
-    sendJson(res, 200, { settings: db.settings.ai });
+    await persistMutableSettings(user, settings, workspace);
+    sendJson(res, 200, { settings: settings.ai });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "update" && method === "POST") {
     requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
-    db.settings.ai.updatedAt = nowIso();
-    createNotification("success", "Đã cập nhật mô hình AI", "Mô hình AI đang dùng là phiên bản mới nhất.");
-    saveDb();
-    sendJson(res, 200, { settings: db.settings.ai });
+    const { settings, workspace } = getMutableSettingsForUser(user);
+    settings.ai = {
+      ...(settings.ai || {}),
+      updatedAt: nowIso(),
+      lastUpdateStatus: "updated",
+    };
+    createNotification("success", "Đã cập nhật mô hình AI", "Mô hình AI đang dùng là phiên bản mới nhất.", {
+      userId: user.id,
+      organizationId,
+    });
+    await persistMutableSettings(user, settings, workspace);
+    sendJson(res, 200, { settings: settings.ai });
     return;
   }
 
@@ -10008,26 +10030,25 @@ async function handleExportsApi(req, res, segments) {
 
 async function handleDataApi(req, res, segments) {
   const method = req.method || "GET";
-  requireUser(req);
+  const user = requireUser(req);
 
   if (segments.length === 3 && segments[2] === "summary" && method === "GET") {
-    const user = requireUser(req);
     requireAnyCapability(user, STORAGE_READ_CAPABILITIES, "Không có quyền xem tổng hợp storage");
     sendJson(res, 200, { storage: getStorageSummaryForUser(user) });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "cache" && method === "DELETE") {
-    requireAnyCapability(requireUser(req), STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa cache storage");
+    requireAnyCapability(user, STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa cache storage");
     db.settings.storage.cacheMb = 0;
     addAccessLog("Xóa bộ nhớ tạm");
     saveDb();
-    sendJson(res, 200, { storage: getStorageSummary() });
+    sendJson(res, 200, { storage: getStorageSummaryForUser(user) });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "all" && method === "DELETE") {
-    requireAnyCapability(requireUser(req), ["platform.storage.manage"], "Chỉ platform admin mới được xóa toàn bộ dữ liệu");
+    requireAnyCapability(user, ["platform.storage.manage"], "Chỉ platform admin mới được xóa toàn bộ dữ liệu");
     const payload = await readJsonBody(req);
     if (readString(payload.confirm, 40) !== "XOA DU LIEU") {
       throw httpError(400, "Cần nhập XOA DU LIEU để xác nhận");
@@ -10669,8 +10690,10 @@ async function handlePatientsApi(req, res, url, segments) {
   if (segments.length === 4 && segments[3] === "shares" && method === "GET") {
     assertCanAccessPatient(user, patient.id);
     assertCanManagePatientSharing(user, patient);
-    const shares = db.doctorPatientAccess
-      .filter((grant) => grant.patientId === patient.id && !grant.revokedAt)
+    const grants = repositories && repositories.patientShares
+      ? await repositories.patientShares.listForPatient(patient.id)
+      : db.doctorPatientAccess.filter((grant) => grant.patientId === patient.id && !grant.revokedAt);
+    const shares = grants
       .map((grant) => ({
         ...grant,
         active: isActiveAccessGrant(grant),
@@ -10721,8 +10744,12 @@ async function handlePatientsApi(req, res, url, segments) {
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
-    db.doctorPatientAccess.unshift(grant);
-    db.doctorPatientAccess = db.doctorPatientAccess.slice(0, 1000);
+    if (repositories && repositories.patientShares) {
+      await repositories.patientShares.save(grant);
+    } else {
+      db.doctorPatientAccess.unshift(grant);
+      db.doctorPatientAccess = db.doctorPatientAccess.slice(0, 1000);
+    }
     await appendAudit("patient.share", req, {
       actorUserId: user.id,
       organizationId: patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
@@ -10739,13 +10766,21 @@ async function handlePatientsApi(req, res, url, segments) {
     assertCanAccessPatient(user, patient.id);
     assertCanManagePatientSharing(user, patient);
     const grantId = decodeURIComponent(segments[4]);
-    const grant = db.doctorPatientAccess.find((item) => item.id === grantId && item.patientId === patient.id);
+    const grant = repositories && repositories.patientShares
+      ? await repositories.patientShares.findForPatient(patient.id, grantId)
+      : db.doctorPatientAccess.find((item) => item.id === grantId && item.patientId === patient.id);
     if (!grant) {
       throw httpError(404, "Không tìm thấy quyền chia sẻ");
     }
-    grant.revokedAt = nowIso();
-    grant.revokedByUserId = user.id;
-    grant.updatedAt = nowIso();
+    let revokedGrant = grant;
+    if (repositories && repositories.patientShares) {
+      revokedGrant = await repositories.patientShares.revoke(patient.id, grantId, user.id) || grant;
+    } else {
+      grant.revokedAt = nowIso();
+      grant.revokedByUserId = user.id;
+      grant.updatedAt = nowIso();
+      revokedGrant = grant;
+    }
     await appendAudit("patient.share.revoke", req, {
       actorUserId: user.id,
       organizationId: patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
@@ -10754,7 +10789,7 @@ async function handlePatientsApi(req, res, url, segments) {
       metadata: { patientId: patient.id },
     });
     saveDb();
-    sendJson(res, 200, { revoked: true, share: grant });
+    sendJson(res, 200, { revoked: true, share: revokedGrant });
     return;
   }
   if (!patient) {

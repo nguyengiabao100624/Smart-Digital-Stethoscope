@@ -19,6 +19,7 @@ const db = {
   ],
   memberships: [],
   patients: [{ id: "patient_stale", name: "Stale Patient", organizationId: "org_stale" }],
+  doctorPatientAccess: [{ id: "share_stale", patientId: "patient_stale", doctorUserId: "user_stale" }],
   devices: [{ id: "device_portal", assignedPatientId: "patient_portal" }],
   scans: [{ id: "scan_stale", patientId: "patient_stale", organizationId: "org_stale" }],
   audioFiles: [],
@@ -34,6 +35,24 @@ const rows = {
   users: [{ id: "user_portal", email: "doctor@example.com", role: "doctor", name: "Doctor" }],
   memberships: [],
   patients: [],
+  doctor_patient_access: [
+    {
+      id: "share_sql",
+      doctor_user_id: "user_portal",
+      doctor_id: "user_portal",
+      patient_id: "patient_sql",
+      organization_id: "org_portal",
+      access_level: "read",
+      scope: "selected_scans",
+      scan_ids: ["scan_sql"],
+      granted_by_user_id: "user_portal",
+      expires_at: null,
+      revoked_at: null,
+      revoked_by_user_id: null,
+      created_at: "2026-06-21T00:00:00.000Z",
+      updated_at: "2026-06-21T00:00:00.000Z",
+    },
+  ],
   devices: [{ id: "device_portal", name: "SH-01", type: "stethoscope", status: "active" }],
   scan_sessions: [],
   audio_files: [],
@@ -48,10 +67,11 @@ const guardChecks = {
   userPatientFk: false,
   patientOwnerFk: false,
   devicePairedUserFk: false,
+  patientShareScanIds: false,
 };
 
 const pool = {
-  async query(sql) {
+  async query(sql, params = []) {
     const text = String(sql);
     if (text.includes("INSERT INTO users")) {
       guardChecks.userPatientFk = text.includes("EXISTS (SELECT 1 FROM patients WHERE id = $13)");
@@ -62,7 +82,17 @@ const pool = {
     if (text.includes("INSERT INTO devices")) {
       guardChecks.devicePairedUserFk = text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3)");
     }
+    if (text.includes("INSERT INTO doctor_patient_access")) {
+      guardChecks.patientShareScanIds = text.includes("scan_ids") && text.includes("EXISTS (SELECT 1 FROM users WHERE id = $2)");
+    }
     const match = text.match(/FROM\s+([a-z_]+)/i);
+    if (match && match[1] === "doctor_patient_access" && text.includes("WHERE id = $1")) {
+      return {
+        rows: rows.doctor_patient_access.filter(
+          (item) => item.id === params[0] && item.patient_id === params[1],
+        ),
+      };
+    }
     return { rows: match ? rows[match[1]] || [] : [] };
   },
 };
@@ -86,6 +116,9 @@ async function main() {
   assert.equal(db.users[0].roleRequestDocuments[0].id, "doctor_doc_1");
   assert.deepEqual(db.patients, []);
   assert.deepEqual(db.scans, []);
+  assert.equal(db.doctorPatientAccess.length, 1);
+  assert.equal(db.doctorPatientAccess[0].id, "share_sql");
+  assert.deepEqual(db.doctorPatientAccess[0].scanIds, ["scan_sql"]);
   assert.equal(db.devices[0].status, "active");
   assert.equal(db.devices[0].assignedPatientId, "patient_portal");
 
@@ -107,6 +140,35 @@ async function main() {
     name: "Device With Missing User",
     pairedUserId: "missing_user",
   });
+  const share = await repositories.patientShares.save({
+    id: "share_repo",
+    patientId: "patient_sql",
+    doctorUserId: "user_portal",
+    doctorId: "user_portal",
+    scope: "selected_scans",
+    scanIds: ["scan_sql"],
+    grantedByUserId: "user_portal",
+  });
+  rows.doctor_patient_access.unshift({
+    id: share.id,
+    doctor_user_id: share.doctorUserId,
+    doctor_id: share.doctorId,
+    patient_id: share.patientId,
+    organization_id: "",
+    access_level: "read",
+    scope: share.scope,
+    scan_ids: share.scanIds,
+    granted_by_user_id: share.grantedByUserId,
+    expires_at: null,
+    revoked_at: null,
+    revoked_by_user_id: null,
+    created_at: share.createdAt,
+    updated_at: share.updatedAt,
+  });
+  assert.deepEqual(share.scanIds, ["scan_sql"]);
+  const revoked = await repositories.patientShares.revoke("patient_sql", "share_repo", "user_portal");
+  assert.equal(Boolean(revoked.revokedAt), true);
+  assert.equal(revoked.revokedByUserId, "user_portal");
   rows.patients = [{ id: "patient_sql", patient_code: "SQL-1", name: "SQL Patient" }];
   const listedPatients = await repositories.patients.list();
   assert.equal(listedPatients.some((patient) => patient.id === "patient_sql"), true);
@@ -117,6 +179,7 @@ async function main() {
   assert.equal(guardChecks.userPatientFk, true);
   assert.equal(guardChecks.patientOwnerFk, true);
   assert.equal(guardChecks.devicePairedUserFk, true);
+  assert.equal(guardChecks.patientShareScanIds, true);
   console.log("Repository portal metadata smoke passed");
 }
 

@@ -40,6 +40,7 @@ const watchPatterns = [
   "/api/portal/settings",
   "/api/portal/reports",
   "/api/portal/audit-log",
+  "/api/share-targets",
 ];
 
 function readSmokeAccount() {
@@ -218,6 +219,28 @@ async function verifySettingsSurface(page) {
   };
 }
 
+async function verifyConsentSurface(page) {
+  const checks = [];
+  await page.waitForSelector("#share-patient-id", { timeout: 20_000 });
+  await page.waitForSelector("#share-target-type", { timeout: 20_000 });
+  await page.waitForSelector("#share-target-id", { timeout: 20_000 });
+  await page.waitForSelector("#share-scope", { timeout: 20_000 });
+  await page.waitForSelector("#share-expires-at", { timeout: 20_000 });
+  await page.waitForSelector("#share-create-submit", { timeout: 20_000 });
+  checks.push("share form");
+
+  await page.locator("#share-scope").selectOption("selected_scans");
+  await page.waitForSelector("[data-share-scan-scope]", { timeout: 20_000 });
+  checks.push("selected scan scope");
+
+  await page.locator("#share-scope").selectOption("patient_profile");
+  return {
+    label: "consent share controls",
+    path: new URL(page.url()).pathname,
+    checks,
+  };
+}
+
 async function main() {
   const account = readSmokeAccount();
   const checkedResponses = [];
@@ -308,6 +331,9 @@ async function main() {
   ]) {
     const routeCheck = await clickRoute(page, href, label);
     routeChecks.push(routeCheck);
+    if (href === "/portal/consent") {
+      routeChecks.push(await verifyConsentSurface(page));
+    }
     if (href === "/portal/settings") {
       routeChecks.push(await verifySettingsSurface(page));
     }

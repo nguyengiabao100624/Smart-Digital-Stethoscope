@@ -1566,6 +1566,23 @@ function createRepositories(options) {
       await saveDb();
       return scan;
     },
+
+    async delete(id) {
+      const scanId = String(id || "");
+      if (!scanId) {
+        return { deleted: false, scanId };
+      }
+      await withSql(async (pool) => {
+        await pool.query("DELETE FROM ai_results WHERE scan_id = $1", [scanId]);
+        await pool.query("DELETE FROM audio_files WHERE scan_id = $1", [scanId]);
+        await pool.query("DELETE FROM scan_sessions WHERE id = $1", [scanId]);
+      });
+      getDb().aiResults = getDb().aiResults.filter((item) => item.scanId !== scanId);
+      getDb().audioFiles = getDb().audioFiles.filter((item) => item.scanId !== scanId);
+      getDb().scans = getDb().scans.filter((scan) => scan.id !== scanId);
+      await saveDb();
+      return { deleted: true, scanId };
+    },
   };
 
   const audioFiles = {

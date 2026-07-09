@@ -40,7 +40,11 @@ const watchPatterns = [
   "/api/admin/clinics",
   "/api/admin/packages",
   "/api/admin/storage-buckets",
+  "/api/admin/admin-users",
+  "/api/admin/doctors",
+  "/api/admin/doctor-requests",
   "/api/patients",
+  "/api/scans",
   "/api/devices",
   "/api/notifications",
   "/api/settings",
@@ -175,7 +179,7 @@ async function login(page, account) {
 async function apiFetch(page, route, options = {}) {
   const method = options.method || "GET";
   const result = await page.evaluate(
-    async ({ apiBaseUrl, routePath, methodName, body }) => {
+    async ({ apiBaseUrl, routePath, methodName, body, bodyBase64, contentType }) => {
       const url = new URL(routePath.replace(/^\/+/, ""), `${apiBaseUrl}/`);
       const token =
         localStorage.getItem("smart_health_admin_token") ||
@@ -187,7 +191,15 @@ async function apiFetch(page, route, options = {}) {
       };
       if (token) headers.Authorization = `Bearer ${token}`;
       const init = { method: methodName, headers };
-      if (body !== undefined) {
+      if (bodyBase64 !== undefined) {
+        headers["Content-Type"] = contentType || "application/octet-stream";
+        const binary = atob(bodyBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+        init.body = bytes;
+      } else if (body !== undefined) {
         headers["Content-Type"] = "application/json";
         init.body = JSON.stringify(body);
       }
@@ -208,6 +220,8 @@ async function apiFetch(page, route, options = {}) {
       routePath: route,
       methodName: method,
       body: options.body,
+      bodyBase64: options.bodyBase64,
+      contentType: options.contentType,
     },
   );
 
@@ -242,6 +256,61 @@ async function assertAccountRoute(page) {
 
   await page.getByRole("tab", { name: /Thông báo cá nhân/i }).click();
   await page.getByText("Thông báo cá nhân").first().waitFor({ state: "visible" });
+}
+
+async function assertAdminAccountsRoute(page, state) {
+  await page
+    .getByRole("heading", { name: /Quản lý tài khoản admin/i })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  if (state.adminUserEmail) {
+    await page.getByPlaceholder(/Tìm theo tên/i).fill(state.adminUserEmail);
+    await page
+      .getByText(state.adminUserEmail)
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
+  }
+}
+
+async function assertDoctorsRoute(page, state) {
+  await page
+    .getByRole("heading", { name: /Quản lý bác sĩ/i })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  if (state.doctorEmail) {
+    await page.getByPlaceholder(/Tìm tên bác sĩ/i).fill(state.doctorEmail);
+    await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+  }
+}
+
+async function assertDoctorApprovalRoute(page, state) {
+  await page
+    .getByRole("heading", { name: /Duyệt tài khoản bác sĩ/i })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  if (state.doctorEmail) {
+    await page.getByRole("tab", { name: /Đã duyệt/i }).click();
+    await page.getByPlaceholder(/Tìm tên, email, UID/i).fill(state.doctorEmail);
+    await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+  }
+}
+
+async function assertAiMeasurementsRoute(page, state) {
+  await page
+    .getByRole("heading", { name: /Lượt đo & AI Processing/i })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  if (state.scanId) {
+    await page.getByRole("button", { name: /Hoàn tất/i }).click();
+    await page.getByPlaceholder(/Tìm Scan ID/i).fill(state.scanId);
+    await page.getByText(state.scanId).first().waitFor({ state: "visible", timeout: 15_000 });
+  }
+}
+
+function buildPcmChunkBase64({ sampleRate = 16_000, seconds = 1 } = {}) {
+  const sampleCount = sampleRate * seconds;
+  const buffer = Buffer.alloc(sampleCount * 2);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const value = Math.round(Math.sin((2 * Math.PI * 440 * index) / sampleRate) * 9000);
+    buffer.writeInt16LE(value, index * 2);
+  }
+  return buffer.toString("base64");
 }
 
 async function exerciseAdminMutations(page, state) {
@@ -290,6 +359,54 @@ async function exerciseAdminMutations(page, state) {
       subscriptionStatus: "active",
     },
   });
+
+  const adminEmail = `${runKey}-workspace-admin@smarthealth.test`;
+  const adminCreate = await apiFetch(page, "/admin/admin-users", {
+    method: "POST",
+    body: {
+      role: "workspace_admin",
+      email: adminEmail,
+      password: `Smoke${runKey}!1`,
+      name: `Smoke Workspace Admin ${runId}`,
+      phone: "0900000090",
+      title: "Smoke workspace admin",
+      organizationId: state.clinicId,
+    },
+  });
+  state.adminUserId = adminCreate.payload?.user?.id;
+  state.adminUserEmail = adminEmail;
+  if (!state.adminUserId) throw new Error("admin account create response did not include user.id");
+
+  const adminPatch = await apiFetch(
+    page,
+    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
+    {
+      method: "PATCH",
+      body: {
+        name: `Smoke Workspace Admin ${runId} patched`,
+        phone: "0900000091",
+        title: "Smoke admin patched",
+      },
+    },
+  );
+  const adminReset = await apiFetch(
+    page,
+    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/reset-password`,
+    {
+      method: "POST",
+      body: { password: `Smoke${runKey}!2` },
+    },
+  );
+  const adminLock = await apiFetch(
+    page,
+    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/lock`,
+    { method: "POST" },
+  );
+  const adminUnlock = await apiFetch(
+    page,
+    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/unlock`,
+    { method: "POST" },
+  );
 
   const packageId = `pkg_${runKey}`;
   const packageResult = await apiFetch(page, "/admin/packages", {
@@ -374,6 +491,65 @@ async function exerciseAdminMutations(page, state) {
     body: { name: `Admin smoke device ${runId} updated`, assignedPatientId: state.patientId },
   });
 
+  const doctorEmail = `${runKey}-doctor@smarthealth.test`;
+  const doctorCreate = await apiFetch(page, "/admin/doctors", {
+    method: "POST",
+    body: {
+      name: `BS Smoke ${runId}`,
+      email: doctorEmail,
+      phone: "0900000022",
+      license: `CCHN-${runKey.slice(-8)}`,
+      department: "Tim mạch",
+      organizationId: state.clinicId,
+    },
+  });
+  state.doctorUserId = doctorCreate.payload?.doctor?.id;
+  state.doctorEmail = doctorEmail;
+  if (!state.doctorUserId) throw new Error("doctor create response did not include doctor.id");
+
+  const doctorLock = await apiFetch(
+    page,
+    `/admin/doctors/${encodeURIComponent(state.doctorUserId)}/lock`,
+    { method: "PATCH" },
+  );
+  const doctorUnlock = await apiFetch(
+    page,
+    `/admin/doctors/${encodeURIComponent(state.doctorUserId)}/unlock`,
+    { method: "PATCH" },
+  );
+  const doctorRequests = await apiFetch(page, "/admin/doctor-requests?status=all");
+
+  const scanCreate = await apiFetch(page, "/scans", {
+    method: "POST",
+    body: {
+      patientId: state.patientId,
+      deviceId: state.deviceId,
+      mode: "heart",
+      bodySite: "apex",
+      doctorNotes: `Created by ${runId}`,
+    },
+  });
+  state.scanId = scanCreate.payload?.scan?.id;
+  if (!state.scanId) throw new Error("scan create response did not include scan.id");
+
+  const scanChunk = await apiFetch(
+    page,
+    `/scans/${encodeURIComponent(state.scanId)}/audio-chunks`,
+    {
+      method: "POST",
+      bodyBase64: buildPcmChunkBase64(),
+      contentType: "application/octet-stream",
+    },
+  );
+  const scanComplete = await apiFetch(page, `/scans/${encodeURIComponent(state.scanId)}/complete`, {
+    method: "POST",
+  });
+  const scanReprocess = await apiFetch(
+    page,
+    `/scans/${encodeURIComponent(state.scanId)}/reprocess`,
+    { method: "POST" },
+  );
+
   const notificationResult = await apiFetch(page, "/notifications", {
     method: "POST",
     body: {
@@ -438,6 +614,14 @@ async function exerciseAdminMutations(page, state) {
       patchedPrice: packagePatch.payload?.package?.price,
       assignedPackageId: packageAssign.payload?.clinic?.packageId,
     },
+    adminAccount: {
+      id: state.adminUserId,
+      email: state.adminUserEmail,
+      patchedTitle: adminPatch.payload?.user?.title,
+      resetOk: adminReset.payload?.ok === true,
+      lockedStatus: adminLock.payload?.user?.accountStatus,
+      unlockedStatus: adminUnlock.payload?.user?.accountStatus,
+    },
     patient: {
       id: state.patientId,
       patchedNotes: patientPatch.payload?.patient?.notes,
@@ -445,6 +629,22 @@ async function exerciseAdminMutations(page, state) {
     device: {
       id: state.deviceId,
       assignedPatientId: devicePatch.payload?.device?.assignedPatientId,
+    },
+    doctor: {
+      id: state.doctorUserId,
+      email: state.doctorEmail,
+      lockedStatus: doctorLock.payload?.request?.accountStatus,
+      unlockedStatus: doctorUnlock.payload?.request?.accountStatus,
+      requestCount: Array.isArray(doctorRequests.payload?.requests)
+        ? doctorRequests.payload.requests.length
+        : 0,
+    },
+    scan: {
+      id: state.scanId,
+      uploadedBytes: scanChunk.payload?.uploadedBytes,
+      completedStatus: scanComplete.payload?.scan?.status,
+      reprocessedStatus: scanReprocess.payload?.scan?.status,
+      aiLabel: scanReprocess.payload?.scan?.aiLabel,
     },
     notification: {
       id: state.notificationId,
@@ -491,6 +691,22 @@ async function cleanup(page, state, cleanupResults) {
       .catch((error) =>
         cleanupResults.push({ target: "notification", ok: false, error: error.message }),
       );
+  }
+
+  if (state.scanId) {
+    await apiFetch(page, `/scans/${encodeURIComponent(state.scanId)}`, {
+      method: "DELETE",
+      allowFailure: true,
+    })
+      .then((result) => {
+        cleanupResults.push({
+          target: "scan",
+          ok: result.ok || result.status === 404,
+          status: result.status,
+        });
+        state.scanId = "";
+      })
+      .catch((error) => cleanupResults.push({ target: "scan", ok: false, error: error.message }));
   }
 
   if (state.storageBucketId) {
@@ -542,6 +758,40 @@ async function cleanup(page, state, cleanupResults) {
       })
       .catch((error) =>
         cleanupResults.push({ target: "patient", ok: false, error: error.message }),
+      );
+  }
+
+  if (state.doctorUserId) {
+    await apiFetch(page, `/admin/doctors/${encodeURIComponent(state.doctorUserId)}`, {
+      method: "DELETE",
+      allowFailure: true,
+    })
+      .then((result) => {
+        cleanupResults.push({
+          target: "doctor",
+          ok: result.ok || result.status === 404,
+          status: result.status,
+        });
+        state.doctorUserId = "";
+      })
+      .catch((error) => cleanupResults.push({ target: "doctor", ok: false, error: error.message }));
+  }
+
+  if (state.adminUserId) {
+    await apiFetch(page, `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`, {
+      method: "DELETE",
+      allowFailure: true,
+    })
+      .then((result) => {
+        cleanupResults.push({
+          target: "admin account",
+          ok: result.ok || result.status === 404,
+          status: result.status,
+        });
+        state.adminUserId = "";
+      })
+      .catch((error) =>
+        cleanupResults.push({ target: "admin account", ok: false, error: error.message }),
       );
   }
 
@@ -628,6 +878,9 @@ async function main() {
       ["/account", "account settings"],
       ["/devices", "devices"],
       ["/patients", "patients"],
+      ["/doctors", "doctors"],
+      ["/doctor-approval", "doctor approval"],
+      ["/ai-measurements", "ai measurements"],
       ["/clinics", "clinics"],
       ["/packages", "packages"],
       ["/notifications", "notifications"],
@@ -639,6 +892,14 @@ async function main() {
       const routeCheck = await visitRoute(page, href, label);
       if (href === "/account") {
         await assertAccountRoute(page);
+      } else if (href === "/admin-accounts") {
+        await assertAdminAccountsRoute(page, state);
+      } else if (href === "/doctors") {
+        await assertDoctorsRoute(page, state);
+      } else if (href === "/doctor-approval") {
+        await assertDoctorApprovalRoute(page, state);
+      } else if (href === "/ai-measurements") {
+        await assertAiMeasurementsRoute(page, state);
       }
       routeChecks.push(routeCheck);
     }

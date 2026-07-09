@@ -17,6 +17,16 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function buildPcmChunk({ sampleRate = 16000, seconds = 1 } = {}) {
+  const sampleCount = sampleRate * seconds;
+  const buffer = Buffer.alloc(sampleCount * 2);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const value = Math.round(Math.sin((2 * Math.PI * 440 * index) / sampleRate) * 9000);
+    buffer.writeInt16LE(value, index * 2);
+  }
+  return buffer;
+}
+
 function writeSeedDb() {
   fs.rmSync(dataDir, { recursive: true, force: true });
   fs.mkdirSync(dataDir, { recursive: true });
@@ -663,6 +673,85 @@ async function runScenario() {
   await expectStatus("portal cannot read cross workspace scan", workspaceAdmin, "/api/portal/scans/scan_beta", 403, {
     headers: portalHeaders,
   });
+  await expectStatus("selected-scan grant cannot create sibling scan for shared patient", betaDoctor, "/api/v1/scans", 403, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      patientId: "pat_alpha",
+      deviceId: "dev_beta",
+      mode: "heart",
+      bodySite: "apex",
+      doctorNotes: "Selected scan grant must not create a sibling scan",
+    }),
+  });
+  const controlledScan = await expectStatus("workspace admin creates controlled scan for AI lifecycle", workspaceAdmin, "/api/v1/scans", 201, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      patientId: "pat_alpha",
+      deviceId: "dev_alpha",
+      mode: "heart",
+      bodySite: "apex",
+      doctorNotes: "Workspace smoke controlled AI lifecycle",
+    }),
+  });
+  assert.equal(controlledScan.scan.patientId, "pat_alpha");
+  assert.equal(controlledScan.scan.organizationId, "org_alpha");
+  const pcmChunk = buildPcmChunk();
+  const uploadedScanChunk = await expectStatus(
+    "workspace admin uploads controlled scan PCM chunk",
+    workspaceAdmin,
+    `/api/v1/scans/${controlledScan.scan.id}/audio-chunks`,
+    200,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: pcmChunk,
+    },
+  );
+  assert.equal(uploadedScanChunk.uploadedBytes, pcmChunk.length);
+  const completedScan = await expectStatus(
+    "workspace admin completes controlled scan and inline AI",
+    workspaceAdmin,
+    `/api/v1/scans/${controlledScan.scan.id}/complete`,
+    200,
+    { method: "POST" },
+  );
+  assert.equal(completedScan.scan.status, "completed");
+  assert.ok(completedScan.scan.audioUrl);
+  assert.ok(completedScan.scan.aiLabel);
+  const reprocessedScan = await expectStatus(
+    "workspace admin reprocesses controlled scan AI",
+    workspaceAdmin,
+    `/api/v1/scans/${controlledScan.scan.id}/reprocess`,
+    200,
+    { method: "POST" },
+  );
+  assert.equal(reprocessedScan.scan.status, "completed");
+  assert.ok(reprocessedScan.scan.aiResultId);
+  await expectStatus(
+    "beta doctor cannot reprocess unshared controlled scan",
+    betaDoctor,
+    `/api/v1/scans/${controlledScan.scan.id}/reprocess`,
+    403,
+    { method: "POST" },
+  );
+  await expectStatus(
+    "viewer cannot delete controlled scan",
+    viewer,
+    `/api/v1/scans/${controlledScan.scan.id}`,
+    403,
+    { method: "DELETE" },
+  );
+  const deletedScan = await expectStatus(
+    "workspace admin deletes controlled scan artifacts",
+    workspaceAdmin,
+    `/api/v1/scans/${controlledScan.scan.id}`,
+    200,
+    { method: "DELETE" },
+  );
+  assert.equal(deletedScan.deleted, true);
+  await expectStatus("deleted controlled scan is gone", workspaceAdmin, `/api/v1/scans/${controlledScan.scan.id}`, 404);
   const updatedScan = await expectStatus("portal updates scan note", workspaceAdmin, "/api/portal/scans/scan_alpha", 200, {
     method: "PATCH",
     headers: portalJsonHeaders,

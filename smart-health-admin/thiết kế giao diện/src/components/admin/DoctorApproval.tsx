@@ -51,78 +51,12 @@ type DoctorRequest = {
   reason: string;
   uid: string;
   lastLogin: string;
+  requestedAt?: string;
   organizationId?: string;
   requiredFields?: string[];
   workspaceType?: string;
   accountType?: string;
 };
-
-const DOCTOR_REQUESTS: DoctorRequest[] = [
-  {
-    id: "DR-001",
-    name: "BS. Trần Văn Nam",
-    email: "nam.tran@hospital.vn",
-    phone: "0901 234 567",
-    clinic: "Phòng khám Đa khoa Tâm Anh",
-    requestType: "Bác sĩ cơ sở",
-    specialty: "Nội Tim Mạch",
-    date: "20/05/2026",
-    status: "pending",
-    verification: "Đã xác minh CCHN",
-    license: "CCHN-123456",
-    reason: "Sử dụng hệ thống ống nghe AI cho phòng khám mới.",
-    uid: "fb_uid_89x21",
-    lastLogin: "Chưa đăng nhập",
-  },
-  {
-    id: "DR-002",
-    name: "BS. Nguyễn Thị Hương",
-    email: "huong.nguyen@clinic.vn",
-    phone: "0912 345 678",
-    clinic: "Phòng khám Hô hấp Việt",
-    requestType: "Bác sĩ cơ sở",
-    specialty: "Nội Hô Hấp",
-    date: "19/05/2026",
-    status: "pending",
-    verification: "Cần đối chiếu",
-    license: "CCHN-789012",
-    reason: "Mở rộng dịch vụ đo âm thanh phổi và theo dõi bệnh nhân COPD.",
-    uid: "fb_uid_45y78",
-    lastLogin: "Chưa đăng nhập",
-  },
-  {
-    id: "DR-003",
-    name: "BS. Lê Quang Minh",
-    email: "minh.le@cardio.vn",
-    phone: "0988 765 432",
-    clinic: "Phòng khám Tim mạch Minh Tâm",
-    requestType: "Bác sĩ tư",
-    specialty: "Tim Mạch",
-    date: "16/05/2026",
-    status: "approved",
-    verification: "Đã xác minh CCHN",
-    license: "CCHN-332901",
-    reason: "Theo dõi bệnh nhân tim mạch sau tái khám.",
-    uid: "fb_uid_12m90",
-    lastLogin: "20/05/2026 08:12",
-  },
-  {
-    id: "DR-004",
-    name: "BS. Phạm Thu Hà",
-    email: "ha.pham@example.vn",
-    phone: "0977 111 222",
-    clinic: "Chưa xác định",
-    requestType: "Bác sĩ",
-    specialty: "Đa Khoa",
-    date: "14/05/2026",
-    status: "rejected",
-    verification: "Thiếu hồ sơ",
-    license: "Chưa cung cấp",
-    reason: "Thiếu bản chụp chứng chỉ hành nghề và thông tin cơ sở y tế.",
-    uid: "fb_uid_77h31",
-    lastLogin: "Chưa đăng nhập",
-  },
-];
 
 const TABS: Array<{ value: RequestStatus; label: string }> = [
   { value: "pending", label: "Chờ duyệt" },
@@ -171,6 +105,30 @@ function formatDateTime(value?: string) {
   }).format(date);
 }
 
+function matchesDateFilter(value: string | undefined, filter: string) {
+  if (filter === "all") {
+    return true;
+  }
+
+  const date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const now = new Date();
+  if (filter === "today") {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return date.getTime() >= startOfToday;
+  }
+
+  if (filter === "week") {
+    const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    return date.getTime() >= sevenDaysAgo;
+  }
+
+  return true;
+}
+
 function getDoctorWorkspaceType(user: SmartHealthAuthUser, clinic?: SmartHealthClinic) {
   return (
     user.workspaceType ||
@@ -198,6 +156,8 @@ function toDoctorRequest(
 ): DoctorRequest {
   const hasLicense = Boolean(user.license?.trim());
   const clinic = user.organizationId ? clinicMap.get(user.organizationId) : undefined;
+  const requestedAt = user.requestedAt || user.roleRequestedAt || user.createdAt;
+  const status = normalizeRequestStatus(user);
   const workspaceType = getDoctorWorkspaceType(user, clinic);
   const accountType =
     user.accountType ||
@@ -215,9 +175,10 @@ function toDoctorRequest(
       user.clinicName || user.hospital || user.clinicSuggestion || clinic?.name || "Chưa xác định",
     requestType: getDoctorRequestTypeLabel(accountType, workspaceType),
     specialty: user.specialty || user.department || "Chưa cung cấp",
-    date: formatDateTime(user.requestedAt || user.roleRequestedAt || user.createdAt),
-    status: normalizeRequestStatus(user),
-    verification: hasLicense ? "Đã xác minh CCHN" : "Thiếu hồ sơ",
+    date: formatDateTime(requestedAt),
+    status,
+    verification:
+      status === "needs_info" ? "Cần đối chiếu" : hasLicense ? "Đã xác minh CCHN" : "Thiếu hồ sơ",
     license: user.license || "Chưa cung cấp",
     reason:
       user.registrationReason?.trim() ||
@@ -227,6 +188,7 @@ function toDoctorRequest(
       "Bác sĩ đăng ký quyền truy cập từ ứng dụng Android sau khi xác thực email Firebase.",
     uid: user.firebaseUid || user.id,
     lastLogin: formatDateTime(user.updatedAt),
+    requestedAt,
     organizationId: user.organizationId,
     requiredFields: user.roleInfoRequiredFields || [],
     workspaceType,
@@ -246,6 +208,7 @@ export function DoctorApproval() {
   const [infoFields, setInfoFields] = useState<string[]>([]);
   const [approveOrganizationId, setApproveOrganizationId] = useState("");
   const [clinics, setClinics] = useState<SmartHealthClinic[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [clinicFilter, setClinicFilter] = useState("all");
   const [verificationFilter, setVerificationFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -294,16 +257,49 @@ export function DoctorApproval() {
     setInfoFields(selectedDoc?.requiredFields || []);
   }, [selectedDoc, clinics]);
 
+  const filteredDoctorRequests = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+    const verificationMap: Record<string, DoctorRequest["verification"]> = {
+      verified: "Đã xác minh CCHN",
+      review: "Cần đối chiếu",
+      missing: "Thiếu hồ sơ",
+    };
+
+    return doctorRequests.filter((item) => {
+      const haystack = [
+        item.name,
+        item.email,
+        item.phone,
+        item.uid,
+        item.clinic,
+        item.specialty,
+        item.license,
+      ]
+        .join(" ")
+        .toLowerCase();
+      const matchesSearch = !keyword || haystack.includes(keyword);
+      const matchesClinic =
+        clinicFilter === "all" ||
+        item.organizationId === clinicFilter ||
+        item.clinic.toLowerCase().includes(clinicFilter.toLowerCase());
+      const expectedVerification = verificationMap[verificationFilter];
+      const matchesVerification =
+        verificationFilter === "all" || item.verification === expectedVerification;
+      const matchesDate = matchesDateFilter(item.requestedAt, dateFilter);
+      return matchesSearch && matchesClinic && matchesVerification && matchesDate;
+    });
+  }, [clinicFilter, dateFilter, doctorRequests, searchTerm, verificationFilter]);
+
   const counts = useMemo(
     () =>
       TABS.reduce(
         (acc, tab) => ({
           ...acc,
-          [tab.value]: doctorRequests.filter((item) => item.status === tab.value).length,
+          [tab.value]: filteredDoctorRequests.filter((item) => item.status === tab.value).length,
         }),
         {} as Record<RequestStatus, number>,
       ),
-    [doctorRequests],
+    [filteredDoctorRequests],
   );
 
   useEffect(() => {
@@ -313,7 +309,7 @@ export function DoctorApproval() {
       approved: 1,
       rejected: 1,
     });
-  }, [doctorRequests.length]);
+  }, [dateFilter, filteredDoctorRequests.length, searchTerm, clinicFilter, verificationFilter]);
 
   const handleApproveRequest = async () => {
     if (!selectedDoc) return;
@@ -404,7 +400,7 @@ export function DoctorApproval() {
   };
 
   const renderTable = (status: RequestStatus) => {
-    const rows = doctorRequests.filter((doc) => doc.status === status);
+    const rows = filteredDoctorRequests.filter((doc) => doc.status === status);
     const page = requestPages[status] || 1;
     const pagedRows = paginateItems(rows, page, ADMIN_TABLE_PAGE_SIZE);
 
@@ -521,6 +517,8 @@ export function DoctorApproval() {
                 <input
                   type="text"
                   placeholder="Tìm tên, email, UID..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
                   className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none transition-shadow focus:border-ring focus:ring-1 focus:ring-ring"
                 />
               </div>
@@ -549,8 +547,11 @@ export function DoctorApproval() {
                           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
                         >
                           <option value="all">Tất cả cơ sở y tế</option>
-                          <option value="tamanh">Phòng khám Đa khoa Tâm Anh</option>
-                          <option value="hohapviet">Phòng khám Hô hấp Việt</option>
+                          {clinics.map((clinic) => (
+                            <option key={clinic.id} value={clinic.id}>
+                              {clinic.name}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label className="block space-y-1.5">
@@ -585,6 +586,7 @@ export function DoctorApproval() {
                       <div className="flex gap-2 border-t border-border pt-3">
                         <button
                           onClick={() => {
+                            setSearchTerm("");
                             setClinicFilter("all");
                             setDateFilter("all");
                             setVerificationFilter("all");

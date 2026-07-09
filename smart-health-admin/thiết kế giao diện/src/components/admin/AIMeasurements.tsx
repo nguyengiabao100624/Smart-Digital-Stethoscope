@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Download,
   FileAudio,
-  Filter,
   Play,
   RefreshCw,
   Search,
@@ -143,6 +142,8 @@ export function AIMeasurements() {
   const [scans, setScans] = useState<ScanSession[]>([]);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isReprocessing, setIsReprocessing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,22 +175,63 @@ export function AIMeasurements() {
     };
   }, []);
 
+  const filteredScans = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+    if (!keyword) {
+      return scans;
+    }
+
+    return scans.filter((scan) =>
+      [
+        scan.id,
+        scan.patient,
+        scan.doctor,
+        scan.device,
+        scan.region,
+        scan.audioFile,
+        scan.result,
+        scan.status,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword),
+    );
+  }, [scans, searchTerm]);
+
   const counts = useMemo(
     () =>
       STATUS_TABS.reduce(
         (acc, tab) => ({
           ...acc,
-          [tab.value]: scans.filter((scan) => scan.status === tab.value).length,
+          [tab.value]: filteredScans.filter((scan) => scan.status === tab.value).length,
         }),
         {} as Record<ScanStatus, number>,
       ),
-    [scans],
+    [filteredScans],
   );
 
-  const rows = scans.filter((scan) => scan.status === activeTab);
+  const rows = filteredScans.filter((scan) => scan.status === activeTab);
 
-  const rerunAI = () => {
-    toast.success("Đã đưa job AI vào hàng đợi xử lý lại");
+  const rerunAI = async () => {
+    if (!selectedScan) {
+      return;
+    }
+
+    setIsReprocessing(true);
+    try {
+      const { scan } = await smartHealthApi.reprocessScanAi(selectedScan.id);
+      const updatedScan = mapBackendScan(scan);
+      setScans((current) =>
+        current.map((item) => (item.id === updatedScan.id ? updatedScan : item)),
+      );
+      setSelectedScan(updatedScan);
+      setActiveTab(updatedScan.status);
+      toast.success("Đã xử lý lại AI từ backend.");
+    } catch (error) {
+      toast.error(toVietnameseErrorMessage(error, "Không thể chạy lại AI cho lượt đo này."));
+    } finally {
+      setIsReprocessing(false);
+    }
   };
 
   const downloadAudio = async () => {
@@ -304,12 +346,18 @@ export function AIMeasurements() {
               <input
                 type="text"
                 placeholder="Tìm Scan ID, bệnh nhân, thiết bị..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
                 className="w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
               />
             </div>
-            <button className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted">
-              <Filter className="h-4 w-4" />
-              Lọc
+            <button
+              onClick={() => setSearchTerm("")}
+              disabled={!searchTerm.trim()}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <X className="h-4 w-4" />
+              Xóa tìm
             </button>
           </div>
         </div>
@@ -504,10 +552,11 @@ export function AIMeasurements() {
               <div className="grid grid-cols-2 gap-3 border-t border-border bg-muted/30 p-5">
                 <button
                   onClick={rerunAI}
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                  disabled={isReprocessing}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <RefreshCw className="h-4 w-4" />
-                  Chạy lại AI
+                  <RefreshCw className={`h-4 w-4 ${isReprocessing ? "animate-spin" : ""}`} />
+                  {isReprocessing ? "Đang chạy AI" : "Chạy lại AI"}
                 </button>
                 <button
                   onClick={downloadAudio}

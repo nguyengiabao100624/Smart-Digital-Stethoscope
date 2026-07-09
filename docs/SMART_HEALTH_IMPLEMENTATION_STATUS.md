@@ -36,6 +36,31 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Production readiness gate | Real/checker | Backend has a readiness CLI, strict deploy gate, platform-only readiness API, Web Admin deployment tab, production env example, and third-party setup runbook. The current local/demo env is intentionally blocked until real Firebase/Postgres/S3/HTTPS/secret setup is supplied. |
 | Context/new-chat handoff | Real | Context docs and AI skill docs exist. `SMART_HEALTH_PROJECT_INDEX.md` is now the one-page entrypoint for active source folders, handoff order, cleanup rules, and focused smoke commands. Third-party skills are user-wide under `C:\Users\baobe\.agents\skills`; project-local skill copies were removed on 2026-06-22. `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` documents selective routing, automatic installed skill/tool selection, and the every-task `context-budget` + `strategic-compact` token gate. KLTN report evidence summary, report-ready Word copy, and final evidence Word copy were added on 2026-06-05. |
 
+## 2026-07-09 Web Admin AI/Doctor Approval Scan Lifecycle Source Slice
+
+### Implemented
+
+- Web Admin AI Measurements now searches backend scan data and calls a backend scan AI reprocess action.
+- Web Admin Doctor Approval now uses backend doctor requests plus clinic catalog data instead of static table rows.
+- Backend scan lifecycle now supports reprocess and delete routes for completed/uploaded scans, including audio/AI artifact cleanup, audit records, and repository-backed delete support.
+- Selected-scan sharing is hardened for mutation paths: `canManageScan` now checks `canAccessScan`, and doctor/admin scan creation for an existing patient rejects selected-scan-only grants before a sibling scan is created.
+- Workspace access smoke now creates a controlled scan, uploads a PCM chunk, completes inline AI, reprocesses AI, denies selected-scan/viewer mutation attempts, deletes the scan, and confirms 404 after delete.
+
+### Verification
+
+- Backend `node --check .\server.js` passed.
+- Backend `node --check .\scripts\workspaceAccessSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+- Backend `npm.cmd run check` passed.
+- Backend `npm.cmd run smoke:repositories` passed.
+- Web Admin `node --check .\scripts\adminMutationSmokeTest.mjs` passed.
+- Web Admin `npm.cmd run lint` passed.
+- Web Admin `npm.cmd run build:firebase:admin` passed and prerendered all 17 admin pages.
+
+### Remaining Limits
+
+- This slice is source/build/backend-smoke verified, not deployed. Expanded live `smoke:admin-mutation` should wait until the backend with scan reprocess/delete routes is deployed to Render.
+
 ## 2026-07-07 Whole-System Scope Clarification
 
 - Clarified that Smart Health means the full `D:\Study\KLTN` product system: `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs.

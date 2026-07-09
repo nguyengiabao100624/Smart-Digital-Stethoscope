@@ -771,6 +771,13 @@ export const smartHealthApi = {
     return requestBlob(audioUrl);
   },
 
+  async reprocessScanAi(scanId: string) {
+    return requestJson<{ scan: SmartHealthScan }>(
+      `/scans/${encodeURIComponent(scanId)}/reprocess`,
+      { method: "POST" },
+    );
+  },
+
   async listDevices() {
     return requestJson<{ devices: SmartHealthDevice[] }>(
       IS_PORTAL_SURFACE ? "/portal/devices" : "/devices",

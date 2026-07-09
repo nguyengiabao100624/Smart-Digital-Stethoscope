@@ -26,6 +26,24 @@ Web Admin current live deploy after the same migration and production-backend gu
 
 Web Admin now has controlled live destructive mutation coverage through `npm.cmd run smoke:admin-mutation` in `smart-health-admin\thiết kế giao diện`. It signs into `https://shcare-admin.web.app`, mutates live Render data with unique test IDs, cleans up settings, notification, storage bucket, device, patient, package, and workspace records, and verifies `/account` profile/security/session/notification controls plus `/api/auth/sessions`.
 
+2026-07-09 source follow-up: Web Admin AI Measurements and Doctor Approval are now backed by real scan reprocess, doctor-request, and clinic-catalog contracts, and `smoke:workspace-access` covers scan create/upload/complete/reprocess/delete with selected-scan mutation denials. Use these local checks before deploy:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+node --check .\server.js
+node --check .\scripts\workspaceAccessSmokeTest.js
+npm.cmd run smoke:workspace-access
+npm.cmd run check
+npm.cmd run smoke:repositories
+
+cd 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện'
+node --check .\scripts\adminMutationSmokeTest.mjs
+npm.cmd run lint
+npm.cmd run build:firebase:admin
+```
+
+Do not run the expanded live `npm.cmd run smoke:admin-mutation` until the backend source with `/api/v1/scans/:id/reprocess` and `DELETE /api/v1/scans/:id` has been deployed to Render. The old live backend route contract cannot satisfy the expanded AI Measurements mutation coverage.
+
 2026-07-09 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` after the workspace-summary follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrdgnc3d`, and targeted Playwright visual QA after the portal density/search-field deploy. A follow-up density sweep checked 19 portal routes for overflow, H1/input/button/search sizing, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
 
 Web Admin build/deploy/smoke:

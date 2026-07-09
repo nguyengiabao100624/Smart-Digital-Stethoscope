@@ -25,6 +25,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
 
+## Completed source/build/backend smoke - 2026-07-09 Web Admin AI/doctor approval scan lifecycle
+
+- Web Admin AI Measurements now uses backend scan data and real scan AI reprocess API instead of a static-only action surface. Doctor Approval now reads backend doctor requests plus clinic catalog data instead of static request rows.
+- Backend scan lifecycle now supports reprocessing an uploaded/completed scan and deleting a scan with audio/AI artifact cleanup, audit events, and repository-backed delete support.
+- Security hardening closed a selected-scan grant escalation found by the smoke: scan mutations now require `canAccessScan`, and doctor/admin scan creation for an existing patient rejects selected-scan-only grants before a sibling scan can be created.
+- Smoke coverage now exercises create -> PCM chunk upload -> complete -> reprocess -> delete and negative selected-scan/viewer cases in `smoke:workspace-access`; Web Admin mutation smoke source now includes admin accounts, doctors, Doctor Approval, and AI Measurements route/action contracts.
+- Verification passed locally: backend `node --check .\server.js`, backend `node --check .\scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, backend `npm.cmd run smoke:repositories`, Web Admin `node --check .\scripts\adminMutationSmokeTest.mjs`, Web Admin `npm.cmd run lint`, and Web Admin `npm.cmd run build:firebase:admin`.
+- Remaining follow-up: deploy the backend source before running expanded live `npm.cmd run smoke:admin-mutation`, because live Render must have `/api/v1/scans/:id/reprocess` and `DELETE /api/v1/scans/:id` first.
+
 ## Completed deployed/live - 2026-07-09 Web Admin production backend guard
 
 - Found a real Web Admin production config drift: local `.env.production` still pointed at the retired Render backend `https://smart-health-api-xj0a.onrender.com`, even though the active production backend is `https://smart-health-api-r5is.onrender.com`.

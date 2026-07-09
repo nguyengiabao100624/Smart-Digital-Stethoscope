@@ -23,6 +23,14 @@ Smart Health is the full `D:\Study\KLTN` product workspace: `smart-health-embedd
 
 When a change touches product behavior, check the cross-surface contract: backend authorization/repository logic, client API usage, role/surface routing, tenant isolation, storage/notification/device side effects, Android/web/admin UX, firmware/device protocol if applicable, verification commands, deployment state, and handoff updates.
 
+## 2026-07-09 - Web Admin AI/doctor approval scan lifecycle source follow-up
+
+- Continued the in-progress Web Admin operations slice instead of starting a new unrelated surface. Web Admin `AIMeasurements` now searches backend scan data and calls the real backend AI reprocess action; `DoctorApproval` now uses backend doctor requests plus clinic catalog data instead of static rows; `adminMutationSmokeTest.mjs` now covers admin accounts, doctors, Doctor Approval, and AI Measurements route/action contracts.
+- Backend `web-monitor` now has scan reprocess/delete lifecycle support with artifact cleanup, repository-backed scan delete, audit events, and workspace smoke coverage for create -> audio chunk upload -> complete -> reprocess -> delete.
+- Security follow-up from the new smoke: selected-scan-only doctor grants can no longer manage a sibling scan through broad patient access. `canManageScan` now uses scan-level access, and doctor/admin scan creation for an existing patient rejects selected-scan-only grants before creating a new sibling scan.
+- Verification passed locally: backend `node --check .\server.js`, backend `node --check .\scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, backend `npm.cmd run smoke:repositories`, Web Admin `node --check .\scripts\adminMutationSmokeTest.mjs`, Web Admin `npm.cmd run lint`, and Web Admin `npm.cmd run build:firebase:admin`.
+- Not deployed in this slice. Do not run the expanded live `smoke:admin-mutation` against Render until the backend containing `/api/v1/scans/:id/reprocess` and `DELETE /api/v1/scans/:id` is deployed; otherwise live Web Admin will still be on the old route contract.
+
 ## 2026-07-09 - Web Admin production backend guard and live redeploy
 
 - Found a Web Admin config drift after the active backend moved to Render `smart-health-api-r5is`: `smart-health-admin\thiết kế giao diện\.env.production` still pointed to retired `https://smart-health-api-xj0a.onrender.com`.

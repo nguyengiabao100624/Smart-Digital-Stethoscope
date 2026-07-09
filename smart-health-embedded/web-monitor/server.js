@@ -2897,6 +2897,27 @@ function canAccessScan(user, scan) {
   return false;
 }
 
+function canManagePatientScanCollection(user, patientId) {
+  if (!user || !patientId) {
+    return false;
+  }
+  const patient = findPatient(patientId);
+  if (hasDirectPatientAccess(user, patient)) {
+    return true;
+  }
+  const grants = getActivePatientGrantsForUser(user, patientId);
+  return grants.some((grant) => {
+    const scanIds = Array.isArray(grant.scanIds) ? grant.scanIds : [];
+    return grant.scope !== "selected_scans" || scanIds.length === 0;
+  });
+}
+
+function assertCanManagePatientScanCollection(user, patientId) {
+  if (!canManagePatientScanCollection(user, patientId)) {
+    throw httpError(403, "Patient scan collection is outside current user scope");
+  }
+}
+
 function assertCanAccessScan(user, scan) {
   if (!canAccessScan(user, scan)) {
     throw httpError(403, "Scan is outside current user scope");
@@ -3004,7 +3025,7 @@ function filterDevicesForUser(user, devices) {
 function canManageScan(user, scan) {
   return (
     scan &&
-    canAccessPatient(user, scan.patientId) &&
+    canAccessScan(user, scan) &&
     hasAnyCapability(user, [
       "platform.scans.manage",
       "workspace.scans.manage",
@@ -3380,6 +3401,144 @@ async function completeUploadedScan(scan) {
   await enqueueAudioProcessing(scan, wavFilePath);
   broadcastScanEvent("scan_completed", scan);
   return scan;
+}
+
+async function reprocessScanAudio(scan) {
+  if (!scan.wavFile) {
+    throw httpError(400, "Lượt đo này chưa có file WAV để chạy lại AI");
+  }
+
+  const wavFilePath = path.join(AUDIO_DIR, path.basename(scan.wavFile));
+  if (!fs.existsSync(wavFilePath)) {
+    throw httpError(404, "Không tìm thấy file âm thanh để chạy lại AI");
+  }
+
+  Object.assign(scan, {
+    status: "processing",
+    processingStatus: "processing",
+    updatedAt: nowIso(),
+  });
+  await saveScanRecord(scan);
+
+  try {
+    const processingResult = await runInlineAudioProcessing(scan, wavFilePath);
+    const quality = processingResult.processed.quality;
+    const existingAudioFile = repositories
+      ? await repositories.audioFiles.findByScanId(scan.id)
+      : db.audioFiles.find((file) => file.scanId === scan.id);
+    const audioFile = Object.assign(existingAudioFile || {}, {
+      id: existingAudioFile?.id || createId("audio"),
+      scanId: scan.id,
+      patientId: scan.patientId,
+      storageProvider: processingResult.audioUpload.provider,
+      objectKey: processingResult.audioObjectKey,
+      contentType: "audio/wav",
+      byteSize: processingResult.audioUpload.byteSize,
+      sampleRate: scan.sampleRate || SAMPLE_RATE,
+      createdAt: existingAudioFile?.createdAt || nowIso(),
+      updatedAt: nowIso(),
+    });
+    const aiResult = {
+      id: createId("ai"),
+      scanId: scan.id,
+      modelVersion: db.settings.ai.version || "signal-quality-demo",
+      label: quality.label,
+      confidence: quality.confidence,
+      summary: quality.summary,
+      rawResult: {
+        quality,
+        waveformObjectKey: processingResult.waveformObjectKey,
+        reprocessed: true,
+      },
+      status: "completed",
+      createdAt: nowIso(),
+    };
+
+    if (!existingAudioFile) {
+      db.audioFiles.unshift(audioFile);
+    }
+    db.aiResults.unshift(aiResult);
+    db.audioFiles = db.audioFiles.slice(0, 500);
+    db.aiResults = db.aiResults.slice(0, 500);
+    Object.assign(scan, {
+      status: "completed",
+      processingStatus: "completed",
+      peak: quality.peak,
+      rms: quality.rms,
+      levelPercent: quality.signalLevel,
+      aiLabel: aiResult.label,
+      aiConfidence: aiResult.confidence,
+      aiSummary: aiResult.summary,
+      aiResultId: aiResult.id,
+      audioFileId: audioFile.id,
+      audioUrl: `/api/scans/${scan.id}/audio`,
+      updatedAt: nowIso(),
+    });
+    await saveAudioArtifacts(scan, audioFile, aiResult);
+    await enqueueAudioProcessing(scan, wavFilePath);
+    broadcastScanEvent("scan_reprocessed", scan);
+    return scan;
+  } catch (error) {
+    Object.assign(scan, {
+      status: "failed",
+      processingStatus: "failed",
+      aiLabel: "processing_failed",
+      aiSummary: error && error.message ? String(error.message) : "Không thể chạy lại AI",
+      updatedAt: nowIso(),
+    });
+    await saveScanRecord(scan);
+    throw error;
+  }
+}
+
+async function deleteScanRecord(scan) {
+  const relatedAudioFiles = db.audioFiles.filter((file) => file.scanId === scan.id);
+  const relatedAiResults = db.aiResults.filter((result) => result.scanId === scan.id);
+  const objectKeys = new Set(
+    relatedAudioFiles
+      .map((file) => readString(file.objectKey, 1000))
+      .filter(Boolean),
+  );
+  for (const result of relatedAiResults) {
+    const rawResult = result && typeof result.rawResult === "object" ? result.rawResult : {};
+    const waveformObjectKey = readString(rawResult.waveformObjectKey, 1000);
+    if (waveformObjectKey) {
+      objectKeys.add(waveformObjectKey);
+    }
+  }
+
+  if (objectKeys.size > 0) {
+    if (!storageAdapter) {
+      storageAdapter = createStorageAdapter({ dataDir: DATA_DIR, env: process.env });
+    }
+    for (const objectKey of objectKeys) {
+      await storageAdapter.deleteObject(objectKey).catch((err) => {
+        addAccessLog("Không thể xóa object của lượt đo", {
+          severity: "warning",
+          scanId: scan.id,
+          objectKey,
+          error: err && err.message ? err.message : String(err),
+        });
+      });
+    }
+  }
+
+  if (scan.wavFile) {
+    const wavFilePath = path.join(AUDIO_DIR, path.basename(scan.wavFile));
+    await fs.promises.rm(wavFilePath, { force: true }).catch(() => undefined);
+  }
+  await fs.promises.rm(path.join(TMP_DIR, `${scan.id}.chunks.pcm`), { force: true }).catch(() => undefined);
+  await fs.promises.rm(path.join(TMP_DIR, `${scan.id}.pcm`), { force: true }).catch(() => undefined);
+
+  if (repositories && repositories.scans && typeof repositories.scans.delete === "function") {
+    await repositories.scans.delete(scan.id);
+  } else {
+    db.aiResults = db.aiResults.filter((result) => result.scanId !== scan.id);
+    db.audioFiles = db.audioFiles.filter((file) => file.scanId !== scan.id);
+    db.scans = db.scans.filter((item) => item.id !== scan.id);
+    await saveDb();
+  }
+  broadcastScanEvent("scan_deleted", { id: scan.id, patientId: scan.patientId });
 }
 
 function startRecording(payload = {}, actorUser = null) {
@@ -10909,7 +11068,9 @@ async function handleScansApi(req, res, url, segments) {
     requireAnyCapability(user, ["platform.scans.manage", "workspace.scans.manage", "personal.scans.manage"]);
     const payload = await readJsonBody(req);
     if (isDoctorUser(user) && payload.patientId) {
-      assertCanAccessPatient(user, readString(payload.patientId, 120));
+      const requestedPatientId = readString(payload.patientId, 120);
+      assertCanAccessPatient(user, requestedPatientId);
+      assertCanManagePatientScanCollection(user, requestedPatientId);
     }
     if (isPatientUser(user)) {
       delete payload.doctorNotes;
@@ -10931,7 +11092,9 @@ async function handleScansApi(req, res, url, segments) {
       return;
     }
     if (isDoctorUser(user) && payload.patientId) {
-      assertCanAccessPatient(user, readString(payload.patientId, 120));
+      const requestedPatientId = readString(payload.patientId, 120);
+      assertCanAccessPatient(user, requestedPatientId);
+      assertCanManagePatientScanCollection(user, requestedPatientId);
     }
     if (isPatientUser(user)) {
       delete payload.doctorNotes;
@@ -10986,10 +11149,45 @@ async function handleScansApi(req, res, url, segments) {
     return;
   }
 
+  if (segments.length === 3 && method === "DELETE") {
+    requireAnyCapability(user, ["platform.scans.manage", "workspace.scans.manage"]);
+    assertCanManageScan(user, scan);
+    await deleteScanRecord(scan);
+    await appendAudit("scan.delete", req, {
+      resourceType: "scan",
+      resourceId: scan.id,
+      organizationId: scan.organizationId || getScanOrgId(scan),
+      metadata: {
+        patientId: scan.patientId,
+        deviceId: scan.deviceId || "",
+        status: scan.status || "",
+      },
+    });
+    sendJson(res, 200, { deleted: true, scanId: scan.id });
+    return;
+  }
+
   if (segments.length === 4 && segments[3] === "stop" && method === "POST") {
     assertCanManageScan(user, scan);
     const stopped = await stopRecording(scan.id);
     sendJson(res, 200, { scan: stopped });
+    return;
+  }
+
+  if (segments.length === 4 && segments[3] === "reprocess" && method === "POST") {
+    requireAnyCapability(user, ["platform.scans.manage", "workspace.scans.manage"]);
+    assertCanManageScan(user, scan);
+    const reprocessed = await reprocessScanAudio(scan);
+    await appendAudit("scan.reprocess", req, {
+      resourceType: "scan",
+      resourceId: reprocessed.id,
+      organizationId: reprocessed.organizationId || getScanOrgId(reprocessed),
+      metadata: {
+        aiLabel: reprocessed.aiLabel || "",
+        aiConfidence: reprocessed.aiConfidence ?? null,
+      },
+    });
+    sendJson(res, 200, { scan: reprocessed });
     return;
   }
 

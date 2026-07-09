@@ -41,6 +41,33 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Clarified that Smart Health means the full `D:\Study\KLTN` product system: `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs.
 - Future feature/fix slices should verify the workflow across affected surfaces before being marked complete: backend policy/data, client API calls, role/surface routing, tenant isolation, device/storage/notification side effects, Android/web/admin UX, firmware protocol when relevant, tests/smokes, deploy status, and docs.
 
+## 2026-07-09 Shcare Portal UI Density And Search Field Polish
+
+### Implemented
+
+- Fixed the screenshot-reported search-field collision where the icon could overlap the placeholder on portal pages.
+- Added a portal-scoped density layer in `clinical-system.css` that normalizes portal heading/text utilities, input/select/textarea heights and padding, premium buttons, and table cell sizing without changing the public marketing pages.
+- Introduced the shared `.portal-search-field` layout and applied it to Patients, Records, Audit Log, and Help search inputs so all affected pages use the same icon spacing, input padding, focus state, and height.
+- Normalized portal page titles to compact clinical dashboard scale instead of oversized hero-style gradients.
+
+### Verification
+
+- Shcare Web `bunx tsc --noEmit --pretty false` passed.
+- Shcare Web `bun run lint` passed.
+- Shcare Web `bun run build:firebase` passed.
+- Local browser smoke passed with `SMART_HEALTH_WEB_URL=http://localhost:8087`, Render API `https://smart-health-api-r5is.onrender.com/api`, and `SMOKE_DISABLE_WEB_SECURITY=1`.
+- Local and live Playwright visual QA measured Patients, Records, Audit, and Help: title size `21.44px`, input height `44px`, input font `14px`, input left padding `43.2px`, icon-to-text gap about `12.809px`, and `overflowX=0` on checked desktop/mobile viewports.
+- Live verification passed on `https://shcare.web.app`: `npm.cmd run smoke:public-deployment`, live `bun run smoke:portal-browser` without local CORS bypass, and live visual QA with no severe console errors.
+
+### Production Follow-Up
+
+- Commit `ff9adec5` (`Normalize Shcare portal UI density`) was pushed to `origin/main`.
+- Firebase Hosting target `webapp` deployed site `shcare` version `projects/162993928259/sites/shcare/versions/a1b568cf873aac0d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783594254847000`.
+
+### Remaining Limits
+
+- This closes the portal density/search-input visual regression slice. It does not close unrelated provider/device evidence: real Android FCM delivery, real inbox click-through, production object-storage provider proof, and physical MSM261 board validation remain separate blockers.
+
 ## 2026-07-09 Shcare Portal Workspace Summary Contract
 
 ### Implemented

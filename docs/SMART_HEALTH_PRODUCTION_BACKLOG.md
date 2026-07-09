@@ -25,6 +25,16 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
 
+## Completed deployed/live - 2026-07-09 Shcare Portal UI density and search-field polish
+
+- Fixed the user-reported portal search-input defect where the search icon overlapped placeholder text.
+- Normalized Shcare Portal dashboard density across Patients, Records, Audit Log, Help, and shared portal primitives: page titles, text-size utilities, inputs/selects/textareas, search-field icon spacing, buttons, and table cells now use a consistent compact clinical scale.
+- The fix is implemented through `clinical-system.css` plus real page integration in `PatientsPage.tsx`, `RecordsPage.tsx`, `AuditLogPage.tsx`, and `HelpPage.tsx`; it is not a detached mock UI.
+- Verification passed locally: Shcare Web typecheck, lint, Firebase build, local authenticated portal browser smoke with CORS bypass for localhost, scoped `git diff --check`, and Playwright visual QA on desktop/mobile.
+- Visual QA proved title size `21.44px`, search input height `44px`, `14px` input text, `43.2px` search padding, about `12.809px` icon-to-text gap, and zero horizontal overflow on checked desktop/mobile viewports.
+- Production follow-up completed: commit `ff9adec5` was pushed to `origin/main`, Firebase Hosting target `webapp` deployed `shcare` version `projects/162993928259/sites/shcare/versions/a1b568cf873aac0d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783594254847000`, live public deployment smoke passed, live authenticated portal browser smoke passed without local CORS bypass, and live visual QA passed against `https://shcare.web.app`.
+- Remaining work is outside this UI slice: provider/device validation, real Android FCM, inbox click-through, production object-storage provider proof, and physical MSM261 ESP32-S3 validation still need their own evidence.
+
 ## Completed source/build/backend smoke - 2026-07-09 Android workspace switcher and dashboard context
 
 - Fixed Android workspace context parity after the broad completeness audit found mobile Settings/Dashboard did not consume backend memberships/current workspace.

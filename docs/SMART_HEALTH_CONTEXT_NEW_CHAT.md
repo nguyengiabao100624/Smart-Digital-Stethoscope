@@ -23,6 +23,16 @@ Smart Health is the full `D:\Study\KLTN` product workspace: `smart-health-embedd
 
 When a change touches product behavior, check the cross-surface contract: backend authorization/repository logic, client API usage, role/surface routing, tenant isolation, storage/notification/device side effects, Android/web/admin UX, firmware/device protocol if applicable, verification commands, deployment state, and handoff updates.
 
+## 2026-07-09 - Shcare Portal UI density and search-field polish
+
+- Follow-up after a user screenshot showed the portal search icon overlapping placeholder text and broader portal page density drifting too large/small across routes.
+- `smart-health-web/src/web-styles/clinical-system.css` now adds a portal-specific density layer for titles, common text-size utilities, inputs/selects/textareas, premium buttons, table cells, and search fields. `.portal-search-field` owns icon placement and input left padding so the icon no longer collides with placeholder text.
+- `PatientsPage.tsx`, `RecordsPage.tsx`, `AuditLogPage.tsx`, and `HelpPage.tsx` now use the shared `portal-search-field` pattern instead of route-specific absolute icon wrappers.
+- Verification passed locally: Shcare Web `bunx tsc --noEmit --pretty false`, `bun run lint`, `bun run build:firebase`, local dev `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`, targeted visual Playwright measurement for Patients/Records/Audit/Help on desktop plus Patients/Help on mobile, and scoped `git diff --check`.
+- Visual QA measured portal titles at `21.44px`, search inputs at `44px` height, `14px` input text, `43.2px` left padding, about `12.809px` icon-to-text gap, and zero horizontal overflow on checked desktop/mobile viewports.
+- Commit `ff9adec5` was pushed to `origin/main` and deployed to Firebase Hosting target `webapp`: version `projects/162993928259/sites/shcare/versions/a1b568cf873aac0d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783594254847000`.
+- Post-deploy verification passed: backend/public `npm.cmd run smoke:public-deployment`, live `bun run smoke:portal-browser` without local CORS bypass, and live visual Playwright measurement on `https://shcare.web.app` with the same density/search metrics and no severe console errors.
+
 ## 2026-07-09 - Android workspace switcher and dashboard context
 
 - Follow-up after the broad completeness prompt found the Android counterpart to the portal workspace gap: Android `AuthUser` did not parse backend `currentWorkspace`, `currentMembership`, or `memberships`, so mobile Settings/Dashboard could not reflect the active workspace or switch between joined workspaces.

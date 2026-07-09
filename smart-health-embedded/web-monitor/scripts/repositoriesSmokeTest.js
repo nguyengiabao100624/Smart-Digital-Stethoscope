@@ -32,7 +32,17 @@ const db = {
 
 const rows = {
   organizations: [{ id: "org_portal", name: "SQL name", type: "clinic" }],
-  users: [{ id: "user_portal", email: "doctor@example.com", role: "doctor", name: "Doctor" }],
+  users: [
+    {
+      id: "user_portal",
+      email: "doctor@example.com",
+      role: "doctor",
+      name: "Doctor",
+      requested_role: "doctor",
+      role_request_status: "approved",
+      role_approved_at: "2026-06-21T00:00:00.000Z",
+    },
+  ],
   memberships: [],
   patients: [],
   doctor_patient_access: [
@@ -129,6 +139,19 @@ async function main() {
     name: "Stale Patient User",
     patientId: "missing_patient",
   });
+  await repositories.users.save({
+    id: "user_runtime_doctor",
+    email: "runtime-doctor@example.com",
+    role: "doctor",
+    requestedRole: "doctor",
+    roleRequestStatus: "approved",
+    roleApprovedAt: "2026-06-21T00:00:01.000Z",
+    accountStatus: "active",
+    name: "Runtime Doctor",
+  });
+  const approvedDoctors = await repositories.users.listApprovedDoctors();
+  assert.equal(approvedDoctors.some((doctor) => doctor.id === "user_portal"), true);
+  assert.equal(approvedDoctors.some((doctor) => doctor.id === "user_runtime_doctor"), true);
   await repositories.patients.save({
     id: "patient_stale_owner",
     patientCode: "STALE-OWNER",

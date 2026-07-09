@@ -1122,6 +1122,8 @@ function createRepositories(options) {
     },
 
     async listApprovedDoctors() {
+      const runtimeUsers = getDb()
+        .users.filter((user) => user.requestedRole === "doctor" && user.roleRequestStatus === "approved");
       const sqlUsers = await withSql(async (pool) => {
         const result = await pool.query(
           `
@@ -1132,14 +1134,14 @@ function createRepositories(options) {
         );
         return result.rows.map(rowToUser);
       });
-      if (sqlUsers && sqlUsers.length > 0) {
+      if (sqlUsers) {
         for (const user of sqlUsers) {
           syncArrayItem(getDb().users, user);
         }
-        return sqlUsers;
+        return mergeSqlListWithRuntime(runtimeUsers, sqlUsers)
+          .sort((a, b) => String(b.roleApprovedAt || b.updatedAt || "").localeCompare(String(a.roleApprovedAt || a.updatedAt || "")));
       }
-      return getDb()
-        .users.filter((user) => user.requestedRole === "doctor" && user.roleRequestStatus === "approved")
+      return runtimeUsers
         .sort((a, b) => String(b.roleApprovedAt || b.updatedAt || "").localeCompare(String(a.roleApprovedAt || a.updatedAt || "")));
     },
 

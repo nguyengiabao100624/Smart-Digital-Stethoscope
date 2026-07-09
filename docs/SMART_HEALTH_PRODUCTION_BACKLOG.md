@@ -44,6 +44,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Passed firmware source build checks: PlatformIO `run` for both `esp32-s3-devkitm-1` and `esp32-s3-ota`.
 - Still blocked: real Android FCM/device UI proof because `adb devices` has no attached device; physical MSM261 validation because `platformio device list` has no ESP32-S3 serial device; production S3/Postgres/PHI provider smoke because no backend production `.env` is available in this shell; real inbox click-through because no authenticated mailbox/session is available; MQTT because `MQTT_URL` is unset.
 - Runbook note: `smoke:production-roles` should set `PUBLIC_BACKEND_URL=https://smart-health-api-r5is.onrender.com` in this workspace, otherwise it can read a web/admin env URL and receive HTML instead of backend JSON.
+- Emulator safety note: `Pixel_8_Pro_2` AVD boot attempts caused repeated Windows `DPC_WATCHDOG_VIOLATION` bugchecks. The AVD has been moved to `D:\Android\avd\Pixel_8_Pro_2.avd`, C free space is about `27.6GB`, and `aehd` is stopped/demand-start. Do not run this emulator normally with AEHD/hardware acceleration in future validation.
 
 ## Completed source/build/backend smoke - 2026-07-09 Android workspace switcher and dashboard context
 

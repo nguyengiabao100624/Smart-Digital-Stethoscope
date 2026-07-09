@@ -43,6 +43,9 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Android source/build pass: `.\gradlew.bat :app:compileDebugKotlin`, `.\gradlew.bat :app:assembleDebug`, and `.\gradlew.bat :app:testDebugUnitTest`.
 - Firmware build pass: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run` passed both `esp32-s3-devkitm-1` and `esp32-s3-ota`.
 - Hardware/provider blockers remain: `adb.exe` exists under the Android SDK but `adb devices` showed no attached device; `platformio device list` showed no ESP32-S3 serial device; backend `web-monitor` has no production `.env` file with S3/Postgres/PHI/MQTT provider secrets; Gmail inbox click-through still needs an authenticated mailbox/session.
+- Emulator safety follow-up: attempts to boot `Pixel_8_Pro_2` correlated with three Windows bugchecks `0x00000133` (`DPC_WATCHDOG_VIOLATION`) at about 18:12, 18:17, and 18:26 on 2026-07-09. Event logs saved minidumps under `C:\Windows\Minidump\070926-*.dmp`; a simple string scan found `qemu-system` in the latest dump. Do not boot this AVD with AEHD/hardware acceleration until the crash path is isolated.
+- To reduce C-drive pressure and avoid the previous AVD path, `Pixel_8_Pro_2.avd` was moved from `C:\Users\baobe\.android\avd` to `D:\Android\avd\Pixel_8_Pro_2.avd`, and `C:\Users\baobe\.android\avd\Pixel_8_Pro_2.ini` now points to the D path. C free space increased to about `27.6GB`.
+- Android Emulator Hypervisor Driver `aehd` was stopped and changed from system start (`Start=1`) to demand start (`Start=3`). Future emulator tests should either use a physical device or a deliberately software-rendered/software-accelerated run; do not start `Pixel_8_Pro_2` normally from automation.
 
 ## 2026-07-09 - Android workspace switcher and dashboard context
 

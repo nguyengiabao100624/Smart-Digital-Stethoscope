@@ -793,6 +793,8 @@ Full assemble debug when needed:
 
 Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, again on 2026-06-11 after the doctor signup catalog-picker fix, and again on 2026-07-09 after Android workspace switcher/context parsing: passed. The debug APK installed and launched on emulator `Pixel_8_Pro_2`; 2026-06-09 smoke also verified direct `MainActivity` launch, phone-login UI, Android notification permission prompt, and empty crash buffer. The 2026-07-09 workspace switcher pass was source/build/unit-test only; emulator visual proof is still pending.
 
+Host safety update for `Pixel_8_Pro_2` on 2026-07-09: do not start this emulator normally from automation. Boot attempts correlated with repeated Windows bugcheck `0x00000133` (`DPC_WATCHDOG_VIOLATION`), and `qemu-system` appeared in the latest minidump string scan. The AVD data was moved from C to `D:\Android\avd\Pixel_8_Pro_2.avd`, and `C:\Users\baobe\.android\avd\Pixel_8_Pro_2.ini` now points to that D path. Android Emulator Hypervisor Driver `aehd` was stopped and changed from system start to demand start. Prefer a real attached Android device for FCM/visual proof; if an emulator is unavoidable, use a deliberately conservative software-only run and stop immediately on any driver warning.
+
 Unit test target used for Android account/workspace source slices:
 
 ```powershell

@@ -87,6 +87,12 @@ This file records the real project state. Keep it factual: implemented, partial,
 - `platformio device list` showed no ESP32-S3 serial device, so physical WiFi/audio/cloud command/OTA validation is not closed.
 - `smart-health-embedded/web-monitor` has only `.env.example`; no backend production `.env` with S3/Postgres/PHI provider secrets is available in this workspace shell. Gmail inbox click-through still needs an authenticated mailbox/session.
 
+### Emulator Safety Finding
+
+- Booting the local `Pixel_8_Pro_2` AVD correlated with repeated Windows bugcheck `0x00000133` (`DPC_WATCHDOG_VIOLATION`) and unexpected shutdown events. Do not treat this as a Smart Health Android app crash; it is a host/emulator driver stability problem.
+- The AVD was moved to `D:\Android\avd\Pixel_8_Pro_2.avd` and its `.ini` now points to the D path, freeing roughly 12GB from C.
+- The Android Emulator Hypervisor Driver service `aehd` was stopped and changed to demand start. Android runtime validation remains blocked until a safe emulator mode is explicitly chosen or a real Android device is attached.
+
 ## 2026-07-09 Shcare Portal Workspace Summary Contract
 
 ### Implemented

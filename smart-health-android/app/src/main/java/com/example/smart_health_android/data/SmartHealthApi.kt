@@ -155,6 +155,25 @@ class SmartHealthApi(
         true
     }
 
+    suspend fun updateTwoFactor(enable: Boolean, method: String = "app"): TwoFactorUpdateResult = withContext(Dispatchers.IO) {
+        val response = postJson(
+            "$baseUrl/me/2fa",
+            JSONObject()
+                .put("action", if (enable) "enable" else "disable")
+                .put("method", method)
+        )
+        val user = parseAuthUser(response.getJSONObject("user"))
+        val twoFactor = response.optJSONObject("twoFactor") ?: JSONObject()
+        TwoFactorUpdateResult(
+            user = user,
+            enabled = twoFactor.optBoolean("enabled", user.twoFactorEnabled),
+            method = twoFactor.optString("method", user.twoFactorMethod),
+            secretPreview = twoFactor.optString("secretPreview", user.twoFactorSecretPreview),
+            recoveryCodes = twoFactor.optJSONArray("recoveryCodes").toStringList(),
+            note = twoFactor.optString("note")
+        )
+    }
+
     suspend fun uploadMyAvatar(fileName: String, contentType: String, bytes: ByteArray): AuthUser = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl/me/avatar")
@@ -535,6 +554,9 @@ class SmartHealthApi(
             accountType = json.optString("accountType"),
             clinicSuggestion = json.optString("clinicSuggestion"),
             notificationPreferences = json.optJSONObject("notificationPreferences") ?: JSONObject(),
+            twoFactorEnabled = json.optBoolean("twoFactorEnabled"),
+            twoFactorMethod = json.optString("twoFactorMethod"),
+            twoFactorSecretPreview = json.optString("twoFactorSecretPreview"),
             createdAt = json.stringOrNull("createdAt"),
             updatedAt = json.stringOrNull("updatedAt")
         )

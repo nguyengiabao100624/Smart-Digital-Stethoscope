@@ -51,6 +51,13 @@ When a change touches product behavior, check the cross-surface contract: backen
 - `workspaceAccessSmokeTest.js` now also verifies the backend password endpoint by changing the seeded patient password, rejecting the old password, and accepting the new password in the temporary JSON backend.
 - Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`. Real Android UI execution still needs an attached emulator/device.
 
+## 2026-07-09 - Android Privacy 2FA backend bridge
+
+- Follow-up in Android `PrivacyScreen.kt` found the 2FA switch was local-only while backend `/api/v1/me/2fa` already stores 2FA setup state, secret preview, and recovery codes.
+- `AuthUser` now parses `twoFactorEnabled`, `twoFactorMethod`, and `twoFactorSecretPreview`; `SmartHealthApi.updateTwoFactor()` calls `/me/2fa`; `PrivacyScreen.kt` loads the current backend 2FA state, enables/disables it through the backend, shows returned recovery codes, and keeps biometric disabled with a clear not-available state until native BiometricPrompt is implemented.
+- `workspaceAccessSmokeTest.js` now verifies patient backend 2FA enable/disable and recovery-code response in the temporary JSON backend.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `npm.cmd run smoke:workspace-access`, and backend `npm.cmd run check`. Real OTP provider/enforcement is still a backend/provider follow-up; this slice closes Android UI-to-backend setup, not full OTP challenge enforcement.
+
 ## 2026-07-09 - Shcare Portal consent/share live follow-up
 
 - Source follow-up after the broader completeness audit found `/portal/consent` had backend share APIs but weak browser workflow coverage. `smart-health-web/src/app/pages/portal/InvitationsPage.tsx` now supports patient selection, doctor/workspace target selection, full-profile vs selected-scan scope, optional expiry, friendly target labels, active share list, and revoke controls backed by `/api/share-targets` plus `/api/portal/patients/:id/shares`.

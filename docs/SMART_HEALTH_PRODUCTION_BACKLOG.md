@@ -64,6 +64,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`.
 - Remaining validation requires running the Android screen on an emulator or physical device with real Firebase credentials.
 
+## Completed source/build/backend smoke - 2026-07-09 Android Privacy 2FA backend bridge
+
+- Replaced the Android Privacy local-only 2FA toggle with backend-backed `/api/v1/me/2fa` enable/disable.
+- Added Android parsing for backend 2FA state and recovery-code response.
+- The Privacy screen now loads backend 2FA state, shows returned recovery codes after enable, and marks biometric as not available instead of behaving like a fake toggle.
+- Expanded `smoke:workspace-access` to verify patient 2FA enable/disable and recovery-code response.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `npm.cmd run smoke:workspace-access`, and backend `npm.cmd run check`.
+- Remaining validation: real OTP provider/enforcement and native BiometricPrompt are not implemented in this slice; both require provider/runtime work beyond backend setup state.
+
 ## Completed source/build/backend smoke - 2026-07-09 Android Data Access consent history
 
 - Replaced Android Data Access local-only privacy switches with a backend-backed consent ledger.

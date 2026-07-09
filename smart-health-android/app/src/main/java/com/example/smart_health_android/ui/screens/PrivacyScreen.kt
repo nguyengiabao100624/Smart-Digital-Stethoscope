@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -20,7 +21,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun PrivacyScreen(
@@ -31,8 +35,60 @@ fun PrivacyScreen(
 ) {
     var biometric by remember { mutableStateOf(false) }
     var twoFactor by remember { mutableStateOf(false) }
+    var twoFactorMethod by remember { mutableStateOf("") }
+    var twoFactorSecretPreview by remember { mutableStateOf("") }
+    var recoveryCodes by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var isSavingTwoFactor by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var securityNotice by remember {
         mutableStateOf("Sinh trắc học và 2FA trên app sẽ được bật khi nối native biometric/SMS provider thật.")
+    }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun applyTwoFactorState(enabled: Boolean, method: String, secretPreview: String = "") {
+        twoFactor = enabled
+        twoFactorMethod = method
+        twoFactorSecretPreview = secretPreview
+        securityNotice = if (enabled) {
+            val methodLabel = if (method == "sms") "SMS" else "ứng dụng OTP"
+            "Cấu hình 2FA backend đang bật qua $methodLabel. OTP provider thật vẫn cần được kích hoạt ở hạ tầng."
+        } else {
+            "2FA đang tắt. Bật 2FA sẽ lưu cấu hình bảo mật trên backend và cấp mã khôi phục."
+        }
+    }
+
+    fun updateTwoFactor(enabled: Boolean) {
+        if (isSavingTwoFactor) return
+        isSavingTwoFactor = true
+        errorMessage = null
+        recoveryCodes = emptyList()
+        coroutineScope.launch {
+            try {
+                val result = SmartHealthRepository.api.updateTwoFactor(enable = enabled, method = "app")
+                applyTwoFactorState(result.enabled, result.method, result.secretPreview)
+                recoveryCodes = result.recoveryCodes
+                if (result.note.isNotBlank()) {
+                    securityNotice = result.note
+                }
+            } catch (error: Exception) {
+                errorMessage = error.toVietnameseMessage("Không thể cập nhật 2FA")
+            } finally {
+                isSavingTwoFactor = false
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        isLoading = true
+        errorMessage = null
+        runCatching {
+            val user = SmartHealthRepository.api.getMe()
+            applyTwoFactorState(user.twoFactorEnabled, user.twoFactorMethod, user.twoFactorSecretPreview)
+        }.onFailure {
+            errorMessage = it.toVietnameseMessage("Không thể tải cấu hình bảo mật")
+        }
+        isLoading = false
     }
 
     Column(
@@ -67,6 +123,21 @@ fun PrivacyScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            if (isLoading || isSavingTwoFactor) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = PrimaryTeal,
+                    trackColor = Border
+                )
+            }
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
             // Section 1: Xác Thực
             Column {
                 Text("XÁC THỰC", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
@@ -80,22 +151,28 @@ fun PrivacyScreen(
                         icon = Icons.Default.Fingerprint,
                         iconColor = Color(0xFF10B981),
                         title = "Xác thực sinh trắc học",
-                        subtitle = "Vân tay hoặc Face ID",
+                        subtitle = "Chưa khả dụng cho bản Android hiện tại",
                         checked = biometric,
                         onCheckedChange = {
                             securityNotice = "Sinh trắc học cần tích hợp Android BiometricPrompt trước khi bật trong bản phát hành."
                         },
+                        enabled = false,
                         showDivider = true
                     )
                     PrivacyToggleRow(
                         icon = Icons.Default.Smartphone,
                         iconColor = PrimaryBlue,
                         title = "Xác thực 2 yếu tố (2FA)",
-                        subtitle = "Cần nhà cung cấp OTP thật",
-                        checked = twoFactor,
-                        onCheckedChange = {
-                            securityNotice = "2FA qua SMS/app chưa bật trên Android vì chưa cấu hình provider OTP thật."
+                        subtitle = if (twoFactor) {
+                            listOf("Đang bật", twoFactorMethod.uppercase(), twoFactorSecretPreview)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" • ")
+                        } else {
+                            "Lưu cấu hình 2FA và mã khôi phục trên backend"
                         },
+                        checked = twoFactor,
+                        onCheckedChange = { updateTwoFactor(it) },
+                        enabled = !isLoading && !isSavingTwoFactor,
                         showDivider = false
                     )
                 }
@@ -106,6 +183,25 @@ fun PrivacyScreen(
                     fontSize = 13.sp,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
+                if (recoveryCodes.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFEFF6FF), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0xFFBFDBFE), RoundedCornerShape(14.dp))
+                            .padding(14.dp)
+                    ) {
+                        Text("Mã khôi phục vừa cấp", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            recoveryCodes.joinToString("  •  "),
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
             }
 
             // Section 2: Mật Khẩu
@@ -244,13 +340,14 @@ fun PrivacyToggleRow(
     subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
     showDivider: Boolean
 ) {
-    Column {
+    Column(modifier = Modifier.alpha(if (enabled) 1f else 0.55f)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onCheckedChange(!checked) }
+                .clickable(enabled = enabled) { onCheckedChange(!checked) }
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -271,6 +368,7 @@ fun PrivacyToggleRow(
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
+                enabled = enabled,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = Color(0xFF10B981),

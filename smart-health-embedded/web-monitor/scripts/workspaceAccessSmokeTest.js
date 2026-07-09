@@ -534,6 +534,21 @@ async function runScenario() {
     200,
   );
   assert.ok(patientSharesAfterRevoke.shares.some((item) => item.id === patientShare.share.id && item.active === false));
+  const enabledTwoFactor = await expectStatus("patient enables backend 2FA setup", patient, "/api/v1/me/2fa", 200, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "enable", method: "app" }),
+  });
+  assert.equal(enabledTwoFactor.twoFactor.enabled, true);
+  assert.equal(enabledTwoFactor.twoFactor.method, "app");
+  assert.equal(Array.isArray(enabledTwoFactor.twoFactor.recoveryCodes), true);
+  assert.equal(enabledTwoFactor.twoFactor.recoveryCodes.length > 0, true);
+  const disabledTwoFactor = await expectStatus("patient disables backend 2FA setup", patient, "/api/v1/me/2fa", 200, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "disable" }),
+  });
+  assert.equal(disabledTwoFactor.twoFactor.enabled, false);
   await expectStatus("patient changes backend account password", patient, "/api/v1/me/password", 200, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

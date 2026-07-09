@@ -108,6 +108,27 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 - This closes source/build/backend-contract coverage. Real Android UI execution still needs an attached emulator or physical device.
 
+## 2026-07-09 Android Privacy 2FA Backend Bridge
+
+### Implemented
+
+- Fixed Android `PrivacyScreen.kt` so the 2FA switch no longer behaves as local-only placeholder state.
+- Added `SmartHealthApi.updateTwoFactor()` for backend `/api/v1/me/2fa`.
+- Extended `AuthUser` parsing with `twoFactorEnabled`, `twoFactorMethod`, and `twoFactorSecretPreview`, plus `TwoFactorUpdateResult` for recovery codes and backend notes.
+- `PrivacyScreen.kt` now loads backend 2FA state, enables/disables backend 2FA setup, shows the returned recovery codes after enable, and keeps biometric disabled with clear not-available copy until native BiometricPrompt is implemented.
+- Expanded `scripts/workspaceAccessSmokeTest.js` to verify patient backend 2FA enable/disable and recovery-code response.
+
+### Verification
+
+- Android `.\gradlew.bat :app:compileDebugKotlin` passed.
+- Android `.\gradlew.bat :app:assembleDebug` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+- Backend `npm.cmd run check` passed.
+
+### Remaining Limits
+
+- This closes Android UI-to-backend 2FA setup state. Real OTP provider challenge/enforcement is still a backend/provider follow-up, and visual UI proof still needs an emulator or physical Android device.
+
 ## 2026-07-09 Android Patient Data Access Consent History
 
 ### Implemented

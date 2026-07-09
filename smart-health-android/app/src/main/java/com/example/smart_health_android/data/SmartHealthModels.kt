@@ -166,6 +166,9 @@ data class AuthUser(
     val accountType: String = "",
     val clinicSuggestion: String = "",
     val notificationPreferences: JSONObject = JSONObject(),
+    val twoFactorEnabled: Boolean = false,
+    val twoFactorMethod: String = "",
+    val twoFactorSecretPreview: String = "",
     val createdAt: String? = null,
     val updatedAt: String? = null
 )
@@ -173,6 +176,15 @@ data class AuthUser(
 data class AuthResult(
     val token: String,
     val user: AuthUser
+)
+
+data class TwoFactorUpdateResult(
+    val user: AuthUser,
+    val enabled: Boolean,
+    val method: String = "",
+    val secretPreview: String = "",
+    val recoveryCodes: List<String> = emptyList(),
+    val note: String = ""
 )
 
 data class ClinicOption(

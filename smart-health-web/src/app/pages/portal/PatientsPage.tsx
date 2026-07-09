@@ -98,7 +98,7 @@ export default function PatientsPage() {
         </form>
       )}
       <div className="glass-panel rounded-2xl p-4">
-        <div className="relative max-w-md">
+        <div className="portal-search-field">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94b8d0]" size={15} />
           <input
             id="portal-patient-search"

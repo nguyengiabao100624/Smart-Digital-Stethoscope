@@ -90,7 +90,7 @@ export default function HelpPage() {
         </h1>
       </div>
 
-      <div className="flex items-center gap-2 px-4 h-11 rounded-xl border border-white/10 bg-white/8 max-w-lg">
+      <div className="portal-search-field max-w-lg">
         <Search size={16} className="text-[#8aa5ba]" />
         <input
           id="portal-help-search"
@@ -98,7 +98,7 @@ export default function HelpPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Tìm câu hỏi, hướng dẫn..."
-          className="flex-1 bg-transparent outline-none text-sm text-[#eefbff] placeholder:text-white/55"
+          className="portal-input"
         />
       </div>
 

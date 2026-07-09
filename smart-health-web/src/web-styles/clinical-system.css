@@ -880,6 +880,13 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 /* Portal page compatibility layer: normalize legacy hardcoded dark/cyber utilities. */
+.clinical-portal {
+  --portal-title-size: 1.34rem;
+  --portal-section-title-size: 1rem;
+  --portal-control-height: 2.65rem;
+  --portal-control-radius: var(--clinical-radius-sm);
+}
+
 .clinical-portal .glass-panel,
 .clinical-portal .navy-card,
 .clinical-portal .premium-card,
@@ -910,6 +917,58 @@ html.dark .shc-public-layout > .shc-announcement {
   color: var(--clinical-primary) !important;
 }
 
+.clinical-portal .brand-gradient-text,
+.clinical-portal .hero-gradient-text {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 !important;
+  background: none !important;
+  background-clip: initial !important;
+  -webkit-background-clip: initial !important;
+  filter: none !important;
+  color: var(--clinical-ink) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-family: var(--clinical-ui) !important;
+  font-size: var(--portal-title-size) !important;
+  font-weight: 760 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.22 !important;
+  text-shadow: none !important;
+  text-wrap: balance;
+}
+
+.clinical-portal h2,
+.clinical-portal [class~="text-lg"] {
+  font-size: var(--portal-section-title-size) !important;
+  line-height: 1.35 !important;
+}
+
+.clinical-portal [class~="text-xl"] {
+  font-size: 1.12rem !important;
+  line-height: 1.28 !important;
+}
+
+.clinical-portal [class~="text-2xl"] {
+  font-size: 1.24rem !important;
+  line-height: 1.25 !important;
+}
+
+.clinical-portal [class~="text-3xl"] {
+  font-size: 1.58rem !important;
+  line-height: 1.18 !important;
+}
+
+.clinical-portal .brand-gradient-text svg,
+.clinical-portal .hero-gradient-text svg {
+  width: 1.12rem;
+  height: 1.12rem;
+  flex: 0 0 auto;
+  stroke-width: 1.9;
+}
+
 .clinical-portal [class*="border-white"],
 .clinical-portal [class*="border-[#"] {
   border-color: var(--clinical-line) !important;
@@ -919,10 +978,35 @@ html.dark .shc-public-layout > .shc-announcement {
 .clinical-portal select,
 .clinical-portal textarea,
 .portal-input {
+  width: 100%;
   border-color: var(--clinical-line-strong) !important;
   background: var(--clinical-surface) !important;
   color: var(--clinical-ink) !important;
   box-shadow: none !important;
+}
+
+.clinical-portal .portal-input,
+.clinical-portal input.portal-input,
+.clinical-portal select.portal-input,
+.clinical-portal textarea.portal-input {
+  min-height: var(--portal-control-height);
+  border: 1px solid var(--clinical-line-strong) !important;
+  border-radius: var(--portal-control-radius) !important;
+  padding: 0 0.86rem !important;
+  font-family: var(--clinical-ui) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500;
+  line-height: 1.25rem;
+}
+
+.clinical-portal textarea.portal-input {
+  min-height: 6rem;
+  padding: 0.74rem 0.86rem !important;
+  line-height: 1.5;
+}
+
+.clinical-portal select.portal-input {
+  padding-right: 2rem !important;
 }
 
 .clinical-portal input::placeholder,
@@ -938,6 +1022,50 @@ html.dark .shc-public-layout > .shc-announcement {
   box-shadow: 0 0 0 3px var(--clinical-focus) !important;
 }
 
+.clinical-portal .portal-search-field {
+  position: relative;
+  width: min(100%, 28rem);
+}
+
+.clinical-portal .portal-search-field svg {
+  position: absolute;
+  left: 0.9rem !important;
+  top: 50% !important;
+  z-index: 1;
+  width: 1rem;
+  height: 1rem;
+  transform: translateY(-50%) !important;
+  color: var(--clinical-faint) !important;
+  pointer-events: none;
+}
+
+.clinical-portal .portal-search-field .portal-input,
+.clinical-portal .portal-input[class~="pl-10"] {
+  padding-left: 2.7rem !important;
+}
+
+.clinical-portal .premium-button {
+  min-height: 2.5rem;
+  border-radius: var(--clinical-radius-sm) !important;
+  padding: 0.58rem 0.95rem !important;
+  background: var(--clinical-action) !important;
+  border: 1px solid var(--clinical-action) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  font-size: 0.84rem !important;
+  font-weight: 720 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.2;
+  text-transform: none !important;
+}
+
+.clinical-portal .premium-button:hover {
+  transform: translateY(-1px) !important;
+  background: var(--clinical-action-hover) !important;
+  border-color: var(--clinical-action-hover) !important;
+  box-shadow: var(--clinical-shadow-tight) !important;
+}
+
 .clinical-portal [class*="shadow-[0_"],
 .clinical-portal [class*="animate-pulse"] {
   box-shadow: none !important;
@@ -946,6 +1074,23 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .clinical-portal table {
   font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+}
+
+.clinical-portal th,
+.clinical-portal td {
+  padding: 0.82rem 1rem !important;
+}
+
+.clinical-portal th {
+  color: var(--clinical-muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 740;
+  letter-spacing: 0.035em;
+}
+
+.clinical-portal td {
+  line-height: 1.45;
 }
 
 @media (max-width: 900px) {

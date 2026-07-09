@@ -30,16 +30,18 @@ export default function AuditLogPage() {
           Lịch sử do backend ghi nhận, đã giới hạn theo workspace.
         </p>
       </div>
-      <div className="glass-panel rounded-2xl p-4 relative max-w-md">
-        <Search size={15} className="absolute left-7 top-1/2 -translate-y-1/2 text-[#94b8d0]" />
-        <input
-          id="portal-audit-search"
-          name="portalAuditSearch"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="portal-input pl-10"
-          placeholder="Tìm hành động, người dùng..."
-        />
+      <div className="glass-panel rounded-2xl p-4">
+        <div className="portal-search-field">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94b8d0]" />
+          <input
+            id="portal-audit-search"
+            name="portalAuditSearch"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="portal-input pl-10"
+            placeholder="Tìm hành động, người dùng..."
+          />
+        </div>
       </div>
       {query.isLoading ? (
         <PortalLoading />

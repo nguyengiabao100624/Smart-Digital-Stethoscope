@@ -31,7 +31,7 @@ export default function RecordsPage() {
         <p className="text-sm text-[#94b8d0]">Dữ liệu thật từ workspace hiện tại</p>
       </div>
       <div className="glass-panel rounded-2xl p-4 flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-60">
+        <div className="portal-search-field flex-1 min-w-60">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94b8d0]" />
           <input
             id="portal-record-search"

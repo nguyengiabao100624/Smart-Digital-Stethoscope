@@ -5,6 +5,8 @@ import process from "node:process";
 const rootDir = process.cwd();
 const envFiles = [".env", ".env.local", ".env.production", ".env.production.local"];
 const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "10.0.2.2"]);
+const retiredBaseUrls = new Set(["https://smart-health-api-xj0a.onrender.com"]);
+const retiredApiBaseUrls = new Set(["https://smart-health-api-xj0a.onrender.com/api"]);
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -71,6 +73,15 @@ function requireHttpsNonLocalUrl(env, key) {
   return value;
 }
 
+function rejectRetiredBackendUrl(key, value) {
+  const retiredUrls = key.endsWith("_API_BASE_URL") ? retiredApiBaseUrls : retiredBaseUrls;
+  if (retiredUrls.has(value)) {
+    throw new Error(
+      `${key} points to a retired Smart Health backend. Use https://smart-health-api-r5is.onrender.com instead.`,
+    );
+  }
+}
+
 const env = getEffectiveEnv();
 if (env.VITE_AUTH_MODE !== "production") {
   throw new Error("VITE_AUTH_MODE must be production for product web builds.");
@@ -78,6 +89,14 @@ if (env.VITE_AUTH_MODE !== "production") {
 
 const httpBaseUrl = requireHttpsNonLocalUrl(env, "VITE_SMART_HEALTH_BASE_URL");
 const apiBaseUrl = requireHttpsNonLocalUrl(env, "VITE_SMART_HEALTH_API_BASE_URL");
+rejectRetiredBackendUrl("VITE_SMART_HEALTH_BASE_URL", httpBaseUrl);
+rejectRetiredBackendUrl("VITE_SMART_HEALTH_API_BASE_URL", apiBaseUrl);
+
+if (apiBaseUrl !== `${httpBaseUrl}/api`) {
+  throw new Error(
+    `VITE_SMART_HEALTH_API_BASE_URL must match VITE_SMART_HEALTH_BASE_URL + /api. Got ${apiBaseUrl}.`,
+  );
+}
 
 console.log("Product web env OK");
 console.log(`- VITE_SMART_HEALTH_BASE_URL=${httpBaseUrl}`);

@@ -23,6 +23,21 @@ Smart Health is the full `D:\Study\KLTN` product workspace: `smart-health-embedd
 
 When a change touches product behavior, check the cross-surface contract: backend authorization/repository logic, client API usage, role/surface routing, tenant isolation, storage/notification/device side effects, Android/web/admin UX, firmware/device protocol if applicable, verification commands, deployment state, and handoff updates.
 
+## 2026-07-09 - Web Admin production backend guard and live redeploy
+
+- Found a Web Admin config drift after the active backend moved to Render `smart-health-api-r5is`: `smart-health-admin\thiết kế giao diện\.env.production` still pointed to retired `https://smart-health-api-xj0a.onrender.com`.
+- Corrected the local production env to `https://smart-health-api-r5is.onrender.com` and added a tracked guard in `scripts/validate-product-env.mjs` that rejects retired `xj0a` URLs and requires API base to equal base URL plus `/api`.
+- Verification passed: `npm.cmd run lint`, `npm.cmd run build:firebase:admin`, bundle scan for active `r5is`, Firebase deploy to `shcare-admin` version `projects/162993928259/sites/shcare-admin/versions/0d796ccc2368d21e`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783598280968000`, and live `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrdgdbok` against `https://smart-health-api-r5is.onrender.com/api`.
+- The live smoke covered admin login plus controlled workspace, package, patient, device, notification, storage bucket, and settings mutations with cleanup and checked overview/devices/patients/clinics/packages/notifications/storage/settings/admin-accounts/audit-log routes.
+
+## 2026-07-09 - Pixel_8_Pro_2 emulator restart root cause mitigation
+
+- The emulator issue is a host/emulator driver problem, not an Android app crash. Windows logged repeated `0x00000133 DPC_WATCHDOG_VIOLATION` bugchecks when the AVD was booted earlier.
+- The AVD data now lives on `D:\Android\avd\Pixel_8_Pro_2.avd`; the `.ini` under `C:\Users\baobe\.android\avd` points to that D path. C free space is about `27.7GB`.
+- AEHD is stopped and demand-start (`Start=3`). The AVD config now uses cold boot, `hw.gpu.mode=swiftshader_indirect`, and `hw.cpu.ncore=2`.
+- A software/no-accel boot did not crash the host, opened emulator console/ADB ports, but stayed `emulator-5554 offline`, matching the emulator warning that x86_64 images may not work without hardware acceleration.
+- Windows `HypervisorPlatform` has been enabled and `bcdedit hypervisorlaunchtype auto` succeeded, but this boot still reports `HypervisorPresent=False`; a controlled restart is required before retrying WHPX-accelerated emulator QA. Do not return to AEHD/hardware-auto boot.
+
 ## 2026-07-09 - Shcare Portal UI density and search-field polish
 
 - Follow-up after a user screenshot showed the portal search icon overlapping placeholder text and broader portal page density drifting too large/small across routes.

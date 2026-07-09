@@ -25,6 +25,14 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
 
+## Completed deployed/live - 2026-07-09 Web Admin production backend guard
+
+- Found a real Web Admin production config drift: local `.env.production` still pointed at the retired Render backend `https://smart-health-api-xj0a.onrender.com`, even though the active production backend is `https://smart-health-api-r5is.onrender.com`.
+- Corrected the local Web Admin production env to `https://smart-health-api-r5is.onrender.com` / `/api`.
+- Added a tracked production build guard in `smart-health-admin\thiết kế giao diện\scripts\validate-product-env.mjs` so future Firebase builds fail if they use the retired `xj0a` backend or if `VITE_SMART_HEALTH_API_BASE_URL` does not equal `VITE_SMART_HEALTH_BASE_URL + /api`.
+- Verification passed: Web Admin `npm.cmd run lint`, `npm.cmd run build:firebase:admin`, bundle scan confirming effective `r5is` backend, Firebase Hosting deploy to `shcare-admin` version `projects/162993928259/sites/shcare-admin/versions/0d796ccc2368d21e`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783598280968000`, and live `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrdgdbok`.
+- The live admin smoke signed into `https://shcare-admin.web.app`, exercised backend `https://smart-health-api-r5is.onrender.com/api`, mutated and cleaned workspace, package, patient, device, notification, storage bucket, and settings records, and checked overview/devices/patients/clinics/packages/notifications/storage/settings/admin-accounts/audit-log routes.
+
 ## Completed deployed/live - 2026-07-09 Shcare Portal UI density and search-field polish
 
 - Fixed the user-reported portal search-input defect where the search icon overlapped placeholder text.
@@ -44,7 +52,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Passed firmware source build checks: PlatformIO `run` for both `esp32-s3-devkitm-1` and `esp32-s3-ota`.
 - Still blocked: real Android FCM/device UI proof because `adb devices` has no attached device; physical MSM261 validation because `platformio device list` has no ESP32-S3 serial device; production S3/Postgres/PHI provider smoke because no backend production `.env` is available in this shell; real inbox click-through because no authenticated mailbox/session is available; MQTT because `MQTT_URL` is unset.
 - Runbook note: `smoke:production-roles` should set `PUBLIC_BACKEND_URL=https://smart-health-api-r5is.onrender.com` in this workspace, otherwise it can read a web/admin env URL and receive HTML instead of backend JSON.
-- Emulator safety note: `Pixel_8_Pro_2` AVD boot attempts caused repeated Windows `DPC_WATCHDOG_VIOLATION` bugchecks. The AVD has been moved to `D:\Android\avd\Pixel_8_Pro_2.avd`, C free space is about `27.6GB`, and `aehd` is stopped/demand-start. Do not run this emulator normally with AEHD/hardware acceleration in future validation.
+- Emulator safety note: `Pixel_8_Pro_2` AVD boot attempts caused repeated Windows `DPC_WATCHDOG_VIOLATION` bugchecks. The AVD has been moved to `D:\Android\avd\Pixel_8_Pro_2.avd`, C free space is about `27.7GB`, and `aehd` is stopped/demand-start. The AVD config is now cold boot, SwiftShader, 2 CPU cores. Windows `HypervisorPlatform` is enabled and `hypervisorlaunchtype` is `Auto`, but the current boot still reports `HypervisorPresent=False`, so WHPX requires a controlled restart before retrying normal emulator QA. The no-accel boot path avoided a host crash but stalled as `emulator-5554 offline`, so it is not usable for Android app validation.
 
 ## Completed source/build/backend smoke - 2026-07-09 Android workspace switcher and dashboard context
 

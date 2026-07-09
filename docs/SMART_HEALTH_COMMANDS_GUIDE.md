@@ -22,11 +22,46 @@ Current active backend after the 2026-07-09 Render account migration is `https:/
 
 Latest confirmed live deploy after the 2026-07-09 Render migration, portal settings/consent/workspace-summary follow-ups, and portal UI density/search-field polish: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/a1b568cf873aac0d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783594254847000`. The deployed login flow keeps distinct Android-only/patient, pending, needs-info, rejected, portal-denied, platform-admin, and invalid-credential messages without exposing raw Firebase `auth/*` text. `bun run smoke:portal-browser` confirms live Firebase login, portal API reads, records filters, sidebar route buttons, avatar menu, notification menu, device claim route, consent/share controls, audit navigation, portal settings profile/security/notification/workspace controls, and `/portal/workspace` numeric summaries from backend `/me`. The latest UI visual QA also confirms portal search icons no longer overlap placeholder text on Patients/Records/Audit/Help, portal titles are normalized to `21.44px`, search inputs to `44px` height with `14px` text and about `12.809px` icon-to-text gap, and checked desktop/mobile routes have zero horizontal overflow. `bun run smoke:portal-mutation` last passed against the new backend with run id `portal-mutation-mrdczthd`, including patient share create/revoke, account profile, workspace settings, notification-preference restore cleanup, device cleanup, support cleanup, logout, and session recovery.
 
-Web Admin current live deploy after the same migration: Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/35d5d0458143d1b4`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783534018473000`. Platform Admin navigation exposes `/devices` for full-right accounts. Shcare Web and Web Admin forms now use `method="post"` so native/pre-hydration submit does not leak credentials through URL query strings; a custom Playwright smoke verified no-query-leak behavior plus hydrated admin/portal logins.
+Web Admin current live deploy after the same migration and production-backend guard follow-up: Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/0d796ccc2368d21e`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783598280968000`. Platform Admin navigation exposes `/devices` for full-right accounts. Shcare Web and Web Admin forms now use `method="post"` so native/pre-hydration submit does not leak credentials through URL query strings; a custom Playwright smoke verified no-query-leak behavior plus hydrated admin/portal logins. Web Admin production build validation rejects the retired `smart-health-api-xj0a` backend and requires `VITE_SMART_HEALTH_API_BASE_URL` to match `VITE_SMART_HEALTH_BASE_URL + /api`.
 
 Web Admin now has controlled live destructive mutation coverage through `npm.cmd run smoke:admin-mutation` in `smart-health-admin\thiết kế giao diện`. It signs into `https://shcare-admin.web.app`, mutates live Render data with unique test IDs, and cleans up settings, notification, storage bucket, device, patient, package, and workspace records.
 
-2026-07-09 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` after the workspace-summary follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`, and targeted Playwright visual QA after the portal density/search-field deploy. A follow-up density sweep checked 19 portal routes for overflow, H1/input/button/search sizing, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
+2026-07-09 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` after the workspace-summary follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrdgdbok`, and targeted Playwright visual QA after the portal density/search-field deploy. A follow-up density sweep checked 19 portal routes for overflow, H1/input/button/search sizing, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
+
+Web Admin build/deploy/smoke:
+
+```powershell
+cd 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện'
+npm.cmd run lint
+npm.cmd run build:firebase:admin
+
+$env:GOOGLE_APPLICATION_CREDENTIALS='D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json'
+$env:npm_config_cache='D:\Study\KLTN\.npm-cache'
+$env:XDG_CONFIG_HOME='D:\Study\KLTN\.config'
+npm.cmd run deploy:firebase:admin
+
+$env:SMART_HEALTH_API_BASE_URL='https://smart-health-api-r5is.onrender.com/api'
+$env:SMOKE_ADMIN_URL='https://shcare-admin.web.app'
+npm.cmd run smoke:admin-mutation
+```
+
+Do not override Web Admin production env to `smart-health-api-xj0a`; `scripts\validate-product-env.mjs` should fail that build.
+
+Local emulator safety for Android QA:
+
+```powershell
+# Current host mitigation already applied:
+# - Pixel_8_Pro_2 AVD data path: D:\Android\avd\Pixel_8_Pro_2.avd
+# - aehd service: stopped, demand start
+# - AVD config: cold boot, SwiftShader, 2 CPU cores
+# - Windows HypervisorPlatform: enabled
+# - bcdedit hypervisorlaunchtype: Auto
+
+Get-CimInstance Win32_ComputerSystem | Select-Object HypervisorPresent
+emulator -accel-check
+```
+
+Only retry normal emulator QA after a controlled Windows restart makes `HypervisorPresent=True` and `emulator -accel-check` reports WHPX/hypervisor acceleration usable. A no-accel boot avoided another host crash but stayed `emulator-5554 offline`, so it is not a usable Android QA path. Do not re-enable AEHD or start `Pixel_8_Pro_2` with hardware-auto/AEHD while investigating the watchdog path.
 
 2026-07-09 Android account/family/workspace backend contract coverage: `smoke:workspace-access` now also covers the patient Android path for family profile create/update/delete, consent history, password change, 2FA setup, auth session list/revoke, revoked-token denial, and a joined doctor workspace switch through `/api/v1/me`. For this slice, use:
 

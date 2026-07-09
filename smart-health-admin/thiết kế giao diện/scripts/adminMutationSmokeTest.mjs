@@ -241,6 +241,44 @@ async function visitRoute(page, href, label) {
   return { label, path: new URL(page.url()).pathname };
 }
 
+async function getBodyExcerpt(page, limit = 1200) {
+  const body = await page
+    .locator("body")
+    .innerText({ timeout: 5_000 })
+    .catch(() => "");
+  return body.replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function summarizeDoctorPayload(payload, email) {
+  const doctors = Array.isArray(payload?.doctors) ? payload.doctors : [];
+  return {
+    count: doctors.length,
+    foundInApi: doctors.some((doctor) => String(doctor.email || "") === email),
+    sample: doctors.slice(0, 8).map((doctor) => ({
+      id: doctor.id || "",
+      email: doctor.email || "",
+      organizationId: doctor.organizationId || "",
+      accountStatus: doctor.accountStatus || "",
+      roleRequestStatus: doctor.roleRequestStatus || "",
+    })),
+  };
+}
+
+function summarizeDoctorRequestPayload(payload, email) {
+  const requests = Array.isArray(payload?.requests) ? payload.requests : [];
+  return {
+    count: requests.length,
+    foundInApi: requests.some((request) => String(request.email || "") === email),
+    sample: requests.slice(0, 8).map((request) => ({
+      id: request.id || "",
+      email: request.email || "",
+      organizationId: request.organizationId || "",
+      accountStatus: request.accountStatus || "",
+      roleRequestStatus: request.roleRequestStatus || request.status || "",
+    })),
+  };
+}
+
 async function assertAccountRoute(page) {
   await page
     .getByRole("heading", { name: /Cài đặt tài khoản/i })
@@ -276,8 +314,39 @@ async function assertDoctorsRoute(page, state) {
     .getByRole("heading", { name: /Quản lý bác sĩ/i })
     .waitFor({ state: "visible", timeout: 15_000 });
   if (state.doctorEmail) {
+    const apiResponse = await apiFetch(page, "/admin/doctors");
+    const apiSummary = summarizeDoctorPayload(apiResponse.payload, state.doctorEmail);
+    if (!apiSummary.foundInApi) {
+      throw new Error(
+        `doctors route API did not return created doctor ${state.doctorEmail}: ${JSON.stringify(
+          apiSummary,
+          null,
+          2,
+        )}`,
+      );
+    }
     await page.getByPlaceholder(/Tìm tên bác sĩ/i).fill(state.doctorEmail);
-    await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+    try {
+      await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+    } catch (error) {
+      const bodyExcerpt = await getBodyExcerpt(page);
+      const searchValue = await page
+        .getByPlaceholder(/Tìm tên bác sĩ/i)
+        .inputValue()
+        .catch(() => "");
+      throw new Error(
+        `doctors route UI did not render created doctor ${state.doctorEmail}: ${JSON.stringify(
+          {
+            apiSummary,
+            searchValue,
+            bodyExcerpt,
+            originalError: error instanceof Error ? error.message : String(error),
+          },
+          null,
+          2,
+        )}`,
+      );
+    }
   }
 }
 
@@ -286,9 +355,40 @@ async function assertDoctorApprovalRoute(page, state) {
     .getByRole("heading", { name: /Duyệt tài khoản bác sĩ/i })
     .waitFor({ state: "visible", timeout: 15_000 });
   if (state.doctorEmail) {
+    const apiResponse = await apiFetch(page, "/admin/doctor-requests?status=approved");
+    const apiSummary = summarizeDoctorRequestPayload(apiResponse.payload, state.doctorEmail);
+    if (!apiSummary.foundInApi) {
+      throw new Error(
+        `doctor approval API did not return approved doctor ${state.doctorEmail}: ${JSON.stringify(
+          apiSummary,
+          null,
+          2,
+        )}`,
+      );
+    }
     await page.getByRole("tab", { name: /Đã duyệt/i }).click();
     await page.getByPlaceholder(/Tìm tên, email, UID/i).fill(state.doctorEmail);
-    await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+    try {
+      await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+    } catch (error) {
+      const bodyExcerpt = await getBodyExcerpt(page);
+      const searchValue = await page
+        .getByPlaceholder(/Tìm tên, email, UID/i)
+        .inputValue()
+        .catch(() => "");
+      throw new Error(
+        `doctor approval UI did not render approved doctor ${state.doctorEmail}: ${JSON.stringify(
+          {
+            apiSummary,
+            searchValue,
+            bodyExcerpt,
+            originalError: error instanceof Error ? error.message : String(error),
+          },
+          null,
+          2,
+        )}`,
+      );
+    }
   }
 }
 
@@ -890,16 +990,22 @@ async function main() {
       ["/audit-log", "audit log"],
     ]) {
       const routeCheck = await visitRoute(page, href, label);
-      if (href === "/account") {
-        await assertAccountRoute(page);
-      } else if (href === "/admin-accounts") {
-        await assertAdminAccountsRoute(page, state);
-      } else if (href === "/doctors") {
-        await assertDoctorsRoute(page, state);
-      } else if (href === "/doctor-approval") {
-        await assertDoctorApprovalRoute(page, state);
-      } else if (href === "/ai-measurements") {
-        await assertAiMeasurementsRoute(page, state);
+      try {
+        if (href === "/account") {
+          await assertAccountRoute(page);
+        } else if (href === "/admin-accounts") {
+          await assertAdminAccountsRoute(page, state);
+        } else if (href === "/doctors") {
+          await assertDoctorsRoute(page, state);
+        } else if (href === "/doctor-approval") {
+          await assertDoctorApprovalRoute(page, state);
+        } else if (href === "/ai-measurements") {
+          await assertAiMeasurementsRoute(page, state);
+        }
+      } catch (error) {
+        throw new Error(
+          `${label} route assertion failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       routeChecks.push(routeCheck);
     }

@@ -152,6 +152,9 @@ async function main() {
   const approvedDoctors = await repositories.users.listApprovedDoctors();
   assert.equal(approvedDoctors.some((doctor) => doctor.id === "user_portal"), true);
   assert.equal(approvedDoctors.some((doctor) => doctor.id === "user_runtime_doctor"), true);
+  const approvedDoctorRequests = await repositories.users.listDoctorRequests("approved");
+  assert.equal(approvedDoctorRequests.some((doctor) => doctor.id === "user_portal"), true);
+  assert.equal(approvedDoctorRequests.some((doctor) => doctor.id === "user_runtime_doctor"), true);
   await repositories.patients.save({
     id: "patient_stale_owner",
     patientCode: "STALE-OWNER",

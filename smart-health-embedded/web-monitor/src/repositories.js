@@ -934,6 +934,8 @@ function createRepositories(options) {
     },
 
     async listDoctorRequests(status) {
+      const runtimeUsers = getDb()
+        .users.filter((user) => matchesDoctorRequestStatus(user, status));
       const sqlUsers = await withSql(async (pool) => {
         const params = [];
         let where = "requested_role = 'doctor'";
@@ -951,14 +953,14 @@ function createRepositories(options) {
         );
         return result.rows.map(rowToUser);
       });
-      if (sqlUsers && sqlUsers.length > 0) {
+      if (sqlUsers) {
         for (const user of sqlUsers) {
           syncArrayItem(getDb().users, user);
         }
-        return sqlUsers;
+        return mergeSqlListWithRuntime(runtimeUsers, sqlUsers)
+          .sort((a, b) => String(b.roleRequestedAt || b.createdAt || "").localeCompare(String(a.roleRequestedAt || a.createdAt || "")));
       }
-      return getDb()
-        .users.filter((user) => matchesDoctorRequestStatus(user, status))
+      return runtimeUsers
         .sort((a, b) => String(b.roleRequestedAt || b.createdAt || "").localeCompare(String(a.roleRequestedAt || a.createdAt || "")));
     },
 

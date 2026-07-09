@@ -93,6 +93,12 @@ const ADMIN_MENU_ITEMS = [
     capabilities: ["platform.devices.view", "platform.devices.manage"],
   },
   {
+    path: "/ai-measurements",
+    label: "Lượt đo & AI",
+    icon: Activity,
+    capabilities: ["platform.scans.view", "platform.scans.manage"],
+  },
+  {
     path: "/admin-actions",
     label: "Hành động quản trị",
     icon: ShieldCheck,

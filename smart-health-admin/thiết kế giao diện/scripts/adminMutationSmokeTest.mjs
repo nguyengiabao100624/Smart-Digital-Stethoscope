@@ -327,7 +327,10 @@ async function assertDoctorsRoute(page, state) {
     }
     await page.getByPlaceholder(/Tìm tên bác sĩ/i).fill(state.doctorEmail);
     try {
-      await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+      await page
+        .getByText(state.doctorEmail)
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 });
     } catch (error) {
       const bodyExcerpt = await getBodyExcerpt(page);
       const searchValue = await page
@@ -369,7 +372,10 @@ async function assertDoctorApprovalRoute(page, state) {
     await page.getByRole("tab", { name: /Đã duyệt/i }).click();
     await page.getByPlaceholder(/Tìm tên, email, UID/i).fill(state.doctorEmail);
     try {
-      await page.getByText(state.doctorEmail).first().waitFor({ state: "visible", timeout: 15_000 });
+      await page
+        .getByText(state.doctorEmail)
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 });
     } catch (error) {
       const bodyExcerpt = await getBodyExcerpt(page);
       const searchValue = await page

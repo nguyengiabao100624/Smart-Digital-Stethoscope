@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
 
@@ -29,7 +29,15 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Backend `web-monitor` now has scan reprocess/delete lifecycle support with artifact cleanup, repository-backed scan delete, audit events, and workspace smoke coverage for create -> audio chunk upload -> complete -> reprocess -> delete.
 - Security follow-up from the new smoke: selected-scan-only doctor grants can no longer manage a sibling scan through broad patient access. `canManageScan` now uses scan-level access, and doctor/admin scan creation for an existing patient rejects selected-scan-only grants before creating a new sibling scan.
 - Verification passed locally: backend `node --check .\server.js`, backend `node --check .\scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, backend `npm.cmd run smoke:repositories`, Web Admin `node --check .\scripts\adminMutationSmokeTest.mjs`, Web Admin `npm.cmd run lint`, and Web Admin `npm.cmd run build:firebase:admin`.
-- Not deployed in this slice. Do not run the expanded live `smoke:admin-mutation` against Render until the backend containing `/api/v1/scans/:id/reprocess` and `DELETE /api/v1/scans/:id` is deployed; otherwise live Web Admin will still be on the old route contract.
+- Initial source slice was not deployed at that moment; see the 2026-07-10 live closure below for the completed Render/Firebase deploy and expanded live smoke pass.
+
+## 2026-07-10 - Web Admin expanded mutation smoke live closure
+
+- The source-only warning above is now resolved. Commits pushed to `origin/main`: `f79d6cba` wired admin scan lifecycle operations, `56f3c3f8` fixed approved-doctor repository list parity, `6e9a14b3` fixed approved doctor-request repository list parity, and `31fe2ebf` allowed platform admins to access `/ai-measurements`.
+- Root causes found by live smoke: repository-backed `listApprovedDoctors()` and `listDoctorRequests()` returned SQL-only rows when SQL had any rows, hiding newly-created runtime/API doctors from Web Admin route assertions; Web Admin route guard exposed platform scan capabilities in Overview but did not include a Platform Admin menu/access rule for `/ai-measurements`.
+- Fixes: repository list APIs now merge SQL rows with runtime rows before sorting; `smoke:repositories` covers runtime approved doctors in both approved-doctor and approved-request lists; `adminMutationSmokeTest.mjs` now labels route assertion failures and captures API/DOM summaries for doctors/Doctor Approval; Web Admin platform navigation includes `Lượt đo & AI` with `platform.scans.view/manage`.
+- Deploys verified: Render auto-deployed the backend behavior by live canary; Web Admin Firebase Hosting `shcare-admin` is live at version `projects/162993928259/sites/shcare-admin/versions/c6371f255aa5f85f`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783635730840000`.
+- Final live smoke passed: `npm.cmd run smoke:admin-mutation` run `admin-mutation-mre2pt6i` against `https://shcare-admin.web.app` and `https://smart-health-api-r5is.onrender.com/api` mutated workspace, package, admin account, patient, device, doctor, scan/audio/reprocess, notification, storage bucket, and settings; checked overview, account, devices, patients, doctors, doctor approval, AI measurements, clinics, packages, notifications, storage, settings, admin accounts, and audit log; cleanup returned HTTP 200 for all 10 targets.
 
 ## 2026-07-09 - Web Admin production backend guard and live redeploy
 

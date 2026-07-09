@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -32,7 +32,17 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Security hardening closed a selected-scan grant escalation found by the smoke: scan mutations now require `canAccessScan`, and doctor/admin scan creation for an existing patient rejects selected-scan-only grants before a sibling scan can be created.
 - Smoke coverage now exercises create -> PCM chunk upload -> complete -> reprocess -> delete and negative selected-scan/viewer cases in `smoke:workspace-access`; Web Admin mutation smoke source now includes admin accounts, doctors, Doctor Approval, and AI Measurements route/action contracts.
 - Verification passed locally: backend `node --check .\server.js`, backend `node --check .\scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, backend `npm.cmd run smoke:repositories`, Web Admin `node --check .\scripts\adminMutationSmokeTest.mjs`, Web Admin `npm.cmd run lint`, and Web Admin `npm.cmd run build:firebase:admin`.
-- Remaining follow-up: deploy the backend source before running expanded live `npm.cmd run smoke:admin-mutation`, because live Render must have `/api/v1/scans/:id/reprocess` and `DELETE /api/v1/scans/:id` first.
+- Follow-up completed on 2026-07-10: backend and Web Admin were deployed and expanded live `npm.cmd run smoke:admin-mutation` passed; see the deployed/live entry below.
+
+## Completed deployed/live - 2026-07-10 Web Admin AI/doctor approval/admin mutation closure
+
+- Deployed the Web Admin AI Measurements, Doctor Approval, admin account, doctor, scan reprocess/delete, and route assertion smoke expansion against the active Render backend `smart-health-api-r5is`.
+- Fixed two repository-backed production parity bugs found by live smoke: approved doctor list and approved doctor-request list now merge SQL rows with runtime-created rows instead of returning SQL-only data when SQL has any rows.
+- Fixed the Platform Admin route/menu gap for AI Measurements: `/ai-measurements` is now visible and allowed for `platform.scans.view` / `platform.scans.manage`, matching backend capabilities and Overview route links.
+- Verification passed: backend `smoke:repositories`, backend `check`, backend `smoke:workspace-access`, Web Admin `node --check` for `adminMutationSmokeTest.mjs`, Web Admin `lint`, Web Admin `build:firebase:admin`, live backend doctor/doctor-request canary with cleanup, live AI route Playwright probe, and full live `smoke:admin-mutation`.
+- Final smoke evidence: run id `admin-mutation-mre2pt6i`; mutations covered workspace, package, admin account, patient, device, doctor, scan/audio/reprocess, notification, storage bucket, and settings; routes covered overview, account, devices, patients, doctors, doctor approval, AI measurements, clinics, packages, notifications, storage, settings, admin accounts, and audit log; cleanup returned HTTP 200 for all 10 created/restored targets.
+- Pushed commits: `f79d6cba`, `56f3c3f8`, `6e9a14b3`, `31fe2ebf`. Firebase Hosting Web Admin live version `projects/162993928259/sites/shcare-admin/versions/c6371f255aa5f85f`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783635730840000`.
+- Remaining backlog after this closure is outside the Web Admin smoke slice: real physical ESP32-S3 proof, Android runtime proof on a stable emulator/device, Brevo/SMS/Zalo real delivery, MQTT/Redis production decisions, provider-env object-storage proof, and real inbox click-through.
 
 ## Completed deployed/live - 2026-07-09 Web Admin production backend guard
 

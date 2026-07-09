@@ -26,7 +26,7 @@ Web Admin current live deploy after the same migration: Firebase Hosting site `s
 
 Web Admin now has controlled live destructive mutation coverage through `npm.cmd run smoke:admin-mutation` in `smart-health-admin\thiết kế giao diện`. It signs into `https://shcare-admin.web.app`, mutates live Render data with unique test IDs, and cleans up settings, notification, storage bucket, device, patient, package, and workspace records.
 
-2026-07-09 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` after the workspace-summary follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`, and a targeted Playwright visual QA pass after the portal density/search-field deploy.
+2026-07-09 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` after the workspace-summary follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`, and targeted Playwright visual QA after the portal density/search-field deploy. A follow-up density sweep checked 19 portal routes for overflow, H1/input/button/search sizing, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
 
 2026-07-09 Android account/family/workspace backend contract coverage: `smoke:workspace-access` now also covers the patient Android path for family profile create/update/delete, consent history, password change, 2FA setup, auth session list/revoke, revoked-token denial, and a joined doctor workspace switch through `/api/v1/me`. For this slice, use:
 
@@ -100,8 +100,11 @@ Prerequisite: refresh temporary smoke credentials first when needed:
 cd D:\Study\KLTN\smart-health-embedded\web-monitor
 $env:FIREBASE_PROJECT_ID="smart-health-stethoscope"
 $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json"
+$env:PUBLIC_BACKEND_URL="https://smart-health-api-r5is.onrender.com"
 npm.cmd run smoke:production-roles
 ```
+
+Set `PUBLIC_BACKEND_URL` explicitly in this workspace. If omitted, `smoke:production-roles` can read a web/admin env URL and receive Firebase Hosting HTML instead of backend JSON.
 
 `smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. The workspace switcher route smoke asserts workspace cards, numeric patient/device/alert summaries, and an active workspace card. The consent route smoke asserts patient/target/scope/expiry/share-submit controls plus selected-scan scope UI. The settings route smoke asserts profile, security/password/session/2FA, notification, and workspace controls. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
 

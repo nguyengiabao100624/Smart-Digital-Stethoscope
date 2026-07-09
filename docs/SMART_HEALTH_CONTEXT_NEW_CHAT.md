@@ -32,6 +32,17 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Visual QA measured portal titles at `21.44px`, search inputs at `44px` height, `14px` input text, `43.2px` left padding, about `12.809px` icon-to-text gap, and zero horizontal overflow on checked desktop/mobile viewports.
 - Commit `ff9adec5` was pushed to `origin/main` and deployed to Firebase Hosting target `webapp`: version `projects/162993928259/sites/shcare/versions/a1b568cf873aac0d`, release `projects/162993928259/sites/shcare/channels/live/releases/1783594254847000`.
 - Post-deploy verification passed: backend/public `npm.cmd run smoke:public-deployment`, live `bun run smoke:portal-browser` without local CORS bypass, and live visual Playwright measurement on `https://shcare.web.app` with the same density/search metrics and no severe console errors.
+- Follow-up live density sweep checked 19 portal routes on `https://shcare.web.app` for horizontal overflow, H1 scale, portal input/search/button dimensions, search icon gap, logo image loading, and severe console/page errors. It passed with `checked=19`, `failing=[]`, `severe=[]`.
+
+## 2026-07-09 - Provider/device validation re-probe after portal UI deploy
+
+- Backend/local provider smoke pass: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:storage`, `npm.cmd run smoke:notification-push`, `npm.cmd run smoke:api-production`, `npm.cmd run smoke:workspace-access`, and `npm.cmd run smoke:repositories`.
+- Live/provider smoke pass: `npm.cmd run smoke:public-deployment`, Firebase email verification link generation with local Firebase Admin env, `npm.cmd run smoke:production-roles` with `PUBLIC_BACKEND_URL=https://smart-health-api-r5is.onrender.com`, `npm.cmd run smoke:portal-production`, and live `bun run smoke:portal-browser`.
+- `npm.cmd run smoke:mqtt` skipped because `MQTT_URL` is not set. Workspace-access notification email fanout skipped Brevo sends because `BREVO_API_KEY` and `BREVO_FROM_EMAIL` are not configured in this shell.
+- Local production readiness remains blocked in this shell: `npm.cmd run check:production` reported `BLOCKED` with pass=3, warn=6, fail=7, manual=2; strict mode exited nonzero as expected. This reflects missing local production envs, not a failed live Render/Firebase API smoke.
+- Android source/build pass: `.\gradlew.bat :app:compileDebugKotlin`, `.\gradlew.bat :app:assembleDebug`, and `.\gradlew.bat :app:testDebugUnitTest`.
+- Firmware build pass: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run` passed both `esp32-s3-devkitm-1` and `esp32-s3-ota`.
+- Hardware/provider blockers remain: `adb.exe` exists under the Android SDK but `adb devices` showed no attached device; `platformio device list` showed no ESP32-S3 serial device; backend `web-monitor` has no production `.env` file with S3/Postgres/PHI/MQTT provider secrets; Gmail inbox click-through still needs an authenticated mailbox/session.
 
 ## 2026-07-09 - Android workspace switcher and dashboard context
 

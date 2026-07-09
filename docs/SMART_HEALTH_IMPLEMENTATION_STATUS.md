@@ -58,6 +58,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Local browser smoke passed with `SMART_HEALTH_WEB_URL=http://localhost:8087`, Render API `https://smart-health-api-r5is.onrender.com/api`, and `SMOKE_DISABLE_WEB_SECURITY=1`.
 - Local and live Playwright visual QA measured Patients, Records, Audit, and Help: title size `21.44px`, input height `44px`, input font `14px`, input left padding `43.2px`, icon-to-text gap about `12.809px`, and `overflowX=0` on checked desktop/mobile viewports.
 - Live verification passed on `https://shcare.web.app`: `npm.cmd run smoke:public-deployment`, live `bun run smoke:portal-browser` without local CORS bypass, and live visual QA with no severe console errors.
+- Follow-up live portal density sweep checked 19 routes for horizontal overflow, H1 sizing, portal input/search/button dimensions, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
 
 ### Production Follow-Up
 
@@ -67,6 +68,24 @@ This file records the real project state. Keep it factual: implemented, partial,
 ### Remaining Limits
 
 - This closes the portal density/search-input visual regression slice. It does not close unrelated provider/device evidence: real Android FCM delivery, real inbox click-through, production object-storage provider proof, and physical MSM261 board validation remain separate blockers.
+
+## 2026-07-09 Provider/Device Validation Re-Probe After Portal UI Deploy
+
+### Verification
+
+- Backend/source checks passed: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, and `npm.cmd run smoke:repositories`.
+- Provider-adjacent/local smokes passed: `npm.cmd run smoke:storage`, `npm.cmd run smoke:notification-push`, Firebase email verification link smoke with local Firebase Admin env, and `npm.cmd run smoke:api-production`.
+- Live smokes passed: `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles` with `PUBLIC_BACKEND_URL=https://smart-health-api-r5is.onrender.com`, `npm.cmd run smoke:portal-production`, and live Shcare Web `bun run smoke:portal-browser`.
+- Android source/build checks passed: `.\gradlew.bat :app:compileDebugKotlin`, `.\gradlew.bat :app:assembleDebug`, and `.\gradlew.bat :app:testDebugUnitTest`.
+- Firmware build passed: PlatformIO `run` for `esp32-s3-devkitm-1` and `esp32-s3-ota`.
+
+### Blockers
+
+- `npm.cmd run smoke:mqtt` skipped because `MQTT_URL` is not set.
+- Local `npm.cmd run check:production` and strict mode remain `BLOCKED` in this shell because production envs are not loaded here: auth mode/Firebase Admin/public backend URL/Postgres/S3/PHI/Brevo/MQTT. Live Render/Firebase smokes above still passed.
+- `adb.exe` is present under the Android SDK, but `adb devices` showed no attached Android device, so real Android FCM and emulator/device visual proof are not closed.
+- `platformio device list` showed no ESP32-S3 serial device, so physical WiFi/audio/cloud command/OTA validation is not closed.
+- `smart-health-embedded/web-monitor` has only `.env.example`; no backend production `.env` with S3/Postgres/PHI provider secrets is available in this workspace shell. Gmail inbox click-through still needs an authenticated mailbox/session.
 
 ## 2026-07-09 Shcare Portal Workspace Summary Contract
 

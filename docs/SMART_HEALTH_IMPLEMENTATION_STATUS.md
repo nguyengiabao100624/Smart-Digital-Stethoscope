@@ -129,6 +129,28 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 - This closes Android UI-to-backend 2FA setup state. Real OTP provider challenge/enforcement is still a backend/provider follow-up, and visual UI proof still needs an emulator or physical Android device.
 
+## 2026-07-09 Android Privacy Auth Session Management
+
+### Implemented
+
+- Added Android `AuthSession` model support and `SmartHealthApi.listAuthSessions()` / `SmartHealthApi.revokeAuthSession()` for backend `/api/v1/auth/sessions`.
+- Extended Android `PrivacyScreen.kt` with a backend-backed "Phiên đăng nhập" section that loads sessions, shows loading/empty state, marks the current session, and lets the user revoke non-current sessions.
+- Hardened backend demo auth fallback in `server.js`: a request carrying an invalid/revoked bearer token now returns unauthenticated instead of falling back to the default platform admin demo user.
+- Expanded `scripts/workspaceAccessSmokeTest.js` to create a second patient session, list patient sessions, revoke the non-current session, and verify the revoked token is rejected by `/api/v1/me`.
+
+### Verification
+
+- Backend `node --check server.js` passed.
+- Backend `node --check scripts\workspaceAccessSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+- Backend `npm.cmd run check` passed.
+- Android `.\gradlew.bat :app:compileDebugKotlin` passed.
+- Android `.\gradlew.bat :app:assembleDebug` passed.
+
+### Remaining Limits
+
+- This closes source/build/backend-contract coverage for Android account sessions. Real Android visual/runtime proof still needs an attached emulator or physical device, and broader account-session UX on every role should remain part of future browser/emulator QA breadth.
+
 ## 2026-07-09 Android Patient Data Access Consent History
 
 ### Implemented
@@ -914,13 +936,13 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Global route transitions are implemented via `ui/motion/SmartHealthMotion.kt` and wired into `AppNavGraph.kt` with Navigation Compose enter/exit/pop transitions.
 - Live audio client connects to backend WebSocket for demo audio playback and metrics.
 - Live audio client sends the current API bearer token on the WebSocket request when available, and Android device screens now parse/use backend cloud device fields (`online`, WiFi RSSI/SSID/IP, firmware, OTA status, audio status) instead of assuming Bluetooth/local status.
-- API wrapper has endpoints for auth, role requests, settings, notifications, access logs, devices, AI, exports, patients, and scans.
+- API wrapper has endpoints for auth, auth sessions, role requests, settings, notifications, access logs, devices, AI, exports, patients, and scans.
 - API wrapper now includes patient share endpoints. `Patient` includes `profileType` and `relationship`.
 - New Scan loads patient profiles, lets the user add a dependent/family profile, and starts scans with the selected profile id.
 - Medical Records can share a selected scan/profile to a doctor/workspace id through the backend sharing endpoint.
 - Android push notification foundation is now real: the app requests notification permission on Android 13+, gets FCM tokens, registers them to backend notification devices after auth, and has a `FirebaseMessagingService` for refreshed tokens/messages.
 - Notification settings load and save per-user backend preferences through `/api/me` instead of local-only Compose state.
-- Profile avatar upload/delete, profile save, Firebase password reset, and Firebase password change are wired to real backend/Firebase APIs.
+- Profile avatar upload/delete, profile save, Firebase password reset, password change with backend audit, 2FA setup-state, and auth session list/revoke are wired to real backend/Firebase APIs.
 - Phone/SMS login remains unavailable until a real SMS provider is configured, and the UI now states that clearly instead of simulating OTP.
 
 ### Known Android Limits

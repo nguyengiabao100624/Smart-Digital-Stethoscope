@@ -187,6 +187,18 @@ data class TwoFactorUpdateResult(
     val note: String = ""
 )
 
+data class AuthSession(
+    val id: String = "",
+    val provider: String = "",
+    val device: String = "",
+    val userAgent: String = "",
+    val ip: String = "",
+    val current: Boolean = false,
+    val createdAt: String = "",
+    val lastSeenAt: String = "",
+    val revokedAt: String? = null
+)
+
 data class ClinicOption(
     val id: String,
     val name: String,

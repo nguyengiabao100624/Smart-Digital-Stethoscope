@@ -549,6 +549,30 @@ async function runScenario() {
     body: JSON.stringify({ action: "disable" }),
   });
   assert.equal(disabledTwoFactor.twoFactor.enabled, false);
+  const patientSecondLogin = await expectLoginPassword(
+    "patient opens a second backend auth session",
+    "patient@alpha.test",
+    "12345678",
+    200,
+  );
+  const patientSecondSession = {
+    user: patientSecondLogin.user,
+    headers: { Authorization: `Bearer ${patientSecondLogin.token}` },
+  };
+  const patientSessions = await expectStatus("patient lists own auth sessions", patient, "/api/v1/auth/sessions", 200);
+  const currentPatientSession = patientSessions.sessions.find((item) => item.current === true);
+  const secondaryPatientSession = patientSessions.sessions.find((item) => item.current !== true && !item.revokedAt);
+  assert.ok(currentPatientSession);
+  assert.ok(secondaryPatientSession);
+  const revokedPatientSession = await expectStatus(
+    "patient revokes another auth session",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
+    200,
+    { method: "POST" },
+  );
+  assert.equal(Boolean(revokedPatientSession.session.revokedAt), true);
+  await expectStatus("revoked patient session cannot access account", patientSecondSession, "/api/v1/me", 401);
   await expectStatus("patient changes backend account password", patient, "/api/v1/me/password", 200, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

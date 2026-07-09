@@ -4224,6 +4224,9 @@ function getRequestUser(req) {
     attachActor(req, req.authUser);
     return req.authUser;
   }
+  if (getBearerToken(req)) {
+    return null;
+  }
   return AUTH_MODE === "production" ? null : getCurrentUser();
 }
 

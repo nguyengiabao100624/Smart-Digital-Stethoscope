@@ -73,6 +73,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `npm.cmd run smoke:workspace-access`, and backend `npm.cmd run check`.
 - Remaining validation: real OTP provider/enforcement and native BiometricPrompt are not implemented in this slice; both require provider/runtime work beyond backend setup state.
 
+## Completed source/build/backend smoke - 2026-07-09 Android Privacy auth session management
+
+- Added Android `AuthSession` parsing and API calls for backend `/api/v1/auth/sessions` list/revoke.
+- Extended Android Privacy with a real account-session section: load sessions, current-session badge, backend revoke action for non-current sessions, and loading/empty states.
+- Hardened backend demo auth fallback so invalid/revoked bearer tokens no longer become the default platform admin user in demo mode.
+- Expanded `smoke:workspace-access` to open a second patient session, list sessions, revoke the non-current one, and verify the revoked token cannot access `/api/v1/me`.
+- Verification passed: backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, Android `.\gradlew.bat :app:compileDebugKotlin`, and Android `.\gradlew.bat :app:assembleDebug`.
+- Remaining validation: run the Privacy screen on an emulator or physical Android device with real credentials; provider/device validation is still blocked without attached Android hardware/runtime.
+
 ## Completed source/build/backend smoke - 2026-07-09 Android Data Access consent history
 
 - Replaced Android Data Access local-only privacy switches with a backend-backed consent ledger.

@@ -136,6 +136,20 @@ class SmartHealthApi(
         parseAuthUser(getJson("$baseUrl/me").getJSONObject("user"))
     }
 
+    suspend fun listAuthSessions(): List<AuthSession> = withContext(Dispatchers.IO) {
+        getJson("$baseUrl/auth/sessions")
+            .optJSONArray("sessions")
+            .orEmpty()
+            .map(::parseAuthSession)
+    }
+
+    suspend fun revokeAuthSession(sessionId: String): AuthSession = withContext(Dispatchers.IO) {
+        parseAuthSession(
+            postJson("$baseUrl/auth/sessions/${sessionId.urlEncode()}/revoke", JSONObject())
+                .getJSONObject("session")
+        )
+    }
+
     suspend fun updateMe(fields: JSONObject): AuthUser = withContext(Dispatchers.IO) {
         parseAuthUser(patchJson("$baseUrl/me", fields).getJSONObject("user"))
     }
@@ -559,6 +573,20 @@ class SmartHealthApi(
             twoFactorSecretPreview = json.optString("twoFactorSecretPreview"),
             createdAt = json.stringOrNull("createdAt"),
             updatedAt = json.stringOrNull("updatedAt")
+        )
+    }
+
+    private fun parseAuthSession(json: JSONObject): AuthSession {
+        return AuthSession(
+            id = json.optString("id"),
+            provider = json.optString("provider"),
+            device = json.optString("device"),
+            userAgent = json.optString("userAgent"),
+            ip = json.optString("ip"),
+            current = json.optBoolean("current"),
+            createdAt = json.optString("createdAt"),
+            lastSeenAt = json.optString("lastSeenAt"),
+            revokedAt = json.stringOrNull("revokedAt")
         )
     }
 

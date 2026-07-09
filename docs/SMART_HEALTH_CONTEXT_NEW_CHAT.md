@@ -58,6 +58,14 @@ When a change touches product behavior, check the cross-surface contract: backen
 - `workspaceAccessSmokeTest.js` now verifies patient backend 2FA enable/disable and recovery-code response in the temporary JSON backend.
 - Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `npm.cmd run smoke:workspace-access`, and backend `npm.cmd run check`. Real OTP provider/enforcement is still a backend/provider follow-up; this slice closes Android UI-to-backend setup, not full OTP challenge enforcement.
 
+## 2026-07-09 - Android Privacy auth session management
+
+- Follow-up in Android `PrivacyScreen.kt` found account sessions were available in backend and Shcare Portal settings through `/api/v1/auth/sessions`, but Android Privacy had no session list/revoke UI.
+- `SmartHealthApi.kt` now exposes `listAuthSessions()` and `revokeAuthSession(sessionId)`; `SmartHealthModels.kt` adds `AuthSession`; `PrivacyScreen.kt` loads backend sessions, shows current-session and revoke states, and revokes non-current sessions through the backend.
+- Backend demo auth fallback was hardened in `server.js`: if a request sends a bearer token that is invalid, expired, or revoked, `requireUser()` no longer falls back to the default platform admin user. Demo fallback is retained only for requests without any bearer token.
+- `workspaceAccessSmokeTest.js` now opens a second patient session, lists the patient's sessions, revokes the non-current session, and verifies the revoked token cannot access `/api/v1/me`.
+- Verification passed: backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, Android `.\gradlew.bat :app:compileDebugKotlin`, and Android `.\gradlew.bat :app:assembleDebug`. Real Android visual/runtime proof still needs an attached emulator or physical device.
+
 ## 2026-07-09 - Shcare Portal consent/share live follow-up
 
 - Source follow-up after the broader completeness audit found `/portal/consent` had backend share APIs but weak browser workflow coverage. `smart-health-web/src/app/pages/portal/InvitationsPage.tsx` now supports patient selection, doctor/workspace target selection, full-profile vs selected-scan scope, optional expiry, friendly target labels, active share list, and revoke controls backed by `/api/share-targets` plus `/api/portal/patients/:id/shares`.

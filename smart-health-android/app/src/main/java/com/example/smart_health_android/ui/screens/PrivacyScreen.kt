@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smart_health_android.data.AuthSession
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
@@ -38,8 +39,11 @@ fun PrivacyScreen(
     var twoFactorMethod by remember { mutableStateOf("") }
     var twoFactorSecretPreview by remember { mutableStateOf("") }
     var recoveryCodes by remember { mutableStateOf<List<String>>(emptyList()) }
+    var sessions by remember { mutableStateOf<List<AuthSession>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isLoadingSessions by remember { mutableStateOf(true) }
     var isSavingTwoFactor by remember { mutableStateOf(false) }
+    var revokingSessionId by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var securityNotice by remember {
         mutableStateOf("Sinh trắc học và 2FA trên app sẽ được bật khi nối native biometric/SMS provider thật.")
@@ -55,6 +59,17 @@ fun PrivacyScreen(
             "Cấu hình 2FA backend đang bật qua $methodLabel. OTP provider thật vẫn cần được kích hoạt ở hạ tầng."
         } else {
             "2FA đang tắt. Bật 2FA sẽ lưu cấu hình bảo mật trên backend và cấp mã khôi phục."
+        }
+    }
+
+    suspend fun refreshSessions() {
+        isLoadingSessions = true
+        try {
+            sessions = SmartHealthRepository.api.listAuthSessions()
+        } catch (error: Exception) {
+            errorMessage = error.toVietnameseMessage("Không thể tải phiên đăng nhập")
+        } finally {
+            isLoadingSessions = false
         }
     }
 
@@ -79,8 +94,26 @@ fun PrivacyScreen(
         }
     }
 
+    fun revokeSession(session: AuthSession) {
+        if (session.current || !session.revokedAt.isNullOrBlank() || revokingSessionId != null) return
+        revokingSessionId = session.id
+        errorMessage = null
+        coroutineScope.launch {
+            try {
+                SmartHealthRepository.api.revokeAuthSession(session.id)
+                refreshSessions()
+                securityNotice = "Đã thu hồi phiên đăng nhập ${session.device.ifBlank { "khác" }}."
+            } catch (error: Exception) {
+                errorMessage = error.toVietnameseMessage("Không thể thu hồi phiên đăng nhập")
+            } finally {
+                revokingSessionId = null
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         isLoading = true
+        isLoadingSessions = true
         errorMessage = null
         runCatching {
             val user = SmartHealthRepository.api.getMe()
@@ -88,6 +121,7 @@ fun PrivacyScreen(
         }.onFailure {
             errorMessage = it.toVietnameseMessage("Không thể tải cấu hình bảo mật")
         }
+        refreshSessions()
         isLoading = false
     }
 
@@ -204,7 +238,55 @@ fun PrivacyScreen(
                 }
             }
 
-            // Section 2: Mật Khẩu
+            // Section 2: Phiên Đăng Nhập
+            Column {
+                Text("PHIÊN ĐĂNG NHẬP", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(16.dp))
+                        .border(1.dp, Border, RoundedCornerShape(16.dp))
+                ) {
+                    when {
+                        isLoadingSessions -> {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = PrimaryTeal,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("Đang tải phiên đăng nhập", color = TextSecondary, fontSize = 14.sp)
+                            }
+                        }
+                        sessions.isEmpty() -> {
+                            Text(
+                                "Chưa có phiên đăng nhập nào được backend ghi nhận cho tài khoản này.",
+                                color = TextSecondary,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                        else -> {
+                            sessions.forEachIndexed { index, session ->
+                                PrivacySessionRow(
+                                    session = session,
+                                    isRevoking = revokingSessionId == session.id,
+                                    showDivider = index < sessions.lastIndex,
+                                    onRevoke = { revokeSession(session) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section 3: Mật Khẩu
             Column {
                 Text("MẬT KHẨU", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
                 Column(
@@ -267,7 +349,7 @@ fun PrivacyScreen(
                 }
             }
 
-            // Section 3: Quyền Riêng Tư
+            // Section 4: Quyền Riêng Tư
             Column {
                 Text("QUYỀN RIÊNG TƯ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
                 Column(
@@ -328,6 +410,97 @@ fun PrivacyScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+fun PrivacySessionRow(
+    session: AuthSession,
+    isRevoking: Boolean,
+    showDivider: Boolean,
+    onRevoke: () -> Unit
+) {
+    val isRevoked = !session.revokedAt.isNullOrBlank()
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(PrimaryBlue.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Smartphone, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        session.device.ifBlank { "Smart Health" },
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 20.sp,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (session.current) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF10B981).copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text("Hiện tại", color = Color(0xFF047857), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    listOf(
+                        session.provider.ifBlank { "backend" },
+                        session.ip.ifBlank { "không rõ IP" },
+                        session.lastSeenAt.ifBlank { session.createdAt }.ifBlank { "chưa có thời gian" }
+                    ).joinToString(" • "),
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            when {
+                session.current -> {
+                    Text("Đang dùng", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+                isRevoked -> {
+                    Text("Đã thu hồi", color = Color(0xFFD97706), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+                else -> {
+                    TextButton(
+                        onClick = onRevoke,
+                        enabled = !isRevoking,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        if (isRevoking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = PrimaryTeal,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Thu hồi", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+        if (showDivider) {
+            HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
         }
     }
 }

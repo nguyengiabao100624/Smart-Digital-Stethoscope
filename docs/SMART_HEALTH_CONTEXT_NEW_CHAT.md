@@ -66,6 +66,14 @@ When a change touches product behavior, check the cross-surface contract: backen
 - `workspaceAccessSmokeTest.js` now opens a second patient session, lists the patient's sessions, revokes the non-current session, and verifies the revoked token cannot access `/api/v1/me`.
 - Verification passed: backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, Android `.\gradlew.bat :app:compileDebugKotlin`, and Android `.\gradlew.bat :app:assembleDebug`. Real Android visual/runtime proof still needs an attached emulator or physical device.
 
+## 2026-07-09 - Android family profile management
+
+- Follow-up after the patient/family contract work found Android could create dependent profiles only from New Scan, while Settings had no dedicated family-profile management surface.
+- Added `FamilyProfilesScreen.kt` and a Settings route for `Hồ sơ gia đình`. The screen lists backend patient/family profiles, edits existing profiles, creates dependent profiles, and deletes non-self dependent profiles through real backend patient APIs.
+- `SmartHealthApi.kt` now exposes `updatePatient()` and `deletePatient()` beside the existing patient list/create/share calls.
+- `workspaceAccessSmokeTest.js` now verifies a patient can create, update, delete, and no longer read a dependent family profile, while cross-workspace patient update remains forbidden.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin` and backend `node --check scripts\workspaceAccessSmokeTest.js` plus `npm.cmd run smoke:workspace-access`. Real visual/runtime proof still needs an attached emulator or physical Android device.
+
 ## 2026-07-09 - Shcare Portal consent/share live follow-up
 
 - Source follow-up after the broader completeness audit found `/portal/consent` had backend share APIs but weak browser workflow coverage. `smart-health-web/src/app/pages/portal/InvitationsPage.tsx` now supports patient selection, doctor/workspace target selection, full-profile vs selected-scan scope, optional expiry, friendly target labels, active share list, and revoke controls backed by `/api/share-targets` plus `/api/portal/patients/:id/shares`.

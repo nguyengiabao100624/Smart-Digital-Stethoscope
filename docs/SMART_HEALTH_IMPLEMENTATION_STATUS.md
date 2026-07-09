@@ -26,7 +26,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Storage admin | Partial production | Storage API supports bucket/file listing, upload, share URL, download, delete, audit, and workspace scoping. `smoke:workspace-access` now verifies share URL, authenticated local-object read, cross-workspace signed URL denial, direct download content, upload/list/download/delete, and post-delete 404 in JSON/local-object mode. Real S3/Supabase Storage provider smoke still needs provider envs loaded where the smoke runs. |
 | Notifications | Partial production | Notification list/read/delete works in app/admin/portal. Android registers FCM tokens to backend notification devices and saves per-user notification preferences. Backend now queues Firebase Cloud Messaging delivery for direct user notifications, records `pushStatus` separately from platform-admin email fanout, disables invalid/unregistered tokens, persists per-attempt `pushAttempts` history without raw tokens, and retries retryable FCM failures with bounded env controls. AI update notifications from both Android-facing and admin-facing settings endpoints are scoped to caller user/workspace. Real device/provider delivery smoke and workspace recipient policy are still incomplete. |
 | Android motion/animation | Real | Shared Compose motion layer is applied through `AppNavGraph.kt`, giving all routes consistent fade/slide/scale screen transitions. Element-level micro-interactions can still be expanded screen by screen later. |
-| Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Medical Records can share a scan/profile to a doctor/workspace, and Data Access now reads backend patient-share consent history and can revoke active grants. Full workspace switcher, dashboard-by-workspace, and polished family management screens are not complete. |
+| Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Settings now has a backend-backed family profile manager for list/create/update/delete of personal/dependent profiles. Medical Records can share a scan/profile to a doctor/workspace, and Data Access now reads backend patient-share consent history and can revoke active grants. Full workspace switcher and dashboard-by-workspace are not complete. |
 | Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. 2026-07-01 source fix wires `GET /api/v1/devices/:id/events` in the device route and tests own/cross-workspace access. 2026-07-06 source follow-up allows workspace users to self-claim provisioned same-workspace devices with claim codes while keeping arbitrary no-code creation behind device-management capability; Shcare Portal has a `/portal/devices/claim` route and mutation smoke coverage. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
 | Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. Android-facing AI chat/settings/update endpoints are now workspace-aware for history, settings persistence, and notifications. No real queue/model pipeline yet. |
@@ -150,6 +150,26 @@ This file records the real project state. Keep it factual: implemented, partial,
 ### Remaining Limits
 
 - This closes source/build/backend-contract coverage for Android account sessions. Real Android visual/runtime proof still needs an attached emulator or physical device, and broader account-session UX on every role should remain part of future browser/emulator QA breadth.
+
+## 2026-07-09 Android Family Profile Management
+
+### Implemented
+
+- Added `FamilyProfilesScreen.kt` so Android Settings now has a dedicated `Hồ sơ gia đình` surface instead of forcing family/dependent profile management through New Scan only.
+- Added Android `SmartHealthApi.updatePatient()` and `SmartHealthApi.deletePatient()` for backend `PATCH /api/v1/patients/:id` and `DELETE /api/v1/patients/:id`.
+- Updated `SettingsScreen.kt` and `AppNavGraph.kt` to expose the new route from the account settings group.
+- The new screen loads backend profiles, shows self/dependent rows, supports create/update through the backend, and disables self-profile deletion while allowing dependent-profile deletion.
+- Expanded `scripts/workspaceAccessSmokeTest.js` to verify patient dependent profile create/update/delete, deleted-profile 404, and cross-workspace update denial.
+
+### Verification
+
+- Android `.\gradlew.bat :app:compileDebugKotlin` passed.
+- Backend `node --check scripts\workspaceAccessSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed.
+
+### Remaining Limits
+
+- This closes source/build/backend-contract coverage for Android family profile management. Visual/runtime proof still needs an attached emulator or physical Android device, which this shell does not currently have.
 
 ## 2026-07-09 Android Patient Data Access Consent History
 
@@ -937,8 +957,9 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Live audio client connects to backend WebSocket for demo audio playback and metrics.
 - Live audio client sends the current API bearer token on the WebSocket request when available, and Android device screens now parse/use backend cloud device fields (`online`, WiFi RSSI/SSID/IP, firmware, OTA status, audio status) instead of assuming Bluetooth/local status.
 - API wrapper has endpoints for auth, auth sessions, role requests, settings, notifications, access logs, devices, AI, exports, patients, and scans.
-- API wrapper now includes patient share endpoints. `Patient` includes `profileType` and `relationship`.
+- API wrapper now includes patient share endpoints plus patient update/delete. `Patient` includes `profileType` and `relationship`.
 - New Scan loads patient profiles, lets the user add a dependent/family profile, and starts scans with the selected profile id.
+- Settings includes a backend-backed family profile screen for listing, creating, updating, and deleting dependent profiles.
 - Medical Records can share a selected scan/profile to a doctor/workspace id through the backend sharing endpoint.
 - Android push notification foundation is now real: the app requests notification permission on Android 13+, gets FCM tokens, registers them to backend notification devices after auth, and has a `FirebaseMessagingService` for refreshed tokens/messages.
 - Notification settings load and save per-user backend preferences through `/api/me` instead of local-only Compose state.

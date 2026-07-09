@@ -82,6 +82,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed: backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, Android `.\gradlew.bat :app:compileDebugKotlin`, and Android `.\gradlew.bat :app:assembleDebug`.
 - Remaining validation: run the Privacy screen on an emulator or physical Android device with real credentials; provider/device validation is still blocked without attached Android hardware/runtime.
 
+## Completed source/build/backend smoke - 2026-07-09 Android family profile management
+
+- Added Android Settings route `Hồ sơ gia đình` through `FamilyProfilesScreen.kt`.
+- Added Android API methods for backend patient update/delete so the app can manage dependent profiles beyond the quick-create path in New Scan.
+- The screen lists self/dependent profiles, edits profile metadata, creates dependent profiles, and deletes only non-self profiles through backend APIs.
+- Expanded `smoke:workspace-access` to verify patient dependent profile create/update/delete, deleted-profile 404, and cross-workspace update denial.
+- Verification passed: Android `.\gradlew.bat :app:compileDebugKotlin`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`.
+- Remaining validation: run the new screen on an emulator or physical device with real patient credentials; this shell currently has no attached Android device.
+
 ## Completed source/build/backend smoke - 2026-07-09 Android Data Access consent history
 
 - Replaced Android Data Access local-only privacy switches with a backend-backed consent ledger.

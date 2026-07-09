@@ -28,7 +28,7 @@ Web Admin now has controlled live destructive mutation coverage through `npm.cmd
 
 2026-07-09 migration QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrcnnzcg` after the consent/share follow-up, and `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`.
 
-2026-07-09 Android account-security backend contract coverage: `smoke:workspace-access` now also covers the patient Android account path for consent history, password change, 2FA setup, auth session list/revoke, and revoked-token denial. For this slice, use:
+2026-07-09 Android account/family backend contract coverage: `smoke:workspace-access` now also covers the patient Android path for family profile create/update/delete, consent history, password change, 2FA setup, auth session list/revoke, and revoked-token denial. For this slice, use:
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\web-monitor

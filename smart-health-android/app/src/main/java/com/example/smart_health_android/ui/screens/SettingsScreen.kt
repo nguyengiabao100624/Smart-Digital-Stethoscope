@@ -28,6 +28,7 @@ import com.example.smart_health_android.ui.theme.*
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToProfile: () -> Unit,
+    onNavigateToFamilyProfiles: () -> Unit,
     onNavigateToPrivacy: () -> Unit,
     onNavigateToStethoscopeSettings: () -> Unit,
     onNavigateToAICalibration: () -> Unit,
@@ -128,6 +129,8 @@ fun SettingsScreen(
 
             SettingsGroup("TÀI KHOẢN") {
                 SettingsItem(Icons.Default.Person, "Thông tin cá nhân", Color(0xFF3B82F6), onClick = onNavigateToProfile)
+                HorizontalDivider(color = Border)
+                SettingsItem(Icons.Default.Groups, "Hồ sơ gia đình", PrimaryTeal, onClick = onNavigateToFamilyProfiles)
                 HorizontalDivider(color = Border)
                 SettingsItem(Icons.Default.Lock, "Bảo mật & Quyền riêng tư", Color(0xFF10B981), onClick = onNavigateToPrivacy)
             }

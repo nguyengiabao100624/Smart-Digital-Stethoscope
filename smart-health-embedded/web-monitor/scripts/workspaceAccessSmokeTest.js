@@ -509,6 +509,38 @@ async function runScenario() {
   assert.equal(patientCreatedProfile.patient.ownerUserId, "usr_patient");
   assert.equal(patientCreatedProfile.patient.guardianUserId, "usr_patient");
   assert.equal(patientCreatedProfile.patient.profileType, "dependent");
+  const patientUpdatedProfile = await expectStatus(
+    "patient updates dependent family profile",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    200,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Updated Dependent", relationship: "mother", age: 62 }),
+    },
+  );
+  assert.equal(patientUpdatedProfile.patient.name, "Updated Dependent");
+  assert.equal(patientUpdatedProfile.patient.relationship, "mother");
+  await expectStatus("patient cannot update workspace-owned patient profile", patient, "/api/v1/patients/pat_alpha", 403, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Cross Workspace Edit" }),
+  });
+  const patientDeletedProfile = await expectStatus(
+    "patient deletes dependent family profile",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    200,
+    { method: "DELETE" },
+  );
+  assert.equal(patientDeletedProfile.deleted, true);
+  await expectStatus(
+    "patient deleted dependent profile is gone",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    404,
+  );
   const patientShareTargets = await expectStatus("patient resolves doctor share targets", patient, "/api/v1/share-targets", 200);
   assert.ok(patientShareTargets.doctors.some((target) => target.id === "usr_doctor"));
   const patientShare = await expectStatus("patient shares dependent profile", patient, "/api/v1/patients/pat_patient_child/shares", 201, {

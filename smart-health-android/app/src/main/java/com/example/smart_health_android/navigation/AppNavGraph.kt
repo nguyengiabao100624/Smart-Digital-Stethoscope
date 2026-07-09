@@ -279,6 +279,7 @@ fun AppNavGraph(
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToProfile = { navController.navigate("profile") },
+                onNavigateToFamilyProfiles = { navController.navigate("family-profiles") },
                 onNavigateToPrivacy = { navController.navigate("privacy") },
                 onNavigateToStethoscopeSettings = { navController.navigate("stethoscope-settings") },
                 onNavigateToAICalibration = { navController.navigate("ai-calibration") },
@@ -301,6 +302,12 @@ fun AppNavGraph(
                 onNavigateToReVerifyContact = { type, contact ->
                     navController.navigate("re-verify/$type/${Uri.encode(contact)}")
                 }
+            )
+        }
+
+        composable("family-profiles") {
+            FamilyProfilesScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

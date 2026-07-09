@@ -65,6 +65,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Android change password backend bridge | Closed in source/build/backend-smoke | Android `/settings -> privacy -> change-password` now updates Firebase, refreshes the ID token, and records the change through backend `/me/password` with `firebaseClientUpdated=true`; demo/backend sessions still use current/new password directly. `smoke:workspace-access` verifies backend patient password change plus old-password rejection/new-password login. |
 | Android Privacy 2FA backend bridge | Closed in source/build/backend-smoke for setup state | Android `/settings -> privacy` now loads and updates backend `/me/2fa`, shows recovery codes returned by the backend, and disables biometric clearly until native BiometricPrompt exists. `smoke:workspace-access` verifies patient 2FA enable/disable and recovery-code response. Real OTP provider/enforcement remains a provider/backend follow-up. |
 | Android Privacy auth session management | Closed in source/build/backend-smoke | Android `/settings -> privacy` now lists backend auth sessions from `/auth/sessions`, marks the current session, and revokes non-current sessions through the backend. Backend demo auth fallback no longer turns an invalid/revoked bearer token into the default platform admin user. `smoke:workspace-access` verifies patient session list/revoke and revoked-token denial. |
+| Android family profile management | Closed in source/build/backend-smoke | Android Settings now has `Hồ sơ gia đình` for backend-backed family/dependent profile list/create/update/delete. `SmartHealthApi` supports patient update/delete, and `smoke:workspace-access` verifies patient dependent profile create/update/delete plus cross-workspace update denial. |
 
 ## Verification Ledger
 
@@ -96,6 +97,7 @@ Do not repeat these as unresolved unless new evidence regresses them.
 - Android account password bridge on 2026-07-09: `ChangePasswordScreen.kt` now follows the same Firebase-client-plus-backend-audit contract as the web/admin account settings flow; `SmartHealthApi.changePassword` carries `firebaseClientUpdated`; `smoke:workspace-access` now proves backend password change/re-login for the seeded patient account. Verification passed with Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`.
 - Android Privacy 2FA bridge on 2026-07-09: `PrivacyScreen.kt` no longer uses a local-only 2FA toggle; `SmartHealthApi.updateTwoFactor` calls `/me/2fa`; `AuthUser` parses backend 2FA state; the UI shows recovery codes returned after enable and marks biometric as unavailable instead of acting like a working toggle. Verification passed with Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, backend `npm.cmd run smoke:workspace-access`, and backend `npm.cmd run check`.
 - Android Privacy auth session bridge on 2026-07-09: `PrivacyScreen.kt` now shows backend auth sessions and revokes non-current sessions; `SmartHealthApi` exposes `/auth/sessions` list/revoke; backend demo fallback rejects invalid/revoked bearer tokens instead of falling back to platform admin. Verification passed with backend `node --check server.js`, backend `node --check scripts\workspaceAccessSmokeTest.js`, backend `npm.cmd run smoke:workspace-access`, backend `npm.cmd run check`, Android `.\gradlew.bat :app:compileDebugKotlin`, and Android `.\gradlew.bat :app:assembleDebug`.
+- Android family profile management on 2026-07-09: `FamilyProfilesScreen.kt` adds Settings -> `Hồ sơ gia đình`; `SmartHealthApi.updatePatient/deletePatient` call backend patient APIs; `smoke:workspace-access` now proves patient dependent profile create/update/delete and cross-workspace update denial. Verification passed with Android `.\gradlew.bat :app:compileDebugKotlin`, backend `node --check scripts\workspaceAccessSmokeTest.js`, and backend `npm.cmd run smoke:workspace-access`.
 
 ## Current Severity Checklist
 
@@ -124,8 +126,8 @@ Do not repeat these as unresolved unless new evidence regresses them.
 Recommended next non-repeated slice:
 
 1. Move to provider/device validation that still needs outside evidence: real Android FCM delivery, real inbox click-through for email verification, production S3/Supabase Storage provider smoke, and physical MSM261 ESP32-S3 WiFi/audio/OTA validation.
-2. Continue browser/emulator-level patient/family profile UX, patient-facing consent history/session-management UI proof, and notification-preference breadth when provider/device gates are not available.
-3. Do not repeat the closed Role/Auth/Register/Approval/RBAC, Android password/2FA/session bridges, Supabase/Postgres repository-parity, local storage API, or live performance slices unless new regression evidence appears.
+2. Continue browser/emulator-level patient/family profile UX proof, patient-facing consent history/session-management visual proof, and notification-preference breadth when provider/device gates are not available.
+3. Do not repeat the closed Role/Auth/Register/Approval/RBAC, Android family profile/password/2FA/session bridges, Supabase/Postgres repository-parity, local storage API, or live performance slices unless new regression evidence appears.
 
 ## Handoff Rule
 

@@ -406,6 +406,30 @@ class SmartHealthApi(
         parsePatient(postJson("$baseUrl/patients", body).getJSONObject("patient"))
     }
 
+    suspend fun updatePatient(
+        patientId: String,
+        name: String? = null,
+        age: Int? = null,
+        gender: String? = null,
+        phone: String? = null,
+        notes: String? = null,
+        relationship: String? = null
+    ): Patient = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+        if (name != null) body.put("name", name)
+        if (age != null) body.put("age", age)
+        if (gender != null) body.put("gender", gender)
+        if (phone != null) body.put("phone", phone)
+        if (notes != null) body.put("notes", notes)
+        if (relationship != null) body.put("relationship", relationship)
+        parsePatient(patchJson("$baseUrl/patients/${patientId.urlEncode()}", body).getJSONObject("patient"))
+    }
+
+    suspend fun deletePatient(patientId: String): Boolean = withContext(Dispatchers.IO) {
+        deleteJson("$baseUrl/patients/${patientId.urlEncode()}")
+        true
+    }
+
     suspend fun listPatientShares(patientId: String): List<PatientShare> = withContext(Dispatchers.IO) {
         getJson("$baseUrl/patients/${patientId.urlEncode()}/shares")
             .optJSONArray("shares")

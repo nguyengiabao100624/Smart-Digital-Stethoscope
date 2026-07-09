@@ -63,9 +63,15 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Shcare Web `bun run build` passed.
 - Local dev browser smoke passed with `SMART_HEALTH_WEB_URL=http://127.0.0.1:8080`, `SMOKE_DISABLE_WEB_SECURITY=1`, and Render API `https://smart-health-api-r5is.onrender.com/api`; route checks included `workspace switcher summary` with one workspace card and one active card.
 
+### Production Follow-Up
+
+- Commit `2b3d21a3` was pushed to `origin/main`, allowing the Render-connected backend source to deploy.
+- Shcare Web was rebuilt with `bun run build:firebase` and deployed to Firebase Hosting target `webapp`, version `projects/162993928259/sites/shcare/versions/4f370368cfbe2403`, release `projects/162993928259/sites/shcare/channels/live/releases/1783592537850000`.
+- Post-deploy live verification passed: `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:portal-production`, live `bun run smoke:portal-browser` without `SMOKE_DISABLE_WEB_SECURITY`, and live `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` with cleanup OK.
+
 ### Remaining Limits
 
-- This is source/local verification only. The Render backend and Firebase-hosted Shcare Web live site were not redeployed in this turn, so production completion for this contract still requires deploy plus live `bun run smoke:portal-browser` without the local CORS bypass.
+- This closes the portal workspace-summary production contract. It does not close unrelated provider/device evidence: real Android FCM, real inbox click-through, production object-storage provider proof, and physical MSM261 board validation remain separate blockers.
 
 ## 2026-07-09 Android Workspace Switcher And Dashboard Context
 

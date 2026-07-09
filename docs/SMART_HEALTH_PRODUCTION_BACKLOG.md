@@ -35,14 +35,14 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed: backend `node .\scripts\workspaceAccessSmokeTest.js`, Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, and Android `.\gradlew.bat :app:testDebugUnitTest`.
 - Remaining validation: run the new Settings workspace switcher and dashboard context on an Android emulator or physical device with real credentials. This source slice does not prove live mobile runtime, real FCM delivery, or physical device workflows.
 
-## Completed source/local - 2026-07-09 Shcare Portal workspace summary contract
+## Completed deployed/live - 2026-07-09 Shcare Portal workspace summary contract
 
 - Found and fixed a portal sync gap where `/portal/workspace` showed patient/device/alert counters but `AuthContext.tsx` hardcoded membership counts to `0`.
 - Backend `/api/me` / `/api/v1/me` now returns scoped operational summaries on `currentWorkspace` and memberships: patients, total devices, online devices, alert/offline devices, and scans.
 - Shcare Web now types and maps these count fields, and the workspace switcher now performs an awaited switch with loading/error state, accessible button cards, role/type labels, and smoke selectors for the summary counters.
 - Smoke coverage now locks both sides of the contract: `smoke:workspace-access` asserts exact seeded `/me` workspace counts, and `smoke:portal-browser` asserts the workspace switcher renders numeric counters and one active card.
-- Verification passed locally/source-level: backend syntax checks, backend `smoke:workspace-access`, backend `check`, Shcare Web portal smoke script syntax check, Shcare Web typecheck, targeted ESLint, production build, and local dev `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`.
-- Remaining production step: deploy backend and Shcare Web, then rerun live `bun run smoke:portal-browser` without `SMOKE_DISABLE_WEB_SECURITY`. Do not call this live production-complete until that deploy/live smoke is done.
+- Source verification passed: backend syntax checks, backend `smoke:workspace-access`, backend `check`, Shcare Web portal smoke script syntax check, Shcare Web typecheck, targeted ESLint, production build, and local dev `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`.
+- Production follow-up completed: commit `2b3d21a3` was pushed to `origin/main`, Firebase Hosting target `webapp` deployed `shcare` version `projects/162993928259/sites/shcare/versions/4f370368cfbe2403`, release `projects/162993928259/sites/shcare/channels/live/releases/1783592537850000`, live `npm.cmd run smoke:public-deployment` passed, live `npm.cmd run smoke:portal-production` passed, live `bun run smoke:portal-browser` passed without `SMOKE_DISABLE_WEB_SECURITY`, and live `bun run smoke:portal-mutation` passed with run id `portal-mutation-mrdczthd` and cleanup OK.
 
 ## Completed - 2026-07-09 Render backend account migration and Firebase redeploy
 

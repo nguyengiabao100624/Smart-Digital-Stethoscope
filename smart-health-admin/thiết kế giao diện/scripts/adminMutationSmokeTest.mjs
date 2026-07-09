@@ -34,6 +34,7 @@ const runKey = runId.replace(/[^a-z0-9]/gi, "_");
 const sensitiveHeaderNames = new Set(["authorization", "cookie", "set-cookie"]);
 const watchPatterns = [
   "/api/auth/firebase",
+  "/api/auth/sessions",
   "/api/me",
   "/api/admin/overview-stats",
   "/api/admin/clinics",
@@ -224,6 +225,23 @@ async function visitRoute(page, href, label) {
   await page.waitForSelector("#admin-global-search", { timeout: 20_000 });
   await assertNoAdminError(page, label);
   return { label, path: new URL(page.url()).pathname };
+}
+
+async function assertAccountRoute(page) {
+  await page
+    .getByRole("heading", { name: /Cài đặt tài khoản/i })
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByText("Thông tin cá nhân").first().waitFor({ state: "visible" });
+  await page.getByText("Ảnh đại diện").first().waitFor({ state: "visible" });
+  await page.getByText("Thông tin cơ bản").first().waitFor({ state: "visible" });
+
+  await page.getByRole("tab", { name: /Bảo mật tài khoản/i }).click();
+  await page.getByText("Đổi mật khẩu").first().waitFor({ state: "visible" });
+  await page.getByText("Xác thực hai yếu tố").first().waitFor({ state: "visible" });
+  await page.getByText("Phiên đăng nhập hiện tại").first().waitFor({ state: "visible" });
+
+  await page.getByRole("tab", { name: /Thông báo cá nhân/i }).click();
+  await page.getByText("Thông báo cá nhân").first().waitFor({ state: "visible" });
 }
 
 async function exerciseAdminMutations(page, state) {
@@ -607,6 +625,7 @@ async function main() {
     const routeChecks = [];
     for (const [href, label] of [
       ["/", "overview"],
+      ["/account", "account settings"],
       ["/devices", "devices"],
       ["/patients", "patients"],
       ["/clinics", "clinics"],
@@ -617,7 +636,11 @@ async function main() {
       ["/admin-accounts", "admin accounts"],
       ["/audit-log", "audit log"],
     ]) {
-      routeChecks.push(await visitRoute(page, href, label));
+      const routeCheck = await visitRoute(page, href, label);
+      if (href === "/account") {
+        await assertAccountRoute(page);
+      }
+      routeChecks.push(routeCheck);
     }
 
     const badResponses = checkedResponses.filter((item) => item.status >= 400);

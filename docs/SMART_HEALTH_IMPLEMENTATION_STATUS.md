@@ -108,6 +108,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Web Admin `npm.cmd run build:firebase:admin` passed and printed the active `r5is` backend.
 - Firebase Hosting target `admin` deployed `shcare-admin` version `projects/162993928259/sites/shcare-admin/versions/0d796ccc2368d21e`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783598280968000`.
 - Live `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mrdgdbok`, backend `https://smart-health-api-r5is.onrender.com/api`, and cleanup OK for settings, notification, storage bucket, device, patient, package, and workspace.
+- Follow-up live `npm.cmd run smoke:admin-mutation` passed with run id `admin-mutation-mrdgnc3d` after adding account-route assertions. It now visits `/account`, verifies profile/avatar/basic-info UI, password/2FA/session controls, personal notification tab, and captures `/api/auth/sessions` 200.
 
 ## 2026-07-09 Shcare Portal Workspace Summary Contract
 

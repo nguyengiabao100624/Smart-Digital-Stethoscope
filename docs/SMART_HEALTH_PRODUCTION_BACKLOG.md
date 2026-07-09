@@ -32,6 +32,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Added a tracked production build guard in `smart-health-admin\thiết kế giao diện\scripts\validate-product-env.mjs` so future Firebase builds fail if they use the retired `xj0a` backend or if `VITE_SMART_HEALTH_API_BASE_URL` does not equal `VITE_SMART_HEALTH_BASE_URL + /api`.
 - Verification passed: Web Admin `npm.cmd run lint`, `npm.cmd run build:firebase:admin`, bundle scan confirming effective `r5is` backend, Firebase Hosting deploy to `shcare-admin` version `projects/162993928259/sites/shcare-admin/versions/0d796ccc2368d21e`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783598280968000`, and live `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrdgdbok`.
 - The live admin smoke signed into `https://shcare-admin.web.app`, exercised backend `https://smart-health-api-r5is.onrender.com/api`, mutated and cleaned workspace, package, patient, device, notification, storage bucket, and settings records, and checked overview/devices/patients/clinics/packages/notifications/storage/settings/admin-accounts/audit-log routes.
+- Follow-up Web Admin smoke coverage passed with run id `admin-mutation-mrdgnc3d` after adding `/account` route checks for profile/avatar/basic-info UI, password/2FA/session controls, personal notification tab, and backend `/api/auth/sessions` 200.
 
 ## Completed deployed/live - 2026-07-09 Shcare Portal UI density and search-field polish
 

@@ -28,7 +28,7 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Found a Web Admin config drift after the active backend moved to Render `smart-health-api-r5is`: `smart-health-admin\thiết kế giao diện\.env.production` still pointed to retired `https://smart-health-api-xj0a.onrender.com`.
 - Corrected the local production env to `https://smart-health-api-r5is.onrender.com` and added a tracked guard in `scripts/validate-product-env.mjs` that rejects retired `xj0a` URLs and requires API base to equal base URL plus `/api`.
 - Verification passed: `npm.cmd run lint`, `npm.cmd run build:firebase:admin`, bundle scan for active `r5is`, Firebase deploy to `shcare-admin` version `projects/162993928259/sites/shcare-admin/versions/0d796ccc2368d21e`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783598280968000`, and live `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrdgdbok` against `https://smart-health-api-r5is.onrender.com/api`.
-- The live smoke covered admin login plus controlled workspace, package, patient, device, notification, storage bucket, and settings mutations with cleanup and checked overview/devices/patients/clinics/packages/notifications/storage/settings/admin-accounts/audit-log routes.
+- Follow-up smoke coverage now includes `/account`: run `admin-mutation-mrdgnc3d` checked the account settings route, profile/avatar/basic-info UI, security tab with password/2FA/sessions, notification tab, and backend `/api/auth/sessions` 200, while still mutating and cleaning workspace, package, patient, device, notification, storage bucket, and settings records.
 
 ## 2026-07-09 - Pixel_8_Pro_2 emulator restart root cause mitigation
 

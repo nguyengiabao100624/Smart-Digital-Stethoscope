@@ -140,6 +140,48 @@ data class LiveMetrics(
     val updatedAt: String? = null
 )
 
+data class WorkspaceSummary(
+    val id: String = "",
+    val name: String = "",
+    val type: String = "",
+    val workspaceType: String = "",
+    val role: String = "",
+    val patientCount: Int = 0,
+    val deviceCount: Int = 0,
+    val deviceOnline: Int = 0,
+    val alertCount: Int = 0,
+    val scanCount: Int = 0
+)
+
+data class WorkspaceMembership(
+    val id: String = "",
+    val workspaceId: String = "",
+    val organizationId: String = "",
+    val workspaceName: String = "",
+    val workspaceType: String = "",
+    val role: String = "",
+    val patientCount: Int = 0,
+    val deviceCount: Int = 0,
+    val deviceOnline: Int = 0,
+    val alertCount: Int = 0,
+    val scanCount: Int = 0
+) {
+    fun toWorkspaceSummary(): WorkspaceSummary {
+        return WorkspaceSummary(
+            id = workspaceId.ifBlank { organizationId },
+            name = workspaceName.ifBlank { workspaceId.ifBlank { organizationId } },
+            type = workspaceType,
+            workspaceType = workspaceType,
+            role = role,
+            patientCount = patientCount,
+            deviceCount = deviceCount,
+            deviceOnline = deviceOnline,
+            alertCount = alertCount,
+            scanCount = scanCount
+        )
+    }
+}
+
 data class AuthUser(
     val id: String = "",
     val role: String = "doctor",
@@ -162,6 +204,10 @@ data class AuthUser(
     val roleInfoRequiredFields: List<String> = emptyList(),
     val roleInfoRequestMessage: String = "",
     val registrationReason: String = "",
+    val currentWorkspaceId: String = "",
+    val currentMembership: WorkspaceMembership? = null,
+    val currentWorkspace: WorkspaceSummary? = null,
+    val memberships: List<WorkspaceMembership> = emptyList(),
     val workspaceType: String = "",
     val accountType: String = "",
     val clinicSuggestion: String = "",
@@ -171,7 +217,37 @@ data class AuthUser(
     val twoFactorSecretPreview: String = "",
     val createdAt: String? = null,
     val updatedAt: String? = null
-)
+) {
+    fun workspaceOptions(): List<WorkspaceSummary> {
+        val byId = linkedMapOf<String, WorkspaceSummary>()
+        currentWorkspace?.takeIf { it.id.isNotBlank() }?.let { byId[it.id] = it }
+        memberships.map { it.toWorkspaceSummary() }.forEach { workspace ->
+            val id = workspace.id
+            if (id.isNotBlank()) {
+                byId[id] = byId[id]?.let { existing ->
+                    existing.copy(
+                        role = existing.role.ifBlank { workspace.role },
+                        patientCount = existing.patientCount.takeIf { it > 0 } ?: workspace.patientCount,
+                        deviceCount = existing.deviceCount.takeIf { it > 0 } ?: workspace.deviceCount,
+                        deviceOnline = existing.deviceOnline.takeIf { it > 0 } ?: workspace.deviceOnline,
+                        alertCount = existing.alertCount.takeIf { it > 0 } ?: workspace.alertCount,
+                        scanCount = existing.scanCount.takeIf { it > 0 } ?: workspace.scanCount
+                    )
+                } ?: workspace
+            }
+        }
+        if (byId.isEmpty() && organizationId.isNotBlank()) {
+            byId[organizationId] = WorkspaceSummary(
+                id = organizationId,
+                name = clinicName.ifBlank { hospital.ifBlank { organizationId } },
+                type = workspaceType,
+                workspaceType = workspaceType,
+                role = role
+            )
+        }
+        return byId.values.toList()
+    }
+}
 
 data class AuthResult(
     val token: String,

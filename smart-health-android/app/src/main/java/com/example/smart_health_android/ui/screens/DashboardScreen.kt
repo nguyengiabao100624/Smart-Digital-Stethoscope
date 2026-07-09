@@ -103,6 +103,8 @@ fun DashboardScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var stoppingScanId by remember { mutableStateOf<String?>(null) }
     var displayName by remember { mutableStateOf("Bác sĩ") }
+    var workspaceName by remember { mutableStateOf("") }
+    var workspaceMeta by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
 
     suspend fun refreshDashboard() {
@@ -119,6 +121,14 @@ fun DashboardScreen(
         runCatching {
             val currentUser = SmartHealthRepository.api.getMe()
             displayName = currentUser.name.ifBlank { currentUser.email.ifBlank { "Bác sĩ" } }
+            workspaceName = currentUser.currentWorkspace?.name
+                .orEmpty()
+                .ifBlank { currentUser.clinicName }
+                .ifBlank { currentUser.organizationId }
+            workspaceMeta = listOf(
+                workspaceTypeLabel(currentUser.workspaceType),
+                roleLabel(currentUser.role)
+            ).filter { it.isNotBlank() }.joinToString(" • ")
         }
         while (true) {
             refreshDashboard()
@@ -161,6 +171,8 @@ fun DashboardScreen(
         item {
             DoctorDashboardHeader(
                 displayName = displayName,
+                workspaceName = workspaceName,
+                workspaceMeta = workspaceMeta,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 onNavigateToSettings = onNavigateToSettings,
@@ -273,6 +285,8 @@ fun DashboardScreen(
 @Composable
 private fun DoctorDashboardHeader(
     displayName: String,
+    workspaceName: String,
+    workspaceMeta: String,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -307,6 +321,16 @@ private fun DoctorDashboardHeader(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (workspaceName.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = listOf(workspaceName, workspaceMeta).filter { it.isNotBlank() }.joinToString(" • "),
+                            color = Color.White.copy(alpha = 0.78f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     HeaderIconButton(icon = Icons.Default.Settings, onClick = onNavigateToSettings)
@@ -350,6 +374,30 @@ private fun DoctorDashboardHeader(
                 shape = RoundedCornerShape(14.dp)
             )
         }
+    }
+}
+
+private fun workspaceTypeLabel(type: String): String {
+    return when (type) {
+        "solo_practice", "doctor_private" -> "Bác sĩ tư"
+        "clinic" -> "Phòng khám"
+        "hospital" -> "Bệnh viện"
+        "personal" -> "Cá nhân/gia đình"
+        "platform" -> "Nền tảng"
+        else -> ""
+    }
+}
+
+private fun roleLabel(role: String): String {
+    return when (role) {
+        "doctor" -> "Bác sĩ"
+        "workspace_owner" -> "Chủ workspace"
+        "workspace_admin", "clinic_manager" -> "Quản lý workspace"
+        "nurse" -> "Điều dưỡng"
+        "technician" -> "Kỹ thuật viên"
+        "billing" -> "Tài chính"
+        "viewer" -> "Chỉ xem"
+        else -> ""
     }
 }
 

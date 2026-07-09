@@ -9,6 +9,16 @@ export interface WorkspaceMembership {
   workspaceName?: string;
   workspaceType?: string;
   role?: string;
+  patientCount?: number;
+  patientsCount?: number;
+  deviceCount?: number;
+  devicesCount?: number;
+  deviceOnline?: number;
+  devicesOnline?: number;
+  alertCount?: number;
+  alertsCount?: number;
+  scanCount?: number;
+  scansCount?: number;
 }
 
 export interface WorkspaceSummary {
@@ -25,6 +35,20 @@ export interface WorkspaceSummary {
   website?: string;
   legalName?: string;
   representative?: string;
+  usage?: Record<string, unknown>;
+  quota?: Record<string, unknown>;
+  userCount?: number;
+  doctorCount?: number;
+  patientCount?: number;
+  patientsCount?: number;
+  deviceCount?: number;
+  devicesCount?: number;
+  deviceOnline?: number;
+  devicesOnline?: number;
+  alertCount?: number;
+  alertsCount?: number;
+  scanCount?: number;
+  scansCount?: number;
   settings?: Record<string, unknown>;
 }
 

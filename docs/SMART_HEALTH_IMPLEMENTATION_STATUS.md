@@ -26,7 +26,7 @@ This file records the real project state. Keep it factual: implemented, partial,
 | Storage admin | Partial production | Storage API supports bucket/file listing, upload, share URL, download, delete, audit, and workspace scoping. `smoke:workspace-access` now verifies share URL, authenticated local-object read, cross-workspace signed URL denial, direct download content, upload/list/download/delete, and post-delete 404 in JSON/local-object mode. Real S3/Supabase Storage provider smoke still needs provider envs loaded where the smoke runs. |
 | Notifications | Partial production | Notification list/read/delete works in app/admin/portal. Android registers FCM tokens to backend notification devices and saves per-user notification preferences. Backend now queues Firebase Cloud Messaging delivery for direct user notifications, records `pushStatus` separately from platform-admin email fanout, disables invalid/unregistered tokens, persists per-attempt `pushAttempts` history without raw tokens, and retries retryable FCM failures with bounded env controls. AI update notifications from both Android-facing and admin-facing settings endpoints are scoped to caller user/workspace. Real device/provider delivery smoke and workspace recipient policy are still incomplete. |
 | Android motion/animation | Real | Shared Compose motion layer is applied through `AppNavGraph.kt`, giving all routes consistent fade/slide/scale screen transitions. Element-level micro-interactions can still be expanded screen by screen later. |
-| Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Settings now has a backend-backed family profile manager for list/create/update/delete of personal/dependent profiles. Medical Records can share a scan/profile to a doctor/workspace, and Data Access now reads backend patient-share consent history and can revoke active grants. Full workspace switcher and dashboard-by-workspace are not complete. |
+| Android workspace onboarding | Partial | Signup now distinguishes personal user, solo doctor, and doctor belonging to a health facility. Solo doctor sends `workspaceType=solo_practice`; personal user sends `workspaceType=personal`; facility doctor still uses searchable clinic catalog plus specialty and optional missing-clinic request. Android New Scan now lists/creates family/dependent patient profiles and sends the selected `patientId` before starting a scan. Settings now has backend-backed family profile management and a backend-backed workspace switcher that reads `/me` memberships/current workspace and switches through `/api/v1/me`. Doctor and patient dashboards now show current workspace context. Medical Records can share a scan/profile to a doctor/workspace, and Data Access now reads backend patient-share consent history and can revoke active grants. Real emulator/device visual proof and broader dashboard-by-workspace runtime QA remain pending. |
 | Device management | Partial cloud-first | Device inventory and UI exist. `/api/devices` list and management actions are scoped by workspace/capability in JSON/demo mode. Backend now accepts outbound ESP WebSocket registration, heartbeat telemetry, device events, command delivery, event history, manual URL OTA, and storage-backed OTA command creation with tokenized firmware download URLs. 2026-07-01 source fix wires `GET /api/v1/devices/:id/events` in the device route and tests own/cross-workspace access. 2026-07-06 source follow-up allows workspace users to self-claim provisioned same-workspace devices with claim codes while keeping arbitrary no-code creation behind device-management capability; Shcare Portal has a `/portal/devices/claim` route and mutation smoke coverage. Production mode no longer auto-seeds demo devices or accepts missing device ids for scan/recording flow. Web Admin Devices page shows cloud status/events and sends restart/revoke/rotate/OTA through backend. MQTT/certificate hardening and physical-board E2E remain pending. |
 | Audio ingest | Partial cloud-first | Legacy MSM261 UDP audio remains as development fallback. MSM261 firmware now attempts outbound WebSocket/WSS audio streaming to backend first, while backend fans ESP audio to listener clients. Android sends the current bearer token on the live WebSocket request. Backend listener sockets now support token-based auth in production, but TLS hardening, buffering, and durable HTTPS chunk upload remain pending. |
 | AI pipeline | Demo/scaffold | Scan stop can produce local audio/quality-style result. Android-facing AI chat/settings/update endpoints are now workspace-aware for history, settings persistence, and notifications. No real queue/model pipeline yet. |
@@ -40,6 +40,53 @@ This file records the real project state. Keep it factual: implemented, partial,
 
 - Clarified that Smart Health means the full `D:\Study\KLTN` product system: `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs.
 - Future feature/fix slices should verify the workflow across affected surfaces before being marked complete: backend policy/data, client API calls, role/surface routing, tenant isolation, device/storage/notification side effects, Android/web/admin UX, firmware protocol when relevant, tests/smokes, deploy status, and docs.
+
+## 2026-07-09 Shcare Portal Workspace Summary Contract
+
+### Implemented
+
+- Fixed another portal completeness gap where `/portal/workspace` rendered patient/device/alert counters but the frontend auth mapper filled every count with `0`.
+- Backend `/api/me` / `/api/v1/me` workspace context now includes operational workspace summaries for both `currentWorkspace` and each membership: patient count, device count, online device count, alert/offline count, and scan count.
+- `WorkspaceMembership` and `WorkspaceSummary` frontend contracts now type these count fields, and `AuthContext.tsx` maps them into the portal workspace model.
+- `WorkspaceSwitcher.tsx` now uses accessible button cards, awaits workspace switch API completion, shows loading/error state, preserves role/type labels, and exposes stable selectors for card/count smoke coverage.
+- `smoke:workspace-access` now asserts exact current-workspace and membership counts for seeded `org_alpha`, and `smoke:portal-browser` now verifies the workspace switcher renders numeric summaries with an active card.
+
+### Verification
+
+- Backend `node --check server.js` passed.
+- Backend `node --check scripts\workspaceAccessSmokeTest.js` passed.
+- Backend `npm.cmd run smoke:workspace-access` passed; Brevo notification emails were skipped because Brevo env vars are not configured in this shell.
+- Backend `npm.cmd run check` passed.
+- Shcare Web `node --check scripts\portalBrowserSmokeTest.mjs` passed.
+- Shcare Web `bunx tsc --noEmit --pretty false` passed.
+- Targeted Shcare Web ESLint passed for `src/app/context/AuthContext.tsx`, `src/app/pages/portal/WorkspaceSwitcher.tsx`, and `src/lib/smart-health-api.ts`.
+- Shcare Web `bun run build` passed.
+- Local dev browser smoke passed with `SMART_HEALTH_WEB_URL=http://127.0.0.1:8080`, `SMOKE_DISABLE_WEB_SECURITY=1`, and Render API `https://smart-health-api-r5is.onrender.com/api`; route checks included `workspace switcher summary` with one workspace card and one active card.
+
+### Remaining Limits
+
+- This is source/local verification only. The Render backend and Firebase-hosted Shcare Web live site were not redeployed in this turn, so production completion for this contract still requires deploy plus live `bun run smoke:portal-browser` without the local CORS bypass.
+
+## 2026-07-09 Android Workspace Switcher And Dashboard Context
+
+### Implemented
+
+- Fixed the Android side of the workspace/member contract: `AuthUser` now parses backend `currentWorkspace`, `currentMembership`, `memberships`, workspace type, role, and operational summary counters from `/me`.
+- Added `WorkspaceSwitcherScreen.kt`, reachable from Settings, with real backend loading/switching through `SmartHealthApi.switchWorkspace()` and loading/error/empty/switching states.
+- Updated Android Settings to show the current workspace under account identity and expose the workspace switcher alongside profile/family/privacy controls.
+- Updated doctor and patient dashboards to display the current workspace context instead of only the user name.
+- Expanded backend `workspaceAccessSmokeTest.js` with a seeded multi-workspace doctor membership and assertions that a joined doctor can switch to `org_beta` through `/api/v1/me`, receives the beta workspace operational summary, and can switch back to `org_alpha`.
+
+### Verification
+
+- Backend `node .\scripts\workspaceAccessSmokeTest.js` passed; Brevo notification emails were skipped because Brevo env vars are not configured in this shell.
+- Android `.\gradlew.bat :app:compileDebugKotlin` passed.
+- Android `.\gradlew.bat :app:assembleDebug` passed.
+- Android `.\gradlew.bat :app:testDebugUnitTest` passed.
+
+### Remaining Limits
+
+- This closes source/build/backend-contract coverage. Real Android emulator or physical-device UI proof is still needed for visual/runtime behavior, and live Render/Firebase deployment is not part of this local Android source slice.
 
 ## 2026-07-09 Render Backend Migration And Firebase Redeploy
 

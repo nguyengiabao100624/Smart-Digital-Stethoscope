@@ -28,7 +28,7 @@ Web Admin now has controlled live destructive mutation coverage through `npm.cmd
 
 2026-07-09 migration QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrcnnzcg` after the consent/share follow-up, and `npm.cmd run smoke:admin-mutation` run `admin-mutation-mrcebq30`.
 
-2026-07-09 Android account/family backend contract coverage: `smoke:workspace-access` now also covers the patient Android path for family profile create/update/delete, consent history, password change, 2FA setup, auth session list/revoke, and revoked-token denial. For this slice, use:
+2026-07-09 Android account/family/workspace backend contract coverage: `smoke:workspace-access` now also covers the patient Android path for family profile create/update/delete, consent history, password change, 2FA setup, auth session list/revoke, revoked-token denial, and a joined doctor workspace switch through `/api/v1/me`. For this slice, use:
 
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\web-monitor
@@ -40,6 +40,7 @@ npm.cmd run check
 cd D:\Study\KLTN\smart-health-android
 .\gradlew.bat :app:compileDebugKotlin
 .\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:testDebugUnitTest
 ```
 
 2026-07-09 patient-share repository persistence: Supabase project `smart-health-production` (`mahvymyncxszvuhlycwp`) has app migration `009_doctor_patient_access_runtime_parity` applied. The verified production schema now supports `doctor_id`, `scope`, JSONB `scan_ids`, `revoked_by_user_id`, `updated_at`, nullable `doctor_user_id`, and patient/doctor/workspace share indexes. Backend source verification for this slice:
@@ -102,7 +103,7 @@ $env:GOOGLE_APPLICATION_CREDENTIALS="D:\Study\KLTN\firebase\smart-health-stethos
 npm.cmd run smoke:production-roles
 ```
 
-`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. The consent route smoke asserts patient/target/scope/expiry/share-submit controls plus selected-scan scope UI. The settings route smoke asserts profile, security/password/session/2FA, notification, and workspace controls. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
+`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. The workspace switcher route smoke asserts workspace cards, numeric patient/device/alert summaries, and an active workspace card. The consent route smoke asserts patient/target/scope/expiry/share-submit controls plus selected-scan scope UI. The settings route smoke asserts profile, security/password/session/2FA, notification, and workspace controls. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
 
 Controlled live portal mutation smoke:
 
@@ -463,7 +464,7 @@ Workspace/RBAC HTTP smoke test with real temporary accounts:
 npm run smoke:workspace-access
 ```
 
-This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `patient`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, storage share URL generation, authenticated local-object URL reads, direct storage download content, cross-workspace signed URL/download denials, upload/list/download/delete cleanup, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, portal notification delete, patient/family profile isolation, patient consent create/list/revoke with revoked-history visibility, patient backend password change with old-password rejection/new-password login, patient 2FA enable/disable setup with recovery-code response, AI chat tenant isolation, workspace-scoped AI settings/update notifications, and Android data summary/cache scoping.
+This seeds `.test-data/workspace-access`, starts a temporary backend on port `3432`, logs in `platform_admin`, `workspace_admin`, `doctor`, `patient`, `technician`, `billing`, and `viewer`, then verifies workspace scoping, `/me` current-workspace and membership operational summaries, storage share URL generation, authenticated local-object URL reads, direct storage download content, cross-workspace signed URL/download denials, upload/list/download/delete cleanup, export download, package edit denial, technician device pairing, doctor claim-code device pairing with no-code creation denial, device-event history scope, portal notification delete, patient/family profile isolation, patient consent create/list/revoke with revoked-history visibility, patient backend password change with old-password rejection/new-password login, patient 2FA enable/disable setup with recovery-code response, AI chat tenant isolation, workspace-scoped AI settings/update notifications, and Android data summary/cache scoping.
 
 Last verified on 2026-07-07 after the storage signed-URL/download coverage expansion: passed. A separate 2026-06-05 runtime smoke on temporary ports `PORT=3450` and `AUDIO_UDP_PORT=3451` also passed `/api/health`, WebSocket `/app`, and UDP audio packet checks.
 
@@ -779,7 +780,7 @@ Compile Kotlin:
 .\gradlew.bat :app:compileDebugKotlin
 ```
 
-Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-06 after Android cloud device status/live audio auth changes, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, and again on 2026-06-11 after the doctor signup catalog-picker fix: passed. Gradle installed Android SDK Build-Tools 36 and Android SDK Platform 36 during the earlier evidence run.
+Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-06 after Android cloud device status/live audio auth changes, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, again on 2026-06-11 after the doctor signup catalog-picker fix, and again on 2026-07-09 after Android workspace switcher/context parsing: passed. Gradle installed Android SDK Build-Tools 36 and Android SDK Platform 36 during the earlier evidence run.
 
 Full assemble debug when needed:
 
@@ -787,7 +788,15 @@ Full assemble debug when needed:
 .\gradlew.bat :app:assembleDebug
 ```
 
-Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, and again on 2026-06-11 after the doctor signup catalog-picker fix: passed. The debug APK installed and launched on emulator `Pixel_8_Pro_2`; 2026-06-09 smoke also verified direct `MainActivity` launch, phone-login UI, Android notification permission prompt, and empty crash buffer.
+Last verified on 2026-06-05 for KLTN evidence, again on 2026-06-09 after Android FCM/profile/avatar/notification-preference cleanup, again on 2026-06-11 after the doctor signup catalog-picker fix, and again on 2026-07-09 after Android workspace switcher/context parsing: passed. The debug APK installed and launched on emulator `Pixel_8_Pro_2`; 2026-06-09 smoke also verified direct `MainActivity` launch, phone-login UI, Android notification permission prompt, and empty crash buffer. The 2026-07-09 workspace switcher pass was source/build/unit-test only; emulator visual proof is still pending.
+
+Unit test target used for Android account/workspace source slices:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest
+```
+
+Last verified on 2026-07-09 after Android workspace switcher/context parsing: passed.
 
 Emulator install/launch/screenshot evidence pattern used on 2026-06-05:
 

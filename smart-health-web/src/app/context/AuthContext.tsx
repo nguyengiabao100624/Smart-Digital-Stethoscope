@@ -54,6 +54,17 @@ export interface AuthUser {
   raw: ApiUser;
 }
 
+function toCount(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return 0;
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
@@ -91,9 +102,24 @@ function workspaceFromMembership(
       (current?.id === id ? current.workspaceType || current.type : "") ||
       "clinic",
     role: member.role || user.role || "viewer",
-    patientCount: 0,
-    deviceOnline: 0,
-    alertCount: 0,
+    patientCount: toCount(
+      member.patientCount,
+      member.patientsCount,
+      current?.id === id ? current.patientCount : undefined,
+      current?.id === id ? current.patientsCount : undefined,
+    ),
+    deviceOnline: toCount(
+      member.deviceOnline,
+      member.devicesOnline,
+      current?.id === id ? current.deviceOnline : undefined,
+      current?.id === id ? current.devicesOnline : undefined,
+    ),
+    alertCount: toCount(
+      member.alertCount,
+      member.alertsCount,
+      current?.id === id ? current.alertCount : undefined,
+      current?.id === id ? current.alertsCount : undefined,
+    ),
   };
 }
 

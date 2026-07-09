@@ -28,6 +28,7 @@ import com.example.smart_health_android.ui.theme.*
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToProfile: () -> Unit,
+    onNavigateToWorkspace: () -> Unit,
     onNavigateToFamilyProfiles: () -> Unit,
     onNavigateToPrivacy: () -> Unit,
     onNavigateToStethoscopeSettings: () -> Unit,
@@ -49,6 +50,11 @@ fun SettingsScreen(
     }
 
     val displayName = currentUser?.name?.ifBlank { "Tài khoản Smart Health" } ?: "Đang tải..."
+    val workspaceName = currentUser?.currentWorkspace?.name
+        .orEmpty()
+        .ifBlank { currentUser?.clinicName.orEmpty() }
+        .ifBlank { currentUser?.organizationId.orEmpty() }
+        .orEmpty()
     val subtitle = when (currentUser?.role) {
         "admin" -> "Quản trị toàn hệ thống"
         "doctor" -> "Bác sĩ"
@@ -106,6 +112,9 @@ fun SettingsScreen(
                     Column {
                         Text(displayName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                         Text("$subtitle • ID: $memberId", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        if (workspaceName.isNotBlank()) {
+                            Text(workspaceName, color = Color.White.copy(alpha = 0.72f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
@@ -129,6 +138,8 @@ fun SettingsScreen(
 
             SettingsGroup("TÀI KHOẢN") {
                 SettingsItem(Icons.Default.Person, "Thông tin cá nhân", Color(0xFF3B82F6), onClick = onNavigateToProfile)
+                HorizontalDivider(color = Border)
+                SettingsItem(Icons.Default.Business, "Workspace đang dùng", PrimaryBlue, onClick = onNavigateToWorkspace)
                 HorizontalDivider(color = Border)
                 SettingsItem(Icons.Default.Groups, "Hồ sơ gia đình", PrimaryTeal, onClick = onNavigateToFamilyProfiles)
                 HorizontalDivider(color = Border)

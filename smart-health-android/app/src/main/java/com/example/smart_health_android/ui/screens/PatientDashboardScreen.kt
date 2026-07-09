@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.Scan
@@ -93,6 +94,7 @@ fun PatientDashboardScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var patientName by remember { mutableStateOf("Bệnh nhân") }
+    var workspaceName by remember { mutableStateOf("") }
     var recentScans by remember { mutableStateOf<List<PatientRecentScan>>(emptyList()) }
     var currentDevice by remember { mutableStateOf<SmartDevice?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -100,6 +102,10 @@ fun PatientDashboardScreen(
         runCatching {
             val user = SmartHealthRepository.api.getMe()
             patientName = user.name.ifBlank { patientName }
+            workspaceName = user.currentWorkspace?.name
+                .orEmpty()
+                .ifBlank { user.clinicName }
+                .ifBlank { user.organizationId }
             recentScans = SmartHealthRepository.api.listPatientScans(limit = 5).map { it.toPatientRecentScan() }
             val devices = SmartHealthRepository.api.listDevices()
             currentDevice = devices.firstOrNull { it.online || it.connected } ?: devices.firstOrNull()
@@ -135,6 +141,7 @@ fun PatientDashboardScreen(
     ) {
         PatientHomeHeader(
             patientName = patientName,
+            workspaceName = workspaceName,
             searchQuery = searchQuery,
             onSearchQueryChange = { searchQuery = it },
             onNavigateToSettings = onNavigateToSettings,
@@ -238,6 +245,7 @@ fun PatientDashboardScreen(
 @Composable
 private fun PatientHomeHeader(
     patientName: String,
+    workspaceName: String,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -256,10 +264,27 @@ private fun PatientHomeHeader(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text("Chào buổi sáng,", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(patientName, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        patientName,
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (workspaceName.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = workspaceName,
+                            color = Color.White.copy(alpha = 0.76f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

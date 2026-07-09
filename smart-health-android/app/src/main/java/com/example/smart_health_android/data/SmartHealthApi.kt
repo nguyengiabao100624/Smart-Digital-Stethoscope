@@ -154,6 +154,11 @@ class SmartHealthApi(
         parseAuthUser(patchJson("$baseUrl/me", fields).getJSONObject("user"))
     }
 
+    suspend fun switchWorkspace(workspaceId: String): AuthUser = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("organizationId", workspaceId)
+        parseAuthUser(patchJson("$baseUrl/me", body).getJSONObject("user"))
+    }
+
     suspend fun changePassword(
         currentPassword: String,
         newPassword: String,
@@ -566,9 +571,26 @@ class SmartHealthApi(
     }
 
     private fun parseAuthUser(json: JSONObject): AuthUser {
+        val currentWorkspace = parseWorkspaceSummary(json.optJSONObject("currentWorkspace") ?: json.optJSONObject("workspace"))
+        val memberships = json.optJSONArray("memberships").orEmpty().map(::parseWorkspaceMembership)
+        val currentMembership = json.optJSONObject("currentMembership")?.let(::parseWorkspaceMembership)
+        val currentWorkspaceId = json.optStringFirst(
+            "currentWorkspaceId",
+            "workspaceId",
+            "organizationId"
+        ).ifBlank { currentWorkspace?.id.orEmpty() }
+        val effectiveWorkspaceType = json.optStringFirst("workspaceType").ifBlank {
+            currentWorkspace?.workspaceType?.ifBlank { currentWorkspace.type }.orEmpty()
+        }
+        val effectiveRole = currentMembership?.role
+            ?.takeIf { it.isNotBlank() }
+            ?: memberships.firstOrNull { it.workspaceId == currentWorkspaceId || it.organizationId == currentWorkspaceId }
+                ?.role
+                ?.takeIf { it.isNotBlank() }
+            ?: json.optString("role", "doctor")
         return AuthUser(
             id = json.optString("id"),
-            role = json.optString("role", "doctor"),
+            role = effectiveRole,
             name = json.optString("name"),
             email = json.optString("email"),
             avatarFileId = json.optString("avatarFileId"),
@@ -577,8 +599,8 @@ class SmartHealthApi(
             license = json.optString("license"),
             hospital = json.optString("hospital"),
             department = json.optString("department"),
-            organizationId = json.optString("organizationId"),
-            clinicName = json.optString("clinicName"),
+            organizationId = json.optStringFirst("organizationId").ifBlank { currentWorkspaceId },
+            clinicName = json.optString("clinicName").ifBlank { currentWorkspace?.name.orEmpty() },
             specialty = json.optString("specialty"),
             address = json.optString("address"),
             verifiedEmail = json.optBoolean("verifiedEmail"),
@@ -588,7 +610,11 @@ class SmartHealthApi(
             roleInfoRequiredFields = json.optJSONArray("roleInfoRequiredFields").toStringList(),
             roleInfoRequestMessage = json.optString("roleInfoRequestMessage"),
             registrationReason = json.optString("registrationReason"),
-            workspaceType = json.optString("workspaceType"),
+            currentWorkspaceId = currentWorkspaceId,
+            currentMembership = currentMembership,
+            currentWorkspace = currentWorkspace,
+            memberships = memberships,
+            workspaceType = effectiveWorkspaceType,
             accountType = json.optString("accountType"),
             clinicSuggestion = json.optString("clinicSuggestion"),
             notificationPreferences = json.optJSONObject("notificationPreferences") ?: JSONObject(),
@@ -597,6 +623,42 @@ class SmartHealthApi(
             twoFactorSecretPreview = json.optString("twoFactorSecretPreview"),
             createdAt = json.stringOrNull("createdAt"),
             updatedAt = json.stringOrNull("updatedAt")
+        )
+    }
+
+    private fun parseWorkspaceMembership(json: JSONObject): WorkspaceMembership {
+        return WorkspaceMembership(
+            id = json.optString("id"),
+            workspaceId = json.optStringFirst("workspaceId", "organizationId"),
+            organizationId = json.optStringFirst("organizationId", "workspaceId"),
+            workspaceName = json.optStringFirst("workspaceName", "name"),
+            workspaceType = json.optStringFirst("workspaceType", "type"),
+            role = json.optString("role"),
+            patientCount = json.optIntFirst("patientCount", "patientsCount"),
+            deviceCount = json.optIntFirst("deviceCount", "devicesCount"),
+            deviceOnline = json.optIntFirst("deviceOnline", "devicesOnline"),
+            alertCount = json.optIntFirst("alertCount", "alertsCount"),
+            scanCount = json.optIntFirst("scanCount", "scansCount")
+        )
+    }
+
+    private fun parseWorkspaceSummary(json: JSONObject?): WorkspaceSummary? {
+        if (json == null) return null
+        val id = json.optStringFirst("id", "workspaceId", "organizationId")
+        val name = json.optStringFirst("name", "workspaceName")
+        if (id.isBlank() && name.isBlank()) return null
+        val workspaceType = json.optStringFirst("workspaceType", "type")
+        return WorkspaceSummary(
+            id = id,
+            name = name.ifBlank { id },
+            type = json.optString("type").ifBlank { workspaceType },
+            workspaceType = workspaceType,
+            role = json.optString("role"),
+            patientCount = json.optIntFirst("patientCount", "patientsCount"),
+            deviceCount = json.optIntFirst("deviceCount", "devicesCount"),
+            deviceOnline = json.optIntFirst("deviceOnline", "devicesOnline"),
+            alertCount = json.optIntFirst("alertCount", "alertsCount"),
+            scanCount = json.optIntFirst("scanCount", "scansCount")
         )
     }
 
@@ -896,6 +958,26 @@ class SmartHealthApi(
     private fun JSONArray?.toStringList(): List<String> {
         if (this == null) return emptyList()
         return List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
+    }
+
+    private fun JSONObject.optStringFirst(vararg names: String): String {
+        for (name in names) {
+            val value = optString(name)
+            if (value.isNotBlank()) return value
+        }
+        return ""
+    }
+
+    private fun JSONObject.optIntFirst(vararg names: String): Int {
+        for (name in names) {
+            if (!has(name) || isNull(name)) continue
+            val raw = opt(name)
+            when (raw) {
+                is Number -> return raw.toInt()
+                is String -> raw.toIntOrNull()?.let { return it }
+            }
+        }
+        return 0
     }
 
     private fun String.urlEncode(): String = java.net.URLEncoder.encode(this, "UTF-8")

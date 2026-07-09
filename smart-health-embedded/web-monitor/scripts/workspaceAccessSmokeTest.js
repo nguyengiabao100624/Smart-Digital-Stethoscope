@@ -56,6 +56,13 @@ function writeSeedDb() {
     role: user.role === "admin" ? "platform_admin" : user.role,
     createdAt,
   }));
+  memberships.push({
+    id: "mem_usr_doctor_org_beta",
+    userId: "usr_doctor",
+    organizationId: "org_beta",
+    role: "doctor",
+    createdAt,
+  });
 
   const db = {
     version: 1,
@@ -372,6 +379,38 @@ async function runScenario() {
   assert.deepEqual(patient.user.allowedSurfaces, ["android"]);
   assert.ok(technician.user.capabilities.includes("workspace.devices.manage"));
   assert.ok(!technician.user.capabilities.includes("billing.view"));
+  assert.equal(workspaceAdmin.user.currentWorkspace.patientCount, 1);
+  assert.equal(workspaceAdmin.user.currentWorkspace.deviceCount, 2);
+  assert.equal(workspaceAdmin.user.currentWorkspace.deviceOnline, 0);
+  assert.equal(workspaceAdmin.user.currentWorkspace.alertCount, 2);
+  assert.equal(workspaceAdmin.user.currentWorkspace.scanCount, 2);
+  const alphaMembership = workspaceAdmin.user.memberships.find((membership) => membership.workspaceId === "org_alpha");
+  assert.ok(alphaMembership, "workspace admin /me should include org_alpha membership");
+  assert.equal(alphaMembership.patientCount, 1);
+  assert.equal(alphaMembership.deviceCount, 2);
+  assert.equal(alphaMembership.deviceOnline, 0);
+  assert.equal(alphaMembership.alertCount, 2);
+  assert.equal(alphaMembership.scanCount, 2);
+  const doctorBetaMembership = doctor.user.memberships.find((membership) => membership.workspaceId === "org_beta");
+  assert.ok(doctorBetaMembership, "doctor /me should include joined beta membership for Android workspace switching");
+  const doctorSwitchedToBeta = await expectStatus("doctor can switch to joined beta workspace through /me", doctor, "/api/v1/me", 200, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId: "org_beta" }),
+  });
+  assert.equal(doctorSwitchedToBeta.user.organizationId, "org_beta");
+  assert.equal(doctorSwitchedToBeta.user.currentWorkspace.id, "org_beta");
+  assert.equal(doctorSwitchedToBeta.user.currentWorkspace.patientCount, 1);
+  assert.equal(doctorSwitchedToBeta.user.currentWorkspace.deviceCount, 1);
+  assert.equal(doctorSwitchedToBeta.user.currentWorkspace.scanCount, 1);
+  assert.equal(doctorSwitchedToBeta.user.currentMembership.workspaceId, "org_beta");
+  const doctorSwitchedBackToAlpha = await expectStatus("doctor can switch back to alpha workspace through /me", doctor, "/api/v1/me", 200, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ organizationId: "org_alpha" }),
+  });
+  assert.equal(doctorSwitchedBackToAlpha.user.organizationId, "org_alpha");
+  assert.equal(doctorSwitchedBackToAlpha.user.currentWorkspace.id, "org_alpha");
 
   const contactRequest = await expectPublicStatus("public web contact form creates request", "/api/contact", 201, {
     method: "POST",

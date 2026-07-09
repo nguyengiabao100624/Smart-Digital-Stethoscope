@@ -183,6 +183,36 @@ async function visitRoute(page, href, label) {
   return { label, path: new URL(page.url()).pathname };
 }
 
+async function verifyWorkspaceSwitcherSurface(page) {
+  await page.waitForSelector("[data-workspace-card]", { timeout: 20_000 });
+  const result = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll("[data-workspace-card]")];
+    return cards.map((card) => ({
+      id: card.getAttribute("data-workspace-card") || "",
+      active: card.getAttribute("data-workspace-active") === "true",
+      patientCount: card.querySelector("[data-workspace-patient-count]")?.getAttribute("data-workspace-patient-count") || "",
+      deviceOnline: card.querySelector("[data-workspace-device-online]")?.getAttribute("data-workspace-device-online") || "",
+      alertCount: card.querySelector("[data-workspace-alert-count]")?.getAttribute("data-workspace-alert-count") || "0",
+    }));
+  });
+  if (!result.length) {
+    throw new Error("workspace switcher: no workspace cards rendered");
+  }
+  for (const card of result) {
+    for (const field of ["patientCount", "deviceOnline", "alertCount"]) {
+      if (!/^\d+$/.test(String(card[field]))) {
+        throw new Error(`workspace switcher: ${field} is not numeric for ${card.id}`);
+      }
+    }
+  }
+  return {
+    label: "workspace switcher summary",
+    path: new URL(page.url()).pathname,
+    cards: result.length,
+    activeCards: result.filter((card) => card.active).length,
+  };
+}
+
 async function verifySettingsSurface(page) {
   const checks = [];
   await page.waitForSelector("#portal-settings-profile-tab", {
@@ -347,6 +377,9 @@ async function main() {
     ["/portal/devices/assign", "assign device"],
   ]) {
     routeChecks.push(await visitRoute(page, href, label));
+    if (href === "/portal/workspace") {
+      routeChecks.push(await verifyWorkspaceSwitcherSurface(page));
+    }
   }
 
   await page.locator("#portal-user-menu-trigger").click();

@@ -279,6 +279,7 @@ fun AppNavGraph(
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToProfile = { navController.navigate("profile") },
+                onNavigateToWorkspace = { navController.navigate("workspace-switcher") },
                 onNavigateToFamilyProfiles = { navController.navigate("family-profiles") },
                 onNavigateToPrivacy = { navController.navigate("privacy") },
                 onNavigateToStethoscopeSettings = { navController.navigate("stethoscope-settings") },
@@ -292,6 +293,12 @@ fun AppNavGraph(
                         popUpTo("dashboard") { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable("workspace-switcher") {
+            WorkspaceSwitcherScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

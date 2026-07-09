@@ -937,6 +937,7 @@ function getUserMemberships(user) {
   return memberships.map((membership) => {
     const workspace = getClinicById(membership.organizationId);
     const role = user.role === "admin" ? "platform_admin" : normalizeWorkspaceRole(membership.role || user.role);
+    const workspaceSummary = workspace ? getWorkspaceOperationalSummary(workspace.id) : {};
     return {
       id: membership.id || "",
       workspaceId: membership.organizationId || "",
@@ -946,6 +947,7 @@ function getUserMemberships(user) {
       role,
       legacyRole: membership.role || user.role || "",
       createdAt: membership.createdAt || "",
+      ...workspaceSummary,
     };
   });
 }
@@ -1049,6 +1051,7 @@ function getUserWorkspaceContext(user) {
     memberships[0] ||
     null;
   const workspace = getClinicById(currentWorkspaceId);
+  const workspaceSummary = workspace ? getWorkspaceOperationalSummary(workspace.id) : {};
   const roleForCapabilities = user?.role === "admin" ? "platform_admin" : currentMembership?.role || user?.role;
   const capabilitySet = new Set(getCapabilitiesForRole(roleForCapabilities));
   if (
@@ -1081,6 +1084,7 @@ function getUserWorkspaceContext(user) {
           packageId: workspace.packageId || "",
           subscriptionStatus: workspace.subscriptionStatus || "",
           billingCycle: workspace.billingCycle || "",
+          ...workspaceSummary,
         }
       : null,
     capabilities,
@@ -1297,6 +1301,31 @@ function getWorkspaceLinkSummary(organizationId) {
   };
 }
 
+function getWorkspaceOperationalSummary(organizationId) {
+  const workspaceId = readString(organizationId, 120);
+  const patients = db.patients.filter((patient) => patient.organizationId === workspaceId);
+  const devices = db.devices.filter((device) => device.organizationId === workspaceId);
+  const scans = db.scans.filter((scan) => getScanOrgId(scan) === workspaceId);
+  const devicesOnline = devices.filter((device) => publicDevice(device).online).length;
+  const alertsCount = devices.filter((device) => {
+    const status = String(device.status || "").toLowerCase();
+    return device.connected === false || status.includes("offline") || status.includes("error") || status.includes("fail");
+  }).length;
+
+  return {
+    patientCount: patients.length,
+    patientsCount: patients.length,
+    deviceCount: devices.length,
+    devicesCount: devices.length,
+    deviceOnline: devicesOnline,
+    devicesOnline,
+    alertCount: alertsCount,
+    alertsCount,
+    scanCount: scans.length,
+    scansCount: scans.length,
+  };
+}
+
 function getWorkspaceUsage(organizationId) {
   const audioStorageBytes = db.storageFiles
     .filter((file) => file.organizationId === organizationId)
@@ -1336,6 +1365,7 @@ function getPackageQuota(packageId) {
 function publicWorkspace(org) {
   const clinic = publicClinic(org);
   const linkSummary = getWorkspaceLinkSummary(org.id);
+  const operationalSummary = getWorkspaceOperationalSummary(org.id);
   return {
     ...clinic,
     usage: getWorkspaceUsage(org.id),
@@ -1344,6 +1374,7 @@ function publicWorkspace(org) {
     doctorCount: linkSummary.doctors,
     patientCount: linkSummary.patients,
     deviceCount: linkSummary.devices,
+    ...operationalSummary,
   };
 }
 

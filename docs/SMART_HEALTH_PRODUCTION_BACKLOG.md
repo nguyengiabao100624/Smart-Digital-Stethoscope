@@ -25,6 +25,25 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
 
+## Completed source/build/backend smoke - 2026-07-09 Android workspace switcher and dashboard context
+
+- Fixed Android workspace context parity after the broad completeness audit found mobile Settings/Dashboard did not consume backend memberships/current workspace.
+- Android `AuthUser` now parses `/me` `currentWorkspace`, `currentMembership`, `memberships`, workspace type, role, and operational summary counters.
+- Added Android `WorkspaceSwitcherScreen.kt` and routed it from Settings. The screen loads joined workspaces from the backend, shows loading/empty/error/switching states, and switches workspace through backend `PATCH /api/v1/me` rather than local-only state.
+- Doctor and patient dashboards now display the current workspace context so the active tenant is visible before patient/device/scan work.
+- Backend `smoke:workspace-access` now seeds a doctor with a second workspace membership and verifies successful switch to `org_beta`, beta summary/currentMembership response, and switch-back to `org_alpha`, while keeping unauthorized workspace self-join denial coverage for workspace admin.
+- Verification passed: backend `node .\scripts\workspaceAccessSmokeTest.js`, Android `.\gradlew.bat :app:compileDebugKotlin`, Android `.\gradlew.bat :app:assembleDebug`, and Android `.\gradlew.bat :app:testDebugUnitTest`.
+- Remaining validation: run the new Settings workspace switcher and dashboard context on an Android emulator or physical device with real credentials. This source slice does not prove live mobile runtime, real FCM delivery, or physical device workflows.
+
+## Completed source/local - 2026-07-09 Shcare Portal workspace summary contract
+
+- Found and fixed a portal sync gap where `/portal/workspace` showed patient/device/alert counters but `AuthContext.tsx` hardcoded membership counts to `0`.
+- Backend `/api/me` / `/api/v1/me` now returns scoped operational summaries on `currentWorkspace` and memberships: patients, total devices, online devices, alert/offline devices, and scans.
+- Shcare Web now types and maps these count fields, and the workspace switcher now performs an awaited switch with loading/error state, accessible button cards, role/type labels, and smoke selectors for the summary counters.
+- Smoke coverage now locks both sides of the contract: `smoke:workspace-access` asserts exact seeded `/me` workspace counts, and `smoke:portal-browser` asserts the workspace switcher renders numeric counters and one active card.
+- Verification passed locally/source-level: backend syntax checks, backend `smoke:workspace-access`, backend `check`, Shcare Web portal smoke script syntax check, Shcare Web typecheck, targeted ESLint, production build, and local dev `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`.
+- Remaining production step: deploy backend and Shcare Web, then rerun live `bun run smoke:portal-browser` without `SMOKE_DISABLE_WEB_SECURITY`. Do not call this live production-complete until that deploy/live smoke is done.
+
 ## Completed - 2026-07-09 Render backend account migration and Firebase redeploy
 
 - Recreated the backend on the new Render workspace because the previous `smart-health-api-xj0a` workspace hit the free outbound bandwidth limit and direct Render service transfer between workspaces is not supported.

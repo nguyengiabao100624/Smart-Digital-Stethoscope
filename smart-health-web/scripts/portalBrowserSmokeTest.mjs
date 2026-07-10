@@ -32,6 +32,7 @@ const watchPatterns = [
   "/api/portal/status",
   "/api/portal/overview",
   "/api/portal/patients",
+  "/api/portal/appointments",
   "/api/portal/scans",
   "/api/portal/notifications",
   "/api/portal/devices",
@@ -271,6 +272,24 @@ async function verifyConsentSurface(page) {
   };
 }
 
+async function verifyAppointmentsSurface(page) {
+  await page.waitForSelector("#portal-add-appointment", { timeout: 20_000 });
+  await page.waitForSelector("#portal-appointment-search", { timeout: 20_000 });
+  await page.waitForSelector("#portal-appointment-status", { timeout: 20_000 });
+  await page.locator("#portal-add-appointment").click();
+  await page.waitForSelector("#appointment-patient-id", { timeout: 20_000 });
+  await page.waitForSelector("#appointment-doctor-id", { timeout: 20_000 });
+  await page.waitForSelector("#appointment-type", { timeout: 20_000 });
+  await page.waitForSelector("#appointment-starts-at", { timeout: 20_000 });
+  await page.waitForSelector("#appointment-ends-at", { timeout: 20_000 });
+  await page.waitForSelector("#appointment-save", { timeout: 20_000 });
+  await page.locator("#portal-add-appointment").click();
+  return {
+    label: "appointments scheduling controls",
+    path: new URL(page.url()).pathname,
+  };
+}
+
 async function main() {
   const account = readSmokeAccount();
   const checkedResponses = [];
@@ -347,6 +366,7 @@ async function main() {
   for (const [href, label] of [
     ["/portal/dashboard", "dashboard"],
     ["/portal/patients", "patients"],
+    ["/portal/appointments", "appointments"],
     ["/portal/live", "live monitoring"],
     ["/portal/devices", "devices"],
     ["/portal/consent", "consent"],
@@ -363,6 +383,9 @@ async function main() {
     routeChecks.push(routeCheck);
     if (href === "/portal/consent") {
       routeChecks.push(await verifyConsentSurface(page));
+    }
+    if (href === "/portal/appointments") {
+      routeChecks.push(await verifyAppointmentsSurface(page));
     }
     if (href === "/portal/settings") {
       routeChecks.push(await verifySettingsSurface(page));

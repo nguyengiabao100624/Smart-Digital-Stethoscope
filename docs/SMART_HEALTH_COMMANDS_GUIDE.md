@@ -44,6 +44,18 @@ npm.cmd run build:firebase:admin
 
 The expanded live `npm.cmd run smoke:admin-mutation` is now valid against `smart-health-api-r5is`: final verified run `admin-mutation-mre2pt6i` passed after Render auto-deploy and Firebase Admin deploy. It covered workspace/package/admin-account/patient/device/doctor/scan/audio/reprocess/notification/storage/settings mutations, 14 admin routes including Doctor Approval and AI Measurements, and cleanup returned HTTP 200 for all 10 created/restored targets.
 
+2026-07-10 backend audio worker queue persistence source checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd test
+npm.cmd run check
+npm.cmd run smoke:workspace-access
+node scripts\worker.js
+```
+
+`npm.cmd test` includes a focused regression that writes a tiny WAV file and verifies `src/audioProcessingWorker.js` persists scan/audio/AI state through repository-style saves. `node scripts\worker.js` should print `REDIS_URL is not set; audio worker is disabled.` when Redis is not configured. A real queue runtime proof still requires setting `REDIS_URL` and running backend + worker against the same data/storage env; do not claim live BullMQ processing from the no-Redis check alone.
+
 2026-07-09/10 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `bun run smoke:portal-mutation` run `portal-mutation-mrdczthd` after the workspace-summary follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mre2pt6i`, and targeted Playwright visual QA after the portal density/search-field deploy. A follow-up density sweep checked 19 portal routes for overflow, H1/input/button/search sizing, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
 
 Web Admin build/deploy/smoke:
@@ -2105,7 +2117,7 @@ npm.cmd run smoke:public-deployment
 
 For the 2026-07-01 route-contract fix, `smoke:workspace-access` specifically verifies `GET /api/v1/devices/:id/events` for own/cross-workspace devices and `DELETE /api/portal/notifications/:id`.
 
-The same smoke is now also the focused Shcare Portal backend-contract suite. It covers public contact, portal status/overview/monitoring/reports/audit, patient CRUD, patient share/revoke, scan note update, device assign/command, staff create/list, settings/workspace patch, `/api/v1/me` notification preferences, share-target tenant scoping, notification read/read-all/delete, and cross-workspace denials.
+The same smoke is now also the focused Shcare Portal backend-contract suite. It covers public contact, portal status/overview/monitoring/reports/audit, patient CRUD, appointment list/create/confirm/delete plus notification side effects, patient share/revoke, scan note update, device assign/command, staff create/list, settings/workspace patch, `/api/v1/me` notification preferences, share-target tenant scoping, notification read/read-all/delete, and cross-workspace denials.
 
 2026-07-01 deploy evidence for this BE route-contract fix:
 
@@ -2119,6 +2131,8 @@ route canary: doctor.viewer.smoke@smarthealth.test has workspace.devices.view, n
 ```
 
 The tooling commit changed backend `npm start` to `node scripts/start.js`. On hosts with `DATABASE_URL`, `scripts/start.js` runs `scripts/migrate.js` first, then starts `server.js`; without `DATABASE_URL`, it starts normally. Migration `006_secure_public_tables.sql` enables RLS and revokes direct Supabase `anon`/`authenticated` table access so web/mobile clients continue to use the Render backend API.
+
+As of 2026-07-10, appointment scheduling adds migration `010_appointments.sql`. Local `npm.cmd run migrate` still requires `DATABASE_URL`; if the shell lacks it, the command exits with `DATABASE_URL is required to run migrations` and the migration must be applied by the Postgres-backed deploy/start path or a shell with database envs.
 
 In a local demo env, `check:production:strict` is still expected to fail with `BLOCKED`; pass requires real provider envs on the backend host.
 

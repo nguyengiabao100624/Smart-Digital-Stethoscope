@@ -39,6 +39,24 @@ When a change touches product behavior, check the cross-surface contract: backen
 - Deploys verified: Render auto-deployed the backend behavior by live canary; Web Admin Firebase Hosting `shcare-admin` is live at version `projects/162993928259/sites/shcare-admin/versions/c6371f255aa5f85f`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783635730840000`.
 - Final live smoke passed: `npm.cmd run smoke:admin-mutation` run `admin-mutation-mre2pt6i` against `https://shcare-admin.web.app` and `https://smart-health-api-r5is.onrender.com/api` mutated workspace, package, admin account, patient, device, doctor, scan/audio/reprocess, notification, storage bucket, and settings; checked overview, account, devices, patients, doctors, doctor approval, AI measurements, clinics, packages, notifications, storage, settings, admin accounts, and audit log; cleanup returned HTTP 200 for all 10 targets.
 
+## 2026-07-10 - Backend audio worker queue persistence source follow-up
+
+- Closed a source gap in the scan/AI processing queue: `scripts/worker.js` no longer only runs `processAudioFile()` and logs the result. It now builds a data-store/repository/storage context and calls `src/audioProcessingWorker.js`, which stores audio artifacts, waveform JSON, AI result rows, and completed scan status through the same JSON/Postgres-aware repository path used by the backend.
+- Backend scan completion/reprocess no longer processes inline and then enqueues a duplicate Redis job. When `REDIS_URL` queueing succeeds, the scan stays `queued` for the worker; when Redis is absent or enqueue fails, the existing inline fallback remains active.
+- Regression coverage was added to backend `npm test`: it creates a tiny WAV file, runs `processAudioJob()`, and asserts scan/audio/AI artifacts are persisted through fake repositories. `npm.cmd run check` now syntax-checks `src/audioProcessingWorker.js`.
+- Verification passed locally: backend `npm.cmd test`, `npm.cmd run check`, `npm.cmd run smoke:workspace-access`, and `node scripts\worker.js` with no `REDIS_URL` returning the expected disabled message.
+- This is source/build smoke only. A real Redis/BullMQ deployment smoke still needs `REDIS_URL` and the backend/worker running against the same production data/storage env.
+
+## 2026-07-10 - Shcare Portal appointments source follow-up
+
+- Closed a missing software module before ESP32 work: appointment/consultation scheduling had only notification preferences and no active API/UI/persistence route.
+- Backend now has `appointments` runtime state normalization, appointment capabilities, scoped `/api/v1/appointments`, `/api/portal/appointments`, and `/api/doctor/appointments` routes for list/create/get/update/delete, patient/doctor validation, status transitions, audit events, and scoped in-app notifications.
+- Repository/schema follow-up added `repositories.appointments` with JSON fallback plus SQL list/find/save/delete and migration `010_appointments.sql` for the normalized `appointments` table and indexes.
+- Shcare Portal now has `/portal/appointments`, sidebar entries for doctor/clinic portals, typed API client methods, a scheduling page with status/search filters, create form, confirm/cancel/delete actions, and browser-smoke selectors.
+- Smoke coverage now asserts backend workspace scoping, cross-workspace denial, appointment create/confirm/delete, notification side effect, and browser route/form controls. `smoke:portal-browser`, `smoke:portal-mutation`, and `smoke:performance` include the appointment route/API in their watched coverage.
+- Verification passed locally: backend RED first failed on missing `/api/portal/appointments` 404, then backend `npm.cmd run smoke:workspace-access`, `npm.cmd test`, `npm.cmd run check`, `npm.cmd run smoke:repositories`, Shcare Web `npm.cmd run lint`, `.\node_modules\.bin\tsc.exe --noEmit`, `npm.cmd run build`, and `npm.cmd run build:firebase`. Local Vite dev server is running at `http://127.0.0.1:8080`.
+- `npm.cmd run migrate` was not applied because this shell has no `DATABASE_URL`; the migration file is present for the next Postgres-backed deploy/migration run. This source slice has not yet been pushed/deployed/live-smoked.
+
 ## 2026-07-09 - Web Admin production backend guard and live redeploy
 
 - Found a Web Admin config drift after the active backend moved to Render `smart-health-api-r5is`: `smart-health-admin\thiết kế giao diện\.env.production` still pointed to retired `https://smart-health-api-xj0a.onrender.com`.

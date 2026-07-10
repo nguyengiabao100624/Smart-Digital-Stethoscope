@@ -105,6 +105,29 @@ export interface Patient {
   updatedAt?: string;
 }
 
+export interface Appointment {
+  id: string;
+  organizationId?: string;
+  patientId?: string;
+  doctorUserId?: string;
+  createdByUserId?: string;
+  type?: "remote_consultation" | "clinic_visit" | "measurement" | "follow_up" | string;
+  status?: "scheduled" | "confirmed" | "completed" | "cancelled" | "no_show" | string;
+  startsAt?: string;
+  endsAt?: string;
+  location?: string;
+  channel?: string;
+  reason?: string;
+  notes?: string;
+  cancellationReason?: string;
+  cancelledAt?: string;
+  completedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  patient?: Pick<Patient, "id" | "patientCode" | "name" | "organizationId"> | null;
+  doctor?: Pick<ApiUser, "id" | "name" | "email" | "specialty"> | null;
+}
+
 export interface Scan {
   id: string;
   patientId?: string;
@@ -534,6 +557,32 @@ export const smartHealthApi = {
     request<{ revoked: boolean; share?: PatientShare }>(
       `/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(shareId)}`,
       { method: "DELETE" },
+    ),
+  listAppointments: (query: Record<string, QueryValue> = {}) =>
+    request<{ appointments: Appointment[] }>("/portal/appointments", { query }),
+  getAppointment: (id: string) =>
+    request<{ appointment: Appointment }>(
+      `/portal/appointments/${encodeURIComponent(id)}`,
+    ),
+  createAppointment: (payload: Partial<Appointment>) =>
+    request<{ appointment: Appointment }>("/portal/appointments", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateAppointment: (id: string, payload: Partial<Appointment>) =>
+    request<{ appointment: Appointment }>(
+      `/portal/appointments/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    ),
+  deleteAppointment: (id: string) =>
+    request<{ deleted: boolean }>(
+      `/portal/appointments/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+      },
     ),
   listScans: (query: Record<string, QueryValue> = {}) =>
     request<{ scans: Scan[] }>("/portal/scans", { query }),

@@ -35,6 +35,7 @@ const watchPatterns = [
   "/api/me",
   "/api/portal/status",
   "/api/portal/patients",
+  "/api/portal/appointments",
   "/api/portal/devices",
   "/api/portal/notifications",
   "/api/portal/settings",
@@ -291,6 +292,79 @@ async function updatePatientNotesViaUi(page, patientId) {
     }
   }
   return { note };
+}
+
+async function exerciseAppointmentMutation(page, patientId, state) {
+  const startsAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+  const endsAt = new Date(Date.now() + 120 * 60 * 1000).toISOString();
+  const reason = `Portal appointment smoke ${runId}`;
+  const notes = "Controlled appointment mutation smoke.";
+  const createdResult = await apiFetch(page, "/portal/appointments", {
+    method: "POST",
+    body: {
+      patientId,
+      type: "remote_consultation",
+      startsAt,
+      endsAt,
+      reason,
+      notes,
+    },
+  });
+  const appointment = createdResult.payload?.appointment;
+  if (!appointment?.id) {
+    throw new Error("create appointment: backend did not return appointment.id");
+  }
+  state.appointmentId = appointment.id;
+
+  const listedResult = await apiFetch(page, "/portal/appointments");
+  const listed = Array.isArray(listedResult.payload?.appointments)
+    ? listedResult.payload.appointments
+    : [];
+  if (!listed.some((item) => item.id === appointment.id)) {
+    throw new Error("list appointment: created appointment was not returned");
+  }
+
+  const updatedResult = await apiFetch(
+    page,
+    `/portal/appointments/${encodeURIComponent(appointment.id)}`,
+    {
+      method: "PATCH",
+      body: {
+        status: "confirmed",
+        notes: `${notes} Confirmed.`,
+      },
+    },
+  );
+  if (updatedResult.payload?.appointment?.status !== "confirmed") {
+    throw new Error("update appointment: status was not persisted");
+  }
+
+  const deletedResult = await apiFetch(
+    page,
+    `/portal/appointments/${encodeURIComponent(appointment.id)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  if (deletedResult.payload?.deleted !== true) {
+    throw new Error("delete appointment: backend did not confirm deletion");
+  }
+  state.appointmentId = "";
+
+  const verifyDeletedResult = await apiFetch(page, "/portal/appointments");
+  const remaining = Array.isArray(verifyDeletedResult.payload?.appointments)
+    ? verifyDeletedResult.payload.appointments
+    : [];
+  if (remaining.some((item) => item.id === appointment.id)) {
+    throw new Error("delete appointment: appointment is still listed");
+  }
+
+  return {
+    id: appointment.id,
+    patientId,
+    status: updatedResult.payload.appointment.status,
+    deleted: true,
+  };
 }
 
 async function exerciseDeviceAssignment(page, patientId, state) {
@@ -896,6 +970,32 @@ async function restoreIfNeeded(page, state, cleanupResults) {
     state.notificationId = "";
   }
 
+  if (state.appointmentId) {
+    await apiFetch(
+      page,
+      `/portal/appointments/${encodeURIComponent(state.appointmentId)}`,
+      {
+        method: "DELETE",
+        allowFailure: true,
+      },
+    )
+      .then((result) =>
+        cleanupResults.push({
+          target: "appointment",
+          ok: result.ok || result.status === 404,
+          status: result.status,
+        }),
+      )
+      .catch((error) =>
+        cleanupResults.push({
+          target: "appointment",
+          ok: false,
+          error: error.message,
+        }),
+      );
+    state.appointmentId = "";
+  }
+
   if (state.supportNotificationId) {
     await apiFetch(
       page,
@@ -1055,6 +1155,11 @@ async function main() {
 
     const created = await createPatientViaUi(page, state);
     const patientUpdate = await updatePatientNotesViaUi(page, state.patientId);
+    const appointment = await exerciseAppointmentMutation(
+      page,
+      state.patientId,
+      state,
+    );
 
     const deviceClaim = await exerciseDeviceClaim(page, state);
 
@@ -1227,6 +1332,7 @@ async function main() {
             updatedNote: patientUpdate.note,
             deleted: patientDelete.deleted,
           },
+          appointment,
           deviceClaim,
           deviceAssignment,
           notification,

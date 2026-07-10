@@ -44,6 +44,24 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Pushed commits: `f79d6cba`, `56f3c3f8`, `6e9a14b3`, `31fe2ebf`. Firebase Hosting Web Admin live version `projects/162993928259/sites/shcare-admin/versions/c6371f255aa5f85f`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783635730840000`.
 - Remaining backlog after this closure is outside the Web Admin smoke slice: real physical ESP32-S3 proof, Android runtime proof on a stable emulator/device, Brevo/SMS/Zalo real delivery, MQTT/Redis production decisions, provider-env object-storage proof, and real inbox click-through.
 
+## Completed source/build/backend smoke - 2026-07-10 audio worker queue persistence
+
+- Closed the source gap where the BullMQ `scripts/worker.js` consumed `audio-processing` jobs but only logged `processAudioFile()` output without updating scan/audio/AI state.
+- Added `src/audioProcessingWorker.js` as a testable processor that writes audio artifact metadata, waveform JSON, AI result metadata, and scan completion fields through JSON/Postgres-aware repositories.
+- Backend scan complete/reprocess now avoids duplicate processing in Redis mode: queue success leaves the scan queued for the worker; missing/broken Redis falls back to the existing inline processing path.
+- Verification passed locally: backend `npm.cmd test`, backend `npm.cmd run check`, backend `npm.cmd run smoke:workspace-access`, and `node scripts\worker.js` with no `REDIS_URL` exiting cleanly.
+- Remaining queue backlog: run a real Redis/BullMQ smoke with backend + worker + production data/storage envs; decide whether the final production AI path needs a stronger model registry/inference service beyond the current signal-quality processor.
+
+## Completed source/build/backend smoke - 2026-07-10 Shcare Portal appointments
+
+- Closed a missing Smart Health software module before ESP32 work: appointments/consultations now have backend API, repository persistence, database migration, validation, permissions, audit/notification side effects, Shcare Portal route/menu/UI, and smoke coverage.
+- Backend routes added: `/api/v1/appointments`, `/api/portal/appointments`, and `/api/doctor/appointments` for scoped list/create/get/update/delete. Workspace admins and doctors can manage workspace appointments; patients can manage personal/family-scope appointments through the same access checks.
+- Migration `010_appointments.sql` creates the normalized `appointments` table with workspace/patient/doctor/status indexes. `repositories.appointments` supports JSON fallback and SQL list/find/save/delete.
+- Shcare Web now has `/portal/appointments` with patient/doctor-backed scheduling form, filters, confirm/cancel/delete controls, API client types/methods, and sidebar entry for doctor/clinic portals.
+- Smoke coverage now includes appointment scope, cross-workspace denial, create/confirm/delete, notification side effect, browser route/form controls, mutation watcher, and performance route coverage.
+- Verification passed: initial RED `smoke:workspace-access` failed on 404, then backend `smoke:workspace-access`, `test`, `check`, `smoke:repositories`, Shcare Web `lint`, TypeScript `--noEmit`, `build`, and `build:firebase` all passed. Local dev server returned 200 at `http://127.0.0.1:8080/portal/appointments`.
+- Remaining deployment backlog: `npm.cmd run migrate` could not apply migration because `DATABASE_URL` is absent in this shell; push/deploy/live portal smoke are still pending for this slice.
+
 ## Completed deployed/live - 2026-07-09 Web Admin production backend guard
 
 - Found a real Web Admin production config drift: local `.env.production` still pointed at the retired Render backend `https://smart-health-api-xj0a.onrender.com`, even though the active production backend is `https://smart-health-api-r5is.onrender.com`.

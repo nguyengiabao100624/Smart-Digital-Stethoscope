@@ -139,6 +139,9 @@ export const createAppRouter = () =>
         { path: "patients/import", lazy: lazyPage(() => import("./pages/portal/PatientImportPage")) },
         { path: "patients/:id", lazy: lazyPage(() => import("./pages/portal/PatientDetail")) },
 
+        // Appointments
+        { path: "appointments", lazy: lazyPage(() => import("./pages/portal/AppointmentsPage")) },
+
         // Live monitoring
         { path: "live", lazy: lazyPage(() => import("./pages/portal/LiveMonitoring")) },
 

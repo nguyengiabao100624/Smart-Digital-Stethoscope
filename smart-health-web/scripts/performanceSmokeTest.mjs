@@ -148,6 +148,7 @@ async function main() {
 
     for (const [pathname, label] of [
       ["/portal/patients", "portal patients"],
+      ["/portal/appointments", "portal appointments"],
       ["/portal/records", "portal records"],
       ["/portal/devices", "portal devices"],
       ["/portal/settings", "portal settings"],

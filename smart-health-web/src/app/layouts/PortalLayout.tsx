@@ -7,6 +7,7 @@ import {
   BarChart2,
   Bell,
   Building2,
+  CalendarDays,
   ChevronDown,
   FileText,
   Fingerprint,
@@ -31,6 +32,7 @@ import { useAuth } from "../context/AuthContext";
 const doctorNav = [
   { to: "/portal/dashboard", icon: Home, label: "Tổng quan" },
   { to: "/portal/patients", icon: Users, label: "Bệnh nhân" },
+  { to: "/portal/appointments", icon: CalendarDays, label: "Lịch hẹn" },
   { to: "/portal/live", icon: Activity, label: "Theo dõi trực tiếp" },
   { to: "/portal/records", icon: FileText, label: "Lượt đo & hồ sơ" },
   { to: "/portal/devices", icon: Stethoscope, label: "Thiết bị" },
@@ -42,6 +44,7 @@ const doctorNav = [
 const clinicNav = [
   { to: "/portal/dashboard", icon: Home, label: "Tổng quan" },
   { to: "/portal/patients", icon: Users, label: "Bệnh nhân" },
+  { to: "/portal/appointments", icon: CalendarDays, label: "Lịch hẹn" },
   { to: "/portal/live", icon: Activity, label: "Theo dõi trực tiếp" },
   { to: "/portal/records", icon: FileText, label: "Lượt đo & hồ sơ" },
   { to: "/portal/devices", icon: Stethoscope, label: "Thiết bị" },

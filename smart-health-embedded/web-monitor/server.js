@@ -214,6 +214,7 @@ function createEmptyDb() {
     createdAt,
     updatedAt: createdAt,
     patients: [],
+    appointments: [],
     scans: [],
     users: [],
     organizations: [],
@@ -267,6 +268,7 @@ function normalizeDb(value) {
   normalized.createdAt = normalized.createdAt || nowIso();
   normalized.updatedAt = normalized.updatedAt || normalized.createdAt;
   normalized.patients = Array.isArray(normalized.patients) ? normalized.patients : [];
+  normalized.appointments = Array.isArray(normalized.appointments) ? normalized.appointments : [];
   normalized.scans = Array.isArray(normalized.scans) ? normalized.scans : [];
   normalized.users = Array.isArray(normalized.users) ? normalized.users : [];
   normalized.organizations = Array.isArray(normalized.organizations) ? normalized.organizations : [];
@@ -958,12 +960,14 @@ function getCapabilitiesForRole(role) {
   const workspaceRead = [
     "workspace.dashboard.view",
     "workspace.patients.view",
+    "workspace.appointments.view",
     "workspace.devices.view",
     "workspace.scans.view",
   ];
   const workspaceManage = [
     "workspace.staff.manage",
     "workspace.patients.manage",
+    "workspace.appointments.manage",
     "workspace.devices.manage",
     "workspace.scans.manage",
     "workspace.storage.manage",
@@ -981,6 +985,8 @@ function getCapabilitiesForRole(role) {
       "platform.users.manage",
       "platform.patients.view",
       "platform.patients.manage",
+      "platform.appointments.view",
+      "platform.appointments.manage",
       "platform.devices.view",
       "platform.devices.manage",
       "platform.scans.view",
@@ -1006,6 +1012,8 @@ function getCapabilitiesForRole(role) {
       "workspace.dashboard.view",
       "workspace.patients.view",
       "workspace.patients.manage",
+      "workspace.appointments.view",
+      "workspace.appointments.manage",
       "workspace.devices.view",
       "workspace.scans.view",
       "workspace.scans.manage",
@@ -1018,6 +1026,7 @@ function getCapabilitiesForRole(role) {
       ...common,
       "workspace.dashboard.view",
       "workspace.patients.view",
+      "workspace.appointments.view",
       "workspace.devices.view",
       "workspace.devices.manage",
       "workspace.scans.view",
@@ -1034,6 +1043,8 @@ function getCapabilitiesForRole(role) {
       ...common,
       "personal.dashboard.view",
       "personal.profiles.manage",
+      "personal.appointments.view",
+      "personal.appointments.manage",
       "personal.devices.manage",
       "personal.scans.manage",
       "personal.sharing.manage",
@@ -1612,6 +1623,15 @@ async function enqueueAudioProcessing(scan, wavFilePath) {
     wavFilePath,
     sampleRate: scan.sampleRate || SAMPLE_RATE,
   });
+}
+
+async function queueAudioProcessingIfAvailable(scan, wavFilePath) {
+  try {
+    return await enqueueAudioProcessing(scan, wavFilePath);
+  } catch (error) {
+    console.warn(`Audio queue unavailable for scan ${scan.id}: ${error.message}`);
+    return false;
+  }
 }
 
 async function handleDeviceTelemetry(deviceId, payload = {}) {
@@ -2611,6 +2631,204 @@ function withPatientStats(patient) {
   };
 }
 
+const APPOINTMENT_TYPES = new Set(["remote_consultation", "clinic_visit", "measurement", "follow_up"]);
+const APPOINTMENT_STATUSES = new Set(["scheduled", "confirmed", "completed", "cancelled", "no_show"]);
+
+function normalizeAppointmentType(value) {
+  const type = readString(value, 60) || "remote_consultation";
+  return APPOINTMENT_TYPES.has(type) ? type : "remote_consultation";
+}
+
+function normalizeAppointmentStatus(value, fallback = "scheduled") {
+  const status = readString(value, 60) || fallback;
+  return APPOINTMENT_STATUSES.has(status) ? status : fallback;
+}
+
+function parseAppointmentTime(value, label) {
+  const raw = readString(value, 120);
+  if (!raw) {
+    throw httpError(400, `${label} is required`);
+  }
+  const time = new Date(raw);
+  if (Number.isNaN(time.getTime())) {
+    throw httpError(400, `${label} must be a valid ISO date`);
+  }
+  return time.toISOString();
+}
+
+function defaultAppointmentEnd(startsAt) {
+  return new Date(Date.parse(startsAt) + 30 * 60 * 1000).toISOString();
+}
+
+function assertAppointmentWindow(startsAt, endsAt) {
+  if (Date.parse(endsAt) <= Date.parse(startsAt)) {
+    throw httpError(400, "Appointment end time must be after start time");
+  }
+}
+
+function createAppointmentRecord(payload = {}) {
+  const createdAt = nowIso();
+  const startsAt = parseAppointmentTime(payload.startsAt, "startsAt");
+  const endsAt = payload.endsAt ? parseAppointmentTime(payload.endsAt, "endsAt") : defaultAppointmentEnd(startsAt);
+  assertAppointmentWindow(startsAt, endsAt);
+  const status = normalizeAppointmentStatus(payload.status);
+  const appointment = {
+    id: createId("appt"),
+    organizationId: readString(payload.organizationId, 120) || "org_default_clinic",
+    patientId: readString(payload.patientId, 120),
+    doctorUserId: readString(payload.doctorUserId || payload.doctorId || payload.assignedDoctorId, 120),
+    createdByUserId: readString(payload.createdByUserId, 120),
+    type: normalizeAppointmentType(payload.type),
+    status,
+    startsAt,
+    endsAt,
+    location: readString(payload.location, 240),
+    channel: readString(payload.channel, 80) || (normalizeAppointmentType(payload.type) === "remote_consultation" ? "video" : "clinic"),
+    reason: readString(payload.reason, 1000),
+    notes: readString(payload.notes, 2000),
+    cancellationReason: readString(payload.cancellationReason, 1000),
+    cancelledAt: status === "cancelled" ? createdAt : "",
+    completedAt: status === "completed" ? createdAt : "",
+    createdAt,
+    updatedAt: createdAt,
+  };
+  db.appointments.unshift(appointment);
+  return appointment;
+}
+
+function updateAppointmentRecord(appointment, payload = {}) {
+  if (Object.prototype.hasOwnProperty.call(payload, "patientId") && readString(payload.patientId, 120) !== appointment.patientId) {
+    throw httpError(400, "Cannot move an appointment to another patient; create a new appointment instead");
+  }
+  for (const field of ["location", "reason", "notes", "cancellationReason"]) {
+    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+      appointment[field] = readString(payload[field], field === "notes" ? 2000 : 1000);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "type")) {
+    appointment.type = normalizeAppointmentType(payload.type);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "channel")) {
+    appointment.channel = readString(payload.channel, 80);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "doctorUserId") || Object.prototype.hasOwnProperty.call(payload, "doctorId")) {
+    appointment.doctorUserId = readString(payload.doctorUserId || payload.doctorId, 120);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "startsAt")) {
+    appointment.startsAt = parseAppointmentTime(payload.startsAt, "startsAt");
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "endsAt")) {
+    appointment.endsAt = parseAppointmentTime(payload.endsAt, "endsAt");
+  }
+  assertAppointmentWindow(appointment.startsAt, appointment.endsAt || defaultAppointmentEnd(appointment.startsAt));
+  if (Object.prototype.hasOwnProperty.call(payload, "status")) {
+    const previous = appointment.status;
+    appointment.status = normalizeAppointmentStatus(payload.status, previous || "scheduled");
+    if (appointment.status === "cancelled" && previous !== "cancelled") {
+      appointment.cancelledAt = nowIso();
+    }
+    if (appointment.status === "completed" && previous !== "completed") {
+      appointment.completedAt = nowIso();
+    }
+  }
+  appointment.updatedAt = nowIso();
+  return appointment;
+}
+
+function findAppointment(appointmentId) {
+  return db.appointments.find((appointment) => appointment.id === appointmentId);
+}
+
+function publicAppointment(appointment) {
+  const patient = findPatient(appointment.patientId);
+  const doctor = appointment.doctorUserId
+    ? db.users.find((user) => user.id === appointment.doctorUserId || user.firebaseUid === appointment.doctorUserId)
+    : null;
+  return {
+    ...appointment,
+    patient: patient
+      ? {
+          id: patient.id,
+          patientCode: patient.patientCode || "",
+          name: patient.name || "",
+          organizationId: patient.organizationId || "",
+        }
+      : null,
+    doctor: doctor
+      ? {
+          id: doctor.id,
+          name: doctor.name || doctor.email || doctor.id,
+          email: doctor.email || "",
+          specialty: doctor.specialty || doctor.department || "",
+        }
+      : null,
+  };
+}
+
+function canAccessAppointment(user, appointment) {
+  if (!user || !appointment) {
+    return false;
+  }
+  if (isPlatformAdminUser(user)) {
+    return true;
+  }
+  if (appointment.doctorUserId && appointment.doctorUserId === user.id) {
+    return true;
+  }
+  const patient = appointment.patientId ? findPatient(appointment.patientId) : null;
+  if (patient && canAccessPatient(user, patient.id)) {
+    return true;
+  }
+  const workspaceContext = getUserWorkspaceContext(user);
+  return Boolean(
+    appointment.organizationId &&
+      appointment.organizationId === workspaceContext.currentWorkspaceId &&
+      hasAnyCapability(user, APPOINTMENT_VIEW_CAPABILITIES),
+  );
+}
+
+function canManageAppointment(user, appointment) {
+  return Boolean(
+    appointment &&
+      canAccessAppointment(user, appointment) &&
+      hasAnyCapability(user, APPOINTMENT_MANAGE_CAPABILITIES),
+  );
+}
+
+function assertCanAccessAppointment(user, appointment) {
+  if (!canAccessAppointment(user, appointment)) {
+    throw httpError(403, "Appointment is outside current user scope");
+  }
+}
+
+function assertCanManageAppointment(user, appointment) {
+  if (!canManageAppointment(user, appointment)) {
+    throw httpError(403, "Cannot manage appointment in current scope");
+  }
+}
+
+function filterAppointmentsForUser(user, appointments) {
+  if (isPlatformAdminUser(user)) {
+    return appointments;
+  }
+  return appointments.filter((appointment) => canAccessAppointment(user, appointment));
+}
+
+function validateAppointmentDoctor(doctorUserId, organizationId, actorUser) {
+  const id = readString(doctorUserId, 120);
+  if (!id) {
+    return "";
+  }
+  const doctor = db.users.find((user) => (user.id === id || user.firebaseUid === id) && user.role === "doctor");
+  if (!doctor) {
+    throw httpError(404, "Doctor assigned to appointment was not found");
+  }
+  if (!isPlatformAdminUser(actorUser) && doctor.organizationId && doctor.organizationId !== organizationId) {
+    throw httpError(403, "Doctor assigned to appointment is outside current workspace");
+  }
+  return doctor.id;
+}
+
 function findPatient(patientId) {
   return db.patients.find((patient) => patient.id === patientId);
 }
@@ -2681,6 +2899,19 @@ const PATIENT_MANAGE_CAPABILITIES = [
   "platform.patients.manage",
   "workspace.patients.manage",
   "personal.profiles.manage",
+];
+const APPOINTMENT_VIEW_CAPABILITIES = [
+  "platform.appointments.view",
+  "platform.appointments.manage",
+  "workspace.appointments.view",
+  "workspace.appointments.manage",
+  "personal.appointments.view",
+  "personal.appointments.manage",
+];
+const APPOINTMENT_MANAGE_CAPABILITIES = [
+  "platform.appointments.manage",
+  "workspace.appointments.manage",
+  "personal.appointments.manage",
 ];
 const SHARING_MANAGE_CAPABILITIES = [
   "platform.patients.manage",
@@ -3352,6 +3583,11 @@ async function completeUploadedScan(scan) {
   scan.updatedAt = nowIso();
   await saveScanRecord(scan);
 
+  if (await queueAudioProcessingIfAvailable(scan, wavFilePath)) {
+    broadcastScanEvent("scan_processing_queued", scan);
+    return scan;
+  }
+
   const processingResult = await runInlineAudioProcessing(scan, wavFilePath);
   const quality = processingResult.processed.quality;
   const audioFile = {
@@ -3398,7 +3634,6 @@ async function completeUploadedScan(scan) {
   db.audioFiles.unshift(audioFile);
   db.aiResults.unshift(aiResult);
   await saveAudioArtifacts(scan, audioFile, aiResult);
-  await enqueueAudioProcessing(scan, wavFilePath);
   broadcastScanEvent("scan_completed", scan);
   return scan;
 }
@@ -3419,6 +3654,17 @@ async function reprocessScanAudio(scan) {
     updatedAt: nowIso(),
   });
   await saveScanRecord(scan);
+
+  if (await queueAudioProcessingIfAvailable(scan, wavFilePath)) {
+    Object.assign(scan, {
+      status: "queued",
+      processingStatus: "queued",
+      updatedAt: nowIso(),
+    });
+    await saveScanRecord(scan);
+    broadcastScanEvent("scan_processing_queued", scan);
+    return scan;
+  }
 
   try {
     const processingResult = await runInlineAudioProcessing(scan, wavFilePath);
@@ -3475,7 +3721,6 @@ async function reprocessScanAudio(scan) {
       updatedAt: nowIso(),
     });
     await saveAudioArtifacts(scan, audioFile, aiResult);
-    await enqueueAudioProcessing(scan, wavFilePath);
     broadcastScanEvent("scan_reprocessed", scan);
     return scan;
   } catch (error) {
@@ -10378,6 +10623,11 @@ async function handleDoctorPortalApi(req, res, url, segments) {
     return;
   }
 
+  if (segments[2] === "appointments") {
+    await handleAppointmentsApi(req, res, url, ["api", ...segments.slice(2)]);
+    return;
+  }
+
   if (segments[2] === "scans") {
     await handleScansApi(req, res, url, ["api", ...segments.slice(2)]);
     return;
@@ -10437,6 +10687,11 @@ async function handlePortalApi(req, res, url, segments) {
 
   if (resource === "patients") {
     await handlePatientsApi(req, res, url, ["api", ...segments.slice(2)]);
+    return;
+  }
+
+  if (resource === "appointments") {
+    await handleAppointmentsApi(req, res, url, ["api", ...segments.slice(2)]);
     return;
   }
 
@@ -10808,6 +11063,11 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (segments[1] === "appointments") {
+    await handleAppointmentsApi(req, res, url, segments);
+    return;
+  }
+
   if (segments[1] === "scans") {
     await handleScansApi(req, res, url, segments);
     return;
@@ -11035,6 +11295,162 @@ async function handlePatientsApi(req, res, url, segments) {
   }
 
   sendJson(res, 404, { error: "Patient route not found" });
+}
+
+async function handleAppointmentsApi(req, res, url, segments) {
+  const method = req.method || "GET";
+  const user = requireUser(req);
+  const appointmentId = segments[2] ? decodeURIComponent(segments[2]) : "";
+
+  if (segments.length === 2 && method === "GET") {
+    requireAnyCapability(user, APPOINTMENT_VIEW_CAPABILITIES);
+    const sourceAppointments = repositories && repositories.appointments
+      ? await repositories.appointments.list()
+      : db.appointments;
+    const patientId = readString(url.searchParams.get("patientId"), 120);
+    const doctorUserId = readString(url.searchParams.get("doctorUserId") || url.searchParams.get("doctorId"), 120);
+    const status = readString(url.searchParams.get("status"), 60);
+    const from = readString(url.searchParams.get("from"), 120);
+    const to = readString(url.searchParams.get("to"), 120);
+    const appointments = filterAppointmentsForUser(user, sourceAppointments)
+      .filter((appointment) => !patientId || appointment.patientId === patientId)
+      .filter((appointment) => !doctorUserId || appointment.doctorUserId === doctorUserId)
+      .filter((appointment) => !status || appointment.status === status)
+      .filter((appointment) => !from || Date.parse(appointment.startsAt || "") >= Date.parse(from))
+      .filter((appointment) => !to || Date.parse(appointment.startsAt || "") <= Date.parse(to))
+      .sort((left, right) => String(left.startsAt || "").localeCompare(String(right.startsAt || "")))
+      .map(publicAppointment);
+    sendJson(res, 200, { appointments });
+    return;
+  }
+
+  if (segments.length === 2 && method === "POST") {
+    requireAnyCapability(user, APPOINTMENT_MANAGE_CAPABILITIES);
+    const payload = await readJsonBody(req);
+    const patientId = readString(payload.patientId, 120);
+    if (!patientId) {
+      throw httpError(400, "patientId is required");
+    }
+    const patient = repositories ? await repositories.patients.findById(patientId) : findPatient(patientId);
+    if (!patient) {
+      throw httpError(404, "Patient assigned to appointment was not found");
+    }
+    assertCanAccessPatient(user, patient.id);
+    const organizationId = isPlatformAdminUser(user)
+      ? readString(payload.organizationId, 120) || patient.organizationId || user.organizationId || "org_default_clinic"
+      : patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "org_default_clinic";
+    const doctorUserId = validateAppointmentDoctor(
+      readString(payload.doctorUserId || payload.doctorId, 120) || (user.role === "doctor" ? user.id : ""),
+      organizationId,
+      user,
+    );
+    const appointment = createAppointmentRecord({
+      ...payload,
+      patientId: patient.id,
+      doctorUserId,
+      organizationId,
+      createdByUserId: user.id,
+    });
+    if (repositories && repositories.appointments) {
+      await repositories.appointments.save(appointment);
+    }
+    await createBackendNotification({
+      type: "info",
+      userId: doctorUserId || patient.ownerUserId || "",
+      organizationId,
+      title: "Lich hen moi",
+      message: `${patient.name || patient.patientCode || "Patient"} co lich hen luc ${new Date(appointment.startsAt).toLocaleString("vi-VN")}`,
+      metadata: {
+        appointmentId: appointment.id,
+        patientId: patient.id,
+        doctorUserId,
+        actionPath: "/appointments",
+        startsAt: appointment.startsAt,
+      },
+    });
+    await appendAudit("appointment.create", req, {
+      actorUserId: user.id,
+      organizationId,
+      resourceType: "appointment",
+      resourceId: appointment.id,
+      metadata: { patientId: patient.id, doctorUserId },
+    });
+    await saveDb();
+    sendJson(res, 201, { appointment: publicAppointment(appointment) });
+    return;
+  }
+
+  const appointment = repositories && repositories.appointments
+    ? await repositories.appointments.findById(appointmentId)
+    : findAppointment(appointmentId);
+  if (!appointment) {
+    throw httpError(404, "Appointment was not found");
+  }
+
+  if (segments.length === 3 && method === "GET") {
+    assertCanAccessAppointment(user, appointment);
+    sendJson(res, 200, { appointment: publicAppointment(appointment) });
+    return;
+  }
+
+  if (segments.length === 3 && method === "PATCH") {
+    assertCanManageAppointment(user, appointment);
+    const payload = await readJsonBody(req);
+    if (Object.prototype.hasOwnProperty.call(payload, "doctorUserId") || Object.prototype.hasOwnProperty.call(payload, "doctorId")) {
+      payload.doctorUserId = validateAppointmentDoctor(payload.doctorUserId || payload.doctorId, appointment.organizationId, user);
+    }
+    const beforeStatus = appointment.status;
+    updateAppointmentRecord(appointment, payload);
+    if (repositories && repositories.appointments) {
+      await repositories.appointments.save(appointment);
+    }
+    if (beforeStatus !== appointment.status) {
+      await createBackendNotification({
+        type: appointment.status === "cancelled" ? "warning" : "info",
+        userId: appointment.doctorUserId || "",
+        organizationId: appointment.organizationId || "",
+        title: "Cap nhat lich hen",
+        message: `Lich hen ${appointment.id} da chuyen sang ${appointment.status}.`,
+        metadata: {
+          appointmentId: appointment.id,
+          patientId: appointment.patientId,
+          actionPath: "/appointments",
+          status: appointment.status,
+        },
+      });
+    }
+    await appendAudit("appointment.update", req, {
+      actorUserId: user.id,
+      organizationId: appointment.organizationId || "",
+      resourceType: "appointment",
+      resourceId: appointment.id,
+      metadata: { status: appointment.status },
+    });
+    await saveDb();
+    sendJson(res, 200, { appointment: publicAppointment(appointment) });
+    return;
+  }
+
+  if (segments.length === 3 && method === "DELETE") {
+    assertCanManageAppointment(user, appointment);
+    if (repositories && repositories.appointments) {
+      await repositories.appointments.delete(appointment.id);
+    } else {
+      db.appointments = db.appointments.filter((item) => item.id !== appointment.id);
+      saveDb();
+    }
+    await appendAudit("appointment.delete", req, {
+      actorUserId: user.id,
+      organizationId: appointment.organizationId || "",
+      resourceType: "appointment",
+      resourceId: appointment.id,
+    });
+    await saveDb();
+    sendJson(res, 200, { deleted: true });
+    return;
+  }
+
+  sendJson(res, 404, { error: "Appointment route not found" });
 }
 
 async function handleScansApi(req, res, url, segments) {
@@ -11501,7 +11917,7 @@ async function startRuntime() {
   });
   const hydratedCounts = await repositories.hydrateCoreState();
   if (hydratedCounts) {
-    console.log(`PostgreSQL normalized state loaded: users=${hydratedCounts.users}, patients=${hydratedCounts.patients}, devices=${hydratedCounts.devices}, scans=${hydratedCounts.scans}, audioFiles=${hydratedCounts.audioFiles}, aiResults=${hydratedCounts.aiResults}, organizations=${hydratedCounts.organizations}, notifications=${hydratedCounts.notifications}, auditLogs=${hydratedCounts.auditLogs}`);
+    console.log(`PostgreSQL normalized state loaded: users=${hydratedCounts.users}, patients=${hydratedCounts.patients}, appointments=${hydratedCounts.appointments || 0}, devices=${hydratedCounts.devices}, scans=${hydratedCounts.scans}, audioFiles=${hydratedCounts.audioFiles}, aiResults=${hydratedCounts.aiResults}, organizations=${hydratedCounts.organizations}, notifications=${hydratedCounts.notifications}, auditLogs=${hydratedCounts.auditLogs}`);
   }
   ensureAppDefaults();
   localizeLegacyDbText();

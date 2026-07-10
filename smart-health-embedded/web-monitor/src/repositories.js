@@ -210,6 +210,30 @@ function rowToPatient(row) {
   };
 }
 
+function rowToAppointment(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    organizationId: row.organization_id || "",
+    patientId: row.patient_id || "",
+    doctorUserId: row.doctor_user_id || "",
+    createdByUserId: row.created_by_user_id || "",
+    type: row.type || "remote_consultation",
+    status: row.status || "scheduled",
+    startsAt: toIso(row.starts_at),
+    endsAt: toIso(row.ends_at),
+    location: row.location || "",
+    channel: row.channel || "",
+    reason: row.reason || "",
+    notes: row.notes || "",
+    cancellationReason: row.cancellation_reason || "",
+    cancelledAt: toIso(row.cancelled_at),
+    completedAt: toIso(row.completed_at),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
 function rowToPatientShare(row) {
   if (!row) return null;
   let scanIds = [];
@@ -618,6 +642,67 @@ function createRepositories(options) {
           optional(patient.notes),
           optional(patient.createdAt),
           patient.updatedAt || nowIso(),
+        ]
+      )
+    );
+  }
+
+  async function upsertAppointmentSql(appointment) {
+    await withSql((pool) =>
+      pool.query(
+        `
+          INSERT INTO appointments (
+            id, organization_id, patient_id, doctor_user_id, created_by_user_id,
+            type, status, starts_at, ends_at, location, channel, reason, notes,
+            cancellation_reason, cancelled_at, completed_at, created_at, updated_at
+          )
+          VALUES (
+            $1, $2,
+            CASE WHEN $3 IS NOT NULL AND EXISTS (SELECT 1 FROM patients WHERE id = $3) THEN $3 ELSE NULL END,
+            CASE WHEN $4 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $4) THEN $4 ELSE NULL END,
+            CASE WHEN $5 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $5) THEN $5 ELSE NULL END,
+            $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13,
+            $14, $15::timestamptz, $16::timestamptz,
+            COALESCE($17::timestamptz, now()), COALESCE($18::timestamptz, now())
+          )
+          ON CONFLICT (id)
+          DO UPDATE SET
+            organization_id = EXCLUDED.organization_id,
+            patient_id = EXCLUDED.patient_id,
+            doctor_user_id = EXCLUDED.doctor_user_id,
+            created_by_user_id = EXCLUDED.created_by_user_id,
+            type = EXCLUDED.type,
+            status = EXCLUDED.status,
+            starts_at = EXCLUDED.starts_at,
+            ends_at = EXCLUDED.ends_at,
+            location = EXCLUDED.location,
+            channel = EXCLUDED.channel,
+            reason = EXCLUDED.reason,
+            notes = EXCLUDED.notes,
+            cancellation_reason = EXCLUDED.cancellation_reason,
+            cancelled_at = EXCLUDED.cancelled_at,
+            completed_at = EXCLUDED.completed_at,
+            updated_at = EXCLUDED.updated_at
+        `,
+        [
+          appointment.id,
+          optional(appointment.organizationId),
+          optional(appointment.patientId),
+          optional(appointment.doctorUserId),
+          optional(appointment.createdByUserId),
+          appointment.type || "remote_consultation",
+          appointment.status || "scheduled",
+          optionalTimestamp(appointment.startsAt),
+          optionalTimestamp(appointment.endsAt),
+          optional(appointment.location),
+          optional(appointment.channel),
+          optional(appointment.reason),
+          optional(appointment.notes),
+          optional(appointment.cancellationReason),
+          optionalTimestamp(appointment.cancelledAt),
+          optionalTimestamp(appointment.completedAt),
+          optionalTimestamp(appointment.createdAt),
+          appointment.updatedAt || nowIso(),
         ]
       )
     );
@@ -1385,6 +1470,81 @@ function createRepositories(options) {
     },
   };
 
+  const appointments = {
+    async list(filters = {}) {
+      const db = getDb();
+      db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
+      const sqlAppointments = await withSql(async (pool) => {
+        const where = [];
+        const values = [];
+        const add = (field, value) => {
+          if (value === undefined || value === null || value === "") return;
+          values.push(value);
+          where.push(`${field} = $${values.length}`);
+        };
+        add("patient_id", filters.patientId);
+        add("doctor_user_id", filters.doctorUserId);
+        add("organization_id", filters.organizationId);
+        add("status", filters.status);
+        const result = await pool.query(
+          `
+            SELECT * FROM appointments
+            ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+            ORDER BY starts_at ASC, created_at DESC
+            LIMIT 500
+          `,
+          values
+        );
+        return result.rows.map(rowToAppointment);
+      });
+      if (sqlAppointments && sqlAppointments.length > 0) {
+        db.appointments = mergeSqlListWithRuntime(db.appointments, sqlAppointments);
+      }
+      return db.appointments
+        .filter((appointment) => !filters.patientId || appointment.patientId === filters.patientId)
+        .filter((appointment) => !filters.doctorUserId || appointment.doctorUserId === filters.doctorUserId)
+        .filter((appointment) => !filters.organizationId || appointment.organizationId === filters.organizationId)
+        .filter((appointment) => !filters.status || appointment.status === filters.status);
+    },
+
+    async findById(id) {
+      const appointmentId = String(id || "");
+      const sqlAppointment = await withSql(async (pool) => {
+        const result = await pool.query("SELECT * FROM appointments WHERE id = $1 LIMIT 1", [appointmentId]);
+        return result.rows[0] ? rowToAppointment(result.rows[0]) : null;
+      });
+      if (sqlAppointment) {
+        const db = getDb();
+        db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
+        return syncArrayItem(db.appointments, sqlAppointment);
+      }
+      const db = getDb();
+      db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
+      return db.appointments.find((appointment) => appointment.id === appointmentId) || null;
+    },
+
+    async save(appointment) {
+      const db = getDb();
+      db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
+      appointment.updatedAt = appointment.updatedAt || nowIso();
+      syncArrayItem(db.appointments, appointment);
+      await upsertAppointmentSql(appointment);
+      await saveDb();
+      return appointment;
+    },
+
+    async delete(id) {
+      const appointmentId = String(id || "");
+      const db = getDb();
+      db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
+      const appointment = db.appointments.find((item) => item.id === appointmentId) || null;
+      db.appointments = db.appointments.filter((item) => item.id !== appointmentId);
+      await withSql((pool) => pool.query("DELETE FROM appointments WHERE id = $1", [appointmentId]));
+      await saveDb();
+      return appointment;
+    },
+  };
+
   const patientShares = {
     async listForPatient(patientId, options = {}) {
       const id = String(patientId || "");
@@ -1756,7 +1916,7 @@ function createRepositories(options) {
           pool.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 200"),
           pool.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1000"),
         ]);
-        return {
+        const hydratedState = {
           organizations: organizationResult.rows.map(rowToOrganization),
           users: userResult.rows.map(rowToUser),
           memberships: membershipResult.rows.map(rowToMembership),
@@ -1771,6 +1931,13 @@ function createRepositories(options) {
           notifications: notificationResult.rows.map(rowToNotification),
           auditLogs: auditResult.rows.map(rowToAuditLog),
         };
+        try {
+          const appointmentResult = await pool.query("SELECT * FROM appointments ORDER BY starts_at ASC, created_at DESC LIMIT 500");
+          hydratedState.appointments = appointmentResult.rows.map(rowToAppointment);
+        } catch (err) {
+          onSqlError(err);
+        }
+        return hydratedState;
       });
 
       if (!hydrated) {
@@ -1779,7 +1946,10 @@ function createRepositories(options) {
 
       const db = getDb();
       const counts = {};
-      for (const key of ["organizations", "users", "memberships", "patients", "doctorPatientAccess", "devices", "scans", "audioFiles", "aiResults", "deviceEvents", "notificationDevices", "notifications", "auditLogs"]) {
+      for (const key of ["organizations", "users", "memberships", "patients", "appointments", "doctorPatientAccess", "devices", "scans", "audioFiles", "aiResults", "deviceEvents", "notificationDevices", "notifications", "auditLogs"]) {
+        if (!Array.isArray(hydrated[key])) {
+          continue;
+        }
         const items = hydrated[key].filter(Boolean);
         counts[key] = items.length;
         // Normalized SQL rows stay authoritative for queryable collections.
@@ -1793,6 +1963,7 @@ function createRepositories(options) {
     memberships,
     notifications,
     patients,
+    appointments,
     patientShares,
     devices,
     scans,

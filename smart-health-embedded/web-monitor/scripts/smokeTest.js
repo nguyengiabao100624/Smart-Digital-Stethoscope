@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 
@@ -6,6 +7,27 @@ const rootDir = path.join(__dirname, "..");
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function writeTestWavFile(filePath, samples, sampleRate = 16000) {
+  const dataSize = samples.length * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write("WAVE", 8);
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  samples.forEach((sample, index) => buffer.writeInt16LE(sample, 44 + index * 2));
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, buffer);
 }
 
 async function waitForHealth(port) {
@@ -546,11 +568,84 @@ async function testDoctorRequestNeedsInfoResubmit() {
   );
 }
 
+async function testAudioWorkerPersistsProcessedResult() {
+  const { processAudioJob } = require("../src/audioProcessingWorker");
+  const suffix = Date.now();
+  const dataDir = path.join(rootDir, ".test-data", `smoke-audio-worker-${suffix}`);
+  const wavFilePath = path.join(dataDir, "audio", "scan-worker.wav");
+  writeTestWavFile(wavFilePath, [0, 600, -850, 1200, -1600, 900, -400, 0]);
+
+  const db = {
+    settings: { ai: { version: "worker-test-model" } },
+    audioFiles: [],
+    aiResults: [],
+    scans: [
+      {
+        id: "scan_worker",
+        organizationId: "org_worker",
+        patientId: "pat_worker",
+        sampleRate: 16000,
+        status: "queued",
+        processingStatus: "queued",
+        wavFile: "scan-worker.wav",
+      },
+    ],
+  };
+  const saved = { scans: [], audioFiles: [], aiResults: [] };
+  const storageWrites = [];
+  const storageAdapter = {
+    async putFile(objectKey, sourceFile, contentType) {
+      const stat = fs.statSync(sourceFile);
+      storageWrites.push({ type: "file", objectKey, contentType, byteSize: stat.size });
+      return { provider: "local", objectKey, contentType, byteSize: stat.size };
+    },
+    async putBuffer(objectKey, buffer, contentType) {
+      storageWrites.push({ type: "buffer", objectKey, contentType, byteSize: buffer.length });
+      return { provider: "local", objectKey, contentType, byteSize: buffer.length };
+    },
+  };
+  const repositories = {
+    scans: { save: async (scan) => saved.scans.push({ ...scan }) },
+    audioFiles: { save: async (audioFile) => saved.audioFiles.push({ ...audioFile }) },
+    aiResults: { save: async (aiResult) => saved.aiResults.push({ ...aiResult }) },
+  };
+
+  const result = await processAudioJob(
+    {
+      scanId: "scan_worker",
+      patientId: "pat_worker",
+      organizationId: "org_worker",
+      wavFilePath,
+      sampleRate: 16000,
+    },
+    {
+      db,
+      repositories,
+      storageAdapter,
+      createId: (prefix) => `${prefix}_worker`,
+      nowIso: () => "2026-07-10T00:00:00.000Z",
+    },
+  );
+
+  assert.equal(result.scanId, "scan_worker");
+  assert.equal(result.label, "captured");
+  assert.equal(db.scans[0].status, "completed");
+  assert.equal(db.scans[0].processingStatus, "completed");
+  assert.equal(db.scans[0].aiResultId, "ai_worker");
+  assert.equal(db.scans[0].audioFileId, "audio_worker");
+  assert.equal(saved.scans.at(-1).aiResultId, "ai_worker");
+  assert.equal(saved.audioFiles[0].scanId, "scan_worker");
+  assert.equal(saved.aiResults[0].modelVersion, "worker-test-model");
+  assert.equal(storageWrites.some((write) => write.type === "file" && write.objectKey.includes("audio.wav")), true);
+  assert.equal(storageWrites.some((write) => write.type === "buffer" && write.objectKey.includes("waveform.json")), true);
+}
+
 async function main() {
   await testDemoAuth();
   await testProductionLocksDemoAuth();
   await testWorkspaceOwnerApprovalLifecycle();
   await testDoctorRequestNeedsInfoResubmit();
+  await testAudioWorkerPersistsProcessedResult();
   console.log("backend smoke tests passed");
 }
 

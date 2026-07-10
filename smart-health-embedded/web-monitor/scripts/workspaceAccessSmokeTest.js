@@ -154,6 +154,38 @@ function writeSeedDb() {
         updatedAt: createdAt,
       },
     ],
+    appointments: [
+      {
+        id: "appt_alpha",
+        organizationId: "org_alpha",
+        patientId: "pat_alpha",
+        doctorUserId: "usr_doctor",
+        createdByUserId: "usr_workspace_admin",
+        type: "remote_consultation",
+        status: "scheduled",
+        startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(Date.now() + 2 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
+        reason: "Alpha follow-up",
+        channel: "video",
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "appt_beta",
+        organizationId: "org_beta",
+        patientId: "pat_beta",
+        doctorUserId: "usr_beta_doctor",
+        createdByUserId: "usr_beta_doctor",
+        type: "clinic_visit",
+        status: "scheduled",
+        startsAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(Date.now() + 3 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
+        reason: "Beta private visit",
+        channel: "clinic",
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
     devices: [
       { id: "dev_alpha", name: "Alpha Device", type: "stethoscope", status: "available", organizationId: "org_alpha", connected: false, createdAt, updatedAt: createdAt },
       { id: "dev_beta", name: "Beta Device", type: "stethoscope", status: "available", organizationId: "org_beta", connected: false, createdAt, updatedAt: createdAt },
@@ -510,6 +542,56 @@ async function runScenario() {
     },
   );
   assert.equal(updatedPatient.patient.notes, "Updated through portal smoke");
+
+  const initialAppointments = await expectStatus("portal lists scoped appointments", workspaceAdmin, "/api/portal/appointments", 200, {
+    headers: portalHeaders,
+  });
+  assert.deepEqual(initialAppointments.appointments.map((appointment) => appointment.id), ["appt_alpha"]);
+  await expectStatus("portal cannot read cross workspace appointment", workspaceAdmin, "/api/portal/appointments/appt_beta", 403, {
+    headers: portalHeaders,
+  });
+  const createdAppointment = await expectStatus("portal creates appointment in current workspace", workspaceAdmin, "/api/portal/appointments", 201, {
+    method: "POST",
+    headers: portalJsonHeaders,
+    body: JSON.stringify({
+      patientId: "pat_alpha",
+      doctorUserId: "usr_doctor",
+      type: "remote_consultation",
+      startsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
+      reason: "Follow-up review",
+      organizationId: "org_beta",
+    }),
+  });
+  assert.equal(createdAppointment.appointment.organizationId, "org_alpha");
+  assert.equal(createdAppointment.appointment.patientId, "pat_alpha");
+  assert.equal(createdAppointment.appointment.doctorUserId, "usr_doctor");
+  const updatedAppointment = await expectStatus(
+    "portal confirms appointment",
+    workspaceAdmin,
+    `/api/portal/appointments/${createdAppointment.appointment.id}`,
+    200,
+    {
+      method: "PATCH",
+      headers: portalJsonHeaders,
+      body: JSON.stringify({ status: "confirmed", notes: "Confirmed through portal smoke" }),
+    },
+  );
+  assert.equal(updatedAppointment.appointment.status, "confirmed");
+  const appointmentNotifications = await expectStatus("appointment create emits scoped notification", workspaceAdmin, "/api/portal/notifications", 200, {
+    headers: portalHeaders,
+  });
+  assert.equal(
+    appointmentNotifications.notifications.some((notification) => notification.metadata?.appointmentId === createdAppointment.appointment.id),
+    true,
+  );
+  await expectStatus("portal deletes appointment", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 200, {
+    method: "DELETE",
+    headers: portalHeaders,
+  });
+  await expectStatus("deleted portal appointment is gone", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 404, {
+    headers: portalHeaders,
+  });
 
   const shareTargets = await expectStatus("portal share targets stay workspace scoped", workspaceAdmin, "/api/share-targets", 200, {
     headers: portalHeaders,

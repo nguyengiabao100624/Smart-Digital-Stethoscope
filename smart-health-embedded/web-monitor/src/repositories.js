@@ -1003,6 +1003,87 @@ function createRepositories(options) {
       return user;
     },
 
+    async updateAccountProfile(identifier, patch = {}) {
+      const id = String(identifier || "");
+      const hasSql = Boolean(getPool());
+      const profilePatch = {};
+      for (const key of [
+        "title",
+        "specialty",
+        "avatarFileId",
+        "avatarUrl",
+        "avatarStorage",
+        "twoFactorEnabled",
+        "twoFactorMethod",
+        "twoFactorSecretPreview",
+        "twoFactorRecoveryCodes",
+        "notificationPreferences",
+      ]) {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) {
+          profilePatch[key] = patch[key];
+        }
+      }
+      const sqlUser = await withSql(async (pool) => {
+        const result = await pool.query(
+          `
+            UPDATE users
+            SET
+              name = $2,
+              phone = $3,
+              license = $4,
+              hospital = $5,
+              department = $6,
+              address = $7,
+              organization_id = CASE
+                WHEN $8 IS NULL THEN organization_id
+                WHEN EXISTS (SELECT 1 FROM organizations WHERE id = $8) THEN $8
+                ELSE organization_id
+              END,
+              firebase_claims = jsonb_set(
+                COALESCE(users.firebase_claims, '{}'::jsonb),
+                '{profile}',
+                COALESCE(users.firebase_claims->'profile', '{}'::jsonb) || $9::jsonb,
+                true
+              ),
+              updated_at = now()
+            WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1)
+            RETURNING *
+          `,
+          [
+            id,
+            patch.name || "",
+            patch.phone || "",
+            patch.license || "",
+            patch.hospital || "",
+            patch.department || "",
+            patch.address || "",
+            patch.organizationId || null,
+            JSON.stringify(profilePatch),
+          ]
+        );
+        return result.rows[0] ? rowToUser(result.rows[0]) : null;
+      });
+      if (hasSql && !sqlUser) {
+        return null;
+      }
+
+      const user = sqlUser
+        ? syncArrayItem(getDb().users, sqlUser)
+        : getDb().users.find(
+            (item) =>
+              item.id === id ||
+              item.firebaseUid === id ||
+              String(item.email || "").toLowerCase() === id.toLowerCase()
+          );
+      if (!user) {
+        return null;
+      }
+      Object.assign(user, patch, { updatedAt: nowIso() });
+      syncArrayItem(getDb().users, user);
+      await saveDb();
+      return user;
+    },
+
     async findByIdOrFirebaseUid(identifier) {
       const id = String(identifier || "");
       const sqlUser = await withSql(async (pool) => {

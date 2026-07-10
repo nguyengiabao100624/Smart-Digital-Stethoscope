@@ -9173,15 +9173,44 @@ async function handleMeApi(req, res, segments) {
       }
       user.organizationId = selectedClinic.id;
       user.hospital = selectedClinic.name;
+      if (repositories && typeof repositories.organizations?.upsert === "function") {
+        await repositories.organizations.upsert(ensureOrganizationFromCatalog(selectedClinic) || selectedClinic);
+      }
     }
     user.updatedAt = nowIso();
     addAccessLog("Cập nhật thông tin cá nhân");
-    if (repositories) {
+    let responseUser = user;
+    if (repositories && typeof repositories.users.updateAccountProfile === "function") {
+      const persistedUser = await repositories.users.updateAccountProfile(user.id, {
+        name: user.name || "",
+        title: user.title || "",
+        phone: user.phone || "",
+        license: user.license || "",
+        hospital: user.hospital || "",
+        department: user.department || "",
+        specialty: user.specialty || "",
+        address: user.address || "",
+        avatarFileId: user.avatarFileId || "",
+        avatarUrl: user.avatarUrl || "",
+        avatarStorage: user.avatarStorage && typeof user.avatarStorage === "object" ? user.avatarStorage : {},
+        twoFactorEnabled: Boolean(user.twoFactorEnabled),
+        twoFactorMethod: user.twoFactorMethod || "",
+        twoFactorSecretPreview: user.twoFactorSecretPreview || "",
+        twoFactorRecoveryCodes: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes : [],
+        notificationPreferences: normalizeNotificationPreferences(user.notificationPreferences),
+        organizationId: user.organizationId || "",
+      });
+      if (!persistedUser) {
+        throw httpError(500, "Cannot persist account profile to database");
+      }
+      responseUser = persistedUser;
+      await repositories.memberships.ensureForUser(responseUser);
+    } else if (repositories) {
       await repositories.users.save(user);
       await repositories.memberships.ensureForUser(user);
     }
     await saveDb();
-    sendJson(res, 200, { user: publicUser(user) });
+    sendJson(res, 200, { user: publicUser(responseUser) });
     return;
   }
 

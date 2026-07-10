@@ -83,6 +83,31 @@ const guardChecks = {
 const pool = {
   async query(sql, params = []) {
     const text = String(sql);
+    if (text.includes("UPDATE users") && text.includes("jsonb_set")) {
+      const target = rows.users.find(
+        (item) =>
+          item.id === params[0] ||
+          item.firebase_uid === params[0] ||
+          String(item.email || "").toLowerCase() === String(params[0] || "").toLowerCase(),
+      );
+      if (!target) return { rows: [] };
+      const profilePatch = JSON.parse(params[8] || "{}");
+      target.name = params[1];
+      target.phone = params[2];
+      target.license = params[3];
+      target.hospital = params[4];
+      target.department = params[5];
+      target.address = params[6];
+      target.organization_id = params[7] || target.organization_id;
+      target.firebase_claims = {
+        ...(target.firebase_claims || {}),
+        profile: {
+          ...((target.firebase_claims || {}).profile || {}),
+          ...profilePatch,
+        },
+      };
+      return { rows: [target] };
+    }
     if (text.includes("INSERT INTO users")) {
       guardChecks.userPatientFk = text.includes("EXISTS (SELECT 1 FROM patients WHERE id = $13)");
     }
@@ -155,6 +180,23 @@ async function main() {
   const approvedDoctorRequests = await repositories.users.listDoctorRequests("approved");
   assert.equal(approvedDoctorRequests.some((doctor) => doctor.id === "user_portal"), true);
   assert.equal(approvedDoctorRequests.some((doctor) => doctor.id === "user_runtime_doctor"), true);
+  const accountProfile = await repositories.users.updateAccountProfile("user_portal", {
+    name: "Updated Portal User",
+    title: "Operations Director",
+    phone: "0901111222",
+    license: "LIC-PORTAL",
+    hospital: "SQL Hospital",
+    department: "Remote Care",
+    specialty: "Cardiology",
+    address: "1 SQL Street",
+    notificationPreferences: { messages: false, aiUpdates: true },
+  });
+  assert.equal(accountProfile.name, "Updated Portal User");
+  assert.equal(accountProfile.title, "Operations Director");
+  assert.equal(accountProfile.department, "Remote Care");
+  assert.equal(accountProfile.specialty, "Cardiology");
+  assert.equal(accountProfile.notificationPreferences.messages, false);
+  assert.equal(accountProfile.notificationPreferences.aiUpdates, true);
   await repositories.patients.save({
     id: "patient_stale_owner",
     patientCode: "STALE-OWNER",

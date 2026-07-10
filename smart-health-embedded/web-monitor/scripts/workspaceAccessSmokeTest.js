@@ -908,6 +908,30 @@ async function runScenario() {
   });
   assert.equal(updatedAccount.user.notificationPreferences.aiUpdates, true);
   assert.equal(updatedAccount.user.notificationPreferences.messages, false);
+  const profileUpdate = {
+    name: "Workspace Smoke Profile",
+    title: "Operations Lead",
+    phone: "0901111222",
+    license: "SH-LIC-ALPHA",
+    hospital: "Alpha Hospital",
+    department: "Remote Care",
+    specialty: "Cardiology",
+    address: "1 Alpha Health Street",
+  };
+  const updatedAccountProfile = await expectStatus("portal updates account profile fields", workspaceAdmin, "/api/v1/me", 200, {
+    method: "PATCH",
+    headers: portalJsonHeaders,
+    body: JSON.stringify(profileUpdate),
+  });
+  for (const [field, expected] of Object.entries(profileUpdate)) {
+    assert.equal(updatedAccountProfile.user[field], expected);
+  }
+  const accountProfileAfterRead = await expectStatus("portal reads updated account profile fields", workspaceAdmin, "/api/v1/me", 200, {
+    headers: portalHeaders,
+  });
+  for (const [field, expected] of Object.entries(profileUpdate)) {
+    assert.equal(accountProfileAfterRead.user[field], expected);
+  }
   const accountAfterHospitalText = await expectStatus("profile hospital text does not switch workspace", workspaceAdmin, "/api/v1/me", 200, {
     method: "PATCH",
     headers: portalJsonHeaders,

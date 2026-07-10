@@ -9157,7 +9157,12 @@ async function handleMeApi(req, res, segments) {
     }
     if (Object.prototype.hasOwnProperty.call(payload, "specialty")) {
       user.specialty = readString(payload.specialty, 160);
-      user.department = user.specialty;
+      if (
+        !Object.prototype.hasOwnProperty.call(payload, "department") &&
+        !readString(user.department, 160)
+      ) {
+        user.department = user.specialty;
+      }
     }
     if (Object.prototype.hasOwnProperty.call(payload, "notificationPreferences")) {
       user.notificationPreferences = normalizeNotificationPreferences(payload.notificationPreferences);

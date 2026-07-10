@@ -202,6 +202,67 @@ async function apiFetch(page, route, options = {}) {
   return result;
 }
 
+const profileFieldIds = {
+  name: "#account-name",
+  title: "#account-title",
+  phone: "#account-phone",
+  license: "#account-license",
+  hospital: "#account-hospital",
+  department: "#account-department",
+  specialty: "#account-specialty",
+  address: "#account-address",
+};
+
+function pickProfileFields(user = {}) {
+  return Object.fromEntries(
+    Object.keys(profileFieldIds).map((field) => [field, user[field] || ""]),
+  );
+}
+
+function assertProfileFields(user, expected, label) {
+  const actual = pickProfileFields(user || {});
+  for (const [field, value] of Object.entries(expected || {})) {
+    if (actual[field] !== value) {
+      throw new Error(
+        `${label}: ${field} did not persist; expected ${JSON.stringify(
+          value,
+        )}, got ${JSON.stringify(actual[field])}`,
+      );
+    }
+  }
+}
+
+async function fillProfileFields(page, profile) {
+  for (const [field, selector] of Object.entries(profileFieldIds)) {
+    await page.locator(selector).fill(profile[field] || "");
+  }
+}
+
+async function assertProfileInputs(page, expected, label) {
+  for (const [field, selector] of Object.entries(profileFieldIds)) {
+    const actual = await page.locator(selector).inputValue();
+    if (actual !== (expected[field] || "")) {
+      throw new Error(
+        `${label}: input ${field} did not persist; expected ${JSON.stringify(
+          expected[field] || "",
+        )}, got ${JSON.stringify(actual)}`,
+      );
+    }
+  }
+}
+
+async function assertProfilePersisted(page, expected, label) {
+  await page.goto(
+    `${siteUrl}/portal/settings?smoke=${encodeURIComponent(runId)}-${encodeURIComponent(label)}`,
+    { waitUntil: "domcontentloaded" },
+  );
+  await waitSettled(page);
+  await page.waitForSelector("#account-save-profile", { timeout: 20_000 });
+  await assertProfileInputs(page, expected, label);
+  const me = await apiFetch(page, "/me");
+  assertProfileFields(me.payload?.user || {}, expected, label);
+}
+
 async function login(page, account, label = "login") {
   await page.goto(
     `${siteUrl}/login?smoke=${encodeURIComponent(runId)}-${label}`,
@@ -605,16 +666,7 @@ async function exerciseSettings(page, state) {
 
   const meBefore = await apiFetch(page, "/me");
   const originalUser = meBefore.payload?.user || {};
-  const originalProfile = {
-    name: originalUser.name || "",
-    title: originalUser.title || "",
-    phone: originalUser.phone || "",
-    license: originalUser.license || "",
-    hospital: originalUser.hospital || "",
-    department: originalUser.department || "",
-    specialty: originalUser.specialty || "",
-    address: originalUser.address || "",
-  };
+  const originalProfile = pickProfileFields(originalUser);
   const originalPreferences =
     originalUser.notificationPreferences &&
     typeof originalUser.notificationPreferences === "object"
@@ -632,18 +684,41 @@ async function exerciseSettings(page, state) {
     restoredPreferences: false,
   };
 
-  const nextTitle = `Smoke title ${runId}`;
-  await page.locator("#account-title").fill(nextTitle);
+  const nextProfile = {
+    name: `Smoke User ${runId}`,
+    title: `Smoke title ${runId}`,
+    phone: `090${Date.now().toString().slice(-7)}`,
+    license: `LIC-${runId}`,
+    hospital: `Hospital ${runId}`,
+    department: `Department ${runId}`,
+    specialty: `Specialty ${runId}`,
+    address: `Address ${runId}`,
+  };
+  await fillProfileFields(page, nextProfile);
   const profileResponse = waitForApiResponse(page, "/api/me", "PATCH");
   await page.locator("#account-save-profile").click();
   const profilePayload = await readResponsePayload(
     await profileResponse,
     "update account profile",
   );
-  if (profilePayload?.user?.title !== nextTitle) {
-    throw new Error("update account profile: title did not persist");
-  }
+  assertProfileFields(
+    profilePayload?.user || {},
+    nextProfile,
+    "update account profile response",
+  );
+  const profileAfterSave = await apiFetch(page, "/me");
+  assertProfileFields(
+    profileAfterSave.payload?.user || {},
+    nextProfile,
+    "update account profile read-after-write",
+  );
+  state.settings.expectedProfile = nextProfile;
   state.settings.profileSaved = true;
+  await assertProfilePersisted(
+    page,
+    nextProfile,
+    "profile settings route reopen",
+  );
 
   await page.locator("#portal-settings-security-tab").click();
   await page.waitForSelector("#account-current-password", { timeout: 20_000 });
@@ -1174,19 +1249,6 @@ async function main() {
 
     const settings = await exerciseSettings(page, state);
 
-    if (state.settings?.profileSaved) {
-      await apiFetch(page, "/me", {
-        method: "PATCH",
-        body: state.settings.originalProfile,
-      });
-      state.settings.restoredProfile = true;
-      cleanupResults.push({
-        target: "account profile",
-        ok: true,
-        phase: "main",
-      });
-    }
-
     if (state.deviceAssignment) {
       await apiFetch(
         page,
@@ -1276,6 +1338,26 @@ async function main() {
     state.patientId = "";
     const negativeApi = await exerciseNegativeApiState(page);
     const session = await logoutAndRecover(page, account);
+    if (state.settings?.expectedProfile) {
+      await assertProfilePersisted(
+        page,
+        state.settings.expectedProfile,
+        "profile after logout login recovery",
+      );
+    }
+
+    if (state.settings?.profileSaved) {
+      await apiFetch(page, "/me", {
+        method: "PATCH",
+        body: state.settings.originalProfile,
+      });
+      state.settings.restoredProfile = true;
+      cleanupResults.push({
+        target: "account profile",
+        ok: true,
+        phase: "main",
+      });
+    }
 
     const badResponses = checkedResponses.filter((item) => {
       if (item.status < 400) return false;

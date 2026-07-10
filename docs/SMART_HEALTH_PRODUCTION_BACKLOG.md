@@ -52,7 +52,7 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Verification passed locally: backend `npm.cmd test`, backend `npm.cmd run check`, backend `npm.cmd run smoke:workspace-access`, and `node scripts\worker.js` with no `REDIS_URL` exiting cleanly.
 - Remaining queue backlog: run a real Redis/BullMQ smoke with backend + worker + production data/storage envs; decide whether the final production AI path needs a stronger model registry/inference service beyond the current signal-quality processor.
 
-## Completed source/build/backend smoke - 2026-07-10 Shcare Portal appointments
+## Completed deployed/live - 2026-07-10 Shcare Portal appointments
 
 - Closed a missing Smart Health software module before ESP32 work: appointments/consultations now have backend API, repository persistence, database migration, validation, permissions, audit/notification side effects, Shcare Portal route/menu/UI, and smoke coverage.
 - Backend routes added: `/api/v1/appointments`, `/api/portal/appointments`, and `/api/doctor/appointments` for scoped list/create/get/update/delete. Workspace admins and doctors can manage workspace appointments; patients can manage personal/family-scope appointments through the same access checks.
@@ -60,7 +60,10 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Shcare Web now has `/portal/appointments` with patient/doctor-backed scheduling form, filters, confirm/cancel/delete controls, API client types/methods, and sidebar entry for doctor/clinic portals.
 - Smoke coverage now includes appointment scope, cross-workspace denial, create/confirm/delete, notification side effect, browser route/form controls, mutation watcher, and performance route coverage.
 - Verification passed: initial RED `smoke:workspace-access` failed on 404, then backend `smoke:workspace-access`, `test`, `check`, `smoke:repositories`, Shcare Web `lint`, TypeScript `--noEmit`, `build`, and `build:firebase` all passed. Local dev server returned 200 at `http://127.0.0.1:8080/portal/appointments`.
-- Remaining deployment backlog: `npm.cmd run migrate` could not apply migration because `DATABASE_URL` is absent in this shell; push/deploy/live portal smoke are still pending for this slice.
+- Production migration was applied through the Supabase connector because local `DATABASE_URL` is absent in this shell. Supabase migration `20260710054623 appointments` is applied on project `mahvymyncxszvuhlycwp`, and schema inspection verified `public.appointments` columns, indexes, and constraints.
+- Commit `b9a6d4cb` was pushed to `origin/main` for Render auto-deploy. Firebase Hosting target `webapp` deployed `shcare` version `projects/162993928259/sites/shcare/versions/044ec7e04023ffb8`, release `projects/162993928259/sites/shcare/channels/live/releases/1783662693801000`.
+- Live verification passed: `smoke:public-deployment`, `smoke:production-roles`, `smoke:portal-production`, Shcare Web live `smoke:portal-browser`, and live mutation run `portal-mutation-mreisktg`.
+- Live appointment evidence: `portal-mutation-mreisktg` created appointment `appt_20260710055434_71922d95`, confirmed it, deleted it, and verified cleanup alongside temporary patient/device/share/settings/support cleanup.
 
 ## Completed deployed/live - 2026-07-09 Web Admin production backend guard
 

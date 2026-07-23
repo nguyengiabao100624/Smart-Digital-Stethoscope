@@ -8,7 +8,7 @@ const sections = [
     content: [
       {
         heading: "1. Thông tin chúng tôi thu thập",
-        body: "Smart Health thu thập thông tin cá nhân bạn cung cấp khi đăng ký (họ tên, email, số điện thoại, thông tin chuyên môn), dữ liệu y tế từ thiết bị đo (với consent của bạn), và dữ liệu sử dụng dịch vụ.",
+        body: "Shcare thu thập thông tin cá nhân bạn cung cấp khi đăng ký (họ tên, email, số điện thoại, thông tin chuyên môn), dữ liệu y tế từ thiết bị đo (với consent của bạn), và dữ liệu sử dụng dịch vụ.",
       },
       {
         heading: "2. Cách chúng tôi sử dụng thông tin",
@@ -29,15 +29,15 @@ const sections = [
     content: [
       {
         heading: "1. Điều kiện sử dụng",
-        body: "Dịch vụ Smart Health chỉ dành cho bác sĩ, phòng khám và cơ sở y tế đã được xác minh. Người dùng phải tuân thủ các quy định pháp luật về y tế và bảo vệ dữ liệu.",
+        body: "Dịch vụ Shcare chỉ dành cho bác sĩ, phòng khám và cơ sở y tế đã được xác minh. Người dùng phải tuân thủ các quy định pháp luật về y tế và bảo vệ dữ liệu.",
       },
       {
         heading: "2. Giới hạn trách nhiệm",
-        body: "Smart Health cung cấp công cụ hỗ trợ theo dõi, không thay thế chẩn đoán y tế. Quyết định lâm sàng hoàn toàn thuộc về bác sĩ có thẩm quyền.",
+        body: "Shcare cung cấp công cụ hỗ trợ theo dõi, không thay thế chẩn đoán y tế. Quyết định lâm sàng hoàn toàn thuộc về bác sĩ có thẩm quyền.",
       },
       {
         heading: "3. Sở hữu trí tuệ",
-        body: "Phần mềm, giao diện và nội dung của Smart Health là tài sản của công ty. Người dùng không được sao chép hoặc sử dụng lại mà không có sự đồng ý bằng văn bản.",
+        body: "Phần mềm, giao diện và nội dung của Shcare là tài sản của công ty. Người dùng không được sao chép hoặc sử dụng lại mà không có sự đồng ý bằng văn bản.",
       },
     ],
   },
@@ -64,22 +64,22 @@ export default function LegalPage() {
   const { pathname } = useLocation();
   const meta = pathname.includes("dieu-khoan")
     ? {
-        title: "Điều khoản sử dụng | Smart Health Care",
+        title: "Điều khoản sử dụng | Shcare",
         description:
-          "Điều khoản sử dụng dịch vụ Smart Health Care dành cho bác sĩ, phòng khám và cơ sở y tế.",
+          "Điều khoản sử dụng dịch vụ Shcare dành cho bác sĩ, phòng khám và cơ sở y tế.",
         path: "/dieu-khoan",
       }
     : pathname.includes("chinh-sach")
       ? {
-          title: "Chính sách bảo mật | Smart Health Care",
+          title: "Chính sách bảo mật | Shcare",
           description:
-            "Cách Smart Health Care thu thập, sử dụng và bảo vệ thông tin cá nhân, dữ liệu y tế của người dùng.",
+            "Cách Shcare thu thập, sử dụng và bảo vệ thông tin cá nhân, dữ liệu y tế của người dùng.",
           path: "/chinh-sach-bao-mat",
         }
       : {
-          title: "Pháp lý & Điều khoản | Smart Health Care",
+          title: "Pháp lý & Điều khoản | Shcare",
           description:
-            "Tài liệu pháp lý của Smart Health Care: chính sách bảo mật, điều khoản sử dụng và chính sách consent dữ liệu.",
+            "Tài liệu pháp lý của Shcare: chính sách bảo mật, điều khoản sử dụng và chính sách consent dữ liệu.",
           path: "/phap-ly",
         };
   useSEO(meta);

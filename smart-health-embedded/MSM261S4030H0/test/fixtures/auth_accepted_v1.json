@@ -1,0 +1,12 @@
+{
+  "type": "auth.accepted",
+  "protocolVersion": 1,
+  "challengeId": "challenge_fixture_0001",
+  "deviceId": "dev_fixture_0001",
+  "sessionId": "session_fixture_0001",
+  "serverTime": "2026-07-17T00:00:01.000Z",
+  "telemetryIntervalMs": 5000,
+  "credentialSlot": "rotation_candidate",
+  "rotationId": "rotation_fixture_0001",
+  "rotationState": "confirmed"
+}

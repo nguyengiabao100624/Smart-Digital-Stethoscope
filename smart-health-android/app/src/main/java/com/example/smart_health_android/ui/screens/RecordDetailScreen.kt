@@ -391,7 +391,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                 }
             }
 
-            // Section 3: AI Analysis
+            // Section 3: Signal quality analysis
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -402,7 +402,7 @@ fun RecordDetailScreen(recordId: String, onNavigateBack: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Psychology, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Tóm tắt phân tích AI", color = Color(0xFFF59E0B), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Tóm tắt chất lượng tín hiệu", color = Color(0xFFF59E0B), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Column(

@@ -1,294 +1,461 @@
 package com.example.smart_health_android.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.account.FamilyProfileDraft
+import com.example.smart_health_android.account.FamilyProfileField
+import com.example.smart_health_android.account.FamilyProfilesAction
+import com.example.smart_health_android.account.FamilyProfilesLoadState
+import com.example.smart_health_android.account.FamilyProfilesUiState
+import com.example.smart_health_android.account.FamilyProfilesViewModel
 import com.example.smart_health_android.data.Patient
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FamilyProfilesScreen(
+    onNavigateBack: () -> Unit,
+    familyViewModel: FamilyProfilesViewModel = viewModel(),
+) {
+    val state by familyViewModel.uiState.collectAsStateWithLifecycle()
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val hasDraft = state.editingProfileId.isNotBlank() || state.draft != FamilyProfileDraft()
+
+    BackHandler(enabled = hasDraft && !state.isSaving) {
+        showDiscardDialog = true
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.family_profiles_title)) },
+                navigationIcon = {
+                    IconButton(
+                        onClick = {
+                            if (hasDraft) showDiscardDialog = true else onNavigateBack()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.family_profiles_back),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { padding ->
+        when (state.loadState) {
+            FamilyProfilesLoadState.Loading -> ShcareLoadingState(
+                message = stringResource(R.string.family_profiles_loading),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            FamilyProfilesLoadState.Error -> ShcareErrorState(
+                onRetry = { familyViewModel.onAction(FamilyProfilesAction.Retry) },
+                title = stringResource(R.string.family_profiles_error_title),
+                message = state.errorMessage.ifBlank {
+                    stringResource(R.string.family_profiles_error_message)
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            FamilyProfilesLoadState.Offline -> ShcareOfflineState(
+                onRetry = { familyViewModel.onAction(FamilyProfilesAction.Retry) },
+                title = stringResource(R.string.family_profiles_offline_title),
+                message = stringResource(R.string.family_profiles_offline_message),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            FamilyProfilesLoadState.PermissionDenied -> ShcarePermissionState(
+                onRequestPermission = onNavigateBack,
+                title = stringResource(R.string.family_profiles_permission_title),
+                message = stringResource(R.string.family_profiles_permission_message),
+                actionLabel = stringResource(R.string.family_profiles_back),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            FamilyProfilesLoadState.Empty,
+            FamilyProfilesLoadState.Ready,
+            -> FamilyProfilesContent(
+                state = state,
+                onAction = familyViewModel::onAction,
+                modifier = Modifier
+                    .padding(padding)
+                    .imePadding(),
+            )
+        }
+    }
+
+    state.pendingDelete?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { familyViewModel.onAction(FamilyProfilesAction.CancelDelete) },
+            title = { Text(stringResource(R.string.family_profiles_delete_title)) },
+            text = {
+                Text(stringResource(R.string.family_profiles_delete_message, profile.name))
+            },
+            confirmButton = {
+                Button(onClick = { familyViewModel.onAction(FamilyProfilesAction.ConfirmDelete) }) {
+                    Text(stringResource(R.string.family_profiles_delete_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { familyViewModel.onAction(FamilyProfilesAction.CancelDelete) }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text(stringResource(R.string.family_profiles_discard_title)) },
+            text = { Text(stringResource(R.string.family_profiles_discard_message)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        familyViewModel.onAction(FamilyProfilesAction.CreateNew)
+                        showDiscardDialog = false
+                        onNavigateBack()
+                    },
+                ) {
+                    Text(stringResource(R.string.family_profiles_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(stringResource(R.string.family_profiles_continue_editing))
+                }
+            },
+        )
+    }
+}
 
 @Composable
-fun FamilyProfilesScreen(onNavigateBack: () -> Unit) {
-    var profiles by remember { mutableStateOf<List<Patient>>(emptyList()) }
-    var editingProfile by remember { mutableStateOf<Patient?>(null) }
-    var name by remember { mutableStateOf("") }
-    var relationship by remember { mutableStateOf("") }
-    var ageText by remember { mutableStateOf("") }
-    var gender by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(true) }
-    var isSaving by remember { mutableStateOf(false) }
-    var deletingProfileId by remember { mutableStateOf<String?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    fun clearForm() {
-        editingProfile = null
-        name = ""
-        relationship = ""
-        ageText = ""
-        gender = ""
-        phone = ""
-        notes = ""
-    }
-
-    fun editProfile(profile: Patient) {
-        editingProfile = profile
-        name = profile.name
-        relationship = profile.relationship
-        ageText = profile.age?.toString().orEmpty()
-        gender = profile.gender
-        phone = profile.phone
-        notes = profile.notes
-        message = null
-    }
-
-    suspend fun loadProfiles() {
-        isLoading = true
-        runCatching {
-            SmartHealthRepository.api.listPatients()
-        }.onSuccess { loaded ->
-            profiles = loaded.sortedWith(
-                compareBy<Patient> { if (it.profileType == "self") 0 else 1 }
-                    .thenBy { it.name.lowercase() }
-            )
-            if (editingProfile != null && loaded.none { it.id == editingProfile?.id }) {
-                clearForm()
-            }
-            message = null
-        }.onFailure {
-            profiles = emptyList()
-            message = it.toVietnameseMessage("Không tải được hồ sơ gia đình")
-        }
-        isLoading = false
-    }
-
-    fun saveProfile() {
-        val cleanName = name.trim()
-        if (cleanName.isBlank() || isSaving) {
-            message = "Cần nhập tên hồ sơ."
-            return
-        }
-        val cleanAge = ageText.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
-        if (ageText.isNotBlank() && cleanAge == null) {
-            message = "Tuổi phải là số."
-            return
-        }
-        scope.launch {
-            isSaving = true
-            runCatching {
-                val current = editingProfile
-                if (current == null) {
-                    SmartHealthRepository.api.createPatient(
-                        patientCode = "",
-                        name = cleanName,
-                        age = cleanAge,
-                        gender = gender.trim(),
-                        phone = phone.trim(),
-                        notes = notes.trim(),
-                        profileType = "dependent",
-                        relationship = relationship.trim()
-                    )
-                } else {
-                    SmartHealthRepository.api.updatePatient(
-                        patientId = current.id,
-                        name = cleanName,
-                        age = cleanAge,
-                        gender = gender.trim(),
-                        phone = phone.trim(),
-                        notes = notes.trim(),
-                        relationship = relationship.trim()
-                    )
-                }
-            }.onSuccess {
-                message = if (editingProfile == null) "Đã thêm hồ sơ gia đình." else "Đã cập nhật hồ sơ."
-                clearForm()
-                loadProfiles()
-            }.onFailure {
-                message = it.toVietnameseMessage("Không lưu được hồ sơ")
-            }
-            isSaving = false
-        }
-    }
-
-    fun deleteProfile(profile: Patient) {
-        if (profile.profileType == "self" || deletingProfileId != null) return
-        scope.launch {
-            deletingProfileId = profile.id
-            runCatching {
-                SmartHealthRepository.api.deletePatient(profile.id)
-            }.onSuccess {
-                message = "Đã xóa hồ sơ ${profile.name}."
-                if (editingProfile?.id == profile.id) clearForm()
-                loadProfiles()
-            }.onFailure {
-                message = it.toVietnameseMessage("Không xóa được hồ sơ")
-            }
-            deletingProfileId = null
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        loadProfiles()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
+private fun FamilyProfilesContent(
+    state: FamilyProfilesUiState,
+    onAction: (FamilyProfilesAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = ShcareTheme.spacing
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(spacing.large),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 24.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text("Hồ sơ gia đình", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Quản lý người thân dùng chung tài khoản", color = Color.White.copy(alpha = 0.82f), fontSize = 14.sp)
-                }
-            }
+        item {
+            Text(
+                text = stringResource(R.string.family_profiles_description),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            if (isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = PrimaryTeal, trackColor = Border)
-            }
-            message?.let {
-                Text(it, color = if (it.startsWith("Đã")) PrimaryTeal else MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            }
-
-            Column {
-                Text("DANH SÁCH HỒ SƠ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
-                if (!isLoading && profiles.isEmpty()) {
-                    EmptyFamilyProfiles(onRefresh = { scope.launch { loadProfiles() } })
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        profiles.forEach { profile ->
-                            FamilyProfileRow(
-                                profile = profile,
-                                isEditing = editingProfile?.id == profile.id,
-                                isDeleting = deletingProfileId == profile.id,
-                                onEdit = { editProfile(profile) },
-                                onDelete = { deleteProfile(profile) }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Column {
-                Text(if (editingProfile == null) "THÊM HỒ SƠ" else "CẬP NHẬT HỒ SƠ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
-                Column(
+        if (state.confirmationMessage.isNotBlank()) {
+            item {
+                Surface(
+                    color = ShcareTheme.colors.successContainer,
+                    contentColor = ShcareTheme.colors.onSuccessContainer,
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
                 ) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Họ tên") },
-                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = stringResource(
+                            R.string.family_profiles_confirmed,
+                            state.confirmationMessage,
+                        ),
+                        modifier = Modifier.padding(spacing.large),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = relationship,
-                            onValueChange = { relationship = it },
-                            label = { Text("Quan hệ") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = ageText,
-                            onValueChange = { ageText = it.filter(Char::isDigit).take(3) },
-                            label = { Text("Tuổi") },
-                            singleLine = true,
-                            modifier = Modifier.width(96.dp)
+                }
+            }
+        }
+        if (state.errorMessage.isNotBlank()) {
+            item {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { liveRegion = LiveRegionMode.Assertive },
+                ) {
+                    Text(state.errorMessage, modifier = Modifier.padding(spacing.large))
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.family_profiles_list_heading),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.semantics { heading() },
+                )
+                TextButton(
+                    onClick = { onAction(FamilyProfilesAction.CreateNew) },
+                    enabled = !state.isSaving && state.deletingProfileId.isBlank(),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Text(stringResource(R.string.family_profiles_add))
+                }
+            }
+        }
+
+        if (state.profiles.isEmpty()) {
+            item {
+                ShcareEmptyState(
+                    title = stringResource(R.string.family_profiles_empty_title),
+                    message = stringResource(R.string.family_profiles_empty_message),
+                )
+            }
+        } else {
+            items(state.profiles, key = Patient::id) { profile ->
+                FamilyProfileCard(
+                    profile = profile,
+                    active = profile.id == state.activePatientId,
+                    editing = profile.id == state.editingProfileId,
+                    switching = profile.id == state.switchingProfileId,
+                    deleting = profile.id == state.deletingProfileId,
+                    actionsEnabled = !state.isSaving &&
+                        state.switchingProfileId.isBlank() &&
+                        state.deletingProfileId.isBlank(),
+                    onEdit = { onAction(FamilyProfilesAction.Edit(profile.id)) },
+                    onSwitch = { onAction(FamilyProfilesAction.SwitchActive(profile.id)) },
+                    onDelete = { onAction(FamilyProfilesAction.RequestDelete(profile.id)) },
+                )
+            }
+        }
+
+        item {
+            HorizontalDivider()
+        }
+        item {
+            FamilyProfileEditor(
+                state = state,
+                onAction = onAction,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FamilyProfileCard(
+    profile: Patient,
+    active: Boolean,
+    editing: Boolean,
+    switching: Boolean,
+    deleting: Boolean,
+    actionsEnabled: Boolean,
+    onEdit: () -> Unit,
+    onSwitch: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val isSelf = profile.profileType == "self"
+    val spokenState = stringResource(
+        if (active) R.string.family_profiles_active else R.string.family_profiles_available,
+    )
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (editing) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (editing || active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                stateDescription = spokenState
+            },
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = actionsEnabled, onClick = onEdit),
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (isSelf) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isSelf) Icons.Default.Person else Icons.Default.Groups,
+                            contentDescription = null,
                         )
                     }
-                    OutlinedTextField(
-                        value = gender,
-                        onValueChange = { gender = it },
-                        label = { Text("Giới tính") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = profile.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                     )
-                    OutlinedTextField(
-                        value = phone,
-                        onValueChange = { phone = it },
-                        label = { Text("Số điện thoại") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = listOfNotNull(
+                            profile.relationship.ifBlank {
+                                stringResource(
+                                    if (isSelf) R.string.family_profiles_self else R.string.family_profiles_dependent,
+                                )
+                            },
+                            profile.resolvedAge()?.let {
+                                stringResource(R.string.family_profiles_age, it)
+                            },
+                            profile.bloodType.takeUnless { it == "unknown" || it.isBlank() },
+                        ).joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedTextField(
-                        value = notes,
-                        onValueChange = { notes = it },
-                        label = { Text("Ghi chú") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth()
+                }
+                if (active) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = stringResource(R.string.family_profiles_active),
+                        tint = ShcareTheme.colors.success,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { clearForm() },
-                            enabled = !isSaving,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Làm mới")
-                        }
-                        Button(
-                            onClick = { saveProfile() },
-                            enabled = !isSaving,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                        ) {
-                            if (isSaving) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                            } else {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(if (editingProfile == null) "Thêm" else "Lưu")
-                            }
-                        }
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                OutlinedButton(
+                    onClick = onSwitch,
+                    enabled = actionsEnabled && !active,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                ) {
+                    if (switching) {
+                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                    } else {
+                        Text(
+                            stringResource(
+                                if (active) R.string.family_profiles_active else R.string.family_profiles_use,
+                            ),
+                        )
+                    }
+                }
+                IconButton(onClick = onEdit, enabled = actionsEnabled) {
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.family_profiles_edit))
+                }
+                IconButton(
+                    onClick = onDelete,
+                    enabled = actionsEnabled && !isSelf && !active,
+                ) {
+                    if (deleting) {
+                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                    } else {
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.family_profiles_delete))
                     }
                 }
             }
@@ -296,83 +463,304 @@ fun FamilyProfilesScreen(onNavigateBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmptyFamilyProfiles(onRefresh: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Default.Groups, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(32.dp))
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Chưa có hồ sơ gia đình", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text("Thêm hồ sơ người thân để đo, theo dõi và chia sẻ consent riêng.", color = TextSecondary, fontSize = 13.sp)
-        Spacer(modifier = Modifier.height(10.dp))
-        OutlinedButton(onClick = onRefresh) {
-            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Tải lại")
+private fun FamilyProfileEditor(
+    state: FamilyProfilesUiState,
+    onAction: (FamilyProfilesAction) -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val draft = state.draft
+    val errors = state.fieldErrors
+    var bloodExpanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.large)) {
+        Text(
+            text = stringResource(
+                if (state.editingProfileId.isBlank()) {
+                    R.string.family_profiles_create_heading
+                } else {
+                    R.string.family_profiles_edit_heading
+                },
+            ),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        ProfileTextField(
+            value = draft.name,
+            label = stringResource(R.string.family_profiles_name),
+            error = errors["name"]?.let { stringResource(R.string.family_profiles_required) },
+            onValueChange = { onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.Name, it)) },
+        )
+        ProfileTextField(
+            value = draft.relationship,
+            label = stringResource(R.string.family_profiles_relationship),
+            error = errors["relationship"]?.let { stringResource(R.string.family_profiles_required) },
+            onValueChange = {
+                onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.Relationship, it))
+            },
+        )
+        FamilyDateField(
+            value = draft.dateOfBirth,
+            error = errors["dateOfBirth"]?.let {
+                stringResource(R.string.family_profiles_birth_date_invalid)
+            },
+            onDateSelected = {
+                onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.DateOfBirth, it))
+            },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.medium)) {
+            ProfileTextField(
+                value = draft.gender,
+                label = stringResource(R.string.family_profiles_gender),
+                onValueChange = {
+                    onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.Gender, it))
+                },
+                modifier = Modifier.weight(1f),
+            )
+            ExposedDropdownMenuBox(
+                expanded = bloodExpanded,
+                onExpandedChange = { if (!state.isSaving) bloodExpanded = it },
+                modifier = Modifier.weight(1f),
+            ) {
+                OutlinedTextField(
+                    value = bloodTypeLabel(draft.bloodType),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text(stringResource(R.string.family_profiles_blood_type)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bloodExpanded) },
+                    isError = errors.containsKey("bloodType"),
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = bloodExpanded,
+                    onDismissRequest = { bloodExpanded = false },
+                ) {
+                    FamilyProfilesViewModel.BLOOD_TYPES.sorted().forEach { bloodType ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(bloodTypeLabel(bloodType)) },
+                            onClick = {
+                                onAction(
+                                    FamilyProfilesAction.DraftChanged(
+                                        FamilyProfileField.BloodType,
+                                        bloodType,
+                                    ),
+                                )
+                                bloodExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        ProfileTextField(
+            value = draft.phone,
+            label = stringResource(R.string.family_profiles_phone),
+            keyboardType = KeyboardType.Phone,
+            onValueChange = { onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.Phone, it)) },
+        )
+        ProfileTextField(
+            value = draft.allergies,
+            label = stringResource(R.string.family_profiles_allergies),
+            supportingText = stringResource(R.string.family_profiles_allergies_support),
+            singleLine = false,
+            onValueChange = {
+                onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.Allergies, it))
+            },
+        )
+        ProfileTextField(
+            value = draft.notes,
+            label = stringResource(R.string.family_profiles_notes),
+            singleLine = false,
+            onValueChange = { onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.Notes, it)) },
+        )
+
+        Text(
+            text = stringResource(R.string.family_profiles_emergency_heading),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = stringResource(R.string.family_profiles_emergency_support),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ProfileTextField(
+            value = draft.emergencyName,
+            label = stringResource(R.string.family_profiles_emergency_name),
+            error = errors["emergencyContact"]?.let {
+                stringResource(R.string.family_profiles_emergency_incomplete)
+            },
+            onValueChange = {
+                onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.EmergencyName, it))
+            },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.medium)) {
+            ProfileTextField(
+                value = draft.emergencyPhone,
+                label = stringResource(R.string.family_profiles_emergency_phone),
+                keyboardType = KeyboardType.Phone,
+                onValueChange = {
+                    onAction(FamilyProfilesAction.DraftChanged(FamilyProfileField.EmergencyPhone, it))
+                },
+                modifier = Modifier.weight(1f),
+            )
+            ProfileTextField(
+                value = draft.emergencyRelationship,
+                label = stringResource(R.string.family_profiles_emergency_relationship),
+                onValueChange = {
+                    onAction(
+                        FamilyProfilesAction.DraftChanged(
+                            FamilyProfileField.EmergencyRelationship,
+                            it,
+                        ),
+                    )
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.medium)) {
+            OutlinedButton(
+                onClick = { onAction(FamilyProfilesAction.CreateNew) },
+                enabled = !state.isSaving,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 52.dp),
+            ) {
+                Text(stringResource(R.string.family_profiles_clear))
+            }
+            Button(
+                onClick = { onAction(FamilyProfilesAction.Save) },
+                enabled = !state.isSaving,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 52.dp),
+            ) {
+                if (state.isSaving) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    Text(
+                        stringResource(
+                            if (state.editingProfileId.isBlank()) {
+                                R.string.family_profiles_create
+                            } else {
+                                R.string.family_profiles_save
+                            },
+                        ),
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun FamilyProfileRow(
-    profile: Patient,
-    isEditing: Boolean,
-    isDeleting: Boolean,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
+private fun ProfileTextField(
+    value: String,
+    label: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    supportingText: String? = null,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true,
 ) {
-    val isSelf = profile.profileType == "self"
-    Row(
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        isError = error != null,
+        supportingText = (error ?: supportingText)?.let { message ->
+            { Text(message) }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        singleLine = singleLine,
+        minLines = if (singleLine) 1 else 2,
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FamilyDateField(
+    value: String,
+    error: String?,
+    onDateSelected: (String) -> Unit,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val selectedMillis = remember(value) {
+        runCatching {
+            LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        }.getOrNull()
+    }
+    OutlinedButton(
+        onClick = { showPicker = true },
+        border = BorderStroke(
+            1.dp,
+            if (error == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+        ),
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (isEditing) PrimaryBlue.copy(alpha = 0.08f) else Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, if (isEditing) PrimaryBlue else Border, RoundedCornerShape(16.dp))
-            .clickable(onClick = onEdit)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .heightIn(min = 56.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .background((if (isSelf) PrimaryBlue else PrimaryTeal).copy(alpha = 0.12f), RoundedCornerShape(13.dp)),
-            contentAlignment = Alignment.Center
+        Icon(Icons.Default.CalendarMonth, contentDescription = null)
+        Spacer(Modifier.size(8.dp))
+        Text(
+            text = value.takeIf(String::isNotBlank)?.let {
+                runCatching { LocalDate.parse(it).format(FAMILY_DATE_FORMAT) }.getOrDefault(it)
+            } ?: stringResource(R.string.family_profiles_birth_date),
+        )
+    }
+    error?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    if (showPicker) {
+        val todayUtc = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedMillis,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= todayUtc
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            onDateSelected(
+                                Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString(),
+                            )
+                        }
+                        showPicker = false
+                    },
+                ) {
+                    Text(stringResource(R.string.family_profiles_date_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPicker = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
         ) {
-            Icon(if (isSelf) Icons.Default.Person else Icons.Default.Groups, contentDescription = null, tint = if (isSelf) PrimaryBlue else PrimaryTeal)
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(profile.name, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 20.sp)
-            Text(
-                listOf(
-                    profile.relationship.ifBlank { if (isSelf) "Hồ sơ cá nhân" else "Người thân" },
-                    profile.age?.let { "$it tuổi" }.orEmpty(),
-                    profile.gender,
-                    profile.patientCode
-                ).filter { it.isNotBlank() }.joinToString(" • "),
-                color = TextSecondary,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
-            )
-            if (profile.scanCount > 0 || !profile.lastScanAt.isNullOrBlank()) {
-                Text("${profile.scanCount} lượt đo", color = TextSecondary, fontSize = 12.sp)
-            }
-        }
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = "Sửa", tint = PrimaryBlue)
-        }
-        IconButton(onClick = onDelete, enabled = !isSelf && !isDeleting) {
-            if (isDeleting) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = ErrorRed)
-            } else {
-                Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = if (isSelf) TextSecondary.copy(alpha = 0.35f) else ErrorRed)
-            }
+            DatePicker(state = pickerState)
         }
     }
 }
+
+@Composable
+private fun bloodTypeLabel(value: String): String = if (value == "unknown" || value.isBlank()) {
+    stringResource(R.string.family_profiles_blood_unknown)
+} else {
+    value
+}
+
+private val FAMILY_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")

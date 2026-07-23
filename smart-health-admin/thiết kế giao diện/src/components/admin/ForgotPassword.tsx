@@ -3,6 +3,7 @@ import { Link } from "@/components/admin/router-shim";
 import { ArrowLeft, CheckCircle2, Mail, Stethoscope } from "lucide-react";
 import { sendFirebasePasswordReset } from "@/lib/firebase-client";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -27,7 +28,8 @@ export function ForgotPassword() {
   if (isSuccess) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm">
+        <div className="relative w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm">
+          <ThemeToggle className="absolute right-4 top-4" />
           <div className="mb-8 flex flex-col items-center text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
               <CheckCircle2 className="h-8 w-8 text-success" />
@@ -50,7 +52,7 @@ export function ForgotPassword() {
 
             <Link
               to="/login"
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-2.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary py-2.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <ArrowLeft className="h-4 w-4" />
               Quay lại đăng nhập
@@ -63,7 +65,8 @@ export function ForgotPassword() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm">
+      <div className="relative w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm">
+        <ThemeToggle className="absolute right-4 top-4" />
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
             <Stethoscope className="h-8 w-8 text-primary" />
@@ -84,7 +87,7 @@ export function ForgotPassword() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="admin@smarthealth.vn"
-                className="w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
               />
             </div>
@@ -99,7 +102,7 @@ export function ForgotPassword() {
           <button
             type="submit"
             disabled={isLoading}
-            className="flex w-full items-center justify-center rounded-md bg-primary py-2.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-70"
+            className="flex min-h-11 w-full items-center justify-center rounded-md bg-primary py-2.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-70"
           >
             {isLoading ? "Đang gửi..." : "Gửi link đặt lại mật khẩu"}
           </button>
@@ -108,7 +111,7 @@ export function ForgotPassword() {
         <div className="mt-6 text-center">
           <Link
             to="/login"
-            className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+            className="flex min-h-11 items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
             Quay lại đăng nhập

@@ -16,19 +16,19 @@ import { useSEO } from "@/lib/useSEO";
 const faqs = [
   {
     q: "RPM (Remote Patient Monitoring) là gì?",
-    a: "RPM — Theo dõi bệnh nhân từ xa — là mô hình chăm sóc sử dụng thiết bị y tế kết nối để thu thập dữ liệu sinh hiệu (nhịp tim, SpO2, huyết áp, âm phổi…) tại nhà bệnh nhân và truyền an toàn về bác sĩ hoặc phòng khám để theo dõi liên tục, can thiệp sớm khi có bất thường.",
+    a: "RPM — theo dõi bệnh nhân từ xa — là mô hình thu thập các chỉ số hoặc lượt đo ngoài cơ sở khám, sau đó chuyển tới đội ngũ chăm sóc để xem xét theo quy trình đã thống nhất.",
   },
   {
     q: "RPM khác gì so với Telehealth?",
-    a: "Telehealth tập trung vào tư vấn trực tuyến theo từng buổi hẹn. RPM thu thập dữ liệu khách quan liên tục giữa các buổi khám, cho phép bác sĩ ra quyết định dựa trên xu hướng dài hạn thay vì một thời điểm.",
+    a: "Telehealth thường tập trung vào buổi tư vấn từ xa. RPM bổ sung dữ liệu đo giữa các lần hẹn; tần suất và cách sử dụng dữ liệu phụ thuộc kế hoạch chăm sóc của cơ sở.",
   },
   {
     q: "Những bệnh nhân nào phù hợp với RPM?",
-    a: "Bệnh nhân mạn tính (tăng huyết áp, suy tim, COPD, hen, đái tháo đường), bệnh nhân hậu phẫu, người cao tuổi sống một mình, và bệnh nhân cần theo dõi sau xuất viện để giảm nguy cơ tái nhập viện.",
+    a: "Đối tượng phù hợp phải do người có chuyên môn và cơ sở triển khai xác định theo mục tiêu theo dõi, khả năng sử dụng thiết bị và quy trình phản hồi.",
   },
   {
     q: "Bệnh nhân cần thiết bị gì để tham gia RPM?",
-    a: "Với Smart Health Care, bệnh nhân cần một ống nghe thông minh (do bác sĩ/phòng khám cấp phát) và điện thoại Android cài Smart Health app. Thiết bị tự động đồng bộ dữ liệu qua Bluetooth và 4G/WiFi.",
+    a: "Trong luồng Shcare hiện tại, bệnh nhân dùng ứng dụng Android để claim thiết bị bằng QR, cấu hình Wi-Fi và thực hiện lượt đo theo hướng dẫn.",
   },
   {
     q: "Dữ liệu RPM được bảo mật như thế nào?",
@@ -36,33 +36,33 @@ const faqs = [
   },
   {
     q: "Bác sĩ mất bao nhiêu thời gian mỗi ngày cho RPM?",
-    a: "Trung bình 5–10 phút/bệnh nhân/tuần nhờ tự động hóa: hệ thống chỉ cảnh báo khi có giá trị bất thường, tự tổng hợp xu hướng và đề xuất hành động. Bác sĩ chỉ can thiệp khi cần.",
+    a: "Khối lượng công việc phụ thuộc số bệnh nhân, tần suất đo, ngưỡng cảnh báo và quy trình của cơ sở. Shcare không đưa ra một thời lượng chuẩn khi chưa có dữ liệu vận hành đã xác minh.",
   },
   {
     q: "RPM có giúp giảm tái nhập viện không?",
-    a: "Có. Các nghiên cứu lâm sàng cho thấy RPM giảm 25–50% tỷ lệ tái nhập viện ở bệnh nhân suy tim và COPD nhờ phát hiện sớm dấu hiệu xấu đi trước khi cần cấp cứu.",
+    a: "Hiệu quả phụ thuộc chương trình, nhóm bệnh nhân và chất lượng vận hành. Shcare không công bố tỷ lệ cải thiện lâm sàng khi chưa có nghiên cứu hoặc dữ liệu triển khai được xác minh.",
   },
   {
     q: "Triển khai RPM tại phòng khám mất bao lâu?",
-    a: "Với Smart Health Care, một phòng khám có thể bắt đầu nhận dữ liệu RPM trong 1–2 tuần: 3 ngày đào tạo nhân sự, 1 tuần cấp phát thiết bị cho 20–50 bệnh nhân pilot, sau đó mở rộng.",
+    a: "Thời gian triển khai được xác định sau khi chốt hạ tầng, vai trò, consent, thiết bị, đào tạo và kiểm thử. Hãy liên hệ để lập phạm vi thay vì dựa vào một mốc thời gian cố định.",
   },
 ];
 
 export default function RPMGuidePage() {
   useSEO({
-    title: "Kiến thức RPM: Theo dõi bệnh nhân từ xa toàn diện | Smart Health Care",
+    title: "Kiến thức RPM: Theo dõi bệnh nhân từ xa | Shcare",
     description:
-      "Hướng dẫn RPM (Remote Patient Monitoring) cho bác sĩ và phòng khám: định nghĩa, quy trình, thiết bị, bảo mật, lợi ích lâm sàng và cách triển khai với Smart Health Care.",
+      "Tổng quan RPM cho bác sĩ và phòng khám: khái niệm, quy trình, thiết bị, quyền truy cập và cách đánh giá phạm vi triển khai với Shcare.",
     path: "/tai-nguyen/kien-thuc-rpm",
     jsonLd: [
       {
         "@context": "https://schema.org",
         "@type": "Article",
-        headline: "Kiến thức RPM: Theo dõi bệnh nhân từ xa toàn diện",
+        headline: "Kiến thức RPM: Theo dõi bệnh nhân từ xa",
         description:
-          "Hướng dẫn đầy đủ về Remote Patient Monitoring: khái niệm, lợi ích, quy trình, thiết bị và triển khai thực tế.",
-        author: { "@type": "Organization", name: "Smart Health Care" },
-        publisher: { "@type": "Organization", name: "Smart Health Care" },
+          "Tổng quan Remote Patient Monitoring: khái niệm, quy trình, thiết bị và các điều kiện cần đánh giá trước khi triển khai.",
+        author: { "@type": "Organization", name: "Shcare" },
+        publisher: { "@type": "Organization", name: "Shcare" },
         mainEntityOfPage: "https://shcare.web.app/tai-nguyen/kien-thuc-rpm",
       },
       {
@@ -120,11 +120,11 @@ export default function RPMGuidePage() {
             Tài nguyên · Kiến thức RPM
           </div>
           <h1 className="brand-gradient-text mb-5 text-3xl md:text-5xl">
-            Kiến thức RPM: Theo dõi bệnh nhân từ xa toàn diện
+            Kiến thức RPM: Theo dõi bệnh nhân từ xa
           </h1>
           <p className="text-[#8aa5ba] text-base md:text-lg max-w-2xl mx-auto">
-            Tất cả những gì bác sĩ và phòng khám cần biết về Remote Patient Monitoring — từ khái
-            niệm, quy trình triển khai đến lợi ích lâm sàng và cách bảo vệ dữ liệu bệnh nhân.
+            Tổng quan dành cho bác sĩ và phòng khám về Remote Patient Monitoring — từ khái niệm,
+            quy trình triển khai đến quyền truy cập và cách bảo vệ dữ liệu bệnh nhân.
           </p>
         </div>
       </section>
@@ -135,16 +135,15 @@ export default function RPMGuidePage() {
           <h2 className="brand-gradient-text mb-4 text-2xl md:text-3xl">RPM là gì?</h2>
           <p className="text-[#8aa5ba] leading-relaxed mb-4">
             <strong className="text-[#eefbff]">RPM (Remote Patient Monitoring)</strong> — Theo dõi
-            bệnh nhân từ xa — là một phương pháp chăm sóc sử dụng các thiết bị y tế kết nối để thu
-            thập dữ liệu sinh hiệu của bệnh nhân tại nhà và truyền liên tục, an toàn về bác sĩ điều
-            trị. Thay vì chỉ dựa vào những lần khám trực tiếp, bác sĩ có bức tranh đầy đủ về tình
-            trạng bệnh nhân theo thời gian thực.
+            bệnh nhân từ xa — là một mô hình thu thập chỉ số hoặc lượt đo ngoài cơ sở khám và chuyển
+            tới đội ngũ chăm sóc theo lịch hoặc sự kiện đã thống nhất. Dữ liệu bổ sung ngữ cảnh giữa
+            các lần hẹn; tần suất review và hành động tiếp theo do cơ sở chuyên môn quy định.
           </p>
           <p className="text-[#8aa5ba] leading-relaxed">
-            Tại Smart Health Care, RPM được xây dựng quanh chiếc{" "}
-            <strong className="text-[#eefbff]">ống nghe thông minh</strong> — thiết bị y tế cấp phép
-            sử dụng AI để phân tích âm tim, âm phổi và sinh hiệu — kết hợp với cổng thông tin bác
-            sĩ/phòng khám và app cho bệnh nhân.
+            Tại Shcare, RPM được xây dựng quanh chiếc{" "}
+            <strong className="text-[#eefbff]">ống nghe thông minh</strong> — thiết bị thu tín hiệu
+            âm tim, âm phổi để đồng bộ với cổng thông tin bác sĩ/phòng khám và app cho bệnh nhân.
+            Hệ thống hiện kiểm tra chất lượng tín hiệu; nhận định lâm sàng do người có chuyên môn thực hiện.
           </p>
         </div>
       </section>
@@ -158,20 +157,20 @@ export default function RPMGuidePage() {
               {
                 icon: HeartPulse,
                 color: "#00FFD1",
-                title: "Giảm tái nhập viện",
-                desc: "Phát hiện sớm dấu hiệu xấu đi giúp giảm 25–50% tỷ lệ tái nhập viện ở bệnh nhân suy tim, COPD.",
+                title: "Hỗ trợ theo dõi giữa các lần hẹn",
+                desc: "Dữ liệu lượt đo giúp đội ngũ chăm sóc có thêm thông tin để sắp xếp ưu tiên review theo quy trình của cơ sở.",
               },
               {
                 icon: Users,
                 color: "#4AA4E0",
                 title: "Mở rộng khả năng chăm sóc",
-                desc: "Một bác sĩ có thể theo dõi nhiều bệnh nhân mạn tính nhờ tự động hóa cảnh báo và báo cáo.",
+                desc: "Workspace tập trung lượt đo, cảnh báo theo quy tắc và trạng thái review để giảm thao tác rời rạc.",
               },
               {
                 icon: BarChart3,
                 color: "#7257E8",
-                title: "Dữ liệu khách quan & liên tục",
-                desc: "Ra quyết định dựa trên xu hướng dài hạn thay vì một lần đo tại phòng khám.",
+                title: "Dữ liệu theo phiên đo",
+                desc: "Lịch sử lượt đo giúp người có chuyên môn xem lại diễn tiến; Shcare không thay thế quyết định lâm sàng.",
               },
             ].map((b) => (
               <div key={b.title} className="glass-panel rounded-2xl p-6">
@@ -193,14 +192,14 @@ export default function RPMGuidePage() {
       <section className="py-10 md:py-14">
         <div className="max-w-4xl mx-auto px-6">
           <h2 className="brand-gradient-text mb-8 text-2xl md:text-3xl">
-            Quy trình RPM với Smart Health Care
+            Quy trình RPM với Shcare
           </h2>
           <div className="space-y-4">
             {[
               {
                 step: "01",
                 title: "Đăng ký & xác minh",
-                desc: "Bác sĩ/phòng khám tạo tài khoản, gửi giấy phép hành nghề và được Smart Health xét duyệt trong 1–3 ngày.",
+                desc: "Bác sĩ/phòng khám tạo tài khoản, nộp thông tin được yêu cầu và theo dõi trạng thái phê duyệt từ backend.",
               },
               {
                 step: "02",
@@ -214,13 +213,13 @@ export default function RPMGuidePage() {
               },
               {
                 step: "04",
-                title: "Theo dõi liên tục",
-                desc: "Dữ liệu sinh hiệu tự động đồng bộ về portal. AI tự động phát hiện bất thường và gửi cảnh báo cho bác sĩ.",
+                title: "Theo dõi theo kế hoạch",
+                desc: "Dữ liệu được đồng bộ về portal cùng trạng thái chất lượng tín hiệu để bác sĩ ưu tiên xem xét.",
               },
               {
                 step: "05",
                 title: "Can thiệp & báo cáo",
-                desc: "Bác sĩ xem xu hướng, ghi chú, gọi điện hoặc đặt lịch tái khám. Báo cáo tháng tự động xuất PDF/Excel.",
+                desc: "Bác sĩ xem hồ sơ, ghi chú và chọn hành động phù hợp. Export chỉ khả dụng theo quyền và định dạng backend hỗ trợ.",
               },
             ].map((s) => (
               <div key={s.step} className="glass-panel rounded-2xl p-5 flex gap-5 items-start">
@@ -249,12 +248,12 @@ export default function RPMGuidePage() {
               {
                 icon: Activity,
                 title: "Hô hấp",
-                desc: "COPD, hen phế quản, hậu COVID — phát hiện sớm cơn cấp qua phân tích âm phổi và SpO2.",
+                desc: "Chương trình hô hấp có thể thu thập âm phổi hoặc chỉ số khác theo chỉ định; người có chuyên môn chịu trách nhiệm review.",
               },
               {
                 icon: Stethoscope,
                 title: "Hậu phẫu & xuất viện",
-                desc: "Theo dõi 30 ngày sau phẫu thuật để phát hiện biến chứng sớm và giảm tái nhập viện.",
+                desc: "Chương trình sau xuất viện có thể đặt lịch lượt đo và tái khám theo phác đồ của cơ sở.",
               },
               {
                 icon: Users,
@@ -283,14 +282,14 @@ export default function RPMGuidePage() {
             Bảo mật & tuân thủ trong RPM
           </h2>
           <p className="text-[#8aa5ba] leading-relaxed mb-6">
-            Dữ liệu sức khỏe là loại dữ liệu nhạy cảm nhất. Smart Health Care áp dụng các biện pháp
-            bảo mật nhiều lớp và tuân thủ chuẩn quốc tế:
+            Dữ liệu sức khỏe cần được bảo vệ theo cấu hình và chính sách của từng cơ sở. Shcare cung
+            cấp các cơ chế kỹ thuật sau, không tự tuyên bố chứng nhận hoặc mức tuân thủ pháp lý:
           </p>
           <div className="grid md:grid-cols-2 gap-3">
             {[
               "Bảo vệ dữ liệu trong quá trình truyền và lưu trữ theo cấu hình triển khai",
               "Consent rõ ràng — bệnh nhân kiểm soát và thu hồi quyền",
-              "Phân quyền theo vai trò (RBAC) và audit log đầy đủ",
+              "Phân quyền theo vai trò (RBAC) và audit cho các hành động được hỗ trợ",
               "Hỗ trợ phân quyền, audit và chính sách bảo vệ dữ liệu cá nhân",
             ].map((s) => (
               <div key={s} className="flex items-start gap-3 glass-panel rounded-xl p-4">
@@ -357,8 +356,8 @@ export default function RPMGuidePage() {
               Sẵn sàng triển khai RPM?
             </h2>
             <p className="text-[#8aa5ba] mb-7 max-w-xl mx-auto">
-              Đội ngũ Smart Health hỗ trợ bác sĩ và phòng khám triển khai RPM trong 1–2 tuần, từ cấp
-              phát thiết bị đến đào tạo và đi vào vận hành.
+              Đội ngũ Shcare sẽ cùng cơ sở xác định phạm vi, điều kiện thiết bị, quyền truy cập và
+              tiêu chí nghiệm thu trước khi chốt lịch triển khai.
             </p>
             <div className="flex flex-wrap justify-center gap-3">
               <Link to="/lien-he" className="premium-button">

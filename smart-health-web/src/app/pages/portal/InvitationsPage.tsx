@@ -1,358 +1,1436 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock, FileText, Mail, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  Building2,
+  Clock3,
+  FileCheck2,
+  FileText,
+  History,
+  KeyRound,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  Stethoscope,
+  Trash2,
+  WifiOff,
+} from "lucide-react";
 import { toast } from "sonner";
-import { PortalEmpty, PortalError, PortalLoading } from "../../components/PortalState";
-import { PatientShare, ShareTarget, smartHealthApi } from "../../../lib/smart-health-api";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../../components/ui/alert-dialog";
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../../components/ui/card";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
+import { RadioGroup, RadioGroupItem } from "../../../components/ui/radio-group";
+import { Skeleton } from "../../../components/ui/skeleton";
+import { useAuth } from "../../context/AuthContext";
+import {
+  smartHealthApi,
+  type ApiError,
+  type CreatePatientSharePayload,
+  type PatientShare,
+  type PatientShareAuthorityType,
+  type PatientShareStatus,
+} from "../../../lib/smart-health-api";
 
 type TargetType = "doctor" | "workspace";
 type ShareScope = "patient_profile" | "selected_scans";
 
-function formatDate(value?: string) {
-  if (!value) return "Không giới hạn";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("vi-VN");
+const SHARING_MANAGE_CAPABILITIES = [
+  "platform.patients.manage",
+  "workspace.patients.manage",
+  "personal.sharing.manage",
+];
+
+const AUTHORITY_LABELS: Record<PatientShareAuthorityType, string> = {
+  patient_consent: "Consent do bệnh nhân cấp",
+  clinician_access_grant: "Quyền truy cập trực tiếp",
+  administrative_assignment: "Phân công hành chính",
+};
+
+const STATUS_LABELS: Record<PatientShareStatus, string> = {
+  active: "Đang hiệu lực",
+  revoked: "Đã thu hồi",
+  expired: "Đã hết hạn",
+};
+
+const PATIENT_SHARE_AUTHORITY_TYPES = new Set<PatientShareAuthorityType>([
+  "patient_consent",
+  "clinician_access_grant",
+  "administrative_assignment",
+]);
+
+function hasCanonicalPatientShareContract(
+  share: PatientShare | null | undefined,
+  patientId: string,
+) {
+  return Boolean(
+    share?.id &&
+      share.patientId === patientId &&
+      share.accessLevel === "read" &&
+      PATIENT_SHARE_AUTHORITY_TYPES.has(share.authorityType) &&
+      ["active", "revoked", "expired"].includes(share.status) &&
+      share.recipient?.id &&
+      ["doctor", "workspace"].includes(share.recipient.type) &&
+      share.audit?.grantedAt,
+  );
 }
 
-function shareTargetLabel(share: PatientShare, doctors: Map<string, ShareTarget>, workspaces: Map<string, ShareTarget>) {
-  if (share.doctorUserId || share.doctorId) {
-    const id = share.doctorUserId || share.doctorId || "";
-    const doctor = doctors.get(id);
-    return doctor?.name || doctor?.email || id || "Bác sĩ";
+function matchesPatientShareIntent(
+  share: PatientShare,
+  intent: CreatePatientSharePayload,
+) {
+  const directDoctor = "doctorUserId" in intent;
+  const expectedRecipientId = directDoctor
+    ? intent.doctorUserId
+    : intent.organizationId;
+  const expectedScanIds =
+    intent.scope === "selected_scans" ? [...(intent.scanIds || [])].sort() : [];
+  return (
+    share.recipient.type === (directDoctor ? "doctor" : "workspace") &&
+    share.recipient.id === expectedRecipientId &&
+    share.scope === intent.scope &&
+    JSON.stringify([...share.scanIds].sort()) === JSON.stringify(expectedScanIds) &&
+    (intent.expiresAt || "") === (share.expiresAt || "")
+  );
+}
+
+function createShareIntentKey(operation: "create" | "revoke", id = "new") {
+  const uniquePart =
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `portal-patient-share-${operation}-${id}-${uniquePart}`;
+}
+
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
+function isPermissionError(error: unknown) {
+  return Boolean(
+    error && typeof error === "object" && (error as ApiError).status === 403,
+  );
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function formatDateTime(value?: string, fallback = "Không giới hạn") {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Không xác định"
+    : date.toLocaleString("vi-VN");
+}
+
+function authorityLabel(authorityType?: PatientShareAuthorityType) {
+  return authorityType
+    ? AUTHORITY_LABELS[authorityType]
+    : "Loại quyền chưa được backend xác định";
+}
+
+function statusLabel(status?: PatientShareStatus) {
+  return status
+    ? STATUS_LABELS[status]
+    : "Trạng thái chưa được backend xác định";
+}
+
+function statusClass(status?: PatientShareStatus) {
+  if (status === "active") {
+    return "border-[var(--clinical-success)]/30 bg-[var(--clinical-success)]/10 text-[var(--clinical-success)]";
   }
-  if (share.organizationId) {
-    const workspace = workspaces.get(share.organizationId);
-    return workspace?.name || share.organizationId;
+  if (status === "revoked") {
+    return "border-destructive/30 bg-destructive/10 text-destructive";
   }
-  return "Đối tượng chia sẻ";
+  if (status === "expired") {
+    return "border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/10 text-[var(--clinical-warning)]";
+  }
+  return "border-border bg-muted text-muted-foreground";
+}
+
+function authorityClass(authorityType?: PatientShareAuthorityType) {
+  if (authorityType === "patient_consent") {
+    return "border-primary/30 bg-primary/10 text-primary";
+  }
+  if (authorityType === "clinician_access_grant") {
+    return "border-[var(--clinical-success)]/30 bg-[var(--clinical-success)]/10 text-[var(--clinical-success)]";
+  }
+  if (authorityType === "administrative_assignment") {
+    return "border-[var(--clinical-info)]/30 bg-[var(--clinical-info)]/10 text-[var(--clinical-info)]";
+  }
+  return "border-border bg-muted text-muted-foreground";
 }
 
 function scopeLabel(scope?: string, scanCount = 0) {
-  if (scope === "selected_scans") return `Chỉ ${scanCount || 0} lượt đo đã chọn`;
-  return "Toàn bộ hồ sơ bệnh nhân";
+  if (scope === "selected_scans") {
+    return `${scanCount} lượt đo được chọn`;
+  }
+  if (scope === "patient_profile") return "Toàn bộ hồ sơ bệnh nhân";
+  return "Phạm vi chưa được backend xác định";
+}
+
+function recipientDetails(share: PatientShare) {
+  return share.recipient;
+}
+
+function recipientTypeLabel(type?: string) {
+  if (type === "doctor") return "Bác sĩ";
+  if (type === "workspace") return "Workspace";
+  return "Loại người nhận chưa xác định";
+}
+
+function auditDetails(share: PatientShare) {
+  return {
+    grantedBy:
+      share.grantedByActor?.name ||
+      share.audit?.grantedByUserId ||
+      share.grantedByUserId ||
+      "",
+    grantedByRole: share.grantedByActor?.role || "",
+    grantedAt: share.audit?.grantedAt || share.createdAt || "",
+    consentedAt: share.consentedAt || "",
+    revokedBy:
+      share.revokedByActor?.name ||
+      share.audit?.revokedByUserId ||
+      share.revokedByUserId ||
+      "",
+    revokedByRole: share.revokedByActor?.role || "",
+    revokedAt: share.audit?.revokedAt || share.revokedAt || "",
+    updatedAt: share.audit?.updatedAt || share.updatedAt || "",
+  };
 }
 
 export default function InvitationsPage() {
-  const client = useQueryClient();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const workspaceId = user?.currentWorkspace.id || "";
+  const capabilities = user?.capabilities || [];
+  const canManageSharing = capabilities.some((capability) =>
+    SHARING_MANAGE_CAPABILITIES.includes(capability),
+  );
+
+  const [online, setOnline] = useState(() => !isOffline());
   const [patientId, setPatientId] = useState("");
   const [targetType, setTargetType] = useState<TargetType>("doctor");
   const [targetId, setTargetId] = useState("");
   const [scope, setScope] = useState<ShareScope>("patient_profile");
   const [expiresAt, setExpiresAt] = useState("");
   const [selectedScanIds, setSelectedScanIds] = useState<string[]>([]);
+  const [createIntentKey, setCreateIntentKey] = useState(() =>
+    createShareIntentKey("create"),
+  );
+  const [createError, setCreateError] = useState("");
+  const [revokeIntent, setRevokeIntent] = useState<{
+    share: PatientShare;
+    patientId: string;
+    key: string;
+  } | null>(null);
+  const [revokeError, setRevokeError] = useState("");
 
-  const patients = useQuery({
-    queryKey: ["portal", "patients"],
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
+
+  const patientsQuery = useQuery({
+    queryKey: ["portal", "patients", workspaceId, "share-access"],
     queryFn: () => smartHealthApi.listPatients(),
+    enabled: Boolean(workspaceId && canManageSharing),
+    retry: false,
   });
-  const targets = useQuery({
-    queryKey: ["portal", "share-targets"],
+  const targetsQuery = useQuery({
+    queryKey: ["portal", "share-targets", workspaceId],
     queryFn: () => smartHealthApi.shareTargets(),
+    enabled: Boolean(workspaceId && canManageSharing),
+    retry: false,
   });
-  const scans = useQuery({
-    queryKey: ["portal", "share-scans", patientId],
+  const scansQuery = useQuery({
+    queryKey: ["portal", "share-scans", workspaceId, patientId],
     queryFn: () => smartHealthApi.listScans({ patientId, limit: 100 }),
-    enabled: Boolean(patientId),
+    enabled: Boolean(
+      workspaceId &&
+      patientId &&
+      scope === "selected_scans" &&
+      canManageSharing,
+    ),
+    retry: false,
   });
-  const shares = useQuery({
-    queryKey: ["portal", "patient-shares", patientId],
+  const sharesQuery = useQuery({
+    queryKey: ["portal", "patient-shares", workspaceId, patientId],
     queryFn: () => smartHealthApi.listPatientShares(patientId),
-    enabled: Boolean(patientId),
+    enabled: Boolean(workspaceId && patientId && canManageSharing),
+    retry: false,
   });
 
-  const doctorsById = useMemo(
-    () => new Map((targets.data?.doctors || []).map((target) => [target.id, target])),
-    [targets.data?.doctors],
+  const targetOptions =
+    targetType === "doctor"
+      ? targetsQuery.data?.doctors || []
+      : targetsQuery.data?.workspaces || [];
+  const shares = sharesQuery.data?.shares || [];
+  const invalidShareContract = shares.some(
+    (share) => !hasCanonicalPatientShareContract(share, patientId),
   );
-  const workspacesById = useMemo(
-    () => new Map((targets.data?.workspaces || []).map((target) => [target.id, target])),
-    [targets.data?.workspaces],
-  );
-  const options = targetType === "doctor" ? targets.data?.doctors || [] : targets.data?.workspaces || [];
-  const activeShares = (shares.data?.shares || []).filter((share) => share.active !== false);
-  const canSubmit =
-    Boolean(patientId && targetId) && (scope !== "selected_scans" || selectedScanIds.length > 0);
+  const activeShareCount = shares.filter(
+    (share) => share.status === "active",
+  ).length;
 
-  const create = useMutation({
-    mutationFn: () =>
-      smartHealthApi.createPatientShare(patientId, {
-        ...(targetType === "doctor" ? { doctorUserId: targetId } : { organizationId: targetId }),
-        scope,
-        ...(scope === "selected_scans" ? { scanIds: selectedScanIds } : {}),
-        ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
-      }),
-    onSuccess: (payload) => {
-      if (payload.share) {
-        client.setQueryData<{ shares: PatientShare[] }>(
-          ["portal", "patient-shares", patientId],
-          (current) => ({
-            shares: [payload.share, ...(current?.shares || []).filter((share) => share.id !== payload.share.id)],
-          }),
+  const rotateCreateIntent = () => {
+    setCreateIntentKey(createShareIntentKey("create"));
+    setCreateError("");
+  };
+
+  const createMutation = useMutation({
+    mutationFn: ({
+      selectedPatientId,
+      payload,
+      idempotencyKey,
+    }: {
+      selectedPatientId: string;
+      payload: CreatePatientSharePayload;
+      idempotencyKey: string;
+    }) =>
+      smartHealthApi.createPatientShare(
+        selectedPatientId,
+        payload,
+        idempotencyKey,
+      ),
+    onSuccess: async (payload, variables) => {
+      if (
+        !hasCanonicalPatientShareContract(
+          payload.share,
+          variables.selectedPatientId,
+        ) ||
+        !matchesPatientShareIntent(payload.share, variables.payload) ||
+        payload.share.status !== "active" ||
+        payload.share.active !== true
+      ) {
+        setCreateError(
+          "Backend chưa xác nhận đầy đủ quyền truy cập đang hiệu lực.",
         );
+        return;
       }
-      toast.success("Đã cấp quyền chia sẻ hồ sơ");
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "portal",
+          "patient-shares",
+          workspaceId,
+          variables.selectedPatientId,
+        ],
+      });
+      toast.success("Backend đã ghi nhận quyền truy cập dữ liệu.");
       setTargetId("");
       setSelectedScanIds([]);
-      client.invalidateQueries({ queryKey: ["portal", "patient-shares", patientId] });
+      setExpiresAt("");
+      setCreateError("");
+      setCreateIntentKey(createShareIntentKey("create"));
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) =>
+      setCreateError(
+        errorMessage(error, "Không thể cấp quyền truy cập dữ liệu."),
+      ),
   });
 
-  const revoke = useMutation({
-    mutationFn: (shareId: string) => smartHealthApi.revokePatientShare(patientId, shareId),
-    onSuccess: (payload, shareId) => {
-      client.setQueryData<{ shares: PatientShare[] }>(
-        ["portal", "patient-shares", patientId],
-        (current) => ({
-          shares: (current?.shares || []).map((share) =>
-            share.id === shareId ? { ...share, ...payload.share, active: false } : share,
-          ),
-        }),
+  const revokeMutation = useMutation({
+    mutationFn: ({
+      share,
+      patientId: selectedPatientId,
+      key,
+    }: {
+      share: PatientShare;
+      patientId: string;
+      key: string;
+    }) => smartHealthApi.revokePatientShare(selectedPatientId, share.id, key),
+    onSuccess: async (payload, variables) => {
+      if (
+        !payload.revoked ||
+        !hasCanonicalPatientShareContract(
+          payload.share,
+          variables.patientId,
+        ) ||
+        payload.share.id !== variables.share.id ||
+        payload.share.status !== "revoked" ||
+        payload.share.active !== false ||
+        !payload.share.audit.revokedAt
+      ) {
+        setRevokeError(
+          "Backend chưa xác nhận đầy đủ quyền truy cập đã được thu hồi.",
+        );
+        return;
+      }
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "portal",
+          "patient-shares",
+          workspaceId,
+          variables.patientId,
+        ],
+      });
+      toast.success("Backend đã xác nhận thu hồi quyền truy cập.");
+      setRevokeIntent(null);
+      setRevokeError("");
+    },
+    onError: (error) =>
+      setRevokeError(
+        errorMessage(error, "Không thể thu hồi quyền truy cập dữ liệu."),
+      ),
+  });
+
+  const submitShare = () => {
+    setCreateError("");
+    if (isOffline()) {
+      setCreateError(
+        "Thiết bị đang ngoại tuyến. Vui lòng kết nối mạng rồi thử lại.",
       );
-      toast.success("Đã thu hồi quyền chia sẻ");
-      client.invalidateQueries({ queryKey: ["portal", "patient-shares", patientId] });
-    },
-    onError: (error) => toast.error(error.message),
-  });
+      return;
+    }
+    if (!patientId) {
+      setCreateError("Vui lòng chọn hồ sơ bệnh nhân.");
+      return;
+    }
+    if (!targetId) {
+      setCreateError(
+        targetType === "doctor"
+          ? "Vui lòng chọn bác sĩ nhận quyền trực tiếp."
+          : "Vui lòng chọn workspace nhận phân công hành chính.",
+      );
+      return;
+    }
+    if (scope === "selected_scans" && selectedScanIds.length === 0) {
+      setCreateError("Vui lòng chọn ít nhất một lượt đo.");
+      return;
+    }
+    const expiration = expiresAt ? new Date(expiresAt) : null;
+    if (
+      expiration &&
+      (Number.isNaN(expiration.getTime()) || expiration.getTime() <= Date.now())
+    ) {
+      setCreateError("Thời hạn phải là một thời điểm hợp lệ trong tương lai.");
+      return;
+    }
 
-  if (patients.isLoading || targets.isLoading) return <PortalLoading />;
-  if (patients.error || targets.error) return <PortalError error={patients.error || targets.error} />;
+    const payload: CreatePatientSharePayload = {
+      ...(targetType === "doctor"
+        ? { doctorUserId: targetId }
+        : { organizationId: targetId }),
+      scope,
+      ...(scope === "selected_scans" ? { scanIds: selectedScanIds } : {}),
+      ...(expiration ? { expiresAt: expiration.toISOString() } : {}),
+    };
+    createMutation.mutate({
+      selectedPatientId: patientId,
+      payload,
+      idempotencyKey: createIntentKey,
+    });
+  };
+
+  if (!canManageSharing) {
+    return <PermissionState />;
+  }
+
+  if (patientsQuery.isLoading) {
+    return <ConsentLoading />;
+  }
+
+  if (patientsQuery.error) {
+    if (isPermissionError(patientsQuery.error)) return <PermissionState />;
+    return (
+      <ConsentError
+        error={patientsQuery.error}
+        retry={() => void patientsQuery.refetch()}
+      />
+    );
+  }
+
+  const patients = patientsQuery.data?.patients || [];
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="hero-gradient-text flex gap-2 items-center">
-            <Mail size={22} />
-            Chia sẻ & consent
+    <div className="space-y-6">
+      <header className="clinical-page-header flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+            Kiểm soát dữ liệu sức khỏe
+          </p>
+          <h1 className="clinical-page-title mt-2 flex items-center gap-2 text-foreground">
+            <ShieldCheck aria-hidden="true" size={24} />
+            Quyền truy cập dữ liệu
           </h1>
-          <p className="text-sm text-[#94b8d0]">
-            Cấp quyền theo bệnh nhân, phạm vi dữ liệu và thời hạn. Backend audit mọi lần cấp
-            hoặc thu hồi.
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            Cấp đúng người nhận, đúng phạm vi và đúng thời hạn. Loại thẩm quyền
+            và trạng thái luôn lấy từ backend; Portal không tự suy diễn consent.
           </p>
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="glass-panel rounded-xl px-3 py-2">
-            <b className="block text-white text-base">{patients.data?.patients.length || 0}</b>
-            <span className="text-[#94b8d0]">Bệnh nhân</span>
-          </div>
-          <div className="glass-panel rounded-xl px-3 py-2">
-            <b className="block text-white text-base">{options.length}</b>
-            <span className="text-[#94b8d0]">Đích chia sẻ</span>
-          </div>
-          <div className="glass-panel rounded-xl px-3 py-2">
-            <b className="block text-white text-base">{activeShares.length}</b>
-            <span className="text-[#94b8d0]">Đang cấp</span>
-          </div>
-        </div>
-      </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11"
+          onClick={() => {
+            void patientsQuery.refetch();
+            void targetsQuery.refetch();
+            if (patientId) void sharesQuery.refetch();
+          }}
+        >
+          <RefreshCw aria-hidden="true" />
+          Làm mới
+        </Button>
+      </header>
 
-      <section className="glass-panel rounded-2xl p-5 space-y-4" aria-label="Cấp quyền chia sẻ hồ sơ">
-        <div className="grid lg:grid-cols-4 md:grid-cols-2 gap-3">
-          <label className="text-xs text-[#94b8d0] space-y-2">
-            <span>Bệnh nhân</span>
-            <select
-              id="share-patient-id"
-              name="sharePatientId"
-              value={patientId}
-              onChange={(event) => {
-                setPatientId(event.target.value);
-                setTargetId("");
-                setSelectedScanIds([]);
-              }}
-              className="portal-input"
-            >
-              <option value="">Chọn bệnh nhân</option>
-              {patients.data?.patients.map((patient) => (
-                <option key={patient.id} value={patient.id}>
-                  {patient.name || patient.id}
-                </option>
-              ))}
-            </select>
-          </label>
+      {!online ? (
+        <OfflineState hasCachedData={Boolean(patients.length)} />
+      ) : null}
 
-          <label className="text-xs text-[#94b8d0] space-y-2">
-            <span>Loại đối tượng</span>
-            <select
-              id="share-target-type"
-              name="shareTargetType"
-              value={targetType}
-              onChange={(event) => {
-                setTargetType(event.target.value as TargetType);
-                setTargetId("");
-              }}
-              className="portal-input"
-            >
-              <option value="doctor">Bác sĩ</option>
-              <option value="workspace">Workspace</option>
-            </select>
-          </label>
-
-          <label className="text-xs text-[#94b8d0] space-y-2">
-            <span>Đối tượng nhận quyền</span>
-            <select
-              id="share-target-id"
-              name="shareTargetId"
-              value={targetId}
-              onChange={(event) => setTargetId(event.target.value)}
-              className="portal-input"
-            >
-              <option value="">Chọn đối tượng</option>
-              {options.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name || target.email || target.id}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-xs text-[#94b8d0] space-y-2">
-            <span>Phạm vi consent</span>
-            <select
-              id="share-scope"
-              name="shareScope"
-              value={scope}
-              onChange={(event) => {
-                setScope(event.target.value as ShareScope);
-                setSelectedScanIds([]);
-              }}
-              className="portal-input"
-            >
-              <option value="patient_profile">Toàn bộ hồ sơ</option>
-              <option value="selected_scans">Chỉ lượt đo đã chọn</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="grid lg:grid-cols-[1fr_auto] gap-3 items-end">
-          <label className="text-xs text-[#94b8d0] space-y-2">
-            <span>Thời hạn tùy chọn</span>
-            <input
-              id="share-expires-at"
-              name="shareExpiresAt"
-              type="datetime-local"
-              value={expiresAt}
-              onChange={(event) => setExpiresAt(event.target.value)}
-              className="portal-input"
-            />
-          </label>
-          <button
-            id="share-create-submit"
-            disabled={!canSubmit || create.isPending}
-            onClick={() => create.mutate()}
-            className="premium-button flex items-center justify-center gap-2 min-h-12 disabled:opacity-50"
-          >
-            <ShieldCheck size={16} />
-            {create.isPending ? "Đang cấp quyền..." : "Cấp quyền"}
-          </button>
-        </div>
-
-        {scope === "selected_scans" && (
-          <div className="rounded-2xl border border-white/10 p-4" data-share-scan-scope>
-            <div className="mb-3 flex items-center gap-2 text-sm text-white">
-              <FileText size={16} />
-              Chọn lượt đo được chia sẻ
-            </div>
-            {!patientId ? (
-              <p className="text-sm text-[#94b8d0]">Chọn bệnh nhân trước khi chọn lượt đo.</p>
-            ) : scans.isLoading ? (
-              <PortalLoading />
-            ) : scans.error ? (
-              <PortalError error={scans.error} retry={() => scans.refetch()} />
-            ) : !scans.data?.scans.length ? (
-              <PortalEmpty label="Bệnh nhân này chưa có lượt đo để chia sẻ riêng lẻ." />
-            ) : (
-              <div className="grid md:grid-cols-2 gap-2">
-                {scans.data.scans.map((scan) => {
-                  const selected = selectedScanIds.includes(scan.id);
-                  return (
-                    <label
-                      key={scan.id}
-                      className="flex gap-3 rounded-xl border border-white/10 p-3 text-sm text-[#94b8d0]"
-                    >
-                      <input
-                        data-share-scan={scan.id}
-                        type="checkbox"
-                        checked={selected}
-                        onChange={(event) =>
-                          setSelectedScanIds((current) =>
-                            event.target.checked
-                              ? [...current, scan.id]
-                              : current.filter((id) => id !== scan.id),
-                          )
-                        }
-                      />
-                      <span>
-                        <b className="block text-white">{scan.aiLabel || scan.status || scan.id}</b>
-                        {formatDate(scan.createdAt || scan.startedAt)}
-                      </span>
-                    </label>
-                  );
-                })}
+      <section
+        aria-label="Phân biệt loại quyền"
+        className="grid gap-4 lg:grid-cols-2"
+      >
+        <Card className="shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
+                <Stethoscope aria-hidden="true" size={20} />
+              </span>
+              <div>
+                <CardTitle className="text-base">Truy cập trực tiếp</CardTitle>
+                <CardDescription>
+                  Bác sĩ cụ thể nhận đúng phạm vi hồ sơ.
+                </CardDescription>
               </div>
-            )}
+            </div>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Backend quyết định đây là consent của bệnh nhân hay quyền truy cập
+            lâm sàng dựa trên actor đã xác thực.
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-xl bg-[var(--clinical-info)]/10 text-[var(--clinical-info)]">
+                <Building2 aria-hidden="true" size={20} />
+              </span>
+              <div>
+                <CardTitle className="text-base">
+                  Phân công hành chính
+                </CardTitle>
+                <CardDescription>
+                  Workspace nhận quyền điều phối theo nghiệp vụ.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Phân công workspace không được hiển thị như consent của bệnh nhân và
+            luôn có dấu vết cấp, thu hồi từ backend.
+          </CardContent>
+        </Card>
+      </section>
+
+      <section
+        aria-label="Tổng quan quyền truy cập"
+        className="grid gap-3 sm:grid-cols-3"
+      >
+        {[
+          { label: "Hồ sơ có thể quản lý", value: patients.length },
+          { label: "Người nhận khả dụng", value: targetOptions.length },
+          { label: "Đang hiệu lực", value: activeShareCount },
+        ].map((item) => (
+          <Card key={item.label} className="shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
+                {item.value}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <KeyRound aria-hidden="true" />
+            Cấp quyền truy cập
+          </CardTitle>
+          <CardDescription>
+            Backend sẽ kiểm tra actor, tenant, người nhận, phạm vi và ghi audit
+            trong cùng mutation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="share-patient-id">Hồ sơ bệnh nhân</Label>
+              <select
+                id="share-patient-id"
+                name="sharePatientId"
+                value={patientId}
+                onChange={(event) => {
+                  setPatientId(event.target.value);
+                  setTargetId("");
+                  setSelectedScanIds([]);
+                  rotateCreateIntent();
+                }}
+                className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Chọn hồ sơ bệnh nhân</option>
+                {patients.map((patient) => (
+                  <option key={patient.id} value={patient.id}>
+                    {patient.name || patient.patientCode || patient.id}
+                  </option>
+                ))}
+              </select>
+              {!patients.length ? (
+                <p className="text-sm text-muted-foreground">
+                  Workspace hiện tại chưa có hồ sơ mà bạn được phép quản lý.
+                </p>
+              ) : null}
+            </div>
+
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-foreground">
+                Cách cấp quyền
+              </legend>
+              <RadioGroup
+                value={targetType}
+                onValueChange={(value) => {
+                  setTargetType(value as TargetType);
+                  setTargetId("");
+                  rotateCreateIntent();
+                }}
+                className="grid gap-3 sm:grid-cols-2"
+              >
+                <Label
+                  htmlFor="share-target-doctor"
+                  className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-3 font-normal transition-colors hover:bg-muted/30"
+                >
+                  <RadioGroupItem id="share-target-doctor" value="doctor" />
+                  <span>
+                    <span className="block font-medium text-foreground">
+                      Bác sĩ cụ thể
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Truy cập trực tiếp
+                    </span>
+                  </span>
+                </Label>
+                <Label
+                  htmlFor="share-target-workspace"
+                  className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-3 font-normal transition-colors hover:bg-muted/30"
+                >
+                  <RadioGroupItem
+                    id="share-target-workspace"
+                    value="workspace"
+                  />
+                  <span>
+                    <span className="block font-medium text-foreground">
+                      Workspace
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Phân công hành chính
+                    </span>
+                  </span>
+                </Label>
+              </RadioGroup>
+            </fieldset>
           </div>
+
+          {targetsQuery.isLoading ? (
+            <div className="space-y-2" aria-label="Đang tải người nhận">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-11 w-full" />
+            </div>
+          ) : targetsQuery.error ? (
+            isPermissionError(targetsQuery.error) ? (
+              <InlinePermissionState />
+            ) : (
+              <ConsentError
+                compact
+                error={targetsQuery.error}
+                retry={() => void targetsQuery.refetch()}
+              />
+            )
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="share-target-id">
+                  {targetType === "doctor"
+                    ? "Bác sĩ nhận quyền"
+                    : "Workspace nhận phân công"}
+                </Label>
+                <select
+                  id="share-target-id"
+                  name="shareTargetId"
+                  value={targetId}
+                  onChange={(event) => {
+                    setTargetId(event.target.value);
+                    rotateCreateIntent();
+                  }}
+                  className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">
+                    {targetType === "doctor" ? "Chọn bác sĩ" : "Chọn workspace"}
+                  </option>
+                  {targetOptions.map((target) => (
+                    <option key={target.id} value={target.id}>
+                      {target.name || target.email || target.id}
+                    </option>
+                  ))}
+                </select>
+                {!targetOptions.length ? (
+                  <p className="text-sm text-muted-foreground">
+                    Backend chưa trả về người nhận phù hợp trong phạm vi của
+                    bạn.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="share-scope">Phạm vi dữ liệu</Label>
+                <select
+                  id="share-scope"
+                  name="shareScope"
+                  value={scope}
+                  onChange={(event) => {
+                    setScope(event.target.value as ShareScope);
+                    setSelectedScanIds([]);
+                    rotateCreateIntent();
+                  }}
+                  className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="patient_profile">
+                    Toàn bộ hồ sơ bệnh nhân
+                  </option>
+                  <option value="selected_scans">
+                    Chỉ các lượt đo được chọn
+                  </option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="share-expires-at">
+                  Thời hạn (không bắt buộc)
+                </Label>
+                <Input
+                  id="share-expires-at"
+                  name="shareExpiresAt"
+                  type="datetime-local"
+                  value={expiresAt}
+                  min={new Date().toISOString().slice(0, 16)}
+                  onChange={(event) => {
+                    setExpiresAt(event.target.value);
+                    rotateCreateIntent();
+                  }}
+                  className="min-h-11"
+                />
+              </div>
+            </div>
+          )}
+
+          {scope === "selected_scans" ? (
+            <section
+              className="rounded-xl border bg-muted/10 p-4"
+              aria-labelledby="share-scan-heading"
+              data-share-scan-scope
+            >
+              <div className="flex items-center gap-2">
+                <FileText
+                  aria-hidden="true"
+                  className="text-primary"
+                  size={18}
+                />
+                <h2
+                  id="share-scan-heading"
+                  className="font-medium text-foreground"
+                >
+                  Lượt đo được phép truy cập
+                </h2>
+              </div>
+              {!patientId ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Chọn hồ sơ bệnh nhân trước khi chọn lượt đo.
+                </p>
+              ) : scansQuery.isLoading ? (
+                <div
+                  className="mt-4 grid gap-2 sm:grid-cols-2"
+                  aria-label="Đang tải lượt đo"
+                >
+                  <Skeleton className="h-16" />
+                  <Skeleton className="h-16" />
+                </div>
+              ) : scansQuery.error ? (
+                isPermissionError(scansQuery.error) ? (
+                  <div className="mt-4">
+                    <InlinePermissionState />
+                  </div>
+                ) : (
+                  <div className="mt-4">
+                    <ConsentError
+                      compact
+                      error={scansQuery.error}
+                      retry={() => void scansQuery.refetch()}
+                    />
+                  </div>
+                )
+              ) : !scansQuery.data?.scans.length ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Hồ sơ này chưa có lượt đo khả dụng để cấp riêng lẻ.
+                </p>
+              ) : (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {scansQuery.data.scans.map((scan) => {
+                    const checked = selectedScanIds.includes(scan.id);
+                    return (
+                      <Label
+                        key={scan.id}
+                        htmlFor={`share-scan-${scan.id}`}
+                        className="flex min-h-16 cursor-pointer items-start gap-3 rounded-lg border bg-background p-3 font-normal hover:bg-muted/30"
+                      >
+                        <Checkbox
+                          id={`share-scan-${scan.id}`}
+                          data-share-scan={scan.id}
+                          checked={checked}
+                          onCheckedChange={(next) => {
+                            setSelectedScanIds((current) =>
+                              next === true
+                                ? [...new Set([...current, scan.id])]
+                                : current.filter((id) => id !== scan.id),
+                            );
+                            rotateCreateIntent();
+                          }}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">
+                            {scan.aiLabel || scan.status || scan.id}
+                          </span>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            {formatDateTime(
+                              scan.createdAt || scan.startedAt,
+                              "Chưa có thời gian",
+                            )}
+                          </span>
+                        </span>
+                      </Label>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {createError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            >
+              <AlertCircle
+                aria-hidden="true"
+                className="mt-0.5 shrink-0"
+                size={17}
+              />
+              <span>{createError}</span>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <p className="max-w-2xl text-xs text-muted-foreground">
+              Nút chỉ báo thành công sau khi backend trả về bản ghi quyền truy
+              cập có mã định danh.
+            </p>
+            <Button
+              id="share-create-submit"
+              type="button"
+              className="min-h-11"
+              disabled={
+                !online ||
+                !patientId ||
+                !targetId ||
+                targetsQuery.isLoading ||
+                Boolean(targetsQuery.error) ||
+                createMutation.isPending
+              }
+              onClick={submitShare}
+            >
+              {createMutation.isPending ? (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              ) : (
+                <ShieldCheck aria-hidden="true" />
+              )}
+              {createMutation.isPending
+                ? "Backend đang xử lý..."
+                : "Cấp quyền truy cập"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <section aria-labelledby="patient-share-ledger-heading">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2
+              id="patient-share-ledger-heading"
+              className="text-lg font-semibold text-foreground"
+            >
+              Sổ quyền truy cập
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bao gồm cả quyền đang hiệu lực, hết hạn và đã thu hồi do backend
+              trả về.
+            </p>
+          </div>
+          {patientId ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              onClick={() => void sharesQuery.refetch()}
+              disabled={sharesQuery.isFetching}
+            >
+              {sharesQuery.isFetching ? (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              ) : (
+                <RefreshCw aria-hidden="true" />
+              )}
+              Cập nhật sổ quyền
+            </Button>
+          ) : null}
+        </div>
+
+        {!patientId ? (
+          <ConsentEmpty
+            icon={FileCheck2}
+            title="Chọn hồ sơ để xem quyền truy cập"
+            description="Sổ quyền được tải riêng theo hồ sơ, không trộn dữ liệu giữa các bệnh nhân."
+          />
+        ) : sharesQuery.isLoading ? (
+          <ShareLedgerLoading />
+        ) : sharesQuery.error ? (
+          isPermissionError(sharesQuery.error) ? (
+            <PermissionState compact />
+          ) : (
+            <ConsentError
+              error={sharesQuery.error}
+              retry={() => void sharesQuery.refetch()}
+            />
+          )
+        ) : invalidShareContract ? (
+          <ConsentError
+            error={new Error(
+              "Backend trả về sổ quyền truy cập thiếu authority, lifecycle, recipient hoặc audit.",
+            )}
+            retry={() => void sharesQuery.refetch()}
+          />
+        ) : !shares.length ? (
+          <ConsentEmpty
+            icon={KeyRound}
+            title="Chưa có quyền truy cập nào"
+            description="Backend chưa ghi nhận quyền truy cập hoặc phân công nào cho hồ sơ này."
+          />
+        ) : (
+          <>
+            <div className="grid gap-4 md:hidden">
+              {shares.map((share) => (
+                <MobileShareCard
+                  key={share.id}
+                  share={share}
+                  online={online}
+                  revokePending={revokeMutation.isPending}
+                  onRevoke={() => {
+                    setRevokeError("");
+                    setRevokeIntent({
+                      share,
+                      patientId,
+                      key: createShareIntentKey("revoke", share.id),
+                    });
+                  }}
+                />
+              ))}
+            </div>
+            <Card className="hidden overflow-hidden shadow-sm md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1120px] text-sm">
+                  <thead className="border-b bg-muted/30 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3">Người nhận</th>
+                      <th className="px-4 py-3">Loại quyền</th>
+                      <th className="px-4 py-3">Phạm vi & thời hạn</th>
+                      <th className="px-4 py-3">Dấu vết audit</th>
+                      <th className="px-4 py-3">Trạng thái</th>
+                      <th className="px-4 py-3 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {shares.map((share) => {
+                      const recipient = recipientDetails(share);
+                      const audit = auditDetails(share);
+                      return (
+                        <tr
+                          key={share.id}
+                          data-share-row={share.id}
+                          className="align-top transition-colors hover:bg-muted/20"
+                        >
+                          <td className="px-4 py-4">
+                            <p className="font-medium text-foreground">
+                              {recipient.name}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {recipientTypeLabel(recipient.type)}
+                              {recipient.id ? ` · ${recipient.id}` : ""}
+                            </p>
+                            {recipient.workspaceId ? (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Workspace: {recipient.workspaceId}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-4">
+                            <Badge
+                              variant="outline"
+                              className={authorityClass(share.authorityType)}
+                            >
+                              {authorityLabel(share.authorityType)}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-4">
+                            <p className="text-foreground">
+                              {scopeLabel(
+                                share.scope,
+                                share.scanIds?.length || 0,
+                              )}
+                            </p>
+                            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Clock3 aria-hidden="true" size={13} />
+                              {formatDateTime(share.expiresAt)}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-muted-foreground">
+                            <p>
+                              Cấp:{" "}
+                              {formatDateTime(
+                                audit.grantedAt,
+                                "Chưa có thời gian",
+                              )}
+                            </p>
+                            <p className="mt-1">
+                              Actor: {audit.grantedBy || "Chưa có metadata"}
+                              {audit.grantedByRole
+                                ? ` · ${audit.grantedByRole}`
+                                : ""}
+                            </p>
+                            {share.authorityType === "patient_consent" &&
+                            audit.consentedAt ? (
+                              <p className="mt-1">
+                                Consent: {formatDateTime(audit.consentedAt)}
+                              </p>
+                            ) : null}
+                            {audit.revokedAt ? (
+                              <p className="mt-1">
+                                Thu hồi:{" "}
+                                {formatDateTime(
+                                  audit.revokedAt,
+                                  "Chưa có thời gian",
+                                )}
+                                {audit.revokedBy ? ` · ${audit.revokedBy}` : ""}
+                                {audit.revokedByRole
+                                  ? ` (${audit.revokedByRole})`
+                                  : ""}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-4">
+                            <Badge
+                              variant="outline"
+                              className={statusClass(share.status)}
+                            >
+                              {statusLabel(share.status)}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            {share.status === "active" ? (
+                              <Button
+                                data-share-revoke={share.id}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="min-h-11 text-destructive hover:text-destructive"
+                                disabled={!online || revokeMutation.isPending}
+                                onClick={() => {
+                                  setRevokeError("");
+                                  setRevokeIntent({
+                                    share,
+                                    patientId,
+                                    key: createShareIntentKey(
+                                      "revoke",
+                                      share.id,
+                                    ),
+                                  });
+                                }}
+                              >
+                                <Trash2 aria-hidden="true" />
+                                Thu hồi
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                Không còn hiệu lực
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </>
         )}
       </section>
 
-      {!patientId ? (
-        <PortalEmpty label="Chọn bệnh nhân để xem và quản lý quyền chia sẻ." />
-      ) : shares.isLoading ? (
-        <PortalLoading />
-      ) : shares.error ? (
-        <PortalError error={shares.error} retry={() => shares.refetch()} />
-      ) : !shares.data?.shares.length ? (
-        <PortalEmpty label="Hồ sơ chưa được chia sẻ." />
-      ) : (
-        <div className="glass-panel rounded-2xl overflow-hidden">
-          <div className="grid md:grid-cols-[1.5fr_1fr_1fr_auto] gap-3 border-b border-white/10 p-4 text-xs uppercase text-[#94b8d0]">
-            <span>Đối tượng</span>
-            <span>Phạm vi</span>
-            <span>Thời hạn</span>
-            <span className="text-right">Trạng thái</span>
-          </div>
-          <div className="divide-y divide-white/5">
-            {shares.data.shares.map((share) => (
-              <div
-                key={share.id}
-                data-share-row={share.id}
-                className="grid md:grid-cols-[1.5fr_1fr_1fr_auto] gap-3 p-4 items-center"
-              >
-                <div>
-                  <div className="text-white text-sm">
-                    {shareTargetLabel(share, doctorsById, workspacesById)}
-                  </div>
-                  <div className="text-xs text-[#94b8d0]">{share.id}</div>
-                </div>
-                <div className="text-sm text-[#94b8d0]">
-                  {scopeLabel(share.scope, share.scanIds?.length || 0)}
-                </div>
-                <div className="flex items-center gap-2 text-sm text-[#94b8d0]">
-                  <Clock size={14} />
-                  {formatDate(share.expiresAt)}
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-1 text-xs text-white">
-                    <CheckCircle2 size={13} />
-                    {share.active === false ? "Đã thu hồi" : "Đang cấp"}
-                  </span>
-                  {share.active !== false && (
-                    <button
-                      data-share-revoke={share.id}
-                      onClick={() => revoke.mutate(share.id)}
-                      disabled={revoke.isPending}
-                      className="rounded-lg p-2 text-[#FF6B6B] hover:bg-[#FF6B6B]/10 disabled:opacity-50"
-                      aria-label="Thu hồi quyền chia sẻ"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <AlertDialog
+        open={Boolean(revokeIntent)}
+        onOpenChange={(open) => {
+          if (!open && !revokeMutation.isPending) {
+            setRevokeIntent(null);
+            setRevokeError("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Thu hồi quyền truy cập?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Backend sẽ đóng quyền của{" "}
+              {revokeIntent
+                ? recipientDetails(revokeIntent.share).name
+                : "người nhận"}{" "}
+              và ghi actor, thời gian thu hồi vào audit. Thao tác này không xóa
+              lịch sử.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {revokeError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            >
+              <AlertCircle
+                aria-hidden="true"
+                className="mt-0.5 shrink-0"
+                size={17}
+              />
+              <span>{revokeError}</span>
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revokeMutation.isPending}>
+              Giữ quyền
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-share-revoke-confirm
+              disabled={!online || revokeMutation.isPending || !revokeIntent}
+              className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                if (revokeIntent) revokeMutation.mutate(revokeIntent);
+              }}
+            >
+              {revokeMutation.isPending ? (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Trash2 aria-hidden="true" />
+              )}
+              {revokeMutation.isPending
+                ? "Backend đang thu hồi..."
+                : "Xác nhận thu hồi"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+function MobileShareCard({
+  share,
+  online,
+  revokePending,
+  onRevoke,
+}: {
+  share: PatientShare;
+  online: boolean;
+  revokePending: boolean;
+  onRevoke: () => void;
+}) {
+  const recipient = recipientDetails(share);
+  const audit = auditDetails(share);
+  return (
+    <Card data-share-row={share.id} className="shadow-sm">
+      <CardHeader className="gap-3 p-4 pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="truncate text-base">
+              {recipient.name}
+            </CardTitle>
+            <CardDescription className="mt-1 truncate">
+              {recipientTypeLabel(recipient.type)}
+              {recipient.id ? ` · ${recipient.id}` : ""}
+            </CardDescription>
+          </div>
+          <Badge variant="outline" className={statusClass(share.status)}>
+            {statusLabel(share.status)}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4 pt-2">
+        <Badge
+          variant="outline"
+          className={authorityClass(share.authorityType)}
+        >
+          {authorityLabel(share.authorityType)}
+        </Badge>
+        <dl className="grid gap-3 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">Phạm vi</dt>
+            <dd className="mt-1 text-foreground">
+              {scopeLabel(share.scope, share.scanIds?.length || 0)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Thời hạn</dt>
+            <dd className="mt-1 text-foreground">
+              {formatDateTime(share.expiresAt)}
+            </dd>
+          </div>
+          <div>
+            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <History aria-hidden="true" size={13} />
+              Audit
+            </dt>
+            <dd className="mt-1 text-foreground">
+              Cấp {formatDateTime(audit.grantedAt, "chưa có thời gian")}
+            </dd>
+            <dd className="mt-1 text-xs text-muted-foreground">
+              Actor: {audit.grantedBy || "Chưa có metadata"}
+              {audit.grantedByRole ? ` · ${audit.grantedByRole}` : ""}
+            </dd>
+            {share.authorityType === "patient_consent" && audit.consentedAt ? (
+              <dd className="mt-1 text-xs text-muted-foreground">
+                Consent {formatDateTime(audit.consentedAt, "chưa có thời gian")}
+              </dd>
+            ) : null}
+            {audit.revokedAt ? (
+              <dd className="mt-1 text-xs text-muted-foreground">
+                Thu hồi {formatDateTime(audit.revokedAt, "chưa có thời gian")}
+                {audit.revokedBy ? ` · ${audit.revokedBy}` : ""}
+                {audit.revokedByRole ? ` (${audit.revokedByRole})` : ""}
+              </dd>
+            ) : null}
+          </div>
+        </dl>
+        {share.status === "active" ? (
+          <Button
+            data-share-revoke={share.id}
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full text-destructive hover:text-destructive"
+            disabled={!online || revokePending}
+            onClick={onRevoke}
+          >
+            <Trash2 aria-hidden="true" />
+            Thu hồi quyền
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConsentLoading() {
+  return (
+    <div className="space-y-5" aria-label="Đang tải quyền truy cập">
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-44" />
+        <Skeleton className="h-9 w-80 max-w-full" />
+        <Skeleton className="h-4 w-full max-w-2xl" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-36" />
+        <Skeleton className="h-36" />
+      </div>
+      <Skeleton className="h-80" />
+    </div>
+  );
+}
+
+function ShareLedgerLoading() {
+  return (
+    <div
+      className="grid gap-4 md:grid-cols-2"
+      aria-label="Đang tải sổ quyền truy cập"
+    >
+      <Skeleton className="h-48" />
+      <Skeleton className="h-48" />
+    </div>
+  );
+}
+
+function ConsentError({
+  error,
+  retry,
+  compact = false,
+}: {
+  error: unknown;
+  retry?: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <Card
+      className="border-destructive/30 bg-destructive/5 shadow-sm"
+      role="alert"
+    >
+      <CardContent
+        className={`flex flex-wrap items-center gap-3 ${compact ? "p-4" : "p-6"}`}
+      >
+        <AlertCircle aria-hidden="true" className="shrink-0 text-destructive" />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">
+            Không thể tải dữ liệu quyền truy cập
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {errorMessage(error, "Backend không phản hồi. Vui lòng thử lại.")}
+          </p>
+        </div>
+        {retry ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            onClick={retry}
+          >
+            <RefreshCw aria-hidden="true" />
+            Thử lại
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PermissionState({ compact = false }: { compact?: boolean }) {
+  return (
+    <Card
+      className="border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/5 shadow-sm"
+      role="alert"
+    >
+      <CardContent
+        className={`flex items-start gap-3 ${compact ? "p-4" : "p-6"}`}
+      >
+        <ShieldAlert
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 text-[var(--clinical-warning)]"
+        />
+        <div>
+          <p className="font-medium text-foreground">
+            Không có quyền quản lý truy cập dữ liệu
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Tài khoản cần quyền quản lý bệnh nhân của workspace, quyền quản lý
+            bệnh nhân cấp nền tảng hoặc quyền chia sẻ hồ sơ cá nhân. Backend vẫn
+            là nơi quyết định cuối cùng.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function InlinePermissionState() {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-lg border border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/5 p-4 text-sm"
+    >
+      <ShieldAlert
+        aria-hidden="true"
+        className="mt-0.5 shrink-0 text-[var(--clinical-warning)]"
+        size={18}
+      />
+      <div>
+        <p className="font-medium text-foreground">
+          Backend từ chối phạm vi này
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          Kiểm tra workspace hiện tại và quyền được cấp cho tài khoản rồi thử
+          lại.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function OfflineState({ hasCachedData }: { hasCachedData: boolean }) {
+  return (
+    <Card
+      role="status"
+      className="border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/5 shadow-sm"
+    >
+      <CardContent className="flex items-start gap-3 p-4">
+        <WifiOff
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 text-[var(--clinical-warning)]"
+        />
+        <div>
+          <p className="font-medium text-foreground">Đang ngoại tuyến</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {hasCachedData
+              ? "Dữ liệu đã tải có thể đã cũ. Cấp và thu hồi quyền được khóa cho đến khi có mạng."
+              : "Chưa có dữ liệu đã tải. Hãy kết nối mạng để lấy quyền truy cập từ backend."}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConsentEmpty({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof KeyRound;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="flex flex-col items-center px-5 py-12 text-center">
+        <Icon aria-hidden="true" className="text-muted-foreground" size={28} />
+        <p className="mt-3 font-semibold text-foreground">{title}</p>
+        <p className="mt-1 max-w-lg text-sm text-muted-foreground">
+          {description}
+        </p>
+      </CardContent>
+    </Card>
   );
 }

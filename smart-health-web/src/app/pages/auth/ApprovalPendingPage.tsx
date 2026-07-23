@@ -1,8 +1,34 @@
-import { cloneElement, useEffect, useMemo, useState, type ReactElement } from "react";
-import { CheckCircle, Clock, Loader2, Upload, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckCircle2,
+  Clock3,
+  FileUp,
+  Loader2,
+  ShieldAlert,
+  XCircle,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router";
+
+import {
+  AuthAlert,
+  AuthField,
+  AuthPageIntro,
+  AuthPrimaryButton,
+  AuthSecondaryButton,
+  AuthSubmissionStatus,
+  AuthUnsavedChangesGuard,
+} from "../../components/auth/AuthPrimitives";
+import {
+  getSafeAuthErrorMessage,
+  type AuthFieldErrors,
+} from "../../auth/auth-form";
 import { smartHealthApi } from "../../../lib/smart-health-api";
+import {
+  createWorkspaceRequestIdempotencyKey,
+  parseWorkspaceRequestReceipt,
+} from "../../../lib/workspace-request-contract";
 import { useAuth } from "../../context/AuthContext";
+import { useSEO } from "@/lib/useSEO";
 
 type ApprovalState = "info_requested" | "rejected" | "approved" | "pending";
 
@@ -21,9 +47,23 @@ const fieldLabels: Record<string, string> = {
 };
 
 const defaultRequiredFields = ["name", "phone", "license", "specialty"];
-const defaultWorkspaceRequiredFields = ["workspaceName", "address", "representative", "phone"];
+const defaultWorkspaceRequiredFields = [
+  "workspaceName",
+  "address",
+  "representative",
+  "phone",
+];
+const acceptedDocumentTypes = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
+const maxDocumentSize = 10 * 1024 * 1024;
 
-function normalizeStatus(status?: unknown, fallback?: ApprovalState): ApprovalState {
+function normalizeStatus(
+  status?: unknown,
+  fallback?: ApprovalState,
+): ApprovalState {
   if (status === "needs_info") return "info_requested";
   if (status === "rejected") return "rejected";
   if (status === "approved") return "approved";
@@ -36,13 +76,27 @@ export default function ApprovalPendingPage({
 }: {
   state?: "info_requested" | "rejected" | "approved";
 }) {
+  useSEO({
+    title: "Trạng thái hồ sơ | Shcare",
+    description:
+      "Theo dõi trạng thái hồ sơ và bổ sung thông tin khi được yêu cầu.",
+    path: "/cho-duyet",
+  });
+
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [submissionStage, setSubmissionStage] = useState("");
+  const [errors, setErrors] = useState<AuthFieldErrors>({});
   const [success, setSuccess] = useState("");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [changed, setChanged] = useState(false);
+  const checkpoint = useRef({
+    requestSent: false,
+    workspaceRequestKey: "",
+    documentUploaded: false,
+  });
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -63,11 +117,11 @@ export default function ApprovalPendingPage({
     const raw = Array.isArray(user?.raw.roleInfoRequiredFields)
       ? user.raw.roleInfoRequiredFields
       : [];
-    const normalized = raw
-      .map((field) => String(field))
-      .filter((field) => fieldLabels[field]);
+    const normalized = raw.map(String).filter((field) => fieldLabels[field]);
     if (normalized.length) return normalized;
-    return isWorkspaceOwnerRequest ? defaultWorkspaceRequiredFields : defaultRequiredFields;
+    return isWorkspaceOwnerRequest
+      ? defaultWorkspaceRequiredFields
+      : defaultRequiredFields;
   }, [isWorkspaceOwnerRequest, user?.raw.roleInfoRequiredFields]);
 
   useEffect(() => {
@@ -79,22 +133,40 @@ export default function ApprovalPendingPage({
       email: raw.email || "",
       license: String(raw.license || ""),
       specialty: String(raw.department || raw.specialty || ""),
-      clinic: String(raw.hospital || raw.clinicName || raw.currentWorkspace?.name || ""),
-      workspaceName: String(raw.currentWorkspace?.name || raw.clinicName || raw.hospital || ""),
+      clinic: String(
+        raw.hospital || raw.clinicName || raw.currentWorkspace?.name || "",
+      ),
+      workspaceName: String(
+        raw.currentWorkspace?.name || raw.clinicName || raw.hospital || "",
+      ),
       address: String(raw.currentWorkspace?.address || raw.address || ""),
-      representative: String(raw.currentWorkspace?.representative || raw.name || ""),
+      representative: String(
+        raw.currentWorkspace?.representative || raw.name || "",
+      ),
       legalName: String(raw.currentWorkspace?.legalName || raw.legalName || ""),
       reason: String(raw.registrationReason || ""),
     });
+    setChanged(false);
+    checkpoint.current = {
+      requestSent: false,
+      workspaceRequestKey: "",
+      documentUploaded: false,
+    };
   }, [user?.raw]);
 
   const refresh = async () => {
     setLoading(true);
-    setError("");
+    setErrors((current) => ({ ...current, submit: "" }));
     try {
       await refreshUser();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không thể cập nhật trạng thái.");
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        submit: getSafeAuthErrorMessage(
+          error,
+          "Không thể cập nhật trạng thái. Vui lòng thử lại.",
+        ),
+      }));
     } finally {
       setLoading(false);
     }
@@ -102,336 +174,463 @@ export default function ApprovalPendingPage({
 
   const update = (field: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
-    setError("");
+    setErrors((current) => ({ ...current, [field]: "", submit: "" }));
     setSuccess("");
+    setChanged(true);
+    checkpoint.current.requestSent = false;
+    checkpoint.current.workspaceRequestKey = "";
+  };
+
+  const validateRequestedFields = () => {
+    const nextErrors: AuthFieldErrors = {};
+    requiredFields.forEach((field) => {
+      const value = form[field as keyof typeof form];
+      if (!String(value || "").trim()) {
+        nextErrors[field] =
+          `Vui lòng nhập ${fieldLabels[field].toLocaleLowerCase("vi")}.`;
+      }
+    });
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const submitMoreInfo = async () => {
-    const missing = requiredFields.filter((field) => {
-      const key = field === "clinic" ? "clinic" : field;
-      return !String(form[key as keyof typeof form] || "").trim();
-    });
-    if (missing.length) {
-      setError(`Vui lòng bổ sung: ${missing.map((field) => fieldLabels[field]).join(", ")}.`);
-      return;
-    }
-
+    if (submitting || !validateRequestedFields()) return;
     setSubmitting(true);
-    setError("");
+    setErrors({});
     setSuccess("");
+
     try {
-      if (isWorkspaceOwnerRequest) {
-        const workspaceType = String(user?.raw.workspaceType || "clinic");
-        await smartHealthApi.requestWorkspace({
-          name: form.workspaceName.trim() || form.clinic.trim(),
-          clinicName: form.workspaceName.trim() || form.clinic.trim(),
-          workspaceType,
-          address: form.address.trim(),
-          phone: form.phone.trim(),
-          email: form.email.trim() || user?.raw.email || "",
-          representative: form.representative.trim() || form.name.trim(),
-          legalName: form.legalName.trim(),
-          metadata: {
-            resubmissionReason: form.reason.trim(),
-          },
-        });
-      } else {
-        const workspaceType =
-          String(user?.raw.workspaceType || user?.currentWorkspace?.type || "") === "solo_practice"
-            ? "solo_practice"
-            : "clinic";
-        await smartHealthApi.requestRole({
-          requestedRole: "doctor",
-          accountType: workspaceType === "solo_practice" ? "solo_doctor" : "doctor",
-          workspaceType,
-          name: form.name.trim(),
-          phone: form.phone.trim(),
-          license: form.license.trim(),
-          specialty: form.specialty.trim(),
-          department: form.specialty.trim(),
-          clinicName: form.clinic.trim(),
-          hospital: form.clinic.trim(),
-          reason: form.reason.trim(),
-          registrationReason: form.reason.trim(),
-        });
+      if (!checkpoint.current.requestSent) {
+        setSubmissionStage("Đang gửi thông tin bổ sung...");
+        if (isWorkspaceOwnerRequest) {
+          const workspaceType = String(user?.raw.workspaceType || "clinic");
+          const workspaceName = form.workspaceName.trim() || form.clinic.trim();
+          checkpoint.current.workspaceRequestKey ||=
+            createWorkspaceRequestIdempotencyKey(
+              String(user?.raw.id || user?.raw.email || "workspace-owner"),
+            );
+          const response = await smartHealthApi.requestWorkspace(
+            {
+              name: workspaceName,
+              clinicName: workspaceName,
+              workspaceType,
+              address: form.address.trim(),
+              phone: form.phone.trim(),
+              email: form.email.trim() || user?.raw.email || "",
+              representative: form.representative.trim() || form.name.trim(),
+              legalName: form.legalName.trim(),
+              metadata: { resubmissionReason: form.reason.trim() },
+            },
+            checkpoint.current.workspaceRequestKey,
+          );
+          parseWorkspaceRequestReceipt(response, {
+            name: workspaceName,
+            workspaceType,
+          });
+        } else {
+          const workspaceType =
+            String(
+              user?.raw.workspaceType || user?.currentWorkspace?.type || "",
+            ) === "solo_practice"
+              ? "solo_practice"
+              : "clinic";
+          await smartHealthApi.requestRole({
+            requestedRole: "doctor",
+            accountType:
+              workspaceType === "solo_practice" ? "solo_doctor" : "doctor",
+            workspaceType,
+            name: form.name.trim(),
+            phone: form.phone.trim(),
+            license: form.license.trim(),
+            specialty: form.specialty.trim(),
+            department: form.specialty.trim(),
+            clinicName: form.clinic.trim(),
+            hospital: form.clinic.trim(),
+            reason: form.reason.trim(),
+            registrationReason: form.reason.trim(),
+          });
+        }
+        checkpoint.current.requestSent = true;
       }
-      if (documentFile) {
+
+      if (documentFile && !checkpoint.current.documentUploaded) {
+        setSubmissionStage("Đang tải tài liệu bổ sung...");
         await smartHealthApi.uploadRoleRequestDocument(documentFile);
+        checkpoint.current.documentUploaded = true;
       }
+
+      setSubmissionStage("Đang cập nhật trạng thái hồ sơ...");
       await refreshUser();
-      setSuccess("Đã gửi lại hồ sơ. Trạng thái đã chuyển về chờ duyệt.");
+      setChanged(false);
+      setSuccess("Hệ thống đã tiếp nhận hồ sơ bổ sung.");
       navigate("/cho-duyet", { replace: true });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không thể gửi lại hồ sơ.");
+    } catch (error) {
+      setErrors({
+        submit: getSafeAuthErrorMessage(
+          error,
+          "Không thể gửi lại hồ sơ. Vui lòng thử lại.",
+        ),
+      });
     } finally {
       setSubmitting(false);
+      setSubmissionStage("");
     }
+  };
+
+  const selectDocument = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setDocumentFile(null);
+      return;
+    }
+    if (!acceptedDocumentTypes.has(file.type)) {
+      setErrors((current) => ({
+        ...current,
+        document: "Tài liệu cần là PDF, JPG hoặc PNG.",
+      }));
+      event.target.value = "";
+      return;
+    }
+    if (file.size > maxDocumentSize) {
+      setErrors((current) => ({
+        ...current,
+        document: "Tài liệu không được vượt quá 10 MB.",
+      }));
+      event.target.value = "";
+      return;
+    }
+    setDocumentFile(file);
+    setErrors((current) => ({ ...current, document: "", submit: "" }));
+    setChanged(true);
+    checkpoint.current.documentUploaded = false;
   };
 
   const subjectLabel = isWorkspaceOwnerRequest ? "Workspace" : "Hồ sơ";
   const config =
     status === "approved"
       ? {
-          icon: CheckCircle,
-          color: "#00FFD1",
+          icon: CheckCircle2,
+          tone: "success" as const,
           title: `${subjectLabel} đã được duyệt`,
-          text: "Tài khoản đã có quyền truy cập portal.",
+          description:
+            "Tài khoản đã có quyền truy cập portal theo quyền được cấp.",
         }
       : status === "rejected"
         ? {
             icon: XCircle,
-            color: "#FF6B6B",
+            tone: "error" as const,
             title: `${subjectLabel} bị từ chối`,
-            text: String(
-              user?.raw.roleRejectReason || "Liên hệ quản trị viên để biết thêm chi tiết.",
+            description: String(
+              user?.raw.roleRejectReason ||
+                "Liên hệ quản trị viên để biết thêm chi tiết.",
             ),
           }
         : status === "info_requested"
           ? {
-              icon: Clock,
-              color: "#F59E0B",
+              icon: ShieldAlert,
+              tone: "warning" as const,
               title: "Cần bổ sung thông tin",
-              text: String(
-                user?.raw.roleInfoRequestMessage || "Quản trị viên yêu cầu cập nhật hồ sơ.",
+              description: String(
+                user?.raw.roleInfoRequestMessage ||
+                  "Quản trị viên yêu cầu cập nhật hồ sơ.",
               ),
             }
           : {
-              icon: Clock,
-              color: "#4AA4E0",
+              icon: Clock3,
+              tone: "info" as const,
               title: `${subjectLabel} đang chờ duyệt`,
-              text: "Trạng thái được lấy trực tiếp từ backend Smart Health.",
+              description:
+                "Trạng thái này được lấy từ hồ sơ hiện tại trên hệ thống Shcare.",
             };
-  const Icon = config.icon;
 
   return (
-    <div className="py-5">
-      <div className="text-center">
-        <Icon size={48} className="mx-auto mb-5" style={{ color: config.color }} />
-        <h1 className="text-2xl font-black text-white">{config.title}</h1>
-        <p className="mt-3 text-sm leading-relaxed text-white/70">{config.text}</p>
+    <section className="shc-auth-page shc-auth-approval-page">
+      <AuthUnsavedChangesGuard when={changed && !submitting} />
+      <AuthPageIntro
+        icon={config.icon}
+        title={config.title}
+        description={config.description}
+      />
+      <div className="shc-auth-status-summary" data-tone={config.tone}>
+        <strong>Trạng thái hiện tại</strong>
+        <span>
+          {status === "info_requested"
+            ? "Cần bổ sung"
+            : status === "approved"
+              ? "Đã duyệt"
+              : status === "rejected"
+                ? "Bị từ chối"
+                : "Chờ duyệt"}
+        </span>
       </div>
 
-      {status === "info_requested" && (
+      {status === "info_requested" ? (
         <form
-          method="post"
-          className="mt-7 space-y-4 rounded-2xl border border-white/10 bg-white/8 p-5 text-left backdrop-blur-md"
+          className="shc-auth-form shc-auth-needs-info-form"
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             void submitMoreInfo();
           }}
         >
-          <div className="rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-3 text-xs leading-relaxed text-[#FDE68A]">
-            Admin yêu cầu bổ sung:{" "}
-            <span className="font-semibold">
-              {requiredFields.map((field) => fieldLabels[field]).join(", ")}
-            </span>
-          </div>
+          <AuthAlert tone="warning" title="Thông tin được yêu cầu">
+            {requiredFields.map((field) => fieldLabels[field]).join(", ")}.
+          </AuthAlert>
 
           {isWorkspaceOwnerRequest ? (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InfoField label="Tên workspace/cơ sở" required={requiredFields.includes("workspaceName")}>
+              <div className="shc-auth-field-grid">
+                <AuthField
+                  id="needs-info-workspace-name"
+                  label="Tên workspace/cơ sở"
+                  required={requiredFields.includes("workspaceName")}
+                  error={errors.workspaceName}
+                >
                   <input
-                    id="needs-info-workspace-name"
-                    name="needsInfoWorkspaceName"
                     value={form.workspaceName}
-                    onChange={(event) => update("workspaceName", event.target.value)}
+                    onChange={(event) =>
+                      update("workspaceName", event.target.value)
+                    }
                   />
-                </InfoField>
-                <InfoField label="Số điện thoại" required={requiredFields.includes("phone")}>
+                </AuthField>
+                <AuthField
+                  id="needs-info-phone"
+                  label="Số điện thoại"
+                  required={requiredFields.includes("phone")}
+                  error={errors.phone}
+                >
                   <input
-                    id="needs-info-phone"
-                    name="needsInfoPhone"
                     autoComplete="tel"
                     inputMode="tel"
                     value={form.phone}
                     onChange={(event) => update("phone", event.target.value)}
                   />
-                </InfoField>
+                </AuthField>
               </div>
-
-              <InfoField label="Địa chỉ pháp lý" required={requiredFields.includes("address")}>
+              <AuthField
+                id="needs-info-address"
+                label="Địa chỉ pháp lý"
+                required={requiredFields.includes("address")}
+                error={errors.address}
+              >
                 <input
-                  id="needs-info-address"
-                  name="needsInfoAddress"
                   value={form.address}
                   onChange={(event) => update("address", event.target.value)}
                 />
-              </InfoField>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InfoField label="Người đại diện" required={requiredFields.includes("representative")}>
+              </AuthField>
+              <div className="shc-auth-field-grid">
+                <AuthField
+                  id="needs-info-representative"
+                  label="Người đại diện"
+                  required={requiredFields.includes("representative")}
+                  error={errors.representative}
+                >
                   <input
-                    id="needs-info-representative"
-                    name="needsInfoRepresentative"
                     value={form.representative}
-                    onChange={(event) => update("representative", event.target.value)}
+                    onChange={(event) =>
+                      update("representative", event.target.value)
+                    }
                   />
-                </InfoField>
-                <InfoField label="Email" required={requiredFields.includes("email")}>
+                </AuthField>
+                <AuthField
+                  id="needs-info-email"
+                  label="Email"
+                  required={requiredFields.includes("email")}
+                  error={errors.email}
+                >
                   <input
-                    id="needs-info-email"
-                    name="needsInfoEmail"
+                    type="email"
+                    inputMode="email"
                     autoComplete="email"
                     value={form.email}
                     onChange={(event) => update("email", event.target.value)}
                   />
-                </InfoField>
+                </AuthField>
               </div>
-
-              <InfoField label="Mã số pháp lý" required={requiredFields.includes("legalName")}>
+              <AuthField
+                id="needs-info-legal-name"
+                label="Mã số pháp lý"
+                required={requiredFields.includes("legalName")}
+                error={errors.legalName}
+              >
                 <input
-                  id="needs-info-legal-name"
-                  name="needsInfoLegalName"
                   value={form.legalName}
                   onChange={(event) => update("legalName", event.target.value)}
                 />
-              </InfoField>
+              </AuthField>
             </>
           ) : (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InfoField label="Họ và tên" required={requiredFields.includes("name")}>
+              <div className="shc-auth-field-grid">
+                <AuthField
+                  id="needs-info-name"
+                  label="Họ và tên"
+                  required={requiredFields.includes("name")}
+                  error={errors.name}
+                >
                   <input
-                    id="needs-info-name"
-                    name="needsInfoName"
                     autoComplete="name"
                     value={form.name}
                     onChange={(event) => update("name", event.target.value)}
                   />
-                </InfoField>
-                <InfoField label="Số điện thoại" required={requiredFields.includes("phone")}>
+                </AuthField>
+                <AuthField
+                  id="needs-info-phone"
+                  label="Số điện thoại"
+                  required={requiredFields.includes("phone")}
+                  error={errors.phone}
+                >
                   <input
-                    id="needs-info-phone"
-                    name="needsInfoPhone"
                     autoComplete="tel"
                     inputMode="tel"
                     value={form.phone}
                     onChange={(event) => update("phone", event.target.value)}
                   />
-                </InfoField>
+                </AuthField>
               </div>
-
-              <InfoField label="Mã chứng chỉ hành nghề" required={requiredFields.includes("license")}>
+              <AuthField
+                id="needs-info-license"
+                label="Mã chứng chỉ hành nghề"
+                required={requiredFields.includes("license")}
+                error={errors.license}
+              >
                 <input
-                  id="needs-info-license"
-                  name="needsInfoLicense"
                   value={form.license}
                   onChange={(event) => update("license", event.target.value)}
                 />
-              </InfoField>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InfoField label="Chuyên khoa" required={requiredFields.includes("specialty")}>
+              </AuthField>
+              <div className="shc-auth-field-grid">
+                <AuthField
+                  id="needs-info-specialty"
+                  label="Chuyên khoa"
+                  required={requiredFields.includes("specialty")}
+                  error={errors.specialty}
+                >
                   <input
-                    id="needs-info-specialty"
-                    name="needsInfoSpecialty"
                     value={form.specialty}
-                    onChange={(event) => update("specialty", event.target.value)}
+                    onChange={(event) =>
+                      update("specialty", event.target.value)
+                    }
                   />
-                </InfoField>
-                <InfoField label="Cơ sở y tế / phòng khám" required={requiredFields.includes("clinic")}>
+                </AuthField>
+                <AuthField
+                  id="needs-info-clinic"
+                  label="Cơ sở y tế / phòng khám"
+                  required={requiredFields.includes("clinic")}
+                  error={errors.clinic}
+                >
                   <input
-                    id="needs-info-clinic"
-                    name="needsInfoClinic"
                     value={form.clinic}
                     onChange={(event) => update("clinic", event.target.value)}
                   />
-                </InfoField>
+                </AuthField>
               </div>
             </>
           )}
 
-          <InfoField label="Lý do đăng ký" required={requiredFields.includes("reason")}>
+          <AuthField
+            id="needs-info-reason"
+            label="Lý do đăng ký"
+            required={requiredFields.includes("reason")}
+            error={errors.reason}
+          >
             <textarea
-              id="needs-info-reason"
-              name="needsInfoReason"
-              rows={3}
+              rows={4}
               value={form.reason}
               onChange={(event) => update("reason", event.target.value)}
-              className="min-h-24 resize-none py-3"
             />
-          </InfoField>
+          </AuthField>
 
-          <label className="block rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/75">
-            <span className="mb-2 flex items-center gap-2 font-semibold text-white">
-              <Upload size={16} />
-              Tài liệu bổ sung
-            </span>
-            <input
-              id="needs-info-document"
-              name="needsInfoDocument"
-              type="file"
-              accept="application/pdf,image/jpeg,image/png"
-              className="block w-full text-xs text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-[#00FFD1] file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#0d1a30]"
-              onChange={(event) => setDocumentFile(event.target.files?.[0] || null)}
-            />
-            {documentFile && <span className="mt-2 block text-xs text-[#B9FFF1]">{documentFile.name}</span>}
-          </label>
+          <div className="shc-auth-upload-section">
+            <div className="shc-auth-section-heading">
+              <span aria-hidden="true">
+                <FileUp size={20} />
+              </span>
+              <div>
+                <h2>Tài liệu bổ sung</h2>
+                <p>Chỉ chọn khi quản trị viên yêu cầu tài liệu mới.</p>
+              </div>
+            </div>
+            <label
+              className="shc-auth-upload"
+              data-selected={documentFile ? "true" : undefined}
+            >
+              <input
+                type="file"
+                accept="application/pdf,image/jpeg,image/png"
+                aria-invalid={Boolean(errors.document)}
+                aria-describedby={
+                  errors.document
+                    ? "needs-info-document-error"
+                    : "needs-info-document-hint"
+                }
+                onChange={selectDocument}
+              />
+              <FileUp size={24} aria-hidden="true" />
+              <span>
+                {documentFile ? documentFile.name : "Chọn tài liệu bổ sung"}
+              </span>
+              <small id="needs-info-document-hint">
+                PDF, JPG hoặc PNG · tối đa 10 MB
+              </small>
+            </label>
+            {errors.document ? (
+              <p
+                id="needs-info-document-error"
+                className="shc-auth-field-error"
+                role="alert"
+              >
+                {errors.document}
+              </p>
+            ) : null}
+          </div>
 
-          <button
-            id="needs-info-submit"
+          {errors.submit ? (
+            <AuthAlert tone="error">{errors.submit}</AuthAlert>
+          ) : null}
+          {submitting && submissionStage ? (
+            <AuthSubmissionStatus label={submissionStage} />
+          ) : null}
+          <AuthPrimaryButton
             type="submit"
-            disabled={submitting}
-            className="premium-button flex w-full items-center justify-center gap-2 disabled:opacity-60"
+            loading={submitting}
+            loadingLabel="Đang gửi hồ sơ..."
           >
-            {submitting && <Loader2 size={15} className="animate-spin" />}
             Gửi lại hồ sơ
-          </button>
+          </AuthPrimaryButton>
         </form>
-      )}
+      ) : null}
 
-      {success && <p className="mt-4 rounded-xl border border-[#00FFD1]/30 bg-[#00FFD1]/10 p-3 text-xs text-[#B9FFF1]">{success}</p>}
-      {error && <p className="mt-4 rounded-xl border border-[#FF6B6B]/30 bg-[#FF6B6B]/10 p-3 text-xs text-[#FF9A9A]">{error}</p>}
+      {success ? <AuthAlert tone="success">{success}</AuthAlert> : null}
+      {status !== "info_requested" && errors.submit ? (
+        <AuthAlert tone="error">{errors.submit}</AuthAlert>
+      ) : null}
 
-      <div className="mt-7 grid gap-3">
-        {status === "approved" && (
-          <Link to="/portal" className="premium-button">
+      <div className="shc-auth-actions shc-auth-actions-stack">
+        {status === "approved" ? (
+          <Link to="/portal" className="shc-auth-primary-link">
             Mở portal
           </Link>
-        )}
-        <button
-          onClick={refresh}
+        ) : null}
+        <AuthSecondaryButton
+          type="button"
           disabled={loading}
-          className="flex h-12 items-center justify-center gap-2 rounded-xl border border-white/10 text-sm text-white"
+          onClick={() => void refresh()}
         >
-          {loading && <Loader2 size={15} className="animate-spin" />}
-          Cập nhật trạng thái
-        </button>
-        <Link to="/login" className="text-center text-xs text-white/60">
-          Về đăng nhập
+          {loading ? (
+            <Loader2
+              size={17}
+              className="shc-auth-spinner"
+              aria-hidden="true"
+            />
+          ) : null}
+          <span>{loading ? "Đang cập nhật..." : "Cập nhật trạng thái"}</span>
+        </AuthSecondaryButton>
+        <Link to="/login" className="shc-auth-text-link">
+          Về trang đăng nhập
         </Link>
       </div>
-    </div>
-  );
-}
-
-function InfoField({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: ReactElement<{
-    className?: string;
-    id?: string;
-    name?: string;
-    "aria-required"?: boolean;
-  }>;
-}) {
-  const fieldClass =
-    "w-full rounded-xl border border-white/10 bg-white/8 px-4 text-sm text-white outline-none transition-all backdrop-blur-md placeholder:text-white/25 focus:border-[#00FFD1]/50 focus:ring-1 focus:ring-[#00FFD1]/50";
-
-  return (
-    <label htmlFor={children.props.id} className="block text-sm text-white">
-      <span className="mb-2 block">
-        {label} {required && <span className="text-[#F59E0B]">*</span>}
-      </span>
-      {cloneElement(children, {
-        "aria-required": required || undefined,
-        className: `${fieldClass} ${children.type === "textarea" ? "py-3" : "h-12"} ${children.props.className || ""}`,
-      })}
-    </label>
+    </section>
   );
 }

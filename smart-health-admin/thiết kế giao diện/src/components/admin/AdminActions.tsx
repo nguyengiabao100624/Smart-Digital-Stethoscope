@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Plus,
   FileText,
   Database,
   Package,
@@ -10,7 +9,6 @@ import {
   UserPlus,
   Users,
   Stethoscope,
-  Download,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -23,7 +21,7 @@ import { CreateAdminAccountDialog } from "./dialogs/CreateAdminAccountDialog";
 import { ExportReportDialog } from "./dialogs/ExportReportDialog";
 import { ExportDataDialog } from "./dialogs/ExportDataDialog";
 import { CreatePackageDialog } from "./dialogs/CreatePackageDialog";
-import { NotificationSettingsDialog } from "./dialogs/NotificationSettingsDialog";
+import { useNavigate } from "./router-shim";
 import { useAdminAccess } from "./useAdminAccess";
 import {
   DEVICE_MANAGE_CAPABILITIES,
@@ -33,11 +31,11 @@ import {
   PLATFORM_USER_MANAGE_CAPABILITIES,
   REPORT_EXPORT_CAPABILITIES,
   STAFF_MANAGE_CAPABILITIES,
-  STORAGE_MANAGE_CAPABILITIES,
   WORKSPACE_MANAGE_CAPABILITIES,
 } from "./action-permissions";
 
 export function AdminActions() {
+  const navigate = useNavigate();
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const { accessCheckComplete, hasAnyCapability } = useAdminAccess();
 
@@ -117,16 +115,16 @@ export function AdminActions() {
     {
       id: "export-data",
       title: "Xuất dữ liệu",
-      description: "Sao lưu dữ liệu hệ thống",
+      description: "Tạo artifact theo phạm vi được cấp quyền",
       icon: Database,
       color: "bg-red-500",
-      capabilities: STORAGE_MANAGE_CAPABILITIES,
+      capabilities: REPORT_EXPORT_CAPABILITIES,
       category: "Dữ liệu",
     },
     {
       id: "notification-settings",
       title: "Cài đặt thông báo",
-      description: "Quản lý thông báo",
+      description: "Mở cấu hình kênh thông báo đã lưu trên hệ thống",
       icon: Bell,
       color: "bg-yellow-500",
       capabilities: NOTIFICATION_MANAGE_CAPABILITIES,
@@ -141,6 +139,14 @@ export function AdminActions() {
   const canOpenDialog = (id: string) => {
     const action = actions.find((item) => item.id === id);
     return action ? hasAnyCapability(action.capabilities) : false;
+  };
+  const handleAction = (action: (typeof actions)[number]) => {
+    if (!hasAnyCapability(action.capabilities)) return;
+    if (action.id === "notification-settings") {
+      navigate("/settings?section=notifications");
+      return;
+    }
+    setOpenDialog(action.id);
   };
 
   return (
@@ -171,9 +177,7 @@ export function AdminActions() {
                   return (
                     <button
                       key={action.id}
-                      onClick={() => {
-                        if (hasAnyCapability(action.capabilities)) setOpenDialog(action.id);
-                      }}
+                      onClick={() => handleAction(action)}
                       className="group relative bg-card border border-border rounded-xl p-6 hover:border-primary/50 hover:shadow-lg transition-all duration-200 text-left overflow-hidden"
                     >
                       <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-primary/5 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -232,15 +236,15 @@ export function AdminActions() {
             <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                Tất cả dữ liệu đều được mã hóa và bảo mật
+                Kết quả chỉ được xác nhận sau khi hệ thống phản hồi thành công
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                Các thay đổi được ghi lại trong nhật ký hệ thống
+                Quyền truy cập được kiểm tra riêng cho từng thao tác
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                Bạn có thể xuất dữ liệu bất cứ lúc nào
+                Khả năng xuất dữ liệu phụ thuộc vào quyền và dữ liệu hiện có
               </li>
             </ul>
           </div>
@@ -281,10 +285,6 @@ export function AdminActions() {
       />
       <CreatePackageDialog
         open={canOpenDialog("create-package") && openDialog === "create-package"}
-        onOpenChange={(open) => !open && setOpenDialog(null)}
-      />
-      <NotificationSettingsDialog
-        open={canOpenDialog("notification-settings") && openDialog === "notification-settings"}
         onOpenChange={(open) => !open && setOpenDialog(null)}
       />
     </div>

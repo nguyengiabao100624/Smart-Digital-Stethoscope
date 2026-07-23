@@ -1,14 +1,26 @@
-﻿import { useState } from "react";
+import { useState } from "react";
+import { ArrowLeft, MailCheck, RotateCcw } from "lucide-react";
 import { Link } from "react-router";
-import { CheckCircle, Loader2, Mail, ShieldAlert } from "lucide-react";
-import { motion } from "motion/react";
+
+import {
+  AuthAlert,
+  AuthField,
+  AuthPageIntro,
+  AuthPrimaryButton,
+  AuthSecondaryButton,
+} from "../../components/auth/AuthPrimitives";
+import {
+  getSafeAuthErrorMessage,
+  validateEmailOnly,
+  type AuthFieldErrors,
+} from "../../auth/auth-form";
 import { sendFirebasePasswordReset } from "../../../lib/firebase-client";
 import { useSEO } from "@/lib/useSEO";
 
 export default function ForgotPasswordPage() {
   useSEO({
-    title: "Khôi phục mật khẩu | Smart Health Care",
-    description: "Nhận liên kết đặt lại mật khẩu cho tài khoản Smart Health Care Workspace.",
+    title: "Khôi phục mật khẩu | Shcare",
+    description: "Nhận liên kết đặt lại mật khẩu cho tài khoản Shcare Workspace.",
     path: "/quen-mat-khau",
   });
 
@@ -16,69 +28,101 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const nextErrors = validateEmailOnly(email);
+    setFieldErrors(nextErrors);
     setError("");
+    if (Object.keys(nextErrors).length > 0) return;
+
     setLoading(true);
     try {
-      await sendFirebasePasswordReset(email);
+      await sendFirebasePasswordReset(email.trim());
       setSent(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không thể gửi email đặt lại mật khẩu.");
+      setError(
+        getSafeAuthErrorMessage(
+          cause,
+          "Không thể gửi liên kết khôi phục. Vui lòng thử lại.",
+        ),
+      );
     } finally {
       setLoading(false);
     }
   };
-  if (sent)
+
+  if (sent) {
     return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-5">
-        <CheckCircle size={44} className="text-[#00FFD1] mx-auto mb-5" />
-        <h1 className="text-xl font-black text-white">Đã gửi email khôi phục</h1>
-        <p className="text-sm text-white/70 mt-3">
-          Kiểm tra hộp thư <b className="text-[#00FFD1]">{email}</b> và làm theo liên kết đặt lại
-          mật khẩu.
-        </p>
-        <Link to="/login" className="premium-button block mt-7">
-          Về đăng nhập
-        </Link>
-      </motion.div>
-    );
-  return (
-    <div>
-      <h1 className="text-2xl font-black text-white">Khôi phục mật khẩu</h1>
-      <p className="text-sm text-white/70 mt-2 mb-6">
-        Hệ thống sẽ gửi liên kết đặt lại mật khẩu an toàn đến email của bạn.
-      </p>
-      {error && (
-        <div className="mb-4 rounded-xl border border-[#FF4B4B]/30 bg-[#FF4B4B]/10 p-3 text-xs text-[#FF6B6B] flex gap-2">
-          <ShieldAlert size={14} />
-          {error}
+      <div className="shc-auth-page shc-auth-result">
+        <AuthPageIntro
+          icon={MailCheck}
+          title="Kiểm tra hộp thư"
+          description={`Nếu email ${email.trim()} thuộc một tài khoản Shcare, bạn sẽ nhận được liên kết đặt lại mật khẩu.`}
+        />
+        <AuthAlert tone="info">
+          Liên kết có thể mất vài phút để đến. Hãy kiểm tra cả thư rác và chỉ mở email có
+          nguồn gửi Shcare mà bạn tin cậy.
+        </AuthAlert>
+        <div className="shc-auth-result-actions">
+          <Link to="/login" className="shc-auth-link-button">
+            <ArrowLeft size={17} aria-hidden="true" />
+            Về đăng nhập
+          </Link>
+          <AuthSecondaryButton type="button" onClick={() => setSent(false)}>
+            <RotateCcw size={16} aria-hidden="true" />
+            Dùng email khác
+          </AuthSecondaryButton>
         </div>
-      )}
-      <form method="post" onSubmit={submit} className="space-y-5">
-        <div className="relative">
-          <Mail size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="shc-auth-page">
+      <AuthPageIntro
+        icon={MailCheck}
+        title="Khôi phục mật khẩu"
+        description="Nhập email tài khoản. Firebase sẽ gửi liên kết đặt lại mật khẩu nếu yêu cầu hợp lệ."
+      />
+
+      <form method="post" noValidate onSubmit={submit} className="shc-auth-form">
+        <AuthField
+          id="reset-email"
+          label="Email nhận liên kết"
+          error={fieldErrors.email}
+          hint="Dùng đúng email đã đăng ký với Shcare."
+          required
+        >
           <input
-            id="reset-email"
-            name="email"
-            required
             type="email"
             autoComplete="email"
+            inputMode="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full h-12 rounded-xl border border-white/10 bg-white/8 pl-11 pr-4 text-white outline-none"
-            placeholder="doctor@clinic.vn"
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setFieldErrors({});
+              setError("");
+            }}
+            placeholder="bacsi@phongkham.vn"
           />
-        </div>
-        <button
-          disabled={loading}
-          className="premium-button w-full h-12 flex justify-center items-center gap-2"
+        </AuthField>
+
+        {error ? <AuthAlert tone="error">{error}</AuthAlert> : null}
+
+        <AuthPrimaryButton
+          type="submit"
+          loading={loading}
+          loadingLabel="Đang gửi liên kết..."
         >
-          {loading && <Loader2 size={16} className="animate-spin" />}Gửi liên kết khôi phục
-        </button>
+          Gửi liên kết khôi phục
+        </AuthPrimaryButton>
       </form>
-      <Link to="/login" className="block text-center mt-6 text-xs text-white/60">
-        ← Về đăng nhập
+
+      <Link to="/login" className="shc-auth-back-link">
+        <ArrowLeft size={16} aria-hidden="true" />
+        Về đăng nhập
       </Link>
     </div>
   );

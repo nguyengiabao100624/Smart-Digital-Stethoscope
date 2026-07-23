@@ -33,7 +33,9 @@ import com.example.smart_health_android.data.AuthUser
 import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.PrimaryBlue
 import com.example.smart_health_android.ui.theme.PrimaryTeal
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SplashScreen(
@@ -84,7 +86,9 @@ fun SplashScreen(
             }
 
             if (!FirebaseAuthService.reloadCurrentUser()) {
-                val pending = PendingRegistrationStore.load(context)
+                val pending = withContext(Dispatchers.IO) {
+                    PendingRegistrationStore.load(context)
+                }
                 onNavigateToVerifyEmail(pending?.accountType ?: "patient")
                 return@LaunchedEffect
             }

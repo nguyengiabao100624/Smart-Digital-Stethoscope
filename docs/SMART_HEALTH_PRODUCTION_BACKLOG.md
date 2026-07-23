@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-07-10
+Last updated: 2026-07-23
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -24,6 +24,32 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
   - Audio: WSS for realtime preview, HTTPS chunk upload for durable scan storage.
 - Use S3-compatible object storage for production direction: MinIO local, R2/S3 production.
 - Add Redis/BullMQ or equivalent for worker queue and multi-instance coordination when productionizing scans/AI.
+
+## Completed source/docs/backend smoke - 2026-07-10 KLTN unified contract pack
+
+- Added `docs/khoaluan` as the KLTN/thesis contract source before more production-direction work. It defines the unified system/data/status contract, audio packet/WebSocket contract, demo evidence checklist, and KLTN test/gap matrix.
+- Added backend `npm.cmd run smoke:klt-contract` so future work can quickly check that the contract docs exist and the firmware/backend/Android source still matches the documented core audio path.
+- Verification passed: `node --check scripts\kltContractSmokeTest.js`, `npm.cmd run smoke:klt-contract`, backend `npm.cmd run check`, MSM261 PlatformIO build for `esp32-s3-devkitm-1` and `esp32-s3-ota`, and Android `.\gradlew.bat :app:compileDebugKotlin`.
+- This closes a thesis-documentation/source-contract gap, not a physical-device validation gap. Remaining KLTN proof still needs real ESP32-S3/MSM261S4030H0 serial/audio evidence and Android real device/emulator runtime proof when hardware is available.
+
+## Source fixed, production verification blocked - 2026-07-10 account profile persistence
+
+- Fixed the user-reported Shcare Portal account profile bug where editing name or extra account details showed success but reverted after leaving/reopening the page. The backend now separates `department` from `specialty` and persists account-profile updates through a repository SQL `UPDATE users ... RETURNING *` path before returning success.
+- Smoke coverage now asserts account profile fields survive save/read-after-write/reopen/logout-login in the portal mutation script, and backend repository/workspace smokes assert the SQL/runtime mapping for account profile fields and notification preferences.
+- Local verification passed: backend syntax checks, `smoke:repositories`, `smoke:workspace-access`, `check`, `test`; Shcare Web portal mutation script syntax check, `lint`, TypeScript, `build`, and `build:firebase`.
+- Supabase project `mahvymyncxszvuhlycwp` was probed directly for the smoke account; the profile update shape worked and the account row was restored.
+- Pushed commits: `c9181740` and `bf0d08cd`.
+- Remaining production blocker: active Render backend `smart-health-api-r5is` is suspended and returns `503 Service Suspended`, so live `smoke:public-deployment` and `smoke:portal-mutation` cannot prove the fix yet. After Render is unsuspended/restarted, rerun those two smokes before moving this item to deployed/live.
+
+## Source fixed, production verification blocked - 2026-07-10 Shcare Portal billing
+
+- Fixed a real portal billing completeness gap: `/portal/billing` no longer renders session-only fields. It now calls backend `GET /api/portal/billing` and shows plan, current charge, subscription source/status/cycle, usage/quota rows, billing contact, and support CTA.
+- Backend route requires `billing.view`; workspace admin and billing users can read the payload, while viewer is denied. Billing users now get focused portal navigation and are no longer labeled as doctors in the portal shell. The portal shell also has route-level capability guards for direct URLs across billing, patients, appointments, live monitoring, records, devices, consent, staff, reports, alerts, audit, and common account routes.
+- Portal onboarding is now capability-aware, so billing/viewer users no longer get routed into checklist items that call patient/device APIs without permission.
+- Added migration `011_workspace_billing_metadata.sql` and repository persistence for organization workspace/contact/legal/package/subscription metadata. Admin package assignment now upserts the organization through the repository so billing state survives PostgreSQL-backed hydration. Billing usage also now counts storage `byteSize` and AI results linked by `scanId`.
+- Local verification passed: backend `npm.cmd run check`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:workspace-access`; Shcare Web `npm.cmd run lint`, `npm.cmd run build`.
+- Remaining production blocker: active Render backend currently returns non-JSON HTML to `smoke:public-deployment`, and live `smoke:portal-browser` times out during login navigation. After Render is unsuspended/restarted and migrations run, rerun `smoke:public-deployment`, `smoke:portal-browser`, and then controlled `smoke:portal-mutation` before moving this item to deployed/live.
+- Still future work: payment-provider integration, invoice ledger/payment history, quota enforcement, and provider-backed billing webhooks.
 
 ## Completed source/build/backend smoke - 2026-07-09 Web Admin AI/doctor approval scan lifecycle
 
@@ -64,6 +90,15 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - Commit `b9a6d4cb` was pushed to `origin/main` for Render auto-deploy. Firebase Hosting target `webapp` deployed `shcare` version `projects/162993928259/sites/shcare/versions/044ec7e04023ffb8`, release `projects/162993928259/sites/shcare/channels/live/releases/1783662693801000`.
 - Live verification passed: `smoke:public-deployment`, `smoke:production-roles`, `smoke:portal-production`, Shcare Web live `smoke:portal-browser`, and live mutation run `portal-mutation-mreisktg`.
 - Live appointment evidence: `portal-mutation-mreisktg` created appointment `appt_20260710055434_71922d95`, confirmed it, deleted it, and verified cleanup alongside temporary patient/device/share/settings/support cleanup.
+
+## Completed deployed/live - 2026-07-10 Shcare Web full UI/UX polish
+
+- Added a final `clinical-polish.css` layer to `smart-health-web` to make the main web UI more consistent across public, auth, and workspace portal routes without rewriting each page. It standardizes typography scale, spacing, surfaces, forms, tables, buttons, popovers/dialog shells, status colors, light/dark tokens, and responsive behavior.
+- Shared state/status components were aligned with the theme: `StatusBadge.tsx` now uses semantic CSS variable tones, and `PortalState.tsx` exposes shared loading/error/empty classes plus accessible state semantics. Portal popovers/dropdowns were removed from the old no-blur surface override after live smoke caught the avatar menu computed backdrop filter still being `none`.
+- Source/render verification passed: Shcare Web typecheck, lint, build, Firebase build, a Playwright route sweep over 63 URLs at desktop/mobile (`checked=126`, no overflow, no console errors, no too-large/tiny text findings), and authenticated local `smoke:portal-browser` against the active Render backend.
+- Local portal smoke must start Vite through `scripts/production-env.js`; starting plain `bun run dev` lacks Firebase Web envs, falls back to `/auth/login`, and receives production 403 `Demo password auth is disabled in production mode`.
+- Firebase Hosting target `webapp` is deployed for site `shcare`: version `projects/162993928259/sites/shcare/versions/ce8149834356fa86`, release `projects/162993928259/sites/shcare/channels/live/releases/1783667033816000`.
+- Live verification passed: `https://shcare.web.app/`, `/login`, and `/portal` returned HTTP 200 with `index-PQOT0AAG.css` and `index-CuomDxzU.js`; active Render backend `/api/health` and `/api/v1/health` returned HTTP 200; live authenticated `bun run smoke:portal-browser` passed; live route sweep checked 63 public/auth/portal URLs across desktop and mobile (`checkedRoutes=126`, `hardIssueCount=0`, `eventIssueCount=0`).
 
 ## Completed deployed/live - 2026-07-09 Web Admin production backend guard
 
@@ -538,7 +573,7 @@ Remaining web-split work:
 
 ## Recently Completed - 2026-06-11 Skills And Android Signup Catalog UX
 
-- Installed `mattpocock/skills` and added `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` to avoid loading all skills by default. On 2026-06-22 the filtered current set was migrated from the embedded repo to the user-wide `C:\Users\baobe\.agents\skills` directory.
+- Installed `mattpocock/skills` and added `SMART_HEALTH_AGENT_SKILLS_GUIDE.md` to avoid loading all skills by default. On 2026-06-22 the set was migrated from the embedded repo to the user-wide `C:\Users\baobe\.agents\skills` directory. On 2026-07-10 the full current Matt set and previously untracked user-wide skills were source-refreshed from official GitHub repos.
 - Replaced the Android doctor-signup catalog no-op failure with a real empty/error/retry dialog. `Cơ sở y tế` and `Chuyên khoa` are now clickable even when backend catalog data cannot be loaded.
 - Verified the fix with Android compile/build, emulator install/launch, doctor signup UI tree, specialty dialog smoke, clinic dialog smoke, and logcat scan.
 - Remaining E2E gap: run the same doctor signup path against the deployed backend/Firebase with real clinic and specialty catalog rows, then submit a real doctor role request and approve it from Web Admin.
@@ -584,7 +619,8 @@ Tasks:
   - `SMART_HEALTH_COMMANDS_GUIDE.md`
 - Before opening the next production-development slice, finish the remaining physical-device KLTN evidence gap in `SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md`. The 2026-06-05 report evidence gate now has build/smoke logs, web admin screenshots, Android emulator screenshots, audio WAV metadata/waveform, and a final Word copy, but still lacks a same-day ESP32-S3 serial monitor/upload capture because COM6/ESP32-S3 was not detected.
 - Use CodeGraph for structure, Context7 for current docs, Chrome DevTools MCP for UI/browser verification.
-- 2026-06-23 tooling completion, updated 2026-07-07: `codebase-memory-mcp` is configured and `smart-health-web` is indexed; Agent Reach, filtered Matt Pocock, Academic Research, context/token skills, `impeccable`, and 11/13 Taste skills are user-wide. Every future UI task must combine `impeccable` + `gpt-taste`, then load every materially applicable UI/UX skill from the registry pool. Taste v1/generic base remain skipped as direct duplicates.
+- 2026-06-23 tooling completion, updated 2026-07-10: `codebase-memory-mcp` is configured and `smart-health-web` is indexed; Agent Reach, full refreshed `mattpocock/skills`, Academic Research, Context7 `find-docs`, context/token skills, `impeccable`, and Taste/UI skills are user-wide and source-refreshed. `.agents\.skill-lock.json` now tracks 195 of 198 `.agents` skill folders; the remaining untracked folders are legacy Matt `decision-mapping`, `to-prd`, and `to-issues`, superseded for routing by `wayfinder`, `to-spec`, and `to-tickets`. Matt flow now includes `setup-matt-pocock-skills`, `wayfinder`, `to-spec`, `to-tickets`, `implement`, `tdd`, `code-review`, `diagnosing-bugs`, `codebase-design`, and related helpers. Every future UI task must combine `impeccable` + `gpt-taste`, then load every materially applicable UI/UX skill from the registry pool. Taste v1/generic base remain skipped as direct duplicates.
+- `SMART_HEALTH_RULES_AND_SKILLS_AUDIT_2026-07-10.md` is the persistent audit artifact for global/project rule upgrades and skill usage rules. Use it with the global registry when the user asks why a skill/tool should or should not be selected.
 - 2026-06-23 routing/token-gate completion: every future Smart Health task should map the request to the smallest relevant installed skill/tool before broad exploration. Apply lightweight `context-budget` + `strategic-compact` by default; load full ECC skill bodies for broad/long/tooling/audit/context-pressure work. The assistant should infer installed skills/tools from the registry without requiring the user to name them.
 - 2026-06-23 organization audit: `C:\Users\baobe\.codex\GLOBAL_AGENT_TOOLING.md` is the single global registry. All remaining `.ai_skills` trees were removed, stale Antigravity instruction catalogs were converted to pointers, and no shared MCP/plugin/skill payload should be stored inside a repo going forward.
 - Use the global `smart-health-project` Codex skill for project rules. The old project-local `.ai_skills` folder should not be recreated unless there is a strong reason.
@@ -857,7 +893,7 @@ Tasks:
   - audio scans
   - storage files
   - notification reports
-- Keep web export/report dialogs on live backend datasets; add smoke coverage for PDF, Excel, CSV, JSON, and SQL.
+- Keep Web/Admin export/report dialogs on live backend datasets. D2D now covers backend JSON, CSV, XLSX and PDF; SQL export is not part of the accepted contract and must not be claimed without a separate requirement/security design.
 - Audit:
   - upload
   - delete
@@ -1374,3 +1410,249 @@ Remaining ops:
 - Restart the local bridge worker/server with `npm run windows:restart` only after active Telegram-launched Codex jobs finish, so the live process loads the rebuilt `dist` without interrupting a running task.
 - Notification hardening is source-complete and locally verified; the restart step is only needed to put the rebuilt bridge into the live local process.
 - This is local automation infrastructure, not a Smart Health production blocker.
+
+## 2026-07-17 Phase 3 Release Gate — Identity/Profile/Session
+
+Completed locally at source/build level:
+
+- Shcare Web account/profile/workspace/session hardening: stable session-revoke idempotency plus `revokedAt` confirmation; 31/31 Auth/account tests, 14/14 contracts, typecheck, lint and build passed.
+- Android native Profile/Family/Workspace/Account Security state and idempotency hardening: session revoke requires server `revokedAt`; 108/108 unit tests, `assembleDebug` and `lintDebug` passed; lint has zero Error/Fatal.
+- Android pending registration no longer stores plaintext PII and backup remains disabled/excluded.
+
+Release blockers that must remain open:
+
+- The frozen-snapshot backend review and integrated regression rerun are closed locally. Negative coverage now includes production demo-session denial, reconcilable first-login and managed-admin activation, UID-only Firebase conflicts, cross-instance membership/session revoke, SQL/WSS lifecycle, safe patient migration/backfill, PHI-safe reconciliation, last-admin safety and provider/backend recovery. Reopen only on a concrete regression or new evidence, not because provider-live proof is absent.
+- Run migrations and concurrency/row-lock tests against a real PostgreSQL/Supabase database, then run Firebase protected API/WSS E2E with production credentials. Local source/build is not provider-live proof.
+- Run Android runtime, TalkBack, process-death/Keystore and Firebase/FCM checks only on WHPX after a safe restart or a physical device. `adb devices -l` currently shows no attached target.
+
+## 2026-07-17 Phase 4 Device Provision/Inventory Gate
+
+Completed at source/build/local level:
+
+- Backend provision QR idempotency and atomic audit/claim persistence, nullable inventory metadata SQL handling, and JSON→PostgreSQL metadata reconciliation.
+- Admin Add Device stable retry key, pending-dismissal guard, refresh-error separation and inventory detail display.
+- Local evidence: backend device-security 31/31 plus backend gates; Admin contracts 28/28, typecheck, lint/build; firmware three PlatformIO builds and shared fixtures.
+
+Keep open before production promotion:
+
+- Execute migrations 024 then 025 against real PostgreSQL and run concurrent row-lock/replay smoke.
+- Add secure setup-AP physical gesture, per-device PoP, expiry and CSRF/session protection; finish two-phase credential rotation.
+- Make device claims authoritative in SQL across provision/pair/revoke and complete firmware telemetry ACK/durable command dedupe.
+- Obtain authenticated browser, Android runtime, provider, serial/I2S/WSS and OTA rollback evidence. Native firmware tests remain blocked until a host compiler or board test target is available.
+
+## 2026-07-17 Phase 4 follow-up backlog
+
+Priority remains Phase 4; do not start the next product slice until these device-control gaps have an owner and evidence:
+
+- `P0/security`: implement two-phase device-secret rotation (new credential overlap, authenticated device ACK, old-secret revoke, reconnect confirmation and rollback). A rotation request must never report success before the device/backend state confirms it.
+- `P0/tenant`: make claim ownership authoritative in SQL across provision, claim, assign, unassign and revoke; add concurrent row-lock/replay tests against real PostgreSQL.
+- `P1/firmware`: persist command dedupe and ACK/progress/result state across reboot, with bounded storage and explicit expiry; keep unknown commands fail-closed.
+- `P1/telemetry`: finish the Web/Admin device-detail presentation using the existing primitives and expose freshness/stale/degraded states without inventing values.
+- `P1/proof`: capture Android/browser/provider/serial/I2S/WSS/OTA rollback evidence when the corresponding external runtime is available. Until then record `BLOCKED`, not complete.
+- `P2/contract`: keep migration order 024 → 025 → 026 and update release compatibility records for every client/firmware change.
+
+## 2026-07-18 Phase 4 source/local disposition and retained release blockers
+
+Closed in source/build/local proof:
+
+- `P0/security` device-secret rotation invariants, exact-candidate promotion, overlap/ACK state and rollback handling across JSON/SQL paths.
+- `P0/tenant` claim lifecycle persistence and canonical repository return values, with 30/30 ownership repository tests. A real PostgreSQL row-lock run is still an external proof gate, not an open source implementation gap.
+- `P1/firmware/backend` command ACK/applying ordering is serialized per device across WSS and MQTT; the reproduced race has a deterministic regression. Secure setup QR now carries per-device WPA2 PoP and all clients preserve the exact contract.
+- `P1/client` Portal, Admin and Android pairing use stable idempotency, preserve exact identifiers and wait for backend/device confirmation. Admin OTA no longer treats command `applied` as installation success.
+- Fresh local gates: backend device-security 38/38, ownership 30/30, setup 3/3, concurrency 2/2; Web 52/52 Auth plus claim 9/9; Admin 46/46 contracts; Android 140/140 unit; all corresponding compile/lint/build gates passed.
+
+Release blockers that remain open:
+
+- `P0/proof`: run migrations and concurrent ownership/rotation mutations against real PostgreSQL; run protected Firebase/API/WSS mutation proof with real provider credentials.
+- `P0/hardware`: verify actual 16 MB flash and partition behavior, physical gesture/WPA2 setup, serial/I2S, authenticated WSS command/audio, forced OTA failure/rollback and post-reboot firmware confirmation on `MSM261S4030H0`. PlatformIO currently reports an 8 MB board profile even though the CSV ends at 16 MiB.
+- `P0/runtime`: run Android QR/Wi-Fi portal/pairing/TalkBack/lifecycle checks on a safe emulator or physical device and authenticated Admin/Portal browser mutation checks. `adb devices -l` is currently empty.
+- `P1/dependency`: Admin production audit has zero critical findings after overriding `websocket-driver` to 0.7.5, but seven high advisories remain. Replace the unpatched `xlsx` export path and update the affected build/runtime dependency chain before promotion.
+- `P2/cleanup`: the deprecated, unrouteable Android Bluetooth screen still contains legacy demo implementation code. Keep it outside the production route and remove/archive it only after checksum and reference proof; do not re-enable BLE without a same-release GATT/security/hardware contract.
+
+## Phase 5 entry order from the 2026-07-18 audit
+
+1. Close cross-workspace PHI cache leakage for review, alerts and scan detail.
+2. Make the backend audio-session lifecycle trustworthy: persist scan + command before delivery, transition to recording only after device ACK/first valid v2 frame, interrupt on disconnect/failure and replace the global singleton with a device/scan registry.
+3. Bind Portal Live metrics/status and every browser binary frame to session/device/scan identity; add sequence, timestamp, sample count, flags and gap/order tests.
+4. Remove Admin AI waveform/timeline/doctor/model/audio fallbacks and strict-map the real scan lifecycle without converting unknown states to completed.
+5. Implement review decision/version and alert acknowledge/resolve ledgers with capability, idempotency, audit and retry tests.
+6. Make processing/upload idempotent and transactional enough to survive duplicate chunks, Redis retry and partial persistence; preserve protocol/session/drop metadata in PostgreSQL.
+7. Add authenticated audio playback/buffering, pagination, stale/offline states and accessibility after the integrity blockers are green.
+
+## 2026-07-18 Phase 5 source/local closure and next source track
+
+- The Phase 5 entry-order P0/P1 integrity work is closed locally: PHI cache scope, live source binding/session cleanup, truthful Admin/Android AI, real review/alert ledgers, idempotent bounded chunk upload, completion lease recovery, durable processing generations, atomic deterministic worker writes, orphan cleanup and generation-safe terminal failure.
+- Local regressions are green across backend, Web, Admin and Android; see `SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` for exact test counts and APK hash. No production deployment or provider/device/hardware proof is claimed.
+- Keep live PostgreSQL/Redis, authenticated production mutation/provider delivery, Android runtime/FCM/TalkBack and physical firmware gates open as `BLOCKED` work; do not convert their absence into repeated source rework.
+- Next source backlog is Phase 6–7. Audit and implement the smallest real gap across consent/notification, appointment/staff lifecycle parity and remaining Admin data/mutation truthfulness, preserving separate native Android UI/UX and Web/Admin UI/UX.
+
+## 2026-07-19 Packages/Storage disposition and remaining release gates
+
+Closed in source/local proof:
+
+- Package and storage metadata persistence, idempotency, audit, replay, tenant/RBAC negatives, object cleanup and truthful Platform Admin UI.
+- OpenAPI contract for package/storage operations and JSON-to-PostgreSQL reconciliation through additive migrations 037/038.
+
+Still open for release proof:
+
+- Run migrations 037/038 against the live PostgreSQL candidate and capture rollback/row evidence.
+- Run S3 signed-link creation, expiry and authorized download with production provider credentials; local provider unavailability is expected.
+- Run authenticated Admin browser mutation/cleanup for create/update/archive package and bucket/upload/share/delete storage.
+- Resolve bundled JSON tenant remediation before any import and retain the existing Admin dependency/security release gate.
+- Continue source work with the smallest remaining truthful Admin operation; Packages/Storage do not require Android or firmware changes.
+
+## 2026-07-19 Staff invitation disposition and Clinics entry
+
+Closed in source/local proof:
+
+- Invitation list/create/resend/revoke/accept across JSON/PostgreSQL/migration 039, including tenant/RBAC, stable idempotency, audit, raw-token hashing, replay secrecy and truthful email delivery state.
+- Independent Admin Doctors, Portal Staff and Web Auth acceptance UX. Portal access is not granted until the accepted invitation and active matching membership survive a backend authority refresh.
+- Backend, Admin and Web unit/contract/type/lint/build gates plus the responsive/theme/reduced-motion Auth browser matrix.
+
+Still open for release proof:
+
+- Apply migration 039 on the live PostgreSQL candidate and prove rollback/row behavior.
+- Run real provider delivery and inbox click-through; missing Firebase Admin/email credentials remain `BLOCKED`, not a source success.
+- Run authenticated Admin/Portal invitation create/resend/revoke/accept with cleanup on preview/live before promotion.
+- Continue Clinics P0/P1: soft archive must persist across PostgreSQL hydrate, approval must use the idempotent state machine, and fake audit/data semantics must be removed.
+
+## 2026-07-23 Clinics/Workspace disposition and remaining release gates
+
+Closed in source/local proof:
+
+- Migration 040, JSON/PostgreSQL lifecycle parity, optimistic versioning, durable archive tombstones, idempotent audited mutations and canonical owner approval/transfer.
+- Restart-safe catalog/role-request hydration and exact denial of archived workspace reuse.
+- Independent Admin Clinics/theme UI and Web Auth theme bootstrap, including authenticated browser matrices and accessibility/layout checks.
+
+Still open for release proof:
+
+- Apply migration 040 to the live PostgreSQL candidate and capture row-lock, rollback and archive-tombstone evidence.
+- Run authenticated preview/live create/edit/transition/approve/archive mutations with cleanup and verify provider/Firebase state before promotion.
+- Resolve the bundled JSON tenant remediation before import; do not treat the expected identity-migration `BLOCKED` result as a source regression.
+- Keep Android membership/workspace runtime proof separate; Platform approval remains Web/Admin-only and firmware impact is `N/A`.
+- Continue Phase 6–7C with the smallest remaining real operation or fake/local-state gap selected from the current ledger.
+
+## 2026-07-23 Notifications disposition and remaining release gates
+
+Closed in source/local proof:
+
+- Migration 041, JSON/PostgreSQL campaign persistence, workspace/role/user audience resolution, required idempotency, transaction audit and exact replay.
+- Separate in-app/email/push provider states plus independent Admin campaign UX, strict receipt validation and 36/36 accessibility/responsive browser checks with real local mutation and cleanup.
+- Shared delivery fields compile across Web and Android without copying Platform Admin UI into the native App.
+
+Still open for release proof:
+
+- Apply migration 041 to the live PostgreSQL candidate and capture transaction/replay/cross-tenant evidence.
+- Run Brevo and FCM delivery with configured providers, a real recipient/device token and deep-link/channel verification; do not equate backend acceptance with delivery or user view.
+- Run authenticated Admin preview/live audience/channel mutation with deterministic cleanup before promotion.
+- Run Android emulator/device notification permission, display, deep-link and preference coexistence tests. Firmware impact is `N/A`.
+- Continue Phase 6–7D with the next remaining `DATA-FAKE-011` surface; the Notifications sub-slice is closed and should be reopened only for a reproduced regression.
+
+## 2026-07-23 Overview disposition and remaining release gates
+
+Closed in source/local proof:
+
+- Real `today|7d|30d` timestamp aggregation with timezone/range metadata, stable lifecycle keys, strict client parsing and tenant-scoped counts. Fixed-percentage charts and forced minimum counts are removed.
+- Independent Admin/Portal Overview states for loading, empty, first-load error, retry, stale refresh and active range; no fake trend, progress floor or synthetic recent-alert timeline.
+- Backend overview 4/4 and integrated gates; OpenAPI 56 paths/53 schemas; Admin 135/135, type/lint/builds and browser 45/45 with accessibility/layout/theme/target checks.
+
+Still open for release proof:
+
+- Deploy the additive backend response before the updated Admin/Portal client, then run authenticated preview/live reads for every range and both platform/workspace roles. Capture rollback compatibility with the previous client.
+- Do not claim live promotion from local build/browser proof. No database migration, Android release or firmware release is required for this slice.
+- Continue Phase 6–7D2 with the next remaining `DATA-FAKE-011` surface; reopen Overview only for a reproduced regression.
+
+## 2026-07-23 Storage D2A disposition and remaining release gates
+
+Closed in source/local proof:
+
+- Independent stats/files settlement and strict canonical parsing; a failed companion request no longer erases the successful half.
+- Explicit first-load, partial, stale-refresh and retry states with no dormant aggregate fallback, no replacement zero KPIs and no upload before bucket-catalog confirmation.
+- Semantic light/dark charts, reduced motion, accessible descriptions and 44 px controls; Admin contracts 138/138 and browser matrix 54/54 passed.
+
+Still open for release proof:
+
+- Run the existing live PostgreSQL/S3 provider and authenticated storage mutation/cleanup gates; this UI-state hardening does not substitute for signed-link expiry or provider-object proof.
+- Promote and rollback the Admin client independently after preview reads confirm both stats and files aliases. No Android or firmware release is required.
+- Continue Phase 6–7D2 with the next reproduced remaining operation gap; reopen Storage only for regression or external-provider evidence.
+
+## 2026-07-23 Patient CRUD D2B disposition and remaining release gates
+
+Closed in source/local/browser proof:
+
+- Canonical `patientId` and display `patientCode` are separated across backend, Admin and Portal; structured full CRUD no longer serializes clinical fields into notes.
+- Create/update/delete use exact receipts and retry-stable idempotency. JSON mutation serialization/rollback and repository replay prevent concurrent same-key drift; tenant/capability/audit negatives are covered.
+- Admin `63` and Portal Patients `9` browser matrices passed with real create/update/delete, exact replay and deterministic cleanup. Full backend, Admin, Web and Android source/build gates passed.
+
+Still open:
+
+- Run authenticated preview/live CRUD compatibility and cleanup against the release candidate; no live deploy was performed in D2B.
+- Run Android family-profile UX on an emulator/device, including TalkBack, large font, rotation, offline and retry. Firmware impact is `N/A`.
+- Implement D2C Patient Import as an expiring, tenant-scoped, all-or-nothing `validate → preview → commit` batch with UTF-8/5 MB/5,000-row limits, duplicate detection, exact idempotency and negative tests. The current legacy client-side sequential create path is not accepted as complete.
+
+## 2026-07-23 Patient CSV Import D2C disposition and remaining release gates
+
+Closed in source/local/browser proof:
+
+- Tenant-scoped UTF-8 CSV validation, 5 MiB/5,000-row bounds, structured preview, duplicate reporting, 24-hour expiry and an additive persisted batch lifecycle through migration 042.
+- Atomic commit with final duplicate recheck, transaction-bound audit, required idempotency, exact replay and no partial patient creation. JSON repository tests cover concurrent retries and rollback after persistence failure.
+- Portal-native responsive UI with loading/invalid/expired/offline/stale/retry/permission/unsaved/destructive/committed states, 50-row paging and truthful backend-confirmed success. Browser `18/18` plus real validation/commit/replay/cleanup passed.
+
+Still open for release proof:
+
+- Apply migration 042 to the candidate PostgreSQL database and prove row locking, atomic rollback, replay and cross-tenant denial against the real driver; the local JSON and source checks do not substitute for that proof.
+- Deploy the backward-compatible backend before Portal, run authenticated preview/live import with a deterministic CSV and delete every imported patient afterward, then record deploy IDs and rollback compatibility.
+- Android and firmware are `N/A`; do not add a bulk-import screen to the native app or trigger a firmware release for this slice.
+- Continue Phase 6–7D2 with the next reproduced remaining Admin/Portal truthfulness gap; reopen Patient Import only for regression or release evidence.
+
+## 2026-07-23 Audit/Export D2D disposition and remaining release gates
+
+Closed in source/local proof:
+
+- One append-only audit ledger with server-side filter/sort/pagination and compatibility aliases; recursive write-time secret redaction applies to both JSON and PostgreSQL repository paths.
+- Additive migration 043 plus immutable backend JSON/CSV/XLSX/PDF artifacts carrying dataset, scope, filters, renderer version `shcare.export-artifact.v1` and SHA-256.
+- Dedicated export capabilities and fail-closed scope: platform-global audit for Platform Admin; current-workspace authority for owner/admin; granted patients for doctors; owned/dependent profiles for patients; billing/viewer denial; tenant/creator job visibility.
+- Required idempotency, transaction audit, separate download audit and temporary grant cleanup. Bundled JSON tenant and dangling-owner remediation now has explicit audit history and passes the identity-migration gate, superseding older current blocker statements.
+- Backend gates are green: `check:audit-export`, audit/export `12/12`, repositories, identity migrations, workspace access, base test, KLT contract and OpenAPI `0.4.0`.
+- Platform Admin gates are green: TypeScript, ESLint, `151/151` contracts, build and browser `72/72` across three viewports and three theme preferences. The browser verified real audit filters/metadata and a platform CSV Blob with hash/header/BOM/cleanup; zero blocking accessibility/runtime/request/layout/theme/target finding remained.
+- The obsolete client `xlsx` path is removed. Production dependency audit still reports 17 remaining advisories (2 low, 7 moderate, 8 high, 0 critical), which remain a release-review item.
+- Portal gates are green for focused `8/8`, full Vitest `29` files/`105` tests, contracts `60/60`, TypeScript, ESLint, diff check and Firebase build. Targeted browser proof covered server filtering, real Reports data, a verified 11-row CSV, audit create/download events, desktop/mobile/theme/reduced-motion and deterministic local cleanup. Scope/workspace/hash/renderer mismatch fails closed.
+
+Still open for release proof:
+
+- Apply migration 043 to the candidate/live PostgreSQL database and capture schema, append-only, transaction, hash/version and rollback evidence against the real driver.
+- Run authenticated preview/live Admin and Portal audit queries plus JSON/CSV/XLSX/PDF create/download/replay/cross-tenant/cleanup journeys. Record exact run IDs, artifact checks and cleanup before promotion.
+- Deploy the backward-compatible backend first, then Admin and Portal independently; record candidate SHA, deploy IDs and rollback compatibility. No deployment occurred in D2D.
+- Rerun the complete Portal route smoke from a stable local server. Its obsolete selectors were fixed, but the latest attempt ended on dev-server timeout/`ERR_CONNECTION_REFUSED` before a product assertion, so no full-route pass may be claimed. Review the remaining Portal audit result (5 advisories: 1 high, 3 moderate, 1 low) and Admin audit result before release.
+- Android workspace/platform audit UI and firmware are `N/A`. Personal export/access-history remains a separate Android Settings/Security slice and must receive native runtime/device proof when implemented.
+- Continue from the next reproduced Admin/Portal truthfulness gap; reopen Audit/Export only for regression or release evidence.
+
+## 2026-07-23 Phase 8B/8C release-gate update
+
+Closed:
+
+- The complete local Portal route smoke is now green; the earlier
+  `ERR_CONNECTION_REFUSED` note is historical. Route/menu/direct-URL
+  capability parity, unavailable 2FA, consent selectors and appointment/staff
+  query separation have regression coverage.
+- Portal final gates are `105/105`, `63/63`, type/lint/Firebase build and
+  browser `ok: true`. Backend check/base smoke and current Admin,
+  Android/firmware/package candidate builds also pass.
+- Portal `bun audit` is now clean after compatible Vite/TanStack/protobufjs/
+  brace-expansion/esbuild pins and a full gate rerun. Admin
+  `npm audit --omit=dev` is `1 low`, `0 high`, `0 critical`; the remaining
+  Windows dev-server advisory and dev-only build chain stay in release review.
+- Candidate versions, hashes, scope exclusions and rollback order are recorded
+  in `SMART_HEALTH_RELEASE_CANDIDATE_MANIFEST.md`.
+
+Still open:
+
+- Create the intentional candidate commit/tag and verify it from a clean
+  release worktree.
+- Apply migrations through `043` to a safe candidate PostgreSQL database and
+  prove locking, rollback, idempotency, tenant denial and cleanup.
+- Run provider-backed Admin and Web/Portal previews before any live promotion.
+- Produce a production-signed Android artifact and run emulator/device,
+  TalkBack, permission, lifecycle and FCM proof.
+- Resolve the physical 8 MiB board-metadata versus 16 MiB partition question
+  and run ESP32-S3 flash, serial, I2S, WSS, command and forced OTA rollback.

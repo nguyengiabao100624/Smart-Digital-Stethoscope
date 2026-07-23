@@ -1,0 +1,29 @@
+{
+  "name": "@shcare/brand",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "assets",
+    "fonts",
+    "fonts.css",
+    "motion.css",
+    "tokens.css",
+    "tokens.json",
+    "tokens.ts"
+  ],
+  "exports": {
+    "./tokens": "./tokens.ts",
+    "./tokens.css": "./tokens.css",
+    "./tokens.json": "./tokens.json",
+    "./fonts.css": "./fonts.css",
+    "./motion.css": "./motion.css",
+    "./assets/*": "./assets/*"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

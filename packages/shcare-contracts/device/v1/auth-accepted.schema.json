@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/auth-accepted.schema.json",
+  "title": "Shcare authenticated device session v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "protocolVersion",
+    "challengeId",
+    "deviceId",
+    "sessionId",
+    "serverTime",
+    "telemetryIntervalMs",
+    "credentialSlot",
+    "rotationId",
+    "rotationState"
+  ],
+  "properties": {
+    "type": { "const": "auth.accepted" },
+    "protocolVersion": { "const": 1 },
+    "challengeId": { "type": "string", "minLength": 16, "maxLength": 160 },
+    "deviceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "sessionId": { "type": "string", "minLength": 16, "maxLength": 160 },
+    "serverTime": { "type": "string", "format": "date-time" },
+    "telemetryIntervalMs": { "type": "integer", "minimum": 1000, "maximum": 300000 },
+    "credentialSlot": { "enum": ["current", "rotation_candidate"] },
+    "rotationId": { "type": "string", "maxLength": 160 },
+    "rotationState": { "enum": ["", "confirmed"] }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "credentialSlot": { "const": "rotation_candidate" } },
+        "required": ["credentialSlot"]
+      },
+      "then": {
+        "properties": {
+          "rotationId": { "minLength": 1 },
+          "rotationState": { "const": "confirmed" }
+        }
+      }
+    }
+  ]
+}

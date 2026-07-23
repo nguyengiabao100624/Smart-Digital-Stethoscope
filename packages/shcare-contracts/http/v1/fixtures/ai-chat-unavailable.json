@@ -1,0 +1,10 @@
+{
+  "messages": [],
+  "availability": {
+    "available": false,
+    "status": "unavailable",
+    "provider": "openai_compatible",
+    "model": "",
+    "reason": "not_configured"
+  }
+}

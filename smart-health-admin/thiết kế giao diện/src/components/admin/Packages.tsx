@@ -1,16 +1,16 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  AlertTriangle,
+  Archive,
   Check,
   CreditCard,
   Edit,
   Loader2,
   Package as PackageIcon,
   Plus,
+  RefreshCw,
+  Search,
   Shield,
-  Star,
-  Trash2,
   UserRound,
   Users,
   Zap,
@@ -28,6 +28,10 @@ import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { CapabilityGate } from "./AdminAccessContext";
 import { useAdminAccess } from "./useAdminAccess";
 import { PACKAGE_MANAGE_CAPABILITIES } from "./action-permissions";
+import {
+  createPackageOperationIdempotencyKey,
+  parsePackageMutationOutcome,
+} from "@/lib/package-operations";
 
 const segmentLabels: Record<string, string> = {
   organization: "Bệnh viện / phòng khám",
@@ -39,6 +43,16 @@ const durationLabels: Record<string, string> = {
   monthly: "tháng",
   quarterly: "quý",
   yearly: "năm",
+};
+
+const packageTypeLabels: Record<string, string> = {
+  trial: "Dùng thử",
+  basic: "Cơ bản",
+  professional: "Chuyên nghiệp",
+  enterprise: "Doanh nghiệp",
+  custom: "Tùy chỉnh",
+  solo: "Bác sĩ tư",
+  personal: "Cá nhân / gia đình",
 };
 
 function formatMoney(value?: number, currency = "VND") {
@@ -86,27 +100,43 @@ export function Packages() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<SmartHealthServicePackage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [backendError, setBackendError] = useState("");
-  const [deleteAction, setDeleteAction] = useState<SmartHealthServicePackage | null>(null);
-  const [deleteError, setDeleteError] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [packageError, setPackageError] = useState("");
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
+  const [archiveAction, setArchiveAction] = useState<SmartHealthServicePackage | null>(null);
+  const [archiveError, setArchiveError] = useState("");
+  const [isArchiving, setIsArchiving] = useState(false);
+  const archiveIdempotencyKeysRef = React.useRef(new Map<string, string>());
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    try {
-      const [packageResponse, clinicResponse] = await Promise.all([
-        smartHealthApi.listPackages(),
-        smartHealthApi.listClinics(),
-      ]);
-      setPackages(packageResponse.packages);
-      setWorkspaces(clinicResponse.clinics);
-      setBackendError("");
-    } catch (error) {
+    const [packageResult, workspaceResult] = await Promise.allSettled([
+      smartHealthApi.listPackages(),
+      smartHealthApi.listClinics(),
+    ]);
+    if (packageResult.status === "fulfilled") {
+      setPackages(packageResult.value.packages);
+      setPackageError("");
+    } else {
       setPackages([]);
-      setBackendError(toVietnameseErrorMessage(error, "Không thể tải gói dịch vụ từ backend."));
-    } finally {
-      setIsLoading(false);
+      setPackageError(
+        toVietnameseErrorMessage(packageResult.reason, "Không thể tải gói dịch vụ từ backend."),
+      );
     }
+    if (workspaceResult.status === "fulfilled") {
+      setWorkspaces(workspaceResult.value.clinics);
+      setWorkspaceError("");
+    } else {
+      setWorkspaces([]);
+      setWorkspaceError(
+        toVietnameseErrorMessage(
+          workspaceResult.reason,
+          "Không thể tải số workspace đang sử dụng gói.",
+        ),
+      );
+    }
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -120,61 +150,82 @@ export function Packages() {
     }, {});
   }, [workspaces]);
 
-  const segmentCounts = useMemo(() => {
-    return workspaces.reduce<Record<string, number>>((acc, workspace) => {
-      const key = workspace.workspaceType || "clinic";
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-  }, [workspaces]);
+  const filteredPackages = useMemo(() => {
+    const query = searchTerm.trim().toLocaleLowerCase("vi-VN");
+    return packages.filter((pkg) => {
+      const status = pkg.status === "archived" ? "archived" : "active";
+      if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (!query) return true;
+      return [pkg.name, pkg.id, pkg.type, pkg.segment]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase("vi-VN").includes(query));
+    });
+  }, [packages, searchTerm, statusFilter]);
+
+  const activePackageCount = packages.filter((pkg) => pkg.status !== "archived").length;
+  const archivedPackageCount = packages.length - activePackageCount;
+  const assignedWorkspaceCount = Object.values(assignedCountByPackage).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
 
   const handleEdit = (pkg: SmartHealthServicePackage) => {
     if (!canManagePackages) {
-      toast.error("Tai khoan khong co quyen quan ly goi dich vu.");
+      toast.error("Tài khoản không có quyền quản lý gói dịch vụ.");
       return;
     }
     setEditingPackage(pkg);
     setCreateDialogOpen(true);
   };
 
-  const handleDelete = (pkg: SmartHealthServicePackage) => {
+  const handleArchive = (pkg: SmartHealthServicePackage) => {
     if (!canManagePackages) {
-      toast.error("Tai khoan khong co quyen quan ly goi dich vu.");
+      toast.error("Tài khoản không có quyền quản lý gói dịch vụ.");
       return;
     }
-    setDeleteError("");
-    setDeleteAction(pkg);
+    setArchiveError("");
+    setArchiveAction(pkg);
   };
 
-  const confirmDelete = async () => {
-    const pkg = deleteAction;
+  const confirmArchive = async () => {
+    const pkg = archiveAction;
     if (!pkg) return;
-    setIsDeleting(true);
-    setDeleteError("");
+    setIsArchiving(true);
+    setArchiveError("");
+    const idempotencyKey =
+      archiveIdempotencyKeysRef.current.get(pkg.id) ||
+      createPackageOperationIdempotencyKey("archive", pkg.id);
+    archiveIdempotencyKeysRef.current.set(pkg.id, idempotencyKey);
     try {
-      await smartHealthApi.deletePackage(pkg.id);
-      toast.success("Đã xóa gói dịch vụ", {
-        description: `${pkg.name} đã được gỡ khỏi backend.`,
+      const response = await smartHealthApi.archivePackage(pkg.id, idempotencyKey);
+      parsePackageMutationOutcome(response, "archive", { id: pkg.id });
+      archiveIdempotencyKeysRef.current.delete(pkg.id);
+      toast.success("Đã lưu trữ gói dịch vụ", {
+        description: `${pkg.name} không còn khả dụng cho lần gán mới.`,
       });
-      setDeleteAction(null);
+      setArchiveAction(null);
       await loadData();
     } catch (error) {
-      const message = toVietnameseErrorMessage(error, "Vui lòng kiểm tra backend.");
-      setDeleteError(message);
-      toast.error("Không thể xóa gói dịch vụ", { description: message });
+      const message = toVietnameseErrorMessage(error, "Backend chưa xác nhận việc lưu trữ gói.");
+      setArchiveError(message);
+      toast.error("Không thể lưu trữ gói dịch vụ", { description: message });
     } finally {
-      setIsDeleting(false);
+      setIsArchiving(false);
     }
   };
 
-  const deleteAssignedCount = deleteAction ? assignedCountByPackage[deleteAction.id] || 0 : 0;
+  const archiveAssignedCount = archiveAction
+    ? workspaceError
+      ? null
+      : assignedCountByPackage[archiveAction.id] || 0
+    : 0;
 
   return (
     <div className="flex h-full flex-col space-y-6">
       <PageHeader
         eyebrow="Billing theo workspace"
         title="Gói dịch vụ & subscription"
-        description="Quản lý gói cho bệnh viện/phòng khám, bác sĩ tư và cá nhân/gia đình theo giới hạn bác sĩ, hồ sơ/bệnh nhân, thiết bị kích hoạt, storage, AI và retention."
+        description="Quản lý danh mục gói và quota hiển thị cho workspace. Billing hiện là quy trình thủ công, không thu tiền trực tuyến."
         action={
           <CapabilityGate capabilities={PACKAGE_MANAGE_CAPABILITIES}>
             <button
@@ -191,94 +242,150 @@ export function Packages() {
         }
       />
 
-      {backendError && (
-        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          {backendError}
+      {packageError ? (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p className="font-semibold">Không thể tải danh mục gói</p>
+            <p className="mt-1">{packageError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadData()}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-destructive/30 px-3 font-semibold"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Thử lại
+          </button>
         </div>
-      )}
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-        <AnimatedCard className="scan-sheen relative overflow-hidden bg-gradient-to-r from-primary to-secondary p-5 text-primary-foreground lg:col-span-3">
-          <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <CreditCard className="h-4 w-4" />
-                Subscription workspace
-              </div>
-              <p className="mt-2 max-w-2xl text-sm text-white/85">
-                {workspaces.length} workspace đang quản lý: {segmentCounts.hospital || 0} bệnh viện,{" "}
-                {segmentCounts.clinic || 0} phòng khám, {segmentCounts.solo_practice || 0} bác sĩ
-                tư, {segmentCounts.personal || 0} cá nhân/gia đình.
-              </p>
-            </div>
-            <div className="rounded-md bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/30">
-              {packages.length} gói khả dụng
-            </div>
-          </div>
+      {workspaceError && !packageError ? (
+        <div
+          role="status"
+          className="rounded-lg border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-warning-foreground"
+        >
+          <p className="font-semibold">Dữ liệu gán workspace đang tạm thiếu</p>
+          <p className="mt-1">{workspaceError} Danh mục gói vẫn có thể xem và chỉnh sửa.</p>
+        </div>
+      ) : null}
+
+      {!packageError ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <PackageMetric
+            icon={<PackageIcon className="h-5 w-5" />}
+            label="Gói đang hoạt động"
+            value={activePackageCount}
+          />
+          <PackageMetric
+            icon={<Archive className="h-5 w-5" />}
+            label="Gói đã lưu trữ"
+            value={archivedPackageCount}
+          />
+          <PackageMetric
+            icon={<CreditCard className="h-5 w-5" />}
+            label="Workspace có gán gói"
+            value={workspaceError ? "Chưa xác định" : assignedWorkspaceCount}
+          />
+        </div>
+      ) : null}
+
+      {!packageError ? (
+        <AnimatedCard className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+          <label className="relative block w-full md:max-w-md">
+            <span className="sr-only">Tìm gói dịch vụ</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Tìm theo tên, mã, loại gói..."
+              className="min-h-11 w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Trạng thái</span>
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value as "all" | "active" | "archived")
+              }
+              className="min-h-11 rounded-md border border-border bg-background px-3 text-foreground"
+            >
+              <option value="all">Tất cả</option>
+              <option value="active">Đang hoạt động</option>
+              <option value="archived">Đã lưu trữ</option>
+            </select>
+          </label>
         </AnimatedCard>
+      ) : null}
 
-        <AnimatedCard className="border-warning/30 bg-warning/10 p-5" delay={0.05}>
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-[#B45309]" />
-            <div>
-              <div className="font-semibold text-[#92400E]">Quota cần theo dõi</div>
-              <p className="mt-1 text-sm leading-5 text-[#B45309]">
-                Workspace vượt storage hoặc AI nên bị cảnh báo trước khi chặn thao tác.
-              </p>
-            </div>
-          </div>
-        </AnimatedCard>
-      </div>
-
-      {isLoading ? (
+      {isLoading && !packageError ? (
         <AnimatedCard className="flex items-center justify-center gap-3 p-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Đang tải gói dịch vụ...
         </AnimatedCard>
+      ) : packageError ? null : packages.length === 0 ? (
+        <AnimatedCard className="flex flex-col items-center justify-center px-6 py-14 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <PackageIcon className="h-6 w-6" />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold text-foreground">Chưa có gói dịch vụ</h2>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Tạo gói đầu tiên để hiển thị quota và billing summary cho workspace.
+          </p>
+        </AnimatedCard>
+      ) : filteredPackages.length === 0 ? (
+        <AnimatedCard className="px-6 py-12 text-center">
+          <h2 className="font-semibold text-foreground">Không có gói phù hợp</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Thử đổi từ khóa hoặc bộ lọc trạng thái.
+          </p>
+        </AnimatedCard>
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {packages.map((pkg, index) => {
+          {filteredPackages.map((pkg, index) => {
             const Icon = packageIcon(pkg);
             const assignedCount = assignedCountByPackage[pkg.id] || 0;
-            const isPopular = pkg.type === "professional";
+            const isArchived = pkg.status === "archived";
             return (
               <motion.div
                 key={pkg.id}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05, duration: 0.25 }}
-                whileHover={{ y: -3 }}
-                className={`relative flex flex-col rounded-xl border bg-card p-5 shadow-sm ${
-                  isPopular ? "border-primary pt-9 ring-1 ring-primary/20" : "border-border"
+                whileHover={{ y: -2 }}
+                className={`relative flex flex-col rounded-xl border border-border bg-card p-5 shadow-sm ${
+                  isArchived ? "opacity-80" : ""
                 }`}
               >
-                {isPopular && (
-                  <div className="absolute left-1/2 top-3 -translate-x-1/2">
-                    <StatusBadge label="Được chọn nhiều" tone="info" />
-                  </div>
-                )}
-
                 <div className="mb-4 flex items-center justify-between">
-                  <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-lg ${isPopular ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
-                  >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-muted-foreground">Đang dùng</div>
-                    <div className="text-lg font-semibold text-foreground">{assignedCount} WS</div>
+                    <div className="text-lg font-semibold text-foreground">
+                      {workspaceError ? "—" : `${assignedCount} WS`}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mb-3">
+                <div className="mb-3 flex flex-wrap gap-2">
                   <StatusBadge
                     label={segmentLabels[pkg.segment || "organization"] || "Khác"}
                     tone="muted"
                   />
+                  <StatusBadge
+                    label={isArchived ? "Đã lưu trữ" : "Đang hoạt động"}
+                    tone={isArchived ? "muted" : "success"}
+                  />
                 </div>
                 <h3 className="text-xl font-bold text-foreground">{pkg.name}</h3>
                 <p className="mt-2 min-h-12 text-sm leading-5 text-muted-foreground">
-                  {pkg.type || "custom"} · {pkg.status || "active"}
+                  {packageTypeLabels[pkg.type || "custom"] || "Tùy chỉnh"} · {pkg.id}
                 </p>
 
                 <div className="my-5 border-b border-border pb-5">
@@ -306,13 +413,15 @@ export function Packages() {
                       <Edit className="h-4 w-4" />
                       Sửa
                     </button>
-                    <button
-                      onClick={() => void handleDelete(pkg)}
-                      className="rounded-md border border-destructive/20 bg-destructive/10 p-2 text-destructive transition-colors hover:bg-destructive/15"
-                      aria-label="Xóa gói"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {!isArchived ? (
+                      <button
+                        onClick={() => handleArchive(pkg)}
+                        className="min-h-11 min-w-11 rounded-md border border-warning/25 bg-warning/10 p-2 text-warning-foreground transition-colors hover:bg-warning/15"
+                        aria-label={`Lưu trữ gói ${pkg.name}`}
+                      >
+                        <Archive className="mx-auto h-4 w-4" />
+                      </button>
+                    ) : null}
                   </div>
                 </CapabilityGate>
               </motion.div>
@@ -331,33 +440,43 @@ export function Packages() {
         onSaved={loadData}
       />
       <ConfirmActionDialog
-        open={Boolean(deleteAction)}
+        open={Boolean(archiveAction)}
         onOpenChange={(open) => {
-          if (!open) setDeleteAction(null);
-          setDeleteError("");
+          if (!open) setArchiveAction(null);
+          setArchiveError("");
         }}
-        title="Xóa gói dịch vụ"
+        title="Lưu trữ gói dịch vụ"
         description={
-          deleteAction ? (
+          archiveAction ? (
             <span>
-              Bạn có chắc chắn muốn xóa <strong>{deleteAction.name}</strong>?
-              {deleteAssignedCount > 0 ? (
+              Gói <strong>{archiveAction.name}</strong> sẽ không còn khả dụng cho lần gán mới.
+              {archiveAssignedCount === null ? (
                 <>
                   <br />
-                  Đang có {deleteAssignedCount} workspace dùng gói này. Backend có thể từ chối nếu
-                  gói còn được gán.
+                  Chưa tải được số workspace đang dùng; backend sẽ kiểm tra lại trước khi lưu.
                 </>
-              ) : null}
+              ) : archiveAssignedCount > 0 ? (
+                <>
+                  <br />
+                  Đang có {archiveAssignedCount} workspace dùng gói này. Hãy chuyển các workspace
+                  sang gói khác trước.
+                </>
+              ) : (
+                <>
+                  <br />
+                  Gói không được gán cho workspace nào.
+                </>
+              )}
             </span>
           ) : (
             ""
           )
         }
-        confirmLabel="Xóa gói"
+        confirmLabel="Lưu trữ gói"
         tone="danger"
-        loading={isDeleting}
-        error={deleteError}
-        onConfirm={confirmDelete}
+        loading={isArchiving}
+        error={archiveError}
+        onConfirm={confirmArchive}
       />
     </div>
   );
@@ -372,5 +491,27 @@ function Limit({ label, value }: { label: string; value: string }) {
       </span>
       <span className="font-semibold text-foreground">{value}</span>
     </div>
+  );
+}
+
+function PackageMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <AnimatedCard className="flex items-center gap-4 p-5">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        {icon}
+      </div>
+      <div>
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
+      </div>
+    </AnimatedCard>
   );
 }

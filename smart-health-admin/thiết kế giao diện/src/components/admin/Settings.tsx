@@ -5,8 +5,6 @@ import {
   BrainCircuit,
   Building,
   CheckCircle2,
-  Copy,
-  KeyRound,
   MessageSquare,
   RefreshCw,
   Save,
@@ -15,13 +13,17 @@ import {
 } from "lucide-react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
-import { Switch } from "@/components/ui/switch";
 import {
   smartHealthApi,
   type SmartHealthProductionReadiness,
   type SmartHealthReadinessItem,
 } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import {
+  createStorageOperationIdempotencyKey,
+  parseStorageFileOutcome,
+} from "@/lib/storage-operations";
+import { useLocation } from "./router-shim";
 
 type SettingsState = {
   system: {
@@ -65,11 +67,15 @@ type SettingsState = {
     autoConnect: boolean;
   };
   ai: {
+    analysisKind: string;
     selectedModel: string;
     version: string;
-    minConfidence: number;
-    maxNoiseDb: number;
-    timeoutSeconds: number;
+    analyzerVersion: string;
+    status: string;
+    updateSupported: boolean;
+    clinicalDecisionSupport: boolean;
+    accuracyMetricsAvailable: boolean;
+    lastUpdateStatus: string;
   };
   outbound: {
     email: {
@@ -141,10 +147,25 @@ type RuntimeState = {
   };
   smtp: { configured: boolean; missing: string[]; host: string; port: number | null; from: string };
   outboundWebhook: { configured: boolean; missing: string[]; urlConfiguredIn: string };
-  twoFactorAvailable: boolean;
-  apiKeyRotationAvailable: boolean;
-  backupTestAvailable: boolean;
-  aiModelUpdateAvailable: boolean;
+  ai: {
+    scanAnalysis: {
+      available: boolean;
+      analysisKind: string;
+      analyzerVersion: string;
+      clinicalDecisionSupport: boolean;
+    };
+    chatProvider: {
+      available: boolean;
+      status: string;
+      provider: string;
+      model: string;
+      reason: string;
+    };
+    modelUpdate: {
+      available: boolean;
+      reason: string;
+    };
+  };
 };
 
 type SettingsScope = {
@@ -195,11 +216,15 @@ const defaults: SettingsState = {
     autoConnect: true,
   },
   ai: {
-    selectedModel: "balanced",
-    version: "AI Medical Analysis v3.2.1",
-    minConfidence: 85,
-    maxNoiseDb: 45,
-    timeoutSeconds: 120,
+    analysisKind: "",
+    selectedModel: "",
+    version: "",
+    analyzerVersion: "",
+    status: "unavailable",
+    updateSupported: false,
+    clinicalDecisionSupport: false,
+    accuracyMetricsAvailable: false,
+    lastUpdateStatus: "unavailable",
   },
   outbound: {
     email: {
@@ -241,22 +266,7 @@ const defaults: SettingsState = {
     backupCheckEnabled: false,
     lastBackupCheckAt: "",
     lastBackupStatus: "",
-    apiKeys: [
-      {
-        id: "key_production",
-        name: "API Key Production",
-        keyPreview: "sk_live_********1234",
-        status: "active",
-        scope: "platform",
-      },
-      {
-        id: "key_staging",
-        name: "API Key Staging",
-        keyPreview: "sk_test_********7788",
-        status: "active",
-        scope: "workspace",
-      },
-    ],
+    apiKeys: [],
     passwordRules: {
       minLength: 8,
       requireMixedCase: true,
@@ -287,10 +297,25 @@ const runtimeDefaults: RuntimeState = {
     missing: ["OUTBOUND_WEBHOOK_URL or settings.outbound.webhook.url"],
     urlConfiguredIn: "",
   },
-  twoFactorAvailable: false,
-  apiKeyRotationAvailable: false,
-  backupTestAvailable: false,
-  aiModelUpdateAvailable: false,
+  ai: {
+    scanAnalysis: {
+      available: false,
+      analysisKind: "",
+      analyzerVersion: "",
+      clinicalDecisionSupport: false,
+    },
+    chatProvider: {
+      available: false,
+      status: "unavailable",
+      provider: "",
+      model: "",
+      reason: "not_configured",
+    },
+    modelUpdate: {
+      available: false,
+      reason: "not_supported",
+    },
+  },
 };
 
 function objectOf(value: unknown): Record<string, unknown> {
@@ -394,11 +419,15 @@ function normalizeSettings(raw: Record<string, unknown>): SettingsState {
       autoConnect: asBool(stethoscope.autoConnect, defaults.stethoscope.autoConnect),
     },
     ai: {
+      analysisKind: asString(ai.analysisKind, defaults.ai.analysisKind),
       selectedModel: asString(ai.selectedModel, defaults.ai.selectedModel),
       version: asString(ai.version, defaults.ai.version),
-      minConfidence: asNumber(ai.minConfidence, defaults.ai.minConfidence),
-      maxNoiseDb: asNumber(ai.maxNoiseDb, defaults.ai.maxNoiseDb),
-      timeoutSeconds: asNumber(ai.timeoutSeconds, defaults.ai.timeoutSeconds),
+      analyzerVersion: asString(ai.analyzerVersion, defaults.ai.analyzerVersion),
+      status: asString(ai.status, defaults.ai.status),
+      updateSupported: asBool(ai.updateSupported, false),
+      clinicalDecisionSupport: asBool(ai.clinicalDecisionSupport, false),
+      accuracyMetricsAvailable: asBool(ai.accuracyMetricsAvailable, false),
+      lastUpdateStatus: asString(ai.lastUpdateStatus, defaults.ai.lastUpdateStatus),
     },
     outbound: {
       email: {
@@ -493,6 +522,10 @@ function normalizeRuntime(raw: Record<string, unknown>): RuntimeState {
   const email = objectOf(runtime.email);
   const smtp = objectOf(runtime.smtp);
   const outboundWebhook = objectOf(runtime.outboundWebhook);
+  const ai = objectOf(runtime.ai);
+  const scanAnalysis = objectOf(ai.scanAnalysis);
+  const chatProvider = objectOf(ai.chatProvider);
+  const modelUpdate = objectOf(ai.modelUpdate);
   const smtpPort = smtp.port === null ? null : asNumber(smtp.port, 0) || null;
   const smtpState = {
     configured: asBool(smtp.configured, false),
@@ -525,10 +558,31 @@ function normalizeRuntime(raw: Record<string, unknown>): RuntimeState {
         : runtimeDefaults.outboundWebhook.missing,
       urlConfiguredIn: asString(outboundWebhook.urlConfiguredIn),
     },
-    twoFactorAvailable: asBool(runtime.twoFactorAvailable, false),
-    apiKeyRotationAvailable: asBool(runtime.apiKeyRotationAvailable, false),
-    backupTestAvailable: asBool(runtime.backupTestAvailable, false),
-    aiModelUpdateAvailable: asBool(runtime.aiModelUpdateAvailable, false),
+    ai: {
+      scanAnalysis: {
+        available: asBool(scanAnalysis.available, runtimeDefaults.ai.scanAnalysis.available),
+        analysisKind: asString(
+          scanAnalysis.analysisKind,
+          runtimeDefaults.ai.scanAnalysis.analysisKind,
+        ),
+        analyzerVersion: asString(
+          scanAnalysis.analyzerVersion,
+          runtimeDefaults.ai.scanAnalysis.analyzerVersion,
+        ),
+        clinicalDecisionSupport: asBool(scanAnalysis.clinicalDecisionSupport, false),
+      },
+      chatProvider: {
+        available: asBool(chatProvider.available, false),
+        status: asString(chatProvider.status, runtimeDefaults.ai.chatProvider.status),
+        provider: asString(chatProvider.provider),
+        model: asString(chatProvider.model),
+        reason: asString(chatProvider.reason, runtimeDefaults.ai.chatProvider.reason),
+      },
+      modelUpdate: {
+        available: asBool(modelUpdate.available, false),
+        reason: asString(modelUpdate.reason, runtimeDefaults.ai.modelUpdate.reason),
+      },
+    },
   };
 }
 
@@ -541,19 +595,55 @@ function normalizeScope(raw: Record<string, unknown>): SettingsScope {
   };
 }
 
+function chatProviderReasonLabel(reason: string) {
+  switch (reason) {
+    case "not_configured":
+      return "Chưa cấu hình endpoint, API key và model trên backend.";
+    case "invalid_configuration":
+      return "Cấu hình provider không hợp lệ; backend đã khóa kết nối.";
+    default:
+      return "Provider hỗ trợ hội thoại hiện không khả dụng.";
+  }
+}
+
+function chatProviderLabel(provider: string) {
+  if (!provider) return "Chưa cấu hình";
+  if (provider === "openai_compatible") return "OpenAI-compatible";
+  return provider.replaceAll("_", " ");
+}
+
 function buildPayload(settings: SettingsState) {
   return {
-    ...settings,
     system: {
       ...settings.system,
       source: "web-admin",
       updatedAt: new Date().toISOString(),
     },
+    branding: settings.branding,
+    outbound: {
+      webhook: {
+        url: settings.outbound.webhook.url.trim(),
+      },
+    },
   };
 }
 
 export function Settings() {
+  const location = useLocation();
+  const requestedTab =
+    location.search && typeof location.search === "object"
+      ? String((location.search as Record<string, unknown>).section || "")
+      : "";
+  const initialTab = ["general", "ai", "notifications", "security", "deployment"].includes(
+    requestedTab,
+  )
+    ? requestedTab
+    : "general";
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const logoUploadAttemptRef = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null>(null);
   const [settings, setSettings] = useState<SettingsState>(defaults);
   const [runtime, setRuntime] = useState<RuntimeState>(runtimeDefaults);
   const [scope, setScope] = useState<SettingsScope>({ type: "platform" });
@@ -562,24 +652,24 @@ export function Settings() {
   const [readinessError, setReadinessError] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [logoUploading, setLogoUploading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success">("idle");
   const [emailTesting, setEmailTesting] = useState(false);
   const [outboundTesting, setOutboundTesting] = useState<"sms" | "zalo" | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [backupChecking, setBackupChecking] = useState(false);
-  const [apiKeyAction, setApiKeyAction] = useState<string | null>(null);
-  const [aiUpdating, setAiUpdating] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
+    setLoadError("");
     try {
       const { settings: raw } = await smartHealthApi.getSettings();
       setSettings(normalizeSettings(raw));
       setRuntime(normalizeRuntime(raw));
       setScope(normalizeScope(raw));
     } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể tải cài đặt."));
+      const message = toVietnameseErrorMessage(error, "Không thể tải cài đặt vận hành.");
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -653,7 +743,6 @@ export function Settings() {
     } catch (error) {
       setSaveStatus("idle");
       toast.error(toVietnameseErrorMessage(error, "Không thể lưu cài đặt hệ thống."));
-      throw error;
     }
   };
 
@@ -672,11 +761,21 @@ export function Settings() {
 
     setLogoUploading(true);
     try {
-      const { file: storageFile } = await smartHealthApi.uploadStorageFile({
+      const fingerprint = [file.name, file.size, file.type, file.lastModified].join(":");
+      const idempotencyKey =
+        logoUploadAttemptRef.current?.fingerprint === fingerprint
+          ? logoUploadAttemptRef.current.idempotencyKey
+          : createStorageOperationIdempotencyKey("file-upload", "branding-logo");
+      logoUploadAttemptRef.current = { fingerprint, idempotencyKey };
+      const uploadResponse = await smartHealthApi.uploadStorageFile({
         bucket: "avatars",
         file,
-        visibility: "public",
         tags: ["branding", "logo"],
+        idempotencyKey,
+      });
+      const storageFile = parseStorageFileOutcome(uploadResponse, {
+        name: file.name,
+        bucket: "avatars",
       });
       const branding = {
         ...settings.branding,
@@ -688,6 +787,7 @@ export function Settings() {
       setSettings(normalizeSettings(raw));
       setRuntime(normalizeRuntime(raw));
       setScope(normalizeScope(raw));
+      logoUploadAttemptRef.current = null;
       toast.success("Đã cập nhật logo hệ thống.");
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể tải logo."));
@@ -711,16 +811,6 @@ export function Settings() {
       toast.success("Đã gỡ logo hệ thống.");
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể gỡ logo."));
-    }
-  };
-
-  const handleCopy = async (key: string, value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(key);
-      window.setTimeout(() => setCopied(null), 1500);
-    } catch {
-      toast.error("Không thể sao chép vào clipboard.");
     }
   };
 
@@ -758,7 +848,11 @@ export function Settings() {
     try {
       if (settings.outbound.webhook.url && !runtime.outboundWebhook.configured) {
         const { settings: raw } = await smartHealthApi.updateSettings({
-          outbound: settings.outbound,
+          outbound: {
+            webhook: {
+              url: settings.outbound.webhook.url.trim(),
+            },
+          },
         });
         setSettings(normalizeSettings(raw));
         setRuntime(normalizeRuntime(raw));
@@ -777,89 +871,6 @@ export function Settings() {
     }
   };
 
-  const refreshSettingsFromResponse = (raw: Record<string, unknown>) => {
-    setSettings(normalizeSettings(raw));
-    setRuntime(normalizeRuntime(raw));
-    setScope(normalizeScope(raw));
-  };
-
-  const runBackupCheck = async () => {
-    setBackupChecking(true);
-    try {
-      const { settings: raw } = await smartHealthApi.runBackupCheck();
-      refreshSettingsFromResponse(raw);
-      toast.success("Đã kiểm tra trạng thái backup và storage.");
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể kiểm tra backup."));
-    } finally {
-      setBackupChecking(false);
-    }
-  };
-
-  const createApiKey = async () => {
-    setApiKeyAction("create");
-    try {
-      const { settings: raw, secret } = await smartHealthApi.createApiKey({
-        name: isWorkspaceScope ? "Workspace API Key" : "Platform API Key",
-      });
-      refreshSettingsFromResponse(raw);
-      if (secret) await navigator.clipboard.writeText(secret).catch(() => undefined);
-      toast.success(
-        secret ? "Đã tạo API key mới và sao chép secret một lần." : "Đã tạo API key mới.",
-      );
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể tạo API key."));
-    } finally {
-      setApiKeyAction(null);
-    }
-  };
-
-  const rotateApiKey = async (keyId: string) => {
-    setApiKeyAction(`rotate-${keyId}`);
-    try {
-      const { settings: raw, secret } = await smartHealthApi.rotateApiKey(keyId);
-      refreshSettingsFromResponse(raw);
-      if (secret) await navigator.clipboard.writeText(secret).catch(() => undefined);
-      toast.success(secret ? "Đã rotate API key và sao chép secret mới." : "Đã rotate API key.");
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể rotate API key."));
-    } finally {
-      setApiKeyAction(null);
-    }
-  };
-
-  const revokeApiKey = async (keyId: string) => {
-    setApiKeyAction(`revoke-${keyId}`);
-    try {
-      const { settings: raw } = await smartHealthApi.revokeApiKey(keyId);
-      refreshSettingsFromResponse(raw);
-      toast.success("Đã thu hồi API key.");
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể thu hồi API key."));
-    } finally {
-      setApiKeyAction(null);
-    }
-  };
-
-  const updateAiModel = async () => {
-    setAiUpdating(true);
-    try {
-      const check = await smartHealthApi.checkAiModelUpdate();
-      const update = check.update as { latestVersion?: string; available?: boolean } | undefined;
-      if (!update?.available) {
-        toast.success("AI model đã ở phiên bản mới nhất.");
-        return;
-      }
-      const { settings: raw } = await smartHealthApi.updateAiModel();
-      refreshSettingsFromResponse(raw);
-      toast.success(`Đã cập nhật AI model ${update.latestVersion || ""}.`);
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể cập nhật AI model."));
-    } finally {
-      setAiUpdating(false);
-    }
-  };
-
   const emailProviderLabel =
     runtime.email.provider === "brevo"
       ? "Brevo API"
@@ -874,17 +885,46 @@ export function Settings() {
   const webhookReason = webhookReady
     ? ""
     : "Chưa có OUTBOUND_WEBHOOK_URL hoặc Webhook URL trong settings.";
-  const unavailableReason = "Cần cấu hình backend/provider triển khai trước khi bật chức năng này.";
   const isWorkspaceScope = scope.type === "workspace";
   const settingsTitle = isWorkspaceScope ? "Cài đặt bệnh viện" : "Cài đặt hệ thống";
   const settingsDescription = isWorkspaceScope
     ? `Cấu hình áp dụng cho ${scope.name || "workspace hiện tại"}; dữ liệu được lưu riêng theo bệnh viện.`
-    : "Cấu hình nền tảng, branding, AI, kênh gửi thông báo và chính sách bảo mật.";
+    : "Cấu hình nền tảng, branding, phân tích tín hiệu, kênh gửi thông báo và chính sách bảo mật.";
+  const signalAnalysisAvailable = runtime.ai.scanAnalysis.available;
+  const analyzerVersion =
+    runtime.ai.scanAnalysis.analyzerVersion || settings.ai.analyzerVersion || settings.ai.version;
+  const chatProviderAvailable = runtime.ai.chatProvider.available;
+  const modelUpdateAvailable = settings.ai.updateSupported && runtime.ai.modelUpdate.available;
 
   if (isLoading) {
     return (
       <div className="flex h-[360px] items-center justify-center rounded-xl border border-border bg-card text-sm text-muted-foreground">
         Đang tải cài đặt...
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto flex min-h-[360px] w-full max-w-4xl items-center justify-center">
+        <div
+          role="alert"
+          className="w-full rounded-xl border border-destructive/30 bg-card p-6 text-center"
+        >
+          <AlertOctagon className="mx-auto h-8 w-8 text-destructive" aria-hidden="true" />
+          <h1 className="mt-3 text-lg font-semibold text-foreground">
+            Không thể tải cài đặt vận hành
+          </h1>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void loadSettings()}
+            className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Thử tải lại
+          </button>
+        </div>
       </div>
     );
   }
@@ -910,10 +950,10 @@ export function Settings() {
         </button>
       </div>
 
-      <Tabs.Root defaultValue="general" className="flex-1 flex flex-col">
+      <Tabs.Root defaultValue={initialTab} className="flex-1 flex flex-col">
         <Tabs.List className="flex space-x-6 border-b border-border mb-6 overflow-x-auto">
           <TabTrigger value="general" icon={Building} label="Chung" />
-          <TabTrigger value="ai" icon={BrainCircuit} label="AI & thiết bị" />
+          <TabTrigger value="ai" icon={BrainCircuit} label="Phân tích & thiết bị" />
           <TabTrigger value="notifications" icon={Bell} label="Kênh thông báo" />
           <TabTrigger value="security" icon={Shield} label="Bảo mật" />
           <TabTrigger value="deployment" icon={CheckCircle2} label="Triển khai" />
@@ -1018,129 +1058,129 @@ export function Settings() {
             </div>
           </Panel>
 
-          <Panel title="Storage và đồng bộ">
-            <div className="space-y-3">
-              <ToggleRow
-                title="Tự động đồng bộ dữ liệu"
-                description="Cho phép app đồng bộ metadata khi có mạng"
-                checked={settings.storage.autoSync}
-                onChange={(autoSync) =>
-                  patchSettings({ storage: { ...settings.storage, autoSync } })
-                }
-              />
-              <ToggleRow
-                title="Cloud backup"
-                description="Bật backup metadata và file quan trọng theo lịch backend"
-                checked={settings.storage.cloudBackup}
-                onChange={(cloudBackup) =>
-                  patchSettings({ storage: { ...settings.storage, cloudBackup } })
-                }
-              />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <NumberField
-                  label="Local quota MB"
-                  value={settings.storage.localTotalMb}
-                  onChange={(localTotalMb) =>
-                    patchSettings({ storage: { ...settings.storage, localTotalMb } })
-                  }
-                />
-                <NumberField
-                  label="Cloud quota MB"
-                  value={settings.storage.cloudTotalMb}
-                  onChange={(cloudTotalMb) =>
-                    patchSettings({ storage: { ...settings.storage, cloudTotalMb } })
-                  }
-                />
-              </div>
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="Storage và đồng bộ"
+            description="Chưa có hợp đồng thực thi cho lịch backup, đồng bộ app hoặc quota storage từ trang Settings. Quota thật được quản lý tại Gói dịch vụ và Storage; trạng thái provider được kiểm tra trong tab Triển khai."
+          />
         </Tabs.Content>
 
         <Tabs.Content value="ai" className="space-y-6">
-          <Panel title="Mô hình phân tích AI">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/20 p-4">
-                <div>
-                  <div className="font-medium text-foreground">{settings.ai.version}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    Model đang chọn: {settings.ai.selectedModel}
+          <Panel title="Phân tích tín hiệu">
+            <section
+              className="overflow-hidden rounded-xl border border-border"
+              aria-labelledby="signal-analysis-status-heading"
+            >
+              <div className="flex flex-col gap-4 bg-muted/20 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
+                <div className="flex min-w-0 gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <BrainCircuit className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3
+                      id="signal-analysis-status-heading"
+                      className="text-sm font-semibold text-foreground"
+                    >
+                      Chỉ kiểm tra chất lượng tín hiệu
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      Backend dùng bộ quy tắc cục bộ để đánh giá dữ liệu âm thanh đầu vào. Đây không
+                      phải mô hình chẩn đoán.
+                    </p>
                   </div>
                 </div>
-                <button
-                  onClick={updateAiModel}
-                  disabled={!runtime.aiModelUpdateAvailable || aiUpdating}
-                  title={runtime.aiModelUpdateAvailable ? undefined : unavailableReason}
-                  className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-                >
-                  {aiUpdating ? "Đang cập nhật..." : "Kiểm tra & cập nhật"}
-                </button>
+                <StatusBadge
+                  status={signalAnalysisAvailable ? "pass" : "warn"}
+                  label={signalAnalysisAvailable ? "Đang khả dụng" : "Không khả dụng"}
+                />
               </div>
-              <SelectField
-                label="Chế độ AI"
-                value={settings.ai.selectedModel}
-                onChange={(selectedModel) =>
-                  patchSettings({ ai: { ...settings.ai, selectedModel } })
-                }
-                options={["fast", "balanced", "high_accuracy"]}
-              />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <NumberField
-                  label="Độ tin cậy tối thiểu (%)"
-                  value={settings.ai.minConfidence}
-                  onChange={(minConfidence) =>
-                    patchSettings({ ai: { ...settings.ai, minConfidence } })
-                  }
-                />
-                <NumberField
-                  label="Độ nhiễu tối đa (dB)"
-                  value={settings.ai.maxNoiseDb}
-                  onChange={(maxNoiseDb) => patchSettings({ ai: { ...settings.ai, maxNoiseDb } })}
-                />
-                <NumberField
-                  label="Timeout AI job (giây)"
-                  value={settings.ai.timeoutSeconds}
-                  onChange={(timeoutSeconds) =>
-                    patchSettings({ ai: { ...settings.ai, timeoutSeconds } })
-                  }
-                />
+
+              <dl className="grid divide-y divide-border border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <div className="p-4">
+                  <dt className="text-xs text-muted-foreground">Phạm vi</dt>
+                  <dd className="mt-1 text-sm font-medium text-foreground">
+                    Chất lượng tín hiệu âm thanh
+                  </dd>
+                </div>
+                <div className="p-4">
+                  <dt className="text-xs text-muted-foreground">Bộ phân tích</dt>
+                  <dd className="mt-1 break-all font-mono text-sm font-medium text-foreground">
+                    {analyzerVersion || "Chưa có dữ liệu"}
+                  </dd>
+                </div>
+                <div className="p-4">
+                  <dt className="text-xs text-muted-foreground">Số liệu lâm sàng</dt>
+                  <dd className="mt-1 text-sm font-medium text-foreground">
+                    {settings.ai.accuracyMetricsAvailable
+                      ? "Backend đã cung cấp"
+                      : "Không có số liệu xác thực"}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="border-t border-border p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <MessageSquare
+                      className="mt-0.5 h-5 w-5 shrink-0 text-primary"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">
+                        Provider hỗ trợ hội thoại
+                      </h4>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        {chatProviderAvailable
+                          ? `${chatProviderLabel(runtime.ai.chatProvider.provider)}${runtime.ai.chatProvider.model ? ` · ${runtime.ai.chatProvider.model}` : ""}`
+                          : chatProviderReasonLabel(runtime.ai.chatProvider.reason)}
+                      </p>
+                    </div>
+                  </div>
+                  <StatusBadge
+                    status={chatProviderAvailable ? "pass" : "warn"}
+                    label={chatProviderAvailable ? "Đã cấu hình" : "Chưa cấu hình"}
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-border p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-foreground">
+                      Cập nhật mô hình lâm sàng
+                    </h4>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {modelUpdateAvailable
+                        ? "Backend đã báo có bản cập nhật; giao diện chưa bật thao tác này."
+                        : "Hệ thống chưa có provider hoặc quy trình cập nhật mô hình được xác thực."}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    status={modelUpdateAvailable ? "manual" : "unavailable"}
+                    label={modelUpdateAvailable ? "Chờ quy trình" : "Không hỗ trợ"}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <div
+              role="note"
+              className="flex gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4"
+            >
+              <Shield className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+              <div>
+                <h4 className="text-sm font-semibold text-foreground">Giới hạn lâm sàng</h4>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Không phát hiện bệnh, không đưa ra chẩn đoán và không thay thế đánh giá của người
+                  có chuyên môn.
+                </p>
               </div>
             </div>
           </Panel>
 
-          <Panel title="Ống nghe điện tử">
-            <div className="space-y-3">
-              <NumberField
-                label="Âm lượng mặc định"
-                value={settings.stethoscope.volume}
-                onChange={(volume) =>
-                  patchSettings({ stethoscope: { ...settings.stethoscope, volume } })
-                }
-              />
-              <NumberField
-                label="Độ nhạy microphone"
-                value={settings.stethoscope.sensitivity}
-                onChange={(sensitivity) =>
-                  patchSettings({ stethoscope: { ...settings.stethoscope, sensitivity } })
-                }
-              />
-              <ToggleRow
-                title="Khử nhiễu"
-                description="Áp dụng noise cancellation khi thu âm"
-                checked={settings.stethoscope.noiseCancel}
-                onChange={(noiseCancel) =>
-                  patchSettings({ stethoscope: { ...settings.stethoscope, noiseCancel } })
-                }
-              />
-              <ToggleRow
-                title="Tự kết nối thiết bị"
-                description="App sẽ ưu tiên kết nối thiết bị đã ghép đôi"
-                checked={settings.stethoscope.autoConnect}
-                onChange={(autoConnect) =>
-                  patchSettings({ stethoscope: { ...settings.stethoscope, autoConnect } })
-                }
-              />
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="Ống nghe điện tử"
+            description="Chưa có hợp đồng thực thi để đẩy âm lượng, độ nhạy, khử nhiễu hoặc tự kết nối từ Settings tới app và firmware. Cấu hình thiết bị chỉ được coi là áp dụng sau khi backend nhận lệnh và firmware ACK."
+          />
         </Tabs.Content>
 
         <Tabs.Content value="notifications" className="space-y-6">
@@ -1157,53 +1197,24 @@ export function Settings() {
               failText={emailReason}
             />
             <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Brevo API key và sender được lưu bằng env trên backend Render. Các ô SMTP bên dưới chỉ
-              là thông tin hiển thị/fallback cho hosting cho phép SMTP.
+              Provider, sender và thông tin SMTP được đọc từ runtime backend. Trang này không ghi đè
+              biến môi trường hoặc lưu credential.
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <ReadinessMeta label="Provider đang dùng" value={emailProviderLabel} />
+              <ReadinessMeta label="Sender runtime" value={runtime.email.from || "Chưa cấu hình"} />
+              <ReadinessMeta
+                label="SMTP fallback"
+                value={
+                  runtime.smtp.configured
+                    ? `${runtime.smtp.host || "SMTP"}${runtime.smtp.port ? `:${runtime.smtp.port}` : ""}`
+                    : "Không khả dụng"
+                }
+              />
+            </div>
+            <div className="max-w-md">
               <TextField
-                label="SMTP Host fallback"
-                value={settings.outbound.email.host}
-                onChange={(host) =>
-                  patchSettings({
-                    outbound: { ...settings.outbound, email: { ...settings.outbound.email, host } },
-                  })
-                }
-              />
-              <NumberField
-                label="SMTP Port fallback"
-                value={settings.outbound.email.port}
-                onChange={(port) =>
-                  patchSettings({
-                    outbound: { ...settings.outbound, email: { ...settings.outbound.email, port } },
-                  })
-                }
-              />
-              <TextField
-                label="Email gửi đi hiển thị"
-                type="email"
-                value={settings.outbound.email.from}
-                onChange={(from) =>
-                  patchSettings({
-                    outbound: { ...settings.outbound, email: { ...settings.outbound.email, from } },
-                  })
-                }
-              />
-              <SelectField
-                label="Mã hóa SMTP fallback"
-                value={settings.outbound.email.encryption}
-                onChange={(encryption) =>
-                  patchSettings({
-                    outbound: {
-                      ...settings.outbound,
-                      email: { ...settings.outbound.email, encryption },
-                    },
-                  })
-                }
-                options={["tls", "ssl", "none"]}
-              />
-              <TextField
-                label="Email nhận test"
+                label="Email nhận test (không lưu)"
                 type="email"
                 value={settings.outbound.email.testRecipient}
                 onChange={(testRecipient) =>
@@ -1256,54 +1267,11 @@ export function Settings() {
                   })
                 }
               />
-              <ToggleRow
-                title="Sự kiện thiết bị offline"
-                description="Kích hoạt khi thiết bị mất kết nối quá 30 phút"
-                checked={settings.outbound.webhook.events.deviceOffline}
-                onChange={(deviceOffline) =>
-                  patchSettings({
-                    outbound: {
-                      ...settings.outbound,
-                      webhook: {
-                        ...settings.outbound.webhook,
-                        events: { ...settings.outbound.webhook.events, deviceOffline },
-                      },
-                    },
-                  })
-                }
-              />
-              <ToggleRow
-                title="Sự kiện AI job thất bại"
-                description="Kích hoạt khi job AI không hoàn thành"
-                checked={settings.outbound.webhook.events.aiJobFailed}
-                onChange={(aiJobFailed) =>
-                  patchSettings({
-                    outbound: {
-                      ...settings.outbound,
-                      webhook: {
-                        ...settings.outbound.webhook,
-                        events: { ...settings.outbound.webhook.events, aiJobFailed },
-                      },
-                    },
-                  })
-                }
-              />
-              <ToggleRow
-                title="Sự kiện bác sĩ đăng ký mới"
-                description="Kích hoạt khi có bác sĩ cần duyệt"
-                checked={settings.outbound.webhook.events.doctorRegistered}
-                onChange={(doctorRegistered) =>
-                  patchSettings({
-                    outbound: {
-                      ...settings.outbound,
-                      webhook: {
-                        ...settings.outbound.webhook,
-                        events: { ...settings.outbound.webhook.events, doctorRegistered },
-                      },
-                    },
-                  })
-                }
-              />
+              <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
+                <span className="font-medium">Chưa có hợp đồng thực thi cho bộ lọc sự kiện.</span>{" "}
+                Webhook này hiện chỉ được backend xác nhận khi chạy test SMS/Zalo; Settings không
+                tuyên bố đã bật phát sự kiện thiết bị, phân tích hoặc đăng ký bác sĩ.
+              </div>
             </div>
           </Panel>
 
@@ -1359,285 +1327,32 @@ export function Settings() {
             </div>
           </Panel>
 
-          <Panel title="Loại thông báo hệ thống">
-            <div className="space-y-3">
-              <ToggleRow
-                title="Bật hệ thống thông báo"
-                description="Cho phép backend tạo notification in-app"
-                checked={settings.notifications.enabled}
-                onChange={(enabled) =>
-                  patchSettings({ notifications: { ...settings.notifications, enabled } })
-                }
-              />
-              <ToggleRow
-                title="Cảnh báo AI bất thường"
-                description="Thông báo khi AI phát hiện kết quả cần chú ý"
-                checked={settings.notifications.abnormalResults}
-                onChange={(abnormalResults) =>
-                  patchSettings({ notifications: { ...settings.notifications, abnormalResults } })
-                }
-              />
-              <ToggleRow
-                title="Thiết bị kết nối/offline"
-                description="Thông báo tình trạng thiết bị"
-                checked={settings.notifications.deviceConnection}
-                onChange={(deviceConnection) =>
-                  patchSettings({ notifications: { ...settings.notifications, deviceConnection } })
-                }
-              />
-              <ToggleRow
-                title="Tin nhắn và trao đổi"
-                description="Thông báo tin nhắn giữa admin, bác sĩ và phòng khám"
-                checked={settings.notifications.messages}
-                onChange={(messages) =>
-                  patchSettings({ notifications: { ...settings.notifications, messages } })
-                }
-              />
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="Loại thông báo hệ thống"
+            description="Chưa có hợp đồng thực thi để bật/tắt toàn cục từng loại notification từ Platform Settings. Audience và kênh gửi thật được quản lý trong Thông báo; tùy chọn cá nhân được quản lý ở Cài đặt tài khoản."
+          />
         </Tabs.Content>
 
         <Tabs.Content value="security" className="space-y-6">
-          <Panel title="Chính sách phiên đăng nhập">
-            <div className="space-y-4">
-              <NumberField
-                label="Thời gian hết phiên (phút)"
-                value={settings.securityPolicy.sessionTimeoutMinutes}
-                onChange={(sessionTimeoutMinutes) =>
-                  patchSettings({
-                    securityPolicy: { ...settings.securityPolicy, sessionTimeoutMinutes },
-                  })
-                }
-              />
-              <NumberField
-                label="Số thiết bị đăng nhập tối đa / tài khoản"
-                value={settings.securityPolicy.maxSessionsPerUser}
-                onChange={(maxSessionsPerUser) =>
-                  patchSettings({
-                    securityPolicy: { ...settings.securityPolicy, maxSessionsPerUser },
-                  })
-                }
-              />
-              <ToggleRow
-                title="Bắt buộc 2FA cho admin"
-                description={
-                  runtime.twoFactorAvailable ? "Áp dụng cho mọi tài khoản admin" : unavailableReason
-                }
-                checked={settings.securityPolicy.requireAdmin2fa}
-                disabled={!runtime.twoFactorAvailable}
-                onChange={(requireAdmin2fa) =>
-                  patchSettings({ securityPolicy: { ...settings.securityPolicy, requireAdmin2fa } })
-                }
-              />
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="Chính sách phiên đăng nhập"
+            description="Chưa có hợp đồng thực thi cho thời gian hết phiên, giới hạn số phiên hoặc bắt buộc 2FA toàn cục. Phiên và 2FA của từng tài khoản được quản lý trong Cài đặt tài khoản; Settings không thay đổi enforcement đăng nhập."
+          />
 
-          <Panel title="Chính sách mật khẩu">
-            <div className="space-y-3">
-              <NumberField
-                label="Độ dài tối thiểu"
-                value={settings.securityPolicy.passwordRules.minLength}
-                onChange={(minLength) =>
-                  patchSettings({
-                    securityPolicy: {
-                      ...settings.securityPolicy,
-                      passwordRules: { ...settings.securityPolicy.passwordRules, minLength },
-                    },
-                  })
-                }
-              />
-              <ToggleRow
-                title="Bắt buộc chữ hoa và chữ thường"
-                description="Áp dụng cho luồng đổi mật khẩu backend"
-                checked={settings.securityPolicy.passwordRules.requireMixedCase}
-                onChange={(requireMixedCase) =>
-                  patchSettings({
-                    securityPolicy: {
-                      ...settings.securityPolicy,
-                      passwordRules: { ...settings.securityPolicy.passwordRules, requireMixedCase },
-                    },
-                  })
-                }
-              />
-              <ToggleRow
-                title="Bắt buộc ít nhất 1 số"
-                description="Áp dụng cho luồng đổi mật khẩu backend"
-                checked={settings.securityPolicy.passwordRules.requireNumber}
-                onChange={(requireNumber) =>
-                  patchSettings({
-                    securityPolicy: {
-                      ...settings.securityPolicy,
-                      passwordRules: { ...settings.securityPolicy.passwordRules, requireNumber },
-                    },
-                  })
-                }
-              />
-              <ToggleRow
-                title="Bắt buộc ký tự đặc biệt"
-                description="Áp dụng cho luồng đổi mật khẩu backend"
-                checked={settings.securityPolicy.passwordRules.requireSpecial}
-                onChange={(requireSpecial) =>
-                  patchSettings({
-                    securityPolicy: {
-                      ...settings.securityPolicy,
-                      passwordRules: { ...settings.securityPolicy.passwordRules, requireSpecial },
-                    },
-                  })
-                }
-              />
-              <NumberField
-                label="Hết hạn mật khẩu sau số ngày (0 = tắt)"
-                value={settings.securityPolicy.passwordRules.expireDays}
-                onChange={(expireDays) =>
-                  patchSettings({
-                    securityPolicy: {
-                      ...settings.securityPolicy,
-                      passwordRules: { ...settings.securityPolicy.passwordRules, expireDays },
-                    },
-                  })
-                }
-              />
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="Chính sách mật khẩu"
+            description="Chưa có hợp đồng thực thi để áp dụng bộ quy tắc mật khẩu từ Platform Settings cho Firebase Auth và luồng đổi mật khẩu. Các giá trị từng được lưu ở đây chỉ là metadata, không được hiển thị như chính sách đang hoạt động."
+          />
 
-          <Panel title="IP whitelist, retention và rate limit">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Danh sách IP cho phép</label>
-                <textarea
-                  value={settings.securityPolicy.ipWhitelist}
-                  onChange={(event) =>
-                    patchSettings({
-                      securityPolicy: {
-                        ...settings.securityPolicy,
-                        ipWhitelist: event.target.value,
-                      },
-                    })
-                  }
-                  rows={3}
-                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring"
-                  placeholder="Mỗi dòng một IP hoặc CIDR"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <NumberField
-                  label="Data retention (ngày)"
-                  value={settings.securityPolicy.retentionDays}
-                  onChange={(retentionDays) =>
-                    patchSettings({ securityPolicy: { ...settings.securityPolicy, retentionDays } })
-                  }
-                />
-                <NumberField
-                  label="Rate limit / phút"
-                  value={settings.securityPolicy.rateLimitPerMinute}
-                  onChange={(rateLimitPerMinute) =>
-                    patchSettings({
-                      securityPolicy: { ...settings.securityPolicy, rateLimitPerMinute },
-                    })
-                  }
-                />
-              </div>
-              <ToggleRow
-                title="Mã hóa dữ liệu nhạy cảm"
-                description="Giữ bật để hiển thị cảnh báo vận hành"
-                checked={settings.privacy.encryption}
-                onChange={(encryption) =>
-                  patchSettings({ privacy: { ...settings.privacy, encryption } })
-                }
-              />
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="IP whitelist, retention, rate limit và mã hóa"
+            description="Chưa có hợp đồng thực thi cho các control này. Rate limit và khóa mã hóa do cấu hình backend quyết định; retention phải được áp dụng bằng job xóa có audit. Tab Triển khai chỉ báo trạng thái thật, không cho đổi local state."
+          />
 
-          <Panel title="Backup và API keys">
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border bg-muted/20 p-4">
-                <div className="font-medium text-sm">Backup/restore</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Kiểm tra trạng thái dữ liệu, storage và phạm vi vận hành hiện tại.
-                  {settings.securityPolicy.lastBackupCheckAt
-                    ? ` Lần kiểm tra gần nhất: ${settings.securityPolicy.lastBackupCheckAt}.`
-                    : ""}
-                </div>
-                <button
-                  onClick={runBackupCheck}
-                  disabled={!runtime.backupTestAvailable || backupChecking}
-                  title={runtime.backupTestAvailable ? undefined : unavailableReason}
-                  className="mt-3 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                >
-                  {backupChecking ? "Đang kiểm tra..." : "Kiểm tra backup"}
-                </button>
-              </div>
-              {settings.securityPolicy.apiKeys.map((apiKey, idx) => {
-                const isRevoked = apiKey.status === "revoked";
-                return (
-                  <div
-                    key={apiKey.id}
-                    className={`flex items-center justify-between gap-4 rounded-lg border p-4 ${
-                      isRevoked
-                        ? "border-border bg-muted/10 opacity-70"
-                        : "border-border bg-muted/20"
-                    }`}
-                  >
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        <span>{apiKey.name}</span>
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                          {apiKey.status}
-                        </span>
-                      </div>
-                      <div className="mt-1 font-mono text-xs text-muted-foreground">
-                        {apiKey.keyPreview}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        Scope: {apiKey.scope || "workspace"}
-                        {apiKey.lastRotatedAt ? ` • Rotate: ${apiKey.lastRotatedAt}` : ""}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => void handleCopy(`key-${idx}`, apiKey.keyPreview)}
-                        className="rounded border border-border p-1.5 hover:bg-muted"
-                        title="Sao chép"
-                      >
-                        {copied === `key-${idx}` ? (
-                          <CheckCircle2 className="h-4 w-4 text-success" />
-                        ) : (
-                          <Copy className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => void rotateApiKey(apiKey.id)}
-                        disabled={
-                          !runtime.apiKeyRotationAvailable || isRevoked || apiKeyAction !== null
-                        }
-                        title="Rotate API key"
-                        className="rounded border border-border p-1.5 hover:bg-muted disabled:opacity-50"
-                      >
-                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                      <button
-                        onClick={() => void revokeApiKey(apiKey.id)}
-                        disabled={isRevoked || apiKeyAction !== null}
-                        title="Thu hồi API key"
-                        className="rounded border border-destructive/30 p-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                      >
-                        <AlertOctagon className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              <button
-                onClick={createApiKey}
-                disabled={!runtime.apiKeyRotationAvailable || apiKeyAction !== null}
-                title={runtime.apiKeyRotationAvailable ? undefined : unavailableReason}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
-              >
-                <KeyRound className="w-4 h-4" />{" "}
-                {apiKeyAction === "create" ? "Đang tạo..." : "Tạo API Key mới"}
-              </button>
-            </div>
-          </Panel>
+          <UnavailablePanel
+            title="Backup và API keys"
+            description="Chưa có hợp đồng thực thi để xác minh bản backup có thể khôi phục hoặc dùng API key làm credential. Vì vậy trang này không tạo, rotate, thu hồi key hay báo kiểm tra backup thành công. Các hàng key mẫu/preview cũ không được coi là khóa hoạt động."
+          />
         </Tabs.Content>
 
         <Tabs.Content value="deployment" className="space-y-6">
@@ -1755,6 +1470,20 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <h3 className="text-base font-semibold">{title}</h3>
       {children}
     </div>
+  );
+}
+
+function UnavailablePanel({ title, description }: { title: string; description: string }) {
+  return (
+    <Panel title={title}>
+      <div className="flex gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4">
+        <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+        <div className="min-w-0">
+          <StatusBadge status="unavailable" label="Chưa hỗ trợ" />
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
@@ -1896,28 +1625,6 @@ function TextField({
   );
 }
 
-function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
-      <input
-        type="number"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-      />
-    </div>
-  );
-}
-
 function SelectField({
   label,
   value,
@@ -1943,30 +1650,6 @@ function SelectField({
           </option>
         ))}
       </select>
-    </div>
-  );
-}
-
-function ToggleRow({
-  title,
-  description,
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
-      <div>
-        <div className="text-sm font-medium">{title}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
-      </div>
-      <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} aria-label={title} />
     </div>
   );
 }
@@ -2025,7 +1708,7 @@ function ChannelTester({
         onChange={onProviderChange}
         options={["webhook"]}
       />
-      <TextField label="Người nhận test" value={value} onChange={onRecipientChange} />
+      <TextField label="Người nhận test (không lưu)" value={value} onChange={onRecipientChange} />
       <button
         onClick={onTest}
         disabled={disabled || loading || !value.trim()}

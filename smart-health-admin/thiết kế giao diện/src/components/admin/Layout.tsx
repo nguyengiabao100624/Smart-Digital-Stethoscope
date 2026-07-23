@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Link, Outlet, useLocation, useNavigate } from "@/components/admin/router-shim";
 import {
   LayoutDashboard,
@@ -24,6 +24,7 @@ import {
   Database,
   ShieldCheck,
   UserCog,
+  type LucideIcon,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
@@ -51,184 +52,62 @@ import {
   NOTIFICATION_SYNC_EVENT,
 } from "@/lib/notification-events";
 import { AdminAccessProvider } from "./AdminAccessContext";
+import { ThemeToggle } from "./ThemeToggle";
 import { userHasAnyCapability } from "./admin-access-context";
+import {
+  findAdminRouteContract,
+  getAdminNavigationContracts,
+  type AdminNavigationRouteContract,
+  type AdminNavigationRouteContractId,
+} from "@/contracts/admin-route-contract";
 import {
   getSurfaceAccessTargetUrl,
   getWrongSurfaceMessage,
   hasCurrentWebSurfaceAccess,
   IS_ADMIN_SURFACE,
   IS_PORTAL_SURFACE,
+  WEB_SURFACE,
   WEB_SURFACE_TITLE,
 } from "@/lib/surface";
+import { parseOverviewStatsResponse } from "@/lib/overview-operations";
 
-const ADMIN_MENU_ITEMS = [
-  {
-    path: "/",
-    label: "Tổng quan",
-    icon: LayoutDashboard,
-    capabilities: ["platform.dashboard.view"],
-  },
-  {
-    path: "/doctor-approval",
-    label: "Duyệt bác sĩ",
-    icon: UserCheck,
-    capabilities: ["platform.doctorRequests.manage"],
-  },
-  {
-    path: "/clinics",
-    label: "Phòng khám",
-    icon: Building2,
-    capabilities: ["platform.workspaces.manage"],
-  },
-  {
-    path: "/doctors",
-    label: "Tài khoản bác sĩ",
-    icon: Stethoscope,
-    capabilities: ["platform.users.manage"],
-  },
-  {
-    path: "/devices",
-    label: "Thiết bị",
-    icon: MonitorSpeaker,
-    capabilities: ["platform.devices.view", "platform.devices.manage"],
-  },
-  {
-    path: "/ai-measurements",
-    label: "Lượt đo & AI",
-    icon: Activity,
-    capabilities: ["platform.scans.view", "platform.scans.manage"],
-  },
-  {
-    path: "/admin-actions",
-    label: "Hành động quản trị",
-    icon: ShieldCheck,
-    capabilities: [
-      "platform.workspaces.manage",
-      "platform.users.manage",
-      "platform.devices.manage",
-      "platform.packages.manage",
-      "platform.storage.manage",
-      "platform.settings.manage",
-    ],
-  },
-  {
-    path: "/admin-accounts",
-    label: "Tài khoản admin",
-    icon: UserCog,
-    capabilities: ["platform.users.manage"],
-  },
-  {
-    path: "/packages",
-    label: "Gói dịch vụ",
-    icon: Package,
-    capabilities: ["platform.packages.manage"],
-  },
-  {
-    path: "/notifications",
-    label: "Thông báo",
-    icon: Bell,
-    capabilities: ["notifications.view"],
-  },
-  {
-    path: "/audit-log",
-    label: "Audit toàn hệ thống",
-    icon: FileText,
-    capabilities: ["platform.audit.view"],
-  },
-  {
-    path: "/settings",
-    label: "Cấu hình hệ thống",
-    icon: Settings,
-    capabilities: ["platform.settings.manage", "account.manage"],
-  },
-];
+const ROUTE_ICONS = {
+  "admin.overview": LayoutDashboard,
+  "admin.doctor-approval": UserCheck,
+  "admin.clinics": Building2,
+  "admin.patients": Users,
+  "admin.doctors": Stethoscope,
+  "admin.devices": MonitorSpeaker,
+  "admin.ai-measurements": Activity,
+  "admin.admin-actions": ShieldCheck,
+  "admin.admin-accounts": UserCog,
+  "admin.packages": Package,
+  "admin.storage": Database,
+  "admin.notifications": Bell,
+  "admin.audit-log": FileText,
+  "admin.settings": Settings,
+  "portal.overview": LayoutDashboard,
+  "portal.patients": Users,
+  "portal.ai-measurements": Activity,
+  "portal.devices": MonitorSpeaker,
+  "portal.doctors": Stethoscope,
+  "portal.storage": Database,
+  "portal.notifications": Bell,
+  "portal.audit-log": FileText,
+  "portal.settings": Settings,
+} satisfies Record<AdminNavigationRouteContractId, LucideIcon>;
 
-const PORTAL_MENU_ITEMS = [
-  {
-    path: "/",
-    label: "Tổng quan",
-    icon: LayoutDashboard,
-    capabilities: ["workspace.dashboard.view"],
-  },
-  {
-    path: "/patients",
-    label: "Bệnh nhân",
-    icon: Users,
-    capabilities: ["workspace.patients.view", "workspace.patients.manage"],
-  },
-  {
-    path: "/ai-measurements",
-    label: "Lượt đo & theo dõi",
-    icon: Activity,
-    capabilities: ["workspace.scans.view", "workspace.scans.manage"],
-  },
-  {
-    path: "/devices",
-    label: "Thiết bị",
-    icon: MonitorSpeaker,
-    capabilities: ["workspace.devices.view", "workspace.devices.manage"],
-  },
-  {
-    path: "/doctors",
-    label: "Bác sĩ/nhân sự",
-    icon: Stethoscope,
-    capabilities: ["workspace.staff.manage"],
-  },
-  {
-    path: "/storage",
-    label: "Hồ sơ & lưu trữ",
-    icon: Database,
-    capabilities: ["workspace.storage.manage", "workspace.scans.view"],
-  },
-  {
-    path: "/notifications",
-    label: "Thông báo",
-    icon: Bell,
-    capabilities: ["notifications.view"],
-  },
-  {
-    path: "/audit-log",
-    label: "Nhật ký vận hành",
-    icon: FileText,
-    capabilities: ["workspace.audit.view"],
-  },
-  {
-    path: "/settings",
-    label: "Cài đặt workspace",
-    icon: Settings,
-    capabilities: ["workspace.settings.manage", "account.manage"],
-  },
-];
+function toMenuItem(contract: AdminNavigationRouteContract) {
+  const icon = ROUTE_ICONS[contract.id];
+  return {
+    id: contract.id,
+    path: contract.path,
+    label: contract.nav.label,
+    icon,
+  };
+}
 
-const MENU_ITEMS = IS_PORTAL_SURFACE ? PORTAL_MENU_ITEMS : ADMIN_MENU_ITEMS;
-
-type MenuItem = (typeof ADMIN_MENU_ITEMS)[number] | (typeof PORTAL_MENU_ITEMS)[number];
-
-const ROUTE_ACCESS_RULES: Array<{
-  path: string;
-  capabilities: MenuItem["capabilities"];
-}> = [
-  ...MENU_ITEMS.map(({ path, capabilities }) => ({ path, capabilities })),
-  {
-    path: "/account",
-    capabilities: ["account.manage"],
-  },
-  ...(IS_ADMIN_SURFACE
-    ? [
-        {
-          path: "/admin-actions",
-          capabilities: [
-            "platform.workspaces.manage",
-            "platform.users.manage",
-            "platform.devices.manage",
-            "platform.packages.manage",
-            "platform.storage.manage",
-            "platform.settings.manage",
-          ],
-        },
-      ]
-    : []),
-];
+type MenuItem = ReturnType<typeof toMenuItem>;
 
 const formatBadgeCount = (count: number) => (count > 99 ? "99+" : String(count));
 
@@ -238,12 +117,6 @@ const workspaceTypeLabels: Record<string, string> = {
   solo_practice: "Bác sĩ tư",
   personal: "Cá nhân/gia đình",
 };
-
-function getRouteAccessRule(pathname: string) {
-  return ROUTE_ACCESS_RULES.find(
-    (item) => pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path)),
-  );
-}
 
 function AccessDeniedPanel({ onNavigate }: { onNavigate: () => void }) {
   return (
@@ -319,6 +192,24 @@ function mapNotification(notification: SmartHealthNotification): NotificationIte
     time: formatNotificationTime(notification.createdAt || notification.updatedAt),
     type: notification.type || "info",
     isRead: Boolean(notification.read),
+    channel: notification.channel,
+    campaignId: notification.campaignId,
+    audienceType: notification.audienceType,
+    audienceRole: notification.audienceRole,
+    requestedChannels: notification.requestedChannels,
+    inAppStatus: notification.inAppStatus,
+    emailStatus: notification.emailStatus,
+    organizationId: notification.organizationId,
+    userId: notification.userId,
+    deliveryStatus: notification.deliveryStatus,
+    pushStatus: notification.pushStatus,
+    sentAt: notification.sentAt,
+    failedAt: notification.failedAt,
+    pushSentAt: notification.pushSentAt,
+    pushFailedAt: notification.pushFailedAt,
+    readAt: notification.readAt,
+    retryCount: notification.retryCount,
+    metadata: notification.metadata,
   };
 }
 
@@ -416,6 +307,7 @@ function SidebarNav({
   onItemClick?: () => void;
 }) {
   const isRail = variant === "rail";
+  const shouldReduceMotion = useReducedMotion();
   return (
     <Tooltip.Provider delayDuration={200}>
       <nav className={`space-y-1 ${isRail ? "px-2" : "px-3"}`}>
@@ -427,8 +319,9 @@ function SidebarNav({
             <Link
               to={item.path}
               onClick={onItemClick}
+              aria-label={isRail ? item.label : undefined}
               className={`relative flex min-w-0 items-center ${
-                isRail ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5"
+                isRail ? "min-h-11 justify-center px-2 py-2.5" : "min-h-11 gap-3 px-3 py-2.5"
               } rounded-md font-medium transition-colors ${
                 isActive
                   ? "text-primary-foreground"
@@ -461,9 +354,11 @@ function SidebarNav({
           return (
             <motion.div
               key={item.path}
-              initial={{ opacity: 0, x: -8 }}
+              initial={shouldReduceMotion ? false : { opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.03, duration: 0.25 }}
+              transition={
+                shouldReduceMotion ? { duration: 0 } : { delay: idx * 0.03, duration: 0.25 }
+              }
             >
               {isRail ? (
                 <Tooltip.Root>
@@ -492,6 +387,7 @@ function SidebarNav({
 export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const shouldReduceMotion = useReducedMotion();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [topNotifications, setTopNotifications] = useState<NotificationItem[]>([]);
@@ -503,28 +399,31 @@ export function Layout() {
   const [surfaceBlockedUser, setSurfaceBlockedUser] = useState<SmartHealthAuthUser | null>(null);
   const [accessCheckComplete, setAccessCheckComplete] = useState(false);
   const visibleMenuItems = useMemo(() => {
-    const capabilities = new Set(currentUser?.capabilities || []);
-    if (!currentUser || capabilities.size === 0) return [];
-    if (currentUser.role === "admin") return MENU_ITEMS;
-    return MENU_ITEMS.filter((item) =>
-      item.capabilities.some((capability) => capabilities.has(capability)),
-    );
+    if (!currentUser) return [];
+    return getAdminNavigationContracts(
+      WEB_SURFACE,
+      currentUser.capabilities || [],
+      currentUser.role === "admin",
+    ).map(toMenuItem);
   }, [currentUser]);
   const activeAccessRule = useMemo(
-    () => getRouteAccessRule(location.pathname),
+    () => findAdminRouteContract(WEB_SURFACE, location.pathname),
     [location.pathname],
   );
   const isRouteAllowed = useMemo(() => {
     if (!activeAccessRule) return false;
     if (!currentUser) return false;
-    return userHasAnyCapability(currentUser, activeAccessRule.capabilities);
+    return userHasAnyCapability(currentUser, activeAccessRule.requiredCapabilities);
   }, [activeAccessRule, currentUser]);
   const firstAllowedPath = visibleMenuItems[0]?.path || "/";
 
   const refreshEventBadges = useCallback(async () => {
     const [notificationsResult, overviewResult, devicesResult] = await Promise.allSettled([
       smartHealthApi.listNotifications(),
-      smartHealthApi.getOverviewStats(),
+      smartHealthApi.getOverviewStats({
+        range: "today",
+        timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
+      }),
       smartHealthApi.listDevices(),
     ]);
 
@@ -539,9 +438,13 @@ export function Layout() {
     }
 
     if (overviewResult.status === "fulfilled") {
-      const stats = overviewResult.value.stats;
-      nextBadges["/doctor-approval"] = stats.pendingDoctors || 0;
-      nextBadges["/ai-measurements"] = stats.aiJobsFailed || 0;
+      try {
+        const overview = parseOverviewStatsResponse(overviewResult.value, "today");
+        nextBadges["/doctor-approval"] = overview.stats.pendingDoctors || 0;
+        nextBadges["/ai-measurements"] = overview.stats.aiJobsFailed || 0;
+      } catch {
+        // A malformed summary must not turn into a synthetic zero badge.
+      }
     }
 
     if (devicesResult.status === "fulfilled") {
@@ -856,7 +759,7 @@ export function Layout() {
                   </div>
                   <button
                     onClick={() => setMobileOpen(false)}
-                    className="p-1.5 rounded-md hover:bg-sidebar-accent text-sidebar-foreground"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent"
                     aria-label="Đóng menu"
                   >
                     <X className="w-5 h-5" />
@@ -884,7 +787,7 @@ export function Layout() {
               {/* Hamburger – mobile only */}
               <button
                 onClick={() => setMobileOpen(true)}
-                className="md:hidden p-2 -ml-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="-ml-2 inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
                 aria-label="Mở menu"
               >
                 <Menu className="w-5 h-5" />
@@ -898,14 +801,14 @@ export function Layout() {
                   name="admin-global-search"
                   type="text"
                   placeholder={searchPlaceholder}
-                  className="w-full pl-9 pr-4 py-2 bg-input-background border-transparent rounded-md focus:border-ring focus:ring-1 focus:ring-ring outline-none text-sm transition-all"
+                  className="min-h-11 w-full rounded-md border-transparent bg-input-background py-2 pl-9 pr-4 text-sm outline-none transition-all focus:border-ring focus:ring-1 focus:ring-ring"
                 />
               </div>
 
               {/* Mobile search icon */}
               <button
                 onClick={() => setMobileSearchOpen((v) => !v)}
-                className="md:hidden p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
                 aria-label="Tìm kiếm"
               >
                 <Search className="w-5 h-5" />
@@ -925,9 +828,15 @@ export function Layout() {
                 </div>
               </div>
 
+              <ThemeToggle />
+
               <Popover.Root>
                 <Popover.Trigger asChild>
-                  <button className="relative p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted">
+                  <button
+                    type="button"
+                    aria-label="Mở thông báo"
+                    className="relative inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
                     <Bell className="w-5 h-5" />
                     {unreadNotificationCount > 0 && (
                       <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold leading-none text-destructive-foreground shadow-sm ring-2 ring-card">
@@ -1031,7 +940,11 @@ export function Layout() {
 
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
-                  <button className="flex items-center gap-2 outline-none">
+                  <button
+                    type="button"
+                    aria-label="Mở menu tài khoản"
+                    className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-semibold text-primary">
                       {adminInitial}
                     </span>
@@ -1099,7 +1012,7 @@ export function Layout() {
                     autoFocus
                     type="text"
                     placeholder="Tìm kiếm..."
-                    className="w-full pl-9 pr-3 py-2 bg-input-background rounded-md outline-none text-sm focus:ring-1 focus:ring-ring"
+                    className="min-h-11 w-full rounded-md bg-input-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
               </motion.div>
@@ -1111,10 +1024,12 @@ export function Layout() {
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
-                initial={{ opacity: 0, y: 8 }}
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}
+                transition={
+                  shouldReduceMotion ? { duration: 0 } : { duration: 0.22, ease: "easeOut" }
+                }
               >
                 {!accessCheckComplete ? (
                   <AccessCheckingPanel />

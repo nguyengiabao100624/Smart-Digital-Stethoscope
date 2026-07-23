@@ -5,11 +5,9 @@ import {
   Copy,
   Download,
   FileText,
-  Globe2,
   HardDrive,
   Lock,
   Share2,
-  Shield,
   Trash2,
   User as UserIcon,
   X,
@@ -26,10 +24,9 @@ export interface StorageFile {
   size: string;
   uploader: string;
   uploadedAt: string;
-  visibility: "public" | "private" | "encrypted";
+  visibility: "private";
   previewUrl?: string;
   downloadUrl?: string;
-  shareUrl?: string;
   createdAt?: string;
   byteSize?: number;
   tags?: string[];
@@ -54,23 +51,31 @@ export function FileDetailDialog({
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [sharing, setSharing] = useState(false);
+  const [generatedShareLink, setGeneratedShareLink] = useState<{
+    fileId: string;
+    url: string;
+  } | null>(null);
   if (!file) return null;
 
-  const visibleShareUrl = file.shareUrl || file.downloadUrl || "";
+  const visibleShareUrl = generatedShareLink?.fileId === file.id ? generatedShareLink.url : "";
 
   const copyLink = async () => {
+    if (!onShare) return;
+    setSharing(true);
     try {
-      const url = (await onShare?.(file)) || visibleShareUrl;
-      if (!url) {
-        toast.error("Tệp này chưa có liên kết chia sẻ");
-        return;
-      }
+      const createdUrl = visibleShareUrl || (await onShare(file));
+      const url = typeof createdUrl === "string" ? createdUrl.trim() : "";
+      if (!url) throw new Error("Backend chưa trả về liên kết chia sẻ hợp lệ.");
+      setGeneratedShareLink({ fileId: file.id, url });
       await navigator.clipboard.writeText(url);
       setCopied(true);
       toast.success("Đã sao chép liên kết");
       setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể tạo liên kết chia sẻ."));
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -143,23 +148,7 @@ export function FileDetailDialog({
                     <Row icon={HardDrive} label="Bucket" value={file.bucket} />
                     <Row icon={UserIcon} label="Người tải" value={file.uploader} />
                     <Row icon={Clock} label="Ngày tải" value={file.uploadedAt} />
-                    <Row
-                      icon={
-                        file.visibility === "public"
-                          ? Globe2
-                          : file.visibility === "encrypted"
-                            ? Shield
-                            : Lock
-                      }
-                      label="Quyền"
-                      value={
-                        file.visibility === "public"
-                          ? "Công khai"
-                          : file.visibility === "encrypted"
-                            ? "Mã hóa AES-256"
-                            : "Riêng tư"
-                      }
-                    />
+                    <Row icon={Lock} label="Quyền" value="Theo quyền workspace" />
                   </div>
                 </section>
 
@@ -181,92 +170,88 @@ export function FileDetailDialog({
                   </section>
                 ) : null}
 
-                <section>
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Liên kết chia sẻ
-                  </h3>
-                  <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
-                    <span className="flex-1 truncate font-mono text-xs text-muted-foreground">
-                      {visibleShareUrl || "Bấm Chia sẻ để tạo liên kết"}
-                    </span>
-                    <button
-                      onClick={copyLink}
-                      className="text-muted-foreground hover:text-primary"
-                      title="Sao chép"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  </div>
-                  {copied ? <p className="mt-1 text-xs text-success">Đã sao chép!</p> : null}
-                </section>
-
-                <section>
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Lịch sử truy cập
-                  </h3>
-                  <div className="relative ml-1.5 space-y-2.5 border-l-2 border-border pl-4">
-                    {[
-                      { t: "Vừa xong", d: "Quản trị viên mở chi tiết tệp" },
-                      { t: "Gần đây", d: "Hệ thống kiểm tra quyền truy cập" },
-                      { t: file.uploadedAt, d: "Tệp được ghi nhận trong storage" },
-                    ].map((event, index) => (
-                      <div key={index} className="relative">
-                        <div className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-card" />
-                        <div className="text-xs text-muted-foreground">{event.t}</div>
-                        <div className="text-sm">{event.d}</div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                {onShare ? (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Liên kết chia sẻ
+                    </h3>
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+                      <span className="flex-1 truncate font-mono text-xs text-muted-foreground">
+                        {visibleShareUrl || "Bấm Chia sẻ để tạo liên kết"}
+                      </span>
+                      <button
+                        onClick={copyLink}
+                        disabled={sharing}
+                        aria-label={
+                          sharing ? "Đang tạo liên kết chia sẻ" : "Tạo và sao chép liên kết"
+                        }
+                        className="text-muted-foreground hover:text-primary"
+                        title="Tạo và sao chép liên kết"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {copied ? <p className="mt-1 text-xs text-success">Đã sao chép!</p> : null}
+                  </section>
+                ) : null}
               </div>
             </div>
 
             <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/20 p-4">
-              <button
-                onClick={copyLink}
-                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-              >
-                <Share2 className="h-4 w-4" /> Chia sẻ
-              </button>
-              <button
-                onClick={() => onDownload?.(file)}
-                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-              >
-                <Download className="h-4 w-4" /> Tải xuống
-              </button>
-              <button
-                onClick={() => {
-                  setDeleteError("");
-                  setConfirmDeleteOpen(true);
-                }}
-                disabled={deleting}
-                className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
-              >
-                <Trash2 className="h-4 w-4" /> {deleting ? "Đang xóa..." : "Xóa tệp"}
-              </button>
+              {onShare ? (
+                <button
+                  onClick={copyLink}
+                  disabled={sharing}
+                  className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                >
+                  <Share2 className="h-4 w-4" /> {sharing ? "Đang tạo..." : "Chia sẻ"}
+                </button>
+              ) : null}
+              {onDownload ? (
+                <button
+                  onClick={() => onDownload(file)}
+                  className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                >
+                  <Download className="h-4 w-4" /> Tải xuống
+                </button>
+              ) : null}
+              {onDelete ? (
+                <button
+                  onClick={() => {
+                    setDeleteError("");
+                    setConfirmDeleteOpen(true);
+                  }}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
+                >
+                  <Trash2 className="h-4 w-4" /> {deleting ? "Đang xóa..." : "Xóa tệp"}
+                </button>
+              ) : null}
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      <ConfirmActionDialog
-        open={confirmDeleteOpen}
-        onOpenChange={(open) => {
-          setConfirmDeleteOpen(open);
-          if (!open) setDeleteError("");
-        }}
-        title="Xóa tệp lưu trữ"
-        description={
-          <span>
-            Bạn có chắc chắn muốn xóa <strong>{file.name}</strong>? Hành động này không thể hoàn
-            tác.
-          </span>
-        }
-        confirmLabel="Xóa tệp"
-        tone="danger"
-        loading={deleting}
-        error={deleteError}
-        onConfirm={deleteFile}
-      />
+      {onDelete ? (
+        <ConfirmActionDialog
+          open={confirmDeleteOpen}
+          onOpenChange={(open) => {
+            setConfirmDeleteOpen(open);
+            if (!open) setDeleteError("");
+          }}
+          title="Xóa tệp lưu trữ"
+          description={
+            <span>
+              Bạn có chắc chắn muốn xóa <strong>{file.name}</strong>? Hành động này không thể hoàn
+              tác.
+            </span>
+          }
+          confirmLabel="Xóa tệp"
+          tone="danger"
+          loading={deleting}
+          error={deleteError}
+          onConfirm={deleteFile}
+        />
+      ) : null}
     </>
   );
 }

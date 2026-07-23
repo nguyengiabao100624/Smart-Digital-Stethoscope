@@ -1,308 +1,403 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.ai.AiChatLoadState
+import com.example.smart_health_android.ai.AiChatUiAction
+import com.example.smart_health_android.ai.AiChatUiState
+import com.example.smart_health_android.ai.AiChatViewModel
 import com.example.smart_health_android.data.AiChatMessage
-import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.formatIso
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
-data class ChatMessage(
-    val id: String,
-    val role: String, // "user" or "assistant"
-    val content: String,
-    val timestamp: String
-)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AIAssistantScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: AiChatViewModel = viewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val inputEnabled = state.loadState in setOf(AiChatLoadState.Empty, AiChatLoadState.Ready)
 
-private fun AiChatMessage.toChatMessage(): ChatMessage {
-    return ChatMessage(
-        id = id,
-        role = role,
-        content = content,
-        timestamp = formatIso(createdAt, "HH:mm")
-    )
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.ai_assistant_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.ai_assistant_back),
+                        )
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            if (inputEnabled) {
+                AiChatInput(
+                    state = state,
+                    onAction = viewModel::onAction,
+                )
+            }
+        },
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            when (state.loadState) {
+                AiChatLoadState.Loading -> ShcareLoadingState(
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                AiChatLoadState.Error -> AiChatLoadError(
+                    requestId = state.requestId,
+                    onRetry = { viewModel.onAction(AiChatUiAction.Retry) },
+                )
+
+                AiChatLoadState.Empty -> AiChatEmptyContent()
+
+                AiChatLoadState.Unavailable -> {
+                    if (state.messages.isEmpty()) {
+                        ShcareEmptyState(
+                            title = stringResource(R.string.ai_assistant_unavailable_title),
+                            message = stringResource(R.string.ai_assistant_unavailable_message),
+                            actionLabel = stringResource(R.string.shcare_action_retry),
+                            onAction = { viewModel.onAction(AiChatUiAction.Retry) },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("ai_assistant.unavailable"),
+                        )
+                    } else {
+                        AiChatTimeline(
+                            messages = state.messages,
+                            providerUnavailable = true,
+                        )
+                    }
+                }
+
+                AiChatLoadState.Ready -> AiChatTimeline(
+                    messages = state.messages,
+                    providerUnavailable = false,
+                )
+            }
+        }
+    }
 }
 
 @Composable
-fun AIAssistantScreen(onNavigateBack: () -> Unit) {
-    var inputValue by remember { mutableStateOf("") }
-    var isSending by remember { mutableStateOf(false) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
-    
-    val initialMessages = listOf(
-        ChatMessage(
-            "local_1", "assistant",
-            "Xin chào! Tôi là Trợ lý Y tế AI của bạn. Tôi có thể giúp bạn phân tích kết quả đo, đề xuất các chẩn đoán phân biệt và cung cấp hướng dẫn lâm sàng dựa trên bản thu âm ống nghe của bạn. Tôi có thể giúp gì cho bạn hôm nay?",
-            "13:45"
-        ),
-        ChatMessage(
-            "local_2", "user",
-            "Tôi vừa đo cho một bệnh nhân có tiếng ran nổ ở thùy dưới phổi trái. AI đã cảnh báo bất thường. Bạn có thể giải thích điều này có thể chỉ ra bệnh gì không?",
-            "13:46"
-        ),
-        ChatMessage(
-            "local_3", "assistant",
-            "Dựa trên tiếng ran nổ được phát hiện ở thùy dưới phổi trái, dưới đây là những yếu tố chính cần xem xét:\n\n" +
-            "• Viêm phổi - Nguyên nhân phổ biến nhất của ran nổ khu trú\n" +
-            "• Phù phổi - Đặc biệt nếu xuất hiện ở hai bên hoặc bệnh nhân có tiền sử bệnh tim\n" +
-            "• Xẹp phổi - Phổi giãn nở không hoàn toàn\n" +
-            "• Xơ phổi - Nếu là ran nổ nhỏ, âm thanh giống như xé dán velcro\n\n" +
-            "Các bước tiếp theo được đề xuất:\n" +
-            "1. Kiểm tra dấu hiệu sinh tồn (sốt, độ bão hòa oxy)\n" +
-            "2. Yêu cầu chụp X-quang ngực để xác nhận\n" +
-            "3. Xem xét xét nghiệm công thức máu toàn phần (CBC) và các chỉ số viêm\n\n" +
-            "Bạn có muốn tôi phân tích dữ liệu dạng sóng cụ thể từ bản thu âm của bạn không?",
-            "13:47"
-        )
-    )
-    
-    val messages = remember { mutableStateListOf<ChatMessage>().apply { addAll(initialMessages) } }
-
-    LaunchedEffect(Unit) {
-        try {
-            val remoteMessages = SmartHealthRepository.api.listAiMessages().map { it.toChatMessage() }
-            if (remoteMessages.isNotEmpty()) {
-                messages.clear()
-                messages.addAll(remoteMessages)
-            }
-            loadError = null
-        } catch (error: Exception) {
-            loadError = error.message ?: "Không thể tải lịch sử chat AI"
-        }
-    }
-
-    val getCurrentTime = {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-    }
-
-    fun handleSend() {
-        if (inputValue.isBlank() || isSending) return
-        val content = inputValue.trim()
-        
-        messages.add(
-            ChatMessage(
-                id = "local_${System.currentTimeMillis()}",
-                role = "user",
-                content = content,
-                timestamp = getCurrentTime()
-            )
-        )
-        inputValue = ""
-        isSending = true
-
-        coroutineScope.launch {
-            try {
-                messages.add(SmartHealthRepository.api.sendAiMessage(content).toChatMessage())
-                loadError = null
-            } catch (error: Exception) {
-                loadError = error.message ?: "Không thể gửi câu hỏi AI"
-            } finally {
-                isSending = false
-            }
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
-        // Gradient Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                .padding(horizontal = 16.dp, vertical = 16.dp)
-                .statusBarsPadding()
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Psychology, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Trợ Lý Y Tế AI", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                }
-                Box(modifier = Modifier.size(24.dp)) // Spacer
-            }
-        }
-
-        // Chat List
-        LazyColumn(
+private fun AiChatLoadError(
+    requestId: String,
+    onRetry: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        ShcareErrorState(
+            title = stringResource(R.string.ai_assistant_load_error_title),
+            message = stringResource(R.string.shcare_state_error_message),
+            onRetry = onRetry,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            items(messages) { message ->
-                MessageBubble(message = message)
-            }
-        }
-
-        // Input Area
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White)
-                .border(1.dp, Border)
-                .navigationBarsPadding()
-                .padding(16.dp)
-        ) {
-            loadError?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF8FAFC), RoundedCornerShape(24.dp))
-                    .border(1.dp, Border, RoundedCornerShape(24.dp))
-                    .padding(8.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                IconButton(onClick = { /* Attach */ }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Default.AttachFile, contentDescription = "Attach", tint = TextSecondary)
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp, vertical = 10.dp)
-                ) {
-                    if (inputValue.isEmpty()) {
-                        Text("Hỏi về triệu chứng, chẩn đoán...", color = TextSecondary.copy(alpha = 0.5f), fontSize = 14.sp)
-                    }
-                    BasicTextField(
-                        value = inputValue,
-                        onValueChange = { inputValue = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = LocalTextStyle.current.copy(color = TextPrimary, fontSize = 14.sp)
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            if (inputValue.isNotBlank() && !isSending) PrimaryBlue else Color(0xFFE2E8F0),
-                            CircleShape
-                        )
-                        .clickable(enabled = inputValue.isNotBlank() && !isSending) { handleSend() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isSending) {
-                        CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                    } else {
-                        Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
+                .testTag("ai_assistant.retry"),
+        )
+        if (requestId.isNotBlank()) {
             Text(
-                "Trợ lý AI chỉ cung cấp đề xuất. Luôn xác minh bằng đánh giá chuyên môn lâm sàng.",
-                color = TextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                text = stringResource(R.string.ai_assistant_request_id, requestId),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(ShcareTheme.spacing.large),
             )
         }
     }
 }
 
 @Composable
-fun MessageBubble(message: ChatMessage) {
+private fun AiChatEmptyContent() {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        ShcareEmptyState(
+            title = stringResource(R.string.ai_assistant_empty_title),
+            message = stringResource(R.string.ai_assistant_empty_message),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .testTag("ai_assistant.empty"),
+        )
+        AiDisclaimerCard(
+            modifier = Modifier.padding(
+                horizontal = ShcareTheme.spacing.large,
+                vertical = ShcareTheme.spacing.small,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun AiChatTimeline(
+    messages: List<AiChatMessage>,
+    providerUnavailable: Boolean,
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("ai_assistant.timeline"),
+        contentPadding = PaddingValues(ShcareTheme.spacing.large),
+        verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+    ) {
+        if (providerUnavailable) {
+            item(key = "provider-unavailable") { AiProviderUnavailableBanner() }
+        }
+        item(key = "disclaimer") { AiDisclaimerCard() }
+        items(messages, key = { it.id }) { message ->
+            AiMessageBubble(message)
+        }
+    }
+}
+
+@Composable
+private fun AiProviderUnavailableBanner() {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = ShcareTheme.colors.warningContainer,
+            contentColor = ShcareTheme.colors.onWarningContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+        ) {
+            Text(
+                text = stringResource(R.string.ai_assistant_unavailable_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.ai_assistant_unavailable_message),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiDisclaimerCard(modifier: Modifier = Modifier) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = stringResource(R.string.ai_assistant_disclaimer),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiMessageBubble(message: AiChatMessage) {
     val isUser = message.role == "user"
-    
+    val author = if (isUser) {
+        stringResource(R.string.ai_assistant_message_user)
+    } else {
+        stringResource(R.string.ai_assistant_message_assistant)
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Top
     ) {
-        if (!isUser) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Psychology, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-        }
-
         Column(
-            modifier = Modifier.weight(1f, fill = false),
-            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+            modifier = Modifier.fillMaxWidth(0.88f),
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
         ) {
-            Box(
-                modifier = Modifier
-                    .background(
-                        if (isUser) PrimaryBlue else Color.White,
-                        RoundedCornerShape(16.dp)
-                    )
-                    .border(1.dp, if (isUser) PrimaryBlue else Border, RoundedCornerShape(16.dp))
-                    .padding(16.dp)
+            Text(
+                text = author,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = if (isUser) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = if (isUser) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             ) {
                 Text(
                     text = message.content,
-                    color = if (isUser) Color.White else TextPrimary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(ShcareTheme.spacing.large),
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = message.timestamp,
-                color = TextSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                text = formatIso(message.createdAt, "HH:mm"),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
 
-        if (isUser) {
-            Spacer(modifier = Modifier.width(12.dp))
-            Box(
+@Composable
+private fun AiChatInput(
+    state: AiChatUiState,
+    onAction: (AiChatUiAction) -> Unit,
+) {
+    Surface(
+        tonalElevation = 2.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding()
+            .navigationBarsPadding()
+            .testTag("ai_assistant.composer"),
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        ) {
+            HorizontalDivider()
+            OutlinedTextField(
+                value = state.input,
+                onValueChange = { onAction(AiChatUiAction.InputChanged(it)) },
+                label = { Text(stringResource(R.string.ai_assistant_input_label)) },
+                placeholder = { Text(stringResource(R.string.ai_assistant_input_hint)) },
+                enabled = !state.isSending,
+                minLines = 1,
+                maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onAction(AiChatUiAction.Send) }),
                 modifier = Modifier
-                    .size(40.dp)
-                    .background(Color(0xFFE2E8F0), CircleShape),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .testTag("ai_assistant.input"),
+            )
+            if (state.errorMessage.isNotBlank() || state.errorMessageRes != null) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(ShcareTheme.spacing.medium),
+                        verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.ai_assistant_send_error),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (state.requestId.isNotBlank()) {
+                            Text(
+                                text = stringResource(R.string.ai_assistant_request_id, state.requestId),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                }
+            }
+            Button(
+                onClick = { onAction(AiChatUiAction.Send) },
+                enabled = state.input.isNotBlank() && !state.isSending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("ai_assistant.send"),
             ) {
-                Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                if (state.isSending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.size(ShcareTheme.spacing.small))
+                    Text(stringResource(R.string.ai_assistant_sending))
+                } else {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.size(ShcareTheme.spacing.small))
+                    Text(stringResource(R.string.ai_assistant_send))
+                }
             }
         }
     }

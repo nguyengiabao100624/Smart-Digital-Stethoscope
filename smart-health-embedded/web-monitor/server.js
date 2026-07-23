@@ -6,15 +6,114 @@ const os = require("node:os");
 const path = require("node:path");
 const nodemailer = require("nodemailer");
 const { createDataStore, resolveBackendFromEnv } = require("./src/dataStore");
-const { getFirebaseAdmin, isFirebaseAuthEnabled, verifyFirebaseIdToken } = require("./src/firebaseAuth");
+const {
+  getFirebaseAdmin,
+  isFirebaseAuthEnabled,
+  isFirebaseProviderMutationConfirmed,
+  normalizeFirebaseAuthTime,
+  verifyFirebaseIdToken,
+} = require("./src/firebaseAuth");
+const {
+  createRecoveryCodeBundle,
+  createTwoFactorToken,
+  createTotpEnrollment,
+  getTwoFactorAvailability,
+  hashPrimaryBinding,
+  hashTwoFactorToken,
+  verifyRecoveryCode,
+  verifyTotpCode,
+} = require("./src/twoFactorAuth");
 const { processAudioFile } = require("./src/audioProcessing");
 const { createAudioQueue } = require("./src/queue");
 const { createRepositories } = require("./src/repositories");
+const {
+  EXPORT_ARTIFACT_RENDERER_VERSION,
+  EXPORT_FORMATS,
+  buildExportArtifact,
+  normalizeExportFormat,
+} = require("./src/exportArtifact");
+const { normalizeAuditLogQuery, sanitizeAuditMetadata } = require("./src/auditLogContract");
+const { buildOverviewRangeSnapshot } = require("./src/overviewStatsContract");
+const {
+  PATIENT_IMPORT_MAX_BYTES,
+  PATIENT_IMPORT_TTL_MS,
+  validatePatientImportCsv,
+} = require("./src/patientImportContract");
+const { MAX_SCAN_AUDIO_CHUNK_BYTES } = require("./src/scanAudioUploadRepository");
+const { createKeyedSerialExecutor } = require("./src/deviceEventQueue");
 const { attachActor, createRequestContext, getRequestContext } = require("./src/requestContext");
 const { createMqttControlPlane } = require("./src/mqttControlPlane");
 const { buildProductionReadiness } = require("./src/productionReadiness");
+const { buildPushNotificationPayload } = require("./src/notificationPushPayload");
+const {
+  activateManagedAdminProvider,
+  assertActiveManagedAdminWorkspace,
+  assertManagedAdminAssignableRole,
+  assertPendingManagedAdminProvider,
+  assertManagedAdminReplayBackendState,
+  assertManagedAdminReplayProvider,
+  managedAdminIdempotencyPayload,
+} = require("./src/managedAdminProvisioning");
+const { getAiProviderAvailability, requestAiChat } = require("./src/aiProvider");
+const {
+  SIGNAL_QUALITY_ANALYZER_VERSION,
+  buildAiRuntimeStatus,
+  buildAiUpdateStatus,
+  buildSignalQualityRawResult,
+  normalizeAiSettings,
+} = require("./src/aiRuntime");
 const { buildScanObjectKey, createStorageAdapter } = require("./src/storageAdapter");
 const { encryptJson } = require("./src/cryptoPhi");
+const {
+  DEVICE_AUTH_CHALLENGE_TTL_MS,
+  canonicalDeviceSecretHash,
+  containsSensitiveDeviceCredential,
+  createDeviceAuthenticator,
+  normalizeDeviceSecretMaterial,
+  sanitizeDeviceCredentialRotation,
+  sanitizeDeviceTelemetry,
+  sanitizePublicDeviceEventPayload,
+  wrapDeviceRotationSecret,
+} = require("./src/deviceSessionSecurity");
+const {
+  AUDIO_V2_MAGIC,
+  AudioSequenceGuard,
+  decodeAudioFrameV2,
+  encodeAudioFrameV2,
+} = require("./src/audioProtocolV2");
+const {
+  applyDeviceCommandDelivery,
+  applyDeviceReportedCommandStatus,
+  createDeviceCommandEnvelope,
+  createDeviceCommandRecord,
+  expireDeviceCommandIfOverdue,
+  isSupportedDeviceCommandType,
+  publicDeviceCommand,
+  transitionDeviceCommand,
+} = require("./src/deviceCommandLifecycle");
+const {
+  applyDeviceOwnershipTransition,
+  inferDeviceOwnershipState,
+  validateActiveDeviceClaim,
+} = require("./src/deviceOwnershipLifecycle");
+const {
+  assertCanonicalDeviceId,
+  buildSecureSetupQrPayload,
+} = require("./src/deviceSetupSecurity");
+const {
+  STAFF_INVITATION_STATUSES,
+  assertStaffInvitationToken,
+  generateStaffInvitationToken,
+  hashStaffInvitationToken,
+  normalizeStaffInvitationCreate,
+  normalizeStaffInvitationRevoke,
+} = require("./src/staffInvitationContract");
+const {
+  assertOtaUpgradeVersion,
+  buildSignedOtaManifest,
+  hashOtaDownloadToken,
+  verifyOtaDownloadToken,
+} = require("./src/otaManifestSigning");
 
 const PORT = Number(process.env.PORT || 3000);
 const AUDIO_UDP_PORT = Number(process.env.AUDIO_UDP_PORT || 3001);
@@ -22,6 +121,9 @@ const SAMPLE_RATE = Number(process.env.SAMPLE_RATE || 16000);
 const CHANNELS = 1;
 const BITS_PER_SAMPLE = 16;
 const HOST = "0.0.0.0";
+const deviceEventExecutor = createKeyedSerialExecutor();
+const scanAudioFileMutationExecutor = createKeyedSerialExecutor();
+const scanAudioReprocessExecutor = createKeyedSerialExecutor();
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 const INDEX_FILE = path.join(PUBLIC_DIR, "index.html");
@@ -36,8 +138,27 @@ const ALLOW_DEMO_AUTH = String(process.env.ALLOW_DEMO_AUTH || "").toLowerCase() 
 const SHOULD_SEED_DEMO_DATA = AUTH_MODE !== "production";
 
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 100 * 1024 * 1024);
+const MAX_WS_BUFFER_BYTES = Number(process.env.MAX_WS_BUFFER_BYTES || 1024 * 1024);
+const MAX_DEVICE_AUDIO_FRAME_BYTES = Number(process.env.MAX_DEVICE_AUDIO_FRAME_BYTES || 4 * 1024);
+const ALLOW_AUDIO_V1_COMPAT = String(process.env.ALLOW_AUDIO_V1_COMPAT || "true").toLowerCase() === "true";
+const DEVICE_SECRET_ROTATION_TTL_RAW_MS = Number(process.env.DEVICE_SECRET_ROTATION_TTL_MS || 10 * 60 * 1000);
+const DEVICE_SECRET_ROTATION_TTL_MS = Number.isFinite(DEVICE_SECRET_ROTATION_TTL_RAW_MS)
+  ? Math.max(60_000, Math.min(24 * 60 * 60 * 1000, DEVICE_SECRET_ROTATION_TTL_RAW_MS))
+  : 10 * 60 * 1000;
 const UDP_SOURCE_TIMEOUT_MS = 3000;
 const LIVE_METRIC_INTERVAL_MS = 250;
+const REALTIME_AUTH_SESSION_RECHECK_RAW_MS = Number(process.env.REALTIME_AUTH_SESSION_RECHECK_MS || 15000);
+const REALTIME_AUTH_SESSION_RECHECK_MS = Number.isFinite(REALTIME_AUTH_SESSION_RECHECK_RAW_MS)
+  ? Math.max(5000, REALTIME_AUTH_SESSION_RECHECK_RAW_MS)
+  : 15000;
+const REALTIME_FIREBASE_ACCOUNT_RECHECK_RAW_MS = Number(process.env.REALTIME_FIREBASE_ACCOUNT_RECHECK_MS || 60000);
+const REALTIME_FIREBASE_ACCOUNT_RECHECK_MS = Number.isFinite(REALTIME_FIREBASE_ACCOUNT_RECHECK_RAW_MS)
+  ? Math.max(15000, REALTIME_FIREBASE_ACCOUNT_RECHECK_RAW_MS)
+  : 60000;
+const STAFF_INVITATION_TTL_HOURS_RAW = Number(process.env.STAFF_INVITATION_TTL_HOURS || 168);
+const STAFF_INVITATION_TTL_HOURS = Number.isFinite(STAFF_INVITATION_TTL_HOURS_RAW)
+  ? Math.max(1, Math.min(720, STAFF_INVITATION_TTL_HOURS_RAW))
+  : 168;
 const SPECIALTY_CATALOG = [
   { id: "general", name: "Đa khoa" },
   { id: "internal_medicine", name: "Nội tổng quát" },
@@ -172,7 +293,10 @@ const espClients = new Set();
 const listenClients = new Set();
 const udpAudioSources = new Map();
 const deviceSockets = new Map();
+const deviceRotationSessionKeys = new WeakMap();
 const rateLimitBuckets = new Map();
+const managedAdminCreateInFlight = new Map();
+const scanAudioCompletionInFlight = new Map();
 const requestMetrics = {
   startedAt: nowIso(),
   total: 0,
@@ -187,11 +311,14 @@ let audioQueue = null;
 let mqttControlPlane = null;
 let pendingSave = Promise.resolve();
 let db = createEmptyDb();
-let activeRecording = null;
+const activeRecordingsByScanId = new Map();
+const activeRecordingScanIdByDeviceId = new Map();
 let lastAudioSourceCount = 0;
-let lastMetricBroadcastAt = 0;
 let liveMetrics;
-let liveBeatDetector;
+const deviceAuthenticator = createDeviceAuthenticator({
+  findDeviceById: async (deviceId) =>
+    repositories ? repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId) || null,
+});
 
 function nowIso() {
   return new Date().toISOString();
@@ -214,22 +341,33 @@ function createEmptyDb() {
     createdAt,
     updatedAt: createdAt,
     patients: [],
+    patientImportBatches: [],
     appointments: [],
     scans: [],
+    scanAudioChunks: [],
+    scanAudioCompletions: [],
+    scanReviews: [],
+    clinicalAlerts: [],
     users: [],
     organizations: [],
     memberships: [],
+    staffInvitations: [],
     doctorPatientAccess: [],
     idempotencyKeys: [],
     deviceClaims: [],
     sessions: [],
     authSessions: [],
+    twoFactorCredentials: [],
+    twoFactorEnrollments: [],
+    twoFactorChallenges: [],
+    twoFactorTokens: [],
     notifications: [],
     notificationDevices: [],
     accessLogs: [],
     auditLogs: [],
     devices: [],
     deviceEvents: [],
+    deviceCommands: [],
     audioFiles: [],
     aiResults: [],
     storageBuckets: [],
@@ -268,22 +406,104 @@ function normalizeDb(value) {
   normalized.createdAt = normalized.createdAt || nowIso();
   normalized.updatedAt = normalized.updatedAt || normalized.createdAt;
   normalized.patients = Array.isArray(normalized.patients) ? normalized.patients : [];
+  normalized.patientImportBatches = Array.isArray(normalized.patientImportBatches)
+    ? normalized.patientImportBatches
+    : [];
   normalized.appointments = Array.isArray(normalized.appointments) ? normalized.appointments : [];
   normalized.scans = Array.isArray(normalized.scans) ? normalized.scans : [];
+  normalized.scanAudioChunks = Array.isArray(normalized.scanAudioChunks) ? normalized.scanAudioChunks : [];
+  normalized.scanAudioCompletions = Array.isArray(normalized.scanAudioCompletions) ? normalized.scanAudioCompletions : [];
+  normalized.scanReviews = Array.isArray(normalized.scanReviews) ? normalized.scanReviews : [];
+  normalized.clinicalAlerts = Array.isArray(normalized.clinicalAlerts) ? normalized.clinicalAlerts : [];
   normalized.users = Array.isArray(normalized.users) ? normalized.users : [];
-  normalized.organizations = Array.isArray(normalized.organizations) ? normalized.organizations : [];
-  normalized.memberships = Array.isArray(normalized.memberships) ? normalized.memberships : [];
+  normalized.organizations = (Array.isArray(normalized.organizations) ? normalized.organizations : []).map(
+    (organization) => ({
+      ...organization,
+      version: Number.isInteger(Number(organization?.version)) && Number(organization.version) > 0
+        ? Number(organization.version)
+        : 1,
+      deletedAt: organization?.deletedAt || "",
+    }),
+  );
+  normalized.memberships = (Array.isArray(normalized.memberships) ? normalized.memberships : []).map(
+    (membership) => ({
+      ...membership,
+      status: readString(membership?.status || "active", 40).toLowerCase() || "active",
+      suspendedAt: membership?.suspendedAt || "",
+      updatedAt: membership?.updatedAt || membership?.createdAt || "",
+    }),
+  );
+  normalized.staffInvitations = Array.isArray(normalized.staffInvitations)
+    ? normalized.staffInvitations
+    : [];
   normalized.doctorPatientAccess = Array.isArray(normalized.doctorPatientAccess) ? normalized.doctorPatientAccess : [];
+  const canonicalDoctorByIdentity = new Map();
+  const ambiguousDoctorIdentities = new Set();
+  for (const user of normalized.users) {
+    if (!user || user.role !== "doctor") continue;
+    for (const identity of [user.id, user.firebaseUid].filter(Boolean)) {
+      if (canonicalDoctorByIdentity.has(identity) && canonicalDoctorByIdentity.get(identity) !== user.id) {
+        canonicalDoctorByIdentity.delete(identity);
+        ambiguousDoctorIdentities.add(identity);
+      } else if (!ambiguousDoctorIdentities.has(identity)) {
+        canonicalDoctorByIdentity.set(identity, user.id);
+      }
+    }
+  }
+  normalized.doctorPatientAccess = normalized.doctorPatientAccess.map((grant) => {
+    const requestedIdentity = grant?.doctorUserId || grant?.doctorId || "";
+    const canonicalDoctorId = canonicalDoctorByIdentity.get(requestedIdentity);
+    const patient = normalized.patients.find((item) => item.id === grant?.patientId) || null;
+    const grantedByUserId = readString(grant?.grantedByUserId, 120);
+    const grantedByUser = normalized.users.find((item) => item.id === grantedByUserId) || null;
+    const isPatientAuthority = Boolean(
+      grantedByUserId &&
+      grantedByUser?.role === "patient" &&
+      patient &&
+      [patient.ownerUserId, patient.accountUserId, patient.guardianUserId].includes(grantedByUserId),
+    );
+    const canonicalGrant = canonicalDoctorId
+      ? { ...grant, doctorUserId: canonicalDoctorId, doctorId: canonicalDoctorId }
+      : { ...grant };
+    const authorityType = [
+      "patient_consent",
+      "clinician_access_grant",
+      "administrative_assignment",
+    ].includes(canonicalGrant.authorityType)
+      ? canonicalGrant.authorityType
+      : isPatientAuthority
+        ? "patient_consent"
+        : canonicalGrant.doctorUserId || canonicalGrant.doctorId
+          ? "clinician_access_grant"
+          : "administrative_assignment";
+    return {
+      ...canonicalGrant,
+      authorityType,
+      purpose: readString(canonicalGrant.purpose, 2000),
+      consentedAt:
+        authorityType === "patient_consent"
+          ? canonicalGrant.consentedAt || canonicalGrant.createdAt || ""
+          : "",
+    };
+  });
   normalized.idempotencyKeys = Array.isArray(normalized.idempotencyKeys) ? normalized.idempotencyKeys : [];
+  normalized.identityOperations = Array.isArray(normalized.identityOperations) ? normalized.identityOperations : [];
   normalized.deviceClaims = Array.isArray(normalized.deviceClaims) ? normalized.deviceClaims : [];
   normalized.sessions = Array.isArray(normalized.sessions) ? normalized.sessions : [];
   normalized.authSessions = Array.isArray(normalized.authSessions) ? normalized.authSessions : [];
+  normalized.twoFactorCredentials = Array.isArray(normalized.twoFactorCredentials) ? normalized.twoFactorCredentials : [];
+  normalized.twoFactorEnrollments = Array.isArray(normalized.twoFactorEnrollments) ? normalized.twoFactorEnrollments : [];
+  normalized.twoFactorChallenges = Array.isArray(normalized.twoFactorChallenges) ? normalized.twoFactorChallenges : [];
+  normalized.twoFactorTokens = Array.isArray(normalized.twoFactorTokens) ? normalized.twoFactorTokens : [];
   normalized.notifications = Array.isArray(normalized.notifications) ? normalized.notifications : [];
   normalized.notificationDevices = Array.isArray(normalized.notificationDevices) ? normalized.notificationDevices : [];
   normalized.accessLogs = Array.isArray(normalized.accessLogs) ? normalized.accessLogs : [];
   normalized.auditLogs = Array.isArray(normalized.auditLogs) ? normalized.auditLogs : [];
-  normalized.devices = Array.isArray(normalized.devices) ? normalized.devices : [];
+  normalized.devices = Array.isArray(normalized.devices)
+    ? normalized.devices.map((device) => normalizeDeviceSecretMaterial(device))
+    : [];
   normalized.deviceEvents = Array.isArray(normalized.deviceEvents) ? normalized.deviceEvents : [];
+  normalized.deviceCommands = Array.isArray(normalized.deviceCommands) ? normalized.deviceCommands : [];
   normalized.audioFiles = Array.isArray(normalized.audioFiles) ? normalized.audioFiles : [];
   normalized.aiResults = Array.isArray(normalized.aiResults) ? normalized.aiResults : [];
   normalized.storageBuckets = Array.isArray(normalized.storageBuckets) ? normalized.storageBuckets : [];
@@ -315,10 +535,7 @@ function normalizeDb(value) {
     ...createDefaultSettings().stethoscope,
     ...(normalized.settings.stethoscope || {}),
   };
-  normalized.settings.ai = {
-    ...createDefaultSettings().ai,
-    ...(normalized.settings.ai || {}),
-  };
+  normalized.settings.ai = normalizeAiSettings(normalized.settings.ai);
   normalized.settings.system = {
     ...createDefaultSettings().system,
     ...(normalized.settings.system || {}),
@@ -358,6 +575,15 @@ function normalizeDb(value) {
   for (const user of normalized.users) {
     if (!user || typeof user !== "object") continue;
     user.accountStatus = user.accountStatus || "active";
+    delete user.twoFactorSecret;
+    delete user.twoFactorSecretPreview;
+    delete user.twoFactorRecoveryCodes;
+    user.firebaseClaims = sanitizePublicFirebaseClaims(user.firebaseClaims);
+    const credential = normalized.twoFactorCredentials.find(
+      (item) => item && item.userId === user.id && !item.disabledAt,
+    );
+    user.twoFactorEnabled = Boolean(credential);
+    user.twoFactorMethod = credential ? credential.method || "app" : "";
 
     // Older admin builds used roleRequestStatus="locked" to mean account lock.
     // Keep approval state and lock state separate so dashboard counts stay consistent.
@@ -376,18 +602,108 @@ function normalizeDb(value) {
   return normalized;
 }
 
-function saveDb() {
+function saveDbStrict() {
   db.updatedAt = nowIso();
   if (!dataStore) {
     return Promise.resolve();
   }
-  pendingSave = pendingSave
+  const operation = pendingSave
     .catch(() => {})
-    .then(() => dataStore.save(db))
-    .catch((err) => {
-      console.error(`Cannot persist backend state: ${err.message}`);
-    });
-  return pendingSave;
+    .then(() => dataStore.save(db));
+  pendingSave = operation.catch((err) => {
+    console.error(`Cannot persist backend state: ${err.message}`);
+  });
+  return operation;
+}
+
+function listActiveRecordings() {
+  return Array.from(activeRecordingsByScanId.values());
+}
+
+function getActiveRecordingByScanId(scanId) {
+  return activeRecordingsByScanId.get(readString(scanId, 120)) || null;
+}
+
+function getActiveRecordingForDevice(deviceId) {
+  const scanId = activeRecordingScanIdByDeviceId.get(readString(deviceId, 120));
+  return scanId ? getActiveRecordingByScanId(scanId) : null;
+}
+
+function getActiveRecordingByCommandId(commandId) {
+  const scopedCommandId = readString(commandId, 128);
+  if (!scopedCommandId) return null;
+  return listActiveRecordings().find(
+    (recording) =>
+      recording.startCommandId === scopedCommandId || recording.stopCommandId === scopedCommandId,
+  ) || null;
+}
+
+function registerActiveRecording(recording) {
+  if (!recording?.scanId || !recording?.deviceId) {
+    throw new Error("Active recording requires scan and device identity");
+  }
+  if (activeRecordingsByScanId.has(recording.scanId)) {
+    throw httpError(409, "Lượt ghi này đang hoạt động", "SCAN_ALREADY_RECORDING");
+  }
+  const existingScanId = activeRecordingScanIdByDeviceId.get(recording.deviceId);
+  if (existingScanId) {
+    throw httpError(409, "Thiết bị đang thực hiện một lượt ghi khác", "DEVICE_ALREADY_RECORDING");
+  }
+  activeRecordingsByScanId.set(recording.scanId, recording);
+  activeRecordingScanIdByDeviceId.set(recording.deviceId, recording.scanId);
+  return recording;
+}
+
+function releaseActiveRecording(recordingOrScanId) {
+  const recording =
+    typeof recordingOrScanId === "string"
+      ? getActiveRecordingByScanId(recordingOrScanId)
+      : recordingOrScanId;
+  if (!recording) return null;
+  if (recording.startExpiryTimer) {
+    clearTimeout(recording.startExpiryTimer);
+    recording.startExpiryTimer = null;
+  }
+  activeRecordingsByScanId.delete(recording.scanId);
+  if (activeRecordingScanIdByDeviceId.get(recording.deviceId) === recording.scanId) {
+    activeRecordingScanIdByDeviceId.delete(recording.deviceId);
+  }
+  for (const listener of listenClients) {
+    if (listener._listenerScanId === recording.scanId) {
+      listener._listenerScanId = null;
+      listener._audioSessionId = null;
+      listener._audioFrameSessionId = null;
+      listener._audioProtocolVersion = null;
+      listener._audioSourceBaseSequence = null;
+      listener._audioListenerSequence = null;
+    }
+  }
+  return recording;
+}
+
+const DEVICE_CREDENTIAL_ALPHABET = Buffer.from(
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+  "ascii",
+);
+
+function generateDeviceCredentialBuffer(length = 64) {
+  const boundedLength = Math.max(32, Math.min(95, Number(length) || 64));
+  const output = Buffer.alloc(boundedLength);
+  let offset = 0;
+  while (offset < output.length) {
+    const entropy = crypto.randomBytes(output.length - offset);
+    for (const value of entropy) {
+      output[offset] = DEVICE_CREDENTIAL_ALPHABET[value & 63];
+      offset += 1;
+      if (offset >= output.length) break;
+    }
+    entropy.fill(0);
+  }
+  return output;
+}
+
+function saveDb() {
+  return saveDbStrict().catch(() => undefined);
 }
 
 async function flushDb() {
@@ -449,15 +765,7 @@ function createDefaultSettings() {
       autoConnect: true,
       lastCalibrationAt: "2026-05-19T08:00:00.000Z",
     },
-    ai: {
-      selectedModel: "balanced",
-      version: "AI Medical Analysis v3.2.1",
-      heartAccuracy: 96.8,
-      lungAccuracy: 94.2,
-      sensitivity: 95.5,
-      specificity: 97.1,
-      updatedAt: "2026-05-20T08:00:00.000Z",
-    },
+    ai: normalizeAiSettings(),
     outbound: {
       email: {
         enabled: true,
@@ -533,6 +841,7 @@ function createDefaultSettings() {
 
 function ensureAppDefaults() {
   let changed = false;
+  const seededDemoUserIds = new Set();
 
   if (SHOULD_SEED_DEMO_DATA && db.users.length === 0) {
     const createdAt = nowIso();
@@ -540,6 +849,9 @@ function ensureAppDefaults() {
       {
         id: "usr_doctor_default",
         role: "doctor",
+        requestedRole: "doctor",
+        roleRequestStatus: "approved",
+        accountStatus: "active",
         name: "Bác sĩ Smart Health",
         email: "doctor@example.com",
         phone: "0912345678",
@@ -567,6 +879,8 @@ function ensureAppDefaults() {
         updatedAt: createdAt,
       }
     );
+    seededDemoUserIds.add("usr_doctor_default");
+    seededDemoUserIds.add("usr_patient_default");
     changed = true;
   }
 
@@ -577,6 +891,9 @@ function ensureAppDefaults() {
       name: "Smart Health Clinic",
       type: "clinic",
       workspaceType: "clinic",
+      status: "active",
+      version: 1,
+      deletedAt: "",
       packageId: "pkg_clinic_basic",
       subscriptionStatus: "trial",
       billingCycle: "monthly",
@@ -657,6 +974,13 @@ function ensureAppDefaults() {
       org.updatedAt = nowIso();
       changed = true;
     }
+    if (!org.status) {
+      // Legacy rows were historically treated as active by public/auth reads.
+      // Persist that interpretation so lifecycle validation sees the same state.
+      org.status = "active";
+      org.updatedAt = nowIso();
+      changed = true;
+    }
     if (!org.subscriptionStatus) {
       org.subscriptionStatus = "trial";
       changed = true;
@@ -668,13 +992,17 @@ function ensureAppDefaults() {
   }
 
   for (const user of db.users) {
-    if (!user.organizationId) {
+    if (!user.organizationId && seededDemoUserIds.has(user.id)) {
       user.organizationId = "org_default_clinic";
       user.updatedAt = nowIso();
       changed = true;
     }
 
-    if (!db.memberships.some((item) => item.userId === user.id && item.organizationId === user.organizationId)) {
+    if (
+      seededDemoUserIds.has(user.id) &&
+      user.organizationId &&
+      !db.memberships.some((item) => item.userId === user.id && item.organizationId === user.organizationId)
+    ) {
       db.memberships.push({
         id: createId("mbr"),
         organizationId: user.organizationId,
@@ -781,10 +1109,6 @@ function maskSecret(secret) {
   return `${prefix}_********${value.slice(-4)}`;
 }
 
-function createRecoveryCodes(count = 8) {
-  return Array.from({ length: count }, () => crypto.randomBytes(4).toString("hex").toUpperCase());
-}
-
 function normalizeNotificationPreferences(value = {}) {
   const current = value && typeof value === "object" ? value : {};
   return {
@@ -801,9 +1125,33 @@ function normalizeNotificationPreferences(value = {}) {
   };
 }
 
+function sanitizePublicFirebaseClaims(value = {}) {
+  const claims = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+  delete claims.twoFactorSecret;
+  delete claims.twoFactorSecretPreview;
+  delete claims.twoFactorRecoveryCodes;
+  const profile =
+    claims.profile && typeof claims.profile === "object" && !Array.isArray(claims.profile)
+      ? { ...claims.profile }
+      : {};
+  delete profile.twoFactorSecret;
+  delete profile.twoFactorSecretPreview;
+  delete profile.twoFactorRecoveryCodes;
+  claims.profile = profile;
+  return claims;
+}
+
 function publicUser(user) {
   if (!user) return null;
-  const { password, avatarStorage, ...safeUser } = user;
+  const {
+    password,
+    avatarStorage,
+    twoFactorSecret,
+    twoFactorSecretPreview,
+    twoFactorRecoveryCodes,
+    firebaseClaims,
+    ...safeUser
+  } = user;
   const organization = isPlatformAdminUser(user) ? null : getClinicById(user.organizationId);
   const workspaceContext = getUserWorkspaceContext(user);
   const surfaceInfo = getUserSurfaceInfo(user, workspaceContext);
@@ -833,6 +1181,7 @@ function publicUser(user) {
           : user.role || "");
   return {
     ...safeUser,
+    firebaseClaims: sanitizePublicFirebaseClaims(firebaseClaims),
     title: user.title || "",
     avatarFileId: user.avatarFileId || "",
     avatarUrl: user.avatarUrl || "",
@@ -885,6 +1234,14 @@ function isApprovedDoctorRole(user) {
   return user && user.requestedRole === "doctor" && user.roleRequestStatus === "approved" && user.role === "doctor";
 }
 
+function isApprovedActiveDoctorPrincipal(user) {
+  return Boolean(
+    isActiveUserAccount(user) &&
+    isApprovedDoctorRole(user) &&
+    getUserMemberships(user).some((membership) => membership.role === "doctor" && membership.operational),
+  );
+}
+
 function isApprovedWorkspaceRole(user) {
   const role = normalizeWorkspaceRole(user?.role || "");
   return (
@@ -902,7 +1259,7 @@ function normalizeLookup(value) {
 function getClinicById(id) {
   const clinicId = readString(id, 120);
   if (!clinicId) return null;
-  return db.organizations.find((item) => item.id === clinicId) || null;
+  return db.organizations.find((item) => item.id === clinicId && !item.deletedAt) || null;
 }
 
 function normalizeWorkspaceRole(role) {
@@ -921,25 +1278,42 @@ function normalizeWorkspaceRole(role) {
   return raw || "viewer";
 }
 
+function isActiveWorkspaceMembershipRecord(membership) {
+  return Boolean(
+    membership &&
+    readString(membership.status || "active", 40).toLowerCase() === "active",
+  );
+}
+
+function isOperationalWorkspaceMembership(user, membership, workspace = null) {
+  if (!user || !isActiveWorkspaceMembershipRecord(membership) || !isActiveUserAccount(user)) return false;
+  const resolvedWorkspace = workspace || getClinicById(membership.organizationId);
+  if (!resolvedWorkspace || readString(resolvedWorkspace.status || "active", 40).toLowerCase() !== "active") {
+    return false;
+  }
+  const role = user.role === "admin"
+    ? "platform_admin"
+    : normalizeWorkspaceRole(membership.role || "viewer");
+  if (role === "platform_admin") return true;
+  const workspaceType = normalizeWorkspaceType(
+    resolvedWorkspace.workspaceType || resolvedWorkspace.type,
+    resolvedWorkspace.type === "hospital" ? "hospital" : "clinic",
+  );
+  if (role !== "patient" && workspaceType === "personal") return false;
+  if (role === "patient") return true;
+  if (role === "doctor") return isApprovedDoctorRole(user);
+  return readString(user.roleRequestStatus, 40).toLowerCase() === "approved";
+}
+
 function getUserMemberships(user) {
   if (!user) return [];
-  const existingMemberships = db.memberships.filter((item) => item.userId === user.id);
-  const memberships = existingMemberships.length
-    ? existingMemberships
-    : [
-        {
-          id: "",
-          organizationId: user.organizationId || "org_default_clinic",
-          userId: user.id,
-          role: user.role || "patient",
-          createdAt: user.createdAt || "",
-        },
-      ];
+  const memberships = db.memberships.filter((item) => item.userId === user.id);
 
   return memberships.map((membership) => {
     const workspace = getClinicById(membership.organizationId);
-    const role = user.role === "admin" ? "platform_admin" : normalizeWorkspaceRole(membership.role || user.role);
-    const workspaceSummary = workspace ? getWorkspaceOperationalSummary(workspace.id) : {};
+    const role = user.role === "admin" ? "platform_admin" : normalizeWorkspaceRole(membership.role || "viewer");
+    const operational = isOperationalWorkspaceMembership(user, membership, workspace);
+    const workspaceSummary = workspace && operational ? getWorkspaceOperationalSummary(workspace.id) : {};
     return {
       id: membership.id || "",
       workspaceId: membership.organizationId || "",
@@ -948,7 +1322,12 @@ function getUserMemberships(user) {
       workspaceType: workspace?.workspaceType || workspace?.type || "",
       role,
       legacyRole: membership.role || user.role || "",
+      operational,
+      status: readString(membership.status || "active", 40).toLowerCase() || "active",
+      suspendedAt: membership.suspendedAt || "",
+      workspaceStatus: workspace?.status || "",
       createdAt: membership.createdAt || "",
+      updatedAt: membership.updatedAt || membership.createdAt || "",
       ...workspaceSummary,
     };
   });
@@ -991,10 +1370,16 @@ function getCapabilitiesForRole(role) {
       "platform.devices.manage",
       "platform.scans.view",
       "platform.scans.manage",
+      "platform.review.view",
+      "platform.review.manage",
+      "platform.alerts.view",
+      "platform.alerts.manage",
       "platform.reports.view",
       "platform.packages.manage",
       "platform.storage.manage",
       "platform.audit.view",
+      "platform.audit.export",
+      "platform.exports.manage",
       "platform.settings.manage",
       "billing.manage",
       ...workspaceRead,
@@ -1003,7 +1388,18 @@ function getCapabilitiesForRole(role) {
   }
 
   if (normalizedRole === "workspace_owner" || normalizedRole === "workspace_admin") {
-    return [...common, ...workspaceRead, ...workspaceManage, "billing.view"];
+    return [
+      ...common,
+      ...workspaceRead,
+      ...workspaceManage,
+      "workspace.review.view",
+      "workspace.review.manage",
+      "workspace.alerts.view",
+      "workspace.alerts.manage",
+      "workspace.audit.export",
+      "workspace.exports.manage",
+      "billing.view",
+    ];
   }
 
   if (normalizedRole === "doctor") {
@@ -1017,11 +1413,16 @@ function getCapabilitiesForRole(role) {
       "workspace.devices.view",
       "workspace.scans.view",
       "workspace.scans.manage",
+      "workspace.review.view",
+      "workspace.review.manage",
+      "workspace.alerts.view",
+      "workspace.alerts.manage",
       "workspace.reports.view",
+      "workspace.assigned_data.export",
     ];
   }
 
-  if (normalizedRole === "nurse" || normalizedRole === "technician") {
+  if (normalizedRole === "nurse") {
     return [
       ...common,
       "workspace.dashboard.view",
@@ -1031,6 +1432,24 @@ function getCapabilitiesForRole(role) {
       "workspace.devices.manage",
       "workspace.scans.view",
       "workspace.scans.manage",
+      "workspace.review.view",
+      "workspace.alerts.view",
+      "workspace.alerts.manage",
+    ];
+  }
+
+  if (normalizedRole === "technician") {
+    return [
+      ...common,
+      "workspace.dashboard.view",
+      "workspace.patients.view",
+      "workspace.appointments.view",
+      "workspace.devices.view",
+      "workspace.devices.manage",
+      "workspace.scans.view",
+      "workspace.scans.manage",
+      "workspace.alerts.view",
+      "workspace.alerts.manage",
     ];
   }
 
@@ -1048,6 +1467,7 @@ function getCapabilitiesForRole(role) {
       "personal.devices.manage",
       "personal.scans.manage",
       "personal.sharing.manage",
+      "personal.data.export",
     ];
   }
 
@@ -1055,16 +1475,27 @@ function getCapabilitiesForRole(role) {
 }
 
 function getUserWorkspaceContext(user) {
-  const memberships = getUserMemberships(user);
-  const currentWorkspaceId = user?.organizationId || memberships[0]?.workspaceId || "org_default_clinic";
+  const memberships = getUserMemberships(user).filter(
+    (membership) => Boolean(getClinicById(membership.workspaceId || membership.organizationId)),
+  );
+  const preferredMembership = memberships.find((membership) => membership.workspaceId === user?.organizationId) || null;
+  const selectedMembership = preferredMembership?.operational
+    ? preferredMembership
+    : memberships.find((membership) => membership.operational) || null;
+  const currentWorkspaceId = selectedMembership?.workspaceId || "";
   const currentMembership =
     memberships.find((membership) => membership.workspaceId === currentWorkspaceId) ||
-    memberships[0] ||
     null;
   const workspace = getClinicById(currentWorkspaceId);
   const workspaceSummary = workspace ? getWorkspaceOperationalSummary(workspace.id) : {};
-  const roleForCapabilities = user?.role === "admin" ? "platform_admin" : currentMembership?.role || user?.role;
-  const capabilitySet = new Set(getCapabilitiesForRole(roleForCapabilities));
+  const roleForCapabilities = user?.role === "admin"
+    ? "platform_admin"
+    : currentMembership?.operational
+      ? currentMembership.role || ""
+      : "";
+  const capabilitySet = new Set(
+    roleForCapabilities ? getCapabilitiesForRole(roleForCapabilities) : ["notifications.view", "account.manage"],
+  );
   if (
     user &&
     workspace &&
@@ -1116,7 +1547,9 @@ function getUserSurfaceInfo(user, context = getUserWorkspaceContext(user)) {
     return { allowedSurfaces: ["android"], defaultSurface: "android" };
   }
 
-  const role = normalizeWorkspaceRole(context.currentMembership?.role || user.role);
+  const role = context.currentMembership?.operational
+    ? normalizeWorkspaceRole(context.currentMembership.role)
+    : "";
   const hasWorkspaceSurface =
     ["workspace_owner", "workspace_admin", "doctor", "nurse", "technician", "billing", "viewer"].includes(role) ||
     capabilities.some((capability) => capability.startsWith("workspace."));
@@ -1144,6 +1577,7 @@ function requirePortalSurfaceUser(req) {
 function getCatalogClinicById(id) {
   const clinicId = readString(id, 120);
   if (!clinicId) return null;
+  if (db.organizations.some((item) => item.id === clinicId && item.deletedAt)) return null;
   return getClinicById(clinicId) || DEFAULT_CLINIC_CATALOG.find((item) => item.id === clinicId) || null;
 }
 
@@ -1157,7 +1591,7 @@ function getClinicFromPayload(payload) {
   const requestedName = normalizeLookup(payload.hospital || payload.clinicName || payload.clinic);
   if (!requestedName) return null;
   return (
-    db.organizations.find((item) => normalizeLookup(item.name) === requestedName) ||
+    db.organizations.find((item) => !item.deletedAt && normalizeLookup(item.name) === requestedName) ||
     DEFAULT_CLINIC_CATALOG.find((item) => normalizeLookup(item.name) === requestedName) ||
     null
   );
@@ -1176,19 +1610,43 @@ function getExplicitWorkspaceSelectionFromPayload(payload = {}) {
   return getCatalogClinicById(requestedId);
 }
 
+function hasExplicitWorkspaceSelection(payload = {}) {
+  return ["organizationId", "clinicId", "clinic"].some((key) =>
+    Object.prototype.hasOwnProperty.call(payload, key),
+  );
+}
+
+function getRequestedWorkspaceId(payload = {}) {
+  return readString(payload.organizationId || payload.clinicId || payload.clinic, 120);
+}
+
 function hasWorkspaceMembership(user, organizationId) {
   const nextOrganizationId = readString(organizationId, 120);
   if (!user || !nextOrganizationId) return false;
-  return db.memberships.some(
+  const membership = db.memberships.find(
     (membership) =>
       membership.userId === user.id && membership.organizationId === nextOrganizationId,
   );
+  return isOperationalWorkspaceMembership(user, membership, getClinicById(nextOrganizationId));
+}
+
+function hasWorkspaceRelationship(user, organizationId) {
+  const workspaceId = readString(organizationId, 120);
+  if (!isActiveUserAccount(user) || !workspaceId) return false;
+  const workspace = getClinicById(workspaceId);
+  const membership = db.memberships.find(
+    (item) => item.userId === user.id && item.organizationId === workspaceId,
+  );
+  return isOperationalWorkspaceMembership(user, membership, workspace);
 }
 
 function ensureOrganizationFromCatalog(clinic) {
   if (!clinic) return null;
   const existing = getClinicById(clinic.id);
   if (existing) return existing;
+  if (db.organizations.some((item) => item.id === clinic.id && item.deletedAt)) {
+    throw httpError(410, "Workspace đã được lưu trữ", "WORKSPACE_ARCHIVED");
+  }
   const organization = {
     id: clinic.id,
     name: clinic.name,
@@ -1209,6 +1667,7 @@ function ensureOrganizationFromCatalog(clinic) {
 function ensurePersonalWorkspaceForUser(user) {
   const id = `org_personal_${String(user.id || user.firebaseUid || "user").replace(/[^a-zA-Z0-9_]/g, "_")}`;
   let workspace = db.organizations.find((item) => item.id === id);
+  if (workspace?.deletedAt) throw httpError(410, "Workspace cá nhân đã được lưu trữ", "WORKSPACE_ARCHIVED");
   if (!workspace) {
     const createdAt = nowIso();
     workspace = {
@@ -1232,6 +1691,7 @@ function ensurePersonalWorkspaceForUser(user) {
 function ensureSoloPracticeWorkspaceForUser(user, payload = {}) {
   const id = `org_solo_${String(user.id || user.firebaseUid || "doctor").replace(/[^a-zA-Z0-9_]/g, "_")}`;
   let workspace = db.organizations.find((item) => item.id === id);
+  if (workspace?.deletedAt) throw httpError(410, "Workspace phòng khám đã được lưu trữ", "WORKSPACE_ARCHIVED");
   const name =
     readString(payload.workspaceName || payload.clinicName || payload.hospital, 160) ||
     `Phòng khám cá nhân - ${user.name || user.email || user.id}`;
@@ -1284,18 +1744,27 @@ function publicClinic(org) {
     subscriptionStatus: org.subscriptionStatus || "trial",
     billingCycle: org.billingCycle || "monthly",
     ownerUserId: org.ownerUserId || "",
+    version: Number.isInteger(Number(org.version)) && Number(org.version) > 0 ? Number(org.version) : 1,
+    deletedAt: org.deletedAt || "",
     createdAt: org.createdAt || "",
     updatedAt: org.updatedAt || "",
   };
 }
 
-function isDoctorWorkspaceUser(user) {
-  return user && (user.role === "doctor" || user.requestedRole === "doctor");
+function isDoctorWorkspaceUser(user, organizationId) {
+  if (!isActiveUserAccount(user) || !isApprovedDoctorRole(user)) return false;
+  return db.memberships.some(
+    (membership) =>
+      membership.userId === user.id &&
+      membership.organizationId === organizationId &&
+      normalizeWorkspaceRole(membership.role) === "doctor" &&
+      isActiveWorkspaceMembershipRecord(membership),
+  );
 }
 
 function getWorkspaceLinkSummary(organizationId) {
   const users = db.users.filter((user) => user.organizationId === organizationId);
-  const doctors = users.filter(isDoctorWorkspaceUser);
+  const doctors = users.filter((user) => isDoctorWorkspaceUser(user, organizationId));
   const patients = db.patients.filter((patient) => patient.organizationId === organizationId);
   const devices = db.devices.filter((device) => device.organizationId === organizationId);
   return {
@@ -1338,16 +1807,20 @@ function getWorkspaceOperationalSummary(organizationId) {
 }
 
 function getWorkspaceUsage(organizationId) {
-  const audioStorageBytes = db.storageFiles
+  const totalStorageBytes = db.storageFiles
     .filter((file) => file.organizationId === organizationId)
-    .reduce((total, file) => total + Number(file.sizeBytes || file.size || 0), 0);
+    .reduce((total, file) => total + Number(file.byteSize || file.sizeBytes || file.size || 0), 0);
   const linkSummary = getWorkspaceLinkSummary(organizationId);
   return {
     doctors: linkSummary.doctors,
     patients: linkSummary.patients,
     devices: linkSummary.devices,
-    aiMonthly: db.aiResults.filter((result) => result.organizationId === organizationId).length,
-    storageGb: Math.round((audioStorageBytes / 1024 / 1024 / 1024) * 100) / 100,
+    aiMonthly: db.aiResults.filter((result) => {
+      const resultOrgId = result.organizationId || getScanOrgId(findScan(result.scanId));
+      return resultOrgId === organizationId;
+    }).length,
+    storageGb: Math.round((totalStorageBytes / 1024 / 1024 / 1024) * 100) / 100,
+    storageMetric: "total_storage",
   };
 }
 
@@ -1389,13 +1862,265 @@ function publicWorkspace(org) {
   };
 }
 
+function getWorkspaceExpectedVersion(req, payload = {}, url = null) {
+  const bodyVersion = Object.prototype.hasOwnProperty.call(payload, "expectedVersion")
+    ? payload.expectedVersion
+    : payload.version;
+  if (bodyVersion !== undefined && bodyVersion !== null && bodyVersion !== "") return bodyVersion;
+  const queryVersion = url?.searchParams?.get("version") || url?.searchParams?.get("expectedVersion");
+  if (queryVersion) return queryVersion;
+  const ifMatch = readString(req.headers["if-match"], 80).replace(/^W\//i, "").replace(/^"|"$/g, "");
+  return ifMatch || undefined;
+}
+
+function requireWorkspaceLifecycleRepository() {
+  if (!repositories?.workspaceLifecycle) {
+    throw httpError(
+      503,
+      "Canonical workspace lifecycle repository is unavailable",
+      "WORKSPACE_LIFECYCLE_REPOSITORY_UNAVAILABLE",
+    );
+  }
+  return repositories.workspaceLifecycle;
+}
+
+function setWorkspacePaginationHeaders(res, pageResult) {
+  const total = Number(pageResult.total || 0);
+  const page = Number(pageResult.page || 1);
+  const limit = Number(pageResult.limit || 25);
+  const pageCount = total === 0 ? 0 : Math.ceil(total / limit);
+  res.setHeader("X-Total-Count", String(total));
+  res.setHeader("X-Pagination-Total", String(total));
+  res.setHeader("X-Page", String(page));
+  res.setHeader("X-Page-Limit", String(limit));
+  res.setHeader("X-Page-Count", String(pageCount));
+}
+
+async function approveWorkspaceOwnerIdentity(req, actorUser, workspace, payload = {}) {
+  if (!workspace || workspace.deletedAt) {
+    throw httpError(404, "Không tìm thấy workspace", "WORKSPACE_NOT_FOUND");
+  }
+  if (normalizeWorkspaceType(workspace.workspaceType || workspace.type, "clinic") === "personal") {
+    throw httpError(409, "Workspace cá nhân không dùng luồng phê duyệt owner", "PERSONAL_WORKSPACE_OWNER_IMMUTABLE");
+  }
+  const ownerUserId = readString(workspace.ownerUserId, 120);
+  if (!ownerUserId) {
+    throw httpError(409, "Workspace hoạt động phải có chủ sở hữu", "WORKSPACE_OWNER_REQUIRED");
+  }
+  const idempotencyKey = getRequiredIdempotencyKey(req, payload, "workspace owner approval");
+  if (
+    !repositories?.organizations?.beginOwnerTransfer ||
+    !repositories?.organizations?.completeOwnerTransfer
+  ) {
+    throw httpError(503, "Kho dữ liệu phê duyệt workspace chưa sẵn sàng", "WORKSPACE_APPROVAL_UNAVAILABLE");
+  }
+  const requestContext = getRequestContext(req) || createRequestContext(req);
+  const idempotency = {
+    scope: getIdempotencyScope(actorUser, workspace.id),
+    operation: "workspace.owner.approval",
+    key: idempotencyKey,
+    fingerprint: createIdempotencyFingerprint({
+      organizationId: workspace.id,
+      ownerUserId,
+      target: "identity_ready",
+    }),
+  };
+  const operationId = `workspace_owner_approval_${crypto
+    .createHash("sha256")
+    .update(`${idempotency.scope}:${idempotency.key}`)
+    .digest("hex")
+    .slice(0, 24)}`;
+  const reservation = await repositories.organizations.beginOwnerTransfer({
+    organizationId: workspace.id,
+    newOwnerUserId: ownerUserId,
+    actorUserId: actorUser.id,
+    idempotency,
+    ip: requestContext.ip || req.socket.remoteAddress || "",
+    userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+  });
+  let approval = reservation;
+  let identitySaga = null;
+  if (reservation.state !== "completed") {
+    const canonicalOwner = reservation.replacementOwner;
+    if (!canonicalOwner) {
+      throw httpError(404, "Không tìm thấy tài khoản chủ workspace", "WORKSPACE_OWNER_NOT_FOUND");
+    }
+    if (reservation.requiresIdentityTransition) {
+      const targetState = {
+        role: "workspace_owner",
+        requestedRole: "workspace_owner",
+        roleRequestStatus: "approved",
+        organizationId: workspace.id,
+        accountStatus: "active",
+        hospital: workspace.name || canonicalOwner.hospital || "Shcare",
+      };
+      identitySaga = await runIdentityProviderSaga(
+        req,
+        actorUser,
+        canonicalOwner,
+        "change_role",
+        { role: "workspace_owner", organizationId: workspace.id },
+        async () => {
+          const providerResult = await setFirebaseRoleClaimsForUser(
+            canonicalOwner,
+            "workspace_owner",
+            workspace.id,
+          );
+          return {
+            ...providerResult,
+            skipped: !canonicalOwner.firebaseUid,
+            firebaseClaims: providerResult.claims,
+          };
+        },
+        {
+          targetState,
+          protectLastPlatformAdmin: isPlatformAdminUser(canonicalOwner),
+          deferBackendFinalization: true,
+        },
+      );
+    }
+    approval = await repositories.organizations.completeOwnerTransfer({
+      organizationId: workspace.id,
+      newOwnerUserId: ownerUserId,
+      actorUserId: actorUser.id,
+      identityOperationId: identitySaga?.completed.identityOperation.id || reservation.identityOperationId || "",
+      idempotency,
+      ip: requestContext.ip || req.socket.remoteAddress || "",
+      userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+    });
+  }
+  const replayed = approval.replayed === true || reservation.state === "completed";
+  return {
+    workspace: approval.organization || reservation.organization || workspace,
+    ownerApproval: {
+      userId: ownerUserId,
+      role: "workspace_owner",
+      requestedRole: "workspace_owner",
+      roleRequestStatus: "approved",
+      identityOperationId: approval.identityOperationId || identitySaga?.completed.identityOperation.id || "",
+    },
+    operationId,
+    idempotent: replayed,
+    replayed,
+  };
+}
+
+function publicServicePackage(servicePackage) {
+  if (!servicePackage) return null;
+  return {
+    id: servicePackage.id,
+    name: servicePackage.name || servicePackage.id,
+    type: servicePackage.type || "",
+    segment: servicePackage.segment || "",
+    price: Number(servicePackage.price || 0),
+    currency: servicePackage.currency || "VND",
+    duration: servicePackage.duration || "monthly",
+    maxDevices: Number(servicePackage.maxDevices || 0),
+    maxDoctors: Number(servicePackage.maxDoctors || 0),
+    maxPatients: Number(servicePackage.maxPatients || 0),
+    storageGb: Number(servicePackage.storageGb || 0),
+    aiMonthly: Number(servicePackage.aiMonthly || 0),
+    retentionDays: Number(servicePackage.retentionDays || 0),
+    features: servicePackage.features && typeof servicePackage.features === "object" ? servicePackage.features : {},
+    status: servicePackage.status || "active",
+    createdAt: servicePackage.createdAt || "",
+    updatedAt: servicePackage.updatedAt || "",
+  };
+}
+
+function getBillingUsageRows(usage, quota) {
+  return [
+    { key: "doctors", label: "Bác sĩ / nhân sự", used: Number(usage.doctors || 0), limit: Number(quota.maxDoctors || 0), unit: "người" },
+    { key: "patients", label: "Bệnh nhân", used: Number(usage.patients || 0), limit: Number(quota.maxPatients || 0), unit: "hồ sơ" },
+    { key: "devices", label: "Thiết bị", used: Number(usage.devices || 0), limit: Number(quota.maxDevices || 0), unit: "thiết bị" },
+    { key: "aiMonthly", label: "Lượt AI tháng", used: Number(usage.aiMonthly || 0), limit: Number(quota.aiMonthly || 0), unit: "lượt" },
+    { key: "storageGb", label: "Dung lượng lưu trữ", used: Number(usage.storageGb || 0), limit: Number(quota.storageGb || 0), unit: "GB" },
+  ].map((row) => {
+    const percent = row.limit > 0 ? Math.min(100, Math.round((row.used / row.limit) * 100)) : null;
+    return {
+      ...row,
+      percent,
+      status: percent === null ? "unlimited" : percent >= 100 ? "exceeded" : percent >= 80 ? "warning" : "ok",
+    };
+  });
+}
+
+function getWorkspaceBillingSubscription(workspace, servicePackage) {
+  const subscriptions = Array.isArray(db.subscriptions) ? db.subscriptions : [];
+  const existing =
+    subscriptions.find((item) => item.organizationId === workspace.id && item.packageId === workspace.packageId && !item.canceledAt) ||
+    subscriptions.find((item) => item.organizationId === workspace.id && !item.canceledAt) ||
+    subscriptions.find((item) => item.organizationId === workspace.id) ||
+    null;
+  const status = existing?.status || workspace.subscriptionStatus || "trial";
+  const billingCycle = existing?.billingCycle || workspace.billingCycle || servicePackage?.duration || "monthly";
+  return {
+    id: existing?.id || "",
+    organizationId: workspace.id,
+    packageId: existing?.packageId || workspace.packageId || servicePackage?.id || "",
+    status,
+    billingCycle,
+    source: existing ? "subscription" : "workspace",
+    startedAt: existing?.startedAt || workspace.createdAt || "",
+    renewsAt: existing?.renewsAt || "",
+    canceledAt: existing?.canceledAt || "",
+    createdAt: existing?.createdAt || workspace.createdAt || "",
+    updatedAt: existing?.updatedAt || workspace.updatedAt || "",
+  };
+}
+
+function buildPortalBillingSummary(user) {
+  const workspaceContext = getUserWorkspaceContext(user);
+  const workspaceId = workspaceContext.currentWorkspaceId || user.organizationId || "";
+  const workspace = getClinicById(workspaceId);
+  if (!workspace) {
+    throw httpError(404, "Không tìm thấy workspace hiện tại");
+  }
+  const servicePackage = db.servicePackages.find((item) => item.id === workspace.packageId) || null;
+  const usage = getWorkspaceUsage(workspace.id);
+  const quota = getPackageQuota(workspace.packageId);
+  const publicPackage = publicServicePackage(servicePackage);
+  return {
+    generatedAt: nowIso(),
+    workspace: publicWorkspace(workspace),
+    package: publicPackage,
+    subscription: getWorkspaceBillingSubscription(workspace, servicePackage),
+    usage,
+    quota,
+    usageRows: getBillingUsageRows(usage, quota),
+    currentCharge: publicPackage
+      ? {
+          packageId: publicPackage.id,
+          amount: publicPackage.price,
+          currency: publicPackage.currency,
+          cycle: workspace.billingCycle || publicPackage.duration || "monthly",
+          source: "service_package",
+        }
+      : null,
+    billingContact: {
+      name: workspace.representative || workspace.name || "",
+      email: workspace.email || "",
+      phone: workspace.phone || "",
+      address: workspace.address || "",
+    },
+    invoicePolicy: {
+      mode: "manual",
+      providerConfigured: false,
+      message: "Smart Health đang ghi nhận gói dịch vụ và liên hệ thanh toán ở cấp workspace.",
+    },
+  };
+}
+
 function getActiveClinics() {
   const byId = new Map();
-  for (const org of db.organizations.filter((item) => String(item.status || "active") === "active")) {
+  const archivedIds = new Set(
+    db.organizations.filter((item) => item.deletedAt).map((item) => item.id),
+  );
+  for (const org of db.organizations.filter((item) => !item.deletedAt && String(item.status || "active") === "active")) {
     byId.set(org.id, publicClinic(org));
   }
   for (const clinic of DEFAULT_CLINIC_CATALOG) {
-    if (!byId.has(clinic.id)) {
+    if (!archivedIds.has(clinic.id) && !byId.has(clinic.id)) {
       byId.set(clinic.id, publicClinic(clinic));
     }
   }
@@ -1509,13 +2234,18 @@ function createNotification(type, title, message, metadata = {}) {
 
 async function createBackendNotification(input) {
   const createdAfter = Date.now() - 5000;
+  const inputMetadata = sanitizeNotificationMetadata(input.metadata || input);
+  const inputMetadataKey = JSON.stringify(stableJsonValue(inputMetadata));
   const duplicate = db.notifications.find((notification) => {
     const createdAt = new Date(notification.createdAt || 0).getTime();
     return (
       createdAt >= createdAfter &&
       notification.type === input.type &&
       notification.title === input.title &&
-      notification.message === input.message
+      notification.message === input.message &&
+      readString(notification.userId, 120) === readString(input.userId, 120) &&
+      readString(notification.organizationId, 120) === readString(input.organizationId, 120) &&
+      JSON.stringify(stableJsonValue(notification.metadata || {})) === inputMetadataKey
     );
   });
   if (duplicate) {
@@ -1526,8 +2256,8 @@ async function createBackendNotification(input) {
     };
   }
   if (repositories) {
-    const notification = await repositories.notifications.create(input);
-    notification.metadata = sanitizeNotificationMetadata(input.metadata || input);
+    const notification = await repositories.notifications.create({ ...input, metadata: inputMetadata });
+    notification.metadata = inputMetadata;
     queuePlatformAdminNotificationEmail(notification);
     queueNotificationPush(notification);
     return notification;
@@ -1554,7 +2284,6 @@ async function appendAudit(action, req, detail = {}) {
   log.id = createId("audit");
   log.createdAt = nowIso();
   db.auditLogs.unshift(log);
-  db.auditLogs = db.auditLogs.slice(0, 1000);
   return log;
 }
 
@@ -1564,6 +2293,254 @@ async function saveDeviceRecord(device) {
     return;
   }
   saveDb();
+}
+
+const ACTIVE_DEVICE_ROTATION_STATES = new Set([
+  "initiated",
+  "pending_device_ack",
+  "confirming",
+]);
+
+function credentialRotationExpectation(device = {}) {
+  const rotation = sanitizeDeviceCredentialRotation(device.credentialRotation);
+  return {
+    id: rotation.id || "",
+    state: rotation.state || "",
+    updatedAt: rotation.updatedAt || "",
+  };
+}
+
+async function appendDeviceRotationAudit(action, device, rotation, metadata = {}) {
+  const log = {
+    action,
+    actorUserId: rotation.requestedByUserId || "",
+    organizationId: device.organizationId || "",
+    resourceType: "device",
+    resourceId: device.id,
+    metadata: sanitizeAuditMetadata({
+      rotationId: rotation.id,
+      state: rotation.state,
+      commandId: rotation.commandId || "",
+      ...metadata,
+    }),
+  };
+  if (repositories?.auditLogs?.append) return repositories.auditLogs.append(log);
+  const item = { id: createId("audit"), ...log, createdAt: nowIso() };
+  db.auditLogs.unshift(item);
+  await saveDb();
+  return item;
+}
+
+async function expireDeviceCredentialRotation(device, at = new Date()) {
+  const rotation = sanitizeDeviceCredentialRotation(device?.credentialRotation);
+  const expectedRotation = credentialRotationExpectation(device);
+  const atMs = at instanceof Date ? at.getTime() : new Date(at).getTime();
+  const expiresAtMs = Date.parse(rotation.expiresAt || "");
+  if (
+    !rotation.id ||
+    !ACTIVE_DEVICE_ROTATION_STATES.has(rotation.state) ||
+    !Number.isFinite(atMs) ||
+    !Number.isFinite(expiresAtMs) ||
+    atMs < expiresAtMs
+  ) {
+    return false;
+  }
+  const expiredAt = new Date(atMs).toISOString();
+  rotation.state = "expired";
+  rotation.expiredAt = expiredAt;
+  rotation.updatedAt = expiredAt;
+  rotation.failureCode = "ROTATION_EXPIRED";
+  rotation.nextSecretHash = "";
+  device.credentialRotation = rotation;
+  device.updatedAt = expiredAt;
+  const command = rotation.commandId
+    ? await findDeviceCommand(device.id, rotation.commandId)
+    : null;
+  if (command && !["applied", "failed", "expired"].includes(command.state)) {
+    transitionDeviceCommand(command, "expired", {
+      at: expiredAt,
+      code: "ROTATION_EXPIRED",
+      detail: "Credential candidate was not confirmed by an authenticated reconnect before expiry",
+    });
+    device.lastCommand = publicDeviceCommand(command);
+  }
+  const expiryAuditInput = {
+    action: "device.secret_rotation.expired",
+    actorUserId: rotation.requestedByUserId || "",
+    organizationId: device.organizationId || "",
+    resourceType: "device",
+    resourceId: device.id,
+    metadata: {
+      rotationId: rotation.id,
+      commandId: rotation.commandId || "",
+      state: rotation.state,
+      oldCredentialRetained: true,
+    },
+  };
+  if (repositories?.devices?.saveCredentialRotationWithAudit) {
+    await repositories.devices.saveCredentialRotationWithAudit(
+      device,
+      expiryAuditInput,
+      null,
+      200,
+      command,
+      expectedRotation,
+    );
+  } else {
+    if (command) await saveDeviceCommandRecord(command);
+    await saveDeviceRecord(device);
+    await appendDeviceRotationAudit("device.secret_rotation.expired", device, rotation, {
+      oldCredentialRetained: true,
+    });
+  }
+  await appendDeviceEvent(device.id, "credential_rotation.expired", {
+    rotationId: rotation.id,
+    commandId: rotation.commandId || "",
+    state: rotation.state,
+  });
+  return true;
+}
+
+async function updateCredentialRotationFromCommand(deviceId, command) {
+  if (!command || command.type !== "device.rotate_secret") return false;
+  const device = repositories
+    ? await repositories.devices.findById(deviceId)
+    : findDevice(deviceId);
+  const rotation = sanitizeDeviceCredentialRotation(device?.credentialRotation);
+  if (!device || !rotation.id || rotation.commandId !== command.id) return false;
+  if (!ACTIVE_DEVICE_ROTATION_STATES.has(rotation.state)) return false;
+  const expectedRotation = credentialRotationExpectation(device);
+  const updatedAt = command.updatedAt || nowIso();
+  let action = "";
+  if (["acknowledged", "applying"].includes(command.state)) {
+    rotation.state = "confirming";
+    rotation.acknowledgedAt = rotation.acknowledgedAt || command.acknowledgedAt || updatedAt;
+    rotation.confirmingAt = rotation.confirmingAt || updatedAt;
+    action = "device.secret_rotation.confirming";
+  } else if (command.state === "failed") {
+    rotation.state = "rolled_back";
+    rotation.rolledBackAt = updatedAt;
+    rotation.failureCode = command.code || "ROTATION_DEVICE_FAILED";
+    rotation.nextSecretHash = "";
+    action = "device.secret_rotation.rolled_back";
+  } else if (command.state === "expired") {
+    rotation.state = "expired";
+    rotation.expiredAt = updatedAt;
+    rotation.failureCode = command.code || "ROTATION_EXPIRED";
+    rotation.nextSecretHash = "";
+    action = "device.secret_rotation.expired";
+  } else {
+    return false;
+  }
+  rotation.updatedAt = updatedAt;
+  device.credentialRotation = rotation;
+  device.updatedAt = updatedAt;
+  device.lastCommand = publicDeviceCommand(command);
+  const auditInput = {
+    action,
+    actorUserId: rotation.requestedByUserId || "",
+    organizationId: device.organizationId || "",
+    resourceType: "device",
+    resourceId: device.id,
+    metadata: {
+      rotationId: rotation.id,
+      commandId: rotation.commandId || "",
+      state: rotation.state,
+      oldCredentialRetained: ["rolled_back", "expired"].includes(rotation.state),
+      code: rotation.failureCode || command.code || "",
+    },
+  };
+  if (repositories?.devices?.saveCredentialRotationWithAudit) {
+    await repositories.devices.saveCredentialRotationWithAudit(
+      device,
+      auditInput,
+      null,
+      200,
+      command,
+      expectedRotation,
+    );
+  } else {
+    await saveDeviceCommandRecord(command);
+    await saveDeviceRecord(device);
+    await appendDeviceRotationAudit(action, device, rotation, auditInput.metadata);
+  }
+  return true;
+}
+
+async function confirmDeviceCredentialRotation(device, authResult) {
+  const rotation = sanitizeDeviceCredentialRotation(device?.credentialRotation);
+  const expectedRotation = credentialRotationExpectation(device);
+  if (
+    !rotation.id ||
+    rotation.id !== authResult.rotationId ||
+    !ACTIVE_DEVICE_ROTATION_STATES.has(rotation.state) ||
+    !rotation.nextSecretHash
+  ) {
+    throw httpError(409, "Credential rotation is no longer active", "DEVICE_SECRET_ROTATION_NOT_ACTIVE");
+  }
+  const expiresAtMs = Date.parse(rotation.expiresAt || "");
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    await expireDeviceCredentialRotation(device);
+    throw httpError(410, "Credential rotation expired before reconnect confirmation", "DEVICE_SECRET_ROTATION_EXPIRED");
+  }
+  const confirmedAt = nowIso();
+  device.secretHash = rotation.nextSecretHash;
+  rotation.state = "confirmed";
+  rotation.confirmedAt = confirmedAt;
+  rotation.confirmedSessionId = authResult.sessionId;
+  rotation.updatedAt = confirmedAt;
+  rotation.nextSecretHash = "";
+  device.credentialRotation = rotation;
+  device.updatedAt = confirmedAt;
+  const command = rotation.commandId
+    ? await findDeviceCommand(device.id, rotation.commandId)
+    : null;
+  if (command && !["applied", "failed", "expired"].includes(command.state)) {
+    transitionDeviceCommand(command, "applied", {
+      at: confirmedAt,
+      code: "ROTATION_RECONNECT_CONFIRMED",
+      detail: "Device authenticated a new session with the candidate credential",
+    });
+    device.lastCommand = publicDeviceCommand(command);
+  }
+  const confirmationAuditInput = {
+    action: "device.secret_rotation.confirmed",
+    actorUserId: rotation.requestedByUserId || "",
+    organizationId: device.organizationId || "",
+    resourceType: "device",
+    resourceId: device.id,
+    metadata: {
+      rotationId: rotation.id,
+      commandId: rotation.commandId || "",
+      state: rotation.state,
+      confirmedByAuthenticatedReconnect: true,
+    },
+  };
+  if (repositories?.devices?.saveCredentialRotationWithAudit) {
+    await repositories.devices.saveCredentialRotationWithAudit(
+      device,
+      confirmationAuditInput,
+      null,
+      200,
+      command,
+      expectedRotation,
+    );
+  } else {
+    if (command) await saveDeviceCommandRecord(command);
+    await saveDeviceRecord(device);
+    await appendDeviceRotationAudit(
+      "device.secret_rotation.confirmed",
+      device,
+      rotation,
+      { confirmedByAuthenticatedReconnect: true },
+    );
+  }
+  await appendDeviceEvent(device.id, "credential_rotation.confirmed", {
+    rotationId: rotation.id,
+    commandId: rotation.commandId || "",
+    state: rotation.state,
+  });
+  return rotation;
 }
 
 async function saveScanRecord(scan) {
@@ -1576,6 +2553,16 @@ async function saveScanRecord(scan) {
 
 async function saveAudioArtifacts(scan, audioFile, aiResult) {
   if (repositories) {
+    if (repositories.audioProcessing?.save) {
+      await repositories.audioProcessing.save({
+        scan,
+        audioFile,
+        aiResult,
+        processingGeneration: scan.processingGeneration,
+        processingRunId: scan.processingRunId,
+      });
+      return;
+    }
     await repositories.audioFiles.save(audioFile);
     await repositories.aiResults.save(aiResult);
     await repositories.scans.save(scan);
@@ -1588,6 +2575,70 @@ function getScanOrgId(scan) {
   if (scan.organizationId) return scan.organizationId;
   const patient = db.patients.find((item) => item.id === scan.patientId);
   return patient ? patient.organizationId || "org_default_clinic" : "org_default_clinic";
+}
+
+async function buildAudioArtifactFingerprint(filePath) {
+  const hash = crypto.createHash("sha256");
+  const stream = fs.createReadStream(filePath);
+  try {
+    for await (const chunk of stream) {
+      hash.update(chunk);
+    }
+    return hash.digest("hex");
+  } finally {
+    stream.destroy();
+  }
+}
+
+function buildAudioProcessingRunId(scan, artifactFingerprint) {
+  const hash = crypto.createHash("sha256");
+  for (const part of [
+    scan.id,
+    scan.sampleRate || SAMPLE_RATE,
+    artifactFingerprint || scan.processingArtifactFingerprint || "",
+    getAudioProcessingGeneration(scan, 1),
+    getAudioProcessingIntent(scan, "initial"),
+    SIGNAL_QUALITY_ANALYZER_VERSION,
+  ]) {
+    hash.update(String(part ?? ""), "utf8");
+    hash.update("\0", "utf8");
+  }
+  return `run_v1_${hash.digest("hex").slice(0, 40)}`;
+}
+
+function deterministicAudioProcessingId(prefix, ...parts) {
+  const hash = crypto.createHash("sha256");
+  for (const part of parts) {
+    hash.update(String(part ?? ""), "utf8");
+    hash.update("\0", "utf8");
+  }
+  return `${prefix}_${hash.digest("hex").slice(0, 40)}`;
+}
+
+function getAudioProcessingGeneration(scan, fallback = 1) {
+  const candidate = Number(scan?.processingGeneration);
+  if (Number.isSafeInteger(candidate) && candidate >= 1) {
+    return candidate;
+  }
+  const persistedTimestamp = Date.parse(
+    readString(scan?.processingStartedAt || scan?.updatedAt || scan?.endedAt, 80),
+  );
+  if (Number.isSafeInteger(persistedTimestamp) && persistedTimestamp >= 1) {
+    return persistedTimestamp;
+  }
+  return fallback;
+}
+
+function getAudioProcessingIntent(scan, fallback = "initial") {
+  const intent = readString(scan?.processingIntent, 80);
+  if (intent) return intent;
+  if (
+    scan?.aiResultId &&
+    ["processing", "queued"].includes(scan.status || scan.processingStatus)
+  ) {
+    return "reprocess";
+  }
+  return fallback;
 }
 
 async function runInlineAudioProcessing(scan, wavFilePath) {
@@ -1612,9 +2663,33 @@ async function runInlineAudioProcessing(scan, wavFilePath) {
   };
 }
 
-async function enqueueAudioProcessing(scan, wavFilePath) {
-  if (!audioQueue) {
+async function enqueueAudioProcessing(scan, wavFilePath, processing = {}) {
+  if (!audioQueue?.enabled) {
     return false;
+  }
+  const processingGeneration =
+    processing.processingGeneration ?? getAudioProcessingGeneration(scan, 1);
+  const processingIntent = readString(
+    processing.processingIntent ?? scan.processingIntent,
+    80,
+  ) || "initial";
+  const artifactFingerprint =
+    readString(
+      processing.artifactFingerprint ?? scan.processingArtifactFingerprint,
+      512,
+    ) || (await buildAudioArtifactFingerprint(wavFilePath));
+  if (
+    scan.processingGeneration !== processingGeneration ||
+    scan.processingIntent !== processingIntent ||
+    scan.processingArtifactFingerprint !== artifactFingerprint
+  ) {
+    Object.assign(scan, {
+      processingGeneration,
+      processingIntent,
+      processingArtifactFingerprint: artifactFingerprint,
+      updatedAt: nowIso(),
+    });
+    await saveScanRecord(scan);
   }
   return audioQueue.enqueue({
     scanId: scan.id,
@@ -1622,12 +2697,15 @@ async function enqueueAudioProcessing(scan, wavFilePath) {
     organizationId: getScanOrgId(scan),
     wavFilePath,
     sampleRate: scan.sampleRate || SAMPLE_RATE,
+    processingGeneration,
+    processingIntent,
+    artifactFingerprint,
   });
 }
 
-async function queueAudioProcessingIfAvailable(scan, wavFilePath) {
+async function queueAudioProcessingIfAvailable(scan, wavFilePath, processing = {}) {
   try {
-    return await enqueueAudioProcessing(scan, wavFilePath);
+    return await enqueueAudioProcessing(scan, wavFilePath, processing);
   } catch (error) {
     console.warn(`Audio queue unavailable for scan ${scan.id}: ${error.message}`);
     return false;
@@ -1635,6 +2713,9 @@ async function queueAudioProcessingIfAvailable(scan, wavFilePath) {
 }
 
 async function handleDeviceTelemetry(deviceId, payload = {}) {
+  if (containsSensitiveDeviceCredential(payload)) {
+    throw httpError(400, "Device telemetry contains a forbidden credential field");
+  }
   let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
   if (!device) {
     device = {
@@ -1646,32 +2727,97 @@ async function handleDeviceTelemetry(deviceId, payload = {}) {
       createdAt: nowIso(),
     };
   }
-  if (device.revokedAt) {
+  if (device.revokedAt || device.status === "revoked") {
     await appendDeviceEvent(device.id, "telemetry_rejected", { reason: "revoked" });
     return;
   }
   device.connected = true;
-  device.status = payload.status || "connected";
+  device.status = "connected";
   device.signal = readOptionalNumber(payload.signal ?? payload.rssi) ?? device.signal;
   device.wifiRssi = readOptionalNumber(payload.wifiRssi ?? payload.rssi) ?? device.wifiRssi;
   device.battery = readOptionalNumber(payload.battery) ?? device.battery;
   device.connectionMethod = payload.connectionMethod || device.connectionMethod || "MQTT";
-  device.firmwareVersion = payload.firmwareVersion || payload.firmware || device.firmwareVersion;
+  const reportedFirmwareVersion = readString(payload.firmwareVersion || payload.firmware, 80);
+  device.firmwareVersion = reportedFirmwareVersion || device.firmwareVersion;
   device.ipAddress = readString(payload.ipAddress || payload.ip, 80) || device.ipAddress;
   device.wifiSsid = readString(payload.wifiSsid, 120) || device.wifiSsid;
-  device.audioStatus = readString(payload.audioStatus, 80) || device.audioStatus || "streaming";
+  device.audioStatus = readString(payload.audioStatus, 80) || device.audioStatus || "ready";
   device.otaStatus = readString(payload.otaStatus, 80) || device.otaStatus || "";
   device.backendHost = readString(payload.backendHost, 160) || device.backendHost;
   device.backendPort = readOptionalNumber(payload.backendPort) ?? device.backendPort;
   device.lastSeenAt = nowIso();
   device.updatedAt = nowIso();
+  const incomingTelemetry = sanitizeDeviceTelemetry(payload);
+  const previousTelemetry = sanitizeDeviceTelemetry(device.telemetry);
+  if (Object.keys(incomingTelemetry).length > 0) {
+    device.telemetry = {
+      ...previousTelemetry,
+      ...incomingTelemetry,
+    };
+  } else if (Object.keys(previousTelemetry).length > 0) {
+    device.telemetry = previousTelemetry;
+  }
+  let confirmedOta = null;
+  const otaCommand = await refreshDeviceCommandExpiry(
+    device.ota?.commandId
+      ? await findDeviceCommand(device.id, device.ota.commandId)
+      : null,
+  );
+  const authenticatedSocket = getAuthenticatedDeviceSocket(device);
+  const authenticatedSessionId = readString(authenticatedSocket?._deviceAuth?.sessionId, 128);
+  if (
+    reportedFirmwareVersion &&
+    device.ota &&
+    device.ota.firmwareVersion === reportedFirmwareVersion &&
+    device.ota.status !== "confirmed" &&
+    authenticatedSessionId &&
+    device.ota.requestedSessionId &&
+    authenticatedSessionId !== device.ota.requestedSessionId &&
+    otaCommand &&
+    ["acknowledged", "applying", "applied"].includes(otaCommand.state)
+  ) {
+    device.ota.status = "confirmed";
+    device.ota.confirmedAt = device.updatedAt;
+    device.ota.updatedAt = device.updatedAt;
+    device.otaStatus = "confirmed";
+    confirmedOta = {
+      otaId: device.ota.id,
+      commandId: device.ota.commandId || device.ota.id,
+      correlationId: device.ota.correlationId || "",
+      firmwareVersion: reportedFirmwareVersion,
+      confirmedAt: device.ota.confirmedAt,
+    };
+    if (["acknowledged", "applying"].includes(otaCommand.state)) {
+      transitionDeviceCommand(otaCommand, "applied", {
+        at: device.updatedAt,
+        code: "OTA_VERSION_CONFIRMED",
+        detail: "Device reconnected with the requested firmware version",
+      });
+      await saveDeviceCommandRecord(otaCommand);
+      device.lastCommand = publicDeviceCommand(otaCommand);
+    }
+  }
   await saveDeviceRecord(device);
   await appendDeviceEvent(device.id, "telemetry", payload);
+  if (confirmedOta) {
+    await appendDeviceEvent(device.id, "ota.confirmed", confirmedOta);
+  }
 }
 
 async function handleDeviceEvent(deviceId, payload = {}) {
+  if (containsSensitiveDeviceCredential(payload)) {
+    throw httpError(400, "Device event contains a forbidden credential field");
+  }
   const eventType = readString(payload.type || payload.eventType, 120) || "event";
   let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
+  if (device && (device.revokedAt || device.status === "revoked")) {
+    await appendDeviceEvent(device.id, "event_rejected", { reason: "revoked", eventType });
+    return;
+  }
+  if (eventType === "command.status") {
+    await handleDeviceCommandStatus(deviceId, payload);
+    return;
+  }
   if (device) {
     if (payload.otaStatus || eventType.startsWith("ota.")) {
       device.otaStatus = readString(payload.otaStatus || eventType.replace(/^ota\./, ""), 80) || device.otaStatus;
@@ -1689,36 +2835,99 @@ async function handleDeviceEvent(deviceId, payload = {}) {
   await appendDeviceEvent(deviceId, eventType, payload);
 }
 
-async function registerDeviceSocket(socket, payload = {}) {
-  const deviceId = resolveIncomingDeviceId(payload, socket);
-  if (!deviceId) {
-    closeSocket(socket);
+async function authenticateDeviceSocket(socket, payload = {}) {
+  const result = await deviceAuthenticator.authenticate(socket, payload);
+  if (socket._cleanedUp || socket.destroyed || !socket.writable) {
     return false;
   }
-  const suppliedSecret = readString(payload.secret || socket._querySecret, 160);
-  let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
-  if (device && device.secret && suppliedSecret !== device.secret) {
-    await appendDeviceEvent(deviceId, "socket_rejected", { reason: "invalid_secret" });
-    closeSocket(socket);
+  if (!result.ok) {
+    sendText(socket, JSON.stringify({ type: "auth.rejected", code: result.code }));
+    closeSocket(socket, 1008, result.code);
     return false;
   }
-  socket._deviceId = deviceId;
-  deviceSockets.set(deviceId, socket);
-  await handleDeviceTelemetry(deviceId, {
-    ...(payload.telemetry || payload),
+
+  let confirmedRotation = null;
+  try {
+    if (result.credentialSlot === "rotation_candidate") {
+      confirmedRotation = await confirmDeviceCredentialRotation(result.device, result);
+    } else {
+      await expireDeviceCredentialRotation(result.device);
+    }
+  } catch (error) {
+    if (Buffer.isBuffer(result.rotationWrapKey)) result.rotationWrapKey.fill(0);
+    sendText(socket, JSON.stringify({
+      type: "auth.rejected",
+      code: error.code || "DEVICE_SECRET_ROTATION_CONFIRMATION_FAILED",
+    }));
+    closeSocket(socket, 1011, error.code || "ROTATION_CONFIRMATION_FAILED");
+    return false;
+  }
+
+  const previousSocket = deviceSockets.get(result.deviceId);
+  if (previousSocket && previousSocket !== socket) {
+    closeSocket(
+      previousSocket,
+      1008,
+      confirmedRotation ? "CREDENTIAL_ROTATED" : "SESSION_REPLACED",
+    );
+  }
+
+  socket._deviceId = result.deviceId;
+  socket._deviceAuth = {
+    protocolVersion: 1,
+    deviceId: result.deviceId,
+    organizationId: result.device.organizationId || "",
+    sessionId: result.sessionId,
+    credentialSlot: result.credentialSlot,
+    rotationId: result.rotationId || "",
+  };
+  deviceRotationSessionKeys.set(socket, Buffer.from(result.rotationWrapKey));
+  result.rotationWrapKey.fill(0);
+  if (socket._authTimeout) {
+    clearTimeout(socket._authTimeout);
+    socket._authTimeout = null;
+  }
+  espClients.add(socket);
+  deviceSockets.set(result.deviceId, socket);
+  await handleDeviceTelemetry(result.deviceId, {
+    ...(payload.telemetry || {}),
     connectionMethod: "WSS",
     status: "connected",
-    audioStatus: "streaming",
+    audioStatus: readString(payload?.telemetry?.audioStatus, 80) || "ready",
   });
+  sendText(
+    socket,
+    JSON.stringify({
+      type: "auth.accepted",
+      protocolVersion: 1,
+      challengeId: result.challengeId,
+      deviceId: result.deviceId,
+      sessionId: result.sessionId,
+      serverTime: nowIso(),
+      telemetryIntervalMs: 5_000,
+      credentialSlot: result.credentialSlot,
+      rotationId: result.rotationId || "",
+      rotationState: confirmedRotation ? "confirmed" : "",
+    })
+  );
+  broadcastStatus();
   return true;
 }
 
 function publishDeviceCommand(deviceId, command) {
   const socket = deviceSockets.get(deviceId);
+  const device = findDevice(deviceId);
+  if (!device || device.revokedAt || device.status === "revoked") {
+    return { websocket: false, mqtt: false, delivered: false };
+  }
   let websocket = false;
-  if (socket && socket.writable && !socket.destroyed) {
-    sendText(socket, JSON.stringify(command));
-    websocket = true;
+  if (
+    socket &&
+    socket._deviceAuth?.deviceId === deviceId &&
+    socket.writable &&
+    !socket.destroyed
+  ) {
+    websocket = sendText(socket, JSON.stringify(command));
   }
   let mqtt = false;
   if (mqttControlPlane && mqttControlPlane.enabled) {
@@ -1726,6 +2935,178 @@ function publishDeviceCommand(deviceId, command) {
     mqtt = true;
   }
   return { websocket, mqtt, delivered: websocket || mqtt };
+}
+
+function buildDeviceCommand(type, payload, correlationId, ttlMs = 30_000) {
+  return createDeviceCommandEnvelope({
+    id: createId("cmd"),
+    type,
+    payload,
+    correlationId: readString(correlationId, 128) || createId("correlation"),
+    ttlMs,
+  });
+}
+
+async function findDeviceCommand(deviceId, commandId) {
+  const scopedDeviceId = readString(deviceId, 120);
+  const scopedCommandId = readString(commandId, 128);
+  if (repositories?.deviceCommands?.findById) {
+    return repositories.deviceCommands.findById(scopedDeviceId, scopedCommandId);
+  }
+  return db.deviceCommands.find(
+    (command) => command.deviceId === scopedDeviceId && command.id === scopedCommandId,
+  ) || null;
+}
+
+async function listDeviceCommands(deviceId, limit = 100) {
+  const scopedDeviceId = readString(deviceId, 120);
+  const boundedLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+  if (repositories?.deviceCommands?.listForDevice) {
+    return repositories.deviceCommands.listForDevice(scopedDeviceId, boundedLimit);
+  }
+  return db.deviceCommands
+    .filter((command) => command.deviceId === scopedDeviceId)
+    .sort((left, right) => String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
+    .slice(0, boundedLimit);
+}
+
+async function saveDeviceCommandRecord(command) {
+  if (repositories?.deviceCommands?.save) {
+    return repositories.deviceCommands.save(command);
+  }
+  db.deviceCommands = Array.isArray(db.deviceCommands) ? db.deviceCommands : [];
+  const index = db.deviceCommands.findIndex((item) => item.id === command.id);
+  if (index >= 0) {
+    db.deviceCommands[index] = command;
+  } else {
+    db.deviceCommands.unshift(command);
+  }
+  db.deviceCommands = db.deviceCommands.slice(0, 1000);
+  await saveDb();
+  return command;
+}
+
+async function syncDeviceLastCommand(command) {
+  const device = findDevice(command.deviceId);
+  if (!device) return;
+  device.lastCommand = publicDeviceCommand(command);
+  device.updatedAt = nowIso();
+  await saveDeviceRecord(device);
+}
+
+async function refreshDeviceCommandExpiry(command) {
+  if (!command) return null;
+  const result = expireDeviceCommandIfOverdue(command);
+  if (result.changed) {
+    await saveDeviceCommandRecord(command);
+    await syncDeviceLastCommand(command);
+    await appendDeviceEvent(command.deviceId, "command.expired", {
+      commandId: command.id,
+      correlationId: command.correlationId,
+      type: command.type,
+      state: command.state,
+      code: command.code,
+    });
+  }
+  return command;
+}
+
+async function reconcileAudioSessionCommand(command) {
+  if (!command || !["audio.session.start", "audio.session.stop"].includes(command.type)) return;
+  const recording = getActiveRecordingByCommandId(command.id);
+  if (!recording) return;
+  if (command.type === "audio.session.start") {
+    if (command.state === "applied") {
+      await markRecordingStarted(recording, "device_command_ack");
+      return;
+    }
+    if (["failed", "expired"].includes(command.state)) {
+      await interruptRecording(
+        recording,
+        `The audio session was interrupted because the device reported ${command.state}: ${command.code || "unknown"}.`,
+      );
+    }
+    return;
+  }
+  if (["failed", "expired"].includes(command.state)) {
+    await interruptRecording(
+      recording,
+      `The audio session was interrupted because the stop command ${command.state}: ${command.code || "unknown"}.`,
+    );
+  }
+}
+
+async function handleDeviceCommandStatus(deviceId, payload) {
+  const commandId = readString(payload.commandId, 128);
+  const command = await findDeviceCommand(deviceId, commandId);
+  if (!command) {
+    await appendDeviceEvent(deviceId, "command.status_rejected", {
+      commandId,
+      correlationId: readString(payload.correlationId, 128),
+      reportedState: readString(payload.state, 40),
+      code: "DEVICE_COMMAND_NOT_FOUND",
+    });
+    return false;
+  }
+
+  try {
+    if (command.type === "device.rotate_secret" && readString(payload.state, 40) === "applied") {
+      await appendDeviceEvent(deviceId, "command.status_rejected", {
+        commandId: command.id,
+        correlationId: command.correlationId,
+        reportedState: "applied",
+        code: "ROTATION_RECONNECT_REQUIRED",
+      });
+      return false;
+    }
+    const transition = applyDeviceReportedCommandStatus(command, payload, deviceId);
+    // Keep the scan projection in lockstep with the device ACK before any
+    // command persistence await can expose a terminal command with a stale
+    // `created` recording to concurrent readers.
+    await reconcileAudioSessionCommand(command);
+    if (transition.changed) {
+      if (command.type === "ota.update") {
+        const device = findDevice(deviceId);
+        if (device?.ota?.commandId === command.id) {
+          const otaState = command.state === "applied"
+            ? "rebooting"
+            : command.state === "applying" && command.code === "OTA_REBOOTING"
+              ? "rebooting"
+              : command.state;
+          device.ota.status = otaState;
+          device.ota.updatedAt = command.updatedAt;
+          device.otaStatus = otaState;
+          device.updatedAt = command.updatedAt;
+          await saveDeviceRecord(device);
+        }
+      }
+      const rotationPersisted =
+        command.type === "device.rotate_secret"
+          ? await updateCredentialRotationFromCommand(deviceId, command)
+          : false;
+      if (!rotationPersisted) {
+        await saveDeviceCommandRecord(command);
+        await syncDeviceLastCommand(command);
+      }
+    }
+    await appendDeviceEvent(deviceId, transition.changed ? `command.${command.state}` : "command.status_replay", {
+      commandId: command.id,
+      correlationId: command.correlationId,
+      state: command.state,
+      reportedState: readString(payload.state, 40),
+      code: command.code,
+      detail: command.detail,
+    });
+    return true;
+  } catch (error) {
+    await appendDeviceEvent(deviceId, "command.status_rejected", {
+      commandId,
+      correlationId: readString(payload.correlationId, 128),
+      reportedState: readString(payload.state, 40),
+      code: error.code || "DEVICE_COMMAND_STATUS_INVALID",
+    });
+    return false;
+  }
 }
 
 async function appendDeviceEvent(deviceId, eventType, payload = {}) {
@@ -1957,7 +3338,6 @@ function createEmptyLiveMetrics() {
 }
 
 liveMetrics = createEmptyLiveMetrics();
-liveBeatDetector = new BeatDetector(SAMPLE_RATE);
 
 function websocketAcceptKey(key) {
   return crypto
@@ -1968,7 +3348,7 @@ function websocketAcceptKey(key) {
 
 function sendFrame(socket, opcode, payload) {
   if (!socket.writable || socket.destroyed) {
-    return;
+    return false;
   }
 
   const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
@@ -1990,31 +3370,78 @@ function sendFrame(socket, opcode, payload) {
 
   try {
     socket.write(Buffer.concat([header, body]));
+    return true;
   } catch {
     cleanupSocket(socket);
     socket.destroy();
+    return false;
   }
 }
 
 function sendText(socket, value) {
-  sendFrame(socket, 0x1, value);
+  return sendFrame(socket, 0x1, value);
 }
 
 function sendBinary(socket, value) {
-  sendFrame(socket, 0x2, value);
+  return sendFrame(socket, 0x2, value);
 }
 
-function getStatusPayload() {
+function getActiveRecordingsForListener(listener = null) {
+  const recordings = listActiveRecordings();
+  if (!listener) return recordings;
+  return recordings.filter((recording) =>
+    canListenerAccessScan(listener, findScan(recording.scanId)),
+  );
+}
+
+function getPrimaryActiveRecordingForListener(listener = null) {
+  const visibleRecordings = getActiveRecordingsForListener(listener);
+  if (!listener) {
+    return visibleRecordings.find((recording) => recording.confirmed) || visibleRecordings[0] || null;
+  }
+  if (listener._listenerRequestedScanId) {
+    const requested = visibleRecordings.find(
+      (recording) => recording.scanId === listener._listenerRequestedScanId,
+    ) || null;
+    listener._listenerScanId = requested?.scanId || null;
+    return requested;
+  }
+  const existing = listener._listenerScanId
+    ? visibleRecordings.find((recording) => recording.scanId === listener._listenerScanId)
+    : null;
+  if (existing) return existing;
+  const selected = visibleRecordings.find((recording) => recording.confirmed) || visibleRecordings[0] || null;
+  listener._listenerScanId = selected?.scanId || null;
+  return selected;
+}
+
+function getStatusPayload(listener = null) {
   const espCount = getAudioSourceCount();
+  const visibleRecordings = getActiveRecordingsForListener(listener);
+  const primaryRecording = listener
+    ? getPrimaryActiveRecordingForListener(listener)
+    : visibleRecordings.find((recording) => recording.confirmed) || visibleRecordings[0] || null;
   return {
     type: "status",
     esp: espCount,
     wsEsp: espClients.size,
     udpEsp: Math.max(0, espCount - espClients.size),
     listeners: listenClients.size,
-    recording: Boolean(activeRecording),
-    activeScanId: activeRecording ? activeRecording.scanId : null,
-    activeScanStartedAt: activeRecording ? activeRecording.startedAt : null,
+    recording: Boolean(primaryRecording?.confirmed),
+    workspaceId: primaryRecording?.confirmed ? primaryRecording.organizationId : null,
+    patientId: primaryRecording?.confirmed ? primaryRecording.patientId : null,
+    deviceId: primaryRecording?.confirmed ? primaryRecording.deviceId : null,
+    scanId: primaryRecording?.confirmed ? primaryRecording.scanId : null,
+    sessionId: primaryRecording?.confirmed ? primaryRecording.sessionId : null,
+    activeScanId: primaryRecording?.confirmed ? primaryRecording.scanId : null,
+    activeScanIds: visibleRecordings.map((recording) => recording.scanId),
+    activeScanStartedAt: primaryRecording?.startedAt || null,
+    activeScans: visibleRecordings.map((recording) => ({
+      scanId: recording.scanId,
+      deviceId: recording.deviceId,
+      startedAt: recording.startedAt,
+      state: findScan(recording.scanId)?.status || "created",
+    })),
     sampleRate: SAMPLE_RATE,
     udpPort: AUDIO_UDP_PORT,
     httpPort: PORT,
@@ -2025,22 +3452,25 @@ function getStatusPayload() {
 function broadcastStatus() {
   const status = getStatusPayload();
   lastAudioSourceCount = status.esp;
-  const message = JSON.stringify(status);
 
   for (const socket of listenClients) {
-    sendText(socket, message);
+    sendText(socket, JSON.stringify(getStatusPayload(socket)));
   }
 }
 
 function broadcastScanEvent(type, scan) {
-  const message = JSON.stringify({
-    type,
-    scan,
-    activeScanId: activeRecording ? activeRecording.scanId : null,
-  });
-
   for (const socket of listenClients) {
-    sendText(socket, message);
+    if (canListenerAccessScan(socket, scan)) {
+      const visibleRecordings = getActiveRecordingsForListener(socket);
+      const primaryRecording = visibleRecordings[0] || null;
+      const message = JSON.stringify({
+        type,
+        scan,
+        activeScanId: primaryRecording?.scanId || null,
+        activeScanIds: visibleRecordings.map((recording) => recording.scanId),
+      });
+      sendText(socket, message);
+    }
   }
 
   broadcastStatus();
@@ -2052,14 +3482,37 @@ function cleanupSocket(socket) {
   }
 
   socket._cleanedUp = true;
+  if (socket._authTimeout) {
+    clearTimeout(socket._authTimeout);
+    socket._authTimeout = null;
+  }
+  if (socket._authSessionInterval) {
+    clearInterval(socket._authSessionInterval);
+    socket._authSessionInterval = null;
+  }
+  if (socket._firebaseExpiryTimeout) {
+    clearTimeout(socket._firebaseExpiryTimeout);
+    socket._firebaseExpiryTimeout = null;
+  }
+  const disconnectedDeviceId = socket._deviceId || socket._deviceAuth?.deviceId || "";
+  deviceAuthenticator.clear(socket);
+  const rotationSessionKey = deviceRotationSessionKeys.get(socket);
+  if (Buffer.isBuffer(rotationSessionKey)) rotationSessionKey.fill(0);
+  deviceRotationSessionKeys.delete(socket);
 
   if (socket._wsRole === "esp") {
     espClients.delete(socket);
     if (socket._deviceId && deviceSockets.get(socket._deviceId) === socket) {
       deviceSockets.delete(socket._deviceId);
-      void handleDeviceEvent(socket._deviceId, { type: "socket_disconnected" }).catch((err) =>
+      void markDeviceSocketDisconnected(socket._deviceId).catch((err) =>
         console.error(`Device socket cleanup error: ${err.message}`)
       );
+    }
+    if (disconnectedDeviceId) {
+      void interruptRecordingForDevice(
+        disconnectedDeviceId,
+        "Lượt ghi bị ngắt vì kết nối bảo mật với thiết bị đã đóng.",
+      ).catch((err) => console.error(`Recording disconnect cleanup error: ${err.message}`));
     }
     console.log("ESP disconnected");
   } else if (socket._wsRole === "listen") {
@@ -2067,13 +3520,32 @@ function cleanupSocket(socket) {
     console.log("App/browser disconnected");
   }
 
+  socket._deviceAuth = null;
+
   broadcastStatus();
 }
 
-function closeSocket(socket) {
+async function markDeviceSocketDisconnected(deviceId) {
+  const device = findDevice(deviceId);
+  if (device) {
+    device.connected = false;
+    device.status = device.revokedAt || device.status === "revoked" ? "revoked" : "available";
+    device.audioStatus = "offline";
+    device.updatedAt = nowIso();
+    await saveDeviceRecord(device);
+  }
+  await appendDeviceEvent(deviceId, "socket_disconnected", {});
+}
+
+function closeSocket(socket, code = 1000, reason = "") {
   cleanupSocket(socket);
+  deviceAuthenticator.clear(socket);
   try {
-    sendFrame(socket, 0x8, Buffer.alloc(0));
+    const safeReason = Buffer.from(String(reason || ""), "utf8").subarray(0, 123);
+    const payload = Buffer.alloc(2 + safeReason.length);
+    payload.writeUInt16BE(code, 0);
+    safeReason.copy(payload, 2);
+    sendFrame(socket, 0x8, payload);
     socket.end();
   } catch {
     socket.destroy();
@@ -2097,19 +3569,23 @@ function getAudioSourceCount() {
 function refreshDevicePresence() {
   const activeSocketDeviceIds = new Set();
   for (const [deviceId, socket] of deviceSockets.entries()) {
-    if (socket && socket.writable && !socket.destroyed) {
+    const device = findDevice(deviceId);
+    if (
+      socket &&
+      socket._deviceAuth?.deviceId === deviceId &&
+      device &&
+      !device.revokedAt &&
+      device.status !== "revoked" &&
+      socket.writable &&
+      !socket.destroyed
+    ) {
       activeSocketDeviceIds.add(deviceId);
     }
   }
-
-  const fallbackDeviceId =
-    activeSocketDeviceIds.size === 0 && getAudioSourceCount() > 0
-      ? db.devices.find((item) => item.type === "stethoscope" && !item.revokedAt)?.id || ""
-      : "";
   const now = nowIso();
 
   for (const device of db.devices) {
-    const isActive = activeSocketDeviceIds.has(device.id) || device.id === fallbackDeviceId;
+    const isActive = activeSocketDeviceIds.has(device.id);
     if (isActive) {
       device.connected = true;
       device.status = "connected";
@@ -2126,6 +3602,87 @@ function refreshDevicePresence() {
   }
 }
 
+function closeRealtimeSocketsForSession(userId, session) {
+  if (!userId || !session) return;
+  for (const socket of listenClients) {
+    if (
+      socket._wsUser?.id === userId &&
+      (socket._authSessionId === session.id ||
+        (session.sessionKey && socket._authSessionKey === session.sessionKey))
+    ) {
+      closeSocket(socket, 1008, "AUTH_SESSION_REVOKED");
+    }
+  }
+}
+
+function closeRealtimeSocketsForUser(userId, reason = "ACCOUNT_ACCESS_REVOKED") {
+  if (!userId) return;
+  for (const socket of listenClients) {
+    if (socket._wsUser?.id === userId) closeSocket(socket, 1008, reason);
+  }
+}
+
+async function isRealtimeFirebaseIdentityActive(socket) {
+  if (!socket._firebaseUid) return true;
+  const firebaseAdmin = getFirebaseAdmin(process.env);
+  if (!firebaseAdmin) throw new Error("Firebase Admin is unavailable");
+  try {
+    const record = await firebaseAdmin.auth().getUser(socket._firebaseUid);
+    if (record.disabled) return false;
+    const validAfter = Date.parse(record.tokensValidAfterTime || "");
+    const authenticatedAt = Number(socket._firebaseAuthTime || 0) * 1000;
+    return !Number.isFinite(validAfter) || authenticatedAt >= validAfter;
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") return false;
+    throw error;
+  }
+}
+
+function startRealtimeAuthSessionMonitor(socket) {
+  if (!socket._wsUser?.id || !socket._authSessionId || !repositories?.authSessions?.isActiveForUser) {
+    return;
+  }
+  socket._authSessionInterval = setInterval(async () => {
+    if (socket._cleanedUp || socket._authSessionCheckPending) return;
+    socket._authSessionCheckPending = true;
+    try {
+      if (socket._firebaseExpiresAt && Date.now() >= socket._firebaseExpiresAt) {
+        closeSocket(socket, 1008, "FIREBASE_TOKEN_EXPIRED");
+        return;
+      }
+      const active = await repositories.authSessions.isActiveForUser(
+        socket._wsUser.id,
+        socket._authSessionId,
+      );
+      if (!active && !socket._cleanedUp) {
+        closeSocket(socket, 1008, "AUTH_SESSION_REVOKED");
+        return;
+      }
+      const canonicalUser = await refreshAuthenticatedAuthorization(socket._wsUser);
+      if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+        closeSocket(socket, 1008, "ACCOUNT_ACCESS_REVOKED");
+        return;
+      }
+      socket._wsUser = canonicalUser;
+      if (
+        socket._firebaseUid &&
+        Date.now() - Number(socket._firebaseLastAccountCheckAt || 0) >= REALTIME_FIREBASE_ACCOUNT_RECHECK_MS
+      ) {
+        socket._firebaseLastAccountCheckAt = Date.now();
+        if (!(await isRealtimeFirebaseIdentityActive(socket))) {
+          closeSocket(socket, 1008, "FIREBASE_ACCOUNT_REVOKED");
+        }
+      }
+    } catch (error) {
+      console.error(`Realtime auth session check failed: ${error.message}`);
+      if (!socket._cleanedUp) closeSocket(socket, 1011, "AUTH_SESSION_UNAVAILABLE");
+    } finally {
+      socket._authSessionCheckPending = false;
+    }
+  }, REALTIME_AUTH_SESSION_RECHECK_MS);
+  socket._authSessionInterval.unref?.();
+}
+
 function refreshAudioSourceStatus() {
   const count = getAudioSourceCount();
   if (count !== lastAudioSourceCount) {
@@ -2135,70 +3692,164 @@ function refreshAudioSourceStatus() {
   }
 }
 
-function broadcastAudio(payload) {
-  for (const listener of listenClients) {
-    sendBinary(listener, payload);
-  }
-}
-
-function updateLiveMetrics(payload, source) {
-  let sumSquares = 0;
-  let peak = 0;
-  let sampleCount = 0;
-
-  for (let offset = 0; offset + 1 < payload.length; offset += 2) {
-    const sample = payload.readInt16LE(offset);
-    const abs = Math.abs(sample);
-    sumSquares += sample * sample;
-    sampleCount++;
-    if (abs > peak) {
-      peak = abs;
-    }
-    liveBeatDetector.ingest(sample);
-  }
-
-  const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
-  liveMetrics = {
+function getActiveAudioSessionMetadata(recording) {
+  if (!recording) return null;
+  return {
+    type: "audio.session",
+    protocolVersion: 2,
+    frameEncoding: "shcare_audio_v2",
+    workspaceId: recording.organizationId,
+    patientId: recording.patientId,
+    deviceId: recording.deviceId,
+    scanId: recording.scanId,
+    sessionId: recording.sessionId,
     sampleRate: SAMPLE_RATE,
     channels: CHANNELS,
     bitsPerSample: BITS_PER_SAMPLE,
-    peak,
-    rms: Math.round(rms),
-    levelPercent: Math.min(100, Math.round((rms / 32768) * 180)),
-    bpm: liveBeatDetector.getBpm(),
-    source,
-    updatedAt: nowIso(),
+    encoding: "pcm_s16le",
+    startedAt: recording.startedAt,
   };
 }
 
-function maybeBroadcastLiveMetrics() {
-  const now = Date.now();
-  if (now - lastMetricBroadcastAt < LIVE_METRIC_INTERVAL_MS) {
-    return;
+function listenerFrameForRecording(listener, recording, payload, frameMetadata = {}) {
+  const isNewSession = listener._audioFrameSessionId !== recording.sessionId;
+  const sourceSequence = Number.isInteger(frameMetadata.sequence)
+    ? frameMetadata.sequence
+    : null;
+  if (isNewSession) {
+    listener._audioSourceBaseSequence = sourceSequence;
+    listener._audioListenerSequence = 0;
+  } else if (
+    sourceSequence !== null &&
+    Number.isInteger(listener._audioSourceBaseSequence)
+  ) {
+    listener._audioListenerSequence = sourceSequence - listener._audioSourceBaseSequence;
+  } else {
+    listener._audioListenerSequence = Number(listener._audioListenerSequence || 0) + 1;
   }
 
-  lastMetricBroadcastAt = now;
-  const message = JSON.stringify({
-    type: "metrics",
-    ...liveMetrics,
-    recording: Boolean(activeRecording),
-    activeScanId: activeRecording ? activeRecording.scanId : null,
+  const flags = new Set(Array.isArray(frameMetadata.flags) ? frameMetadata.flags : []);
+  if (isNewSession) flags.add("start");
+  else flags.delete("start");
+  return encodeAudioFrameV2({
+    sessionId: recording.sessionId,
+    scanId: recording.scanId,
+    sequence: listener._audioListenerSequence,
+    timestampMs: Number.isSafeInteger(frameMetadata.timestampMs)
+      ? frameMetadata.timestampMs
+      : Date.now(),
+    sampleCount: payload.length / 2,
+    flags: Array.from(flags),
+    payload,
   });
+}
 
-  for (const socket of listenClients) {
-    sendText(socket, message);
+function broadcastAudio(recording, payload, frameMetadata = {}) {
+  if (!recording) return;
+  for (const listener of listenClients) {
+    if (canListenerAccessActiveScan(listener, recording)) {
+      if (
+        listener._audioSessionId !== recording.sessionId ||
+        listener._audioProtocolVersion !== 2
+      ) {
+        sendText(listener, JSON.stringify(getActiveAudioSessionMetadata(recording)));
+      }
+      const listenerFrame = listenerFrameForRecording(
+        listener,
+        recording,
+        payload,
+        frameMetadata,
+      );
+      listener._audioSessionId = recording.sessionId;
+      listener._audioFrameSessionId = recording.sessionId;
+      listener._audioProtocolVersion = 2;
+      sendBinary(listener, listenerFrame);
+    }
   }
 }
 
-function handleIncomingAudio(payload, source) {
+function canListenerAccessScan(listener, scan) {
+  if (!scan) return false;
+  if (listener._wsUser) return canAccessScan(listener._wsUser, scan);
+  return AUTH_MODE !== "production" || ALLOW_DEMO_AUTH;
+}
+
+function canListenerAccessActiveScan(listener, recording = null) {
+  const boundRecording = getPrimaryActiveRecordingForListener(listener);
+  const targetRecording = recording || boundRecording;
+  if (!targetRecording || !boundRecording || targetRecording.scanId !== boundRecording.scanId) {
+    return false;
+  }
+  return canListenerAccessScan(listener, findScan(targetRecording.scanId));
+}
+
+function updateLiveMetrics(recording, source) {
+  const summary = recording.metrics.getSummary();
+  recording.liveMetrics = {
+    sampleRate: SAMPLE_RATE,
+    channels: CHANNELS,
+    bitsPerSample: BITS_PER_SAMPLE,
+    ...summary,
+    workspaceId: recording.organizationId,
+    patientId: recording.patientId,
+    scanId: recording.scanId,
+    deviceId: recording.deviceId,
+    sessionId: recording.sessionId,
+    source,
+    updatedAt: nowIso(),
+  };
+  liveMetrics = recording.liveMetrics;
+  return recording.liveMetrics;
+}
+
+function maybeBroadcastLiveMetrics(recording) {
+  const now = Date.now();
+  if (now - Number(recording.lastMetricBroadcastAt || 0) < LIVE_METRIC_INTERVAL_MS) {
+    return;
+  }
+
+  recording.lastMetricBroadcastAt = now;
+  const message = JSON.stringify({
+    type: "metrics",
+    ...(recording.liveMetrics || createEmptyLiveMetrics()),
+    recording: true,
+  });
+
+  for (const socket of listenClients) {
+    if (canListenerAccessActiveScan(socket, recording)) {
+      sendText(socket, message);
+    }
+  }
+}
+
+function isAudioSourceBoundToRecording(sourceContext = {}, recording = null) {
+  const targetRecording = recording || getActiveRecordingForDevice(sourceContext.deviceId);
+  if (!targetRecording) return false;
+  return Boolean(
+    sourceContext.authenticated &&
+    sourceContext.deviceId &&
+    sourceContext.deviceId === targetRecording.deviceId &&
+    (sourceContext.organizationId || "") === (targetRecording.organizationId || "") &&
+    sourceContext.authSessionId === targetRecording.deviceSessionId &&
+    (!sourceContext.audioSessionId || sourceContext.audioSessionId === targetRecording.sessionId)
+  );
+}
+
+function handleIncomingAudio(payload, sourceContext = {}, frameMetadata = {}, recording = null) {
+  const targetRecording = recording || getActiveRecordingForDevice(sourceContext.deviceId);
   if (payload.length === 0 || payload.length % 2 !== 0) {
     return false;
   }
+  if (!isAudioSourceBoundToRecording(sourceContext, targetRecording)) {
+    return false;
+  }
 
-  updateLiveMetrics(payload, source);
-  recordAudioPayload(payload);
-  broadcastAudio(payload);
-  maybeBroadcastLiveMetrics();
+  if (!recordAudioPayload(targetRecording, payload, sourceContext)) {
+    return false;
+  }
+  updateLiveMetrics(targetRecording, sourceContext.label || sourceContext.transport || "unknown");
+  broadcastAudio(targetRecording, payload, frameMetadata);
+  maybeBroadcastLiveMetrics(targetRecording);
   return true;
 }
 
@@ -2207,16 +3858,102 @@ function handleBinary(socket, payload) {
     return;
   }
 
-  if (socket._deviceId && (!socket._lastAudioTelemetryAt || Date.now() - socket._lastAudioTelemetryAt > 5000)) {
+  if (!socket._deviceAuth || socket._deviceAuth.deviceId !== socket._deviceId) {
+    closeSocket(socket, 1008, "AUTH_REQUIRED");
+    return;
+  }
+  if (payload.length > MAX_DEVICE_AUDIO_FRAME_BYTES) {
+    closeSocket(socket, 1009, "AUDIO_FRAME_TOO_LARGE");
+    return;
+  }
+  const device = findDevice(socket._deviceAuth.deviceId);
+  if (!device || device.revokedAt || device.status === "revoked") {
+    closeSocket(socket, 1008, "REVOKED");
+    return;
+  }
+
+  const sourceContext = {
+    transport: "websocket",
+    label: `websocket:${socket._deviceAuth.deviceId}`,
+    authenticated: true,
+    deviceId: socket._deviceAuth.deviceId,
+    organizationId: socket._deviceAuth.organizationId || "",
+    authSessionId: socket._deviceAuth.sessionId,
+    audioSessionId: "",
+  };
+  const recording = getActiveRecordingForDevice(sourceContext.deviceId);
+  if (!isAudioSourceBoundToRecording(sourceContext, recording)) {
+    return;
+  }
+
+  let pcmPayload = payload;
+  let frameMetadata = { protocolVersion: 1 };
+  const isProtocolV2 =
+    payload.length >= AUDIO_V2_MAGIC.length &&
+    payload.subarray(0, AUDIO_V2_MAGIC.length).equals(AUDIO_V2_MAGIC);
+
+  if (isProtocolV2) {
+    try {
+      const decoded = decodeAudioFrameV2(payload);
+      if (
+        !recording ||
+        decoded.sessionId !== recording.sessionId ||
+        decoded.scanId !== recording.scanId
+      ) {
+        closeSocket(socket, 1008, "AUDIO_SESSION_MISMATCH");
+        return;
+      }
+      if (recording.protocolVersion && recording.protocolVersion !== 2) {
+        closeSocket(socket, 1008, "AUDIO_PROTOCOL_SWITCH_REJECTED");
+        return;
+      }
+      const sequence = recording.audioSequenceGuard.accept(decoded);
+      recording.protocolVersion = 2;
+      recording.droppedPackets += sequence.droppedPackets;
+      recording.receivedPackets += 1;
+      confirmRecordingStartedFromFrame(recording);
+      pcmPayload = decoded.payload;
+      sourceContext.audioSessionId = decoded.sessionId;
+      frameMetadata = {
+        protocolVersion: 2,
+        sequence: decoded.sequence,
+        timestampMs: decoded.timestampMs,
+        flags: decoded.flags,
+      };
+    } catch (error) {
+      closeSocket(socket, 1008, error.code || "AUDIO_V2_INVALID_FRAME");
+      return;
+    }
+  } else {
+    if (!ALLOW_AUDIO_V1_COMPAT) {
+      closeSocket(socket, 1003, "AUDIO_V1_DISABLED");
+      return;
+    }
+    if (recording?.protocolVersion === 2) {
+      closeSocket(socket, 1008, "AUDIO_PROTOCOL_DOWNGRADE_REJECTED");
+      return;
+    }
+  }
+
+  const accepted = handleIncomingAudio(pcmPayload, sourceContext, frameMetadata, recording);
+
+  if (accepted && !isProtocolV2 && recording) {
+    recording.protocolVersion = 1;
+    recording.receivedPackets += 1;
+  }
+
+  if (
+    accepted &&
+    socket._deviceId &&
+    (!socket._lastAudioTelemetryAt || Date.now() - socket._lastAudioTelemetryAt > 5000)
+  ) {
     socket._lastAudioTelemetryAt = Date.now();
     void handleDeviceTelemetry(socket._deviceId, {
       status: "connected",
       connectionMethod: "WSS",
-      audioStatus: "streaming",
+      audioStatus: "recording",
     }).catch((err) => console.error(`Device audio telemetry error: ${err.message}`));
   }
-
-  handleIncomingAudio(payload, "websocket");
 }
 
 function handleEspText(socket, payload) {
@@ -2228,19 +3965,50 @@ function handleEspText(socket, payload) {
   }
 
   const type = readString(message.type, 80);
-  if (type === "hello" || type === "telemetry") {
-    void registerDeviceSocket(socket, message).catch((err) => {
-      console.error(`Device hello/telemetry error: ${err.message}`);
-      closeSocket(socket);
-    });
+  if (!socket._deviceAuth) {
+    if (type !== "auth.response") {
+      sendText(socket, JSON.stringify({ type: "auth.rejected", code: "INVALID_CREDENTIALS" }));
+      closeSocket(socket, 1008, "AUTH_REQUIRED");
+      return;
+    }
+    if (socket._authInFlight) {
+      closeSocket(socket, 1008, "INVALID_CREDENTIALS");
+      return;
+    }
+    socket._authInFlight = true;
+    void authenticateDeviceSocket(socket, message)
+      .catch((err) => {
+        console.error(`Device authentication error: ${err.message}`);
+        if (!socket._cleanedUp) {
+          sendText(socket, JSON.stringify({ type: "auth.rejected", code: "INVALID_CREDENTIALS" }));
+          closeSocket(socket, 1008, "INVALID_CREDENTIALS");
+        }
+      })
+      .finally(() => {
+        socket._authInFlight = false;
+      });
     return;
   }
 
-  const deviceId = readString(message.deviceId || socket._deviceId || socket._queryDeviceId, 120);
-  if (!deviceId) {
+  const messageDeviceId = readString(message.deviceId, 120);
+  if (messageDeviceId && messageDeviceId !== socket._deviceAuth.deviceId) {
+    closeSocket(socket, 1008, "IDENTITY_MISMATCH");
     return;
   }
-  void handleDeviceEvent(deviceId, message).catch((err) =>
+  if (type === "auth.response" || containsSensitiveDeviceCredential(message)) {
+    closeSocket(socket, 1008, "FORBIDDEN_CREDENTIAL_FIELD");
+    return;
+  }
+  if (type === "hello" || type === "telemetry") {
+    void handleDeviceTelemetry(socket._deviceAuth.deviceId, message.telemetry || message).catch((err) =>
+      console.error(`Device telemetry error: ${err.message}`)
+    );
+    return;
+  }
+  void deviceEventExecutor.enqueue(
+    socket._deviceAuth.deviceId,
+    () => handleDeviceEvent(socket._deviceAuth.deviceId, message),
+  ).catch((err) =>
     console.error(`Device event error: ${err.message}`)
   );
 }
@@ -2283,13 +4051,26 @@ function handleText(socket, payload) {
 async function handleScanSocketCommand(socket, message) {
   try {
     if (message.type === "start_scan") {
-      const scan = startRecording(message.payload || message);
+      const scan = await startRecording(message.payload || message, socket._wsUser || null);
       sendText(socket, JSON.stringify({ type: "scan_started", scan }));
       return;
     }
 
-    const scanId = message.scanId || (activeRecording && activeRecording.scanId);
-    const scan = scanId ? await stopRecording(scanId) : await stopActiveRecording();
+    const visibleRecordings = getActiveRecordingsForListener(socket);
+    if (!message.scanId && visibleRecordings.length > 1) {
+      throw httpError(409, "Cáº§n chá»n lÆ°á»£t ghi cá»¥ thá»ƒ", "ACTIVE_SCAN_AMBIGUOUS");
+    }
+    const scanId = message.scanId || visibleRecordings[0]?.scanId;
+    const targetScan = scanId ? findScan(scanId) : null;
+    if (!targetScan) {
+      throw httpError(409, "Không có lượt ghi đang chạy");
+    }
+    if (socket._wsUser) {
+      assertCanManageScan(socket._wsUser, targetScan);
+    } else if (AUTH_MODE === "production" && !ALLOW_DEMO_AUTH) {
+      throw httpError(401, "Realtime authentication is required");
+    }
+    const scan = scanId ? await stopRecording(scanId) : await stopActiveRecording(socket._wsUser || null);
     sendText(socket, JSON.stringify({ type: "scan_stopped", scan }));
   } catch (err) {
     sendText(
@@ -2359,6 +4140,10 @@ function readNextFrame(buffer) {
 }
 
 function handleWebSocketData(socket, chunk) {
+  if (socket._wsBuffer.length + chunk.length > MAX_WS_BUFFER_BYTES) {
+    closeSocket(socket, 1009, "FRAME_TOO_LARGE");
+    return;
+  }
   socket._wsBuffer = Buffer.concat([socket._wsBuffer, chunk]);
 
   while (socket._wsBuffer.length > 0) {
@@ -2384,6 +4169,9 @@ function handleWebSocketData(socket, chunk) {
       handleBinary(socket, payload);
     } else if (opcode === 0x1) {
       handleText(socket, payload);
+    }
+    if (socket._cleanedUp) {
+      return;
     }
   }
 }
@@ -2456,21 +4244,86 @@ function hashValue(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
 
+function requireDeviceEnrollmentSecret(payload = {}) {
+  const secret = readString(payload.deviceSecret, 512);
+  const byteLength = Buffer.byteLength(secret, "utf8");
+  if (byteLength < 32 || byteLength > 95) {
+    throw httpError(400, "Device enrollment secret must contain between 32 and 95 bytes");
+  }
+  return secret;
+}
+
+function deriveDeviceClaimCode(device, idempotencyKey, fingerprint) {
+  const verificationMaterial = readString(device?.secretHash, 200);
+  if (!verificationMaterial) {
+    throw httpError(
+      503,
+      "Device verification material is unavailable for claim provisioning",
+      "DEVICE_CLAIM_MATERIAL_UNAVAILABLE",
+    );
+  }
+  return crypto
+    .createHmac("sha256", verificationMaterial)
+    .update(
+      [
+        readString(device.id, 120),
+        readString(device.organizationId, 120),
+        readString(idempotencyKey, 160),
+        readString(fingerprint, 128),
+      ].join("\n"),
+      "utf8",
+    )
+    .digest("hex")
+    .slice(0, 12)
+    .toUpperCase();
+}
+
 function publicDevice(device) {
   if (!device) return null;
-  const { secret, claimCodeHash, ...safeDevice } = device;
+  const { secret, deviceSecret, secretHash, claimCodeHash, ...safeDevice } = device;
+  const privateRotation = sanitizeDeviceCredentialRotation(safeDevice.credentialRotation);
+  if (privateRotation.id) {
+    safeDevice.credentialRotation = {
+      id: privateRotation.id,
+      state: privateRotation.state,
+      commandId: privateRotation.commandId || "",
+      requestedAt: privateRotation.requestedAt || "",
+      expiresAt: privateRotation.expiresAt || "",
+      acknowledgedAt: privateRotation.acknowledgedAt || "",
+      confirmingAt: privateRotation.confirmingAt || "",
+      confirmedAt: privateRotation.confirmedAt || "",
+      expiredAt: privateRotation.expiredAt || "",
+      rolledBackAt: privateRotation.rolledBackAt || "",
+      failedAt: privateRotation.failedAt || "",
+      failureCode: privateRotation.failureCode || "",
+      confirmed: privateRotation.state === "confirmed",
+    };
+  } else {
+    delete safeDevice.credentialRotation;
+  }
+  if (safeDevice.telemetry) {
+    safeDevice.telemetry = sanitizeDeviceTelemetry(safeDevice.telemetry);
+  }
   if (safeDevice.ota && typeof safeDevice.ota === "object") {
-    const { token, ...safeOta } = safeDevice.ota;
+    const { token, tokenHash, signature, requestedSessionId, ...safeOta } = safeDevice.ota;
     if (safeOta.firmwareFileId) {
       safeOta.url = "";
     }
     safeDevice.ota = safeOta;
   }
-  const lastSeenMs = Date.parse(safeDevice.lastSeenAt || "");
-  const heartbeatOnline = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs < 90 * 1000;
   return {
     ...safeDevice,
-    online: Boolean(safeDevice.connected || heartbeatOnline),
+    online: Boolean(getAuthenticatedDeviceSocket(device)),
+  };
+}
+
+function deviceOwnershipExpectation(device = {}) {
+  return {
+    organizationId: readString(device.organizationId, 120),
+    ownershipState: inferDeviceOwnershipState(device),
+    ownerUserId: readString(device.ownerUserId || device.pairedUserId, 160),
+    assignedPatientId: readString(device.assignedPatientId, 160),
+    revokedAt: readString(device.revokedAt, 80),
   };
 }
 
@@ -2478,20 +4331,75 @@ function publicDevices(devices) {
   return devices.map(publicDevice);
 }
 
+function normalizeDevicePairingMethod(value, hasClaimCode = false) {
+  const normalized = readString(value, 60).trim().toLowerCase();
+  if (!normalized) return hasClaimCode ? "QR" : "Manual";
+  if (normalized === "qr") return "QR";
+  if (normalized === "manual") return "Manual";
+  throw httpError(
+    400,
+    "Chỉ hỗ trợ ghép thiết bị bằng QR hoặc mã thủ công",
+    "DEVICE_PAIRING_METHOD_UNSUPPORTED",
+  );
+}
+
+function getAuthenticatedDeviceSocket(device) {
+  if (!device || device.revokedAt || device.status === "revoked") return null;
+  const socket = deviceSockets.get(device.id);
+  if (
+    !socket ||
+    socket._deviceAuth?.deviceId !== device.id ||
+    readString(socket._deviceAuth?.organizationId, 120) !== readString(device.organizationId, 120) ||
+    !socket.writable ||
+    socket.destroyed
+  ) {
+    return null;
+  }
+  return socket;
+}
+
+function createDevicePairingState(device) {
+  const authenticatedSocket = getAuthenticatedDeviceSocket(device);
+  const onlineConfirmed = Boolean(authenticatedSocket);
+  return {
+    outcome: onlineConfirmed ? "success" : "accepted",
+    presence: onlineConfirmed ? "online" : "awaiting_online",
+    onlineConfirmed,
+    authenticatedTransport: onlineConfirmed ? "wss" : null,
+  };
+}
+
 function getIdempotencyKey(req, payload = {}) {
   return readString(req.headers["idempotency-key"] || payload.idempotencyKey, 160);
 }
 
-function getIdempotencyScope(user) {
-  return user ? user.id : "anonymous";
+function getIdempotencyScope(user, organizationId = "") {
+  const actorId = user ? user.id : "anonymous";
+  const workspaceId = readString(organizationId, 120);
+  return workspaceId ? `${actorId}:${workspaceId}` : actorId;
 }
 
-function findIdempotentResource(user, key, operation) {
+function stableJsonValue(value) {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .filter((key) => key !== "idempotencyKey")
+      .sort()
+      .map((key) => [key, stableJsonValue(value[key])]),
+  );
+}
+
+function createIdempotencyFingerprint(payload = {}) {
+  return crypto.createHash("sha256").update(JSON.stringify(stableJsonValue(payload))).digest("hex");
+}
+
+function findIdempotentResource(user, key, operation, options = {}) {
   if (!key) {
     return null;
   }
 
-  const scope = getIdempotencyScope(user);
+  const scope = getIdempotencyScope(user, options.organizationId);
   const entry = db.idempotencyKeys.find(
     (item) => item.key === key && item.scope === scope && item.operation === operation
   );
@@ -2500,18 +4408,46 @@ function findIdempotentResource(user, key, operation) {
   }
 
   entry.lastSeenAt = nowIso();
+  const fingerprint = readString(options.fingerprint, 128);
+  if (fingerprint && entry.fingerprint && entry.fingerprint !== fingerprint) {
+    throw httpError(
+      409,
+      "Idempotency-Key was already used with a different request payload",
+      "IDEMPOTENCY_KEY_REUSED",
+    );
+  }
   if (entry.resourceType === "scan") {
     return findScan(entry.resourceId);
+  }
+  if (entry.resourceType === "appointment") {
+    return entry.responseResource && typeof entry.responseResource === "object"
+      ? { ...entry.responseResource }
+      : findAppointment(entry.resourceId);
+  }
+  if (entry.resourceType === "device_pairing") {
+    return entry.responseResource && typeof entry.responseResource === "object"
+      ? { ...entry.responseResource }
+      : null;
+  }
+  if (entry.resourceType === "device_command") {
+    return entry.responseResource && typeof entry.responseResource === "object"
+      ? { ...entry.responseResource }
+      : null;
+  }
+  if (entry.resourceType === "ai_chat") {
+    return entry.responseResource && typeof entry.responseResource === "object"
+      ? { ...entry.responseResource }
+      : null;
   }
   return null;
 }
 
-function rememberIdempotentResource(user, key, operation, resourceType, resourceId) {
+function rememberIdempotentResource(user, key, operation, resourceType, resourceId, options = {}) {
   if (!key) {
     return;
   }
 
-  const scope = getIdempotencyScope(user);
+  const scope = getIdempotencyScope(user, options.organizationId);
   const existing = db.idempotencyKeys.find(
     (item) => item.key === key && item.scope === scope && item.operation === operation
   );
@@ -2519,6 +4455,11 @@ function rememberIdempotentResource(user, key, operation, resourceType, resource
   if (existing) {
     existing.resourceType = resourceType;
     existing.resourceId = resourceId;
+    existing.fingerprint = readString(options.fingerprint, 128) || existing.fingerprint || "";
+    existing.responseStatus = Number(options.responseStatus || existing.responseStatus || 200);
+    if (options.responseResource && typeof options.responseResource === "object") {
+      existing.responseResource = { ...options.responseResource };
+    }
     existing.updatedAt = nowIso();
     return;
   }
@@ -2530,6 +4471,12 @@ function rememberIdempotentResource(user, key, operation, resourceType, resource
     operation,
     resourceType,
     resourceId,
+    fingerprint: readString(options.fingerprint, 128),
+    responseStatus: Number(options.responseStatus || 200),
+    responseResource:
+      options.responseResource && typeof options.responseResource === "object"
+        ? { ...options.responseResource }
+        : undefined,
     createdAt: nowIso(),
     updatedAt: nowIso(),
     lastSeenAt: nowIso(),
@@ -2537,13 +4484,78 @@ function rememberIdempotentResource(user, key, operation, resourceType, resource
   db.idempotencyKeys = db.idempotencyKeys.slice(0, 500);
 }
 
-function createPatientRecord(payload = {}) {
+function normalizeDateOfBirth(payload = {}, currentValue = "") {
+  const hasCanonical = Object.prototype.hasOwnProperty.call(payload, "dateOfBirth");
+  const hasAlias = Object.prototype.hasOwnProperty.call(payload, "dob");
+  if (!hasCanonical && !hasAlias) return currentValue || "";
+  const value = readString(hasCanonical ? payload.dateOfBirth : payload.dob, 40);
+  if (!value) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw httpError(400, "Ngày sinh phải có định dạng YYYY-MM-DD", "PATIENT_DATE_OF_BIRTH_INVALID");
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value || parsed.getTime() > Date.now()) {
+    throw httpError(400, "Ngày sinh không hợp lệ", "PATIENT_DATE_OF_BIRTH_INVALID");
+  }
+  return value;
+}
+
+function ageFromDateOfBirth(dateOfBirth) {
+  if (!dateOfBirth) return null;
+  const birth = new Date(`${dateOfBirth}T00:00:00.000Z`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getUTCFullYear() - birth.getUTCFullYear();
+  const monthDelta = today.getUTCMonth() - birth.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getUTCDate() < birth.getUTCDate())) age -= 1;
+  return Math.max(0, age);
+}
+
+function normalizeBloodType(value, currentValue = "") {
+  if (value === undefined) return currentValue || "";
+  const normalized = readString(value, 20).toUpperCase();
+  if (!normalized) return "";
+  if (normalized === "UNKNOWN") return "unknown";
+  if (!["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].includes(normalized)) {
+    throw httpError(400, "Nhóm máu không hợp lệ", "PATIENT_BLOOD_TYPE_INVALID");
+  }
+  return normalized;
+}
+
+function normalizeAllergies(value, currentValue = []) {
+  if (value === undefined) return Array.isArray(currentValue) ? currentValue : [];
+  if (!Array.isArray(value)) {
+    throw httpError(400, "Danh sách dị ứng phải là một mảng", "PATIENT_ALLERGIES_INVALID");
+  }
+  return Array.from(new Set(value.map((item) => readString(item, 160)).filter(Boolean))).slice(0, 100);
+}
+
+function normalizeEmergencyContact(value, currentValue = {}) {
+  if (value === undefined) {
+    return currentValue && typeof currentValue === "object" && !Array.isArray(currentValue) ? currentValue : {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw httpError(400, "Liên hệ khẩn cấp không hợp lệ", "PATIENT_EMERGENCY_CONTACT_INVALID");
+  }
+  return {
+    name: readString(value.name, 160),
+    phone: readString(value.phone, 40),
+    relationship: readString(value.relationship, 80),
+  };
+}
+
+function createPatientRecord(payload = {}, options = {}) {
   const createdAt = nowIso();
+  const dateOfBirth = normalizeDateOfBirth(payload);
   const patient = {
     id: createId("pat"),
     patientCode: readString(payload.patientCode, 80) || `PAT-${createdAt.slice(0, 10).replace(/-/g, "")}`,
     name: localizePatientName(payload.name) || "Bệnh nhân chưa xác định",
-    age: readOptionalNumber(payload.age),
+    age: dateOfBirth ? ageFromDateOfBirth(dateOfBirth) : readOptionalNumber(payload.age),
+    dateOfBirth,
+    bloodType: normalizeBloodType(payload.bloodType),
+    allergies: normalizeAllergies(payload.allergies),
+    emergencyContact: normalizeEmergencyContact(payload.emergencyContact),
     gender: readString(payload.gender, 40),
     phone: readString(payload.phone, 40),
     email: readString(payload.email, 120),
@@ -2562,11 +4574,11 @@ function createPatientRecord(payload = {}) {
     updatedAt: createdAt,
   };
 
-  db.patients.unshift(patient);
+  if (options.addToRuntime !== false) db.patients.unshift(patient);
   return patient;
 }
 
-function updatePatientRecord(patient, payload = {}) {
+function updatePatientRecord(patient, payload = {}, options = {}) {
   const fields = [
     "patientCode",
     "name",
@@ -2575,14 +4587,14 @@ function updatePatientRecord(patient, payload = {}) {
     "email",
     "address",
     "notes",
-    "profileType",
     "relationship",
-    "familyGroupId",
-    "guardianUserId",
-    "accountUserId",
     "primaryDoctorId",
     "doctorName",
   ];
+
+  if (options.allowAdministrativeFields) {
+    fields.push("profileType", "familyGroupId", "guardianUserId", "accountUserId");
+  }
 
   for (const field of fields) {
     if (Object.prototype.hasOwnProperty.call(payload, field)) {
@@ -2590,8 +4602,23 @@ function updatePatientRecord(patient, payload = {}) {
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(payload, "age")) {
+  const hasDateOfBirth =
+    Object.prototype.hasOwnProperty.call(payload, "dateOfBirth") ||
+    Object.prototype.hasOwnProperty.call(payload, "dob");
+  if (hasDateOfBirth) {
+    patient.dateOfBirth = normalizeDateOfBirth(payload, patient.dateOfBirth);
+    patient.age = patient.dateOfBirth ? ageFromDateOfBirth(patient.dateOfBirth) : null;
+  } else if (Object.prototype.hasOwnProperty.call(payload, "age") && !patient.dateOfBirth) {
     patient.age = readOptionalNumber(payload.age);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "bloodType")) {
+    patient.bloodType = normalizeBloodType(payload.bloodType, patient.bloodType);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "allergies")) {
+    patient.allergies = normalizeAllergies(payload.allergies, patient.allergies);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "emergencyContact")) {
+    patient.emergencyContact = normalizeEmergencyContact(payload.emergencyContact, patient.emergencyContact);
   }
 
   patient.updatedAt = nowIso();
@@ -2625,6 +4652,7 @@ function withPatientStats(patient) {
   const doctor = doctorId ? db.users.find((user) => user.id === doctorId && user.role === "doctor") : null;
   return {
     ...patient,
+    age: patient.dateOfBirth ? ageFromDateOfBirth(patient.dateOfBirth) : patient.age,
     primaryDoctorId: doctor?.id || readString(patient.primaryDoctorId, 120),
     doctorName: doctor?.name || readString(patient.doctorName, 160),
     ...getPatientStats(patient.id),
@@ -2633,6 +4661,14 @@ function withPatientStats(patient) {
 
 const APPOINTMENT_TYPES = new Set(["remote_consultation", "clinic_visit", "measurement", "follow_up"]);
 const APPOINTMENT_STATUSES = new Set(["scheduled", "confirmed", "completed", "cancelled", "no_show"]);
+const APPOINTMENT_ACTIVE_STATUSES = new Set(["scheduled", "confirmed"]);
+const APPOINTMENT_STATUS_TRANSITIONS = {
+  scheduled: new Set(["confirmed", "cancelled", "no_show"]),
+  confirmed: new Set(["completed", "cancelled", "no_show"]),
+  completed: new Set(),
+  cancelled: new Set(),
+  no_show: new Set(),
+};
 
 function normalizeAppointmentType(value) {
   const type = readString(value, 60) || "remote_consultation";
@@ -2641,7 +4677,24 @@ function normalizeAppointmentType(value) {
 
 function normalizeAppointmentStatus(value, fallback = "scheduled") {
   const status = readString(value, 60) || fallback;
-  return APPOINTMENT_STATUSES.has(status) ? status : fallback;
+  if (!APPOINTMENT_STATUSES.has(status)) {
+    throw httpError(400, `Unsupported appointment status: ${status}`, "APPOINTMENT_STATUS_INVALID");
+  }
+  return status;
+}
+
+function assertAppointmentStatusTransition(previousStatus, nextStatus) {
+  const previous = normalizeAppointmentStatus(previousStatus || "scheduled");
+  const next = normalizeAppointmentStatus(nextStatus, previous);
+  if (next === previous) return;
+  if (!APPOINTMENT_STATUS_TRANSITIONS[previous]?.has(next)) {
+    throw httpError(
+      409,
+      `Appointment cannot transition from ${previous} to ${next}`,
+      "APPOINTMENT_STATUS_TRANSITION_INVALID",
+      { previousStatus: previous, nextStatus: next },
+    );
+  }
 }
 
 function parseAppointmentTime(value, label) {
@@ -2662,8 +4715,55 @@ function defaultAppointmentEnd(startsAt) {
 
 function assertAppointmentWindow(startsAt, endsAt) {
   if (Date.parse(endsAt) <= Date.parse(startsAt)) {
-    throw httpError(400, "Appointment end time must be after start time");
+    throw httpError(400, "Appointment end time must be after start time", "APPOINTMENT_TIME_WINDOW_INVALID");
   }
+}
+
+function assertAppointmentStartsInFuture(startsAt) {
+  if (Date.parse(startsAt) <= Date.now()) {
+    throw httpError(400, "Appointment start time must be in the future", "APPOINTMENT_START_IN_PAST");
+  }
+}
+
+function assertAppointmentCancellationReason(status, cancellationReason) {
+  if (status === "cancelled" && !readString(cancellationReason, 1000)) {
+    throw httpError(400, "A cancellation reason is required", "APPOINTMENT_CANCELLATION_REASON_REQUIRED");
+  }
+}
+
+function findAppointmentConflict(candidate, appointments = []) {
+  if (!candidate || !APPOINTMENT_ACTIVE_STATUSES.has(candidate.status)) return null;
+  const candidateStart = Date.parse(candidate.startsAt || "");
+  const candidateEnd = Date.parse(candidate.endsAt || "");
+  return appointments.find((appointment) => {
+    if (!appointment || appointment.id === candidate.id) return false;
+    if (appointment.organizationId !== candidate.organizationId) return false;
+    if (!APPOINTMENT_ACTIVE_STATUSES.has(appointment.status)) return false;
+    const samePatient = Boolean(candidate.patientId && appointment.patientId === candidate.patientId);
+    const sameDoctor = Boolean(candidate.doctorUserId && appointment.doctorUserId === candidate.doctorUserId);
+    if (!samePatient && !sameDoctor) return false;
+    const otherStart = Date.parse(appointment.startsAt || "");
+    const otherEnd = Date.parse(appointment.endsAt || "");
+    return candidateStart < otherEnd && candidateEnd > otherStart;
+  }) || null;
+}
+
+async function assertNoAppointmentConflict(candidate) {
+  const appointments = repositories && repositories.appointments
+    ? await repositories.appointments.list({ organizationId: candidate.organizationId })
+    : db.appointments;
+  const conflict = findAppointmentConflict(candidate, appointments);
+  if (!conflict) return;
+  throw httpError(
+    409,
+    "Appointment time conflicts with another active appointment",
+    "APPOINTMENT_TIME_CONFLICT",
+    {
+      conflictingAppointmentId: conflict.id,
+      patientConflict: Boolean(candidate.patientId && conflict.patientId === candidate.patientId),
+      doctorConflict: Boolean(candidate.doctorUserId && conflict.doctorUserId === candidate.doctorUserId),
+    },
+  );
 }
 
 function createAppointmentRecord(payload = {}) {
@@ -2672,6 +4772,10 @@ function createAppointmentRecord(payload = {}) {
   const endsAt = payload.endsAt ? parseAppointmentTime(payload.endsAt, "endsAt") : defaultAppointmentEnd(startsAt);
   assertAppointmentWindow(startsAt, endsAt);
   const status = normalizeAppointmentStatus(payload.status);
+  if (status !== "scheduled") {
+    throw httpError(409, "New appointments must start in scheduled status", "APPOINTMENT_INITIAL_STATUS_INVALID");
+  }
+  assertAppointmentStartsInFuture(startsAt);
   const appointment = {
     id: createId("appt"),
     organizationId: readString(payload.organizationId, 120) || "org_default_clinic",
@@ -2692,47 +4796,57 @@ function createAppointmentRecord(payload = {}) {
     createdAt,
     updatedAt: createdAt,
   };
-  db.appointments.unshift(appointment);
   return appointment;
 }
 
 function updateAppointmentRecord(appointment, payload = {}) {
+  const nextAppointment = { ...appointment };
   if (Object.prototype.hasOwnProperty.call(payload, "patientId") && readString(payload.patientId, 120) !== appointment.patientId) {
     throw httpError(400, "Cannot move an appointment to another patient; create a new appointment instead");
   }
   for (const field of ["location", "reason", "notes", "cancellationReason"]) {
     if (Object.prototype.hasOwnProperty.call(payload, field)) {
-      appointment[field] = readString(payload[field], field === "notes" ? 2000 : 1000);
+      nextAppointment[field] = readString(payload[field], field === "notes" ? 2000 : 1000);
     }
   }
   if (Object.prototype.hasOwnProperty.call(payload, "type")) {
-    appointment.type = normalizeAppointmentType(payload.type);
+    nextAppointment.type = normalizeAppointmentType(payload.type);
   }
   if (Object.prototype.hasOwnProperty.call(payload, "channel")) {
-    appointment.channel = readString(payload.channel, 80);
+    nextAppointment.channel = readString(payload.channel, 80);
   }
   if (Object.prototype.hasOwnProperty.call(payload, "doctorUserId") || Object.prototype.hasOwnProperty.call(payload, "doctorId")) {
-    appointment.doctorUserId = readString(payload.doctorUserId || payload.doctorId, 120);
+    nextAppointment.doctorUserId = readString(payload.doctorUserId || payload.doctorId, 120);
   }
   if (Object.prototype.hasOwnProperty.call(payload, "startsAt")) {
-    appointment.startsAt = parseAppointmentTime(payload.startsAt, "startsAt");
+    const previousDuration = Math.max(0, Date.parse(appointment.endsAt || "") - Date.parse(appointment.startsAt || ""));
+    nextAppointment.startsAt = parseAppointmentTime(payload.startsAt, "startsAt");
+    if (!Object.prototype.hasOwnProperty.call(payload, "endsAt") && previousDuration > 0) {
+      nextAppointment.endsAt = new Date(Date.parse(nextAppointment.startsAt) + previousDuration).toISOString();
+    }
   }
   if (Object.prototype.hasOwnProperty.call(payload, "endsAt")) {
-    appointment.endsAt = parseAppointmentTime(payload.endsAt, "endsAt");
+    nextAppointment.endsAt = parseAppointmentTime(payload.endsAt, "endsAt");
   }
-  assertAppointmentWindow(appointment.startsAt, appointment.endsAt || defaultAppointmentEnd(appointment.startsAt));
+  assertAppointmentWindow(nextAppointment.startsAt, nextAppointment.endsAt || defaultAppointmentEnd(nextAppointment.startsAt));
+  if (Object.prototype.hasOwnProperty.call(payload, "startsAt") || Object.prototype.hasOwnProperty.call(payload, "endsAt")) {
+    assertAppointmentStartsInFuture(nextAppointment.startsAt);
+  }
   if (Object.prototype.hasOwnProperty.call(payload, "status")) {
     const previous = appointment.status;
-    appointment.status = normalizeAppointmentStatus(payload.status, previous || "scheduled");
-    if (appointment.status === "cancelled" && previous !== "cancelled") {
-      appointment.cancelledAt = nowIso();
+    const next = normalizeAppointmentStatus(payload.status, previous || "scheduled");
+    assertAppointmentStatusTransition(previous, next);
+    nextAppointment.status = next;
+    if (nextAppointment.status === "cancelled" && previous !== "cancelled") {
+      nextAppointment.cancelledAt = nowIso();
     }
-    if (appointment.status === "completed" && previous !== "completed") {
-      appointment.completedAt = nowIso();
+    if (nextAppointment.status === "completed" && previous !== "completed") {
+      nextAppointment.completedAt = nowIso();
     }
   }
-  appointment.updatedAt = nowIso();
-  return appointment;
+  assertAppointmentCancellationReason(nextAppointment.status, nextAppointment.cancellationReason);
+  nextAppointment.updatedAt = nowIso();
+  return nextAppointment;
 }
 
 function findAppointment(appointmentId) {
@@ -2772,17 +4886,20 @@ function canAccessAppointment(user, appointment) {
   if (isPlatformAdminUser(user)) {
     return true;
   }
-  if (appointment.doctorUserId && appointment.doctorUserId === user.id) {
-    return true;
-  }
   const patient = appointment.patientId ? findPatient(appointment.patientId) : null;
-  if (patient && canAccessPatient(user, patient.id)) {
+  const isPatientOrGuardian = Boolean(
+    patient &&
+      (isPatientUser(user) || patient.ownerUserId === user.id || patient.guardianUserId === user.id),
+  );
+  if (isPatientOrGuardian && canAccessPatient(user, patient.id)) {
     return true;
   }
   const workspaceContext = getUserWorkspaceContext(user);
   return Boolean(
     appointment.organizationId &&
       appointment.organizationId === workspaceContext.currentWorkspaceId &&
+      workspaceContext.currentMembership?.operational === true &&
+      hasWorkspaceMembership(user, appointment.organizationId) &&
       hasAnyCapability(user, APPOINTMENT_VIEW_CAPABILITIES),
   );
 }
@@ -2823,8 +4940,12 @@ function validateAppointmentDoctor(doctorUserId, organizationId, actorUser) {
   if (!doctor) {
     throw httpError(404, "Doctor assigned to appointment was not found");
   }
-  if (!isPlatformAdminUser(actorUser) && doctor.organizationId && doctor.organizationId !== organizationId) {
-    throw httpError(403, "Doctor assigned to appointment is outside current workspace");
+  if (!hasWorkspaceMembership(doctor, organizationId)) {
+    throw httpError(
+      403,
+      "Doctor assigned to appointment is outside the appointment workspace",
+      "APPOINTMENT_DOCTOR_OUTSIDE_WORKSPACE",
+    );
   }
   return doctor.id;
 }
@@ -2880,13 +5001,13 @@ const STORAGE_READ_CAPABILITIES = [
 ];
 const STORAGE_MANAGE_CAPABILITIES = ["platform.storage.manage", "workspace.storage.manage"];
 const REPORT_EXPORT_CAPABILITIES = [
-  "platform.reports.view",
-  "workspace.reports.view",
-  "billing.view",
-  "platform.storage.manage",
-  "workspace.storage.manage",
-  "personal.scans.manage",
+  "platform.exports.manage",
+  "workspace.exports.manage",
+  "workspace.assigned_data.export",
+  "personal.data.export",
 ];
+const AUDIT_LOG_VIEW_CAPABILITIES = ["platform.audit.view", "workspace.audit.view"];
+const AUDIT_EXPORT_CAPABILITIES = ["platform.audit.export", "workspace.audit.export"];
 const WORKSPACE_VIEW_CAPABILITIES = ["platform.workspaces.manage", "workspace.dashboard.view"];
 const WORKSPACE_MANAGE_CAPABILITIES = ["platform.workspaces.manage", "workspace.settings.manage"];
 const PACKAGE_MANAGE_CAPABILITIES = ["platform.packages.manage"];
@@ -2913,6 +5034,10 @@ const APPOINTMENT_MANAGE_CAPABILITIES = [
   "workspace.appointments.manage",
   "personal.appointments.manage",
 ];
+const NOTIFICATION_MANAGE_CAPABILITIES = [
+  "platform.settings.manage",
+  "workspace.settings.manage",
+];
 const SHARING_MANAGE_CAPABILITIES = [
   "platform.patients.manage",
   "workspace.patients.manage",
@@ -2935,7 +5060,18 @@ function ensurePatientProfileForUser(user) {
 
   if (user.patientId) {
     const existing = findPatient(user.patientId);
-    if (existing) {
+    if (
+      existing &&
+      (existing.accountUserId === user.id ||
+        (existing.ownerUserId === user.id && (existing.profileType === "self" || existing.relationship === "self")) ||
+        (!existing.ownerUserId && !existing.accountUserId))
+    ) {
+      existing.ownerUserId = existing.ownerUserId || user.id;
+      existing.accountUserId = existing.accountUserId || user.id;
+      existing.profileType = "self";
+      existing.relationship = "self";
+      const selectedProfile = user.activePatientId ? findPatient(user.activePatientId) : null;
+      user.activePatientId = selectedProfile?.ownerUserId === user.id ? selectedProfile.id : existing.id;
       return existing;
     }
   }
@@ -2943,6 +5079,12 @@ function ensurePatientProfileForUser(user) {
   const email = readString(user.email, 160).toLowerCase();
   const phone = readString(user.phone, 40).replace(/\s/g, "");
   let patient = db.patients.find((item) => {
+    if (
+      item.accountUserId !== user.id &&
+      !(item.ownerUserId === user.id && (item.profileType === "self" || item.relationship === "self"))
+    ) {
+      return false;
+    }
     const itemEmail = readString(item.email, 160).toLowerCase();
     const itemPhone = readString(item.phone, 40).replace(/\s/g, "");
     return (email && itemEmail === email) || (phone && itemPhone === phone);
@@ -2965,10 +5107,12 @@ function ensurePatientProfileForUser(user) {
   }
 
   user.patientId = patient.id;
+  const selectedProfile = user.activePatientId ? findPatient(user.activePatientId) : null;
+  user.activePatientId = selectedProfile?.ownerUserId === user.id ? selectedProfile.id : patient.id;
   patient.ownerUserId = user.id;
   patient.accountUserId = patient.accountUserId || user.id;
-  patient.profileType = patient.profileType || "self";
-  patient.relationship = patient.relationship || "self";
+  patient.profileType = "self";
+  patient.relationship = "self";
   patient.organizationId = patient.organizationId || user.organizationId || "org_default_clinic";
   return patient;
 }
@@ -2981,16 +5125,120 @@ function isActiveAccessGrant(grant) {
     return true;
   }
   const expiresAt = new Date(grant.expiresAt).getTime();
-  return Number.isNaN(expiresAt) || expiresAt > Date.now();
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function getPatientShareStatus(grant) {
+  if (grant?.revokedAt) return "revoked";
+  if (grant?.expiresAt) {
+    const expiresAt = Date.parse(grant.expiresAt);
+    if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return "expired";
+  }
+  return "active";
+}
+
+function derivePatientShareAuthorityType(actor, patient, doctorUserId = "") {
+  const patientPrincipalIds = new Set(
+    [patient?.ownerUserId, patient?.accountUserId, patient?.guardianUserId].filter(Boolean),
+  );
+  if (
+    actor &&
+    actor.role === "patient" &&
+    patientPrincipalIds.has(actor.id)
+  ) {
+    return "patient_consent";
+  }
+  return doctorUserId ? "clinician_access_grant" : "administrative_assignment";
+}
+
+function resolvePatientShareAuthorityType(grant) {
+  if (
+    [
+      "patient_consent",
+      "clinician_access_grant",
+      "administrative_assignment",
+    ].includes(grant?.authorityType)
+  ) {
+    return grant.authorityType;
+  }
+  const patient = findPatient(grant?.patientId);
+  const grantor = db.users.find((item) => item.id === grant?.grantedByUserId) || null;
+  return derivePatientShareAuthorityType(
+    grantor,
+    patient,
+    grant?.doctorUserId || grant?.doctorId || "",
+  );
+}
+
+function patientShareActorSummary(userId) {
+  const actor = db.users.find((item) => item.id === userId) || null;
+  if (!actor) return null;
+  return {
+    id: actor.id,
+    name: actor.name || actor.email || actor.id,
+    role: normalizeWorkspaceRole(actor.role || ""),
+  };
+}
+
+function publicPatientShare(grant) {
+  const authorityType = resolvePatientShareAuthorityType(grant);
+  const doctorUserId = grant.doctorUserId || grant.doctorId || "";
+  const doctor = doctorUserId
+    ? db.users.find((item) => item.id === doctorUserId) || null
+    : null;
+  const workspace = grant.organizationId ? getClinicById(grant.organizationId) : null;
+  const status = getPatientShareStatus(grant);
+  return {
+    ...grant,
+    authorityType,
+    purpose: grant.purpose || "",
+    consentedAt:
+      authorityType === "patient_consent"
+        ? grant.consentedAt || grant.createdAt || ""
+        : "",
+    status,
+    active: status === "active",
+    recipient: doctorUserId
+      ? {
+          type: "doctor",
+          id: doctorUserId,
+          name: doctor?.name || doctor?.email || doctorUserId,
+          workspaceId: doctor?.organizationId || "",
+        }
+      : {
+          type: "workspace",
+          id: grant.organizationId || "",
+          name: workspace?.name || grant.organizationId || "",
+          workspaceId: grant.organizationId || "",
+        },
+    grantedByActor: patientShareActorSummary(grant.grantedByUserId),
+    revokedByActor: patientShareActorSummary(grant.revokedByUserId),
+    audit: {
+      grantedAt: grant.createdAt || "",
+      grantedByUserId: grant.grantedByUserId || "",
+      revokedAt: grant.revokedAt || "",
+      revokedByUserId: grant.revokedByUserId || "",
+    },
+  };
+}
+
+function grantsPatientProfileAccess(grant) {
+  return isActiveAccessGrant(grant) && grant.scope === "patient_profile";
 }
 
 function getDoctorPatientGrantIds(user) {
-  if (!user) {
+  if (
+    !user ||
+    !isApprovedActiveDoctorPrincipal(user)
+  ) {
     return new Set();
   }
   return new Set(
     db.doctorPatientAccess
-      .filter((grant) => (grant.doctorUserId === user.id || grant.doctorId === user.id) && isActiveAccessGrant(grant))
+      .filter((grant) => (
+        (grant.doctorUserId === user.id || grant.doctorId === user.id) &&
+        grantsPatientProfileAccess(grant)
+      ))
       .map((grant) => grant.patientId)
       .filter(Boolean),
   );
@@ -3006,7 +5254,7 @@ function getWorkspacePatientGrantIds(user) {
   }
   return new Set(
     db.doctorPatientAccess
-      .filter((grant) => grant.organizationId === workspaceId && isActiveAccessGrant(grant))
+      .filter((grant) => grant.organizationId === workspaceId && grantsPatientProfileAccess(grant))
       .map((grant) => grant.patientId)
       .filter(Boolean),
   );
@@ -3017,14 +5265,26 @@ function getActivePatientGrantsForUser(user, patientId) {
     return [];
   }
   const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+  const canUseDirectDoctorGrant = isApprovedActiveDoctorPrincipal(user);
+  const canUseWorkspaceScanGrant = hasAnyCapability(user, [
+    "workspace.patients.view",
+    "workspace.patients.manage",
+  ]) && hasAnyCapability(user, [
+    "workspace.scans.view",
+    "workspace.scans.manage",
+  ]);
   return db.doctorPatientAccess.filter((grant) => {
     if (grant.patientId !== patientId || !isActiveAccessGrant(grant)) {
       return false;
     }
     if (grant.doctorUserId === user.id || grant.doctorId === user.id) {
-      return true;
+      return canUseDirectDoctorGrant;
     }
-    return Boolean(workspaceId && grant.organizationId === workspaceId);
+    return Boolean(
+      canUseWorkspaceScanGrant &&
+      workspaceId &&
+      grant.organizationId === workspaceId
+    );
   });
 }
 
@@ -3037,9 +5297,12 @@ function hasDirectPatientAccess(user, patient) {
   }
   if (isPatientUser(user)) {
     const selfProfile = ensurePatientProfileForUser(user);
-    return Boolean((selfProfile && selfProfile.id === patient.id) || patient.ownerUserId === user.id);
+    return Boolean(
+      (selfProfile && selfProfile.id === patient.id) ||
+      [patient.ownerUserId, patient.accountUserId, patient.guardianUserId].includes(user.id),
+    );
   }
-  if (patient.ownerUserId && patient.ownerUserId === user.id) {
+  if ([patient.ownerUserId, patient.accountUserId, patient.guardianUserId].includes(user.id)) {
     return true;
   }
   const workspaceContext = getUserWorkspaceContext(user);
@@ -3098,10 +5361,19 @@ function canManagePatientSharing(user, patient) {
   if (isPlatformAdminUser(user)) {
     return true;
   }
-  if (patient.ownerUserId && patient.ownerUserId === user.id && hasCapability(user, "personal.sharing.manage")) {
+  if (
+    [patient.ownerUserId, patient.accountUserId, patient.guardianUserId].includes(user.id) &&
+    hasCapability(user, "personal.sharing.manage")
+  ) {
     return true;
   }
-  return canAccessPatient(user, patient.id) && hasAnyCapability(user, SHARING_MANAGE_CAPABILITIES);
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+  return Boolean(
+    patient.organizationId &&
+    workspaceId === patient.organizationId &&
+    canAccessPatient(user, patient.id) &&
+    hasAnyCapability(user, SHARING_MANAGE_CAPABILITIES)
+  );
 }
 
 function assertCanManagePatientSharing(user, patient) {
@@ -3122,7 +5394,9 @@ function canAccessScan(user, scan) {
   if (grants.length > 0) {
     return grants.some((grant) => {
       const scanIds = Array.isArray(grant.scanIds) ? grant.scanIds : [];
-      return scanIds.length === 0 || grant.scope !== "selected_scans" || scanIds.includes(scan.id);
+      if (grant.scope === "patient_profile") return true;
+      if (grant.scope === "selected_scans") return scanIds.includes(scan.id);
+      return false;
     });
   }
   return false;
@@ -3137,10 +5411,7 @@ function canManagePatientScanCollection(user, patientId) {
     return true;
   }
   const grants = getActivePatientGrantsForUser(user, patientId);
-  return grants.some((grant) => {
-    const scanIds = Array.isArray(grant.scanIds) ? grant.scanIds : [];
-    return grant.scope !== "selected_scans" || scanIds.length === 0;
-  });
+  return grants.some((grant) => grant.scope === "patient_profile");
 }
 
 function assertCanManagePatientScanCollection(user, patientId) {
@@ -3161,7 +5432,13 @@ function filterPatientsForUser(user, patients) {
   }
   if (isPatientUser(user)) {
     const patient = ensurePatientProfileForUser(user);
-    return patient ? patients.filter((item) => item.id === patient.id || item.ownerUserId === user.id) : [];
+    return patient
+      ? patients.filter(
+          (item) =>
+            item.id === patient.id ||
+            [item.ownerUserId, item.accountUserId, item.guardianUserId].includes(user.id),
+        )
+      : [];
   }
   if (hasAnyCapability(user, ["workspace.patients.view", "workspace.patients.manage"])) {
     const workspaceContext = getUserWorkspaceContext(user);
@@ -3201,6 +5478,29 @@ function getDeviceWorkspaceId(device) {
   return device?.organizationId || "org_default_clinic";
 }
 
+function hasWorkspaceDeviceCapability(user, workspaceId, capabilities) {
+  const targetWorkspaceId = readString(workspaceId, 120);
+  if (!user || !targetWorkspaceId) {
+    return false;
+  }
+  const membership = getUserMemberships(user).find(
+    (candidate) => candidate.workspaceId === targetWorkspaceId && candidate.operational,
+  );
+  if (!membership) {
+    return false;
+  }
+  const capabilitySet = new Set(getCapabilitiesForRole(membership.role));
+  const workspace = getClinicById(targetWorkspaceId);
+  if (
+    workspace?.workspaceType === "solo_practice" &&
+    workspace.ownerUserId === user.id &&
+    normalizeWorkspaceRole(membership.role) === "doctor"
+  ) {
+    capabilitySet.add("workspace.devices.manage");
+  }
+  return capabilities.some((capability) => capabilitySet.has(capability));
+}
+
 function canAccessDevice(user, device) {
   if (!user || !device) {
     return false;
@@ -3208,30 +5508,52 @@ function canAccessDevice(user, device) {
   if (isPlatformAdminUser(user)) {
     return true;
   }
-  if (device.pairedUserId && device.pairedUserId === user.id) {
+  const deviceWorkspaceId = getDeviceWorkspaceId(device);
+  const isPersonalOwner = Boolean(
+    isPatientUser(user) &&
+    isActiveUserAccount(user) &&
+    [device.ownerUserId, device.pairedUserId].includes(user.id),
+  );
+  if (
+    isPersonalOwner &&
+    hasWorkspaceDeviceCapability(user, deviceWorkspaceId, ["personal.devices.manage"])
+  ) {
     return true;
   }
-  const workspaceContext = getUserWorkspaceContext(user);
-  const isSameWorkspace = getDeviceWorkspaceId(device) === workspaceContext.currentWorkspaceId;
-  return (
-    isSameWorkspace &&
-    hasAnyCapability(user, [
+  if (device.pairedUserId && device.pairedUserId === user.id) {
+    return hasWorkspaceDeviceCapability(user, deviceWorkspaceId, [
       "workspace.devices.view",
       "workspace.devices.manage",
-      "personal.devices.manage",
+    ]);
+  }
+  const workspaceContext = getUserWorkspaceContext(user);
+  const isSameWorkspace = deviceWorkspaceId === workspaceContext.currentWorkspaceId;
+  return (
+    isSameWorkspace &&
+    hasWorkspaceDeviceCapability(user, deviceWorkspaceId, [
+      "workspace.devices.view",
+      "workspace.devices.manage",
     ])
   );
 }
 
 function canManageDevice(user, device) {
-  return (
-    canAccessDevice(user, device) &&
-    hasAnyCapability(user, [
-      "platform.devices.manage",
-      "workspace.devices.manage",
-      "personal.devices.manage",
-    ])
+  if (!canAccessDevice(user, device)) {
+    return false;
+  }
+  if (isPlatformAdminUser(user)) {
+    return true;
+  }
+  const deviceWorkspaceId = getDeviceWorkspaceId(device);
+  const isPersonalOwner = Boolean(
+    isPatientUser(user) &&
+    isActiveUserAccount(user) &&
+    [device.ownerUserId, device.pairedUserId].includes(user.id),
   );
+  if (isPersonalOwner) {
+    return hasWorkspaceDeviceCapability(user, deviceWorkspaceId, ["personal.devices.manage"]);
+  }
+  return hasWorkspaceDeviceCapability(user, deviceWorkspaceId, ["workspace.devices.manage"]);
 }
 
 function assertCanAccessDevice(user, device) {
@@ -3376,10 +5698,10 @@ function canAccessNotification(user, notification) {
     return true;
   }
   if (notification.userId && notification.userId === user.id) {
-    return true;
+    return !notification.organizationId || hasWorkspaceRelationship(user, notification.organizationId);
   }
   if (notification.organizationId) {
-    return isSameCurrentWorkspace(user, notification.organizationId) && hasCapability(user, "notifications.view");
+    return hasWorkspaceRelationship(user, notification.organizationId) && hasCapability(user, "notifications.view");
   }
   return !notification.userId && !notification.organizationId;
 }
@@ -3388,17 +5710,11 @@ function canTargetNotificationUser(actorUser, targetUser, organizationId = "") {
   if (!actorUser || !targetUser) {
     return false;
   }
-  if (isPlatformAdminUser(actorUser)) {
-    return true;
-  }
-  if (targetUser.id === actorUser.id) {
-    return true;
-  }
   const workspaceId = readString(organizationId, 120) || getUserWorkspaceContext(actorUser).currentWorkspaceId || "";
-  return Boolean(
-    workspaceId &&
-      (targetUser.organizationId === workspaceId || hasWorkspaceMembership(targetUser, workspaceId)),
-  );
+  if (workspaceId) {
+    return ["admin", "platform_admin"].includes(targetUser.role) || hasWorkspaceRelationship(targetUser, workspaceId);
+  }
+  return isPlatformAdminUser(actorUser) || targetUser.id === actorUser.id;
 }
 
 function filterNotificationsForUser(user, notifications) {
@@ -3408,16 +5724,356 @@ function filterNotificationsForUser(user, notifications) {
   return notifications.filter((notification) => canAccessNotification(user, notification));
 }
 
-function filterExportsForUser(user, exportsList) {
-  if (isPlatformAdminUser(user)) {
-    return exportsList;
+const NOTIFICATION_AUDIENCE_ROLES = [
+  "workspace_owner",
+  "workspace_admin",
+  "doctor",
+  "nurse",
+  "technician",
+  "billing",
+  "viewer",
+  "patient",
+];
+const NOTIFICATION_CHANNELS = ["in_app", "email", "push"];
+
+function getNotificationChannelAvailability() {
+  const emailRuntime = getEmailRuntimeStatus();
+  const emailEnabled = isNotificationEmailEnabled();
+  const pushEnabled = isPushNotificationEnabled();
+  const firebaseAdmin = pushEnabled ? getFirebaseAdmin(process.env) : null;
+  const pushConfigured = Boolean(firebaseAdmin && typeof firebaseAdmin.messaging === "function");
+  return {
+    in_app: { available: true, status: "ready", provider: "backend" },
+    email: {
+      available: emailEnabled && emailRuntime.configured,
+      status: !emailEnabled ? "disabled" : emailRuntime.configured ? "ready" : "unavailable",
+      provider: emailRuntime.provider || "email",
+      reasonCode: !emailEnabled
+        ? "NOTIFICATION_EMAIL_DISABLED"
+        : emailRuntime.configured
+          ? ""
+          : "NOTIFICATION_EMAIL_PROVIDER_UNAVAILABLE",
+    },
+    push: {
+      available: pushEnabled && pushConfigured,
+      status: !pushEnabled ? "disabled" : pushConfigured ? "ready" : "unavailable",
+      provider: "fcm",
+      reasonCode: !pushEnabled
+        ? "PUSH_NOTIFICATIONS_DISABLED"
+        : pushConfigured
+          ? ""
+          : "PUSH_PROVIDER_UNAVAILABLE",
+    },
+  };
+}
+
+function normalizeNotificationAudienceRole(value) {
+  const role = normalizeWorkspaceRole(readString(value, 80));
+  return NOTIFICATION_AUDIENCE_ROLES.includes(role) ? role : "";
+}
+
+function getNotificationAudienceOptions(user) {
+  const platformAdmin = isPlatformAdminUser(user);
+  const currentWorkspaceId = getUserWorkspaceContext(user).currentWorkspaceId || "";
+  const workspaces = db.organizations
+    .filter(
+      (workspace) =>
+        !workspace.deletedAt &&
+        String(workspace.status || "active").toLowerCase() === "active" &&
+        (platformAdmin || workspace.id === currentWorkspaceId),
+    )
+    .map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name || workspace.id,
+      workspaceType: workspace.workspaceType || workspace.type || "clinic",
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "vi"));
+  const workspaceIds = new Set(workspaces.map((workspace) => workspace.id));
+  const memberships = (db.memberships || []).filter(
+    (membership) =>
+      workspaceIds.has(membership.organizationId) &&
+      String(membership.status || "active").toLowerCase() === "active",
+  );
+  const users = [];
+  const seen = new Set();
+  for (const membership of memberships) {
+    const targetUser = (db.users || []).find((candidate) => candidate.id === membership.userId);
+    if (!targetUser || !isActiveUserAccount(targetUser)) continue;
+    const key = `${membership.organizationId}:${targetUser.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    users.push({
+      id: targetUser.id,
+      workspaceId: membership.organizationId,
+      name: targetUser.name || targetUser.email || targetUser.id,
+      email: targetUser.email || "",
+      role: normalizeNotificationAudienceRole(membership.role || targetUser.role) || "viewer",
+    });
+    if (users.length >= 500) break;
   }
-  return exportsList.filter((exportJob) => {
-    if (exportJob.createdByUserId && exportJob.createdByUserId === user.id) {
-      return true;
+  users.sort((left, right) => left.name.localeCompare(right.name, "vi"));
+  return {
+    audiences: { workspaces, roles: NOTIFICATION_AUDIENCE_ROLES, users },
+    channels: getNotificationChannelAvailability(),
+  };
+}
+
+function normalizeNotificationCampaignRequest(payload = {}) {
+  const legacyUserId = readString(payload.userId, 120);
+  const legacyWorkspaceId = readString(payload.organizationId, 120);
+  const rawAudience = payload.audience && typeof payload.audience === "object" ? payload.audience : {};
+  const type = readString(rawAudience.type, 40) || (legacyUserId ? "users" : legacyWorkspaceId ? "workspace" : "");
+  if (!["workspace", "role", "users"].includes(type)) {
+    throw httpError(
+      400,
+      "Audience type must be workspace, role or users",
+      "NOTIFICATION_AUDIENCE_TYPE_INVALID",
+    );
+  }
+  const channels = Array.from(
+    new Set(
+      (Array.isArray(payload.channels) ? payload.channels : [payload.channel || "in_app"])
+        .map((channel) => readString(channel, 40).toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  if (channels.length === 0 || channels.some((channel) => !NOTIFICATION_CHANNELS.includes(channel))) {
+    throw httpError(
+      400,
+      "Notification channels must contain in_app, email or push",
+      "NOTIFICATION_CHANNEL_INVALID",
+    );
+  }
+  const title = readString(payload.title, 180);
+  const message = readString(payload.message, 2000);
+  if (!title || !message) {
+    throw httpError(
+      400,
+      "Cần nhập tiêu đề và nội dung thông báo",
+      "NOTIFICATION_CONTENT_REQUIRED",
+    );
+  }
+  const workspaceId = readString(rawAudience.workspaceId || legacyWorkspaceId, 120);
+  const role = type === "role" ? normalizeNotificationAudienceRole(rawAudience.role) : "";
+  const userIds = Array.from(
+    new Set(
+      (Array.isArray(rawAudience.userIds) ? rawAudience.userIds : legacyUserId ? [legacyUserId] : [])
+        .map((id) => readString(id, 120))
+        .filter(Boolean),
+    ),
+  ).sort();
+  if (!workspaceId) {
+    throw httpError(400, "Workspace audience is required", "NOTIFICATION_WORKSPACE_REQUIRED");
+  }
+  if (type === "role" && !role) {
+    throw httpError(400, "A valid workspace role is required", "NOTIFICATION_AUDIENCE_ROLE_INVALID");
+  }
+  if (type === "users" && (userIds.length === 0 || userIds.length > 50)) {
+    throw httpError(
+      400,
+      "User audience must contain 1-50 backend user ids",
+      "NOTIFICATION_AUDIENCE_USERS_INVALID",
+    );
+  }
+  return {
+    type: readString(payload.type, 40) || "info",
+    title,
+    message,
+    channels,
+    audience: { type, workspaceId, ...(role ? { role } : {}), ...(userIds.length ? { userIds } : {}) },
+  };
+}
+
+function resolveNotificationCampaignAudience(actor, normalized) {
+  const options = getNotificationAudienceOptions(actor);
+  const workspace = options.audiences.workspaces.find(
+    (candidate) => candidate.id === normalized.audience.workspaceId,
+  );
+  if (!workspace) {
+    throw httpError(
+      403,
+      "Notification workspace is outside the current authority scope",
+      "NOTIFICATION_WORKSPACE_FORBIDDEN",
+    );
+  }
+  let users = options.audiences.users.filter((candidate) => candidate.workspaceId === workspace.id);
+  if (normalized.audience.type === "role") {
+    users = users.filter((candidate) => candidate.role === normalized.audience.role);
+  } else if (normalized.audience.type === "users") {
+    const requested = new Set(normalized.audience.userIds);
+    users = users.filter((candidate) => requested.has(candidate.id));
+    if (users.length !== requested.size) {
+      throw httpError(
+        403,
+        "One or more notification users are outside the selected workspace",
+        "NOTIFICATION_AUDIENCE_TENANT_MISMATCH",
+      );
     }
-    return exportJob.organizationId && isSameCurrentWorkspace(user, exportJob.organizationId);
+  }
+  if (users.length === 0) {
+    throw httpError(
+      409,
+      "No active recipients match the selected audience",
+      "NOTIFICATION_AUDIENCE_EMPTY",
+    );
+  }
+  if (users.length > 200) {
+    throw httpError(
+      409,
+      "Notification audience exceeds the 200-recipient campaign limit",
+      "NOTIFICATION_AUDIENCE_TOO_LARGE",
+    );
+  }
+  const channelAvailability = options.channels;
+  return {
+    workspace,
+    users,
+    recipients: users.map((targetUser) => ({
+      userId: targetUser.id,
+      emailStatus: normalized.channels.includes("email")
+        ? !targetUser.email
+          ? "no_recipient"
+          : channelAvailability.email.available
+            ? "ready"
+            : channelAvailability.email.status
+        : "skipped",
+      emailErrorMessage:
+        normalized.channels.includes("email") && !channelAvailability.email.available
+          ? channelAvailability.email.reasonCode
+          : "",
+      pushStatus: normalized.channels.includes("push")
+        ? channelAvailability.push.available
+          ? "ready"
+          : channelAvailability.push.status
+        : "skipped",
+      pushErrorMessage:
+        normalized.channels.includes("push") && !channelAvailability.push.available
+          ? channelAvailability.push.reasonCode
+          : "",
+    })),
+    channelAvailability,
+  };
+}
+
+function filterExportsForUser(user, exportsList) {
+  return exportsList.filter((exportJob) => {
+    if (exportJob.dataset === "audit_logs" && !hasAnyCapability(user, AUDIT_EXPORT_CAPABILITIES)) {
+      return false;
+    }
+    if (isPlatformAdminUser(user)) return true;
+    if (!exportJob.organizationId || !isSameCurrentWorkspace(user, exportJob.organizationId)) {
+      return false;
+    }
+    if (hasCapability(user, "workspace.exports.manage")) return true;
+    return Boolean(exportJob.createdByUserId && exportJob.createdByUserId === user.id);
   });
+}
+
+function resolveExportScope(user, organizationId, dataset) {
+  if (isPlatformAdminUser(user)) {
+    return {
+      kind: "platform",
+      actorUserId: user.id,
+      patientIds: [],
+      restrictToPatientIds: false,
+    };
+  }
+  if (!isSameCurrentWorkspace(user, organizationId)) {
+    throw httpError(403, "The export workspace is outside the current workspace", "EXPORT_SCOPE_DENIED");
+  }
+  if (dataset === "audit_logs") {
+    requireAnyCapability(user, AUDIT_EXPORT_CAPABILITIES, "Không có quyền xuất audit log của workspace");
+    return {
+      kind: "workspace",
+      actorUserId: user.id,
+      patientIds: [],
+      restrictToPatientIds: false,
+    };
+  }
+  if (hasCapability(user, "workspace.exports.manage")) {
+    return {
+      kind: "workspace",
+      actorUserId: user.id,
+      patientIds: [],
+      restrictToPatientIds: false,
+    };
+  }
+  if (hasCapability(user, "workspace.assigned_data.export")) {
+    return {
+      kind: "assigned_patients",
+      actorUserId: user.id,
+      patientIds: [...getDoctorPatientGrantIds(user)].sort(),
+      restrictToPatientIds: true,
+    };
+  }
+  if (hasCapability(user, "personal.data.export")) {
+    const patientIds = filterPatientsForUser(user, db.patients)
+      .filter((patient) => patient.organizationId === organizationId)
+      .map((patient) => patient.id)
+      .filter(Boolean)
+      .sort();
+    return {
+      kind: "personal",
+      actorUserId: user.id,
+      patientIds,
+      restrictToPatientIds: true,
+    };
+  }
+  throw httpError(403, "Không có quyền xuất dữ liệu lâm sàng", "EXPORT_SCOPE_DENIED");
+}
+
+function publicExportJob(exportJob) {
+  if (!exportJob) return null;
+  const safeJob = {
+    ...exportJob,
+    workspaceId: exportJob.organizationId || "",
+  };
+  delete safeJob.snapshot;
+  delete safeJob.protectedMetadata;
+  return safeJob;
+}
+
+function normalizeExportDate(value, fieldName) {
+  const date = readString(value, 10);
+  if (!date) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw httpError(
+      400,
+      `${fieldName} must use YYYY-MM-DD`,
+      "EXPORT_DATE_INVALID",
+      { field: fieldName },
+    );
+  }
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw httpError(
+      400,
+      `${fieldName} is not a valid calendar date`,
+      "EXPORT_DATE_INVALID",
+      { field: fieldName },
+    );
+  }
+  return date;
+}
+
+function normalizeExportDateRange(payload = {}) {
+  const startDate = normalizeExportDate(payload.startDate, "startDate");
+  const endDate = normalizeExportDate(payload.endDate, "endDate");
+  if (Boolean(startDate) !== Boolean(endDate)) {
+    throw httpError(
+      400,
+      "Both startDate and endDate are required when filtering an export",
+      "EXPORT_DATE_RANGE_INCOMPLETE",
+    );
+  }
+  if (startDate && endDate < startDate) {
+    throw httpError(
+      400,
+      "endDate must be the same as or later than startDate",
+      "EXPORT_DATE_RANGE_INVALID",
+    );
+  }
+  return { startDate, endDate };
 }
 
 function filterAccessLogsForUser(user, logs) {
@@ -3506,7 +6162,16 @@ async function createScanSession(payload = {}, actorUser = null) {
     throw httpError(400, "Thiết bị là bắt buộc để bắt đầu lượt đo");
   }
   const device = findDevice(deviceId);
-  if (device && actorUser) {
+  if (!device) {
+    throw httpError(404, "Không tìm thấy thiết bị ghi âm");
+  }
+  if (device.revokedAt || device.status === "revoked") {
+    throw httpError(403, "Thiết bị đã bị thu hồi");
+  }
+  if (device.organizationId && patient.organizationId && device.organizationId !== patient.organizationId) {
+    throw httpError(403, "Thiết bị và bệnh nhân phải thuộc cùng workspace");
+  }
+  if (actorUser) {
     assertCanAccessDevice(actorUser, device);
   }
   const scan = {
@@ -3524,6 +6189,7 @@ async function createScanSession(payload = {}, actorUser = null) {
     sampleRate: SAMPLE_RATE,
     channels: CHANNELS,
     bitsPerSample: BITS_PER_SAMPLE,
+    audioProtocolVersion: 2,
     sampleCount: 0,
     durationSeconds: 0,
     peak: 0,
@@ -3533,6 +6199,9 @@ async function createScanSession(payload = {}, actorUser = null) {
     aiLabel: "created",
     aiConfidence: null,
     aiSummary: "",
+    processingGeneration: 0,
+    processingIntent: "",
+    processingArtifactFingerprint: "",
     processingChunks: [],
     doctorNotes: readString(payload.doctorNotes || payload.notes, 4000),
     createdByUserId: actorUser ? actorUser.id : "",
@@ -3548,25 +6217,177 @@ async function createScanSession(payload = {}, actorUser = null) {
   return scan;
 }
 
-async function appendScanAudioChunk(scan, chunkBuffer) {
-  if (!chunkBuffer.length) {
-    throw httpError(400, "Audio chunk is empty");
+function scanAudioChunkDirectory(scanId) {
+  const scanDigest = crypto.createHash("sha256").update(String(scanId || "")).digest("hex");
+  return path.join(TMP_DIR, "scan-audio-chunks", scanDigest);
+}
+
+function scanAudioChunkRelativePath(scanId, sequence, sha256) {
+  const absolutePath = path.join(
+    scanAudioChunkDirectory(scanId),
+    `${String(sequence).padStart(12, "0")}-${sha256}.pcm`,
+  );
+  return path.relative(DATA_DIR, absolutePath).split(path.sep).join("/");
+}
+
+function resolveScanAudioLedgerPath(relativePath) {
+  const dataRoot = path.resolve(DATA_DIR);
+  const resolved = path.resolve(DATA_DIR, ...String(relativePath || "").split("/"));
+  if (resolved !== dataRoot && !resolved.startsWith(`${dataRoot}${path.sep}`)) {
+    throw httpError(500, "Stored audio chunk path is outside the configured data directory", "SCAN_AUDIO_PATH_INVALID");
   }
-  const chunkFile = path.join(TMP_DIR, `${scan.id}.chunks.pcm`);
-  await fs.promises.appendFile(chunkFile, chunkBuffer);
-  scan.status = "uploading";
-  scan.processingStatus = "uploading";
-  scan.uploadedBytes = Number(scan.uploadedBytes || 0) + chunkBuffer.length;
-  scan.updatedAt = nowIso();
-  await saveScanRecord(scan);
+  return resolved;
+}
+
+function parseScanAudioChunkHeaders(req) {
+  const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+  if (!idempotencyKey) {
+    throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+  }
+  const rawSequence = readString(req.headers["x-chunk-sequence"], 40);
+  if (!/^\d+$/.test(rawSequence)) {
+    throw httpError(400, "X-Chunk-Sequence must be a nonnegative integer", "SCAN_AUDIO_SEQUENCE_INVALID");
+  }
+  const sequence = Number(rawSequence);
+  if (!Number.isSafeInteger(sequence) || sequence < 0) {
+    throw httpError(400, "X-Chunk-Sequence must be a nonnegative integer", "SCAN_AUDIO_SEQUENCE_INVALID");
+  }
+  const sha256 = readString(req.headers["x-chunk-sha256"], 64).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(sha256)) {
+    throw httpError(400, "X-Chunk-SHA256 must contain a SHA-256 digest", "SCAN_AUDIO_SHA256_INVALID");
+  }
+  return { idempotencyKey, sequence, sha256 };
+}
+
+async function persistScanAudioChunkFile(scanId, sequence, sha256, chunkBuffer) {
+  const relativePath = scanAudioChunkRelativePath(scanId, sequence, sha256);
+  const absolutePath = resolveScanAudioLedgerPath(relativePath);
+  await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+  let created = false;
+  try {
+    await fs.promises.writeFile(absolutePath, chunkBuffer, { flag: "wx" });
+    created = true;
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    const existing = await fs.promises.readFile(absolutePath);
+    const existingSha256 = crypto.createHash("sha256").update(existing).digest("hex");
+    if (existing.length !== chunkBuffer.length || existingSha256 !== sha256) {
+      throw httpError(
+        409,
+        "Stored audio chunk conflicts with the requested payload",
+        "SCAN_AUDIO_FILE_CONFLICT",
+      );
+    }
+  }
+  return { relativePath, absolutePath, created };
+}
+
+async function appendScanAudioChunkUnsafe(scan, actorUser, metadata, chunkBuffer) {
+  if (!chunkBuffer.length) {
+    throw httpError(400, "Audio chunk is empty", "SCAN_AUDIO_CHUNK_EMPTY");
+  }
+  const actualSha256 = crypto.createHash("sha256").update(chunkBuffer).digest("hex");
+  if (actualSha256 !== metadata.sha256) {
+    throw httpError(422, "Audio chunk SHA-256 does not match the request body", "SCAN_AUDIO_SHA256_MISMATCH", {
+      expectedSha256: metadata.sha256,
+      actualSha256,
+    });
+  }
+  if (!repositories?.scanAudioUploads) {
+    throw httpError(503, "Scan audio upload repository is unavailable", "SCAN_AUDIO_REPOSITORY_UNAVAILABLE");
+  }
+  const persisted = await persistScanAudioChunkFile(scan.id, metadata.sequence, metadata.sha256, chunkBuffer);
+  const organizationId = scan.organizationId || getScanOrgId(scan);
+  let committed;
+  try {
+    committed = await repositories.scanAudioUploads.appendChunk({
+      scanId: scan.id,
+      organizationId,
+      actorUserId: actorUser.id,
+      idempotencyKey: metadata.idempotencyKey,
+      sequence: metadata.sequence,
+      sha256: metadata.sha256,
+      byteSize: chunkBuffer.length,
+      filePath: persisted.relativePath,
+    });
+  } catch (error) {
+    // The file is written before the durable ledger because the ledger stores its
+    // content-addressed path. Remove it only when no committed row references it;
+    // this keeps an exact concurrent retry from deleting another request's file.
+    try {
+      const committedChunks = await repositories.scanAudioUploads.listChunks({
+        scanId: scan.id,
+        organizationId,
+      });
+      if (persisted.created && !committedChunks.some((chunk) => chunk.filePath === persisted.relativePath)) {
+        await fs.promises.rm(persisted.absolutePath, { force: true });
+      }
+    } catch {
+      // A repository outage is not permission to delete a possibly committed file.
+      // The bounded scan-audio janitor can remove unreferenced paths later.
+    }
+    throw error;
+  }
   return {
     scan,
-    uploadedBytes: scan.uploadedBytes,
+    chunk: {
+      id: committed.chunk.id,
+      sequence: committed.chunk.sequence,
+      sha256: committed.chunk.sha256,
+      byteSize: committed.chunk.byteSize,
+      createdAt: committed.chunk.createdAt,
+    },
+    uploadedBytes: committed.uploadedBytes,
+    nextSequence: committed.nextSequence,
+    replayed: committed.replayed,
   };
 }
 
-async function completeUploadedScan(scan) {
+async function appendScanAudioChunk(scan, actorUser, metadata, chunkBuffer) {
+  return scanAudioFileMutationExecutor.enqueue(scan.id, () =>
+    appendScanAudioChunkUnsafe(scan, actorUser, metadata, chunkBuffer),
+  );
+}
+
+async function materializeScanAudioChunks(scan, chunks) {
   const chunkFile = path.join(TMP_DIR, `${scan.id}.chunks.pcm`);
+  const temporaryFile = `${chunkFile}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await fs.promises.writeFile(temporaryFile, Buffer.alloc(0), { flag: "wx" });
+    for (const chunk of chunks) {
+      const chunkPath = resolveScanAudioLedgerPath(chunk.filePath);
+      const payload = await fs.promises.readFile(chunkPath);
+      const actualSha256 = crypto.createHash("sha256").update(payload).digest("hex");
+      if (payload.length !== Number(chunk.byteSize) || actualSha256 !== chunk.sha256) {
+        throw httpError(409, "Committed audio chunk failed integrity verification", "SCAN_AUDIO_CHUNK_INTEGRITY_FAILED", {
+          sequence: chunk.sequence,
+        });
+      }
+      await fs.promises.appendFile(temporaryFile, payload);
+    }
+    await fs.promises.rm(chunkFile, { force: true });
+    await fs.promises.rename(temporaryFile, chunkFile);
+    return chunkFile;
+  } catch (error) {
+    await fs.promises.rm(temporaryFile, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function purgeScanAudioChunkFiles(scanId) {
+  await fs.promises.rm(scanAudioChunkDirectory(scanId), { recursive: true, force: true });
+  await fs.promises.rm(path.join(TMP_DIR, `${scanId}.chunks.pcm`), { force: true });
+}
+
+async function purgeScanAudioChunkFilesBestEffort(scanId) {
+  try {
+    await purgeScanAudioChunkFiles(scanId);
+  } catch (error) {
+    console.warn(`Unable to purge committed scan-audio chunks for ${scanId}: ${error.message}`);
+  }
+}
+
+async function completeUploadedScan(scan, chunkFile = path.join(TMP_DIR, `${scan.id}.chunks.pcm`)) {
   if (!fs.existsSync(chunkFile)) {
     throw httpError(404, "Không tìm thấy audio chunk để hoàn tất lượt đo");
   }
@@ -3581,9 +6402,19 @@ async function completeUploadedScan(scan) {
   scan.wavFile = wavFile;
   scan.endedAt = nowIso();
   scan.updatedAt = nowIso();
+  scan.processingGeneration = getAudioProcessingGeneration(scan, 1);
+  scan.processingIntent = getAudioProcessingIntent(scan, "initial");
+  scan.processingArtifactFingerprint = await buildAudioArtifactFingerprint(wavFilePath);
+  scan.processingRunId = buildAudioProcessingRunId(scan, scan.processingArtifactFingerprint);
   await saveScanRecord(scan);
 
-  if (await queueAudioProcessingIfAvailable(scan, wavFilePath)) {
+  if (
+    await queueAudioProcessingIfAvailable(scan, wavFilePath, {
+      processingGeneration: scan.processingGeneration,
+      processingIntent: scan.processingIntent,
+      artifactFingerprint: scan.processingArtifactFingerprint,
+    })
+  ) {
     broadcastScanEvent("scan_processing_queued", scan);
     return scan;
   }
@@ -3591,7 +6422,7 @@ async function completeUploadedScan(scan) {
   const processingResult = await runInlineAudioProcessing(scan, wavFilePath);
   const quality = processingResult.processed.quality;
   const audioFile = {
-    id: createId("audio"),
+    id: `audio_${scan.id}`,
     scanId: scan.id,
     patientId: scan.patientId,
     storageProvider: processingResult.audioUpload.provider,
@@ -3602,16 +6433,20 @@ async function completeUploadedScan(scan) {
     createdAt: nowIso(),
   };
   const aiResult = {
-    id: createId("ai"),
+    id: deterministicAudioProcessingId("ai", scan.id, scan.processingRunId, SIGNAL_QUALITY_ANALYZER_VERSION),
     scanId: scan.id,
-    modelVersion: db.settings.ai.version || "signal-quality-demo",
+    modelVersion: SIGNAL_QUALITY_ANALYZER_VERSION,
     label: quality.label,
     confidence: quality.confidence,
     summary: quality.summary,
-    rawResult: {
+    rawResult: buildSignalQualityRawResult({
       quality,
       waveformObjectKey: processingResult.waveformObjectKey,
-    },
+      processingGeneration: scan.processingGeneration,
+      processingIntent: scan.processingIntent,
+      processingRunId: scan.processingRunId,
+      artifactFingerprint: scan.processingArtifactFingerprint,
+    }),
     status: "completed",
     createdAt: nowIso(),
   };
@@ -3631,14 +6466,96 @@ async function completeUploadedScan(scan) {
     audioUrl: `/api/scans/${scan.id}/audio`,
     updatedAt: nowIso(),
   });
-  db.audioFiles.unshift(audioFile);
-  db.aiResults.unshift(aiResult);
+  if (!repositories) {
+    db.audioFiles = db.audioFiles.filter((item) => item.id !== audioFile.id && item.scanId !== scan.id);
+    db.aiResults = db.aiResults.filter((item) => item.id !== aiResult.id && item.scanId !== scan.id);
+    db.audioFiles.unshift(audioFile);
+    db.aiResults.unshift(aiResult);
+  }
   await saveAudioArtifacts(scan, audioFile, aiResult);
   broadcastScanEvent("scan_completed", scan);
   return scan;
 }
 
-async function reprocessScanAudio(scan) {
+async function completeUploadedScanIdempotently(scan, actorUser, idempotencyKey) {
+  if (!repositories?.scanAudioUploads) {
+    throw httpError(503, "Scan audio upload repository is unavailable", "SCAN_AUDIO_REPOSITORY_UNAVAILABLE");
+  }
+  const input = {
+    scanId: scan.id,
+    organizationId: scan.organizationId || getScanOrgId(scan),
+    actorUserId: actorUser.id,
+    idempotencyKey,
+  };
+  const begun = await repositories.scanAudioUploads.beginCompletion(input);
+  if (begun.action === "replay") {
+    await purgeScanAudioChunkFilesBestEffort(scan.id);
+    return { response: begun.response, replayed: true };
+  }
+  const inFlightKey = `${scan.id}:${actorUser.id}:${idempotencyKey}`;
+  if (begun.action === "in_progress") {
+    const inFlight = scanAudioCompletionInFlight.get(inFlightKey);
+    if (inFlight) {
+      return { response: await inFlight, replayed: true };
+    }
+    if (scan.status === "completed" && scan.wavFile) {
+      const response = { scan };
+      await repositories.scanAudioUploads.finishCompletion({ ...input, response });
+      await purgeScanAudioChunkFilesBestEffort(scan.id);
+      return { response, replayed: true };
+    }
+    if (scan.status === "queued" && scan.wavFile && audioQueue?.enabled) {
+      const wavFilePath = path.join(AUDIO_DIR, path.basename(scan.wavFile));
+      await enqueueAudioProcessing(scan, wavFilePath);
+      const response = { scan };
+      await repositories.scanAudioUploads.finishCompletion({ ...input, response });
+      await purgeScanAudioChunkFilesBestEffort(scan.id);
+      return { response, replayed: true };
+    }
+    throw httpError(
+      409,
+      "Scan audio completion is already in progress",
+      "SCAN_AUDIO_COMPLETION_IN_PROGRESS",
+    );
+  }
+
+  const operation = (async () => {
+    try {
+      const materializedFile = await materializeScanAudioChunks(scan, begun.chunks);
+      const completed = await completeUploadedScan(scan, materializedFile);
+      const response = { scan: completed };
+      await repositories.scanAudioUploads.finishCompletion({ ...input, response });
+      await purgeScanAudioChunkFilesBestEffort(scan.id);
+      return response;
+    } catch (error) {
+      await repositories.scanAudioUploads.failCompletion({
+        ...input,
+        errorCode: normalizeErrorCode(error?.code, Number(error?.statusCode || 500)),
+        errorMessage: error?.message || "Audio completion failed",
+      }).catch(() => undefined);
+      throw error;
+    }
+  })();
+  scanAudioCompletionInFlight.set(inFlightKey, operation);
+  try {
+    return { response: await operation, replayed: false };
+  } finally {
+    if (scanAudioCompletionInFlight.get(inFlightKey) === operation) {
+      scanAudioCompletionInFlight.delete(inFlightKey);
+    }
+  }
+}
+
+function filterAuditLogsForUser(user, logs) {
+  if (isPlatformAdminUser(user)) return logs;
+  if (!hasAnyCapability(user, ["workspace.audit.view"])) return [];
+  return logs.filter((log) => {
+    if (log.actorUserId && log.actorUserId === user.id) return true;
+    return log.organizationId && isSameCurrentWorkspace(user, log.organizationId);
+  });
+}
+
+async function reprocessScanAudio(scan, options = {}) {
   if (!scan.wavFile) {
     throw httpError(400, "Lượt đo này chưa có file WAV để chạy lại AI");
   }
@@ -3648,14 +6565,40 @@ async function reprocessScanAudio(scan) {
     throw httpError(404, "Không tìm thấy file âm thanh để chạy lại AI");
   }
 
+  const artifactFingerprint = await buildAudioArtifactFingerprint(wavFilePath);
+  const existingGeneration = getAudioProcessingGeneration(scan, 0);
+  const sameQueuedReprocessIntent =
+    !options.forceNewProcessingIntent &&
+    getAudioProcessingIntent(scan, "initial") === "reprocess" &&
+    ["processing", "queued"].includes(scan.status || scan.processingStatus) &&
+    (!scan.processingArtifactFingerprint ||
+      scan.processingArtifactFingerprint === artifactFingerprint);
+  const processingGeneration = sameQueuedReprocessIntent
+    ? Math.max(1, existingGeneration)
+    : Math.max(1, existingGeneration + 1);
+  const processingRunId = buildAudioProcessingRunId({
+    ...scan,
+    processingGeneration,
+    processingIntent: "reprocess",
+  }, artifactFingerprint);
   Object.assign(scan, {
     status: "processing",
     processingStatus: "processing",
+    processingGeneration,
+    processingIntent: "reprocess",
+    processingArtifactFingerprint: artifactFingerprint,
+    processingRunId,
     updatedAt: nowIso(),
   });
   await saveScanRecord(scan);
 
-  if (await queueAudioProcessingIfAvailable(scan, wavFilePath)) {
+  if (
+    await queueAudioProcessingIfAvailable(scan, wavFilePath, {
+      processingGeneration,
+      processingIntent: "reprocess",
+      artifactFingerprint,
+    })
+  ) {
     Object.assign(scan, {
       status: "queued",
       processingStatus: "queued",
@@ -3685,27 +6628,33 @@ async function reprocessScanAudio(scan) {
       updatedAt: nowIso(),
     });
     const aiResult = {
-      id: createId("ai"),
+      id: deterministicAudioProcessingId("ai", scan.id, processingRunId, SIGNAL_QUALITY_ANALYZER_VERSION),
       scanId: scan.id,
-      modelVersion: db.settings.ai.version || "signal-quality-demo",
+      modelVersion: SIGNAL_QUALITY_ANALYZER_VERSION,
       label: quality.label,
       confidence: quality.confidence,
       summary: quality.summary,
-      rawResult: {
+      rawResult: buildSignalQualityRawResult({
         quality,
         waveformObjectKey: processingResult.waveformObjectKey,
         reprocessed: true,
-      },
+        processingGeneration,
+        processingIntent: "reprocess",
+        processingRunId,
+        artifactFingerprint,
+      }),
       status: "completed",
       createdAt: nowIso(),
     };
 
-    if (!existingAudioFile) {
-      db.audioFiles.unshift(audioFile);
+    if (!repositories) {
+      if (!existingAudioFile) {
+        db.audioFiles.unshift(audioFile);
+      }
+      db.aiResults.unshift(aiResult);
+      db.audioFiles = db.audioFiles.slice(0, 500);
+      db.aiResults = db.aiResults.slice(0, 500);
     }
-    db.aiResults.unshift(aiResult);
-    db.audioFiles = db.audioFiles.slice(0, 500);
-    db.aiResults = db.aiResults.slice(0, 500);
     Object.assign(scan, {
       status: "completed",
       processingStatus: "completed",
@@ -3774,6 +6723,7 @@ async function deleteScanRecord(scan) {
   }
   await fs.promises.rm(path.join(TMP_DIR, `${scan.id}.chunks.pcm`), { force: true }).catch(() => undefined);
   await fs.promises.rm(path.join(TMP_DIR, `${scan.id}.pcm`), { force: true }).catch(() => undefined);
+  await fs.promises.rm(scanAudioChunkDirectory(scan.id), { recursive: true, force: true }).catch(() => undefined);
 
   if (repositories && repositories.scans && typeof repositories.scans.delete === "function") {
     await repositories.scans.delete(scan.id);
@@ -3786,8 +6736,97 @@ async function deleteScanRecord(scan) {
   broadcastScanEvent("scan_deleted", { id: scan.id, patientId: scan.patientId });
 }
 
-function startRecording(payload = {}, actorUser = null) {
-  if (activeRecording) {
+async function markRecordingStarted(recording, confirmationSource) {
+  if (!recording || recording.confirmed) return findScan(recording?.scanId);
+  const scan = findScan(recording.scanId);
+  if (!scan || scan.status === "interrupted" || scan.status === "completed") return scan;
+  recording.confirmed = true;
+  recording.confirmedAt = nowIso();
+  recording.confirmationSource = confirmationSource;
+  if (recording.startExpiryTimer) {
+    clearTimeout(recording.startExpiryTimer);
+    recording.startExpiryTimer = null;
+  }
+  Object.assign(scan, {
+    status: "recording",
+    processingStatus: "recording",
+    aiLabel: "recording",
+    audioProtocolVersion: recording.protocolVersion || 2,
+    audioSessionId: recording.sessionId,
+    audioConfirmationSource: confirmationSource,
+    audioConfirmedAt: recording.confirmedAt,
+    updatedAt: recording.confirmedAt,
+  });
+  await saveScanRecord(scan);
+  broadcastScanEvent("scan_started", scan);
+  return scan;
+}
+
+async function confirmStartCommandFromAudioFrame(recording) {
+  if (!recording?.startCommandId) return null;
+  const command = await findDeviceCommand(recording.deviceId, recording.startCommandId);
+  if (!command || ["failed", "expired"].includes(command.state)) return command;
+  if (command.state === "accepted") {
+    applyDeviceCommandDelivery(command, { websocket: true, mqtt: false, delivered: true });
+  }
+  if (command.state === "delivered") {
+    transitionDeviceCommand(command, "acknowledged", {
+      code: "AUDIO_FRAME_ACKNOWLEDGED",
+      detail: "Authenticated audio v2 frame confirmed the device session",
+    });
+  }
+  if (["acknowledged", "applying"].includes(command.state)) {
+    transitionDeviceCommand(command, "applied", {
+      code: "AUDIO_FRAME_CONFIRMED",
+      detail: "Authenticated audio v2 frame confirmed the device session is active",
+    });
+  }
+  await saveDeviceCommandRecord(command);
+  await syncDeviceLastCommand(command);
+  return command;
+}
+
+function confirmRecordingStartedFromFrame(recording) {
+  if (!recording || recording.frameConfirmationInFlight || recording.confirmed) return;
+  recording.frameConfirmationInFlight = true;
+  void (async () => {
+    try {
+      await markRecordingStarted(recording, "audio_v2_frame");
+      await confirmStartCommandFromAudioFrame(recording);
+    } catch (error) {
+      console.error(`Cannot confirm audio session ${recording.scanId} from frame: ${error.message}`);
+      await interruptRecordingForDevice(
+        recording.deviceId,
+        "The audio session was interrupted because backend confirmation failed.",
+      );
+    } finally {
+      recording.frameConfirmationInFlight = false;
+    }
+  })();
+}
+
+function scheduleAudioStartExpiry(recording, command) {
+  const delayMs = Math.max(1, Date.parse(command.expiresAt) - Date.now() + 5);
+  recording.startExpiryTimer = setTimeout(() => {
+    void (async () => {
+      const current = getActiveRecordingByScanId(recording.scanId);
+      if (!current || current.confirmed) return;
+      const durableCommand = await findDeviceCommand(recording.deviceId, command.id);
+      if (durableCommand) {
+        expireDeviceCommandIfOverdue(durableCommand, new Date(Date.parse(command.expiresAt) + 1));
+        await saveDeviceCommandRecord(durableCommand);
+      }
+      await interruptRecordingForDevice(
+        recording.deviceId,
+        "The audio session was interrupted because the device did not confirm it before expiry.",
+      );
+    })().catch((error) => console.error(`Audio start expiry cleanup error: ${error.message}`));
+  }, delayMs);
+  recording.startExpiryTimer.unref?.();
+}
+
+async function startRecording(payload = {}, actorUser = null) {
+  if (getActiveRecordingForDevice(resolveIncomingDeviceId(payload))) {
     throw httpError(409, "Đang có lượt ghi khác");
   }
 
@@ -3804,8 +6843,26 @@ function startRecording(payload = {}, actorUser = null) {
     throw httpError(400, "Thiết bị là bắt buộc để ghi âm");
   }
   const device = findDevice(deviceId);
-  if (device && actorUser) {
+  if (!device) {
+    throw httpError(404, "Không tìm thấy thiết bị ghi âm");
+  }
+  if (device.revokedAt || device.status === "revoked") {
+    throw httpError(403, "Thiết bị đã bị thu hồi");
+  }
+  if (device.organizationId && patient.organizationId && device.organizationId !== patient.organizationId) {
+    throw httpError(403, "Thiết bị và bệnh nhân phải thuộc cùng workspace");
+  }
+  if (actorUser) {
     assertCanAccessDevice(actorUser, device);
+  }
+  const authenticatedDeviceSocket = deviceSockets.get(device.id);
+  if (
+    !authenticatedDeviceSocket ||
+    authenticatedDeviceSocket._deviceAuth?.deviceId !== device.id ||
+    !authenticatedDeviceSocket.writable ||
+    authenticatedDeviceSocket.destroyed
+  ) {
+    throw httpError(409, "Thiết bị chưa có phiên xác thực trực tuyến");
   }
 
   const scan = {
@@ -3813,7 +6870,7 @@ function startRecording(payload = {}, actorUser = null) {
     organizationId: patient.organizationId || (actorUser ? actorUser.organizationId : "") || "org_default_clinic",
     patientId: patient.id,
     patient: buildPatientSnapshot(patient),
-    status: "recording",
+    status: "created",
     mode,
     bodySite,
     deviceId,
@@ -3822,16 +6879,20 @@ function startRecording(payload = {}, actorUser = null) {
     sampleRate: SAMPLE_RATE,
     channels: CHANNELS,
     bitsPerSample: BITS_PER_SAMPLE,
+    audioProtocolVersion: 2,
     sampleCount: 0,
     durationSeconds: 0,
     peak: 0,
     rms: 0,
     levelPercent: 0,
     bpm: 0,
-    aiLabel: "recording",
+    aiLabel: "created",
     aiConfidence: null,
     aiSummary: "",
-    processingStatus: "recording",
+    processingGeneration: 0,
+    processingIntent: "",
+    processingArtifactFingerprint: "",
+    processingStatus: "created",
     doctorNotes: readString(payload.doctorNotes || payload.notes, 4000),
     createdByUserId: actorUser ? actorUser.id : "",
     idempotencyKey: readString(payload.idempotencyKey, 160),
@@ -3841,9 +6902,18 @@ function startRecording(payload = {}, actorUser = null) {
     updatedAt: startedAt,
   };
 
-  db.scans.unshift(scan);
-  activeRecording = {
+  const audioSessionId = createId("audio_session");
+  const recording = {
     scanId,
+    deviceId: device.id,
+    organizationId: scan.organizationId || "",
+    patientId: scan.patientId,
+    deviceSessionId: authenticatedDeviceSocket._deviceAuth.sessionId,
+    sessionId: audioSessionId,
+    protocolVersion: 0,
+    receivedPackets: 0,
+    droppedPackets: 0,
+    audioSequenceGuard: new AudioSequenceGuard(),
     startedAt,
     rawFilePath,
     wavFilePath,
@@ -3852,47 +6922,143 @@ function startRecording(payload = {}, actorUser = null) {
     metrics: new RecordingMetrics(),
     stream: fs.createWriteStream(rawFilePath),
     lastSavedAt: 0,
+    lastMetricBroadcastAt: 0,
+    liveMetrics: createEmptyLiveMetrics(),
+    confirmed: false,
   };
 
-  activeRecording.stream.on("error", (err) => {
+  recording.stream.on("error", (err) => {
     console.error(`Recording stream error: ${err.message}`);
+    void interruptRecordingForDevice(
+      recording.deviceId,
+      "The audio session was interrupted because backend recording failed.",
+    ).catch((error) => console.error(`Recording stream cleanup error: ${error.message}`));
   });
 
-  void saveScanRecord(scan);
-  broadcastScanEvent("scan_started", scan);
+  const startEnvelope = buildDeviceCommand(
+    "audio.session.start",
+    {
+      protocolVersion: 2,
+      workspaceId: recording.organizationId,
+      patientId: recording.patientId,
+      deviceId: recording.deviceId,
+      scanId: recording.scanId,
+      sessionId: recording.sessionId,
+      sampleRate: SAMPLE_RATE,
+      sampleCount: 128,
+      encoding: "pcm_s16le",
+    },
+    scan.id,
+  );
+  const startCommand = createDeviceCommandRecord({
+    envelope: startEnvelope,
+    deviceId: device.id,
+    organizationId: scan.organizationId,
+    requestedByUserId: actorUser?.id || "",
+    idempotencyKey: readString(payload.idempotencyKey, 160),
+    requestFingerprint: createIdempotencyFingerprint({
+      patientId: scan.patientId,
+      deviceId: scan.deviceId,
+      mode: scan.mode,
+      bodySite: scan.bodySite,
+    }),
+  });
+  recording.startCommandId = startCommand.id;
+  scan.audioSessionId = audioSessionId;
+  scan.deviceCommandId = startCommand.id;
+  db.scans.unshift(scan);
+  registerActiveRecording(recording);
+
+  try {
+    await saveScanRecord(scan);
+    await saveDeviceCommandRecord(startCommand);
+  } catch (error) {
+    releaseActiveRecording(recording);
+    recording.stream.destroy();
+    await fs.promises.rm(recording.rawFilePath, { force: true }).catch(() => undefined);
+    db.scans = db.scans.filter((item) => item.id !== scan.id);
+    throw httpError(503, "Cannot persist audio session before device delivery", "AUDIO_SESSION_PERSIST_FAILED");
+  }
+
+  rememberIdempotentResource(
+    actorUser,
+    readString(payload.idempotencyKey, 160),
+    "start_scan",
+    "scan",
+    scan.id,
+    { fingerprint: createIdempotencyFingerprint(payload), responseStatus: 201 },
+  );
+  await saveDb();
+
+  const publishedDelivery = publishDeviceCommand(device.id, startEnvelope);
+  const delivery = {
+    websocket: Boolean(publishedDelivery.websocket),
+    mqtt: false,
+    delivered: Boolean(publishedDelivery.websocket),
+  };
+  applyDeviceCommandDelivery(startCommand, delivery);
+  await saveDeviceCommandRecord(startCommand);
+  if (!delivery.websocket) {
+    await interruptRecording(
+      recording,
+      "The audio session was interrupted because start delivery did not reach authenticated WSS.",
+    );
+    throw httpError(409, "Không thể gửi yêu cầu bắt đầu lượt ghi đến thiết bị");
+  }
+  void appendDeviceEvent(device.id, "audio.session.start", {
+    commandId: startCommand.id,
+    correlationId: scan.id,
+    scanId: scan.id,
+    protocolVersion: 2,
+    delivery,
+  });
+
+  scheduleAudioStartExpiry(recording, startCommand);
+  broadcastScanEvent("scan_start_accepted", scan);
   return scan;
 }
 
-function recordAudioPayload(payload) {
-  if (!activeRecording) {
-    return;
+function recordAudioPayload(recording, payload, sourceContext = {}) {
+  if (!recording || !isAudioSourceBoundToRecording(sourceContext, recording)) {
+    return false;
   }
 
-  activeRecording.stream.write(payload);
-  activeRecording.bytes += payload.length;
-  activeRecording.metrics.ingestBuffer(payload);
-  saveActiveRecordingProgress(false);
+  const scan = findScan(recording.scanId);
+  if (
+    !scan ||
+    scan.deviceId !== recording.deviceId ||
+    scan.patientId !== recording.patientId ||
+    (scan.organizationId || "") !== (recording.organizationId || "")
+  ) {
+    return false;
+  }
+
+  recording.stream.write(payload);
+  recording.bytes += payload.length;
+  recording.metrics.ingestBuffer(payload);
+  saveActiveRecordingProgress(recording, false);
+  return true;
 }
 
-function saveActiveRecordingProgress(force) {
-  if (!activeRecording) {
+function saveActiveRecordingProgress(recording, force) {
+  if (!recording || getActiveRecordingByScanId(recording.scanId) !== recording) {
     return null;
   }
 
   const now = Date.now();
-  if (!force && now - activeRecording.lastSavedAt < 1000) {
+  if (!force && now - recording.lastSavedAt < 1000) {
     return null;
   }
 
-  const scan = findScan(activeRecording.scanId);
+  const scan = findScan(recording.scanId);
   if (!scan) {
     return null;
   }
 
-  Object.assign(scan, activeRecording.metrics.getSummary(), {
+  Object.assign(scan, recording.metrics.getSummary(), {
     updatedAt: nowIso(),
   });
-  activeRecording.lastSavedAt = now;
+  recording.lastSavedAt = now;
   void saveScanRecord(scan);
   return scan;
 }
@@ -3907,19 +7073,70 @@ async function stopRecording(scanId) {
     throw httpError(404, "Không tìm thấy lượt đo");
   }
 
-  if (!activeRecording || activeRecording.scanId !== scanId) {
+  const recording = getActiveRecordingByScanId(scanId);
+  if (!recording) {
     if (scan.status === "completed") {
       return scan;
     }
-    if (scan.status === "recording") {
+    if (["created", "recording"].includes(scan.status)) {
       return markRecordingInterrupted(scan, "Lượt ghi đã dừng nhưng không còn luồng âm thanh hoạt động. Không tạo được file WAV hoàn chỉnh.");
     }
     return scan;
   }
 
-  const recording = activeRecording;
-  saveActiveRecordingProgress(true);
-  activeRecording = null;
+  saveActiveRecordingProgress(recording, true);
+  const stopEnvelope = buildDeviceCommand(
+    "audio.session.stop",
+    {
+      protocolVersion: recording.protocolVersion || 2,
+      scanId: recording.scanId,
+      sessionId: recording.sessionId,
+    },
+    `${recording.scanId}:stop`,
+  );
+  const stopCommand = createDeviceCommandRecord({
+    envelope: stopEnvelope,
+    deviceId: recording.deviceId,
+    organizationId: recording.organizationId,
+    requestedByUserId: scan.createdByUserId || "",
+    idempotencyKey: `audio-stop:${recording.scanId}`,
+    requestFingerprint: createIdempotencyFingerprint({
+      scanId: recording.scanId,
+      sessionId: recording.sessionId,
+      type: "audio.session.stop",
+    }),
+  });
+  recording.stopCommandId = stopCommand.id;
+  await saveDeviceCommandRecord(stopCommand);
+  const publishedStopDelivery = publishDeviceCommand(recording.deviceId, stopEnvelope);
+  const stopDelivery = {
+    websocket: Boolean(publishedStopDelivery.websocket),
+    mqtt: false,
+    delivered: Boolean(publishedStopDelivery.websocket),
+  };
+  applyDeviceCommandDelivery(stopCommand, stopDelivery);
+  await saveDeviceCommandRecord(stopCommand);
+  void appendDeviceEvent(recording.deviceId, "audio.session.stop", {
+    commandId: stopCommand.id,
+    correlationId: stopCommand.correlationId,
+    scanId: recording.scanId,
+    protocolVersion: recording.protocolVersion || 0,
+    delivery: stopDelivery,
+  });
+  if (!stopDelivery.websocket) {
+    await interruptRecording(
+      recording,
+      "The audio session was interrupted because stop delivery did not reach authenticated WSS.",
+    );
+    throw httpError(409, "Cannot deliver audio stop command to the authenticated device", "AUDIO_STOP_DELIVERY_FAILED");
+  }
+  if (!recording.confirmed || recording.bytes === 0) {
+    return interruptRecording(
+      recording,
+      "The audio session ended before the device confirmed and transmitted a valid audio frame.",
+    );
+  }
+  releaseActiveRecording(recording);
 
   await finishWriteStream(recording.stream);
   await writeWavFile(recording.rawFilePath, recording.wavFilePath, recording.bytes);
@@ -3942,14 +7159,14 @@ async function stopRecording(scanId) {
   const aiResult = {
     id: createId("ai"),
     scanId: scan.id,
-    modelVersion: db.settings.ai.version || "signal-quality-demo",
+    modelVersion: SIGNAL_QUALITY_ANALYZER_VERSION,
     label: processingResult.processed.quality.label || signalReview.label,
     confidence: processingResult.processed.quality.confidence || signalReview.confidence,
     summary: processingResult.processed.quality.summary || signalReview.summary,
-    rawResult: {
+    rawResult: buildSignalQualityRawResult({
       quality: processingResult.processed.quality,
       waveformObjectKey: processingResult.waveformObjectKey,
-    },
+    }),
     status: "completed",
     createdAt: nowIso(),
   };
@@ -3961,6 +7178,10 @@ async function stopRecording(scanId) {
     status: "completed",
     processingStatus: "completed",
     endedAt: nowIso(),
+    audioProtocolVersion: recording.protocolVersion || 1,
+    audioSessionId: recording.sessionId,
+    receivedPackets: recording.receivedPackets,
+    droppedPackets: recording.droppedPackets,
     aiLabel: aiResult.label,
     aiConfidence: aiResult.confidence,
     aiSummary: aiResult.summary,
@@ -3972,17 +7193,27 @@ async function stopRecording(scanId) {
   });
 
   await saveAudioArtifacts(scan, audioFile, aiResult);
-  await enqueueAudioProcessing(scan, recording.wavFilePath);
   broadcastScanEvent("scan_stopped", scan);
   return scan;
 }
 
-async function stopActiveRecording() {
-  if (activeRecording) {
-    return stopRecording(activeRecording.scanId);
+async function stopActiveRecording(actorUser = null) {
+  const candidates = listActiveRecordings().filter((recording) => {
+    if (!actorUser) return true;
+    return canAccessScan(actorUser, findScan(recording.scanId));
+  });
+  if (candidates.length > 1) {
+    throw httpError(409, "scanId is required when more than one recording is active", "ACTIVE_SCAN_AMBIGUOUS");
+  }
+  if (candidates.length === 1) {
+    return stopRecording(candidates[0].scanId);
   }
 
-  const staleScan = db.scans.find((scan) => scan.status === "recording");
+  const staleScan = db.scans.find(
+    (scan) =>
+      ["created", "recording"].includes(scan.status) &&
+      (!actorUser || canAccessScan(actorUser, scan)),
+  );
   if (staleScan) {
     return markRecordingInterrupted(staleScan, "Lượt ghi được dừng sau khi luồng âm thanh đã đóng. Hãy tạo lượt đo mới để có file WAV đầy đủ.");
   }
@@ -3990,9 +7221,52 @@ async function stopActiveRecording() {
   throw httpError(409, "Không có lượt ghi đang chạy");
 }
 
-function markRecordingInterrupted(scan, summary) {
+async function interruptRecordingForDevice(deviceId, summary) {
+  const recording = getActiveRecordingForDevice(deviceId);
+  return interruptRecording(recording, summary);
+}
+
+async function interruptRecording(recording, summary) {
+  if (!recording) return null;
+  if (recording.interruptPromise) return recording.interruptPromise;
+  recording.interruptPromise = (async () => {
+    const scan = findScan(recording.scanId);
+    releaseActiveRecording(recording);
+    try {
+      await finishWriteStream(recording.stream);
+    } catch (error) {
+      console.warn(`Cannot close interrupted recording ${recording.scanId}: ${error.message}`);
+    }
+    await fs.promises.rm(recording.rawFilePath, { force: true }).catch(() => undefined);
+    if (!scan) {
+      broadcastStatus();
+      return null;
+    }
+
+    Object.assign(scan, recording.metrics.getSummary(), {
+      status: "interrupted",
+      processingStatus: "interrupted",
+      endedAt: nowIso(),
+      audioProtocolVersion: recording.protocolVersion || scan.audioProtocolVersion || 2,
+      audioSessionId: recording.sessionId,
+      receivedPackets: recording.receivedPackets,
+      droppedPackets: recording.droppedPackets,
+      aiLabel: "interrupted",
+      aiConfidence: null,
+      aiSummary: summary,
+      updatedAt: nowIso(),
+    });
+    await saveScanRecord(scan);
+    broadcastScanEvent("scan_interrupted", scan);
+    return scan;
+  })();
+  return recording.interruptPromise;
+}
+
+async function markRecordingInterrupted(scan, summary) {
   Object.assign(scan, {
     status: "interrupted",
+    processingStatus: "interrupted",
     endedAt: scan.endedAt || nowIso(),
     aiLabel: "interrupted",
     aiConfidence: null,
@@ -4000,7 +7274,7 @@ function markRecordingInterrupted(scan, summary) {
     updatedAt: nowIso(),
   });
 
-  saveDb();
+  await saveScanRecord(scan);
   broadcastScanEvent("scan_interrupted", scan);
   return scan;
 }
@@ -4155,7 +7429,11 @@ function setCommonHeaders(res, req = res.__smartHealthRequest) {
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, Idempotency-Key, X-File-Name, X-Smart-Health-Surface, X-Smart-Health-Client",
+    "Content-Type, Authorization, Idempotency-Key, X-Chunk-Sequence, X-Chunk-SHA256, X-Shcare-2FA-Token, X-File-Name, X-Smart-Health-Surface, X-Smart-Health-Client",
+  );
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    "Content-Disposition, Idempotency-Replayed, X-Total-Count, X-Pagination-Total, X-Page, X-Page-Limit, X-Page-Count, X-Shcare-Artifact-SHA256, X-Shcare-Renderer-Version",
   );
   res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -4199,7 +7477,7 @@ function getMetricsText() {
     `smart_health_request_errors_total ${requestMetrics.errors}`,
     "# HELP smart_health_active_recording Active recording flag.",
     "# TYPE smart_health_active_recording gauge",
-    `smart_health_active_recording ${activeRecording ? 1 : 0}`,
+    `smart_health_active_recording ${activeRecordingsByScanId.size}`,
     "# HELP smart_health_devices_online Online devices.",
     "# TYPE smart_health_devices_online gauge",
     `smart_health_devices_online ${db.devices.filter((device) => device.connected).length}`,
@@ -4270,7 +7548,10 @@ function auditForbiddenError(req, err, statusCode, code) {
 }
 
 function sendError(req, res, err) {
-  const statusCode = err.statusCode || 500;
+  const requestedStatus = Number(err?.statusCode ?? err?.status);
+  const statusCode = Number.isInteger(requestedStatus) && requestedStatus >= 400 && requestedStatus <= 599
+    ? requestedStatus
+    : 500;
   const message = statusCode >= 500 ? "Internal server error" : err.message;
   const context = getRequestContext(req);
   const requestId = context ? context.requestId : "";
@@ -4294,19 +7575,36 @@ function sendError(req, res, err) {
   });
 }
 
+function sendBuffer(res, statusCode, buffer, headers = {}) {
+  setCommonHeaders(res);
+  requestMetrics.total += 1;
+  requestMetrics.byStatus[statusCode] = (requestMetrics.byStatus[statusCode] || 0) + 1;
+  if (statusCode >= 400) requestMetrics.errors += 1;
+  res.writeHead(statusCode, {
+    "Content-Type": "application/octet-stream",
+    "Content-Length": buffer.length,
+    ...headers,
+  });
+  res.end(buffer);
+}
+
 async function readRequestBody(req) {
   const buffer = await readRequestBuffer(req);
   return buffer.toString("utf8");
 }
 
-async function readRequestBuffer(req) {
+async function readRequestBuffer(req, maxBytes = MAX_BODY_BYTES) {
   const chunks = [];
   let total = 0;
+  const contentLength = Number(req.headers["content-length"] || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw httpError(413, "Request body is too large", "REQUEST_BODY_TOO_LARGE", { maxBytes });
+  }
 
   for await (const chunk of req) {
     total += chunk.length;
-    if (total > MAX_BODY_BYTES) {
-      throw httpError(413, "Request body is too large");
+    if (total > maxBytes) {
+      throw httpError(413, "Request body is too large", "REQUEST_BODY_TOO_LARGE", { maxBytes });
     }
     chunks.push(chunk);
   }
@@ -4356,15 +7654,94 @@ function findSessionUserByToken(token) {
   return { user, session };
 }
 
-function getSocketAccessToken(req, url) {
-  const queryToken = readString(
-    url.searchParams.get("token") || url.searchParams.get("access_token"),
-    4000
+function getOfferedSocketProtocols(req) {
+  return String(req.headers["sec-websocket-protocol"] || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function getRequestedListenerScanId(req) {
+  const selectorProtocols = getOfferedSocketProtocols(req).filter((protocol) =>
+    protocol.startsWith("shcare.scan."),
   );
-  if (queryToken) {
-    return queryToken;
+  if (selectorProtocols.length > 1) {
+    throw httpError(400, "Only one realtime scan selector is allowed", "AUDIO_SOURCE_SELECTOR_INVALID");
+  }
+  if (!selectorProtocols.length) return "";
+  const encoded = selectorProtocols[0].slice("shcare.scan.".length);
+  if (!encoded || encoded.length > 240 || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+    throw httpError(400, "Realtime scan selector is invalid", "AUDIO_SOURCE_SELECTOR_INVALID");
+  }
+  const decoded = Buffer.from(encoded, "base64url").toString("utf8");
+  if (!decoded || Buffer.from(decoded, "utf8").toString("base64url") !== encoded) {
+    throw httpError(400, "Realtime scan selector is invalid", "AUDIO_SOURCE_SELECTOR_INVALID");
+  }
+  const scanId = readString(decoded, 160);
+  if (scanId !== decoded || Array.from(scanId).some((character) => {
+    const codePoint = character.codePointAt(0) || 0;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  })) {
+    throw httpError(400, "Realtime scan selector is invalid", "AUDIO_SOURCE_SELECTOR_INVALID");
+  }
+  return scanId;
+}
+
+function getSocketAccessToken(req) {
+  const bearerProtocol = getOfferedSocketProtocols(req).find((protocol) =>
+    protocol.startsWith("shcare.bearer."),
+  );
+  if (bearerProtocol) {
+    return readString(bearerProtocol.slice("shcare.bearer.".length), 4000);
   }
   return getBearerToken(req);
+}
+
+function getSocketTwoFactorToken(req) {
+  const protocol = getOfferedSocketProtocols(req).find((item) => item.startsWith("shcare.2fa."));
+  return readString(
+    req.headers["x-shcare-2fa-token"] || (protocol ? protocol.slice("shcare.2fa.".length) : ""),
+    500,
+  );
+}
+
+async function isRealtimeTwoFactorSatisfied(req, user) {
+  if (!repositories?.twoFactor) return !user.twoFactorEnabled;
+  const credential = await repositories.twoFactor.getCredential(user.id);
+  user.twoFactorEnabled = Boolean(credential);
+  user.twoFactorMethod = credential ? credential.method || "app" : "";
+  if (!credential) return true;
+  if (!getTwoFactorAvailability().available) return false;
+  const token = getSocketTwoFactorToken(req);
+  if (!token) return false;
+  return repositories.twoFactor.verifyToken({
+    userId: user.id,
+    tokenHash: hashTwoFactorToken(token),
+    primaryBindingHash: hashPrimaryBinding(getTwoFactorPrimaryBinding(req, user)),
+  });
+}
+
+async function refreshAuthenticatedAuthorization(user) {
+  if (!user || !repositories) return user;
+  const canonicalUser = repositories.users.findById
+    ? await repositories.users.findById(user.id)
+    : await repositories.users.findByIdOrFirebaseUid(user.id);
+  if (!canonicalUser) return null;
+  let memberships = [];
+  if (repositories.memberships?.listForUser) {
+    memberships = await repositories.memberships.listForUser(canonicalUser.id);
+  }
+  if (repositories.patientShares?.listActiveForPrincipal) {
+    const organizationIds = memberships
+      .map((membership) => membership.organizationId || membership.workspaceId || "")
+      .filter(Boolean);
+    await repositories.patientShares.listActiveForPrincipal(
+      canonicalUser.id,
+      organizationIds,
+      { identityAliases: [canonicalUser.firebaseUid] },
+    );
+  }
+  return canonicalUser;
 }
 
 async function authenticateRealtimeSocket(req, url) {
@@ -4378,11 +7755,14 @@ async function authenticateRealtimeSocket(req, url) {
     if (AUTH_MODE === "production" && !ALLOW_DEMO_AUTH) {
       return null;
     }
+    const canonicalUser = await refreshAuthenticatedAuthorization(sessionAuth.user);
+    if (!canonicalUser || !isActiveUserAccount(canonicalUser)) return null;
     req.authSource = "demo-session";
-    req.authUser = sessionAuth.user;
+    req.authUser = canonicalUser;
     req.authSession = sessionAuth.session;
-    attachActor(req, sessionAuth.user);
-    return sessionAuth.user;
+    attachActor(req, canonicalUser);
+    if (!(await isRealtimeTwoFactorSatisfied(req, canonicalUser))) return null;
+    return canonicalUser;
   }
 
   if (!FIREBASE_AUTH_ENABLED) {
@@ -4400,13 +7780,19 @@ async function authenticateRealtimeSocket(req, url) {
     return null;
   }
 
-  const user = await upsertFirebaseUser(decodedToken, req);
+  getFirebaseAuthenticationTime(decodedToken);
+  const user = await refreshAuthenticatedAuthorization(await upsertFirebaseUser(decodedToken, req));
+  if (!user) return null;
   if (!isActiveUserAccount(user)) {
     return null;
   }
+  const authSession = await rememberAuthSession(user, decodedToken, req);
   req.authSource = "firebase";
+  req.firebaseToken = decodedToken;
   req.authUser = user;
+  req.authSession = authSession;
   attachActor(req, user);
+  if (!(await isRealtimeTwoFactorSatisfied(req, user))) return null;
   return user;
 }
 
@@ -4434,7 +7820,8 @@ function ensureMembershipForUser(user) {
 
   const membership = db.memberships.find((item) => item.userId === user.id && item.organizationId === user.organizationId);
   if (membership) {
-    membership.role = user.role || membership.role || "patient";
+    // Membership role is authorization state, not a profile field. Existing
+    // grants may only be changed by an explicit, guarded role transition.
     return;
   }
 
@@ -4444,7 +7831,10 @@ function ensureMembershipForUser(user) {
       organizationId: user.organizationId,
       userId: user.id,
       role: user.role || "patient",
+      status: "active",
+      suspendedAt: "",
       createdAt: nowIso(),
+      updatedAt: nowIso(),
     });
   }
 }
@@ -4455,25 +7845,42 @@ async function upsertFirebaseUser(decodedToken, req) {
     throw httpError(401, "Firebase token is missing uid");
   }
 
-  const email = readString(decodedToken.email, 160).toLowerCase();
+  const rawEmail = readString(decodedToken.email, 160).toLowerCase();
+  const emailVerified = decodedToken.email_verified === true;
+  const email = emailVerified ? rawEmail : "";
   const phone = readString(decodedToken.phone_number || decodedToken.phoneNumber, 40);
-  const claimedRole = normalizeFirebaseRole(decodedToken);
-  const tokenOrganizationId =
-    readString(decodedToken.organizationId, 120) ||
-    (decodedToken.smartHealth && typeof decodedToken.smartHealth === "object"
-      ? readString(decodedToken.smartHealth.organizationId, 120)
-      : "");
-  const organizationId = tokenOrganizationId || "org_default_clinic";
-  const claimedWorkspace = tokenOrganizationId ? ensureOrganizationFromCatalog(getCatalogClinicById(tokenOrganizationId)) : null;
+  const displayName = readString(decodedToken.name, 120) || (email ? email.split("@")[0] : "Người dùng Shcare");
+
+  if (repositories?.users.resolveFirebaseIdentityGraph) {
+    const context = getRequestContext(req) || createRequestContext(req);
+    const resolved = await repositories.users.resolveFirebaseIdentityGraph({
+      firebaseUid,
+      email,
+      emailVerified,
+      phone,
+      name: displayName,
+      ip: context.ip || req.socket.remoteAddress || "",
+      userAgent: context.userAgent || readString(req.headers["user-agent"], 240),
+    });
+    return resolved.user;
+  }
 
   let matchedByEmail = false;
-  let user = repositories ? await repositories.users.findByIdOrFirebaseUid(firebaseUid) : null;
-  if (!user && repositories && email) {
-    user = await repositories.users.findByIdOrFirebaseUid(email);
-    matchedByEmail = Boolean(user);
-  }
+  let createdBackendUser = false;
+  let user = repositories?.users.findByFirebaseUid
+    ? await repositories.users.findByFirebaseUid(firebaseUid)
+    : repositories
+      ? await repositories.users.findByIdOrFirebaseUid(firebaseUid)
+      : null;
+  if (user && user.firebaseUid !== firebaseUid) user = null;
   if (!user) {
-    user = db.users.find((item) => item.firebaseUid === firebaseUid);
+    user = db.users.find((item) => item.firebaseUid === firebaseUid) || null;
+  }
+  if (!user && repositories && email) {
+    user = repositories.users.findByEmail
+      ? await repositories.users.findByEmail(email)
+      : await repositories.users.findByIdOrFirebaseUid(email);
+    matchedByEmail = Boolean(user);
   }
   if (!user && email) {
     user = db.users.find((item) => readString(item.email, 160).toLowerCase() === email);
@@ -4481,128 +7888,159 @@ async function upsertFirebaseUser(decodedToken, req) {
   }
 
   const now = nowIso();
+  let onboardingWorkspace = null;
   if (!user) {
-    const displayName = readString(decodedToken.name, 120) || (email ? email.split("@")[0] : "Người dùng Smart Health");
-    const initialRole = claimedRole === "admin" ? "admin" : claimedRole;
     user = {
       id: createId("usr"),
-      role: initialRole,
+      role: "patient",
       name: displayName,
       email,
       phone,
       firebaseUid,
-      organizationId,
-      verifiedEmail: Boolean(decodedToken.email_verified),
+      organizationId: "",
+      verifiedEmail: emailVerified,
       verifiedPhone: Boolean(phone),
       createdAt: now,
       updatedAt: now,
     };
     db.users.unshift(user);
+    createdBackendUser = true;
+    onboardingWorkspace = ensurePersonalWorkspaceForUser(user);
+    user.organizationId = onboardingWorkspace.id;
+    user.workspaceType = "personal";
+    user.accountType = "personal";
     addAccessLog(`Tạo user từ Firebase ${displayName}`, { ip: req.socket.remoteAddress || "" });
   } else {
     const previousFirebaseUid = user.firebaseUid || "";
-    if (!previousFirebaseUid || previousFirebaseUid !== firebaseUid) {
+    if (previousFirebaseUid && previousFirebaseUid !== firebaseUid) {
+      throw httpError(401, "Firebase identity conflicts with the linked account", "FIREBASE_IDENTITY_CONFLICT");
+    }
+    if (!previousFirebaseUid) {
       user.firebaseUid = firebaseUid;
-      if (matchedByEmail && previousFirebaseUid) {
+      if (matchedByEmail) {
         addAccessLog("Đồng bộ Firebase UID từ email đã xác thực", {
           severity: "warning",
           userId: user.id,
-          previousFirebaseUid,
           firebaseUid,
         });
       }
     }
-    if (user.role === "admin" || claimedRole === "admin") {
-      user.role = "admin";
-    } else if (claimedRole === "workspace_admin" || claimedRole === "workspace_owner") {
-      user.role = claimedRole;
-      user.requestedRole = claimedRole;
-      user.roleRequestStatus = "approved";
-      user.roleApprovedAt = user.roleApprovedAt || now;
-      user.accountStatus = user.accountStatus || "active";
-    } else if (claimedRole === "doctor") {
-      user.role = "doctor";
-      user.requestedRole = "doctor";
-      user.roleRequestStatus = "approved";
-      user.roleApprovedAt = user.roleApprovedAt || now;
-      user.accountStatus = user.accountStatus || "active";
-    } else if (["nurse", "technician", "billing", "viewer"].includes(claimedRole)) {
-      user.role = claimedRole;
-    } else if (isApprovedDoctorRole(user)) {
-      user.role = "doctor";
-    } else if (isApprovedWorkspaceRole(user)) {
-      user.role = normalizeWorkspaceRole(user.role);
-    } else {
-      user.role = "patient";
-    }
-    user.organizationId = tokenOrganizationId || user.organizationId || "org_default_clinic";
     if (email && user.email !== email) {
       user.email = email;
     }
     if (phone && user.phone !== phone) {
       user.phone = phone;
     }
-    user.verifiedEmail = user.verifiedEmail || Boolean(decodedToken.email_verified);
+    user.verifiedEmail = user.verifiedEmail || emailVerified;
     user.verifiedPhone = user.verifiedPhone || Boolean(phone);
     user.updatedAt = now;
   }
 
-  if (claimedRole === "doctor") {
-    user.requestedRole = "doctor";
-    user.roleRequestStatus = "approved";
-    user.roleApprovedAt = user.roleApprovedAt || now;
-    user.accountStatus = user.accountStatus || "active";
-    user.accountType = user.accountType && user.accountType !== "personal" ? user.accountType : "doctor";
-  }
-  if (["workspace_admin", "workspace_owner"].includes(claimedRole)) {
-    user.requestedRole = claimedRole;
-    user.roleRequestStatus = "approved";
-    user.roleApprovedAt = user.roleApprovedAt || now;
-    user.accountStatus = user.accountStatus || "active";
-    user.accountType = user.accountType || claimedRole;
-  }
-  if (claimedWorkspace) {
-    user.hospital = user.hospital || claimedWorkspace.name || "";
-    user.workspaceType = user.workspaceType || claimedWorkspace.workspaceType || claimedWorkspace.type || "";
-  }
-
-  ensureMembershipForUser(user);
-  if (claimedWorkspace && repositories && typeof repositories.organizations?.upsert === "function") {
-    await repositories.organizations.upsert(claimedWorkspace);
+  if (createdBackendUser) ensureMembershipForUser(user);
+  if (onboardingWorkspace && repositories && typeof repositories.organizations?.upsert === "function") {
+    await repositories.organizations.upsert(onboardingWorkspace);
   }
   if (isPatientUser(user)) {
     ensurePatientProfileForUser(user);
   }
-  req.authSession = rememberAuthSession(user, decodedToken, req);
+  if (createdBackendUser && repositories) {
+    await repositories.users.save(user);
+    if (onboardingWorkspace) await repositories.organizations.upsert(onboardingWorkspace);
+    await repositories.memberships.ensureForUser(user);
+    if (user.patientId) {
+      const selfPatient = findPatient(user.patientId);
+      if (selfPatient) {
+        await repositories.patients.save(selfPatient);
+        await repositories.users.save(user);
+      }
+    }
+  }
   return user;
 }
 
-function rememberAuthSession(user, decodedToken, req) {
+function getFirebaseAuthenticationTime(decodedToken) {
+  const authenticatedAt = normalizeFirebaseAuthTime(decodedToken);
+  if (!authenticatedAt) {
+    throw httpError(
+      401,
+      "Firebase token is missing the stable authentication-time binding",
+      "AUTH_SESSION_BINDING_MISSING",
+    );
+  }
+  return authenticatedAt;
+}
+
+function buildFirebaseAuthSessionCandidate(user, decodedToken, req) {
   const userAgent = readString(req.headers["user-agent"] || "Android", 240);
-  const sessionKey = hashValue(`${user.id}:${decodedToken.uid}:${userAgent}`);
-  let session = db.authSessions.find((item) => item.sessionKey === sessionKey && !item.revokedAt);
+  const authenticatedAt = getFirebaseAuthenticationTime(decodedToken);
+  const sessionKey = hashValue(`${user.id}:${decodedToken.uid}:${authenticatedAt}`);
   const now = nowIso();
+  return {
+    id: createId("authsess"),
+    userId: user.id,
+    provider: "firebase",
+    firebaseUid: decodedToken.uid,
+    sessionKey,
+    tokenBindingHash: hashValue(`${decodedToken.uid}:${authenticatedAt}`),
+    device: userAgent,
+    ip: req.socket.remoteAddress || "",
+    createdAt: now,
+    lastSeenAt: now,
+    revokedAt: null,
+  };
+}
+
+async function findExistingFirebaseUserForSession(decodedToken) {
+  const firebaseUid = readString(decodedToken.uid, 160);
+  let existingUser = firebaseUid && repositories?.users.findByFirebaseUid
+    ? await repositories.users.findByFirebaseUid(firebaseUid)
+    : firebaseUid && repositories
+      ? await repositories.users.findByIdOrFirebaseUid(firebaseUid)
+      : null;
+  if (existingUser && existingUser.firebaseUid !== firebaseUid) {
+    existingUser = null;
+  }
+  if (!existingUser && firebaseUid) {
+    existingUser = db.users.find(
+      (item) => item.firebaseUid === firebaseUid,
+    ) || null;
+  }
+  return existingUser;
+}
+
+async function resolveExistingFirebaseAuthSession(decodedToken, req) {
+  if (!repositories?.authSessions?.resolveFirebaseSession) return null;
+  const existingUser = await findExistingFirebaseUserForSession(decodedToken);
+  if (!existingUser) return null;
+  const session = await repositories.authSessions.resolveFirebaseSession(
+    buildFirebaseAuthSessionCandidate(existingUser, decodedToken, req),
+  );
+  if (session.revokedAt) {
+    throw httpError(401, "Phiên đăng nhập đã bị thu hồi", "AUTH_SESSION_REVOKED");
+  }
+  return session;
+}
+
+async function rememberAuthSession(user, decodedToken, req) {
+  const candidate = buildFirebaseAuthSessionCandidate(user, decodedToken, req);
+  let session = db.authSessions.find(
+    (item) => item.userId === candidate.userId && item.sessionKey === candidate.sessionKey,
+  );
 
   if (!session) {
-    session = {
-      id: createId("authsess"),
-      userId: user.id,
-      provider: "firebase",
-      firebaseUid: decodedToken.uid,
-      sessionKey,
-      device: userAgent,
-      ip: req.socket.remoteAddress || "",
-      createdAt: now,
-      lastSeenAt: now,
-      revokedAt: null,
-    };
-    db.authSessions.unshift(session);
-    db.authSessions = db.authSessions.slice(0, 500);
+    session = candidate;
   } else {
-    session.lastSeenAt = now;
-    session.ip = req.socket.remoteAddress || session.ip;
+    session.lastSeenAt = candidate.lastSeenAt;
+    session.ip = candidate.ip || session.ip;
   }
 
+  if (repositories?.authSessions?.resolveFirebaseSession) {
+    session = await repositories.authSessions.resolveFirebaseSession(session);
+  } else if (!db.authSessions.some((item) => item.id === session.id)) {
+    db.authSessions.unshift(session);
+    db.authSessions = db.authSessions.slice(0, 500);
+  }
+  if (session?.revokedAt) throw httpError(401, "Phiên đăng nhập đã bị thu hồi", "AUTH_SESSION_REVOKED");
   return session;
 }
 
@@ -4618,10 +8056,18 @@ async function authenticateRequest(req) {
   const token = getBearerToken(req);
   const sessionAuth = findSessionUserByToken(token);
   if (sessionAuth) {
+    if (AUTH_MODE === "production" && !ALLOW_DEMO_AUTH) {
+      throw httpError(401, "Demo sessions are disabled in production", "DEMO_SESSION_DISABLED");
+    }
+    const canonicalUser = await refreshAuthenticatedAuthorization(sessionAuth.user);
+    if (!canonicalUser) {
+      throw httpError(401, "Account no longer exists", "ACCOUNT_NOT_FOUND");
+    }
     req.authSource = "demo-session";
-    req.authUser = sessionAuth.user;
+    req.authUser = canonicalUser;
     req.authSession = sessionAuth.session;
-    attachActor(req, sessionAuth.user);
+    attachActor(req, canonicalUser);
+    await prepareTwoFactorAccess(req, canonicalUser);
     return;
   }
 
@@ -4642,16 +8088,16 @@ async function authenticateRequest(req) {
     return;
   }
 
+  getFirebaseAuthenticationTime(decodedToken);
   req.authSource = "firebase";
   req.firebaseToken = decodedToken;
-  req.authUser = await upsertFirebaseUser(decodedToken, req);
-  attachActor(req, req.authUser);
-  if (repositories) {
-    await repositories.users.save(req.authUser);
-    await repositories.memberships.ensureForUser(req.authUser);
-  } else {
-    await saveDb();
+  req.authUser = await refreshAuthenticatedAuthorization(await upsertFirebaseUser(decodedToken, req));
+  if (!req.authUser) {
+    throw httpError(401, "Account no longer exists", "ACCOUNT_NOT_FOUND");
   }
+  attachActor(req, req.authUser);
+  req.authSession = await rememberAuthSession(req.authUser, decodedToken, req);
+  await prepareTwoFactorAccess(req, req.authUser);
 }
 
 function getRequestUser(req) {
@@ -4674,7 +8120,7 @@ function assertUserAccountActive(user) {
   return user;
 }
 
-function requireUser(req) {
+function requirePrimaryUser(req) {
   const user = getRequestUser(req);
   if (!user) {
     throw httpError(401, "Chưa đăng nhập");
@@ -4682,6 +8128,44 @@ function requireUser(req) {
   assertUserAccountActive(user);
   attachActor(req, user);
   return user;
+}
+
+function requirePrimarySessionUser(req) {
+  if (!getBearerToken(req) || !req.authUser) {
+    throw httpError(401, "Missing or invalid primary bearer token");
+  }
+  assertUserAccountActive(req.authUser);
+  attachActor(req, req.authUser);
+  return assertTwoFactorAccess(req, req.authUser);
+}
+
+function assertTwoFactorAccess(req, user) {
+  if (!user.twoFactorEnabled || req.twoFactorSatisfied) return user;
+  const availability = getTwoFactorAvailability();
+  if (!availability.available) {
+    throw httpError(
+      503,
+      "Không thể xác thực yếu tố thứ hai vì cấu hình mã hóa an toàn chưa sẵn sàng.",
+      "TWO_FACTOR_UNAVAILABLE",
+      { availability },
+    );
+  }
+  const challenge = req.twoFactorChallenge;
+  throw httpError(
+    403,
+    "Cần hoàn tất xác thực hai yếu tố.",
+    "TWO_FACTOR_CHALLENGE_REQUIRED",
+    {
+      challengeId: challenge?.id || "",
+      method: "app",
+      expiresAt: challenge?.expiresAt || "",
+    },
+  );
+}
+
+function requireUser(req) {
+  const user = requirePrimaryUser(req);
+  return assertTwoFactorAccess(req, user);
 }
 
 function requireSessionUser(req) {
@@ -4693,7 +8177,7 @@ function requireSessionUser(req) {
   if (req.authUser) {
     assertUserAccountActive(req.authUser);
     attachActor(req, req.authUser);
-    return req.authUser;
+    return assertTwoFactorAccess(req, req.authUser);
   }
 
   throw httpError(401, "Invalid or expired session");
@@ -4705,8 +8189,8 @@ function assertDemoAuthAllowed() {
   }
 }
 
-function createSession(user, req) {
-  const session = {
+function buildSession(user, req) {
+  return {
     id: createId("sess"),
     userId: user.id,
     token: crypto.randomBytes(32).toString("hex"),
@@ -4716,9 +8200,16 @@ function createSession(user, req) {
     lastSeenAt: nowIso(),
     revokedAt: null,
   };
+}
+
+function persistSession(session) {
   db.sessions.unshift(session);
   db.sessions = db.sessions.slice(0, 100);
   return session;
+}
+
+function createSession(user, req) {
+  return persistSession(buildSession(user, req));
 }
 
 function publicAuthSession(session, current = false) {
@@ -4781,8 +8272,89 @@ function mergeSettingsSection(section, patch, currentSettings = db.settings) {
   return next;
 }
 
+function getTwoFactorPrimaryBinding(req, user) {
+  if (req.authSource === "demo-session" && req.authSession?.id) {
+    return `demo-session:${user.id}:${req.authSession.id}`;
+  }
+  if (req.authSource === "firebase" && req.firebaseToken?.uid) {
+    const authTime = Number(req.firebaseToken.auth_time || req.firebaseToken.iat || 0);
+    return `firebase:${user.id}:${req.firebaseToken.uid}:${authTime}`;
+  }
+  return `primary:${user.id}:${req.authSource || "local"}`;
+}
+
+function isTwoFactorBootstrapRequest(req) {
+  const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  return /\/auth\/2fa\/challenge$/.test(pathname);
+}
+
+async function createTwoFactorChallenge(user, primaryAuthSource, primaryBinding) {
+  const availability = getTwoFactorAvailability();
+  if (!availability.available) {
+    throw httpError(503, "2FA chưa sẵn sàng.", "TWO_FACTOR_UNAVAILABLE", { availability });
+  }
+  if (!repositories?.twoFactor) {
+    throw httpError(503, "Kho lưu trữ 2FA chưa sẵn sàng.", "TWO_FACTOR_STORAGE_UNAVAILABLE");
+  }
+  const nowMs = Date.now();
+  const configuredTtlMs = Number(process.env.TWO_FACTOR_CHALLENGE_TTL_MS || 5 * 60 * 1000);
+  const minimumTtlMs = process.env.NODE_ENV === "test" ? 100 : 60 * 1000;
+  const ttlMs = Math.min(
+    10 * 60 * 1000,
+    Math.max(minimumTtlMs, Number.isFinite(configuredTtlMs) ? configuredTtlMs : 5 * 60 * 1000),
+  );
+  return repositories.twoFactor.createChallenge({
+    id: `2fa_challenge_${crypto.randomBytes(24).toString("base64url")}`,
+    userId: user.id,
+    primaryAuthSource,
+    primaryBindingHash: hashPrimaryBinding(primaryBinding),
+    attempts: 0,
+    maxAttempts: 5,
+    createdAt: new Date(nowMs).toISOString(),
+    expiresAt: new Date(nowMs + ttlMs).toISOString(),
+    completedAt: null,
+  });
+}
+
+async function prepareTwoFactorAccess(req, user) {
+  req.twoFactorSatisfied = false;
+  req.twoFactorChallenge = null;
+  if (!repositories?.twoFactor) return;
+  const credential = await repositories.twoFactor.getCredential(user.id);
+  user.twoFactorEnabled = Boolean(credential);
+  user.twoFactorMethod = credential ? credential.method || "app" : "";
+  if (!credential) {
+    req.twoFactorSatisfied = true;
+    return;
+  }
+  const availability = getTwoFactorAvailability();
+  if (!availability.available || isTwoFactorBootstrapRequest(req)) return;
+  const primaryBinding = getTwoFactorPrimaryBinding(req, user);
+  const suppliedToken = readString(req.headers["x-shcare-2fa-token"], 500);
+  if (suppliedToken) {
+    req.twoFactorSatisfied = await repositories.twoFactor.verifyToken({
+      userId: user.id,
+      tokenHash: hashTwoFactorToken(suppliedToken),
+      primaryBindingHash: hashPrimaryBinding(primaryBinding),
+    });
+    if (req.twoFactorSatisfied) return;
+  }
+  req.twoFactorChallenge = await createTwoFactorChallenge(user, req.authSource || "primary", primaryBinding);
+}
+
 function parseSettingsPatch(payload = {}, currentSettings = db.settings) {
   const next = {};
+  if (
+    payload.ai
+    && typeof payload.ai === "object"
+    && Object.keys(payload.ai).length > 0
+  ) {
+    throw httpError(
+      422,
+      "Cấu hình phân tích tín hiệu do backend quản lý và chưa hỗ trợ cập nhật mô hình",
+      "AI_SETTINGS_READ_ONLY",
+    );
+  }
   for (const section of [
     "notifications",
     "privacy",
@@ -4857,6 +8429,7 @@ function mergeSettingsObjects(base = {}, override = {}) {
         ? base.securityPolicy.apiKeys
         : [];
   }
+  merged.ai = normalizeAiSettings(merged.ai);
   return merged;
 }
 
@@ -4943,8 +8516,10 @@ function getOutboundWebhookRuntimeStatus(settings = db.settings) {
 
 function publicSettings(user) {
   const settings = getEffectiveSettingsForUser(user);
+  const aiRuntime = buildAiRuntimeStatus(process.env);
   return {
     ...settings,
+    ai: normalizeAiSettings(settings.ai),
     scope: isPlatformAdminUser(user)
       ? { type: "platform", organizationId: "", name: "Smart Health Platform" }
       : {
@@ -4959,7 +8534,8 @@ function publicSettings(user) {
       twoFactorAvailable: true,
       apiKeyRotationAvailable: true,
       backupTestAvailable: true,
-      aiModelUpdateAvailable: true,
+      aiModelUpdateAvailable: false,
+      ai: aiRuntime,
     },
   };
 }
@@ -5268,8 +8844,67 @@ function getWebPortalBaseUrl(req) {
   return "https://shcare.web.app";
 }
 
+function getStaffInvitationExpiryIso() {
+  return new Date(Date.now() + STAFF_INVITATION_TTL_HOURS * 60 * 60 * 1000).toISOString();
+}
+
+function getStaffInvitationPortalBaseUrl() {
+  const configured = readString(
+    process.env.WEB_PORTAL_URL ||
+      process.env.SHCARE_WEB_URL ||
+      process.env.SMART_HEALTH_WEB_URL ||
+      process.env.PUBLIC_SITE_URL ||
+      process.env.VITE_PUBLIC_SITE_URL,
+    500,
+  );
+  const configuredIsHttps = /^https:\/\//i.test(configured);
+  const configuredIsLocalDebug =
+    AUTH_MODE !== "production" && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configured);
+  return configuredIsHttps || configuredIsLocalDebug
+    ? configured.replace(/\/+$/, "")
+    : "https://shcare.web.app";
+}
+
+function getStaffInvitationAcceptanceUrl(token) {
+  return `${getStaffInvitationPortalBaseUrl()}/staff-invitations/accept?token=${encodeURIComponent(token)}`;
+}
+
+function buildStaffInvitationMessage({ invitation, acceptanceUrl, workspaceName }) {
+  const recipient = invitation.name || invitation.email;
+  const text = [
+    `Xin chào ${recipient},`,
+    "",
+    `Bạn được mời tham gia ${workspaceName || "workspace Shcare"} với vai trò ${invitation.role}.`,
+    "Mở liên kết một lần dưới đây bằng đúng tài khoản email nhận lời mời:",
+    acceptanceUrl,
+    "",
+    `Lời mời hết hạn lúc ${invitation.expiresAt}.`,
+    "Nếu bạn không mong đợi lời mời này, hãy bỏ qua email.",
+  ].join("\n");
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#f4f8fb;font-family:Arial,sans-serif;color:#102a43;">
+    <div style="max-width:560px;margin:0 auto;padding:32px 20px;">
+      <div style="background:#ffffff;border:1px solid #d8e3ea;border-radius:16px;padding:28px;">
+        <p style="margin:0 0 8px;color:#2457d6;font-weight:700;">Shcare — Smart Health Care</p>
+        <h1 style="margin:0 0 16px;font-size:24px;">Lời mời tham gia workspace</h1>
+        <p style="line-height:1.6;">Xin chào <strong>${escapeHtml(recipient)}</strong>,</p>
+        <p style="line-height:1.6;">Bạn được mời tham gia <strong>${escapeHtml(workspaceName || "workspace Shcare")}</strong> với vai trò <strong>${escapeHtml(invitation.role)}</strong>.</p>
+        <p style="margin:24px 0;"><a href="${escapeAttribute(acceptanceUrl)}" style="display:inline-block;background:#2457d6;color:#fff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 18px;">Chấp nhận lời mời</a></p>
+        <p style="color:#52677a;font-size:13px;line-height:1.5;">Liên kết chỉ dùng để chấp nhận lời mời cho đúng email nhận thư và hết hạn lúc ${escapeHtml(invitation.expiresAt)}.</p>
+      </div>
+    </div>
+  </body>
+</html>`;
+  return { text, html };
+}
+
 function getEmailVerificationContinueUrl(req) {
   return `${getWebPortalBaseUrl(req)}/xac-nhan-email`;
+}
+
+function getPasswordResetContinueUrl(req) {
+  return `${getWebPortalBaseUrl(req)}/dat-lai-mat-khau`;
 }
 
 function getFirebaseEmailLinkDomain() {
@@ -5338,6 +8973,28 @@ function buildEmailVerificationMessage({ name, email, verificationLink }) {
     </table>
   </body>
 </html>`;
+  return { text, html };
+}
+
+function buildPasswordResetMessage({ name, email, resetLink }) {
+  const safeName = escapeHtml(name || email || "bạn");
+  const safeEmail = escapeHtml(email);
+  const safeLink = escapeAttribute(resetLink);
+  const text = [
+    `Xin chào ${name || email || "bạn"},`,
+    "",
+    "Bạn vừa yêu cầu đặt lại mật khẩu Shcare.",
+    "Mở liên kết dưới đây để tiếp tục:",
+    resetLink,
+    "",
+    "Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email và kiểm tra các phiên đăng nhập của tài khoản.",
+  ].join("\n");
+  const html = `
+    <p>Xin chào ${safeName},</p>
+    <p>Bạn vừa yêu cầu đặt lại mật khẩu cho tài khoản <strong>${safeEmail}</strong>.</p>
+    <p><a href="${safeLink}">Đặt lại mật khẩu Shcare</a></p>
+    <p>Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email và kiểm tra các phiên đăng nhập của tài khoản.</p>
+  `;
   return { text, html };
 }
 
@@ -5613,41 +9270,135 @@ function queuePlatformAdminNotificationEmail(notification) {
   }, 0);
 }
 
+const notificationCampaignEmailDispatchIds = new Set();
+
+function getDirectNotificationActionUrl(notification) {
+  const metadata = sanitizeNotificationMetadata(notification.metadata || notification);
+  const actionUrl = readString(metadata.actionUrl, 500);
+  if (/^https:\/\//i.test(actionUrl)) return actionUrl;
+  const actionPath = readString(metadata.actionPath, 240);
+  const baseUrl = getStaffInvitationPortalBaseUrl();
+  if (actionPath.startsWith("/")) return `${baseUrl}${actionPath}`;
+  return `${baseUrl}/portal/notifications`;
+}
+
+function buildDirectNotificationEmail(notification, recipient) {
+  const title = readString(notification.title, 180) || "Thông báo Shcare";
+  const message = readString(notification.message, 2400) || "Bạn có một thông báo mới từ Shcare.";
+  const recipientName = readString(recipient?.name || recipient?.email, 180) || "bạn";
+  const actionUrl = getDirectNotificationActionUrl(notification);
+  const subject = `[Shcare] ${title}`;
+  const text = [
+    `Xin chào ${recipientName},`,
+    "",
+    title,
+    message,
+    "",
+    `Mở Shcare: ${actionUrl}`,
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="vi">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
+  <body style="margin:0;padding:0;background:#F4F8FB;color:#102A43;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#FFFFFF;border:1px solid #D8E3EA;border-radius:16px;overflow:hidden;">
+          <tr><td style="background:#2457D6;padding:24px 28px;color:#FFFFFF;"><strong style="font-size:20px;">Shcare</strong><div style="margin-top:4px;color:#DBEAFE;font-size:13px;">Smart Health Care</div></td></tr>
+          <tr><td style="padding:28px;">
+            <p style="margin:0 0 16px;">Xin chào <strong>${escapeHtml(recipientName)}</strong>,</p>
+            <h1 style="margin:0 0 12px;font-size:22px;line-height:1.35;color:#0B1F33;">${escapeHtml(title)}</h1>
+            <p style="margin:0;color:#52677A;font-size:15px;line-height:1.7;">${escapeHtml(message).replace(/\n/g, "<br />")}</p>
+            <p style="margin:24px 0 0;"><a href="${escapeAttribute(actionUrl)}" style="display:inline-block;background:#2457D6;color:#FFFFFF;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">Mở Shcare</a></p>
+          </td></tr>
+          <tr><td style="border-top:1px solid #D8E3EA;padding:16px 28px;color:#52677A;font-size:12px;">Trạng thái gửi được ghi nhận riêng cho từng kênh trong hệ thống Shcare.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+  return { subject, text, html };
+}
+
+async function saveNotificationEmailStatus(notification, patch) {
+  Object.assign(notification, patch, {
+    deliveryStatus: patch.emailStatus || notification.emailStatus || notification.deliveryStatus,
+    updatedAt: nowIso(),
+  });
+  if (repositories?.notifications) {
+    await repositories.notifications.create(notification);
+    return;
+  }
+  const existing = db.notifications.find((item) => item.id === notification.id);
+  if (existing) Object.assign(existing, notification);
+  await saveDb();
+}
+
+async function sendDirectNotificationEmail(notification) {
+  const recipient = db.users.find((candidate) => candidate.id === notification.userId);
+  if (!recipient || !isActiveUserAccount(recipient) || !isValidEmailAddress(recipient.email)) {
+    await saveNotificationEmailStatus(notification, {
+      emailStatus: "no_recipient",
+      emailErrorMessage: "NOTIFICATION_EMAIL_RECIPIENT_UNAVAILABLE",
+    });
+    return null;
+  }
+  const runtime = getEmailRuntimeStatus();
+  if (!isNotificationEmailEnabled() || !runtime.configured) {
+    await saveNotificationEmailStatus(notification, {
+      emailStatus: isNotificationEmailEnabled() ? "unavailable" : "disabled",
+      emailErrorMessage: isNotificationEmailEnabled()
+        ? "NOTIFICATION_EMAIL_PROVIDER_UNAVAILABLE"
+        : "NOTIFICATION_EMAIL_DISABLED",
+    });
+    return null;
+  }
+  const email = buildDirectNotificationEmail(notification, recipient);
+  const result = await sendEmail({
+    to: [{ email: recipient.email, name: recipient.name || recipient.email }],
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
+  });
+  await saveNotificationEmailStatus(notification, {
+    emailStatus: "sent",
+    emailErrorMessage: "",
+    sentAt: nowIso(),
+  });
+  addAccessLog("Email thông báo đã được provider chấp nhận", {
+    severity: "success",
+    organizationId: notification.organizationId || "",
+    resourceType: "notification",
+    resourceId: notification.id,
+  });
+  await saveDb();
+  return result;
+}
+
+function queueDirectNotificationEmail(notification) {
+  if (!notification?.id || notification.emailStatus !== "ready") return;
+  if (notificationCampaignEmailDispatchIds.has(notification.id)) return;
+  notificationCampaignEmailDispatchIds.add(notification.id);
+  if (notificationCampaignEmailDispatchIds.size > 1000) {
+    const stale = Array.from(notificationCampaignEmailDispatchIds).slice(0, 300);
+    for (const id of stale) notificationCampaignEmailDispatchIds.delete(id);
+  }
+  setTimeout(() => {
+    sendDirectNotificationEmail(notification).catch(async (error) => {
+      await saveNotificationEmailStatus(notification, {
+        emailStatus: "failed",
+        emailErrorMessage: readString(error?.message || String(error), 500),
+        failedAt: nowIso(),
+        retryCount: Number(notification.retryCount || 0) + 1,
+      }).catch(() => {});
+      console.error(`Notification email failed (${notification.id}): ${error?.message || error}`);
+    });
+  }, 0);
+}
+
 const notificationPushDispatchIds = new Set();
 
 function isPushNotificationEnabled() {
   return String(process.env.PUSH_NOTIFICATIONS_ENABLED || "true").toLowerCase() !== "false";
-}
-
-function buildPushNotificationPayload(notification) {
-  const title = readString(notification.title, 120) || "Smart Health";
-  const body = readString(notification.message, 240) || "Bạn có thông báo mới từ Smart Health.";
-  const data = {
-    notificationId: readString(notification.id, 120),
-    type: readString(notification.type, 40) || "info",
-    channel: readString(notification.channel, 40) || "in_app",
-    organizationId: readString(notification.organizationId, 120),
-    userId: readString(notification.userId, 120),
-    createdAt: readString(notification.createdAt, 80) || nowIso(),
-  };
-  return {
-    notification: { title, body },
-    data: Object.fromEntries(Object.entries(data).filter(([, value]) => value !== "")),
-    android: {
-      priority: "high",
-      notification: {
-        channelId: "smart_health_alerts",
-        sound: "default",
-      },
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: "default",
-        },
-      },
-    },
-  };
 }
 
 function isInvalidFcmTokenError(error) {
@@ -6005,14 +9756,6 @@ function isManagedAdminAccount(user) {
   return MANAGED_ADMIN_ROLES.has(role);
 }
 
-function activePlatformAdminCount(excludeUserId = "") {
-  return db.users.filter((user) => {
-    if (!user || user.id === excludeUserId) return false;
-    if (readString(user.accountStatus, 40) === "locked") return false;
-    return isPlatformAdminUser(user);
-  }).length;
-}
-
 async function persistUserRecord(user) {
   user.updatedAt = nowIso();
   if (repositories) {
@@ -6042,11 +9785,11 @@ async function findManagedAdminAccount(userId) {
 }
 
 function assertAdminAccountCanBeLockedOrDeleted(actorUser, targetUser, action) {
-  if (actorUser.id === targetUser.id || actorUser.firebaseUid === targetUser.firebaseUid) {
+  const sameFirebaseIdentity = Boolean(
+    actorUser.firebaseUid && targetUser.firebaseUid && actorUser.firebaseUid === targetUser.firebaseUid,
+  );
+  if (actorUser.id === targetUser.id || sameFirebaseIdentity) {
     throw httpError(400, `Không thể ${action} tài khoản đang đăng nhập`);
-  }
-  if (isPlatformAdminUser(targetUser) && activePlatformAdminCount(targetUser.id) === 0) {
-    throw httpError(400, "Không thể vô hiệu hóa tài khoản admin toàn hệ thống cuối cùng");
   }
 }
 
@@ -6081,6 +9824,13 @@ async function updateFirebaseAdminAccount(targetUser, payload = {}) {
   if (Object.prototype.hasOwnProperty.call(payload, "disabled")) {
     updates.disabled = Boolean(payload.disabled);
   }
+  if (Object.prototype.hasOwnProperty.call(payload, "password")) {
+    const password = readString(payload.password, 200);
+    if (password.length < 8) {
+      throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự", "PASSWORD_TOO_SHORT");
+    }
+    updates.password = password;
+  }
   if (Object.keys(updates).length > 0) {
     await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, updates);
   }
@@ -6089,15 +9839,15 @@ async function updateFirebaseAdminAccount(targetUser, payload = {}) {
 
 async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
   const firebaseUid = targetUser.firebaseUid || "";
-  if (!FIREBASE_AUTH_ENABLED) {
-    return { updated: false, firebaseUid, skipped: true };
-  }
   if (!firebaseUid) {
     return {
-      updated: false,
+      updated: true,
+      skipped: true,
       firebaseUid,
-      warning: "Tài khoản này chưa liên kết Firebase Auth, backend đã cập nhật trạng thái nhưng không thể khóa đăng nhập Firebase.",
     };
+  }
+  if (!FIREBASE_AUTH_ENABLED) {
+    return { updated: false, firebaseUid, providerUnavailable: true };
   }
   const firebaseAdminApp = getFirebaseAdmin(process.env);
   if (!firebaseAdminApp) {
@@ -6114,6 +9864,13 @@ async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
   }
   if (Object.prototype.hasOwnProperty.call(payload, "disabled")) {
     updates.disabled = Boolean(payload.disabled);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "password")) {
+    const password = readString(payload.password, 200);
+    if (password.length < 8) {
+      throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự", "PASSWORD_TOO_SHORT");
+    }
+    updates.password = password;
   }
 
   try {
@@ -6150,7 +9907,186 @@ async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
   }
 }
 
-function revokeUserSessions(userId) {
+async function deleteFirebaseLinkedAccount(targetUser) {
+  const firebaseUid = targetUser.firebaseUid || "";
+  if (!firebaseUid) {
+    return { updated: true, skipped: true, firebaseDeleted: false, firebaseAlreadyMissing: false };
+  }
+  if (!FIREBASE_AUTH_ENABLED) {
+    return {
+      updated: false,
+      providerUnavailable: true,
+      firebaseDeleted: false,
+      firebaseAlreadyMissing: false,
+    };
+  }
+  const firebaseAdminApp = getFirebaseAdmin(process.env);
+  if (!firebaseAdminApp) {
+    return { updated: false, firebaseDeleted: false, firebaseAlreadyMissing: false };
+  }
+  try {
+    await firebaseAdminApp.auth().deleteUser(firebaseUid);
+    return { updated: true, firebaseDeleted: true, firebaseAlreadyMissing: false };
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") {
+      return { updated: true, firebaseDeleted: false, firebaseAlreadyMissing: true };
+    }
+    throw error;
+  }
+}
+
+function sanitizeIdentityProviderResult(result = {}) {
+  return {
+    updated: result.updated === true,
+    skipped: result.skipped === true,
+    firebaseDeleted: result.firebaseDeleted === true,
+    firebaseAlreadyMissing: result.firebaseAlreadyMissing === true,
+    providerUnavailable: result.providerUnavailable === true,
+    firebaseDisabled: typeof result.firebaseDisabled === "boolean" ? result.firebaseDisabled : undefined,
+    firebaseTokensRevoked: result.firebaseTokensRevoked === true,
+    firebaseClaims:
+      result.firebaseClaims && typeof result.firebaseClaims === "object" && !Array.isArray(result.firebaseClaims)
+        ? { ...result.firebaseClaims }
+        : undefined,
+    warning: readString(result.warning, 320) || undefined,
+  };
+}
+
+async function runIdentityProviderSaga(
+  req,
+  actorUser,
+  targetUser,
+  operation,
+  fingerprintPayload,
+  providerAction,
+  sagaOptions = {},
+) {
+  if (!repositories?.identityOperations) {
+    throw httpError(503, "Identity operation storage is unavailable", "IDENTITY_OPERATION_STORAGE_UNAVAILABLE");
+  }
+  const context = getRequestContext(req) || createRequestContext(req);
+  const explicitIdempotencyKey = getIdempotencyKey(req, fingerprintPayload || {});
+  const requestFingerprint = createIdempotencyFingerprint({
+    operation,
+    targetUserId: targetUser.id,
+    payload: fingerprintPayload || {},
+  });
+  const idempotencyKey = explicitIdempotencyKey || `implicit:${requestFingerprint}`;
+  const started = await repositories.identityOperations.begin({
+    targetUserId: targetUser.id,
+    actorUserId: actorUser.id,
+    organizationId: targetUser.organizationId || "",
+    operation,
+    idempotencyKey,
+    requestFingerprint,
+    targetState: sagaOptions.targetState || {},
+    protectLastPlatformAdmin: Object.prototype.hasOwnProperty.call(sagaOptions, "protectLastPlatformAdmin")
+      ? Boolean(sagaOptions.protectLastPlatformAdmin)
+      : isPlatformAdminUser(targetUser) && ["lock", "delete"].includes(operation),
+    ip: context.ip || req.socket.remoteAddress || "",
+    userAgent: context.userAgent || readString(req.headers["user-agent"], 240),
+  });
+  if (operation !== "unlock") closeRealtimeSocketsForUser(targetUser.id, "AUTH_SESSION_REVOKED");
+  if (started.identityOperation.status === "completed") {
+    return {
+      started,
+      completed: {
+        identityOperation: started.identityOperation,
+        user: started.user,
+        deleted: operation === "delete",
+        replayed: true,
+      },
+      providerResult: started.identityOperation.providerResult || {},
+      replayed: true,
+      idempotencyKeyProvided: Boolean(explicitIdempotencyKey),
+    };
+  }
+
+  let providerResult = started.identityOperation.status === "provider_applied"
+    ? started.identityOperation.providerResult || {}
+    : null;
+  if (!providerResult) {
+    try {
+      providerResult = await providerAction();
+    } catch (error) {
+      const errorCode = readString(error?.code || "IDENTITY_PROVIDER_FAILED", 120);
+      await repositories.identityOperations.complete({
+        operationId: started.identityOperation.id,
+        providerSucceeded: false,
+        providerStatus: "failed",
+        providerResult: {},
+        errorCode,
+      });
+      const sagaError = httpError(502, "Identity provider operation failed", "IDENTITY_PROVIDER_FAILED");
+      sagaError.details = { operationId: started.identityOperation.id, providerCode: errorCode };
+      throw sagaError;
+    }
+
+    const sanitizedProviderResult = sanitizeIdentityProviderResult(providerResult);
+    const providerSucceeded = isFirebaseProviderMutationConfirmed(targetUser, providerResult);
+    if (!providerSucceeded) {
+      await repositories.identityOperations.complete({
+        operationId: started.identityOperation.id,
+        providerSucceeded: false,
+        providerStatus: "unavailable",
+        providerResult: sanitizedProviderResult,
+        errorCode: "IDENTITY_PROVIDER_UNAVAILABLE",
+      });
+      const sagaError = httpError(503, "Identity provider is unavailable; the account remains blocked safely", "IDENTITY_PROVIDER_UNAVAILABLE");
+      sagaError.details = { operationId: started.identityOperation.id };
+      throw sagaError;
+    }
+    const applied = await repositories.identityOperations.markProviderApplied({
+      operationId: started.identityOperation.id,
+      providerStatus: providerResult?.skipped ? "skipped" : "applied",
+      providerResult: sanitizedProviderResult,
+    });
+    providerResult = applied.identityOperation.providerResult || sanitizedProviderResult;
+  }
+
+  if (sagaOptions.deferBackendFinalization) {
+    const providerApplied = {
+      ...started.identityOperation,
+      status: "provider_applied",
+      providerStatus: providerResult?.skipped ? "skipped" : "applied",
+      providerResult,
+    };
+    return {
+      started,
+      completed: {
+        identityOperation: providerApplied,
+        user: started.user,
+        deleted: false,
+        replayed: Boolean(started.replayed),
+      },
+      providerResult,
+      replayed: Boolean(started.replayed),
+      deferredBackendFinalization: true,
+      idempotencyKeyProvided: Boolean(explicitIdempotencyKey),
+    };
+  }
+
+  const completed = await repositories.identityOperations.complete({
+    operationId: started.identityOperation.id,
+    providerSucceeded: true,
+    providerStatus: providerResult?.skipped ? "skipped" : "applied",
+    providerResult,
+  });
+  return {
+    started,
+    completed,
+    providerResult,
+    replayed: Boolean(started.replayed || completed.replayed),
+    idempotencyKeyProvided: Boolean(explicitIdempotencyKey),
+  };
+}
+
+async function revokeUserSessions(userId, auditInput = {}) {
+  if (repositories?.authSessions?.revokeAllForUser) {
+    const result = await repositories.authSessions.revokeAllForUser(userId, auditInput);
+    closeRealtimeSocketsForUser(userId, "AUTH_SESSION_REVOKED");
+    return result;
+  }
   const revokedAt = nowIso();
   let demoSessionsRevoked = 0;
   let firebaseSessionsRevoked = 0;
@@ -6168,45 +10104,44 @@ function revokeUserSessions(userId) {
     }
     return session;
   });
-  return { demoSessionsRevoked, firebaseSessionsRevoked };
+  closeRealtimeSocketsForUser(userId, "AUTH_SESSION_REVOKED");
+  return { revokedAt, demoSessionsRevoked, firebaseSessionsRevoked };
 }
 
-async function applyManagedAdminRole(targetUser, roleValue, organizationIdValue) {
-  const roleInfo = normalizeManagedAdminRole(roleValue || targetUser.role || "workspace_admin");
+function prepareManagedAdminRoleTransition(targetUser, roleValue, organizationIdValue) {
+  const roleInfo = roleValue && typeof roleValue === "object" && roleValue.role
+    ? roleValue
+    : normalizeManagedAdminRole(roleValue || targetUser.role || "workspace_admin");
   let organizationId = readString(organizationIdValue || targetUser.organizationId, 120);
   let organization = null;
   if (roleInfo.requiresWorkspace) {
     if (!organizationId) {
       throw httpError(400, "Admin bệnh viện phải được gán workspace/bệnh viện");
     }
-    organization = db.organizations.find((item) => item.id === organizationId) || null;
+    organization = getClinicById(organizationId);
     if (!organization) {
       throw httpError(404, "Không tìm thấy workspace/bệnh viện để cấp quyền");
     }
   } else {
     organizationId = organizationId || "org_default_clinic";
-    organization = db.organizations.find((item) => item.id === organizationId) || null;
+    organization = getClinicById(organizationId);
   }
+  assertActiveManagedAdminWorkspace(roleInfo.role, organization);
 
-  targetUser.role = roleInfo.role;
-  targetUser.requestedRole = roleInfo.role;
-  targetUser.roleRequestStatus = "approved";
-  targetUser.organizationId = organizationId;
-  targetUser.hospital = organization?.name || targetUser.hospital || "Smart Health";
-  targetUser.title = targetUser.title || roleInfo.title;
-
-  const firebaseResult = await setFirebaseRoleClaimsForUser(targetUser, roleInfo.claimRole, organizationId);
-  if (firebaseResult.claims) {
-    targetUser.firebaseClaims = firebaseResult.claims;
-  }
-
-  ensureMembershipForUser(targetUser);
-  return { roleInfo, organization };
+  return {
+    roleInfo,
+    organization,
+    targetState: {
+      role: roleInfo.role,
+      requestedRole: roleInfo.role,
+      organizationId,
+      accountStatus: "active",
+    },
+  };
 }
 
 async function createManagedAdminAccount(payload = {}, actorUser, req) {
   requireAnyCapability(actorUser, ["platform.users.manage"], "Chỉ platform admin mới được tạo tài khoản quản trị");
-
   if (!FIREBASE_AUTH_ENABLED) {
     throw httpError(503, "Firebase Admin chưa được cấu hình trên backend production");
   }
@@ -6219,8 +10154,10 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
   const password = readString(payload.password, 200);
   const name = readString(payload.name || payload.fullName || payload.displayName, 160);
   const phone = readString(payload.phone, 40);
+  const requestedTitle = readString(payload.title, 120);
+  const requestedHospital = readString(payload.hospital, 160);
   const roleInfo = normalizeManagedAdminRole(payload.role || "workspace_admin");
-
+  assertManagedAdminAssignableRole({ targetRole: roleInfo.role, operation: "create" });
   if (!isValidEmailAddress(email)) {
     throw httpError(400, "Email admin không hợp lệ");
   }
@@ -6230,9 +10167,6 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
   if (password.length < 8) {
     throw httpError(400, "Mật khẩu tạm thời phải có ít nhất 8 ký tự");
   }
-  if (findUserByLogin(email)) {
-    throw httpError(409, "Email này đã tồn tại trong hệ thống Smart Health");
-  }
 
   let organizationId = readString(payload.organizationId || payload.workspaceId, 120);
   let organization = null;
@@ -6240,111 +10174,351 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
     if (!organizationId) {
       throw httpError(400, "Admin bệnh viện phải được gán workspace/bệnh viện");
     }
-    organization = db.organizations.find((item) => item.id === organizationId) || null;
+    organization = getClinicById(organizationId);
     if (!organization) {
       throw httpError(404, "Không tìm thấy workspace/bệnh viện để cấp quyền");
     }
   } else {
     organizationId = organizationId || "org_default_clinic";
-    organization = db.organizations.find((item) => item.id === organizationId) || null;
+    organization = getClinicById(organizationId);
+  }
+  assertActiveManagedAdminWorkspace(roleInfo.role, organization);
+
+  const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+  if (!idempotencyKey) {
+    throw httpError(
+      400,
+      "Idempotency-Key is required when creating a managed admin account",
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  if (
+    !repositories?.users?.beginManagedAdminCreate ||
+    !repositories?.users?.createManagedAdminWithAudit ||
+    !repositories?.users?.confirmManagedAdminProviderActivation
+  ) {
+    throw httpError(503, "Managed admin identity storage is unavailable", "IDENTITY_STORAGE_UNAVAILABLE");
   }
 
-  try {
-    await firebaseAdminApp.auth().getUserByEmail(email);
-    throw httpError(409, "Email này đã tồn tại trên Firebase Auth");
-  } catch (err) {
-    if (err && err.statusCode === 409) {
-      throw err;
-    }
-    if (!err || err.code !== "auth/user-not-found") {
-      throw err;
-    }
-  }
-
-  const firebaseUser = await firebaseAdminApp.auth().createUser({
-    email,
-    password,
-    displayName: name,
-    emailVerified: true,
-    disabled: false,
-  });
-
-  const claims = {
+  const publicClaims = {
     role: roleInfo.claimRole,
     organizationId,
-    smartHealth: {
-      role: roleInfo.claimRole,
-      organizationId,
-    },
+    smartHealth: { role: roleInfo.claimRole, organizationId },
   };
-  await firebaseAdminApp.auth().setCustomUserClaims(firebaseUser.uid, claims);
-
-  const now = nowIso();
-  const backendUser = {
+  const timestamp = nowIso();
+  const candidateUser = {
     id: createId("usr"),
     role: roleInfo.role,
     requestedRole: roleInfo.role,
     roleRequestStatus: "approved",
-    accountStatus: "active",
+    accountStatus: "provisioning_pending",
     name,
-    title: readString(payload.title, 120) || roleInfo.title,
+    title: requestedTitle || roleInfo.title,
     email,
     phone,
-    firebaseUid: firebaseUser.uid,
     organizationId,
-    hospital: readString(payload.hospital, 160) || organization?.name || "Smart Health",
+    hospital: requestedHospital || organization?.name || "Smart Health",
     verifiedEmail: true,
     verifiedPhone: Boolean(phone),
-    roleRequestedAt: now,
-    roleApprovedAt: now,
-    firebaseClaims: claims,
-    createdAt: now,
-    updatedAt: now,
+    roleRequestedAt: timestamp,
+    roleApprovedAt: timestamp,
+    firebaseClaims: publicClaims,
+    createdAt: timestamp,
+    updatedAt: timestamp,
   };
-
-  if (repositories) {
-    await repositories.users.save(backendUser);
-    await repositories.memberships.ensureForUser(backendUser);
-  } else {
-    db.users.unshift(backendUser);
-    ensureMembershipForUser(backendUser);
-    await saveDb();
+  const idempotency = {
+    scope: getIdempotencyScope(actorUser, organizationId),
+    operation: "admin.user.create",
+    key: idempotencyKey,
+    fingerprint: createIdempotencyFingerprint(managedAdminIdempotencyPayload({
+      email,
+      name,
+      phone,
+      role: roleInfo.role,
+      organizationId,
+      // Only explicit request fields belong in the fingerprint. Derived labels
+      // may change after a workspace rename or copy update while the request is
+      // being safely replayed.
+      title: requestedTitle,
+      hospital: requestedHospital,
+    })),
+  };
+  const inFlightKey = `${idempotency.scope}:${idempotency.operation}:${idempotency.key}`;
+  const active = managedAdminCreateInFlight.get(inFlightKey);
+  if (active) {
+    if (active.fingerprint !== idempotency.fingerprint) {
+      throw httpError(
+        409,
+        "Idempotency-Key was already used with a different request payload",
+        "IDEMPOTENCY_KEY_REUSED",
+      );
+    }
+    const replay = await active.promise;
+    return { ...replay, replayed: true, firebase: { ...replay.firebase, created: false } };
   }
 
-  await appendAudit("admin.user.create", req, {
-    actorUserId: actorUser.id,
-    organizationId,
-    resourceType: "user",
-    resourceId: backendUser.id,
-    metadata: {
-      role: backendUser.role,
-      email,
-      firebaseUid: firebaseUser.uid,
-      workspaceName: organization?.name || "",
-    },
-  });
-  addAccessLog(`Tạo tài khoản ${roleInfo.label}: ${email}`, {
-    severity: "success",
-    userId: actorUser.id,
-    organizationId,
-  });
-  createNotification(
-    "success",
-    "Đã tạo tài khoản admin",
-    `${name} đã được cấp quyền ${roleInfo.label}.`,
-    { userId: actorUser.id, organizationId, targetUserId: backendUser.id },
-  );
-  await saveDb();
+  const creationPromise = (async () => {
+    const begin = await repositories.users.beginManagedAdminCreate({ user: candidateUser, idempotency });
+    const reservation = begin.reservation || {};
+    if (!reservation.operationId || !reservation.userId || !reservation.providerUid) {
+      throw httpError(
+        409,
+        "Managed admin creation reservation is incomplete",
+        "MANAGED_ADMIN_CREATE_RECONCILIATION_REQUIRED",
+      );
+    }
 
-  return {
-    user: publicUser(backendUser),
-    firebase: {
-      uid: firebaseUser.uid,
-      email,
-      created: true,
-      claims,
-    },
-  };
+    const activateCommittedManagedAdmin = async (
+      committed,
+      providerUser,
+      providerCreatedByCurrentAttempt = false,
+    ) => {
+      const activation = await activateManagedAdminProvider({
+        backendUser: committed.user,
+        reservation: committed.reservation,
+        providerUser,
+        expectedClaims: publicClaims,
+        email,
+        role: roleInfo.role,
+        organizationId,
+        enableProvider: (uid) => firebaseAdminApp.auth().updateUser(uid, { disabled: false }),
+        reloadProvider: (uid) => firebaseAdminApp.auth().getUser(uid),
+        disableProvider: (uid) => firebaseAdminApp.auth().updateUser(uid, { disabled: true }),
+        confirmActivation: () => repositories.users.confirmManagedAdminProviderActivation({
+          idempotency,
+          userId: committed.reservation.userId,
+          firebaseUid: committed.reservation.firebaseUid,
+          operationId: committed.reservation.activationOperationId,
+        }),
+        readActivationState: () => repositories.users.beginManagedAdminCreate({
+          user: candidateUser,
+          idempotency,
+        }),
+      });
+      const confirmed = activation.confirmation || {};
+      if (!confirmed.user || confirmed.reservation?.state !== "completed") {
+        throw httpError(
+          409,
+          "Managed admin activation did not produce a canonical active account",
+          "MANAGED_ADMIN_CREATE_RECONCILIATION_REQUIRED",
+        );
+      }
+      if (!committed.replayed && !confirmed.replayed) {
+        addAccessLog(`Tạo tài khoản ${roleInfo.label}: ${email}`, {
+          severity: "success",
+          userId: actorUser.id,
+          organizationId,
+        });
+        await createBackendNotification({
+          type: "success",
+          title: "Đã tạo tài khoản admin",
+          message: `${name} đã được cấp quyền ${roleInfo.label}.`,
+          userId: actorUser.id,
+          organizationId,
+          metadata: { targetUserId: confirmed.user.id },
+        });
+        await saveDb();
+      }
+      return {
+        user: publicUser(confirmed.user),
+        firebase: {
+          uid: activation.providerUser.uid,
+          email,
+          created: providerCreatedByCurrentAttempt,
+          claims: publicClaims,
+        },
+        operationId: reservation.operationId,
+        replayed: Boolean(begin.replayed || committed.replayed || confirmed.replayed || activation.recovered),
+      };
+    };
+
+    if (reservation.state === "completed") {
+      const replayUser = begin.user || await repositories.users.findById(reservation.userId);
+      if (!replayUser || !reservation.firebaseUid || replayUser.firebaseUid !== reservation.firebaseUid) {
+        throw httpError(
+          409,
+          "Completed managed admin account no longer matches its provider identity",
+          "MANAGED_ADMIN_CREATE_RECONCILIATION_REQUIRED",
+        );
+      }
+      assertManagedAdminReplayBackendState({
+        backendUser: replayUser,
+        reservation,
+        email,
+        role: roleInfo.role,
+        organizationId,
+      });
+      let replayProvider = null;
+      try {
+        replayProvider = await firebaseAdminApp.auth().getUser(reservation.firebaseUid);
+      } catch (error) {
+        if (error?.code !== "auth/user-not-found") throw error;
+      }
+      assertManagedAdminReplayProvider({
+        providerUser: replayProvider,
+        reservation,
+        expectedClaims: publicClaims,
+        email,
+      });
+      return {
+        user: publicUser(replayUser),
+        firebase: { uid: replayProvider.uid, email, created: false, claims: publicClaims },
+        operationId: reservation.operationId,
+        replayed: true,
+      };
+    }
+
+    if (reservation.state === "activation_pending") {
+      const activationUser = begin.user || await repositories.users.findById(reservation.userId);
+      assertManagedAdminReplayBackendState({
+        backendUser: activationUser,
+        reservation,
+        email,
+        role: roleInfo.role,
+        organizationId,
+      });
+      let activationProvider = null;
+      try {
+        activationProvider = await firebaseAdminApp.auth().getUser(reservation.firebaseUid);
+      } catch (error) {
+        if (error?.code !== "auth/user-not-found") throw error;
+      }
+      return activateCommittedManagedAdmin(
+        { ...begin, user: activationUser, reservation, replayed: true },
+        activationProvider,
+        false,
+      );
+    }
+
+    if (reservation.state !== "provider_pending") {
+      throw httpError(
+        409,
+        "Managed admin creation reservation is in an unsupported state",
+        "MANAGED_ADMIN_CREATE_RECONCILIATION_REQUIRED",
+      );
+    }
+
+    candidateUser.id = reservation.userId;
+    const provisioningClaims = {
+      ...publicClaims,
+      shcareProvisioningOperationId: reservation.operationId,
+      smartHealth: {
+        ...publicClaims.smartHealth,
+        provisioningOperationId: reservation.operationId,
+      },
+    };
+    let firebaseUser = null;
+    let providerCreatedByCurrentAttempt = false;
+    let backendCommitted = false;
+    try {
+      try {
+        firebaseUser = await firebaseAdminApp.auth().getUserByEmail(email);
+      } catch (error) {
+        if (error?.code !== "auth/user-not-found") throw error;
+      }
+      if (firebaseUser) {
+        assertPendingManagedAdminProvider({ providerUser: firebaseUser, reservation, email });
+      } else {
+        try {
+          firebaseUser = await firebaseAdminApp.auth().createUser({
+            uid: reservation.providerUid,
+            email,
+            password,
+            displayName: name,
+            emailVerified: true,
+            // The new provider identity cannot authenticate before this saga
+            // durably marks it as owned by the reservation below.
+            disabled: true,
+          });
+          providerCreatedByCurrentAttempt = true;
+        } catch (error) {
+          if (error?.code !== "auth/email-already-exists") throw error;
+          firebaseUser = await firebaseAdminApp.auth().getUserByEmail(email);
+          assertPendingManagedAdminProvider({ providerUser: firebaseUser, reservation, email });
+        }
+      }
+
+      await firebaseAdminApp.auth().setCustomUserClaims(firebaseUser.uid, provisioningClaims);
+      await firebaseAdminApp.auth().updateUser(firebaseUser.uid, {
+        displayName: name,
+        emailVerified: true,
+        disabled: true,
+      });
+      candidateUser.firebaseUid = firebaseUser.uid;
+      // The durable provider ownership marker stays provider-side. Backend and
+      // API models retain only the authorization claims clients need.
+      candidateUser.firebaseClaims = publicClaims;
+      const committed = await repositories.users.createManagedAdminWithAudit({
+        user: candidateUser,
+        idempotency,
+        auditInput: {
+          actorUserId: actorUser.id,
+          organizationId,
+          action: "admin.user.create",
+          resourceType: "user",
+          resourceId: candidateUser.id,
+          ip: getRequestIp(req),
+          userAgent: readString(req.headers["user-agent"], 300),
+          metadata: {
+            role: candidateUser.role,
+            email,
+            firebaseUid: firebaseUser.uid,
+            workspaceName: organization?.name || "",
+            provisioningOperationId: reservation.operationId,
+          },
+        },
+      });
+      backendCommitted = true;
+      return activateCommittedManagedAdmin(committed, firebaseUser, providerCreatedByCurrentAttempt);
+    } catch (error) {
+      if (
+        firebaseUser?.uid &&
+        providerCreatedByCurrentAttempt &&
+        !backendCommitted &&
+        !error?.backendCommitted
+      ) {
+        try {
+          let providerAlreadyMissing = false;
+          try {
+            await firebaseAdminApp.auth().updateUser(firebaseUser.uid, { disabled: true });
+          } catch (disableError) {
+            if (disableError?.code === "auth/user-not-found") providerAlreadyMissing = true;
+            else throw disableError;
+          }
+          if (!providerAlreadyMissing) {
+            try {
+              await firebaseAdminApp.auth().deleteUser(firebaseUser.uid);
+            } catch (deleteError) {
+              if (deleteError?.code !== "auth/user-not-found") throw deleteError;
+            }
+          }
+        } catch (cleanupError) {
+          throw httpError(
+            502,
+            "Managed admin creation failed and its newly-created provider account could not be cleaned up",
+            "MANAGED_ADMIN_PROVIDER_COMPENSATION_FAILED",
+            {
+              providerUid: firebaseUser.uid,
+              provisioningOperationId: reservation.operationId,
+              createError: readString(error?.code || error?.message, 200),
+              cleanupError: readString(cleanupError?.code || cleanupError?.message, 200),
+            },
+          );
+        }
+      }
+      throw error;
+    }
+  })();
+  managedAdminCreateInFlight.set(inFlightKey, {
+    fingerprint: idempotency.fingerprint,
+    promise: creationPromise,
+  });
+  try {
+    return await creationPromise;
+  } finally {
+    const current = managedAdminCreateInFlight.get(inFlightKey);
+    if (current?.promise === creationPromise) managedAdminCreateInFlight.delete(inFlightKey);
+  }
 }
 
 function getStorageSummary() {
@@ -6548,50 +10722,6 @@ function parseCsvList(value) {
     .filter(Boolean);
 }
 
-function normalizeBucketPayload(payload = {}, existing = null) {
-  const now = nowIso();
-  const id = sanitizeStorageId(payload.id || payload.name, existing ? existing.id : "");
-  if (!id) {
-    throw httpError(400, "Tên bucket không hợp lệ");
-  }
-  const name = readString(payload.name, 120) || existing?.name || id;
-  const description = readString(payload.description || payload.desc, 500) || existing?.description || "";
-  const iconKey = readString(payload.iconKey, 40) || existing?.iconKey || "database";
-  const colorKey = readString(payload.colorKey, 40) || existing?.colorKey || "blue";
-  const category = readString(payload.category, 80) || existing?.category || "custom";
-  const quotaGb = Math.max(1, Number(payload.quotaGb || payload.quota || existing?.quotaGb || existing?.quota || 100));
-  const visibility = ["public", "private", "encrypted"].includes(payload.visibility)
-    ? payload.visibility
-    : existing?.visibility || "private";
-  const maxFileSizeMb = Math.max(1, Number(payload.maxFileSizeMb || existing?.maxFileSizeMb || 500));
-  const retentionDays = Math.max(0, Number(payload.retentionDays ?? existing?.retentionDays ?? 3650));
-  const allowedExtensions = parseCsvList(payload.allowedExtensions || payload.allowed || existing?.allowedExtensions);
-  const allowedMimeTypes = parseCsvList(payload.allowedMimeTypes || existing?.allowedMimeTypes);
-
-  return {
-    ...(existing || {}),
-    id,
-    name,
-    description,
-    desc: description,
-    iconKey,
-    colorKey,
-    category,
-    quotaGb,
-    quota: quotaGb,
-    visibility,
-    allowedExtensions,
-    allowedMimeTypes,
-    maxFileSizeMb,
-    retentionDays,
-    encryptionRequired: Boolean(payload.encryptionRequired ?? existing?.encryptionRequired ?? visibility !== "public"),
-    system: Boolean(existing?.system || payload.system),
-    color: readString(payload.color || existing?.color, 80),
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-  };
-}
-
 function getStorageBucketsConfig() {
   const map = new Map();
   for (const bucket of SYSTEM_STORAGE_BUCKETS) {
@@ -6761,7 +10891,7 @@ function buildStorageFileRecords(user = null) {
     });
   }
 
-  for (const file of db.storageFiles) {
+  for (const file of db.storageFiles.filter((item) => (item.status || "active") === "active")) {
     const organizationId = file.organizationId || getObjectKeyOrganizationId(file.objectKey);
     if (user && !canAccessStorageRecord(user, { id: file.id, objectKey: file.objectKey || "", organizationId, scanId: "" })) {
       continue;
@@ -6779,7 +10909,7 @@ function buildStorageFileRecords(user = null) {
       uploader: file.uploader || "Quản trị hệ thống",
       uploadedAt: formatDateTime(file.createdAt),
       createdAt: file.createdAt || nowIso(),
-      visibility: file.visibility || "private",
+      visibility: "private",
       tags: Array.isArray(file.tags) ? file.tags : [],
       checksum: file.checksum || file.sha256 || "",
       sha256: file.sha256 || file.checksum || "",
@@ -6788,11 +10918,10 @@ function buildStorageFileRecords(user = null) {
       previewUrl: String(file.contentType || "").startsWith("image/")
         ? `/api/admin/storage-files/${encodeURIComponent(file.id)}/download`
         : "",
-      shareUrl: `/api/admin/storage-files/${encodeURIComponent(file.id)}/share`,
     });
   }
 
-  return records.sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
+  return records.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
 
 async function serveObjectBufferDownload(req, res, objectFile, downloadName) {
@@ -6876,9 +11005,16 @@ async function serveDeviceOtaFirmwareDownload(req, res, url, segments) {
   const token = readString(url.searchParams.get("token"), 180);
   const device = db.devices.find((item) => item.id === deviceId);
   const ota = device && device.ota && typeof device.ota === "object" ? device.ota : null;
+  const otaTokenHash = ota?.tokenHash || (ota?.token ? hashOtaDownloadToken(ota.token) : "");
 
-  if (!device || !ota || ota.id !== otaId || !token || token !== ota.token) {
+  if (!device || !ota || ota.id !== otaId || !verifyOtaDownloadToken(token, otaTokenHash)) {
     throw httpError(404, "Firmware OTA không hợp lệ hoặc đã hết hạn");
+  }
+  if (!ota.tokenHash && ota.token) {
+    ota.tokenHash = otaTokenHash;
+    delete ota.token;
+    device.updatedAt = nowIso();
+    await saveDeviceRecord(device);
   }
   if (ota.expiresAt && Date.parse(ota.expiresAt) < Date.now()) {
     device.otaStatus = "failed";
@@ -6946,41 +11082,103 @@ function buildStorageBucketSummaries(user = null) {
       colorKey: bucket.colorKey || "blue",
       category: bucket.category || "custom",
       used: bytesToGb(byteSize),
-      quota: Number(bucket.quotaGb || bucket.quota || 1),
-      quotaGb: Number(bucket.quotaGb || bucket.quota || 1),
       files: bucketFiles.length,
       createdAt: bucket.createdAt ? formatDateTime(bucket.createdAt) : "",
-      visibility: bucket.visibility || "private",
       allowedExtensions: bucket.allowedExtensions || [],
       allowedMimeTypes: bucket.allowedMimeTypes || [],
       maxFileSizeMb: Number(bucket.maxFileSizeMb || 500),
-      retentionDays: Number(bucket.retentionDays || 0),
-      encryptionRequired: Boolean(bucket.encryptionRequired),
-      color: bucket.color || "from-blue-500 to-cyan-500",
       system: Boolean(bucket.system),
     };
   });
 }
 
-function buildAiReply(message) {
-  const text = readString(message, 2000).toLowerCase();
-  if (!text) {
-    return "Bạn hãy nhập câu hỏi hoặc chọn một hồ sơ đo để tôi hỗ trợ phân tích.";
-  }
-  if (text.includes("ran") || text.includes("phổi") || text.includes("ho")) {
-    return "Tín hiệu phổi bất thường cần đối chiếu với triệu chứng, SpO2, nhiệt độ và X-quang ngực. Nếu có ran nổ khu trú, nên cân nhắc viêm phổi, phù phổi hoặc xẹp phổi tùy bối cảnh lâm sàng.";
-  }
-  if (text.includes("tim") || text.includes("bpm") || text.includes("nhịp")) {
-    return "Với tín hiệu tim, cần xem nhịp đều hay không, tần số BPM, tiếng T1/T2 và dấu hiệu âm thổi. Kết quả trong app hiện là hỗ trợ sàng lọc, không thay thế kết luận của bác sĩ.";
-  }
-  if (text.includes("tín hiệu") || text.includes("yếu") || text.includes("nhiễu")) {
-    return "Nếu tín hiệu yếu, hãy kiểm tra tiếp xúc cảm biến, giảm nhiễu môi trường, giữ đầu nghe ổn định và đo lại ít nhất 10-15 giây để có file đủ chất lượng.";
-  }
-  return "Tôi đã ghi nhận câu hỏi. Với bản production, phần này có thể nối sang mô hình AI y khoa riêng; hiện backend trả gợi ý dựa trên ngữ cảnh đo và chất lượng tín hiệu.";
-}
-
 async function handleAuthApi(req, res, segments) {
   const method = req.method || "GET";
+
+  if (segments.length === 4 && segments[2] === "2fa" && segments[3] === "challenge" && method === "POST") {
+    const availability = getTwoFactorAvailability();
+    if (!availability.available) {
+      throw httpError(503, "2FA chưa sẵn sàng.", "TWO_FACTOR_UNAVAILABLE", { availability });
+    }
+    if (!repositories?.twoFactor) {
+      throw httpError(503, "Kho lưu trữ 2FA chưa sẵn sàng.", "TWO_FACTOR_STORAGE_UNAVAILABLE");
+    }
+    const payload = await readJsonBody(req);
+    const challengeId = readString(payload.challengeId, 200);
+    if (!challengeId) {
+      throw httpError(400, "Thiếu challengeId.", "TWO_FACTOR_CHALLENGE_ID_REQUIRED");
+    }
+    const challenge = await repositories.twoFactor.getChallenge(challengeId);
+    if (!challenge) {
+      throw httpError(404, "Không tìm thấy challenge.", "TWO_FACTOR_CHALLENGE_NOT_FOUND");
+    }
+    if (challenge.primaryAuthSource !== "demo-password") {
+      const primaryUser = requirePrimaryUser(req);
+      if (primaryUser.id !== challenge.userId) {
+        throw httpError(403, "Challenge không thuộc tài khoản hiện tại.", "TWO_FACTOR_CHALLENGE_SCOPE_MISMATCH");
+      }
+    }
+    const user = db.users.find((item) => item.id === challenge.userId);
+    if (!user || !isActiveUserAccount(user)) {
+      throw httpError(401, "Tài khoản không còn khả dụng.", "TWO_FACTOR_PRIMARY_AUTH_INVALID");
+    }
+    const credential = await repositories.twoFactor.getCredential(user.id);
+    if (!credential) {
+      throw httpError(409, "2FA chưa được bật.", "TWO_FACTOR_NOT_ENABLED");
+    }
+    const pendingSession = challenge.primaryAuthSource === "demo-password" ? buildSession(user, req) : null;
+    const primaryBinding = pendingSession
+      ? `demo-session:${user.id}:${pendingSession.id}`
+      : getTwoFactorPrimaryBinding(req, user);
+    const issuedToken = createTwoFactorToken({
+      id: createId("2fa_token"),
+      userId: user.id,
+      primaryBinding,
+    });
+    const otp = readString(payload.otp || payload.code, 20);
+    const recoveryCode = readString(payload.recoveryCode, 80);
+    await repositories.twoFactor.completeChallenge({
+      challengeId,
+      userId: user.id,
+      tokenRecord: issuedToken.record,
+      verifyFactor: async (currentCredential) => {
+        if (recoveryCode) {
+          const match = verifyRecoveryCode(currentCredential, recoveryCode);
+          return match
+            ? { valid: true, recoveryCodeId: match.id, usedAt: nowIso() }
+            : { valid: false, code: "TWO_FACTOR_RECOVERY_CODE_INVALID" };
+        }
+        if (!otp) return { valid: false, code: "TWO_FACTOR_CODE_REQUIRED" };
+        const result = await verifyTotpCode(currentCredential, otp, {
+          afterTimeStep: Number(currentCredential.lastUsedTimeStep),
+        });
+        if (result.replayed) return { valid: false, code: "TWO_FACTOR_CODE_REPLAYED" };
+        return result.valid
+          ? { valid: true, timeStep: Number(result.timeStep) }
+          : { valid: false, code: "TWO_FACTOR_CODE_INVALID" };
+      },
+      auditInput: {
+        organizationId: user.organizationId || "",
+        ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+        userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+        metadata: { method: recoveryCode ? "recovery_code" : "app", primaryAuthSource: challenge.primaryAuthSource },
+      },
+    });
+    if (pendingSession) persistSession(pendingSession);
+    addAccessLog("Đăng nhập thành công sau xác thực hai yếu tố", {
+      userId: user.id,
+      organizationId: user.organizationId || "",
+      ip: req.socket.remoteAddress || "",
+    });
+    await saveDb();
+    sendJson(res, 200, {
+      ...(pendingSession ? { token: pendingSession.token } : {}),
+      twoFactorToken: issuedToken.token,
+      expiresAt: issuedToken.record.expiresAt,
+      user: publicUser(user),
+    });
+    return;
+  }
 
   if (segments.length === 3 && segments[2] === "firebase" && (method === "GET" || method === "POST")) {
     const user = requireSessionUser(req);
@@ -7123,67 +11321,110 @@ async function handleAuthApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "workspace-request" && method === "POST") {
-    const user = requireSessionUser(req);
+    const sessionUser = requireSessionUser(req);
+    if (sessionUser.role !== "patient") {
+      throw httpError(
+        409,
+        "Tài khoản đang có quyền vận hành không thể tự đổi vai trò qua luồng đăng ký workspace",
+        "ROLE_TRANSITION_REQUIRES_ADMIN",
+      );
+    }
     const payload = await readJsonBody(req);
     const name = readString(payload.name || payload.clinicName, 180);
     if (!name) throw httpError(400, "Tên cơ sở y tế là bắt buộc");
+    const idempotencyKey = getRequiredIdempotencyKey(req, payload, "workspace request");
+    if (!repositories?.organizations?.submitRequest) {
+      throw httpError(
+        503,
+        "Kho dữ liệu yêu cầu workspace chưa sẵn sàng",
+        "WORKSPACE_REQUEST_REPOSITORY_UNAVAILABLE",
+      );
+    }
     const existingRequest = db.organizations.find(
-      (item) => item.ownerUserId === user.id && ["pending", "needs_info", "rejected"].includes(String(item.status || ""))
+      (item) =>
+        !item.deletedAt &&
+        item.ownerUserId === sessionUser.id &&
+        ["pending", "needs_info", "rejected"].includes(String(item.status || "")),
     );
-    const workspace = existingRequest || {
-      id: createId("org"),
-      createdAt: nowIso(),
+    const workspaceId = existingRequest?.id || createId("org");
+    const workspaceType = normalizeWorkspaceType(
+      payload.workspaceType || payload.clinicType,
+      "clinic",
+    );
+    const requestPayload = {
+      name,
+      type: workspaceType,
+      workspaceType,
+      address: readString(payload.address, 500),
+      phone: readString(payload.phone || payload.clinicPhone, 80),
+      email: readString(payload.email || payload.clinicEmail, 180),
+      website: readString(payload.website, 500),
+      legalName: readString(payload.legalName || payload.taxCode || payload.licenseCode, 200),
+      representative:
+        readString(payload.representative || payload.repName, 180) || sessionUser.name || "",
+      requestMetadata:
+        payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
     };
-    workspace.name = name;
-    workspace.type = normalizeWorkspaceType(payload.workspaceType || payload.clinicType, "clinic");
-    workspace.workspaceType = workspace.type;
-    workspace.address = readString(payload.address, 500);
-    workspace.phone = readString(payload.phone || payload.clinicPhone, 80);
-    workspace.email = readString(payload.email || payload.clinicEmail, 180);
-    workspace.website = readString(payload.website, 500);
-    workspace.legalName = readString(payload.legalName || payload.taxCode || payload.licenseCode, 200);
-    workspace.representative = readString(payload.representative || payload.repName, 180) || user.name || "";
-    workspace.ownerUserId = user.id;
-    workspace.status = "pending";
-    workspace.requestMetadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
-    workspace.updatedAt = nowIso();
-    if (!existingRequest) db.organizations.unshift(workspace);
-    if (user.role !== "admin") {
-      user.role = "patient";
-    }
-    user.requestedRole = "workspace_owner";
-    user.roleRequestStatus = "pending";
-    user.roleRequestedAt = nowIso();
-    user.roleApprovedAt = "";
-    user.roleRejectedAt = "";
-    user.roleRejectReason = "";
-    user.roleInfoRequestAt = "";
-    user.roleInfoRequestMessage = "";
-    user.roleInfoRequiredFields = [];
-    user.organizationId = workspace.id;
-    user.workspaceType = workspace.workspaceType;
-    user.accountStatus = user.accountStatus || "active";
-    ensureMembershipForUser(user);
-    await persistUserRecord(user);
-    if (repositories && typeof repositories.organizations?.upsert === "function") {
-      await repositories.organizations.upsert(workspace);
-    }
-    await createBackendNotification({
-      type: "info",
-      userId: user.id,
-      organizationId: workspace.id,
-      title: "Yêu cầu duyệt workspace mới",
-      message: `${workspace.name} đang chờ Platform Admin xác minh và kích hoạt.`,
-      metadata: { actionPath: "/clinics", workspaceId: workspace.id, ownerEmail: user.email || "" },
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.organizations.submitRequest({
+      organizationId: workspaceId,
+      actorUserId: sessionUser.id,
+      payload: requestPayload,
+      idempotency: {
+        scope: getIdempotencyScope(sessionUser),
+        operation: "workspace.request.submit",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ workspaceId, payload: requestPayload }),
+      },
+      audit: {
+        actorUserId: sessionUser.id,
+        organizationId: workspaceId,
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+      },
     });
-    await appendAudit("workspace.request", req, { actorUserId: user.id, organizationId: workspace.id, resourceType: "organization", resourceId: workspace.id });
-    await saveDb();
-    sendJson(res, 201, { workspace: publicWorkspace(workspace), user: publicUser(user) });
+    Object.assign(sessionUser, result.user || {});
+    let notificationDelivery = "skipped";
+    if (!result.replayed) {
+      try {
+        await createBackendNotification({
+          type: "info",
+          userId: sessionUser.id,
+          organizationId: workspaceId,
+          title: existingRequest ? "Hồ sơ workspace đã được gửi lại" : "Yêu cầu duyệt workspace mới",
+          message: `${result.workspace.name} đang chờ Platform Admin xác minh và kích hoạt.`,
+          metadata: {
+            actionPath: "/clinics",
+            workspaceId,
+            ownerEmail: sessionUser.email || "",
+            operationId: result.operationId,
+          },
+        });
+        notificationDelivery = "ready";
+      } catch {
+        notificationDelivery = "failed";
+      }
+    }
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, result.responseStatus || 201, {
+      workspace: publicWorkspace(result.workspace),
+      user: publicUser(sessionUser),
+      operationId: result.operationId,
+      idempotent: result.replayed === true,
+      notificationDelivery,
+    });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "role-request" && method === "POST") {
     let user = requireSessionUser(req);
+    if (user.role !== "patient") {
+      throw httpError(
+        409,
+        "Tài khoản đang có quyền vận hành không thể tự đổi vai trò; hãy dùng quy trình quản trị có kiểm soát",
+        "ROLE_TRANSITION_REQUIRES_ADMIN",
+      );
+    }
     const payload = await readJsonBody(req);
     const requestedRole = readString(payload.requestedRole || payload.role, 40);
     if (!["doctor", "patient"].includes(requestedRole)) {
@@ -7351,9 +11592,32 @@ async function handleAuthApi(req, res, segments) {
     if (payload.role && user.role !== payload.role) {
       throw httpError(403, "Tài khoản không đúng vai trò đăng nhập");
     }
+    const credential = repositories?.twoFactor
+      ? await repositories.twoFactor.getCredential(user.id)
+      : db.twoFactorCredentials.find((item) => item.userId === user.id && !item.disabledAt) || null;
+    user.twoFactorEnabled = Boolean(credential);
+    user.twoFactorMethod = credential ? credential.method || "app" : "";
+    if (credential) {
+      const loginBinding = `demo-password:${user.id}:${crypto.randomBytes(24).toString("base64url")}`;
+      const challenge = await createTwoFactorChallenge(user, "demo-password", loginBinding);
+      const requestId = (getRequestContext(req) || createRequestContext(req)).requestId || "";
+      sendJson(res, 202, {
+        error: {
+          code: "TWO_FACTOR_CHALLENGE_REQUIRED",
+          requestId,
+          message: "Cần hoàn tất xác thực hai yếu tố.",
+          details: {
+            challengeId: challenge.id,
+            method: "app",
+            expiresAt: challenge.expiresAt,
+          },
+        },
+      });
+      return;
+    }
     const session = createSession(user, req);
     addAccessLog("Đăng nhập thành công", { ip: req.socket.remoteAddress || "" });
-    saveDb();
+    await saveDb();
     sendJson(res, 200, { token: session.token, user: publicUser(user) });
     return;
   }
@@ -7391,74 +11655,545 @@ async function handleAuthApi(req, res, segments) {
     if (user.role === "patient") {
       ensurePatientProfileForUser(user);
     }
+    ensureMembershipForUser(user);
+    if (repositories) {
+      await repositories.users.save(user);
+      await repositories.memberships.ensureForUser(user);
+      if (user.patientId) {
+        const selfPatient = findPatient(user.patientId);
+        if (selfPatient) await repositories.patients.save(selfPatient);
+      }
+    }
     const session = createSession(user, req);
     createNotification("success", "Tạo tài khoản thành công", "Tài khoản Smart Health đã được tạo.");
     addAccessLog("Tạo tài khoản mới", { ip: req.socket.remoteAddress || "" });
-    saveDb();
+    await saveDb();
     sendJson(res, 201, { token: session.token, user: publicUser(user) });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "logout" && method === "POST") {
+    const user = requireSessionUser(req);
     const token = getBearerToken(req);
-    const session = db.sessions.find((item) => item.token === token);
-    if (session) {
-      session.revokedAt = nowIso();
+    const session = req.authSession || db.sessions.find((item) => item.token === token && item.userId === user.id);
+    if (!session) throw httpError(404, "Session not found", "AUTH_SESSION_NOT_FOUND");
+    const context = getRequestContext(req) || createRequestContext(req);
+    if (repositories?.authSessions) {
+      await repositories.authSessions.revokeForUser(user.id, session.id, {
+        action: "auth.session.logout",
+        organizationId: user.organizationId || "",
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      });
+    } else {
+      session.revokedAt = session.revokedAt || nowIso();
+      await appendAudit("auth.session.logout", req, {
+        actorUserId: user.id,
+        organizationId: user.organizationId || "",
+        resourceType: "auth_session",
+        resourceId: session.id,
+      });
     }
-    if (req.authSession) {
-      req.authSession.revokedAt = nowIso();
-    }
+    closeRealtimeSocketsForSession(user.id, session);
     addAccessLog("Đăng xuất");
-    saveDb();
+    await saveDb();
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "sessions" && method === "GET") {
     const token = getBearerToken(req);
-    const user = requireUser(req);
-    const demoSessions = db.sessions
-      .filter((item) => item.userId === user.id)
-      .map((item) => publicAuthSession(item, Boolean(token && item.token === token)));
-    const firebaseSessions = db.authSessions
-      .filter((item) => item.userId === user.id)
-      .map((item) => publicAuthSession(item, Boolean(req.authSession && req.authSession.id === item.id)));
-    sendJson(res, 200, { sessions: [...firebaseSessions, ...demoSessions] });
+    const user = requireSessionUser(req);
+    const sessions = repositories?.authSessions
+      ? await repositories.authSessions.listForUser(user.id)
+      : [
+          ...db.authSessions.filter((item) => item.userId === user.id && !item.revokedAt),
+          ...db.sessions.filter((item) => item.userId === user.id && !item.revokedAt),
+        ];
+    sendJson(res, 200, {
+      sessions: sessions.map((item) =>
+        publicAuthSession(
+          item,
+          Boolean((req.authSession && req.authSession.id === item.id) || (token && item.token === token)),
+        ),
+      ),
+    });
     return;
   }
 
   if (segments.length === 5 && segments[2] === "sessions" && segments[4] === "revoke" && method === "POST") {
     const user = requireSessionUser(req);
     const sessionId = decodeURIComponent(segments[3]);
-    const demoSession = db.sessions.find((item) => item.id === sessionId && item.userId === user.id);
-    const firebaseSession = db.authSessions.find((item) => item.id === sessionId && item.userId === user.id);
-    const sessionToRevoke = demoSession || firebaseSession;
-    if (!sessionToRevoke) {
-      throw httpError(404, "Session not found");
-    }
-    sessionToRevoke.revokedAt = nowIso();
+    const context = getRequestContext(req) || createRequestContext(req);
+    const revoked = repositories?.authSessions
+      ? await repositories.authSessions.revokeForUser(user.id, sessionId, {
+          action: "auth.session.revoke",
+          organizationId: user.organizationId || "",
+          ip: context.ip || "",
+          userAgent: context.userAgent || "",
+        })
+      : null;
+    if (!revoked) throw httpError(404, "Session not found", "AUTH_SESSION_NOT_FOUND");
+    closeRealtimeSocketsForSession(user.id, revoked.session);
     addAccessLog("Revoke auth session", { severity: "warning" });
-    saveDb();
-    sendJson(res, 200, { session: publicAuthSession(sessionToRevoke, false) });
+    await saveDb();
+    sendJson(res, 200, { session: publicAuthSession(revoked.session, false), replayed: Boolean(revoked.replayed) });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "password-reset" && method === "POST") {
     const payload = await readJsonBody(req);
-    const login = readString(payload.email || payload.phone || payload.login, 160);
-    addAccessLog(`Yêu cầu đặt lại mật khẩu cho ${login || "tài khoản"}`);
-    createNotification("info", "Yêu cầu đặt lại mật khẩu", "Hướng dẫn đặt lại mật khẩu đã được ghi nhận.");
-    saveDb();
-    sendJson(res, 200, { ok: true, message: "Đã ghi nhận yêu cầu đặt lại mật khẩu" });
+    const email = readString(payload.email || payload.login, 180).toLowerCase();
+    if (!FIREBASE_AUTH_ENABLED) {
+      throw httpError(503, "Firebase Auth chưa được cấu hình", "FIREBASE_AUTH_NOT_CONFIGURED");
+    }
+    const firebaseAdminApp = getFirebaseAdmin(process.env);
+    if (!firebaseAdminApp) {
+      throw httpError(503, "Firebase Admin chưa sẵn sàng", "FIREBASE_ADMIN_NOT_READY");
+    }
+
+    let firebaseUser = null;
+    if (isValidEmailAddress(email)) {
+      try {
+        firebaseUser = await firebaseAdminApp.auth().getUserByEmail(email);
+      } catch (error) {
+        if (error?.code !== "auth/user-not-found" && error?.code !== "auth/invalid-email") throw error;
+      }
+    }
+
+    if (firebaseUser?.email) {
+      const actionCodeSettings = { url: getPasswordResetContinueUrl(req) };
+      const linkDomain = getFirebaseEmailLinkDomain();
+      if (linkDomain) actionCodeSettings.linkDomain = linkDomain;
+      const resetLink = await firebaseAdminApp.auth().generatePasswordResetLink(
+        firebaseUser.email,
+        actionCodeSettings,
+      );
+      const backendUser = repositories?.users?.findByEmail
+        ? await repositories.users.findByEmail(firebaseUser.email)
+        : findUserByLogin(firebaseUser.email);
+      const message = buildPasswordResetMessage({
+        name: backendUser?.name || firebaseUser.displayName || firebaseUser.email,
+        email: firebaseUser.email,
+        resetLink,
+      });
+      const delivery = await sendEmail({
+        to: { email: firebaseUser.email, name: backendUser?.name || firebaseUser.displayName || "" },
+        subject: "Đặt lại mật khẩu Shcare",
+        text: message.text,
+        html: message.html,
+      });
+      if (backendUser) {
+        await appendAudit("auth.password_reset.send", req, {
+          actorUserId: backendUser.id,
+          organizationId: backendUser.organizationId || "",
+          resourceType: "user",
+          resourceId: backendUser.id,
+          metadata: { provider: delivery.provider || "" },
+        });
+      }
+    }
+
+    // Keep the same response for known and unknown addresses to avoid account
+    // enumeration. "accepted" does not claim that an account exists.
+    sendJson(res, 200, {
+      ok: true,
+      status: "accepted",
+      message: "Nếu tài khoản tồn tại, hướng dẫn đặt lại mật khẩu sẽ được gửi qua email.",
+    });
     return;
   }
 
   sendJson(res, 404, { error: "Auth route not found" });
 }
 
+function requireStaffInvitationStore() {
+  if (!repositories?.staffInvitations) {
+    throw httpError(
+      503,
+      "Staff invitation storage is unavailable",
+      "STAFF_INVITATION_STORAGE_UNAVAILABLE",
+    );
+  }
+  return repositories.staffInvitations;
+}
+
+function resolveStaffInvitationWorkspaceId(user, requestedOrganizationId, options = {}) {
+  const requested = readString(requestedOrganizationId, 120);
+  if (isPlatformAdminUser(user)) {
+    requireAnyCapability(
+      user,
+      ["platform.users.manage"],
+      "Platform user management permission is required",
+    );
+    if (options.required && !requested) {
+      throw httpError(
+        400,
+        "A workspace is required for the staff invitation",
+        "STAFF_INVITATION_WORKSPACE_REQUIRED",
+      );
+    }
+    return requested;
+  }
+
+  requireAnyCapability(
+    user,
+    ["workspace.staff.manage"],
+    "Workspace staff management permission is required",
+  );
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId || "";
+  if (!workspaceId || !hasWorkspaceMembership(user, workspaceId)) {
+    throw httpError(
+      403,
+      "An operational workspace membership is required",
+      "WORKSPACE_MEMBERSHIP_REQUIRED",
+    );
+  }
+  if (requested && requested !== workspaceId) {
+    throw httpError(
+      403,
+      "Staff invitations are restricted to the current workspace",
+      "STAFF_INVITATION_WORKSPACE_SCOPE_MISMATCH",
+    );
+  }
+  return workspaceId;
+}
+
+function getRequiredIdempotencyKey(req, payload, mutationLabel) {
+  const key = getIdempotencyKey(req, payload);
+  if (!key) {
+    throw httpError(
+      400,
+      `Idempotency-Key is required for ${mutationLabel}`,
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  return key;
+}
+
+function staffInvitationAuditInput(req, user, organizationId, action, metadata = {}) {
+  return {
+    actorUserId: user.id,
+    organizationId,
+    action,
+    resourceType: "staff_invitation",
+    ip: req.socket.remoteAddress || "",
+    userAgent: readString(req.headers["user-agent"], 240),
+    metadata,
+  };
+}
+
+async function deliverStaffInvitation(req, user, invitation, rawToken) {
+  const runtime = getEmailRuntimeStatus();
+  if (!runtime.configured) return invitation;
+  const workspace = getClinicById(invitation.organizationId);
+  const acceptanceUrl = getStaffInvitationAcceptanceUrl(rawToken);
+  const message = buildStaffInvitationMessage({
+    invitation,
+    acceptanceUrl,
+    workspaceName: workspace?.name || invitation.organizationId,
+  });
+  let delivery;
+  try {
+    const result = await sendEmail({
+      to: invitation.email,
+      subject: `Lời mời tham gia ${workspace?.name || "Shcare"}`,
+      ...message,
+    });
+    const acceptedRecipients = (Array.isArray(result.accepted) ? result.accepted : [])
+      .map((recipient) => readString(recipient?.address || recipient, 254).toLowerCase());
+    const rejectedRecipients = (Array.isArray(result.rejected) ? result.rejected : [])
+      .map((recipient) => readString(recipient?.address || recipient, 254).toLowerCase());
+    const recipientAccepted = acceptedRecipients.includes(invitation.email.toLowerCase());
+    const recipientRejected = rejectedRecipients.includes(invitation.email.toLowerCase());
+    delivery = recipientAccepted && !recipientRejected
+      ? {
+          email: "sent",
+          provider: result.provider || runtime.provider,
+          messageId: result.messageId || "",
+          errorCode: "",
+        }
+      : {
+          email: "failed",
+          provider: result.provider || runtime.provider,
+          messageId: result.messageId || "",
+          errorCode: "STAFF_INVITATION_RECIPIENT_REJECTED",
+        };
+  } catch (error) {
+    delivery = {
+      email: "failed",
+      provider: runtime.provider,
+      messageId: "",
+      errorCode: readString(error?.code || "STAFF_INVITATION_EMAIL_FAILED", 120),
+    };
+  }
+  const recorded = await requireStaffInvitationStore().recordDelivery({
+    invitationId: invitation.id,
+    organizationId: invitation.organizationId,
+    ...delivery,
+    audit: staffInvitationAuditInput(
+      req,
+      user,
+      invitation.organizationId,
+      "staff.invitation.delivery",
+      {
+        email: invitation.email,
+        deliveryEmail: delivery.email,
+        provider: delivery.provider,
+        errorCode: delivery.errorCode,
+      },
+    ),
+  });
+  return recorded.invitation;
+}
+
+async function handleAdminStaffInvitationApi(req, res, url, segments, adminUser) {
+  const method = req.method || "GET";
+  requireAnyCapability(
+    adminUser,
+    ["platform.users.manage", "workspace.staff.manage"],
+    "Staff invitation management permission is required",
+  );
+  const store = requireStaffInvitationStore();
+
+  if (segments.length === 3 && method === "GET") {
+    const organizationId = resolveStaffInvitationWorkspaceId(
+      adminUser,
+      url.searchParams.get("organizationId"),
+    );
+    const status = readString(url.searchParams.get("status"), 40).toLowerCase();
+    if (status && !STAFF_INVITATION_STATUSES.includes(status)) {
+      throw httpError(
+        400,
+        "The selected staff invitation status is not supported",
+        "STAFF_INVITATION_STATUS_INVALID",
+        { allowedStatuses: [...STAFF_INVITATION_STATUSES] },
+      );
+    }
+    const invitations = await store.list({
+      organizationId,
+      role: readString(url.searchParams.get("role"), 80),
+      status,
+    });
+    sendJson(res, 200, { invitations });
+    return;
+  }
+
+  if (segments.length === 3 && method === "POST") {
+    const payload = await readJsonBody(req);
+    const organizationId = resolveStaffInvitationWorkspaceId(
+      adminUser,
+      payload.organizationId,
+      { required: true },
+    );
+    const normalizedPayload = normalizeStaffInvitationCreate({
+      ...payload,
+      organizationId,
+    });
+    const idempotencyKey = getRequiredIdempotencyKey(req, payload, "staff invitation creation");
+    const rawToken = generateStaffInvitationToken();
+    const runtime = getEmailRuntimeStatus();
+    const result = await store.create({
+      payload: normalizedPayload,
+      tokenHash: hashStaffInvitationToken(rawToken),
+      expiresAt: getStaffInvitationExpiryIso(),
+      deliveryEmail: runtime.configured ? "ready" : "unavailable",
+      deliveryProvider: runtime.provider,
+      idempotency: {
+        scope: getIdempotencyScope(adminUser, organizationId),
+        operation: "staff.invitation.create",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint(normalizedPayload),
+      },
+      audit: staffInvitationAuditInput(
+        req,
+        adminUser,
+        organizationId,
+        "staff.invitation.create",
+        { email: normalizedPayload.email, role: normalizedPayload.role },
+      ),
+    });
+    if (result.replayed) {
+      res.setHeader("Idempotency-Replayed", "true");
+      const replayedInvitation = result.responseBody.invitation;
+      const invitation = await store.findById(replayedInvitation.id) || replayedInvitation;
+      sendJson(res, 200, {
+        invitation,
+        delivery: invitation.delivery,
+        idempotent: true,
+      });
+      return;
+    }
+    let invitation = result.responseBody.invitation;
+    invitation = await deliverStaffInvitation(req, adminUser, invitation, rawToken);
+    sendJson(res, 201, {
+      invitation,
+      delivery: invitation.delivery,
+      oneTimeAcceptanceToken: rawToken,
+      oneTimeAcceptanceUrl: getStaffInvitationAcceptanceUrl(rawToken),
+      idempotent: false,
+    });
+    return;
+  }
+
+  if (
+    segments.length === 5 &&
+    method === "POST" &&
+    ["resend", "revoke"].includes(segments[4])
+  ) {
+    const invitationId = decodeURIComponent(segments[3]);
+    const workspaceScope = isPlatformAdminUser(adminUser)
+      ? ""
+      : resolveStaffInvitationWorkspaceId(adminUser, "", { required: true });
+    const current = workspaceScope
+      ? (await store.list({ organizationId: workspaceScope })).find(
+          (invitation) => invitation.id === invitationId,
+        ) || null
+      : await store.findById(invitationId);
+    if (!current) {
+      throw httpError(404, "Staff invitation was not found", "STAFF_INVITATION_NOT_FOUND");
+    }
+    const organizationId = workspaceScope || resolveStaffInvitationWorkspaceId(
+      adminUser,
+      current.organizationId,
+      { required: true },
+    );
+    const payload = await readJsonBody(req);
+    const action = segments[4];
+    const idempotencyKey = getRequiredIdempotencyKey(req, payload, `staff invitation ${action}`);
+    if (action === "resend") {
+      const rawToken = generateStaffInvitationToken();
+      const runtime = getEmailRuntimeStatus();
+      const result = await store.resend({
+        invitationId,
+        organizationId,
+        tokenHash: hashStaffInvitationToken(rawToken),
+        expiresAt: getStaffInvitationExpiryIso(),
+        deliveryEmail: runtime.configured ? "ready" : "unavailable",
+        deliveryProvider: runtime.provider,
+        idempotency: {
+          scope: getIdempotencyScope(adminUser, organizationId),
+          operation: "staff.invitation.resend",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({ invitationId, organizationId }),
+        },
+        audit: staffInvitationAuditInput(
+          req,
+          adminUser,
+          organizationId,
+          "staff.invitation.resend",
+          { invitationId, email: current.email },
+        ),
+      });
+      if (result.replayed) {
+        res.setHeader("Idempotency-Replayed", "true");
+        const replayedInvitation = result.responseBody.invitation;
+        const invitation = await store.findById(replayedInvitation.id) || replayedInvitation;
+        sendJson(res, 200, {
+          invitation,
+          delivery: invitation.delivery,
+          idempotent: true,
+        });
+        return;
+      }
+      let invitation = result.responseBody.invitation;
+      invitation = await deliverStaffInvitation(req, adminUser, invitation, rawToken);
+      sendJson(res, 200, {
+        invitation,
+        delivery: invitation.delivery,
+        oneTimeAcceptanceToken: rawToken,
+        oneTimeAcceptanceUrl: getStaffInvitationAcceptanceUrl(rawToken),
+        idempotent: false,
+      });
+      return;
+    }
+
+    const revoke = normalizeStaffInvitationRevoke(payload);
+    const result = await store.revoke({
+      invitationId,
+      organizationId,
+      ...revoke,
+      idempotency: {
+        scope: getIdempotencyScope(adminUser, organizationId),
+        operation: "staff.invitation.revoke",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ invitationId, organizationId, ...revoke }),
+      },
+      audit: staffInvitationAuditInput(
+        req,
+        adminUser,
+        organizationId,
+        "staff.invitation.revoke",
+        { invitationId, email: current.email, reason: revoke.reason },
+      ),
+    });
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, {
+      invitation: result.responseBody.invitation,
+      idempotent: result.replayed,
+    });
+    return;
+  }
+
+  throw httpError(404, "Staff invitation route not found", "STAFF_INVITATION_ROUTE_NOT_FOUND");
+}
+
+async function handleStaffInvitationAcceptanceApi(req, res, segments) {
+  const method = req.method || "GET";
+  if (segments.length !== 3 || segments[2] !== "accept" || method !== "POST") {
+    throw httpError(404, "Staff invitation route not found", "STAFF_INVITATION_ROUTE_NOT_FOUND");
+  }
+  const user = requireSessionUser(req);
+  if (AUTH_MODE === "production" && user.verifiedEmail !== true) {
+    throw httpError(
+      403,
+      "Verify the authenticated email before accepting a staff invitation",
+      "STAFF_INVITATION_EMAIL_VERIFICATION_REQUIRED",
+    );
+  }
+  const payload = await readJsonBody(req);
+  const rawToken = assertStaffInvitationToken(payload.token);
+  const tokenHash = hashStaffInvitationToken(rawToken);
+  const idempotencyKey = getRequiredIdempotencyKey(req, payload, "staff invitation acceptance");
+  const result = await requireStaffInvitationStore().accept({
+    tokenHash,
+    actorUserId: user.id,
+    actorEmail: user.email,
+    organizationId: readString(payload.organizationId, 120),
+    idempotency: {
+      scope: getIdempotencyScope(user),
+      operation: "staff.invitation.accept",
+      key: idempotencyKey,
+      fingerprint: createIdempotencyFingerprint({ tokenHash, actorUserId: user.id }),
+    },
+    audit: staffInvitationAuditInput(
+      req,
+      user,
+      readString(payload.organizationId, 120),
+      "staff.invitation.accept",
+      { acceptedByUserId: user.id },
+    ),
+  });
+  if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+  const acceptedUser = repositories
+    ? await repositories.users.findByIdOrFirebaseUid(user.id)
+    : db.users.find((candidate) => candidate.id === user.id);
+  sendJson(res, 200, {
+    invitation: result.responseBody.invitation,
+    membership: result.responseBody.membership,
+    user: publicUser(acceptedUser || user),
+    idempotent: result.replayed,
+  });
+}
+
 async function handleAdminApi(req, res, url, segments) {
   const method = req.method || "GET";
   const adminUser = requireUser(req);
+
+  if (segments[2] === "staff-invitations") {
+    await handleAdminStaffInvitationApi(req, res, url, segments, adminUser);
+    return;
+  }
 
   if (segments[2] === "overview-stats" && method === "GET") {
     requireAnyCapability(adminUser, DASHBOARD_VIEW_CAPABILITIES, "Không có quyền xem tổng quan workspace");
@@ -7469,43 +12204,65 @@ async function handleAdminApi(req, res, url, segments) {
     const scopedFiles = buildStorageFileRecords(adminUser);
     const pendingDoctors = db.users
       .filter(isAwaitingDoctorApproval)
-      .filter((user) => isPlatformAdminUser(adminUser) || !workspaceId || user.organizationId === workspaceId).length;
+      .filter((user) => isPlatformAdminUser(adminUser) || (workspaceId && user.organizationId === workspaceId)).length;
     const devicesOnline = scopedDevices.filter((d) => d.status === "active" || d.status === "connected" || d.connected).length;
     const devicesOffline = Math.max(0, scopedDevices.length - devicesOnline);
-    const scansCount = scopedScans.length;
-    const aiJobsFailed = scopedScans.filter((s) => s.status === "failed" || s.status === "error").length;
+    let overviewSnapshot;
+    try {
+      overviewSnapshot = buildOverviewRangeSnapshot(scopedScans, {
+        range: url.searchParams.get("range") || "today",
+        timezoneOffsetMinutes: url.searchParams.get("timezoneOffsetMinutes") || 0,
+        now: new Date(),
+      });
+    } catch (error) {
+      throw httpError(400, error.message, error.code || "OVERVIEW_FILTER_INVALID");
+    }
+    const rangedScans = overviewSnapshot.scans;
+    const scansCount = rangedScans.length;
+    const failedScans = rangedScans.filter((scan) => ["failed", "error"].includes(String(scan.status || "").toLowerCase()));
+    const processingScans = rangedScans.filter((scan) =>
+      ["created", "uploading", "queued", "processing", "recording"].includes(String(scan.status || "").toLowerCase()),
+    );
+    const completedScans = rangedScans.filter((scan) => {
+      const status = String(scan.status || "").toLowerCase();
+      return !["failed", "error", "created", "uploading", "queued", "processing", "recording"].includes(status) &&
+        (status === "completed" || Boolean(scan.aiLabel));
+    });
+    const categorizedScanIds = new Set(
+      [...failedScans, ...processingScans, ...completedScans].map((scan) => String(scan.id || "")),
+    );
+    const pendingScans = rangedScans.filter((scan) => !categorizedScanIds.has(String(scan.id || "")));
+    const aiJobsFailed = failedScans.length;
     const storageUsedGb = scopedFiles.reduce((sum, file) => sum + Number(file.byteSize || 0), 0) / 1024 / 1024 / 1024;
-
-    const measureData = [
-      { time: "00:00", count: Math.round(scansCount * 0.1) },
-      { time: "08:00", count: Math.round(scansCount * 0.3) },
-      { time: "16:00", count: Math.round(scansCount * 0.4) },
-      { time: "23:59", count: Math.round(scansCount * 0.2) },
-    ];
+    const storageBytes = scopedFiles.reduce((sum, file) => sum + Number(file.byteSize || 0), 0);
 
     const deviceData = [
-      { name: "Đang hoạt động", value: devicesOnline, color: "#10B981" },
-      { name: "Mất kết nối", value: devicesOffline, color: "#E2E8F0" },
+      { key: "online", name: "Đang hoạt động", value: devicesOnline, color: "#18794E" },
+      { key: "offline", name: "Mất kết nối", value: devicesOffline, color: "#D8E3EA" },
     ];
 
     const aiJobData = [
-      { name: "Đang xử lý", value: scopedScans.filter((s) => s.status === "processing").length, color: "#0EA5E9" },
-      { name: "Hoàn tất", value: scopedScans.filter((s) => s.status === "completed" || s.aiLabel).length, color: "#10B981" },
-      { name: "Thất bại", value: aiJobsFailed, color: "#EF4444" },
+      { key: "processing", name: "Đang xử lý", value: processingScans.length, color: "#2563A6" },
+      { key: "completed", name: "Hoàn tất", value: completedScans.length, color: "#18794E" },
+      { key: "failed", name: "Thất bại", value: aiJobsFailed, color: "#B4233A" },
+      { key: "pending", name: "Chờ xử lý", value: pendingScans.length, color: "#A15C00" },
     ];
 
     sendJson(res, 200, {
+      generatedAt: overviewSnapshot.generatedAt,
+      range: overviewSnapshot.range,
       stats: {
-        clinics: isPlatformAdminUser(adminUser) ? db.organizations.length || 1 : 1,
-        workspaces: isPlatformAdminUser(adminUser) ? db.organizations.length || 1 : 1,
+        clinics: isPlatformAdminUser(adminUser) ? db.organizations.length : workspaceId ? 1 : 0,
+        workspaces: isPlatformAdminUser(adminUser) ? db.organizations.length : workspaceId ? 1 : 0,
         patientsCount: scopedPatients.length,
         pendingDoctors,
         devicesOnline,
         scansCount,
         aiJobsFailed,
+        storageBytes,
         storageUsed: storageUsedGb >= 1 ? `${storageUsedGb.toFixed(1)} GB` : `${Math.round(storageUsedGb * 1024)} MB`
       },
-      measureData,
+      measureData: overviewSnapshot.measureData,
       deviceData,
       aiJobData
     });
@@ -7545,11 +12302,13 @@ async function handleAdminApi(req, res, url, segments) {
       .slice(0, 8);
     const byDay = new Map();
     for (const file of files) {
-      const day = String(file.uploadedAt || "").split(" ")[0] || "";
+      const day = String(file.createdAt || "").slice(0, 10);
+      if (!day) continue;
       byDay.set(day, Number(byDay.get(day) || 0) + Number(file.byteSize || 0));
     }
     const growthData = Array.from(byDay.entries())
       .map(([day, bytes]) => ({ day, gb: bytesToGb(bytes) }))
+      .sort((left, right) => left.day.localeCompare(right.day))
       .slice(-30);
     const recentActivity = files.slice(0, 8).map((file) => ({
       who: file.uploader,
@@ -7559,16 +12318,17 @@ async function handleAdminApi(req, res, url, segments) {
       action: "upload",
     }));
     const orgUsage = new Map();
-    for (const scan of filterScansForUser(adminUser, db.scans)) {
-      const audioFile = db.audioFiles.find((file) => file.scanId === scan.id);
-      const bytes = getScanAudioByteSize(scan, audioFile);
-      const org = db.organizations.find((item) => item.id === (scan.organizationId || "org_default_clinic"));
-      const name = org ? org.name : scan.organizationId || "Smart Health";
-      orgUsage.set(name, Number(orgUsage.get(name) || 0) + bytes);
+    for (const file of files) {
+      const organizationId = file.organizationId || "org_default_clinic";
+      orgUsage.set(
+        organizationId,
+        Number(orgUsage.get(organizationId) || 0) + Number(file.byteSize || 0),
+      );
     }
     const topClinicUsage = Array.from(orgUsage.entries())
-      .map(([name, bytes]) => ({
-        name,
+      .map(([organizationId, bytes]) => ({
+        name:
+          getClinicById(organizationId)?.name || organizationId,
         gb: bytesToGb(bytes),
         percent: totalBytes > 0 ? Math.round((Number(bytes) / totalBytes) * 100) : 0,
       }))
@@ -7576,7 +12336,6 @@ async function handleAdminApi(req, res, url, segments) {
 
     sendJson(res, 200, {
       totalUsed: buckets.reduce((sum, bucket) => sum + bucket.used, 0),
-      totalQuota: buckets.reduce((sum, bucket) => sum + bucket.quota, 0),
       totalFiles: files.length,
       buckets,
       growthData,
@@ -7589,70 +12348,192 @@ async function handleAdminApi(req, res, url, segments) {
   }
 
   if (segments[2] === "storage-buckets" && segments.length === 3 && method === "POST") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền tạo bucket storage");
+    if (!isPlatformAdminUser(adminUser)) {
+      throw httpError(
+        403,
+        "Only Platform Admin can create storage buckets",
+        "STORAGE_BUCKET_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
+    requireAnyCapability(adminUser, ["platform.storage.manage"], "Không có quyền tạo bucket storage");
+    if (!repositories?.storageMetadata?.buckets) {
+      throw httpError(
+        503,
+        "Canonical storage metadata repository is unavailable",
+        "STORAGE_METADATA_REPOSITORY_UNAVAILABLE",
+      );
+    }
     const payload = await readJsonBody(req);
     const id = sanitizeStorageId(payload.id || payload.name);
-    if (getStorageBucket(id)) {
-      throw httpError(409, "Bucket đã tồn tại");
+    const reservedBucket = getStorageBucket(id);
+    if (reservedBucket?.system) {
+      throw httpError(409, "A system bucket already uses this id", "STORAGE_SYSTEM_BUCKET_RESERVED");
     }
-    const bucket = normalizeBucketPayload(payload);
-    db.storageBuckets.unshift(bucket);
-    await appendAudit("storage.bucket.create", req, {
-      resourceType: "storage_bucket",
-      resourceId: bucket.id,
-      organizationId: adminUser.organizationId || "",
-      metadata: { name: bucket.name, iconKey: bucket.iconKey, colorKey: bucket.colorKey },
+    const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for storage bucket creation",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.storageMetadata.buckets.create({
+      payload,
+      idempotency: {
+        scope: getIdempotencyScope(adminUser),
+        operation: "storage.bucket.create",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint(payload),
+      },
+      audit: {
+        action: "storage.bucket.create",
+        actorUserId: adminUser.id,
+        organizationId: adminUser.organizationId || "",
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        metadata: { fields: Object.keys(payload).sort() },
+      },
     });
-    saveDb();
-    sendJson(res, 201, { bucket: buildStorageBucketSummaries().find((item) => item.id === bucket.id) });
+    const canonicalBucket = buildStorageBucketSummaries().find(
+      (item) => item.id === result.responseBody?.bucket?.id,
+    );
+    sendJson(res, result.responseStatus, {
+      bucket: canonicalBucket || result.responseBody?.bucket,
+      ...(result.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
   if (segments[2] === "storage-buckets" && segments.length === 4 && method === "DELETE") {
-    requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa bucket storage");
+    if (!isPlatformAdminUser(adminUser)) {
+      throw httpError(
+        403,
+        "Only Platform Admin can delete storage buckets",
+        "STORAGE_BUCKET_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
+    requireAnyCapability(adminUser, ["platform.storage.manage"], "Không có quyền xóa bucket storage");
+    if (!repositories?.storageMetadata?.buckets) {
+      throw httpError(
+        503,
+        "Canonical storage metadata repository is unavailable",
+        "STORAGE_METADATA_REPOSITORY_UNAVAILABLE",
+      );
+    }
     const bucketId = decodeURIComponent(segments[3]);
     const bucket = getStorageBucket(bucketId);
-    if (!bucket) {
-      throw httpError(404, "Không tìm thấy bucket");
+    if (bucket?.system) {
+      throw httpError(
+        409,
+        "System storage buckets cannot be deleted",
+        "STORAGE_SYSTEM_BUCKET_IMMUTABLE",
+      );
     }
-    if (bucket.system) {
-      throw httpError(400, "Bucket hệ thống không thể xóa");
+    const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for storage bucket deletion",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
     }
-    const files = buildStorageFileRecords().filter((file) => file.bucket === bucket.id);
-    if (files.length > 0) {
-      throw httpError(400, "Chỉ có thể xóa bucket đang rỗng");
-    }
-    db.storageBuckets = db.storageBuckets.filter((item) => item.id !== bucket.id);
-    await appendAudit("storage.bucket.delete", req, {
-      resourceType: "storage_bucket",
-      resourceId: bucket.id,
-      organizationId: adminUser.organizationId || "",
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.storageMetadata.buckets.remove({
+      bucketId,
+      idempotency: {
+        scope: getIdempotencyScope(adminUser),
+        operation: "storage.bucket.delete",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ bucketId }),
+      },
+      audit: {
+        action: "storage.bucket.delete",
+        actorUserId: adminUser.id,
+        organizationId: adminUser.organizationId || "",
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        metadata: { lifecycle: "delete" },
+      },
     });
-    saveDb();
-    sendJson(res, 200, { deleted: true, bucketId: bucket.id });
+    sendJson(res, result.responseStatus, {
+      ...result.responseBody,
+      ...(result.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
   if (segments.length === 5 && segments[2] === "storage-files" && segments[4] === "share" && method === "POST") {
     requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền tạo signed URL chia sẻ file");
+    if (!repositories?.storageMetadata?.files) {
+      throw httpError(
+        503,
+        "Canonical storage metadata repository is unavailable",
+        "STORAGE_METADATA_REPOSITORY_UNAVAILABLE",
+      );
+    }
     const fileId = decodeURIComponent(segments[3]);
     const record = getStorageRecord(fileId);
     if (!record) {
       throw httpError(404, "Không tìm thấy tệp lưu trữ");
     }
     assertCanManageStorageRecord(adminUser, record);
+    const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for storage share links",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const { audioFile, storageFile } = getStorageFileSource(record);
     const objectFile = storageFile || audioFile;
-    const shareUrl = objectFile?.objectKey
-      ? await storageAdapter.getSignedUrl(objectFile.objectKey, 900)
-      : record.downloadUrl;
-    await appendAudit("storage.share", req, {
-      resourceType: "storage_file",
-      resourceId: record.id,
-      organizationId: record.organizationId || adminUser.organizationId || "",
-      metadata: { name: record.name, bucket: record.bucket },
+    if (!objectFile?.objectKey) {
+      throw httpError(
+        409,
+        "Storage object is unavailable for signed sharing",
+        "STORAGE_OBJECT_UNAVAILABLE",
+      );
+    }
+    if (storageAdapter.provider !== "s3") {
+      throw httpError(
+        503,
+        "Signed storage sharing is unavailable without the S3 provider",
+        "STORAGE_SHARE_PROVIDER_UNAVAILABLE",
+      );
+    }
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.storageMetadata.files.recordShare({
+      fileId: record.id,
+      createResponse: async () => {
+        const shareUrl = await storageAdapter.getSignedUrl(objectFile.objectKey, 900);
+        return { url: shareUrl, shareUrl, expiresInSeconds: 900 };
+      },
+      idempotency: {
+        scope: getIdempotencyScope(
+          adminUser,
+          record.organizationId || adminUser.organizationId || "",
+        ),
+        operation: "storage.file.share",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          fileId: record.id,
+          expiresInSeconds: 900,
+        }),
+      },
+      audit: {
+        action: "storage.share",
+        actorUserId: adminUser.id,
+        organizationId: record.organizationId || adminUser.organizationId || "",
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        metadata: { name: record.name, bucket: record.bucket, expiresInSeconds: 900 },
+      },
     });
-    sendJson(res, 200, { url: shareUrl, shareUrl, expiresInSeconds: 900 });
+    sendJson(res, result.responseStatus, {
+      ...result.responseBody,
+      ...(result.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
@@ -7664,6 +12545,21 @@ async function handleAdminApi(req, res, url, segments) {
 
   if (segments[2] === "storage-files" && segments.length === 3 && method === "POST") {
     requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền upload storage");
+    if (!repositories?.storageMetadata?.files) {
+      throw httpError(
+        503,
+        "Canonical storage metadata repository is unavailable",
+        "STORAGE_METADATA_REPOSITORY_UNAVAILABLE",
+      );
+    }
+    const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for storage uploads",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const bucketId = sanitizeStorageId(url.searchParams.get("bucket") || req.headers["x-storage-bucket"], "heart-audio");
     const bucket = getStorageBucket(bucketId);
     if (!bucket) {
@@ -7671,6 +12567,14 @@ async function handleAdminApi(req, res, url, segments) {
     }
     const originalName = readString(url.searchParams.get("filename") || req.headers["x-file-name"], 240) || `${createId("file")}.bin`;
     const contentType = readString(req.headers["content-type"], 160) || "application/octet-stream";
+    const requestedVisibility = readString(url.searchParams.get("visibility"), 40).toLowerCase();
+    if (requestedVisibility && requestedVisibility !== "private") {
+      throw httpError(
+        422,
+        "Storage uploads are private; public visibility is unavailable",
+        "STORAGE_VISIBILITY_UNSUPPORTED",
+      );
+    }
     const buffer = await readRequestBuffer(req);
     if (!buffer.length) {
       throw httpError(400, "File tải lên đang rỗng");
@@ -7679,51 +12583,107 @@ async function handleAdminApi(req, res, url, segments) {
     const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
     const fileId = createId("file");
     const organizationId = getWritableWorkspaceIdForUser(adminUser, url.searchParams.get("organizationId") || req.headers["x-organization-id"]);
+    if (!getClinicById(organizationId)) {
+      throw httpError(
+        404,
+        "The target workspace was not found",
+        "STORAGE_WORKSPACE_NOT_FOUND",
+      );
+    }
     const objectKey = buildStorageObjectKey(organizationId, bucket.id, fileId, originalName);
-    const upload = await storageAdapter.putBuffer(objectKey, buffer, contentType);
     const firmwareVersion =
       bucket.id === "device-firmware"
         ? readString(url.searchParams.get("firmwareVersion") || req.headers["x-firmware-version"], 80) ||
           inferFirmwareVersionFromName(originalName)
         : "";
-    const storageFile = {
-      id: fileId,
-      bucket: bucket.id,
-      name: path.basename(originalName),
-      objectKey,
-      storageProvider: upload.provider,
-      contentType,
-      type: getStorageFileType(originalName, contentType),
-      byteSize: upload.byteSize || buffer.length,
-      checksum,
-      sha256: checksum,
-      firmwareVersion,
-      visibility: readString(url.searchParams.get("visibility"), 40) || bucket.visibility || "private",
-      tags: parseCsvList(url.searchParams.get("tags") || req.headers["x-file-tags"]),
-      uploader: adminUser.name || adminUser.email || "Quản trị hệ thống",
-      createdByUserId: adminUser.id,
-      organizationId,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-    db.storageFiles.unshift(storageFile);
-    db.storageFiles = db.storageFiles.slice(0, 1000);
-    await appendAudit("storage.upload", req, {
-      resourceType: "storage_file",
-      resourceId: storageFile.id,
-      organizationId: storageFile.organizationId,
-      metadata: { name: storageFile.name, bucket: storageFile.bucket, byteSize: storageFile.byteSize },
+    const tags = parseCsvList(url.searchParams.get("tags") || req.headers["x-file-tags"]);
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.storageMetadata.files.create({
+      prepareFile: async () => {
+        const upload = await storageAdapter.putBuffer(objectKey, buffer, contentType);
+        return {
+          id: fileId,
+          bucket: bucket.id,
+          name: path.basename(originalName),
+          objectKey,
+          storageProvider: upload.provider,
+          contentType,
+          type: getStorageFileType(originalName, contentType),
+          byteSize: upload.byteSize || buffer.length,
+          checksum,
+          sha256: checksum,
+          firmwareVersion,
+          tags,
+          uploader: adminUser.name || adminUser.email || "Quản trị hệ thống",
+          createdByUserId: adminUser.id,
+          organizationId,
+        };
+      },
+      cleanupFile: async (file) => {
+        if (file.objectKey && storageAdapter.deleteObject) {
+          await storageAdapter.deleteObject(file.objectKey);
+        }
+      },
+      idempotency: {
+        scope: getIdempotencyScope(adminUser, organizationId),
+        operation: "storage.file.upload",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          organizationId,
+          bucketId: bucket.id,
+          originalName: path.basename(originalName),
+          contentType,
+          byteSize: buffer.length,
+          checksum,
+          firmwareVersion,
+          tags,
+        }),
+      },
+      audit: {
+        action: "storage.upload",
+        actorUserId: adminUser.id,
+        organizationId,
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        metadata: {
+          name: path.basename(originalName),
+          bucket: bucket.id,
+          byteSize: buffer.length,
+          checksum,
+        },
+      },
     });
-    saveDb();
-    const file = buildStorageFileRecords(adminUser).find((item) => item.id === storageFile.id);
-    sendJson(res, 201, { file });
+    const file = buildStorageFileRecords(adminUser).find(
+      (item) => item.id === result.responseBody?.file?.id,
+    );
+    sendJson(res, result.responseStatus, {
+      file: file || result.responseBody?.file,
+      ...(result.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
   if (segments[2] === "storage-files" && segments.length === 4 && method === "DELETE") {
     requireAnyCapability(adminUser, STORAGE_MANAGE_CAPABILITIES, "Không có quyền xóa tệp storage");
+    if (!repositories?.storageMetadata?.files) {
+      throw httpError(
+        503,
+        "Canonical storage metadata repository is unavailable",
+        "STORAGE_METADATA_REPOSITORY_UNAVAILABLE",
+      );
+    }
+    const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for storage file deletion",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const fileId = decodeURIComponent(segments[3]);
-    const record = getStorageRecord(fileId);
+    const record =
+      getStorageRecord(fileId) ||
+      (await repositories.storageMetadata.files.findById(fileId, { includeDeleted: true }));
     if (!record) {
       throw httpError(404, "Không tìm thấy tệp lưu trữ");
     }
@@ -7732,148 +12692,35 @@ async function handleAdminApi(req, res, url, segments) {
     if (!storageFile) {
       throw httpError(400, "Chỉ có thể xóa tệp được tải lên thủ công từ trang lưu trữ");
     }
-    if (storageFile.objectKey && storageAdapter.deleteObject) {
-      await storageAdapter.deleteObject(storageFile.objectKey);
-    }
-    db.storageFiles = db.storageFiles.filter((item) => item.id !== storageFile.id);
-    await appendAudit("storage.delete", req, {
-      resourceType: "storage_file",
-      resourceId: storageFile.id,
-      organizationId: storageFile.organizationId || adminUser.organizationId || "",
-      metadata: { name: storageFile.name, bucket: storageFile.bucket },
-    });
-    saveDb();
-    sendJson(res, 200, { deleted: true, fileId: storageFile.id });
-    return;
-  }
-
-  if (segments[2] === "storage-stats" && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem storage workspace");
-    {
-    const files = buildStorageFileRecords(adminUser);
-    const audioBytes = files.reduce((sum, file) => sum + Number(file.byteSize || 0), 0);
-    const audioGb = bytesToGb(audioBytes);
-    const firstAudio = files[files.length - 1];
-    const buckets = [
-      {
-        id: "heart-audio",
-        desc: "Audio nghe tim/phoi tu cac luot do that",
-        used: audioGb,
-        quota: Number(db.settings.storage.audioQuotaGb || db.settings.storage.quotaGb || 1),
-        files: files.length,
-        createdAt: firstAudio ? firstAudio.uploadedAt : "",
-        visibility: "private",
-        color: "from-emerald-500 to-teal-500",
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.storageMetadata.files.remove({
+      fileId: storageFile.id,
+      deleteObject: async (file) => {
+        if (file.objectKey && storageAdapter.deleteObject) {
+          await storageAdapter.deleteObject(file.objectKey);
+        }
       },
-    ];
-    const typeData = [{ name: "Audio tim/phoi", value: audioGb, color: "#10B981" }];
-    const topBuckets = [{ name: "heart-audio", gb: audioGb }];
-    const byDay = new Map();
-    for (const file of files) {
-      const day = String(file.uploadedAt || "").split(" ")[0] || "";
-      byDay.set(day, Number(byDay.get(day) || 0) + Number(file.byteSize || 0));
-    }
-    const growthData = Array.from(byDay.entries()).map(([day, bytes]) => ({ day, gb: bytesToGb(bytes) }));
-    const recentActivity = files.slice(0, 8).map((file) => ({
-      who: file.uploader,
-      what: "da tai audio len storage",
-      target: file.name,
-      when: file.uploadedAt,
-      action: "upload",
-    }));
-    const orgUsage = new Map();
-    for (const scan of filterScansForUser(adminUser, db.scans)) {
-      const audioFile = db.audioFiles.find((file) => file.scanId === scan.id);
-      const bytes = getScanAudioByteSize(scan, audioFile);
-      const org = db.organizations.find((item) => item.id === (scan.organizationId || "org_default_clinic"));
-      const name = org ? org.name : scan.organizationId || "Smart Health";
-      orgUsage.set(name, Number(orgUsage.get(name) || 0) + bytes);
-    }
-    const topClinicUsage = Array.from(orgUsage.entries())
-      .map(([name, bytes]) => ({
-        name,
-        gb: bytesToGb(bytes),
-        percent: audioBytes > 0 ? Math.round((Number(bytes) / audioBytes) * 100) : 0,
-      }))
-      .sort((a, b) => b.gb - a.gb);
-
-    sendJson(res, 200, {
-      totalUsed: buckets.reduce((sum, bucket) => sum + bucket.used, 0),
-      totalQuota: buckets.reduce((sum, bucket) => sum + bucket.quota, 0),
-      totalFiles: files.length,
-      buckets,
-      growthData,
-      typeData,
-      topBuckets,
-      recentActivity,
-      topClinicUsage,
+      idempotency: {
+        scope: getIdempotencyScope(
+          adminUser,
+          storageFile.organizationId || adminUser.organizationId || "",
+        ),
+        operation: "storage.file.delete",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ fileId: storageFile.id }),
+      },
+      audit: {
+        action: "storage.delete",
+        actorUserId: adminUser.id,
+        organizationId: storageFile.organizationId || adminUser.organizationId || "",
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        metadata: { name: storageFile.name, bucket: storageFile.bucket },
+      },
     });
-    return;
-    }
-
-    const totalAudioCount = db.scans.filter((s) => s.wavFile).length;
-    const audioGb = (totalAudioCount * 1.5) / 1024; // ~1.5MB per file
-
-    const dicomGb = 1820;
-    const reportGb = 610;
-    const fwGb = 240;
-    const avatarGb = 95;
-
-    const buckets = [
-      { id: "medical-images", desc: "Hình ảnh DICOM, X-quang, MRI", used: dicomGb, quota: 2500, files: 184320, createdAt: "12/01/2025", visibility: "private", color: "from-blue-500 to-cyan-500" },
-      { id: "heart-audio", desc: "Audio nghe tim/phổi", used: audioGb < 1 ? 980 : Math.round(audioGb), quota: 1500, files: totalAudioCount || 92410, createdAt: "18/01/2025", visibility: "private", color: "from-emerald-500 to-teal-500" },
-      { id: "patient-reports", desc: "Báo cáo PDF", used: reportGb, quota: 1000, files: 56120, createdAt: "05/02/2025", visibility: "private", color: "from-amber-500 to-orange-500" },
-      { id: "device-firmware", desc: "Firmware OTA cho thiết bị", used: fwGb, quota: 300, files: 142, createdAt: "20/02/2025", visibility: "private", color: "from-violet-500 to-fuchsia-500" },
-      { id: "avatars", desc: "Ảnh đại diện người dùng", used: avatarGb, quota: 200, files: 4280, createdAt: "01/01/2025", visibility: "public", color: "from-rose-500 to-pink-500" },
-    ];
-
-    const typeData = [
-      { name: "DICOM", value: dicomGb, color: "#0B5C9A" },
-      { name: "Audio tim/phổi", value: buckets[1].used, color: "#10B981" },
-      { name: "PDF báo cáo", value: reportGb, color: "#F59E0B" },
-      { name: "Video", value: 420, color: "#8B5CF6" },
-      { name: "Khác", value: 370, color: "#94A3B8" },
-    ];
-
-    const topBuckets = [
-      { name: "medical-images", gb: dicomGb },
-      { name: "heart-audio", gb: buckets[1].used },
-      { name: "patient-reports", gb: reportGb },
-      { name: "device-firmware", gb: fwGb },
-      { name: "avatars", gb: avatarGb },
-    ];
-
-    const growthData = Array.from({ length: 30 }, (_, i) => ({
-      day: `${i + 1}`,
-      gb: Math.round(3800 + i * 14 + Math.sin(i / 3) * 60),
-    }));
-
-    const recentActivity = [
-      { who: "Hệ thống", what: "đã cập nhật dữ liệu", target: "db.json", when: "Vừa xong", action: "backup" }
-    ];
-
-    const topClinicUsage = [
-      { name: "PK Đa khoa Tâm Anh", gb: 642, percent: 28 },
-      { name: "PK Hô hấp Việt", gb: 488, percent: 21 },
-      { name: "PK Tim mạch Minh Tâm", gb: 392, percent: 17 },
-      { name: "PK Đa khoa Hoà Hảo", gb: 215, percent: 9 },
-      { name: "PK Sài Gòn ITO", gb: 156, percent: 7 },
-    ];
-
-    const totalUsed = buckets.reduce((s, b) => s + b.used, 0);
-    const totalQuota = buckets.reduce((s, b) => s + b.quota, 0);
-    const totalFiles = buckets.reduce((s, b) => s + b.files, 0);
-
-    sendJson(res, 200, {
-      totalUsed,
-      totalQuota,
-      totalFiles,
-      buckets,
-      growthData,
-      typeData,
-      topBuckets,
-      recentActivity,
-      topClinicUsage
+    sendJson(res, result.responseStatus, {
+      ...result.responseBody,
+      ...(result.replayed ? { idempotent: true } : {}),
     });
     return;
   }
@@ -7884,64 +12731,98 @@ async function handleAdminApi(req, res, url, segments) {
     return;
   }
 
-  if (segments[2] === "storage-files" && method === "GET") {
-    requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem tệp storage");
-    {
-    sendJson(res, 200, { files: buildStorageFileRecords(adminUser) });
-    return;
-    }
-
-    const files = db.scans.filter((s) => s.wavFile).map((s) => ({
-      id: s.id,
-      name: s.wavFile,
-      bucket: "heart-audio",
-      type: "wav",
-      size: "1.2 MB",
-      uploader: s.patientName || "Bệnh nhân",
-      uploadedAt: new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(s.createdAt)),
-      visibility: "private",
-      tags: [s.mode || "audio"]
-    }));
-
-    files.unshift(
-      { id: "f1", name: "patient_8821_ecg.dcm", bucket: "medical-images", type: "dcm", size: "24.6 MB", uploader: "BS. Trần Văn Nam", uploadedAt: "24/05/2026 09:12", visibility: "encrypted", tags: ["ecg", "khẩn cấp"] },
-      { id: "f3", name: "bao-cao-thang-05.pdf", bucket: "patient-reports", type: "pdf", size: "1.4 MB", uploader: "Admin", uploadedAt: "23/05/2026 17:25", visibility: "private", tags: ["báo cáo"] },
-      { id: "f4", name: "stetho_x1_fw_v2.1.4.bin", bucket: "device-firmware", type: "bin", size: "12.8 MB", uploader: "Hệ thống", uploadedAt: "23/05/2026 10:02", visibility: "private", tags: ["ota", "firmware"] }
-    );
-
-    sendJson(res, 200, { files });
-    return;
-  }
-
   if (segments[2] === "sync-firebase" && method === "POST") {
     requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được đồng bộ Firebase");
-    let deletedCount = 0;
-    if (FIREBASE_AUTH_ENABLED) {
-      try {
-        const listUsersResult = await getFirebaseAdmin().auth().listUsers(1000);
-        const firebaseUids = new Set(listUsersResult.users.map((u) => u.uid));
-        
-        const initialCount = db.users.length;
-        db.users = db.users.filter((user) => {
-          if (user.firebaseUid && !firebaseUids.has(user.firebaseUid) && user.role !== "admin") {
-            db.memberships = db.memberships.filter((m) => m.userId !== user.id);
-            db.sessions = db.sessions.filter((s) => s.userId !== user.id);
-            db.authSessions = db.authSessions.filter((s) => s.userId !== user.id);
-            return false;
-          }
-          return true;
-        });
-        
-        deletedCount = initialCount - db.users.length;
-        if (deletedCount > 0) {
-          addAccessLog("Admin đồng bộ Firebase: xóa tài khoản không tồn tại", { severity: "warning", userId: adminUser.id, deletedCount });
-          await saveDb();
-        }
-      } catch (err) {
-        throw httpError(500, "Lỗi khi gọi Firebase Admin API: " + err.message);
-      }
+    if (!FIREBASE_AUTH_ENABLED) {
+      throw httpError(
+        503,
+        "Firebase Admin chưa được cấu hình; không thể đối soát tài khoản",
+        "IDENTITY_PROVIDER_UNAVAILABLE",
+      );
     }
-    sendJson(res, 200, { deletedCount });
+    const firebaseAdminApp = getFirebaseAdmin(process.env);
+    if (!firebaseAdminApp) {
+      throw httpError(
+        503,
+        "Không thể khởi tạo Firebase Admin để đối soát tài khoản",
+        "IDENTITY_PROVIDER_UNAVAILABLE",
+      );
+    }
+
+    try {
+      const firebaseUsers = [];
+      let pageToken;
+      do {
+        const page = await firebaseAdminApp.auth().listUsers(1000, pageToken);
+        firebaseUsers.push(...page.users);
+        pageToken = page.pageToken;
+      } while (pageToken);
+
+      const firebaseUids = new Set(firebaseUsers.map((user) => user.uid));
+      const backendFirebaseUids = new Set(
+        db.users.map((user) => readString(user.firebaseUid, 160)).filter(Boolean),
+      );
+      const missingProviderAccounts = db.users
+        .filter((user) => {
+          const firebaseUid = readString(user.firebaseUid, 160);
+          return firebaseUid && !firebaseUids.has(firebaseUid);
+        })
+        .map((user) => ({
+          userId: user.id,
+          firebaseUid: user.firebaseUid,
+          email: readString(user.email, 160),
+          role: readString(user.role, 60),
+          accountStatus: readString(user.accountStatus || "active", 40),
+        }));
+      const missingBackendAccounts = firebaseUsers
+        .filter((user) => !backendFirebaseUids.has(user.uid))
+        .map((user) => ({
+          firebaseUid: user.uid,
+          email: readString(user.email, 160),
+          disabled: user.disabled === true,
+        }));
+
+      await appendAudit("firebase.reconcile.scan", req, {
+        actorUserId: adminUser.id,
+        resourceType: "identity_reconciliation",
+        resourceId: "firebase",
+        metadata: {
+          providerAccountCount: firebaseUsers.length,
+          backendLinkedAccountCount: backendFirebaseUids.size,
+          missingProviderAccountCount: missingProviderAccounts.length,
+          missingBackendAccountCount: missingBackendAccounts.length,
+          destructiveAction: false,
+        },
+      });
+      addAccessLog("Admin đối soát tài khoản Firebase (chỉ báo cáo)", {
+        severity: missingProviderAccounts.length || missingBackendAccounts.length ? "warning" : "info",
+        userId: adminUser.id,
+        missingProviderAccountCount: missingProviderAccounts.length,
+        missingBackendAccountCount: missingBackendAccounts.length,
+      });
+      await saveDb();
+
+      sendJson(res, 200, {
+        mode: "report_only",
+        deletedCount: 0,
+        destructiveAction: false,
+        providerAccountCount: firebaseUsers.length,
+        backendLinkedAccountCount: backendFirebaseUids.size,
+        missingProviderAccountCount: missingProviderAccounts.length,
+        missingBackendAccountCount: missingBackendAccounts.length,
+        missingProviderAccounts: missingProviderAccounts.slice(0, 200),
+        missingBackendAccounts: missingBackendAccounts.slice(0, 200),
+        resultsTruncated: missingProviderAccounts.length > 200 || missingBackendAccounts.length > 200,
+      });
+    } catch (err) {
+      if (err?.statusCode) throw err;
+      throw httpError(
+        502,
+        "Không thể đối soát tài khoản với Firebase Admin",
+        "IDENTITY_PROVIDER_RECONCILIATION_FAILED",
+        { providerCode: readString(err?.code || "", 120) },
+      );
+    }
     return;
   }
 
@@ -7987,6 +12868,87 @@ async function handleAdminApi(req, res, url, segments) {
       ? readString(payload.organizationId || payload.workspaceId, 120) || currentOrganizationId
       : currentOrganizationId;
 
+    const roleChanged = nextRole.role !== currentRole.role || nextOrganizationId !== currentOrganizationId;
+    const hasAccountStatusMutation = Object.prototype.hasOwnProperty.call(payload, "accountStatus");
+    if (roleChanged) {
+      assertManagedAdminAssignableRole({
+        currentRole: currentRole.role,
+        targetRole: nextRole.role,
+        operation: "transition",
+      });
+    }
+    if (roleChanged && hasAccountStatusMutation) {
+      throw httpError(
+        400,
+        "Hãy thay đổi vai trò/workspace và trạng thái tài khoản bằng hai yêu cầu riêng biệt",
+        "IDENTITY_MUTATIONS_MUST_BE_SEPARATE",
+      );
+    }
+
+    let roleSaga = null;
+    let roleTransition = null;
+    if (roleChanged) {
+      if (targetUser.id === adminUser.id) {
+        throw httpError(400, "Không thể tự thay đổi vai trò/workspace của tài khoản đang đăng nhập");
+      }
+      roleTransition = prepareManagedAdminRoleTransition(targetUser, nextRole, nextOrganizationId);
+      const targetState = {
+        ...roleTransition.targetState,
+        roleRequestStatus: "approved",
+        hospital: roleTransition.organization?.name || targetUser.hospital || "Smart Health",
+      };
+      roleSaga = await runIdentityProviderSaga(
+        req,
+        adminUser,
+        targetUser,
+        "change_role",
+        { role: targetState.role, organizationId: targetState.organizationId },
+        async () => {
+          const result = await setFirebaseRoleClaimsForUser(
+            targetUser,
+            roleTransition.roleInfo.claimRole,
+            targetState.organizationId,
+          );
+          return { ...result, skipped: !targetUser.firebaseUid, firebaseClaims: result.claims };
+        },
+        {
+          targetState,
+          protectLastPlatformAdmin:
+            isPlatformAdminUser(targetUser) && targetState.role !== "admin",
+        },
+      );
+      Object.assign(targetUser, roleSaga.completed.user || targetState);
+      targetUser.roleRequestStatus = "approved";
+      targetUser.hospital = targetState.hospital;
+      targetUser.title = targetUser.title || roleTransition.roleInfo.title;
+      if (roleSaga.providerResult.firebaseClaims) {
+        targetUser.firebaseClaims = roleSaga.providerResult.firebaseClaims;
+      }
+    }
+
+    let accountStatusSaga = null;
+    if (hasAccountStatusMutation) {
+      const nextStatus = readString(payload.accountStatus, 40) || "active";
+      if (!["active", "locked"].includes(nextStatus)) {
+        throw httpError(400, "Trạng thái tài khoản admin không hợp lệ");
+      }
+      if (nextStatus === "locked") {
+        assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "khóa");
+      }
+      accountStatusSaga = await runIdentityProviderSaga(
+        req,
+        adminUser,
+        targetUser,
+        nextStatus === "locked" ? "lock" : "unlock",
+        { accountStatus: nextStatus },
+        () => updateFirebaseLinkedAccount(targetUser, {
+          disabled: nextStatus === "locked",
+          revokeRefreshTokens: nextStatus === "locked",
+        }),
+      );
+      Object.assign(targetUser, accountStatusSaga.completed.user || { accountStatus: nextStatus });
+    }
+
     if (Object.prototype.hasOwnProperty.call(payload, "name")) {
       targetUser.name = readString(payload.name, 160);
     }
@@ -7996,31 +12958,6 @@ async function handleAdminApi(req, res, url, segments) {
     }
     if (Object.prototype.hasOwnProperty.call(payload, "title")) {
       targetUser.title = readString(payload.title, 120);
-    }
-
-    const roleChanged = nextRole !== currentRole || nextOrganizationId !== currentOrganizationId;
-    if (roleChanged) {
-      if (targetUser.id === adminUser.id) {
-        throw httpError(400, "Không thể tự thay đổi vai trò/workspace của tài khoản đang đăng nhập");
-      }
-      await applyManagedAdminRole(targetUser, nextRole, nextOrganizationId);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(payload, "accountStatus")) {
-      const nextStatus = readString(payload.accountStatus, 40) || "active";
-      if (!["active", "locked"].includes(nextStatus)) {
-        throw httpError(400, "Trạng thái tài khoản admin không hợp lệ");
-      }
-      if (nextStatus === "locked") {
-        assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "khóa");
-      }
-      targetUser.accountStatus = nextStatus;
-      await updateFirebaseAdminAccount(targetUser, { disabled: nextStatus === "locked" });
-      if (nextStatus === "locked") {
-        db.authSessions = db.authSessions.map((session) =>
-          session.userId === targetUser.id ? { ...session, revokedAt: session.revokedAt || nowIso() } : session,
-        );
-      }
     }
 
     await updateFirebaseAdminAccount(targetUser, { displayName: targetUser.name });
@@ -8033,7 +12970,11 @@ async function handleAdminApi(req, res, url, segments) {
       metadata: { role: targetUser.role, accountStatus: targetUser.accountStatus || "active" },
     });
     addAccessLog("Cập nhật tài khoản admin", { severity: "info", userId: adminUser.id, targetUserId: targetUser.id });
-    sendJson(res, 200, { user: publicManagedAdminAccount(targetUser) });
+    sendJson(res, 200, {
+      user: publicManagedAdminAccount(targetUser),
+      operationId: roleSaga?.completed.identityOperation.id || accountStatusSaga?.completed.identityOperation.id,
+      replayed: roleSaga?.replayed || accountStatusSaga?.replayed || false,
+    });
     return;
   }
 
@@ -8045,38 +12986,50 @@ async function handleAdminApi(req, res, url, segments) {
     if (nextPassword.length < 8) {
       throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự");
     }
-    if (FIREBASE_AUTH_ENABLED) {
-      if (!targetUser.firebaseUid) {
-        throw httpError(400, "Tài khoản này chưa liên kết Firebase Auth nên không thể đặt lại mật khẩu");
-      }
-      const firebaseAdminApp = getFirebaseAdmin(process.env);
-      if (!firebaseAdminApp) {
-        throw httpError(503, "Firebase Admin chưa sẵn sàng");
-      }
-      await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, { password: nextPassword, disabled: false });
-      await firebaseAdminApp.auth().revokeRefreshTokens(targetUser.firebaseUid);
-    } else {
-      assertDemoAuthAllowed();
-      targetUser.password = nextPassword;
-    }
-    targetUser.accountStatus = "active";
-    targetUser.updatedAt = nowIso();
-    db.authSessions = db.authSessions.map((session) =>
-      session.userId === targetUser.id ? { ...session, revokedAt: session.revokedAt || nowIso() } : session,
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      "reset_password",
+      { password: nextPassword },
+      async () => {
+        if (!FIREBASE_AUTH_ENABLED) {
+          assertDemoAuthAllowed();
+          targetUser.password = nextPassword;
+          return { updated: true, skipped: true };
+        }
+        if (!targetUser.firebaseUid) {
+          const error = httpError(400, "Tài khoản này chưa liên kết Firebase Auth nên không thể đặt lại mật khẩu");
+          error.code = "IDENTITY_NOT_LINKED";
+          throw error;
+        }
+        const firebaseAdminApp = getFirebaseAdmin(process.env);
+        if (!firebaseAdminApp) {
+          const error = httpError(503, "Firebase Admin chưa sẵn sàng");
+          error.code = "IDENTITY_PROVIDER_UNAVAILABLE";
+          throw error;
+        }
+        await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, { password: nextPassword, disabled: false });
+        await firebaseAdminApp.auth().revokeRefreshTokens(targetUser.firebaseUid);
+        return { updated: true, firebaseDisabled: false, firebaseTokensRevoked: true };
+      },
     );
-    await persistUserRecord(targetUser);
-    await appendAudit("admin.user.reset_password", req, {
-      actorUserId: adminUser.id,
-      organizationId: targetUser.organizationId || "",
-      resourceType: "user",
-      resourceId: targetUser.id,
-    });
+    Object.assign(targetUser, saga.completed.user || { accountStatus: "active" });
+    if (!FIREBASE_AUTH_ENABLED) {
+      targetUser.password = nextPassword;
+      await persistUserRecord(targetUser);
+    }
     createNotification("warning", "Mật khẩu admin đã được đặt lại", `Tài khoản ${targetUser.email} vừa được cấp mật khẩu mới.`, {
       userId: adminUser.id,
       organizationId: targetUser.organizationId || "",
       targetUserId: targetUser.id,
     });
-    sendJson(res, 200, { ok: true, user: publicManagedAdminAccount(targetUser) });
+    sendJson(res, 200, {
+      ok: true,
+      user: publicManagedAdminAccount(targetUser),
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
+    });
     return;
   }
 
@@ -8087,21 +13040,25 @@ async function handleAdminApi(req, res, url, segments) {
     if (action === "lock") {
       assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "khóa");
     }
-    targetUser.accountStatus = action === "lock" ? "locked" : "active";
-    await updateFirebaseAdminAccount(targetUser, { disabled: action === "lock" });
-    if (action === "lock") {
-      db.authSessions = db.authSessions.map((session) =>
-        session.userId === targetUser.id ? { ...session, revokedAt: session.revokedAt || nowIso() } : session,
-      );
-    }
-    await persistUserRecord(targetUser);
-    await appendAudit(`admin.user.${action}`, req, {
-      actorUserId: adminUser.id,
-      organizationId: targetUser.organizationId || "",
-      resourceType: "user",
-      resourceId: targetUser.id,
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      action,
+      { accountStatus: action === "lock" ? "locked" : "active" },
+      () => updateFirebaseLinkedAccount(targetUser, {
+        disabled: action === "lock",
+        revokeRefreshTokens: action === "lock",
+      }),
+    );
+    Object.assign(targetUser, saga.completed.user || {
+      accountStatus: action === "lock" ? "locked" : "active",
     });
-    sendJson(res, 200, { user: publicManagedAdminAccount(targetUser) });
+    sendJson(res, 200, {
+      user: publicManagedAdminAccount(targetUser),
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
+    });
     return;
   }
 
@@ -8109,45 +13066,24 @@ async function handleAdminApi(req, res, url, segments) {
     requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được xóa tài khoản admin");
     const targetUser = await findManagedAdminAccount(decodeURIComponent(segments[3]));
     assertAdminAccountCanBeLockedOrDeleted(adminUser, targetUser, "xóa");
-    let firebaseDeleted = false;
-    let firebaseAlreadyMissing = false;
-    if (targetUser.firebaseUid && FIREBASE_AUTH_ENABLED) {
-      const firebaseAdminApp = getFirebaseAdmin(process.env);
-      if (firebaseAdminApp) {
-        try {
-          await firebaseAdminApp.auth().deleteUser(targetUser.firebaseUid);
-          firebaseDeleted = true;
-        } catch (err) {
-          if (err && err.code === "auth/user-not-found") {
-            firebaseAlreadyMissing = true;
-          } else {
-            throw err;
-          }
-        }
-      }
-    }
-    if (repositories) {
-      await repositories.users.deleteById(targetUser.id);
-    } else {
-      db.users = db.users.filter((user) => user.id !== targetUser.id);
-      db.memberships = db.memberships.filter((membership) => membership.userId !== targetUser.id);
-      db.sessions = db.sessions.filter((session) => session.userId !== targetUser.id);
-      db.authSessions = db.authSessions.filter((session) => session.userId !== targetUser.id);
-      await saveDb();
-    }
-    await appendAudit("admin.user.delete", req, {
-      actorUserId: adminUser.id,
-      organizationId: targetUser.organizationId || "",
-      resourceType: "user",
-      resourceId: targetUser.id,
-      metadata: { firebaseUid: targetUser.firebaseUid || "", firebaseDeleted, firebaseAlreadyMissing },
-    });
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      "delete",
+      { targetUserId: targetUser.id },
+      () => deleteFirebaseLinkedAccount(targetUser),
+    );
+    const firebaseDeleted = saga.providerResult.firebaseDeleted === true;
+    const firebaseAlreadyMissing = saga.providerResult.firebaseAlreadyMissing === true;
     sendJson(res, 200, {
-      deleted: true,
+      deleted: saga.completed.deleted === true,
       userId: targetUser.id,
       firebaseUid: targetUser.firebaseUid || "",
       firebaseDeleted,
       firebaseAlreadyMissing,
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
     });
     return;
   }
@@ -8156,10 +13092,17 @@ async function handleAdminApi(req, res, url, segments) {
     if (segments.length === 3 && method === "GET") {
       requireAnyCapability(adminUser, WORKSPACE_VIEW_CAPABILITIES, "Không có quyền xem workspace");
       const currentWorkspaceId = getUserWorkspaceContext(adminUser).currentWorkspaceId;
-      const sourceWorkspaces = isPlatformAdminUser(adminUser)
-        ? db.organizations
-        : db.organizations.filter((item) => item.id === currentWorkspaceId);
-      const clinics = sourceWorkspaces.map(publicWorkspace);
+      const pageResult = await requireWorkspaceLifecycleRepository().list({
+        organizationId: isPlatformAdminUser(adminUser) ? "" : currentWorkspaceId,
+        q: readString(url.searchParams.get("q"), 160),
+        status: readString(url.searchParams.get("status"), 40),
+        workspaceType: readString(url.searchParams.get("workspaceType"), 80),
+        page: url.searchParams.get("page"),
+        limit: url.searchParams.get("limit"),
+        sort: readString(url.searchParams.get("sort"), 80),
+      });
+      setWorkspacePaginationHeaders(res, pageResult);
+      const clinics = pageResult.items.map(publicWorkspace);
       sendJson(res, 200, { clinics, workspaces: clinics });
       return;
     }
@@ -8167,127 +13110,142 @@ async function handleAdminApi(req, res, url, segments) {
     if (segments.length === 3 && method === "POST") {
       requireAnyCapability(adminUser, ["platform.workspaces.manage"], "Chỉ platform admin mới được tạo workspace");
       const payload = await readJsonBody(req);
-      const name = readString(payload.name, 160);
-      if (!name) {
-        throw httpError(400, "Tên phòng khám là bắt buộc");
+      const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+      if (!idempotencyKey) {
+        throw httpError(400, "Idempotency-Key is required for workspace creation", "IDEMPOTENCY_KEY_REQUIRED");
       }
-      const id = readString(payload.id, 120) || createId("org");
-      if (db.organizations.some((item) => item.id === id)) {
-        throw httpError(409, "Mã phòng khám đã tồn tại");
-      }
-      const clinic = {
-        id,
-        name,
-        type: readString(payload.type, 80) || "general",
-        workspaceType: normalizeWorkspaceType(payload.workspaceType || payload.type, "clinic"),
-        address: readString(payload.address, 240),
-        phone: readString(payload.phone, 40),
-        email: readString(payload.email, 160).toLowerCase(),
-        website: readString(payload.website, 240),
-        status: readString(payload.status, 40) || "active",
-        legalName: readString(payload.legalName, 200),
-        representative: readString(payload.representative, 160),
-        ownerUserId: readString(payload.ownerUserId, 120),
-        packageId: readString(payload.packageId, 120),
-        subscriptionStatus: readString(payload.subscriptionStatus, 40) || "trial",
-        billingCycle: readString(payload.billingCycle, 40) || "monthly",
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-      if (repositories) {
-        await repositories.organizations.upsert(clinic);
-      } else {
-        db.organizations.unshift(clinic);
-      }
-      await appendAudit("clinic.create", req, {
-        actorUserId: adminUser.id,
-        organizationId: clinic.id,
-        resourceType: "organization",
-        resourceId: clinic.id,
+      const workspaceId = readString(payload.id, 120) || createId("org");
+      const requestContext = getRequestContext(req) || createRequestContext(req);
+      const result = await requireWorkspaceLifecycleRepository().create({
+        workspaceId,
+        payload,
+        idempotency: {
+          scope: getIdempotencyScope(adminUser),
+          operation: "workspace.create",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({ workspaceId, payload }),
+        },
+        audit: {
+          action: "workspace.create",
+          actorUserId: adminUser.id,
+          organizationId: workspaceId,
+          resourceType: "organization",
+          resourceId: workspaceId,
+          ip: requestContext.ip || "",
+          userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        },
       });
-      addAccessLog(`Tạo phòng khám ${clinic.name}`, { severity: "success", userId: adminUser.id });
-      await saveDb();
-      sendJson(res, 201, { clinic: publicWorkspace(clinic), workspace: publicWorkspace(clinic) });
+      if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+      const workspace = publicWorkspace(result.responseBody.workspace);
+      sendJson(res, result.responseStatus, { ...result.responseBody, workspace, clinic: workspace });
+      return;
+    }
+
+    if (segments.length === 5 && segments[4] === "owner-approval" && method === "POST") {
+      requireAnyCapability(
+        adminUser,
+        ["platform.workspaces.manage"],
+        "Chỉ platform admin mới được xác nhận chủ workspace",
+      );
+      const workspaceId = decodeURIComponent(segments[3]);
+      const payload = await readJsonBody(req);
+      const expectedVersion = Number(getWorkspaceExpectedVersion(req, payload, url));
+      if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+        throw httpError(
+          400,
+          "A positive integer workspace version is required",
+          "WORKSPACE_VERSION_REQUIRED",
+        );
+      }
+      const workspace = await requireWorkspaceLifecycleRepository().findById(workspaceId);
+      if (!workspace) {
+        throw httpError(404, "Không tìm thấy workspace", "WORKSPACE_NOT_FOUND");
+      }
+      if (Number(workspace.version || 1) !== expectedVersion) {
+        throw httpError(
+          409,
+          "Workspace was changed by another operation",
+          "WORKSPACE_VERSION_CONFLICT",
+          { expectedVersion, currentVersion: Number(workspace.version || 1) },
+        );
+      }
+      if (workspace.status !== "pending") {
+        throw httpError(
+          409,
+          "Workspace owner can only be approved while the workspace is pending",
+          "WORKSPACE_OWNER_APPROVAL_STATUS_INVALID",
+          { currentStatus: workspace.status, requiredStatus: "pending" },
+        );
+      }
+      const approval = await approveWorkspaceOwnerIdentity(req, adminUser, workspace, payload);
+      if (approval.replayed) res.setHeader("Idempotency-Replayed", "true");
+      const canonicalWorkspace = publicWorkspace(approval.workspace);
+      sendJson(res, 200, {
+        ...approval,
+        workspace: canonicalWorkspace,
+        clinic: canonicalWorkspace,
+      });
       return;
     }
 
     if (segments.length === 5 && segments[4] === "package" && method === "POST") {
       requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền gán gói dịch vụ");
-      const clinicId = decodeURIComponent(segments[3]);
-      const clinic = db.organizations.find((item) => item.id === clinicId);
-      if (!clinic) {
-        throw httpError(404, "Không tìm thấy workspace");
-      }
-      const payload = await readJsonBody(req);
-      const packageId = readString(payload.packageId, 120);
-      const servicePackage = db.servicePackages.find((item) => item.id === packageId);
-      if (!servicePackage) {
-        throw httpError(404, "Không tìm thấy gói dịch vụ");
-      }
-      clinic.packageId = packageId;
-      clinic.subscriptionStatus = readString(payload.subscriptionStatus, 40) || clinic.subscriptionStatus || "active";
-      clinic.billingCycle = readString(payload.billingCycle, 40) || servicePackage.duration || "monthly";
-      clinic.updatedAt = nowIso();
-      db.subscriptions.unshift({
-        id: createId("sub"),
-        organizationId: clinic.id,
-        packageId,
-        status: clinic.subscriptionStatus,
-        billingCycle: clinic.billingCycle,
-        startedAt: nowIso(),
-        createdAt: nowIso(),
-      });
-      await appendAudit("workspace.package.assign", req, {
-        actorUserId: adminUser.id,
-        organizationId: clinic.id,
-        resourceType: "organization",
-        resourceId: clinic.id,
-        metadata: { packageId },
-      });
-      await saveDb();
-      sendJson(res, 200, { clinic: publicWorkspace(clinic), workspace: publicWorkspace(clinic) });
-      return;
+      throw httpError(
+        410,
+        "Legacy package assignment is retired; update package fields through the versioned workspace PATCH contract",
+        "WORKSPACE_PACKAGE_ROUTE_RETIRED",
+      );
     }
 
     if (segments.length === 4 && method === "DELETE") {
       requireAnyCapability(adminUser, ["platform.workspaces.manage"], "Chỉ platform admin mới được xóa workspace");
-      const clinicId = decodeURIComponent(segments[3]);
-      const clinic = db.organizations.find((item) => item.id === clinicId);
-      if (!clinic) {
-        throw httpError(404, "Không tìm thấy phòng khám");
+      const workspaceId = decodeURIComponent(segments[3]);
+      const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+      if (!idempotencyKey) {
+        throw httpError(400, "Idempotency-Key is required for workspace archival", "IDEMPOTENCY_KEY_REQUIRED");
       }
-      const linkSummary = getWorkspaceLinkSummary(clinicId);
-      if (linkSummary.total > 0) {
-        throw httpError(
-          409,
-          "Không thể xóa phòng khám đang còn tài khoản, bệnh nhân hoặc thiết bị liên kết",
-          "WORKSPACE_IN_USE",
-          { workspaceId: clinicId, workspaceName: clinic.name, ...linkSummary },
-        );
+      let payload = {};
+      const contentLength = Number(req.headers["content-length"] || 0);
+      if (contentLength > 0 || String(req.headers["transfer-encoding"] || "").toLowerCase() === "chunked") {
+        payload = await readJsonBody(req);
       }
-      db.organizations = db.organizations.filter((item) => item.id !== clinicId);
-      await appendAudit("clinic.delete", req, {
-        actorUserId: adminUser.id,
-        organizationId: clinicId,
-        resourceType: "organization",
-        resourceId: clinicId,
+      const expectedVersion = getWorkspaceExpectedVersion(req, payload, url);
+      const requestContext = getRequestContext(req) || createRequestContext(req);
+      const result = await requireWorkspaceLifecycleRepository().archive({
+        workspaceId,
+        expectedVersion,
+        idempotency: {
+          scope: getIdempotencyScope(adminUser, workspaceId),
+          operation: "workspace.archive",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({ workspaceId, expectedVersion }),
+        },
+        audit: {
+          action: "workspace.archive",
+          actorUserId: adminUser.id,
+          organizationId: workspaceId,
+          resourceType: "organization",
+          resourceId: workspaceId,
+          ip: requestContext.ip || "",
+          userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        },
       });
-      addAccessLog(`Xóa phòng khám ${clinic.name}`, { severity: "warning", userId: adminUser.id });
-      await saveDb();
-      sendJson(res, 200, { deleted: true, clinicId });
+      if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, result.responseStatus, { ...result.responseBody, clinicId: workspaceId });
       return;
     }
 
     if (segments.length === 4 && method === "PATCH") {
       const clinicId = decodeURIComponent(segments[3]);
-      const clinic = db.organizations.find((item) => item.id === clinicId);
+      const storedClinic = getClinicById(clinicId);
       requireAnyCapability(adminUser, WORKSPACE_MANAGE_CAPABILITIES, "Không có quyền cập nhật workspace");
       if (!isPlatformAdminUser(adminUser) && clinicId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
         throw httpError(403, "Workspace nam ngoai pham vi hien tai");
       }
-      if (!clinic) {
+      if (!storedClinic) {
         throw httpError(404, "Không tìm thấy phòng khám");
       }
+      const clinic = { ...storedClinic };
 
       const payload = await readJsonBody(req);
       if (!isPlatformAdminUser(adminUser)) {
@@ -8297,299 +13255,345 @@ async function handleAdminApi(req, res, url, segments) {
           }
         }
       }
-      if (Object.prototype.hasOwnProperty.call(payload, "name")) {
-        const name = readString(payload.name, 160);
-        if (!name) {
-          throw httpError(400, "Tên phòng khám là bắt buộc");
+      if (Object.prototype.hasOwnProperty.call(payload, "ownerUserId")) {
+        if (!isPlatformAdminUser(adminUser)) {
+          throw httpError(403, "Chỉ platform admin mới được chuyển chủ workspace");
         }
-        clinic.name = name;
-      }
-      for (const field of [
-        "type",
-        "workspaceType",
-        "address",
-        "phone",
-        "email",
-        "website",
-        "status",
-        "legalName",
-        "representative",
-        "ownerUserId",
-        "packageId",
-        "subscriptionStatus",
-        "billingCycle",
-      ]) {
-        if (Object.prototype.hasOwnProperty.call(payload, field)) {
-          const maxLength = field === "address" || field === "website" ? 240 : field === "legalName" ? 200 : 160;
-          clinic[field] = field === "workspaceType"
-            ? normalizeWorkspaceType(payload[field], clinic.workspaceType || "clinic")
-            : readString(payload[field], maxLength);
+        const nextOwnerUserId = readString(payload.ownerUserId, 120);
+        if (!nextOwnerUserId) {
+          throw httpError(400, "Chủ workspace mới là bắt buộc", "WORKSPACE_OWNER_REQUIRED");
         }
-      }
-      if (!["active", "inactive", "pending", "needs_info", "rejected"].includes(String(clinic.status || "active"))) {
-        clinic.status = "active";
-      }
-      clinic.updatedAt = nowIso();
+        const combinedFields = Object.keys(payload).filter(
+          (field) => !["ownerUserId", "idempotencyKey", "version", "expectedVersion"].includes(field),
+        );
+        if (combinedFields.length > 0) {
+          throw httpError(
+            400,
+            "Hãy chuyển chủ workspace bằng một yêu cầu riêng",
+            "WORKSPACE_OWNER_TRANSFER_MUST_BE_SEPARATE",
+            { combinedFields },
+          );
+        }
+        const idempotencyKey = getIdempotencyKey(req, payload);
+        if (!idempotencyKey) {
+          throw httpError(400, "Idempotency-Key là bắt buộc khi chuyển chủ workspace", "IDEMPOTENCY_KEY_REQUIRED");
+        }
+        if (
+          !repositories?.organizations?.beginOwnerTransfer ||
+          !repositories?.organizations?.completeOwnerTransfer
+        ) {
+          throw httpError(503, "Kho dữ liệu chuyển chủ workspace chưa sẵn sàng", "WORKSPACE_OWNER_TRANSFER_UNAVAILABLE");
+        }
+        if (nextOwnerUserId === adminUser.id) {
+          throw httpError(
+            400,
+            "Không thể tự chuyển tài khoản platform admin hiện tại thành chủ workspace",
+            "WORKSPACE_OWNER_SELF_TRANSFER_NOT_ALLOWED",
+          );
+        }
+        const expectedVersion = Number(getWorkspaceExpectedVersion(req, payload, url));
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+          throw httpError(
+            400,
+            "A positive integer workspace version is required for owner transfer",
+            "WORKSPACE_VERSION_REQUIRED",
+          );
+        }
+        const requestContext = getRequestContext(req) || createRequestContext(req);
+        const idempotency = {
+          scope: getIdempotencyScope(adminUser, clinicId),
+          operation: "workspace.owner.transfer",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            organizationId: clinicId,
+            newOwnerUserId: nextOwnerUserId,
+            expectedVersion,
+          }),
+        };
+        const reservation = await repositories.organizations.beginOwnerTransfer({
+          organizationId: clinicId,
+          newOwnerUserId: nextOwnerUserId,
+          actorUserId: adminUser.id,
+          expectedVersion,
+          idempotency,
+          ip: requestContext.ip || req.socket.remoteAddress || "",
+          userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        });
 
-      let ownerTransition = null;
-      if (isPlatformAdminUser(adminUser) && clinic.ownerUserId) {
-        const owner = db.users.find((item) => item.id === clinic.ownerUserId);
-        if (owner && owner.requestedRole === "workspace_owner") {
-          const nextStatus = String(clinic.status || "active");
-          const rejectReason = readString(payload.reason || payload.rejectReason, 1000);
-          const infoMessage = readString(payload.message || payload.requestInfoMessage || payload.reason, 1000);
-          const requiredFields = normalizeRoleInfoFields(payload.requiredFields);
-          let firebaseClaims = { updated: false };
-
-          const setOwnerClaims = async (role) => {
-            try {
-              return await setFirebaseRoleClaimsForUser(owner, role, clinic.id);
-            } catch (err) {
-              return {
-                updated: false,
-                warning: "Khong the cap nhat Firebase custom claims cho workspace owner.",
-                error: err && err.message ? err.message : String(err),
-              };
-            }
-          };
-
-          if (nextStatus === "active") {
-            owner.role = "workspace_owner";
-            owner.requestedRole = "workspace_owner";
-            owner.roleRequestStatus = "approved";
-            owner.accountStatus = "active";
-            owner.roleApprovedAt = nowIso();
-            owner.roleRejectedAt = "";
-            owner.roleRejectReason = "";
-            owner.roleInfoRequestAt = "";
-            owner.roleInfoRequestMessage = "";
-            owner.roleInfoRequiredFields = [];
-            owner.organizationId = clinic.id;
-            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
-            owner.accountType = owner.accountType || "workspace_owner";
-            ensureMembershipForUser(owner);
-            firebaseClaims = await setOwnerClaims("workspace_owner");
-            owner.firebaseClaims = firebaseClaims;
-            await createBackendNotification({
-              type: "success",
-              userId: owner.id,
-              organizationId: clinic.id,
-              title: "Workspace đã được phê duyệt",
-              message: `${clinic.name} đã được kích hoạt. Tài khoản chủ workspace có thể truy cập portal.`,
-              metadata: { actionPath: "/portal", workspaceId: clinic.id },
-            });
-          } else if (nextStatus === "rejected") {
-            owner.role = owner.role === "admin" ? "admin" : "patient";
-            owner.requestedRole = "workspace_owner";
-            owner.roleRequestStatus = "rejected";
-            owner.accountStatus = "active";
-            owner.roleApprovedAt = "";
-            owner.roleRejectedAt = nowIso();
-            owner.roleRejectReason = rejectReason || owner.roleRejectReason || "Workspace request rejected.";
-            owner.roleInfoRequestAt = "";
-            owner.roleInfoRequestMessage = "";
-            owner.roleInfoRequiredFields = [];
-            owner.organizationId = clinic.id;
-            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
-            ensureMembershipForUser(owner);
-            firebaseClaims = await setOwnerClaims("patient");
-            owner.firebaseClaims = firebaseClaims;
-            await createBackendNotification({
-              type: "warning",
-              userId: owner.id,
-              organizationId: clinic.id,
-              title: "Workspace bị từ chối",
-              message: owner.roleRejectReason,
-              metadata: { actionPath: "/bi-tu-choi", workspaceId: clinic.id },
-            });
-          } else if (nextStatus === "needs_info") {
-            if (!infoMessage) {
-              throw httpError(400, "Additional information message is required");
-            }
-            owner.role = owner.role === "admin" ? "admin" : "patient";
-            owner.requestedRole = "workspace_owner";
-            owner.roleRequestStatus = "needs_info";
-            owner.accountStatus = "active";
-            owner.roleApprovedAt = "";
-            owner.roleRejectedAt = "";
-            owner.roleRejectReason = "";
-            owner.roleInfoRequestAt = nowIso();
-            owner.roleInfoRequestMessage = infoMessage;
-            owner.roleInfoRequiredFields = requiredFields.length
-              ? requiredFields
-              : ["workspaceName", "address", "representative", "phone"];
-            owner.organizationId = clinic.id;
-            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
-            ensureMembershipForUser(owner);
-            firebaseClaims = await setOwnerClaims("patient");
-            owner.firebaseClaims = firebaseClaims;
-            await createBackendNotification({
-              type: "warning",
-              userId: owner.id,
-              organizationId: clinic.id,
-              title: "Cần bổ sung hồ sơ workspace",
-              message: infoMessage,
-              metadata: {
-                actionPath: "/can-bo-sung",
-                workspaceId: clinic.id,
-                requiredFields: owner.roleInfoRequiredFields,
-              },
-            });
-          } else if (nextStatus === "pending") {
-            owner.role = owner.role === "admin" ? "admin" : "patient";
-            owner.requestedRole = "workspace_owner";
-            owner.roleRequestStatus = "pending";
-            owner.accountStatus = "active";
-            owner.roleApprovedAt = "";
-            owner.roleRejectedAt = "";
-            owner.roleRejectReason = "";
-            owner.roleInfoRequestAt = "";
-            owner.roleInfoRequestMessage = "";
-            owner.roleInfoRequiredFields = [];
-            owner.organizationId = clinic.id;
-            owner.workspaceType = normalizeWorkspaceType(clinic.workspaceType || clinic.type, "clinic");
-            ensureMembershipForUser(owner);
-            firebaseClaims = await setOwnerClaims("patient");
-            owner.firebaseClaims = firebaseClaims;
+        let transfer = reservation;
+        let ownerIdentitySaga = null;
+        if (reservation.state !== "completed") {
+          const replacementOwner = reservation.replacementOwner;
+          if (!replacementOwner) {
+            throw httpError(404, "Không tìm thấy tài khoản chủ workspace mới", "WORKSPACE_OWNER_NOT_FOUND");
           }
-
-          if (["active", "pending", "needs_info", "rejected"].includes(nextStatus)) {
-            await persistUserRecord(owner);
-            ownerTransition = {
-              userId: owner.id,
-              role: owner.role,
-              requestedRole: owner.requestedRole,
-              roleRequestStatus: owner.roleRequestStatus,
-              firebaseClaims,
+          if (reservation.requiresIdentityTransition) {
+            const targetState = {
+              role: "workspace_owner",
+              requestedRole: "workspace_owner",
+              roleRequestStatus: "approved",
+              organizationId: clinicId,
+              accountStatus: "active",
+              hospital: reservation.organization?.name || replacementOwner.hospital || "Shcare",
             };
+            ownerIdentitySaga = await runIdentityProviderSaga(
+              req,
+              adminUser,
+              replacementOwner,
+              "change_role",
+              { role: "workspace_owner", organizationId: clinicId },
+              async () => {
+                const providerResult = await setFirebaseRoleClaimsForUser(
+                  replacementOwner,
+                  "workspace_owner",
+                  clinicId,
+                );
+                return {
+                  ...providerResult,
+                  skipped: !replacementOwner.firebaseUid,
+                  firebaseClaims: providerResult.claims,
+                };
+              },
+              {
+                targetState,
+                protectLastPlatformAdmin: isPlatformAdminUser(replacementOwner),
+                deferBackendFinalization: true,
+              },
+            );
           }
+          transfer = await repositories.organizations.completeOwnerTransfer({
+            organizationId: clinicId,
+            newOwnerUserId: nextOwnerUserId,
+            actorUserId: adminUser.id,
+            identityOperationId: ownerIdentitySaga?.completed.identityOperation.id || reservation.identityOperationId || "",
+            expectedVersion,
+            idempotency,
+            ip: requestContext.ip || req.socket.remoteAddress || "",
+            userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+          });
+        }
+        Object.assign(clinic, transfer.organization || { ownerUserId: nextOwnerUserId });
+        if (!transfer.replayed) {
+          addAccessLog("Chuyển chủ workspace", {
+            severity: "warning",
+            userId: adminUser.id,
+            workspaceId: clinicId,
+            previousOwnerUserId: transfer.previousOwnerUserId || "",
+            newOwnerUserId: nextOwnerUserId,
+          });
+          await saveDb();
+        }
+        sendJson(res, 200, {
+          clinic: publicWorkspace(clinic),
+          workspace: publicWorkspace(clinic),
+          ownerTransfer: {
+            previousOwnerUserId: transfer.previousOwnerUserId || "",
+            newOwnerUserId: nextOwnerUserId,
+            membership: transfer.membership || null,
+          },
+          operationId:
+            transfer.operationId ||
+            reservation.operationId ||
+            transfer.identityOperationId ||
+            ownerIdentitySaga?.completed.identityOperation.id ||
+            "",
+          replayed: transfer.replayed === true || reservation.state === "completed",
+        });
+        return;
+      }
+      const idempotencyKey = getIdempotencyKey(req, payload);
+      if (!idempotencyKey) {
+        throw httpError(400, "Idempotency-Key is required for workspace mutations", "IDEMPOTENCY_KEY_REQUIRED");
+      }
+      const expectedVersion = getWorkspaceExpectedVersion(req, payload, url);
+      const hasStatusTransition = Object.prototype.hasOwnProperty.call(payload, "status");
+      if (hasStatusTransition) {
+        const combinedFields = Object.keys(payload).filter(
+          (field) => ![
+            "status",
+            "version",
+            "expectedVersion",
+            "idempotencyKey",
+            "reason",
+            "rejectReason",
+            "message",
+            "requestInfoMessage",
+            "requiredFields",
+          ].includes(field),
+        );
+        if (combinedFields.length > 0) {
+          throw httpError(
+            400,
+            "Hãy chuyển trạng thái workspace bằng một yêu cầu riêng",
+            "WORKSPACE_TRANSITION_MUST_BE_SEPARATE",
+            { combinedFields },
+          );
         }
       }
 
-      if (repositories) {
-        await repositories.organizations.upsert(clinic);
-      } else {
-        await saveDb();
-      }
-      await appendAudit("clinic.update", req, {
+      const requestContext = getRequestContext(req) || createRequestContext(req);
+      const nextStatus = readString(payload.status, 40).toLowerCase();
+      const operation = hasStatusTransition ? "workspace.transition" : "workspace.update";
+      const idempotency = {
+        scope: getIdempotencyScope(adminUser, clinicId),
+        operation,
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ clinicId, expectedVersion, payload }),
+      };
+      const audit = {
+        action: operation,
         actorUserId: adminUser.id,
-        organizationId: clinic.id,
+        organizationId: clinicId,
         resourceType: "organization",
-        resourceId: clinic.id,
-        metadata: { status: clinic.status || "active", ownerTransition },
+        resourceId: clinicId,
+        ip: requestContext.ip || "",
+        userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+        metadata: {},
+      };
+      const result = hasStatusTransition
+        ? await requireWorkspaceLifecycleRepository().transition({
+            workspaceId: clinicId,
+            expectedVersion,
+            nextStatus,
+            reason: readString(payload.reason || payload.rejectReason, 1000),
+            message: readString(payload.message || payload.requestInfoMessage || payload.reason, 1000),
+            requiredFields: normalizeRoleInfoFields(payload.requiredFields),
+            idempotency,
+            audit,
+          })
+        : await requireWorkspaceLifecycleRepository().update({
+            workspaceId: clinicId,
+            expectedVersion,
+            payload,
+            idempotency,
+            audit,
+          });
+      if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+      const workspace = publicWorkspace(result.responseBody.workspace);
+      sendJson(res, result.responseStatus, {
+        ...result.responseBody,
+        workspace,
+        clinic: workspace,
       });
-      addAccessLog(`Cập nhật phòng khám ${clinic.name}`, { severity: "success", userId: adminUser.id });
-      await saveDb();
-      sendJson(res, 200, { clinic: publicWorkspace(clinic), workspace: publicWorkspace(clinic) });
       return;
     }
   }
 
   if (segments[2] === "packages") {
+    if (!isPlatformAdminUser(adminUser)) {
+      throw httpError(
+        403,
+        "Only Platform Admin can manage the service package catalog",
+        "PACKAGE_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
+    if (!repositories?.servicePackages) {
+      throw httpError(
+        503,
+        "The canonical service package repository is unavailable",
+        "PACKAGE_REPOSITORY_UNAVAILABLE",
+      );
+    }
+
     if (segments.length === 3 && method === "GET") {
       requireAnyCapability(adminUser, ["platform.packages.manage"], "Không có quyền xem gói dịch vụ hệ thống");
-      sendJson(res, 200, { packages: db.servicePackages });
+      sendJson(res, 200, { packages: await repositories.servicePackages.list() });
       return;
     }
 
     if (segments.length === 3 && method === "POST") {
       requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền tạo gói dịch vụ");
       const payload = await readJsonBody(req);
-      const name = readString(payload.name || payload.packageName, 160);
-      if (!name) {
-        throw httpError(400, "Tên gói dịch vụ là bắt buộc");
+      const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+      if (!idempotencyKey) {
+        throw httpError(400, "Idempotency-Key is required for package creation", "IDEMPOTENCY_KEY_REQUIRED");
       }
-      const servicePackage = {
-        id: readString(payload.id, 120) || createId("pkg"),
-        name,
-        type: readString(payload.type || payload.packageType, 80) || "basic",
-        segment: normalizePackageSegment(payload.segment, "organization"),
-        price: readOptionalNumber(payload.price) ?? 0,
-        currency: readString(payload.currency, 20) || "VND",
-        duration: readString(payload.duration, 40) || "monthly",
-        maxDevices: readOptionalNumber(payload.maxDevices) ?? 0,
-        maxDoctors: readOptionalNumber(payload.maxDoctors) ?? 0,
-        maxPatients: readOptionalNumber(payload.maxPatients) ?? 0,
-        storageGb: readOptionalNumber(payload.storageGb) ?? 0,
-        aiMonthly: readOptionalNumber(payload.aiMonthly) ?? 0,
-        retentionDays: readOptionalNumber(payload.retentionDays) ?? 0,
-        features: payload.features && typeof payload.features === "object" ? payload.features : {},
-        status: "active",
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-      db.servicePackages.unshift(servicePackage);
-      await appendAudit("package.create", req, {
-        actorUserId: adminUser.id,
-        resourceType: "service_package",
-        resourceId: servicePackage.id,
+      const requestContext = getRequestContext(req) || createRequestContext(req);
+      const result = await repositories.servicePackages.create({
+        packageId: Object.prototype.hasOwnProperty.call(payload, "id") ? payload.id : createId("pkg"),
+        payload,
+        idempotency: {
+          scope: getIdempotencyScope(adminUser),
+          operation: "package.create",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint(payload),
+        },
+        audit: {
+          action: "package.create",
+          actorUserId: adminUser.id,
+          ip: requestContext.ip || "",
+          userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+          metadata: { fields: Object.keys(payload).sort() },
+        },
       });
-      addAccessLog(`Tạo gói dịch vụ ${servicePackage.name}`, { severity: "success", userId: adminUser.id });
-      await saveDb();
-      sendJson(res, 201, { package: servicePackage });
+      sendJson(res, result.responseStatus, {
+        ...result.responseBody,
+        ...(result.replayed ? { idempotent: true } : {}),
+      });
       return;
     }
 
     if (segments.length === 4 && method === "PATCH") {
       requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền sửa gói dịch vụ");
       const packageId = decodeURIComponent(segments[3]);
-      const servicePackage = db.servicePackages.find((item) => item.id === packageId);
-      if (!servicePackage) {
-        throw httpError(404, "Không tìm thấy gói dịch vụ");
-      }
       const payload = await readJsonBody(req);
-      if (Object.prototype.hasOwnProperty.call(payload, "name") || Object.prototype.hasOwnProperty.call(payload, "packageName")) {
-        const name = readString(payload.name || payload.packageName, 160);
-        if (!name) {
-          throw httpError(400, "Tên gói dịch vụ là bắt buộc");
-        }
-        servicePackage.name = name;
+      const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+      if (!idempotencyKey) {
+        throw httpError(400, "Idempotency-Key is required for package updates", "IDEMPOTENCY_KEY_REQUIRED");
       }
-      for (const field of ["type", "packageType", "currency", "duration", "status"]) {
-        if (Object.prototype.hasOwnProperty.call(payload, field)) {
-          const target = field === "packageType" ? "type" : field;
-          servicePackage[target] = readString(payload[field], 80);
-        }
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, "segment")) {
-        servicePackage.segment = normalizePackageSegment(payload.segment, servicePackage.segment || "organization");
-      }
-      for (const field of ["price", "maxDevices", "maxDoctors", "maxPatients", "storageGb", "aiMonthly", "retentionDays"]) {
-        if (Object.prototype.hasOwnProperty.call(payload, field)) {
-          servicePackage[field] = readOptionalNumber(payload[field]) ?? 0;
-        }
-      }
-      if (payload.features && typeof payload.features === "object") {
-        servicePackage.features = payload.features;
-      }
-      servicePackage.updatedAt = nowIso();
-      await appendAudit("package.update", req, {
-        actorUserId: adminUser.id,
-        resourceType: "service_package",
-        resourceId: packageId,
+      const requestContext = getRequestContext(req) || createRequestContext(req);
+      const result = await repositories.servicePackages.update({
+        packageId,
+        payload,
+        idempotency: {
+          scope: getIdempotencyScope(adminUser),
+          operation: "package.update",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({ packageId, payload }),
+        },
+        audit: {
+          action: "package.update",
+          actorUserId: adminUser.id,
+          ip: requestContext.ip || "",
+          userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+          metadata: { fields: Object.keys(payload).sort() },
+        },
       });
-      addAccessLog(`Cập nhật gói dịch vụ ${servicePackage.name}`, { severity: "success", userId: adminUser.id });
-      await saveDb();
-      sendJson(res, 200, { package: servicePackage });
+      sendJson(res, result.responseStatus, {
+        ...result.responseBody,
+        ...(result.replayed ? { idempotent: true } : {}),
+      });
       return;
     }
 
     if (segments.length === 4 && method === "DELETE") {
       requireAnyCapability(adminUser, PACKAGE_MANAGE_CAPABILITIES, "Không có quyền xóa gói dịch vụ");
       const packageId = decodeURIComponent(segments[3]);
-      const servicePackage = db.servicePackages.find((item) => item.id === packageId);
-      if (!servicePackage) {
-        throw httpError(404, "Không tìm thấy gói dịch vụ");
+      const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+      if (!idempotencyKey) {
+        throw httpError(400, "Idempotency-Key is required for package archival", "IDEMPOTENCY_KEY_REQUIRED");
       }
-      db.servicePackages = db.servicePackages.filter((item) => item.id !== packageId);
-      await appendAudit("package.delete", req, {
-        actorUserId: adminUser.id,
-        resourceType: "service_package",
-        resourceId: packageId,
+      const requestContext = getRequestContext(req) || createRequestContext(req);
+      const result = await repositories.servicePackages.archive({
+        packageId,
+        idempotency: {
+          scope: getIdempotencyScope(adminUser),
+          operation: "package.archive",
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({ packageId }),
+        },
+        audit: {
+          action: "package.archive",
+          actorUserId: adminUser.id,
+          ip: requestContext.ip || "",
+          userAgent: requestContext.userAgent || readString(req.headers["user-agent"], 240),
+          metadata: { lifecycle: "archive" },
+        },
       });
-      addAccessLog(`Xóa gói dịch vụ ${servicePackage.name}`, { severity: "warning", userId: adminUser.id });
-      await saveDb();
-      sendJson(res, 200, { deleted: true, packageId });
+      sendJson(res, result.responseStatus, {
+        ...result.responseBody,
+        ...(result.replayed ? { idempotent: true } : {}),
+      });
       return;
     }
   }
@@ -8619,34 +13623,61 @@ async function handleAdminApi(req, res, url, segments) {
     if (segments[4] === "approve" && method === "POST") {
       const payload = await readJsonBody(req);
       const organizationId = readString(payload.organizationId, 120) || targetUser.organizationId || "org_default_clinic";
-      targetUser.role = "doctor";
-      targetUser.requestedRole = "doctor";
-      targetUser.roleRequestStatus = "approved";
-      targetUser.accountStatus = "active";
-      targetUser.roleApprovedAt = nowIso();
+      const organization = getClinicById(organizationId);
+      if (!organization) {
+        throw httpError(404, "Không tìm thấy workspace để cấp quyền bác sĩ", "WORKSPACE_NOT_FOUND");
+      }
+      if (String(organization.status || "active") !== "active") {
+        throw httpError(409, "Workspace phải hoạt động trước khi cấp quyền bác sĩ", "WORKSPACE_NOT_ACTIVE");
+      }
+      if (targetUser.requestedRole !== "doctor") {
+        throw httpError(409, "Tài khoản chưa gửi yêu cầu cấp quyền bác sĩ", "DOCTOR_REQUEST_NOT_PENDING");
+      }
+      const currentRequestStatus = String(targetUser.roleRequestStatus || "pending");
+      const alreadyApproved = currentRequestStatus === "approved" && targetUser.role === "doctor";
+      if (!alreadyApproved && currentRequestStatus !== "pending") {
+        throw httpError(
+          409,
+          "Yêu cầu phải ở trạng thái chờ duyệt; hồ sơ cần bổ sung phải được gửi lại trước",
+          "DOCTOR_REQUEST_NOT_PENDING",
+          { currentStatus: currentRequestStatus },
+        );
+      }
+
+      const targetState = {
+        role: "doctor",
+        requestedRole: "doctor",
+        roleRequestStatus: "approved",
+        organizationId,
+        accountStatus: "active",
+        hospital: organization.name || targetUser.hospital || "Shcare",
+      };
+      const approvalSaga = await runIdentityProviderSaga(
+        req,
+        adminUser,
+        targetUser,
+        "change_role",
+        { role: "doctor", organizationId },
+        async () => {
+          const providerResult = await setFirebaseRoleClaimsForUser(targetUser, "doctor", organizationId);
+          return {
+            ...providerResult,
+            skipped: !targetUser.firebaseUid,
+            firebaseClaims: providerResult.claims,
+          };
+        },
+        { targetState },
+      );
+      targetUser = approvalSaga.completed.user || { ...targetUser, ...targetState };
+      targetUser.roleApprovedAt = targetUser.roleApprovedAt || nowIso();
       targetUser.roleRejectedAt = "";
       targetUser.roleRejectReason = "";
       targetUser.roleInfoRequestAt = "";
       targetUser.roleInfoRequestMessage = "";
       targetUser.roleInfoRequiredFields = [];
-      targetUser.organizationId = organizationId;
+      targetUser.firebaseClaims = approvalSaga.providerResult.firebaseClaims || targetUser.firebaseClaims || {};
       targetUser.updatedAt = nowIso();
-      ensureMembershipForUser(targetUser);
-      if (repositories) {
-        await repositories.memberships.ensureForUser(targetUser);
-      }
 
-      let firebaseClaims;
-      try {
-        firebaseClaims = await setFirebaseRoleClaimsForUser(targetUser, "doctor", organizationId);
-        targetUser.firebaseClaims = firebaseClaims;
-      } catch (err) {
-        firebaseClaims = {
-          updated: false,
-          warning: "Không thể cập nhật Firebase custom claims, quyền bác sĩ vẫn đã được lưu trong backend.",
-          error: err && err.message ? err.message : String(err),
-        };
-      }
       if (repositories && typeof repositories.users.updateDoctorRequestState === "function") {
         const persistedUser = await repositories.users.updateDoctorRequestState(targetUser.id, {
           role: targetUser.role,
@@ -8669,35 +13700,43 @@ async function handleAdminApi(req, res, url, segments) {
       } else if (repositories) {
         await repositories.users.save(targetUser);
       }
-      createNotification(
-        "success",
-        "Tài khoản bác sĩ đã được phê duyệt",
-        `${targetUser.name || targetUser.email || targetUser.id} đã được cấp quyền bác sĩ.`
-      );
-      addAccessLog("Doctor role request approved", {
-        severity: "success",
-        userId: adminUser.id,
-        ip: req.socket.remoteAddress || "",
-      });
-      await createBackendNotification({
-        type: "success",
-        title: "Tài khoản bác sĩ đã được phê duyệt",
-        message: `${targetUser.name || targetUser.email || targetUser.id} đã được cấp quyền bác sĩ.`,
-        userId: targetUser.id,
-        organizationId,
-      });
-      await appendAudit("doctor.approve", req, {
-        actorUserId: adminUser.id,
-        organizationId,
-        resourceType: "user",
-        resourceId: targetUser.id,
-        metadata: { firebaseUid: targetUser.firebaseUid || "", firebaseClaims },
-      });
+      if (!approvalSaga.replayed) {
+        createNotification(
+          "success",
+          "Tài khoản bác sĩ đã được phê duyệt",
+          `${targetUser.name || targetUser.email || targetUser.id} đã được cấp quyền bác sĩ.`,
+        );
+        addAccessLog("Doctor role request approved", {
+          severity: "success",
+          userId: adminUser.id,
+          ip: req.socket.remoteAddress || "",
+        });
+        await createBackendNotification({
+          type: "success",
+          title: "Tài khoản bác sĩ đã được phê duyệt",
+          message: `${targetUser.name || targetUser.email || targetUser.id} đã được cấp quyền bác sĩ.`,
+          userId: targetUser.id,
+          organizationId,
+        });
+        await appendAudit("doctor.approve", req, {
+          actorUserId: adminUser.id,
+          organizationId,
+          resourceType: "user",
+          resourceId: targetUser.id,
+          metadata: {
+            firebaseUid: targetUser.firebaseUid || "",
+            firebaseClaims: approvalSaga.providerResult.firebaseClaims || {},
+            operationId: approvalSaga.completed.identityOperation.id,
+          },
+        });
+      }
       await saveDb();
 
       sendJson(res, 200, {
         request: publicDoctorRoleRequest(targetUser),
-        firebaseClaims,
+        firebaseClaims: approvalSaga.providerResult.firebaseClaims || {},
+        operationId: approvalSaga.completed.identityOperation.id,
+        replayed: approvalSaga.replayed,
       });
       return;
     }
@@ -8707,6 +13746,18 @@ async function handleAdminApi(req, res, url, segments) {
       const reason = readString(payload.reason, 1000);
       if (!reason) {
         throw httpError(400, "Reject reason is required");
+      }
+      if (
+        targetUser.requestedRole !== "doctor" ||
+        targetUser.role === "doctor" ||
+        !["pending", "needs_info"].includes(String(targetUser.roleRequestStatus || "pending"))
+      ) {
+        throw httpError(
+          409,
+          "Chỉ có thể từ chối hồ sơ bác sĩ đang chờ xử lý; hãy dùng luồng đổi vai trò để thu hồi quyền đã cấp",
+          "DOCTOR_REQUEST_NOT_REJECTABLE",
+          { currentStatus: targetUser.roleRequestStatus || "", currentRole: targetUser.role || "" },
+        );
       }
 
       targetUser.requestedRole = "doctor";
@@ -8778,6 +13829,18 @@ async function handleAdminApi(req, res, url, segments) {
       if (!message) {
         throw httpError(400, "Additional information message is required");
       }
+      if (
+        targetUser.requestedRole !== "doctor" ||
+        targetUser.role === "doctor" ||
+        !["pending", "needs_info"].includes(String(targetUser.roleRequestStatus || "pending"))
+      ) {
+        throw httpError(
+          409,
+          "Chỉ có thể yêu cầu bổ sung đối với hồ sơ bác sĩ chưa được phê duyệt",
+          "DOCTOR_REQUEST_NOT_EDITABLE",
+          { currentStatus: targetUser.roleRequestStatus || "", currentRole: targetUser.role || "" },
+        );
+      }
 
       targetUser.requestedRole = "doctor";
       targetUser.role = targetUser.role === "admin" ? "admin" : "patient";
@@ -8846,9 +13909,19 @@ async function handleAdminApi(req, res, url, segments) {
 
   if (segments[2] === "doctors" && segments.length === 3 && method === "GET") {
     requireAnyCapability(adminUser, ["platform.users.manage", "workspace.staff.manage"], "Không có quyền xem nhân sự bác sĩ");
+    const currentWorkspaceId = getUserWorkspaceContext(adminUser).currentWorkspaceId;
     const users = (repositories ? await repositories.users.listApprovedDoctors() : db.users
       .filter((user) => user.requestedRole === "doctor" && user.roleRequestStatus === "approved"))
-      .filter((user) => isPlatformAdminUser(adminUser) || user.organizationId === getUserWorkspaceContext(adminUser).currentWorkspaceId)
+      .filter(
+        (user) =>
+          isPlatformAdminUser(adminUser) ||
+          db.memberships.some(
+            (membership) =>
+              membership.userId === user.id &&
+              membership.organizationId === currentWorkspaceId &&
+              readString(membership.status || "active", 40).toLowerCase() !== "revoked",
+          ),
+      )
       .sort((a, b) => String(b.roleApprovedAt || b.updatedAt || "").localeCompare(String(a.roleApprovedAt || a.updatedAt || "")));
     const doctors = users.map(publicUser);
 
@@ -8858,59 +13931,20 @@ async function handleAdminApi(req, res, url, segments) {
 
   if (segments[2] === "doctors" && segments.length === 3 && method === "POST") {
     requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền tạo tài khoản bác sĩ");
-    const payload = await readJsonBody(req);
-    const email = readString(payload.email, 160).toLowerCase();
-    const phone = readString(payload.phone, 40);
-    if (!email && !phone) {
-      throw httpError(400, "Cần email hoặc số điện thoại để tạo bác sĩ");
-    }
-    if (email && findUserByLogin(email)) {
-      throw httpError(409, "Email đã được sử dụng");
-    }
-    const selectedClinic = getClinicFromPayload(payload);
-    const organizationId = isPlatformAdminUser(adminUser)
-      ? selectedClinic?.id || readString(payload.organizationId || payload.clinic, 120) || "org_default_clinic"
-      : getUserWorkspaceContext(adminUser).currentWorkspaceId || adminUser.organizationId || "org_default_clinic";
-    const doctor = {
-      id: createId("usr"),
-      role: "doctor",
-      requestedRole: "doctor",
-      roleRequestStatus: "approved",
-      accountStatus: "active",
-      name: readString(payload.name || payload.fullName, 160) || email || phone,
-      email,
-      phone,
-      license: readString(payload.license || payload.licenseNumber, 120),
-      hospital: selectedClinic?.name || readString(payload.hospital || payload.clinicName, 160),
-      department: readString(payload.department || payload.specialty, 160),
-      organizationId,
-      verifiedEmail: false,
-      verifiedPhone: false,
-      roleRequestedAt: nowIso(),
-      roleApprovedAt: nowIso(),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-    db.users.unshift(doctor);
-    ensureMembershipForUser(doctor);
-    if (repositories) {
-      await repositories.users.save(doctor);
-      await repositories.memberships.ensureForUser(doctor);
-    }
-    await appendAudit("doctor.create", req, {
-      actorUserId: adminUser.id,
-      organizationId,
-      resourceType: "user",
-      resourceId: doctor.id,
-    });
-    addAccessLog(`Admin tạo bác sĩ ${doctor.name}`, { severity: "success", userId: adminUser.id });
-    await saveDb();
-    sendJson(res, 201, { doctor: publicUser(doctor) });
-    return;
+    throw httpError(
+      501,
+      "Tạo bác sĩ trực tiếp đã bị khóa vì không tạo được danh tính đăng nhập an toàn; hãy dùng quy trình mời nhân sự khi được bật",
+      "DOCTOR_INVITATION_REQUIRED",
+      { plannedSurface: "staff-invitations" },
+    );
   }
 
   if (segments[2] === "doctors" && segments.length === 4 && method === "DELETE") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền xóa tài khoản bác sĩ");
+    requireAnyCapability(
+      adminUser,
+      ["platform.users.manage"],
+      "Chỉ platform admin mới được xóa danh tính bác sĩ toàn hệ thống",
+    );
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories
       ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
@@ -8922,76 +13956,17 @@ async function handleAdminApi(req, res, url, segments) {
     if (targetUser.role === "admin" || (targetUser.role !== "doctor" && targetUser.requestedRole !== "doctor")) {
       throw httpError(400, "Only doctor accounts can be deleted from this endpoint");
     }
-    if (!isPlatformAdminUser(adminUser) && targetUser.organizationId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
-      throw httpError(403, "Không được xóa bác sĩ ngoài workspace");
-    }
-
-    let firebaseDeleted = false;
-    let firebaseAlreadyMissing = false;
-    let warning = "";
-    if (targetUser.firebaseUid) {
-      if (FIREBASE_AUTH_ENABLED) {
-        try {
-          const admin = getFirebaseAdmin(process.env);
-          if (!admin) {
-            warning = "Firebase Auth đang tắt nên hệ thống chỉ xóa dữ liệu backend.";
-          } else {
-            await admin.auth().deleteUser(targetUser.firebaseUid);
-            firebaseDeleted = true;
-          }
-        } catch (err) {
-          if (err && err.code === "auth/user-not-found") {
-            firebaseAlreadyMissing = true;
-          } else {
-            throw httpError(502, "Không thể xóa tài khoản Firebase Auth: " + (err && err.message ? err.message : String(err)));
-          }
-        }
-      } else {
-        warning = "Firebase Auth đang tắt nên hệ thống chỉ xóa dữ liệu backend.";
-      }
-    } else {
-      warning = "Tài khoản backend này chưa có firebaseUid nên không có tài khoản Firebase Auth liên kết để xóa.";
-    }
-
-    if (repositories) {
-      await repositories.users.deleteById(targetUser.id);
-    } else {
-      db.users = db.users.filter((user) => user.id !== targetUser.id);
-      db.memberships = db.memberships.filter((item) => item.userId !== targetUser.id);
-      db.sessions = db.sessions.filter((item) => item.userId !== targetUser.id);
-      db.authSessions = db.authSessions.filter((item) => item.userId !== targetUser.id);
-      db.notificationDevices = db.notificationDevices.filter((item) => item.userId !== targetUser.id);
-      db.doctorPatientAccess = db.doctorPatientAccess.filter((item) => item.doctorUserId !== targetUser.id && item.doctorId !== targetUser.id);
-      for (const item of db.doctorPatientAccess) {
-        if (item.grantedByUserId === targetUser.id) item.grantedByUserId = "";
-      }
-      for (const item of db.devices) {
-        if (item.pairedUserId === targetUser.id) item.pairedUserId = "";
-      }
-      for (const item of db.patients) {
-        if (item.ownerUserId === targetUser.id) item.ownerUserId = "";
-      }
-      for (const item of db.scans) {
-        if (item.createdByUserId === targetUser.id) item.createdByUserId = "";
-      }
-      for (const item of db.notifications) {
-        if (item.userId === targetUser.id) item.userId = "";
-      }
-      await saveDb();
-    }
-
-    await appendAudit("doctor.delete", req, {
-      actorUserId: adminUser.id,
-      organizationId: targetUser.organizationId || "",
-      resourceType: "user",
-      resourceId: targetUser.id,
-      metadata: {
-        firebaseUid: targetUser.firebaseUid || "",
-        firebaseDeleted,
-        firebaseAlreadyMissing,
-        warning,
-      },
-    });
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      "delete",
+      { targetUserId: targetUser.id },
+      () => deleteFirebaseLinkedAccount(targetUser),
+    );
+    const firebaseDeleted = saga.providerResult.firebaseDeleted === true;
+    const firebaseAlreadyMissing = saga.providerResult.firebaseAlreadyMissing === true;
+    const warning = saga.providerResult.warning || "";
     addAccessLog("Admin xóa tài khoản bác sĩ", {
       severity: "warning",
       userId: adminUser.id,
@@ -9003,17 +13978,24 @@ async function handleAdminApi(req, res, url, segments) {
     await saveDb();
 
     sendJson(res, 200, {
-      deleted: true,
+      deleted: saga.completed.deleted === true,
+      userId: targetUser.id,
       firebaseDeleted,
       firebaseAlreadyMissing,
       firebaseUid: targetUser.firebaseUid || "",
       warning,
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
     });
     return;
   }
 
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "lock" && method === "PATCH") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền khóa tài khoản bác sĩ");
+    requireAnyCapability(
+      adminUser,
+      ["platform.users.manage"],
+      "Chỉ platform admin mới được khóa danh tính bác sĩ toàn hệ thống",
+    );
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories
       ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
@@ -9021,35 +14003,26 @@ async function handleAdminApi(req, res, url, segments) {
     if (!targetUser) {
       throw httpError(404, "User not found");
     }
-    if (!isPlatformAdminUser(adminUser) && targetUser.organizationId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
-      throw httpError(403, "Không được khóa bác sĩ ngoài workspace");
+    if (targetUser.role !== "doctor" && targetUser.requestedRole !== "doctor") {
+      throw httpError(400, "Only doctor accounts can be locked from this endpoint");
     }
-    
-    targetUser.role = "doctor";
-    targetUser.requestedRole = "doctor";
-    targetUser.roleRequestStatus = "approved";
-    targetUser.accountStatus = "locked";
-    targetUser.updatedAt = nowIso();
-    const firebaseResult = await updateFirebaseLinkedAccount(targetUser, {
-      disabled: true,
-      revokeRefreshTokens: true,
-    });
-    const sessionResult = revokeUserSessions(targetUser.id);
-    await persistUserRecord(targetUser);
-    await appendAudit("doctor.lock", req, {
-      actorUserId: adminUser.id,
-      organizationId: targetUser.organizationId || "",
-      resourceType: "user",
-      resourceId: targetUser.id,
-      metadata: {
-        firebaseUid: targetUser.firebaseUid || "",
-        firebaseDisabled: firebaseResult.firebaseDisabled === true,
-        firebaseTokensRevoked: firebaseResult.firebaseTokensRevoked === true,
-        firebaseAlreadyMissing: firebaseResult.firebaseAlreadyMissing === true,
-        demoSessionsRevoked: sessionResult.demoSessionsRevoked,
-        firebaseSessionsRevoked: sessionResult.firebaseSessionsRevoked,
-      },
-    });
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      "lock",
+      { accountStatus: "locked" },
+      () => updateFirebaseLinkedAccount(targetUser, {
+        disabled: true,
+        revokeRefreshTokens: true,
+      }),
+    );
+    Object.assign(targetUser, saga.completed.user || { accountStatus: "locked" });
+    const firebaseResult = saga.providerResult;
+    const sessionResult = {
+      demoSessionsRevoked: saga.started.demoSessionsRevoked || 0,
+      firebaseSessionsRevoked: saga.started.firebaseSessionsRevoked ?? saga.started.revokedCount,
+    };
     
     addAccessLog("Admin khóa tài khoản bác sĩ", { severity: "warning", userId: adminUser.id });
     await saveDb();
@@ -9059,12 +14032,18 @@ async function handleAdminApi(req, res, url, segments) {
       ...firebaseResult,
       ...sessionResult,
       warning: firebaseResult.warning || "",
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
     });
     return;
   }
 
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "unlock" && method === "PATCH") {
-    requireAnyCapability(adminUser, DOCTOR_MANAGE_CAPABILITIES, "Không có quyền mở khóa tài khoản bác sĩ");
+    requireAnyCapability(
+      adminUser,
+      ["platform.users.manage"],
+      "Chỉ platform admin mới được mở khóa danh tính bác sĩ toàn hệ thống",
+    );
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories
       ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
@@ -9072,42 +14051,33 @@ async function handleAdminApi(req, res, url, segments) {
     if (!targetUser) {
       throw httpError(404, "User not found");
     }
-    if (!isPlatformAdminUser(adminUser) && targetUser.organizationId !== getUserWorkspaceContext(adminUser).currentWorkspaceId) {
-      throw httpError(403, "Không được mở khóa bác sĩ ngoài workspace");
+    if (targetUser.role !== "doctor" || targetUser.roleRequestStatus !== "approved") {
+      throw httpError(
+        409,
+        "Chỉ tài khoản bác sĩ đã được phê duyệt mới có thể mở khóa từ endpoint này",
+        "APPROVED_DOCTOR_REQUIRED",
+      );
     }
-    
-    targetUser.role = "doctor";
-    targetUser.requestedRole = "doctor";
-    targetUser.roleRequestStatus = "approved";
-    targetUser.accountStatus = "active";
-    targetUser.updatedAt = nowIso();
-    const firebaseAccountResult = await updateFirebaseLinkedAccount(targetUser, {
-      disabled: false,
-    });
-    let firebaseClaims;
-    let warning = firebaseAccountResult.warning || "";
-    if (targetUser.firebaseUid && FIREBASE_AUTH_ENABLED) {
-      try {
-        firebaseClaims = await setFirebaseRoleClaimsForUser(targetUser, "doctor", targetUser.organizationId);
-        targetUser.firebaseClaims = firebaseClaims;
-      } catch (err) {
-        const message = err && err.message ? err.message : String(err);
-        warning = [warning, `Không thể cập nhật Firebase custom claims: ${message}`].filter(Boolean).join(" ");
-      }
-    }
-    await persistUserRecord(targetUser);
-    await appendAudit("doctor.unlock", req, {
-      actorUserId: adminUser.id,
-      organizationId: targetUser.organizationId || "",
-      resourceType: "user",
-      resourceId: targetUser.id,
-      metadata: {
-        firebaseUid: targetUser.firebaseUid || "",
-        firebaseDisabled: firebaseAccountResult.firebaseDisabled === false ? false : undefined,
-        firebaseAlreadyMissing: firebaseAccountResult.firebaseAlreadyMissing === true,
-        firebaseClaims,
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      "unlock",
+      { accountStatus: "active", role: "doctor", organizationId: targetUser.organizationId || "" },
+      async () => {
+        const accountResult = await updateFirebaseLinkedAccount(targetUser, { disabled: false });
+        let firebaseClaims;
+        if (targetUser.firebaseUid && FIREBASE_AUTH_ENABLED &&
+          (accountResult.updated || accountResult.firebaseAlreadyMissing)) {
+          firebaseClaims = await setFirebaseRoleClaimsForUser(targetUser, "doctor", targetUser.organizationId);
+        }
+        return { ...accountResult, firebaseClaims };
       },
-    });
+    );
+    Object.assign(targetUser, saga.completed.user || { accountStatus: "active" });
+    const firebaseAccountResult = saga.providerResult;
+    const firebaseClaims = firebaseAccountResult.firebaseClaims;
+    const warning = firebaseAccountResult.warning || "";
     
     addAccessLog("Admin mở khóa tài khoản bác sĩ", { severity: "success", userId: adminUser.id });
     await saveDb();
@@ -9117,6 +14087,8 @@ async function handleAdminApi(req, res, url, segments) {
       ...firebaseAccountResult,
       firebaseClaims,
       warning,
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
     });
     return;
   }
@@ -9126,9 +14098,216 @@ async function handleAdminApi(req, res, url, segments) {
 
 async function handleMeApi(req, res, segments) {
   const method = req.method || "GET";
-  const user = requireUser(req);
+  const user = segments[2] === "2fa" ? requirePrimarySessionUser(req) : requireUser(req);
   if (isPatientUser(user)) {
     ensurePatientProfileForUser(user);
+  }
+
+  if (segments.length === 3 && segments[2] === "2fa" && method === "GET") {
+    const credential = repositories?.twoFactor
+      ? await repositories.twoFactor.getCredential(user.id)
+      : db.twoFactorCredentials.find((item) => item.userId === user.id && !item.disabledAt) || null;
+    const enrollment = repositories?.twoFactor
+      ? await repositories.twoFactor.getPendingEnrollment(user.id)
+      : db.twoFactorEnrollments.find(
+          (item) => item.userId === user.id && !item.consumedAt && Date.parse(item.expiresAt || "") > Date.now(),
+        ) || null;
+    user.twoFactorEnabled = Boolean(credential);
+    user.twoFactorMethod = credential ? credential.method || "app" : "";
+    sendJson(res, 200, {
+      availability: getTwoFactorAvailability(),
+      twoFactor: {
+        enabled: Boolean(credential),
+        method: credential ? credential.method || "app" : "",
+        enrollmentPending: Boolean(enrollment),
+      },
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "2fa" && segments[3] === "enroll" && method === "POST") {
+    const payload = await readJsonBody(req);
+    const methodName = readString(payload.method, 40) || "app";
+    if (methodName !== "app") {
+      throw httpError(
+        503,
+        "Phương thức 2FA này chưa có provider thật.",
+        "TWO_FACTOR_METHOD_UNAVAILABLE",
+        { method: methodName, availability: getTwoFactorAvailability() },
+      );
+    }
+    const availability = getTwoFactorAvailability();
+    if (!availability.available) {
+      throw httpError(
+        503,
+        "2FA chưa sẵn sàng vì thiếu cấu hình mã hóa an toàn.",
+        "TWO_FACTOR_UNAVAILABLE",
+        { availability },
+      );
+    }
+    const enrollmentId = createId("2fa_enroll");
+    const enrollment = await createTotpEnrollment({
+      id: enrollmentId,
+      userId: user.id,
+      accountLabel: user.email || user.phone || user.id,
+    });
+    const persisted = repositories?.twoFactor
+      ? await repositories.twoFactor.createEnrollment(enrollment.record)
+      : enrollment.record;
+    if (!repositories?.twoFactor) {
+      db.twoFactorEnrollments.push(persisted);
+      await saveDb();
+    }
+    sendJson(res, 201, {
+      twoFactor: { enabled: false, method: "" },
+      enrollment: {
+        id: persisted.id,
+        method: "app",
+        manualKey: enrollment.manualKey,
+        otpauthUri: enrollment.otpauthUri,
+        expiresAt: persisted.expiresAt,
+      },
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "2fa" && segments[3] === "verify" && method === "POST") {
+    const availability = getTwoFactorAvailability();
+    if (!availability.available) {
+      throw httpError(503, "2FA chưa sẵn sàng.", "TWO_FACTOR_UNAVAILABLE", { availability });
+    }
+    const payload = await readJsonBody(req);
+    const enrollmentId = readString(payload.enrollmentId, 200);
+    const otp = readString(payload.otp || payload.code, 20);
+    if (!enrollmentId) {
+      throw httpError(400, "Thiếu enrollmentId.", "TWO_FACTOR_ENROLLMENT_ID_REQUIRED");
+    }
+    const enrollment = repositories?.twoFactor
+      ? await repositories.twoFactor.getEnrollment(user.id, enrollmentId)
+      : db.twoFactorEnrollments.find((item) => item.id === enrollmentId && item.userId === user.id) || null;
+    if (!enrollment) {
+      throw httpError(404, "Không tìm thấy enrollment.", "TWO_FACTOR_ENROLLMENT_NOT_FOUND");
+    }
+    if (enrollment.consumedAt) {
+      throw httpError(409, "Enrollment đã được sử dụng.", "TWO_FACTOR_ENROLLMENT_ALREADY_USED");
+    }
+    if (Date.parse(enrollment.expiresAt || "") <= Date.now()) {
+      throw httpError(410, "Enrollment đã hết hạn.", "TWO_FACTOR_ENROLLMENT_EXPIRED");
+    }
+    if (Number(enrollment.attempts || 0) >= Number(enrollment.maxAttempts || 5)) {
+      throw httpError(429, "Đã vượt quá số lần thử.", "TWO_FACTOR_ATTEMPTS_EXCEEDED");
+    }
+    const verification = await verifyTotpCode(enrollment, otp);
+    if (!verification.valid || !Number.isFinite(verification.timeStep)) {
+      const failed = repositories?.twoFactor
+        ? await repositories.twoFactor.recordEnrollmentFailure(user.id, enrollmentId)
+        : enrollment;
+      if (!repositories?.twoFactor) {
+        failed.attempts = Math.min(Number(failed.maxAttempts || 5), Number(failed.attempts || 0) + 1);
+        await saveDb();
+      }
+      const attemptsRemaining = Math.max(0, Number(failed.maxAttempts || 5) - Number(failed.attempts || 0));
+      throw httpError(
+        attemptsRemaining ? 401 : 429,
+        attemptsRemaining ? "Mã TOTP không hợp lệ." : "Đã vượt quá số lần thử.",
+        attemptsRemaining ? "TWO_FACTOR_CODE_INVALID" : "TWO_FACTOR_ATTEMPTS_EXCEEDED",
+        { attemptsRemaining },
+      );
+    }
+    const enabledAt = nowIso();
+    const credentialId = `2fa_credential_${user.id}`;
+    const recovery = createRecoveryCodeBundle(user.id, credentialId);
+    const credential = {
+      id: credentialId,
+      userId: user.id,
+      method: "app",
+      enrollmentId: enrollment.id,
+      secretCiphertext: enrollment.secretCiphertext,
+      secretIv: enrollment.secretIv,
+      secretTag: enrollment.secretTag,
+      secretVersion: Number(enrollment.secretVersion || 1),
+      recoverySalt: recovery.recoverySalt,
+      recoveryCodes: recovery.recoveryCodes,
+      lastUsedTimeStep: verification.timeStep,
+      disableAttempts: 0,
+      disableLockedUntil: null,
+      enabledAt,
+      updatedAt: enabledAt,
+      disabledAt: null,
+      version: 1,
+    };
+    const issuedToken = createTwoFactorToken({
+      id: createId("2fa_token"),
+      userId: user.id,
+      primaryBinding: getTwoFactorPrimaryBinding(req, user),
+    });
+    if (repositories?.twoFactor) {
+      await repositories.twoFactor.confirmEnrollment({
+        userId: user.id,
+        enrollmentId,
+        credential,
+        tokenRecord: issuedToken.record,
+        auditInput: {
+          organizationId: user.organizationId || "",
+          ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+          userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+          metadata: { method: "app" },
+        },
+      });
+    } else {
+      throw httpError(503, "Kho lưu trữ 2FA chưa sẵn sàng.", "TWO_FACTOR_STORAGE_UNAVAILABLE");
+    }
+    user.twoFactorEnabled = true;
+    user.twoFactorMethod = "app";
+    sendJson(res, 200, {
+      twoFactor: { enabled: true, method: "app" },
+      recoveryCodes: recovery.codes,
+      twoFactorToken: issuedToken.token,
+      tokenExpiresAt: issuedToken.record.expiresAt,
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "2fa" && segments[3] === "disable" && method === "POST") {
+    const availability = getTwoFactorAvailability();
+    if (!availability.available) {
+      throw httpError(503, "2FA chưa sẵn sàng.", "TWO_FACTOR_UNAVAILABLE", { availability });
+    }
+    if (!repositories?.twoFactor) {
+      throw httpError(503, "Kho lưu trữ 2FA chưa sẵn sàng.", "TWO_FACTOR_STORAGE_UNAVAILABLE");
+    }
+    const payload = await readJsonBody(req);
+    const otp = readString(payload.otp || payload.code, 20);
+    const recoveryCode = readString(payload.recoveryCode, 80);
+    await repositories.twoFactor.disable({
+      userId: user.id,
+      verifyFactor: async (credential) => {
+        if (recoveryCode) {
+          const match = verifyRecoveryCode(credential, recoveryCode);
+          return match
+            ? { valid: true, recoveryCodeId: match.id, usedAt: nowIso() }
+            : { valid: false, code: "TWO_FACTOR_RECOVERY_CODE_INVALID" };
+        }
+        if (!otp) return { valid: false, code: "TWO_FACTOR_CODE_REQUIRED" };
+        const result = await verifyTotpCode(credential, otp, {
+          afterTimeStep: Number(credential.lastUsedTimeStep),
+        });
+        if (result.replayed) return { valid: false, code: "TWO_FACTOR_CODE_REPLAYED" };
+        return result.valid
+          ? { valid: true, timeStep: Number(result.timeStep) }
+          : { valid: false, code: "TWO_FACTOR_CODE_INVALID" };
+      },
+      auditInput: {
+        organizationId: user.organizationId || "",
+        ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+        userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+        metadata: { method: recoveryCode ? "recovery_code" : "app" },
+      },
+    });
+    user.twoFactorEnabled = false;
+    user.twoFactorMethod = "";
+    sendJson(res, 200, { twoFactor: { enabled: false, method: "" } });
+    return;
   }
 
   if (segments.length === 2 && method === "GET") {
@@ -9136,9 +14315,102 @@ async function handleMeApi(req, res, segments) {
     return;
   }
 
+  if (segments.length === 3 && segments[2] === "active-profile" && method === "PATCH") {
+    if (!isPatientUser(user) || !hasCapability(user, "personal.profiles.manage")) {
+      throw httpError(403, "Không có quyền chuyển hồ sơ đang hoạt động", "PROFILE_SCOPE_DENIED");
+    }
+    const payload = await readJsonBody(req);
+    const patientId = readString(payload.patientId, 120);
+    if (!patientId) throw httpError(400, "Thiếu patientId", "ACTIVE_PROFILE_REQUIRED");
+    const activePatient = repositories ? await repositories.patients.findById(patientId) : findPatient(patientId);
+    if (!activePatient) throw httpError(404, "Không tìm thấy hồ sơ sức khỏe", "PROFILE_NOT_FOUND");
+    const selfProfile = ensurePatientProfileForUser(user);
+    if (activePatient.ownerUserId !== user.id && activePatient.id !== selfProfile?.id) {
+      throw httpError(403, "Hồ sơ nằm ngoài phạm vi gia đình hiện tại", "PROFILE_SCOPE_DENIED");
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (user.activePatientId === activePatient.id && !idempotencyKey) {
+      sendJson(res, 200, { user: publicUser(user), activePatient: withPatientStats(activePatient), replayed: true });
+      return;
+    }
+    const nextUser = { ...user, activePatientId: activePatient.id, updatedAt: nowIso() };
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = repositories?.users.updateAccountProfileWithAudit
+      ? await repositories.users.updateAccountProfileWithAudit(
+          user.id,
+          {
+            name: nextUser.name || "",
+            title: nextUser.title || "",
+            phone: nextUser.phone || "",
+            license: nextUser.license || "",
+            hospital: nextUser.hospital || "",
+            department: nextUser.department || "",
+            specialty: nextUser.specialty || "",
+            address: nextUser.address || "",
+            avatarFileId: nextUser.avatarFileId || "",
+            avatarUrl: nextUser.avatarUrl || "",
+            avatarStorage: nextUser.avatarStorage && typeof nextUser.avatarStorage === "object" ? nextUser.avatarStorage : {},
+            twoFactorEnabled: Boolean(nextUser.twoFactorEnabled),
+            twoFactorMethod: nextUser.twoFactorMethod || "",
+            notificationPreferences: normalizeNotificationPreferences(nextUser.notificationPreferences),
+            activePatientId: activePatient.id,
+            organizationId: nextUser.organizationId || "",
+          },
+          {
+            action: "profile.active.switch",
+            actorUserId: user.id,
+            organizationId: user.organizationId || "",
+            authorization: {
+              kind: "active_profile",
+              actorUserId: user.id,
+              patientId: activePatient.id,
+            },
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: { previousPatientId: user.activePatientId || user.patientId || "", patientId: activePatient.id },
+          },
+          idempotencyKey
+            ? {
+                scope: getIdempotencyScope(user, user.organizationId || ""),
+                operation: "profile.active.switch",
+                key: idempotencyKey,
+                fingerprint: createIdempotencyFingerprint({ patientId: activePatient.id }),
+              }
+            : null,
+        )
+      : null;
+    if (!persisted?.user) throw httpError(503, "Không thể lưu hồ sơ đang hoạt động", "PROFILE_STORAGE_UNAVAILABLE");
+    sendJson(res, 200, {
+      user: publicUser(persisted.user),
+      activePatient: withPatientStats(activePatient),
+      replayed: Boolean(persisted.replayed),
+    });
+    return;
+  }
+
   if (segments.length === 2 && method === "PATCH") {
     const payload = await readJsonBody(req);
-    const selectedClinic = getExplicitWorkspaceSelectionFromPayload(payload);
+    const approvalEvidenceFields = ["license", "hospital", "department", "specialty"];
+    if (isApprovedDoctorRole(user) && approvalEvidenceFields.some(
+      (field) => Object.prototype.hasOwnProperty.call(payload, field),
+    )) {
+      throw httpError(
+        409,
+        "Approved clinician credentials require a reviewed change request",
+        "APPROVAL_EVIDENCE_IMMUTABLE",
+      );
+    }
+    const workspaceSelectionRequested = hasExplicitWorkspaceSelection(payload);
+    const requestedWorkspaceId = getRequestedWorkspaceId(payload);
+    if (workspaceSelectionRequested && !requestedWorkspaceId) {
+      throw httpError(400, "Thiếu workspace cần chuyển", "WORKSPACE_REQUIRED");
+    }
+    const selectedClinic = workspaceSelectionRequested ? getExplicitWorkspaceSelectionFromPayload(payload) : null;
+    if (workspaceSelectionRequested && !selectedClinic) {
+      throw httpError(404, "Không tìm thấy workspace", "WORKSPACE_NOT_FOUND");
+    }
+    const previousOrganizationId = user.organizationId || "";
+    const nextUser = { ...user };
     for (const field of [
       "name",
       "title",
@@ -9152,65 +14424,89 @@ async function handleMeApi(req, res, segments) {
     ]) {
       if (Object.prototype.hasOwnProperty.call(payload, field)) {
         const maxLength = field === "address" || field === "avatarUrl" ? 1000 : 160;
-        user[field] = readString(payload[field], maxLength);
+        nextUser[field] = readString(payload[field], maxLength);
       }
     }
     if (Object.prototype.hasOwnProperty.call(payload, "specialty")) {
-      user.specialty = readString(payload.specialty, 160);
+      nextUser.specialty = readString(payload.specialty, 160);
       if (
         !Object.prototype.hasOwnProperty.call(payload, "department") &&
-        !readString(user.department, 160)
+        !readString(nextUser.department, 160)
       ) {
-        user.department = user.specialty;
+        nextUser.department = nextUser.specialty;
       }
     }
     if (Object.prototype.hasOwnProperty.call(payload, "notificationPreferences")) {
-      user.notificationPreferences = normalizeNotificationPreferences(payload.notificationPreferences);
+      nextUser.notificationPreferences = normalizeNotificationPreferences(payload.notificationPreferences);
     }
     if (selectedClinic) {
       if (!isPlatformAdminUser(user) && !hasWorkspaceMembership(user, selectedClinic.id)) {
         throw httpError(403, "Không thể tự chuyển sang workspace khi chưa có membership", "WORKSPACE_MEMBERSHIP_REQUIRED");
       }
-      user.organizationId = selectedClinic.id;
-      user.hospital = selectedClinic.name;
+      nextUser.organizationId = selectedClinic.id;
+      nextUser.hospital = selectedClinic.name;
       if (repositories && typeof repositories.organizations?.upsert === "function") {
         await repositories.organizations.upsert(ensureOrganizationFromCatalog(selectedClinic) || selectedClinic);
       }
     }
-    user.updatedAt = nowIso();
+    nextUser.updatedAt = nowIso();
     addAccessLog("Cập nhật thông tin cá nhân");
-    let responseUser = user;
-    if (repositories && typeof repositories.users.updateAccountProfile === "function") {
-      const persistedUser = await repositories.users.updateAccountProfile(user.id, {
-        name: user.name || "",
-        title: user.title || "",
-        phone: user.phone || "",
-        license: user.license || "",
-        hospital: user.hospital || "",
-        department: user.department || "",
-        specialty: user.specialty || "",
-        address: user.address || "",
-        avatarFileId: user.avatarFileId || "",
-        avatarUrl: user.avatarUrl || "",
-        avatarStorage: user.avatarStorage && typeof user.avatarStorage === "object" ? user.avatarStorage : {},
-        twoFactorEnabled: Boolean(user.twoFactorEnabled),
-        twoFactorMethod: user.twoFactorMethod || "",
-        twoFactorSecretPreview: user.twoFactorSecretPreview || "",
-        twoFactorRecoveryCodes: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes : [],
-        notificationPreferences: normalizeNotificationPreferences(user.notificationPreferences),
-        organizationId: user.organizationId || "",
-      });
-      if (!persistedUser) {
-        throw httpError(500, "Cannot persist account profile to database");
-      }
-      responseUser = persistedUser;
-      await repositories.memberships.ensureForUser(responseUser);
-    } else if (repositories) {
-      await repositories.users.save(user);
-      await repositories.memberships.ensureForUser(user);
+    const context = getRequestContext(req) || createRequestContext(req);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const persisted = repositories?.users.updateAccountProfileWithAudit
+      ? await repositories.users.updateAccountProfileWithAudit(
+          user.id,
+          {
+            name: nextUser.name || "",
+            title: nextUser.title || "",
+            phone: nextUser.phone || "",
+            license: nextUser.license || "",
+            hospital: nextUser.hospital || "",
+            department: nextUser.department || "",
+            specialty: nextUser.specialty || "",
+            address: nextUser.address || "",
+            avatarFileId: nextUser.avatarFileId || "",
+            avatarUrl: nextUser.avatarUrl || "",
+            avatarStorage: nextUser.avatarStorage && typeof nextUser.avatarStorage === "object" ? nextUser.avatarStorage : {},
+            twoFactorEnabled: Boolean(nextUser.twoFactorEnabled),
+            twoFactorMethod: nextUser.twoFactorMethod || "",
+            notificationPreferences: normalizeNotificationPreferences(nextUser.notificationPreferences),
+            activePatientId: nextUser.activePatientId || nextUser.patientId || "",
+            organizationId: nextUser.organizationId || "",
+          },
+          {
+            action: workspaceSelectionRequested ? "workspace.switch" : "account.profile.update",
+            actorUserId: user.id,
+            organizationId: nextUser.organizationId || previousOrganizationId,
+            authorization: {
+              kind: workspaceSelectionRequested
+                ? isPlatformAdminUser(user)
+                  ? "platform_workspace_switch"
+                  : "workspace_switch"
+                : "account_owner",
+              actorUserId: user.id,
+              organizationId: nextUser.organizationId || previousOrganizationId,
+            },
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: workspaceSelectionRequested
+              ? { previousOrganizationId, organizationId: nextUser.organizationId || "" }
+              : { fields: Object.keys(payload).filter((key) => key !== "idempotencyKey") },
+          },
+          idempotencyKey
+            ? {
+                scope: getIdempotencyScope(user, ""),
+                operation: workspaceSelectionRequested ? "workspace.switch" : "account.profile.update",
+                key: idempotencyKey,
+                fingerprint: createIdempotencyFingerprint(payload),
+              }
+            : null,
+        )
+      : null;
+    if (!persisted?.user) {
+      throw httpError(503, "Cannot persist account profile to database", "ACCOUNT_STORAGE_UNAVAILABLE");
     }
-    await saveDb();
-    sendJson(res, 200, { user: publicUser(responseUser) });
+    sendJson(res, 200, { user: publicUser(persisted.user), replayed: Boolean(persisted.replayed) });
     return;
   }
 
@@ -9347,24 +14643,52 @@ async function handleMeApi(req, res, segments) {
   if (segments.length === 3 && segments[2] === "password" && method === "POST") {
     const payload = await readJsonBody(req);
     if (FIREBASE_AUTH_ENABLED && user.firebaseUid) {
-      if (payload.firebaseClientUpdated !== true) {
-        throw httpError(400, "Đổi mật khẩu Firebase cần xác thực lại trên Web Admin trước khi ghi nhận backend.");
+      if (req.authSource !== "firebase" || !req.firebaseToken) {
+        throw httpError(401, "Đổi mật khẩu Firebase cần phiên Firebase đã xác thực", "FIREBASE_REAUTH_REQUIRED");
       }
-      user.updatedAt = nowIso();
-      db.settings.privacy.passwordUpdatedAt = nowIso();
-      await persistUserRecord(user);
-      await appendAudit("account.password.change", req, {
-        actorUserId: user.id,
-        organizationId: user.organizationId || "",
-        resourceType: "user",
-        resourceId: user.id,
+      const authenticatedAt = Number(getFirebaseAuthenticationTime(req.firebaseToken));
+      if (!Number.isFinite(authenticatedAt) || Date.now() / 1000 - authenticatedAt > 300) {
+        throw httpError(
+          401,
+          "Hãy xác thực lại tài khoản Firebase trước khi đổi mật khẩu",
+          "FIREBASE_RECENT_LOGIN_REQUIRED",
+        );
+      }
+      const nextPassword = readString(payload.newPassword || payload.password, 200);
+      if (nextPassword.length < 8) {
+        throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự", "PASSWORD_TOO_SHORT");
+      }
+      const saga = await runIdentityProviderSaga(
+        req,
+        user,
+        user,
+        "reset_password",
+        { password: nextPassword },
+        () => updateFirebaseLinkedAccount(user, {
+          password: nextPassword,
+          revokeRefreshTokens: true,
+        }),
+      );
+      if (!saga.replayed) {
+        await appendAudit("account.password.change", req, {
+          actorUserId: user.id,
+          organizationId: user.organizationId || "",
+          resourceType: "user",
+          resourceId: user.id,
+          metadata: { operationId: saga.completed.identityOperation.id, provider: "firebase" },
+        });
+        createNotification("success", "Đã đổi mật khẩu", "Mật khẩu Firebase của tài khoản vừa được cập nhật.", {
+          userId: user.id,
+          organizationId: user.organizationId || "",
+        });
+        await saveDb();
+      }
+      sendJson(res, 200, {
+        ok: true,
+        provider: "firebase",
+        operationId: saga.completed.identityOperation.id,
+        replayed: saga.replayed,
       });
-      createNotification("success", "Đã đổi mật khẩu", "Mật khẩu Firebase của tài khoản vừa được cập nhật.", {
-        userId: user.id,
-        organizationId: user.organizationId || "",
-      });
-      await saveDb();
-      sendJson(res, 200, { ok: true, provider: "firebase" });
       return;
     }
 
@@ -9384,66 +14708,23 @@ async function handleMeApi(req, res, segments) {
       userId: user.id,
       organizationId: user.organizationId || "",
     });
-    saveDb();
+    await saveDb();
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "2fa" && method === "POST") {
-    const payload = await readJsonBody(req);
-    const action = readString(payload.action, 40) || "enable";
-    const methodName = readString(payload.method, 40) || "app";
-
-    if (action === "disable") {
-      user.twoFactorEnabled = false;
-      user.twoFactorMethod = "";
-      user.twoFactorSecretPreview = "";
-      user.twoFactorRecoveryCodes = [];
-      user.updatedAt = nowIso();
-      await appendAudit("account.2fa.disable", req, {
-        actorUserId: user.id,
-        organizationId: user.organizationId || "",
-        resourceType: "user",
-        resourceId: user.id,
-      });
-      await saveDb();
-      sendJson(res, 200, { user: publicUser(user), twoFactor: { enabled: false, method: "" } });
-      return;
-    }
-
-    if (!["app", "sms"].includes(methodName)) {
-      throw httpError(400, "Phương thức 2FA không hợp lệ");
-    }
-    if (methodName === "sms" && !readString(user.phone, 40)) {
-      throw httpError(400, "Cần cập nhật số điện thoại trước khi bật 2FA SMS");
-    }
-
-    const secret = crypto.randomBytes(10).toString("base64url").toUpperCase();
-    const recoveryCodes = createRecoveryCodes();
-    user.twoFactorEnabled = true;
-    user.twoFactorMethod = methodName;
-    user.twoFactorSecretPreview = `${secret.slice(0, 4)}••••${secret.slice(-4)}`;
-    user.twoFactorRecoveryCodes = recoveryCodes;
-    user.updatedAt = nowIso();
-    await appendAudit("account.2fa.enable", req, {
-      actorUserId: user.id,
-      organizationId: user.organizationId || "",
-      resourceType: "user",
-      resourceId: user.id,
-      metadata: { method: methodName },
-    });
-    await saveDb();
-    sendJson(res, 200, {
-      user: publicUser(user),
-      twoFactor: {
-        enabled: true,
-        method: methodName,
-        secretPreview: user.twoFactorSecretPreview,
-        recoveryCodes,
-        note: "Thiết lập 2FA đã được lưu. OTP provider thật sẽ tích hợp sau.",
+    throw httpError(
+      410,
+      "Endpoint bật 2FA cũ đã bị loại bỏ; hãy dùng quy trình enroll và verify.",
+      "TWO_FACTOR_LEGACY_ENDPOINT_REMOVED",
+      {
+        statusPath: "/api/v1/me/2fa",
+        enrollPath: "/api/v1/me/2fa/enroll",
+        verifyPath: "/api/v1/me/2fa/verify",
+        disablePath: "/api/v1/me/2fa/disable",
       },
-    });
-    return;
+    );
   }
 
   sendJson(res, 404, { error: "Me route not found" });
@@ -9615,44 +14896,21 @@ async function handleSettingsApi(req, res, segments) {
 
   if (segments.length === 4 && segments[2] === "ai" && segments[3] === "check-update" && method === "POST") {
     requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền kiểm tra AI");
-    const settings = getEffectiveSettingsForUser(user);
-    const currentVersion = readString(settings.ai?.version, 120) || "AI Medical Analysis v3.2.1";
     sendJson(res, 200, {
       ok: true,
-      update: {
-        available: true,
-        currentVersion,
-        latestVersion: "AI Medical Analysis v3.2.2-local",
-        notes: "Bản local cập nhật metadata model cho báo cáo KLTN; chưa tải model cloud.",
-        checkedAt: nowIso(),
-      },
+      update: buildAiUpdateStatus(process.env),
     });
     return;
   }
 
   if (segments.length === 4 && segments[2] === "ai" && segments[3] === "update" && method === "POST") {
     requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
-    const { settings, workspace } = getMutableSettingsForUser(user);
-    settings.ai = {
-      ...(settings.ai || {}),
-      version: "AI Medical Analysis v3.2.2-local",
-      updatedAt: nowIso(),
-      lastUpdateStatus: "updated",
-    };
-    await persistMutableSettings(user, settings, workspace);
-    await appendAudit("settings.ai.update", req, {
-      actorUserId: user.id,
-      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "",
-      resourceType: "settings",
-      resourceId: "ai",
-      metadata: { version: settings.ai.version },
-    });
-    createNotification("success", "Đã cập nhật mô hình AI", "Metadata model AI local vừa được cập nhật.", {
-      userId: user.id,
-      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "",
-    });
-    sendJson(res, 200, { ok: true, settings: publicSettings(user), ai: settings.ai });
-    return;
+    throw httpError(
+      503,
+      "Chưa có nhà cung cấp cập nhật mô hình lâm sàng được cấu hình",
+      "AI_MODEL_UPDATE_UNAVAILABLE",
+      { update: buildAiUpdateStatus(process.env) },
+    );
   }
 
   if (segments.length === 2 && method === "PATCH") {
@@ -9690,6 +14948,16 @@ async function handleNotificationsApi(req, res, segments) {
   const user = requireUser(req);
   const context = getRequestContext(req) || createRequestContext(req);
 
+  if (segments.length === 3 && segments[2] === "options" && method === "GET") {
+    requireAnyCapability(
+      user,
+      NOTIFICATION_MANAGE_CAPABILITIES,
+      "Không có quyền xem tùy chọn gửi thông báo",
+    );
+    sendJson(res, 200, getNotificationAudienceOptions(user));
+    return;
+  }
+
   if (segments.length === 2 && method === "GET") {
     const notifications = repositories ? await repositories.notifications.list() : db.notifications;
     sendJson(res, 200, { notifications: filterNotificationsForUser(user, notifications) });
@@ -9697,48 +14965,71 @@ async function handleNotificationsApi(req, res, segments) {
   }
 
   if (segments.length === 2 && method === "POST") {
+    requireAnyCapability(
+      user,
+      NOTIFICATION_MANAGE_CAPABILITIES,
+      "Không có quyền tạo thông báo cho workspace",
+    );
     const payload = await readJsonBody(req);
-    const organizationId = isPlatformAdminUser(user)
-      ? readString(payload.organizationId, 120) || context.organizationId || ""
-      : getUserWorkspaceContext(user).currentWorkspaceId || "";
-    const requestedUserId = readString(payload.userId, 120);
-    let targetUserId = "";
-    if (requestedUserId) {
-      const targetUser = db.users.find(
-        (candidate) => candidate.id === requestedUserId || candidate.firebaseUid === requestedUserId,
-      );
-      if (!targetUser) {
-        throw httpError(404, "Target notification user not found");
-      }
-      if (!canTargetNotificationUser(user, targetUser, organizationId)) {
-        throw httpError(403, "Target notification user is outside current workspace");
-      }
-      targetUserId = targetUser.id;
-    }
-    const input = {
-      type: readString(payload.type, 40) || "info",
-      title: readString(payload.title, 180),
-      message: readString(payload.message, 2000),
-      channel: readString(payload.channel, 40) || "in_app",
-      organizationId,
-      userId: targetUserId,
-      read: false,
-    };
-    if (!input.title || !input.message) {
-      throw httpError(400, "Can nhap tieu de va noi dung thong bao");
-    }
-    const notification = await createBackendNotification(input);
-    await appendAudit("notification.create", req, {
-      resourceType: "notification",
-      resourceId: notification.id,
-      organizationId: notification.organizationId || context.organizationId || "",
+    const idempotencyKey = getRequiredIdempotencyKey(req, payload, "notification campaign creation");
+    const normalized = normalizeNotificationCampaignRequest({
+      ...payload,
+      organizationId:
+        readString(payload.organizationId, 120) ||
+        (!isPlatformAdminUser(user) ? getUserWorkspaceContext(user).currentWorkspaceId || "" : ""),
     });
-    saveDb();
-    sendJson(res, 201, { notification });
+    const resolved = resolveNotificationCampaignAudience(user, normalized);
+    const fingerprint = createIdempotencyFingerprint({
+      ...normalized,
+      recipientUserIds: resolved.users.map((targetUser) => targetUser.id).sort(),
+    });
+    const result = await repositories.notifications.createCampaignWithAudit(
+      {
+        actorUserId: user.id,
+        organizationId: resolved.workspace.id,
+        audience: normalized.audience,
+        requestedChannels: normalized.channels,
+        recipients: resolved.recipients,
+        type: normalized.type,
+        title: normalized.title,
+        message: normalized.message,
+        metadata: { actionPath: "/portal/notifications" },
+      },
+      {
+        actorUserId: user.id,
+        organizationId: resolved.workspace.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      },
+      {
+        scope: `${user.id}:${resolved.workspace.id}`,
+        operation: "notification.campaign.create",
+        key: idempotencyKey,
+        fingerprint,
+      },
+    );
+    if (!result.replayed) {
+      for (const notification of result.notifications) {
+        if (notification.emailStatus === "ready") queueDirectNotificationEmail(notification);
+        if (notification.pushStatus === "ready") queueNotificationPush(notification);
+      }
+    }
+    sendJson(res, result.responseStatus || 201, {
+      campaign: result.campaign,
+      notifications: result.notifications,
+      notification: result.notifications[0] || null,
+      idempotent: result.replayed,
+      channelAvailability: resolved.channelAvailability,
+    });
     return;
   }
 
   if (segments.length === 2 && method === "DELETE") {
+    requireAnyCapability(
+      user,
+      NOTIFICATION_MANAGE_CAPABILITIES,
+      "Không có quyền xóa thông báo của workspace",
+    );
     const scopedNotifications = filterNotificationsForUser(user, repositories ? await repositories.notifications.list() : db.notifications);
     const count = scopedNotifications.length;
     if (repositories) {
@@ -9797,6 +15088,17 @@ async function handleNotificationsApi(req, res, segments) {
     return;
   }
 
+  if (segments.length === 3 && segments[2] === "unregister-device" && method === "POST") {
+    const payload = await readJsonBody(req);
+    const fcmToken = readString(payload.fcmToken, 4096);
+    if (!fcmToken) {
+      throw httpError(400, "FCM token is required");
+    }
+    const device = await repositories.notificationDevices.disableToken(user.id, fcmToken);
+    sendJson(res, 200, { unregistered: Boolean(device) });
+    return;
+  }
+
   if (repositories) {
     await repositories.notifications.list();
   }
@@ -9821,6 +15123,14 @@ async function handleNotificationsApi(req, res, segments) {
   }
 
   if (segments.length === 3 && method === "DELETE") {
+    const ownsDirectNotification = Boolean(notification.userId && notification.userId === user.id);
+    if (!ownsDirectNotification) {
+      requireAnyCapability(
+        user,
+        NOTIFICATION_MANAGE_CAPABILITIES,
+        "Không có quyền xóa thông báo dùng chung",
+      );
+    }
     if (repositories) {
       await repositories.notifications.delete(notification.id, context);
     } else {
@@ -9863,13 +15173,87 @@ async function handleObjectsApi(req, res, url, segments) {
   sendJson(res, 404, { error: "Object route not found" });
 }
 
-async function handleAccessLogsApi(req, res, segments) {
+function publicAuditLog(log) {
+  const actor = db.users.find((user) => user.id === log.actorUserId) || null;
+  const organization = db.organizations.find((workspace) => workspace.id === log.organizationId) || null;
+  const metadata = sanitizeAuditMetadata(log.metadata || {});
+  const declaredOutcome = String(metadata.outcome || metadata.status || "").toLowerCase();
+  return {
+    id: log.id || "",
+    actorUserId: log.actorUserId || "",
+    actorName: actor?.name || actor?.email || "",
+    actorRole: actor?.role || "",
+    workspaceId: log.organizationId || "",
+    organizationId: log.organizationId || "",
+    organizationName: organization?.name || "",
+    action: log.action || "",
+    resourceType: log.resourceType || "",
+    resourceId: log.resourceId || "",
+    outcome: ["success", "failure", "warning", "denied"].includes(declaredOutcome)
+      ? declaredOutcome
+      : "recorded",
+    ip: log.ip || "",
+    userAgent: log.userAgent || "",
+    metadata,
+    createdAt: log.createdAt || "",
+  };
+}
+
+async function handleAuditLogsApi(req, res, url, segments) {
   const user = requireUser(req);
   if (segments.length === 2 && (req.method || "GET") === "GET") {
-    sendJson(res, 200, { logs: filterAccessLogsForUser(user, db.accessLogs).slice(0, 100) });
+    requireAnyCapability(user, AUDIT_LOG_VIEW_CAPABILITIES, "Không có quyền xem audit log");
+    const workspaceContext = getUserWorkspaceContext(user);
+    const requestedOrganizationId = readString(url.searchParams.get("organizationId"), 120);
+    if (
+      !isPlatformAdminUser(user) &&
+      requestedOrganizationId &&
+      requestedOrganizationId !== workspaceContext.currentWorkspaceId
+    ) {
+      throw httpError(403, "Audit log workspace is outside the current workspace", "AUDIT_SCOPE_DENIED");
+    }
+    const organizationId = isPlatformAdminUser(user)
+      ? requestedOrganizationId
+      : workspaceContext.currentWorkspaceId || "";
+    if (!isPlatformAdminUser(user) && !organizationId) {
+      throw httpError(403, "Select an operational workspace before viewing audit logs", "AUDIT_WORKSPACE_REQUIRED");
+    }
+    let filters;
+    try {
+      filters = normalizeAuditLogQuery({
+        organizationId,
+        q: url.searchParams.get("q"),
+        action: url.searchParams.get("action"),
+        resourceType: url.searchParams.get("resourceType"),
+        actorUserId: url.searchParams.get("actorUserId"),
+        startDate: url.searchParams.get("startDate"),
+        endDate: url.searchParams.get("endDate"),
+        page: url.searchParams.get("page"),
+        limit: url.searchParams.get("limit"),
+        sort: url.searchParams.get("sort"),
+      });
+    } catch (error) {
+      throw httpError(400, error.message, error.code || "AUDIT_FILTER_INVALID", {
+        field: error.field || "",
+      });
+    }
+    const pageResult = await repositories.auditLogs.list(filters);
+    setWorkspacePaginationHeaders(res, pageResult);
+    const pageCount = pageResult.total === 0 ? 0 : Math.ceil(pageResult.total / pageResult.limit);
+    sendJson(res, 200, {
+      logs: pageResult.items.map(publicAuditLog),
+      pagination: {
+        page: pageResult.page,
+        limit: pageResult.limit,
+        total: pageResult.total,
+        pageCount,
+        hasNextPage: pageResult.page < pageCount,
+        sort: pageResult.sort,
+      },
+    });
     return;
   }
-  sendJson(res, 404, { error: "Access log route not found" });
+  sendJson(res, 404, { error: "Audit log route not found" });
 }
 
 async function handleDevicesApi(req, res, segments) {
@@ -9899,10 +15283,53 @@ async function handleDevicesApi(req, res, segments) {
   if (segments.length === 3 && segments[2] === "provision-qr" && method === "POST") {
     requireAnyCapability(user, ["platform.devices.manage", "workspace.devices.manage", "personal.devices.manage"]);
     const payload = await readJsonBody(req);
-    const deviceId = readString(payload.deviceId, 120) || createId("dev");
-    const claimCode = crypto.randomBytes(6).toString("hex").toUpperCase();
-    let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
-    if (!device) {
+    const deviceId = assertCanonicalDeviceId(
+      Object.prototype.hasOwnProperty.call(payload, "deviceId")
+        ? payload.deviceId
+        : createId("dev"),
+    );
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyOperation = "device.provision";
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const requestedType = readString(payload.type, 40);
+    if (requestedType && !["stethoscope", "respiratory", "other"].includes(requestedType)) {
+      throw httpError(400, "Device type is unsupported", "DEVICE_TYPE_UNSUPPORTED");
+    }
+    const purchaseDate = readString(payload.purchaseDate, 20);
+    if (purchaseDate) {
+      const parsedPurchaseDate = new Date(`${purchaseDate}T00:00:00.000Z`);
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ||
+        Number.isNaN(parsedPurchaseDate.getTime()) ||
+        parsedPurchaseDate.toISOString().slice(0, 10) !== purchaseDate
+      ) {
+        throw httpError(400, "Purchase date must use a valid YYYY-MM-DD date", "DEVICE_PURCHASE_DATE_INVALID");
+      }
+    }
+    const existingDevice = repositories
+      ? await repositories.devices.findById(deviceId)
+      : db.devices.find((item) => item.id === deviceId);
+    const requestedOrganizationId = readString(payload.organizationId, 120);
+    if (existingDevice) {
+      assertCanAccessDevice(user, existingDevice);
+      if (inferDeviceOwnershipState(existingDevice) !== "provisioned") {
+        throw httpError(
+          409,
+          "An owned or revoked device cannot be reprovisioned; use the audited transfer or revoke workflow",
+          "DEVICE_ALREADY_OWNED",
+        );
+      }
+      if (
+        requestedOrganizationId &&
+        existingDevice.organizationId &&
+        requestedOrganizationId !== existingDevice.organizationId
+      ) {
+        throw httpError(403, "Use the platform transfer endpoint to change a device workspace");
+      }
+    }
+    let device;
+    if (!existingDevice) {
+      const enrollmentSecret = requireDeviceEnrollmentSecret(payload);
       device = {
         id: deviceId,
         name: readString(payload.name, 120) || "Ống nghe Smart Health",
@@ -9911,21 +15338,53 @@ async function handleDevicesApi(req, res, segments) {
         signal: -60,
         battery: 0,
         connected: false,
-        secret: crypto.randomBytes(32).toString("hex"),
+        ownershipState: "provisioned",
+        secretHash: canonicalDeviceSecretHash(enrollmentSecret),
         createdAt: nowIso(),
         updatedAt: nowIso(),
       };
-      db.devices.unshift(device);
+    } else {
+      // Keep the hydrated runtime row unchanged until the audited mutation
+      // commits, so a storage failure cannot leave a partial provision.
+      device = { ...existingDevice };
+    }
+    if (!device.secretHash && device.secret) {
+      device.secretHash = canonicalDeviceSecretHash(device.secret);
+      delete device.secret;
+    }
+    if (!device.secretHash) {
+      device.secretHash = canonicalDeviceSecretHash(requireDeviceEnrollmentSecret(payload));
     }
 
     device.name = readString(payload.name, 120) || device.name;
-    device.organizationId = getWritableWorkspaceIdForUser(user, payload.organizationId || device.organizationId);
-    assertCanAccessDevice(user, device);
+    if (requestedType) device.type = requestedType;
+    for (const [field, maximum] of [
+      ["manufacturer", 120],
+      ["model", 120],
+      ["serialNumber", 120],
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(payload, field)) {
+        device[field] = readString(payload[field], maximum);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "purchaseDate")) {
+      device.purchaseDate = purchaseDate;
+    }
+    device.organizationId =
+      device.organizationId || getWritableWorkspaceIdForUser(user, requestedOrganizationId || device.organizationId);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device provisioning",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    const claimCode = deriveDeviceClaimCode(device, idempotencyKey, idempotencyFingerprint);
     device.claimCodeHash = hashValue(`${device.id}:${claimCode}`);
     device.claimCodeExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     device.status = "unclaimed";
     device.updatedAt = nowIso();
-    db.deviceClaims.unshift({
+    const claim = {
       id: createId("claim"),
       deviceId: device.id,
       organizationId: device.organizationId,
@@ -9934,34 +15393,122 @@ async function handleDevicesApi(req, res, segments) {
       expiresAt: device.claimCodeExpiresAt,
       claimedAt: null,
       createdAt: nowIso(),
-    });
-    db.deviceClaims = db.deviceClaims.slice(0, 500);
-    addAccessLog(`Tạo QR claim cho thiết bị ${device.name}`);
-    if (repositories) {
-      await repositories.devices.save(device);
-    } else {
-      saveDb();
-    }
-    sendJson(res, 201, {
+      updatedAt: nowIso(),
+    };
+    // Validate the cross-client device identity and derive the setup material
+    // before committing anything. The derived PoP is returned once/replayed
+    // deterministically, but is never stored in the idempotency ledger.
+    buildSecureSetupQrPayload(
+      {
+        deviceId: device.id,
+        secretHash: device.secretHash,
+        claimCode,
+        claimExpiresAt: device.claimCodeExpiresAt,
+      },
+      { now: Date.now() },
+    );
+    const context = getRequestContext(req) || createRequestContext(req);
+    const auditInput = {
+      action: "device.provision",
+      actorUserId: user.id,
+      resourceType: "device",
+      resourceId: device.id,
+      organizationId: device.organizationId || "",
+      ip: context.ip || "",
+      userAgent: context.userAgent || "",
+      metadata: {
+        type: device.type,
+        claimExpiresAt: device.claimCodeExpiresAt,
+        hasManufacturer: Boolean(device.manufacturer),
+        hasModel: Boolean(device.model),
+        hasSerialNumber: Boolean(device.serialNumber),
+        hasPurchaseDate: Boolean(device.purchaseDate),
+      },
+    };
+    const safeResponseBody = {
       device: publicDevice(device),
       claim: {
         deviceId: device.id,
-        claimCode,
         expiresAt: device.claimCodeExpiresAt,
         qrPayload: {
           deviceId: device.id,
-          claimCode,
         },
       },
+    };
+    if (!repositories?.devices?.saveProvisionWithAudit) {
+      throw httpError(
+        503,
+        "Audited device provisioning storage is unavailable",
+        "DEVICE_PROVISION_STORAGE_UNAVAILABLE",
+      );
+    }
+    const persistenceResult = await repositories.devices.saveProvisionWithAudit(
+      device,
+      claim,
+      auditInput,
+      {
+        scope: getIdempotencyScope(user, device.organizationId),
+        operation: idempotencyOperation,
+        key: idempotencyKey,
+        fingerprint: idempotencyFingerprint,
+      },
+      safeResponseBody,
+      201,
+    );
+    const persistedResponse = persistenceResult.responseBody || safeResponseBody;
+    const persistedDevice = persistedResponse.device || safeResponseBody.device;
+    const replayClaimCode = deriveDeviceClaimCode(
+      {
+        ...device,
+        id: persistedDevice.id,
+        organizationId: persistedDevice.organizationId || device.organizationId,
+      },
+      idempotencyKey,
+      idempotencyFingerprint,
+    );
+    const secureSetupQrPayload = buildSecureSetupQrPayload(
+      {
+        deviceId: persistedDevice.id,
+        secretHash: device.secretHash,
+        claimCode: replayClaimCode,
+        claimExpiresAt: persistedResponse.claim?.expiresAt || device.claimCodeExpiresAt,
+      },
+      { now: Date.now() },
+    );
+    if (!persistenceResult.replayed) {
+      addAccessLog(`Tạo QR claim cho thiết bị ${device.name}`, {
+        userId: user.id,
+        organizationId: device.organizationId,
+        ip: context.ip || "",
+        severity: "info",
+      });
+      await saveDb();
+    }
+    sendJson(res, persistenceResult.responseStatus || 201, {
+      ...persistedResponse,
+      claim: {
+        ...(persistedResponse.claim || {}),
+        claimCode: replayClaimCode,
+        qrPayload: secureSetupQrPayload,
+      },
+      ...(persistenceResult.replayed ? { idempotent: true } : {}),
     });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "pair" && method === "POST") {
     const payload = await readJsonBody(req);
-    const deviceId = readString(payload.deviceId, 120) || createId("dev");
+    const deviceId = assertCanonicalDeviceId(
+      Object.prototype.hasOwnProperty.call(payload, "deviceId")
+        ? payload.deviceId
+        : createId("dev"),
+    );
     const claimCode = readString(payload.claimCode, 80);
-    const connectionMethod = readString(payload.connectionMethod, 60);
+    const connectionMethod = normalizeDevicePairingMethod(payload.connectionMethod, Boolean(claimCode));
+    const requestedOrganizationId = readString(payload.organizationId, 120);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyOperation = "device.pair";
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
     const canManageDevices = hasAnyCapability(user, [
       "platform.devices.manage",
       "workspace.devices.manage",
@@ -9974,6 +15521,7 @@ async function handleDevicesApi(req, res, segments) {
       "personal.devices.manage",
     ]);
     let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
+    const deviceAlreadyExists = Boolean(device);
     if (!device) {
       if (claimCode) {
         throw httpError(404, "Không tìm thấy thiết bị để claim");
@@ -9981,64 +15529,202 @@ async function handleDevicesApi(req, res, segments) {
       if (!canManageDevices) {
         throw httpError(403, "Không có quyền tạo thiết bị mới trong workspace này");
       }
+      const enrollmentSecret = requireDeviceEnrollmentSecret(payload);
       device = {
         id: deviceId,
         name: readString(payload.name, 120) || "Ống nghe Smart Health",
         type: "stethoscope",
         status: "available",
-        organizationId: getWritableWorkspaceIdForUser(user, payload.organizationId),
+        organizationId: getWritableWorkspaceIdForUser(user, requestedOrganizationId),
         signal: readOptionalNumber(payload.signal) || -55,
         battery: readOptionalNumber(payload.battery) || 85,
         connected: false,
-        secret: crypto.randomBytes(16).toString("hex"),
-        lastSeenAt: nowIso(),
+        ownershipState: "provisioned",
+        secretHash: canonicalDeviceSecretHash(enrollmentSecret),
+        createdAt: nowIso(),
         updatedAt: nowIso(),
       };
-      db.devices.unshift(device);
+    } else {
+      // Keep the hydrated projection unchanged until the audited transaction
+      // consumes the claim and commits the ownership state.
+      device = { ...device };
     }
-
     if (device.revokedAt) {
       throw httpError(403, "Thiết bị đã bị thu hồi");
     }
 
-    device.organizationId = device.organizationId || getWritableWorkspaceIdForUser(user, payload.organizationId);
+    device.organizationId = device.organizationId || getWritableWorkspaceIdForUser(user, requestedOrganizationId);
+    assertCanAccessDevice(user, device);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device pairing",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
+      organizationId: device.organizationId,
+      fingerprint: idempotencyFingerprint,
+    });
+    if (replayedResponse) {
+      sendJson(res, 200, { ...replayedResponse, idempotent: true });
+      await saveDb();
+      return;
+    }
+    if (!device.secretHash && !device.secret) {
+      device.secretHash = canonicalDeviceSecretHash(requireDeviceEnrollmentSecret(payload));
+    }
 
-    if (device.claimCodeHash) {
+    let claimMutation = null;
+    if (claimCode) {
       if (!canClaimDevice) {
         throw httpError(403, "Không có quyền claim thiết bị trong workspace này");
       }
       assertCanAccessDevice(user, device);
-      if (!claimCode || hashValue(`${device.id}:${claimCode}`) !== device.claimCodeHash) {
-        throw httpError(403, "Claim code không hợp lệ");
-      }
-      const expiresAt = Date.parse(device.claimCodeExpiresAt || "");
-      if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
-        throw httpError(410, "Claim code đã hết hạn");
-      }
-      const claim = db.deviceClaims.find((item) => item.deviceId === device.id && item.claimCodeHash === device.claimCodeHash);
-      if (claim) {
-        claim.claimedAt = nowIso();
-        claim.claimedByUserId = user.id;
-      }
-      delete device.claimCodeHash;
-      delete device.claimCodeExpiresAt;
+      claimMutation = {
+        organizationId: device.organizationId,
+        claimCodeHash: hashValue(`${device.id}:${claimCode}`),
+        claimedByUserId: user.id,
+        at: nowIso(),
+      };
     } else {
       assertCanManageDevice(user, device);
+      if (deviceAlreadyExists && inferDeviceOwnershipState(device) === "provisioned") {
+        throw httpError(
+          409,
+          "A one-time claim code is required before adopting this provisioned device",
+          "DEVICE_CLAIM_REQUIRED",
+        );
+      }
     }
 
-    device.pairedUserId = user.id;
-    device.status = "connected";
-    device.connected = true;
-    device.connectionMethod = connectionMethod || (claimCode ? "QR" : "Bluetooth");
+    Object.assign(
+      device,
+      applyDeviceOwnershipTransition(device, "claimed", {
+        ownerUserId: user.id,
+        at: claimMutation?.at || nowIso(),
+      }),
+    );
+    const pairing = createDevicePairingState(device);
+    device.connected = pairing.onlineConfirmed;
+    device.status = device.connected ? "connected" : "available";
+    device.connectionMethod = connectionMethod;
     device.updatedAt = nowIso();
-    addAccessLog(`Ghép nối thiết bị ${device.name}`);
-    createNotification("success", "Đã ghép nối thiết bị", `${device.name} đã sẵn sàng sử dụng.`);
-    if (repositories) {
-      await repositories.devices.save(device);
+    const responseBody = {
+      device: {
+        ...publicDevice(device),
+        connected: pairing.onlineConfirmed,
+        online: pairing.onlineConfirmed,
+      },
+      pairing,
+    };
+    const context = getRequestContext(req) || createRequestContext(req);
+    const auditInput = {
+      action: "device.pair",
+      actorUserId: user.id,
+      organizationId: device.organizationId,
+      resourceType: "device",
+      resourceId: device.id,
+      ip: context.ip || "",
+      userAgent: context.userAgent || "",
+      metadata: {
+        connectionMethod,
+        pairingOutcome: pairing.outcome,
+        presence: pairing.presence,
+        onlineConfirmed: pairing.onlineConfirmed,
+      },
+    };
+    const notificationInput = {
+      type: pairing.onlineConfirmed ? "success" : "info",
+      userId: user.id,
+      organizationId: device.organizationId,
+      title: pairing.onlineConfirmed
+        ? "Thiết bị đã kết nối"
+        : "Yêu cầu ghép thiết bị đã được chấp nhận",
+      message: pairing.onlineConfirmed
+        ? `${device.name} đã xác thực trực tuyến và sẵn sàng sử dụng.`
+        : `${device.name} đang chờ xác thực trực tuyến trước khi báo sẵn sàng.`,
+      metadata: sanitizeNotificationMetadata({
+        deviceId: device.id,
+        destination: "device_detail",
+        actionPath: `/devices/${encodeURIComponent(device.id)}`,
+        pairingOutcome: pairing.outcome,
+        presence: pairing.presence,
+        onlineConfirmed: pairing.onlineConfirmed,
+        connectionMethod,
+      }),
+    };
+    let persistenceResult;
+    if (repositories && typeof repositories.devices.savePairingWithAudit === "function") {
+      persistenceResult = await repositories.devices.savePairingWithAudit(
+        device,
+        auditInput,
+        notificationInput,
+        idempotencyKey
+          ? {
+              scope: getIdempotencyScope(user, device.organizationId),
+              operation: idempotencyOperation,
+              key: idempotencyKey,
+              fingerprint: idempotencyFingerprint,
+            }
+          : null,
+        responseBody,
+        200,
+        claimMutation,
+      );
     } else {
-      saveDb();
+      if (claimMutation) {
+        const claim = db.deviceClaims.find(
+          (item) =>
+            item.deviceId === device.id &&
+            item.claimCodeHash === claimMutation.claimCodeHash,
+        );
+        validateActiveDeviceClaim(claim, {
+          deviceId: device.id,
+          organizationId: device.organizationId,
+          claimCodeHash: claimMutation.claimCodeHash,
+          now: Date.parse(claimMutation.at),
+        });
+        claim.claimedByUserId = user.id;
+        claim.claimedAt = claimMutation.at;
+        claim.updatedAt = claimMutation.at;
+      }
+      if (!db.devices.some((item) => item.id === device.id)) {
+        db.devices.unshift(device);
+      }
+      await saveDeviceRecord(device);
+      await appendAudit("device.pair", req, auditInput);
+      const notification = await createBackendNotification(notificationInput);
+      rememberIdempotentResource(user, idempotencyKey, idempotencyOperation, "device_pairing", device.id, {
+        organizationId: device.organizationId,
+        fingerprint: idempotencyFingerprint,
+        responseStatus: 200,
+        responseResource: responseBody,
+      });
+      persistenceResult = {
+        responseBody,
+        responseStatus: 200,
+        replayed: false,
+        notification,
+      };
     }
-    sendJson(res, 200, { device: publicDevice(device) });
+    if (!persistenceResult.replayed) {
+      addAccessLog(`Ghép nối thiết bị ${device.name}`, {
+        userId: user.id,
+        organizationId: device.organizationId,
+        ip: context.ip || "",
+        severity: pairing.onlineConfirmed ? "success" : "info",
+      });
+      if (persistenceResult.notification && repositories?.devices?.savePairingWithAudit) {
+        queuePlatformAdminNotificationEmail(persistenceResult.notification);
+        queueNotificationPush(persistenceResult.notification);
+      }
+      await saveDb();
+    }
+    sendJson(res, persistenceResult.responseStatus || 200, {
+      ...(persistenceResult.responseBody || responseBody),
+      ...(persistenceResult.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
@@ -10055,42 +15741,84 @@ async function handleDevicesApi(req, res, segments) {
     assertCanAccessDevice(user, device);
     const events = db.deviceEvents
       .filter((event) => event.deviceId === device.id)
-      .slice(0, 100);
+      .slice(0, 100)
+      .map((event) => ({
+        ...event,
+        payload: sanitizePublicDeviceEventPayload(event.payload || {}),
+      }));
     sendJson(res, 200, { events });
+    return;
+  }
+
+  if (segments.length === 4 && segments[3] === "commands" && method === "GET") {
+    assertCanAccessDevice(user, device);
+    const commands = await listDeviceCommands(device.id, 100);
+    for (const command of commands) {
+      await refreshDeviceCommandExpiry(command);
+    }
+    sendJson(res, 200, {
+      commands: commands.map(publicDeviceCommand),
+    });
+    return;
+  }
+
+  if (segments.length === 5 && segments[3] === "commands" && method === "GET") {
+    assertCanAccessDevice(user, device);
+    const command = await refreshDeviceCommandExpiry(
+      await findDeviceCommand(device.id, decodeURIComponent(segments[4])),
+    );
+    if (!command) {
+      throw httpError(404, "Device command not found", "DEVICE_COMMAND_NOT_FOUND");
+    }
+    sendJson(res, 200, { command: publicDeviceCommand(command) });
+    return;
+  }
+
+  if (segments.length === 3 && method === "GET") {
+    assertCanAccessDevice(user, device);
+    await expireDeviceCredentialRotation(device);
+    sendJson(res, 200, { device: publicDevice(device) });
     return;
   }
 
   assertCanManageDevice(user, device);
 
   if (segments.length === 3 && method === "DELETE") {
-    if (repositories) {
-      await repositories.devices.delete(device.id);
-    } else {
-      const index = db.devices.findIndex((item) => item.id === device.id);
-      if (index >= 0) {
-        db.devices.splice(index, 1);
-      }
-    }
-    addAccessLog(`Xóa thiết bị ${device.name}`);
-    saveDb();
-    sendJson(res, 200, { deleted: true, deviceId: device.id });
-    return;
+    throw httpError(
+      409,
+      "Device history must be retained; revoke the device instead of deleting it",
+      "DEVICE_REVOKE_REQUIRED",
+    );
   }
 
   if (segments.length === 3 && method === "PATCH") {
     const payload = await readJsonBody(req);
-    for (const field of ["name", "status"]) {
-      if (Object.prototype.hasOwnProperty.call(payload, field)) {
-        device[field] = readString(payload[field], 120);
-      }
+    const devicePatch = {};
+    const operatorUpdatedFields = [];
+    const auditInputs = [];
+    const mutationAt = nowIso();
+    let ownershipOperation = "update";
+    let assignedPatientId = "";
+    const context = getRequestContext(req) || createRequestContext(req);
+    const auditOrganizationId =
+      device.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "";
+    const forbiddenReportedField = ["status", "signal", "battery", "connected", "lastSeenAt"]
+      .find((field) => Object.prototype.hasOwnProperty.call(payload, field));
+    if (forbiddenReportedField) {
+      throw httpError(
+        400,
+        `Field ${forbiddenReportedField} is device-reported and cannot be changed by an operator`,
+        "DEVICE_REPORTED_FIELD_FORBIDDEN",
+      );
     }
-    for (const field of ["signal", "battery"]) {
+    for (const field of ["name"]) {
       if (Object.prototype.hasOwnProperty.call(payload, field)) {
-        device[field] = readOptionalNumber(payload[field]) ?? device[field];
+        devicePatch[field] = readString(payload[field], 120);
+        operatorUpdatedFields.push(field);
       }
     }
     if (Object.prototype.hasOwnProperty.call(payload, "assignedPatientId")) {
-      const assignedPatientId = readString(payload.assignedPatientId, 120);
+      assignedPatientId = readString(payload.assignedPatientId, 120);
       if (assignedPatientId) {
         const patient = findPatient(assignedPatientId);
         if (!patient) {
@@ -10101,90 +15829,377 @@ async function handleDevicesApi(req, res, segments) {
           throw httpError(403, "Không thể gán thiết bị cho bệnh nhân ngoài workspace");
         }
       }
-      device.assignedPatientId = assignedPatientId || "";
-      await appendAudit(assignedPatientId ? "device.assign_patient" : "device.unassign_patient", req, {
+      ownershipOperation = assignedPatientId ? "assign" : "unassign";
+      auditInputs.push({
+        action: assignedPatientId ? "device.assign_patient" : "device.unassign_patient",
         actorUserId: user.id,
-        organizationId: device.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
+        organizationId: auditOrganizationId,
         resourceType: "device",
         resourceId: device.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
         metadata: { patientId: assignedPatientId },
       });
     }
-    device.updatedAt = nowIso();
-    if (repositories) {
-      await repositories.devices.save(device);
-    } else {
-      saveDb();
+    if (operatorUpdatedFields.length > 0) {
+      auditInputs.push({
+        action: "device.update",
+        actorUserId: user.id,
+        organizationId: auditOrganizationId,
+        resourceType: "device",
+        resourceId: device.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: { fields: operatorUpdatedFields },
+      });
     }
-    sendJson(res, 200, { device: publicDevice(device) });
+    if (auditInputs.length === 0) {
+      throw httpError(400, "No supported device field was provided", "DEVICE_UPDATE_EMPTY");
+    }
+    if (!repositories?.devices?.saveOwnershipMutationWithAudit) {
+      throw httpError(
+        503,
+        "Audited device mutation storage is unavailable",
+        "DEVICE_OWNERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const persisted = await repositories.devices.saveOwnershipMutationWithAudit(
+      {
+        deviceId: device.id,
+        operation: ownershipOperation,
+        expected: deviceOwnershipExpectation(device),
+        patch: devicePatch,
+        assignedPatientId,
+        actorUserId: user.id,
+        at: mutationAt,
+      },
+      auditInputs,
+    );
+    sendJson(res, 200, { device: publicDevice(persisted.device) });
     return;
   }
 
   if (segments.length === 4 && segments[3] === "connect" && method === "POST") {
-    device.connected = true;
-    device.status = "connected";
-    device.lastSeenAt = nowIso();
-    device.updatedAt = nowIso();
-    addAccessLog(`Kết nối thiết bị ${device.name}`);
-    await saveDeviceRecord(device);
-    sendJson(res, 200, { device: publicDevice(device) });
-    return;
+    throw httpError(
+      409,
+      "Device presence can only be confirmed by an authenticated device transport",
+      "DEVICE_PRESENCE_DEVICE_REPORTED_ONLY",
+    );
   }
 
   if (segments.length === 4 && segments[3] === "disconnect" && method === "POST") {
-    device.connected = false;
-    device.status = "available";
-    device.updatedAt = nowIso();
-    addAccessLog(`Ngắt kết nối thiết bị ${device.name}`);
-    await saveDeviceRecord(device);
-    sendJson(res, 200, { device: publicDevice(device) });
-    return;
+    throw httpError(
+      409,
+      "Device presence can only be changed by transport disconnect or heartbeat expiry",
+      "DEVICE_PRESENCE_DEVICE_REPORTED_ONLY",
+    );
   }
 
   if (segments.length === 4 && segments[3] === "calibrate" && method === "POST") {
-    db.settings.stethoscope.lastCalibrationAt = nowIso();
-    addAccessLog(`Hiệu chuẩn thiết bị ${device.name}`);
-    createNotification("success", "Đã hiệu chuẩn thiết bị", `${device.name} đã được hiệu chuẩn.`);
-    await saveDeviceRecord(device);
-    sendJson(res, 200, { device: publicDevice(device), settings: db.settings.stethoscope });
-    return;
+    throw httpError(
+      409,
+      "Device calibration is unavailable until a validated firmware algorithm exists",
+      "DEVICE_CALIBRATION_UNAVAILABLE",
+    );
   }
 
   if (segments.length === 4 && segments[3] === "unpair" && method === "POST") {
-    device.pairedUserId = null;
-    device.connected = false;
-    device.status = "available";
-    device.updatedAt = nowIso();
-    addAccessLog(`Hủy ghép nối thiết bị ${device.name}`);
-    await saveDeviceRecord(device);
-    await appendDeviceEvent(device.id, "unpair", { actorUserId: user.id });
-    await appendAudit("device.unpair", req, { resourceType: "device", resourceId: device.id, organizationId: device.organizationId || "" });
-    sendJson(res, 200, { device: publicDevice(device) });
-    return;
+    throw httpError(
+      409,
+      "Device ownership cannot be erased by unpairing; use unassign, audited transfer, or revoke",
+      "DEVICE_UNPAIR_REQUIRES_TRANSFER_OR_REVOKE",
+    );
   }
 
   if (segments.length === 4 && segments[3] === "revoke" && method === "POST") {
-    device.revokedAt = nowIso();
-    device.connected = false;
-    device.status = "revoked";
-    device.updatedAt = nowIso();
+    if (inferDeviceOwnershipState(device) === "revoked") {
+      sendJson(res, 200, { device: publicDevice(device), idempotent: true });
+      return;
+    }
+    const at = nowIso();
+    const context = getRequestContext(req) || createRequestContext(req);
+    if (!repositories?.devices?.saveOwnershipMutationWithAudit) {
+      throw httpError(
+        503,
+        "Audited device ownership storage is unavailable",
+        "DEVICE_OWNERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const persisted = await repositories.devices.saveOwnershipMutationWithAudit(
+      {
+        deviceId: device.id,
+        operation: "revoke",
+        expected: deviceOwnershipExpectation(device),
+        actorUserId: user.id,
+        at,
+        revokeOpenClaims: true,
+      },
+      [{
+        action: "device.revoke",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        resourceType: "device",
+        resourceId: device.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: { previousOwnershipState: inferDeviceOwnershipState(device) },
+      }],
+    );
     addAccessLog(`Thu hồi thiết bị ${device.name}`, { severity: "warning" });
-    await saveDeviceRecord(device);
+    const activeDeviceSocket = deviceSockets.get(device.id);
+    if (activeDeviceSocket) {
+      closeSocket(activeDeviceSocket, 1008, "REVOKED");
+    }
     await appendDeviceEvent(device.id, "revoke", { actorUserId: user.id });
-    await appendAudit("device.revoke", req, { resourceType: "device", resourceId: device.id, organizationId: device.organizationId || "" });
-    sendJson(res, 200, { device: publicDevice(device) });
+    await interruptRecordingForDevice(device.id, "Lượt ghi bị ngắt vì thiết bị đã được thu hồi.");
+    sendJson(res, 200, { device: publicDevice(persisted.device) });
     return;
   }
 
   if (segments.length === 4 && segments[3] === "rotate-secret" && method === "POST") {
-    device.secret = crypto.randomBytes(32).toString("hex");
-    device.secretRotatedAt = nowIso();
-    device.updatedAt = nowIso();
-    addAccessLog(`Rotate secret thiết bị ${device.name}`, { severity: "warning" });
-    await saveDeviceRecord(device);
-    await appendDeviceEvent(device.id, "rotate_secret", { actorUserId: user.id });
-    await appendAudit("device.rotate_secret", req, { resourceType: "device", resourceId: device.id, organizationId: device.organizationId || "" });
-    sendJson(res, 200, { device: publicDevice(device), rotated: true });
+    const payload = await readJsonBody(req);
+    if (Object.keys(payload).some((field) => field !== "idempotencyKey")) {
+      throw httpError(
+        400,
+        "The next device credential is generated by the backend and cannot be supplied by an operator",
+        "DEVICE_SECRET_SERVER_GENERATED_ONLY",
+      );
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device credential rotation",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    const idempotencyFingerprint = createIdempotencyFingerprint({ deviceId: device.id });
+    await expireDeviceCredentialRotation(device);
+    const existingRotation = sanitizeDeviceCredentialRotation(device.credentialRotation);
+    if (existingRotation.id && existingRotation.idempotencyKey === idempotencyKey) {
+      if (
+        existingRotation.requestedByUserId !== user.id ||
+        existingRotation.requestFingerprint !== idempotencyFingerprint
+      ) {
+        throw httpError(
+          409,
+          "Idempotency-Key was already used by a different rotation request",
+          "IDEMPOTENCY_KEY_REUSED",
+        );
+      }
+      const existingCommand = existingRotation.commandId
+        ? await findDeviceCommand(device.id, existingRotation.commandId)
+        : null;
+      sendJson(res, 202, {
+        device: publicDevice(device),
+        rotation: publicDevice(device).credentialRotation,
+        command: publicDeviceCommand(existingCommand),
+        confirmed: existingRotation.state === "confirmed",
+        idempotent: true,
+      });
+      return;
+    }
+    if (existingRotation.id && ACTIVE_DEVICE_ROTATION_STATES.has(existingRotation.state)) {
+      throw httpError(
+        409,
+        "Another credential rotation is already awaiting device confirmation",
+        "DEVICE_SECRET_ROTATION_IN_PROGRESS",
+      );
+    }
+    const expectedRotation = credentialRotationExpectation(device);
+    const authenticatedDeviceSocket = getAuthenticatedDeviceSocket(device);
+    const rotationWrapKey = authenticatedDeviceSocket
+      ? deviceRotationSessionKeys.get(authenticatedDeviceSocket)
+      : null;
+    if (
+      !authenticatedDeviceSocket ||
+      authenticatedDeviceSocket._deviceAuth?.credentialSlot !== "current" ||
+      !Buffer.isBuffer(rotationWrapKey) ||
+      rotationWrapKey.length !== 32
+    ) {
+      throw httpError(
+        409,
+        "The device must be online on its current authenticated WSS session before rotating credentials",
+        "DEVICE_SECRET_ROTATION_DEVICE_OFFLINE",
+      );
+    }
+
+    const requestedAt = nowIso();
+    const expiresAt = new Date(Date.parse(requestedAt) + DEVICE_SECRET_ROTATION_TTL_MS).toISOString();
+    const rotationId = createId("rotation");
+    const generatedSecret = generateDeviceCredentialBuffer(64);
+    let nextSecretHash;
+    let wrappedSecret;
+    try {
+      nextSecretHash = canonicalDeviceSecretHash(generatedSecret);
+      wrappedSecret = wrapDeviceRotationSecret(generatedSecret, rotationWrapKey, {
+        rotationId,
+        deviceId: device.id,
+        sessionId: authenticatedDeviceSocket._deviceAuth.sessionId,
+      });
+    } finally {
+      generatedSecret.fill(0);
+    }
+    const envelope = createDeviceCommandEnvelope({
+      id: createId("cmd"),
+      type: "device.rotate_secret",
+      correlationId: rotationId,
+      issuedAt: requestedAt,
+      expiresAt,
+      payload: {
+        rotationId,
+        expiresAt,
+        wrapAlgorithm: wrappedSecret.algorithm,
+        wrapKeyDerivation: wrappedSecret.keyDerivation,
+        wrapIv: wrappedSecret.iv,
+        wrapCiphertext: wrappedSecret.ciphertext,
+        wrapTag: wrappedSecret.tag,
+      },
+    });
+    const command = createDeviceCommandRecord({
+      envelope,
+      deviceId: device.id,
+      organizationId: device.organizationId || "",
+      requestedByUserId: user.id,
+      idempotencyKey,
+      requestFingerprint: idempotencyFingerprint,
+    });
+    const rotation = {
+      id: rotationId,
+      state: "initiated",
+      nextSecretHash,
+      requestedByUserId: user.id,
+      requestedSessionId: authenticatedDeviceSocket._deviceAuth.sessionId,
+      commandId: command.id,
+      correlationId: command.correlationId,
+      idempotencyKey,
+      requestFingerprint: idempotencyFingerprint,
+      requestedAt,
+      expiresAt,
+      updatedAt: requestedAt,
+    };
+    device.credentialRotation = rotation;
+    device.updatedAt = requestedAt;
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const rotationAuditInput = {
+      action: "device.secret_rotation.initiated",
+      actorUserId: user.id,
+      organizationId: device.organizationId || "",
+      resourceType: "device",
+      resourceId: device.id,
+      ip: requestContext.ip || "",
+      userAgent: requestContext.userAgent || "",
+      metadata: {
+        rotationId,
+        commandId: command.id,
+        state: rotation.state,
+        expiresAt,
+      },
+    };
+    let rotationPersistence = null;
+    if (repositories?.devices?.saveCredentialRotationWithAudit) {
+      rotationPersistence = await repositories.devices.saveCredentialRotationWithAudit(
+        device,
+        rotationAuditInput,
+        {
+          scope: getIdempotencyScope(user, device.organizationId),
+          operation: `device.secret_rotation:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: idempotencyFingerprint,
+        },
+        202,
+        command,
+        expectedRotation,
+      );
+      if (rotationPersistence.replayed) {
+        const replayDevice = rotationPersistence.device || device;
+        const replayRotation = sanitizeDeviceCredentialRotation(replayDevice.credentialRotation);
+        const replayCommand = replayRotation.commandId
+          ? await findDeviceCommand(replayDevice.id, replayRotation.commandId)
+          : null;
+        sendJson(res, 202, {
+          device: publicDevice(replayDevice),
+          rotation: publicDevice(replayDevice).credentialRotation,
+          command: publicDeviceCommand(replayCommand),
+          confirmed: replayRotation.state === "confirmed",
+          idempotent: true,
+        });
+        return;
+      }
+    } else {
+      await saveDeviceCommandRecord(command);
+      await saveDeviceRecord(device);
+      await appendAudit("device.secret_rotation.initiated", req, rotationAuditInput);
+    }
+    await appendDeviceEvent(device.id, "credential_rotation.initiated", {
+      rotationId,
+      commandId: command.id,
+      state: rotation.state,
+      expiresAt,
+    });
+
+    const sameAuthenticatedSession =
+      deviceSockets.get(device.id) === authenticatedDeviceSocket &&
+      authenticatedDeviceSocket._deviceAuth?.sessionId === rotation.requestedSessionId &&
+      authenticatedDeviceSocket.writable &&
+      !authenticatedDeviceSocket.destroyed;
+    const delivery = { websocket: sameAuthenticatedSession, mqtt: false, delivered: sameAuthenticatedSession };
+    if (sameAuthenticatedSession) sendText(authenticatedDeviceSocket, JSON.stringify(envelope));
+    applyDeviceCommandDelivery(command, delivery);
+    rotation.state = delivery.delivered ? "pending_device_ack" : "failed";
+    rotation.updatedAt = command.updatedAt;
+    if (!delivery.delivered) {
+      rotation.failedAt = command.updatedAt;
+      rotation.failureCode = "ROTATION_SESSION_LOST";
+      rotation.nextSecretHash = "";
+    }
+    device.credentialRotation = rotation;
+    device.updatedAt = command.updatedAt;
+    device.lastCommand = publicDeviceCommand(command);
+    const deliveryAuditInput = {
+      action: delivery.delivered
+        ? "device.secret_rotation.delivered"
+        : "device.secret_rotation.delivery_failed",
+      actorUserId: user.id,
+      organizationId: device.organizationId || "",
+      resourceType: "device",
+      resourceId: device.id,
+      metadata: {
+        rotationId,
+        commandId: command.id,
+        state: rotation.state,
+        delivered: delivery.delivered,
+      },
+    };
+    if (repositories?.devices?.saveCredentialRotationWithAudit) {
+      await repositories.devices.saveCredentialRotationWithAudit(
+        device,
+        deliveryAuditInput,
+        null,
+        202,
+        command,
+        {
+          id: rotationId,
+          state: "initiated",
+          updatedAt: requestedAt,
+        },
+      );
+    } else {
+      await saveDeviceCommandRecord(command);
+      await saveDeviceRecord(device);
+      await appendAudit(deliveryAuditInput.action, req, deliveryAuditInput);
+    }
+    await appendDeviceEvent(device.id, `credential_rotation.${rotation.state}`, {
+      rotationId,
+      commandId: command.id,
+      state: rotation.state,
+    });
+    sendJson(res, 202, {
+      device: publicDevice(device),
+      rotation: publicDevice(device).credentialRotation,
+      command: publicDeviceCommand(command),
+      confirmed: false,
+    });
     return;
   }
 
@@ -10216,54 +16231,223 @@ async function handleDevicesApi(req, res, segments) {
         throw httpError(403, "Target device owner is outside the target workspace");
       }
     }
-    device.organizationId = transferOrganizationId || device.organizationId;
-    if (nextOwner) {
-      device.pairedUserId = nextOwner.id;
+    const previousOrganizationId = device.organizationId || "";
+    const at = nowIso();
+    const context = getRequestContext(req) || createRequestContext(req);
+    if (!repositories?.devices?.saveOwnershipMutationWithAudit) {
+      throw httpError(
+        503,
+        "Audited device ownership storage is unavailable",
+        "DEVICE_OWNERSHIP_STORAGE_UNAVAILABLE",
+      );
     }
-    device.updatedAt = nowIso();
-    await saveDeviceRecord(device);
-    await appendDeviceEvent(device.id, "transfer", { organizationId: device.organizationId, ownerUserId: device.pairedUserId });
-    await appendAudit("device.transfer", req, { resourceType: "device", resourceId: device.id, organizationId: device.organizationId || "" });
-    sendJson(res, 200, { device: publicDevice(device) });
+    const transferMetadata = {
+      previousOrganizationId,
+      organizationId: transferOrganizationId,
+      previousOwnerUserId: device.ownerUserId || device.pairedUserId || "",
+      ownerUserId: nextOwner?.id || "",
+    };
+    const transferAuditInputs =
+      previousOrganizationId && previousOrganizationId !== transferOrganizationId
+        ? [
+            {
+              action: "device.transfer_out",
+              actorUserId: user.id,
+              organizationId: previousOrganizationId,
+              resourceType: "device",
+              resourceId: device.id,
+              ip: context.ip || "",
+              userAgent: context.userAgent || "",
+              metadata: transferMetadata,
+            },
+            {
+              action: "device.transfer_in",
+              actorUserId: user.id,
+              organizationId: transferOrganizationId,
+              resourceType: "device",
+              resourceId: device.id,
+              ip: context.ip || "",
+              userAgent: context.userAgent || "",
+              metadata: transferMetadata,
+            },
+          ]
+        : [
+            {
+              action: "device.transfer",
+              actorUserId: user.id,
+              organizationId: transferOrganizationId,
+              resourceType: "device",
+              resourceId: device.id,
+              ip: context.ip || "",
+              userAgent: context.userAgent || "",
+              metadata: transferMetadata,
+            },
+          ];
+    const persisted = await repositories.devices.saveOwnershipMutationWithAudit(
+      {
+        deviceId: device.id,
+        operation: "transfer",
+        expected: deviceOwnershipExpectation(device),
+        organizationId: transferOrganizationId,
+        ownerUserId: nextOwner?.id || "",
+        actorUserId: user.id,
+        at,
+        revokeOpenClaims: previousOrganizationId !== transferOrganizationId,
+        claimOrganizationId: previousOrganizationId,
+      },
+      transferAuditInputs,
+    );
+    const transferredDevice = persisted.device;
+    const activeDeviceSocket = deviceSockets.get(device.id);
+    if (activeDeviceSocket) {
+      closeSocket(activeDeviceSocket, 1008, "WORKSPACE_TRANSFERRED");
+    }
+    await interruptRecordingForDevice(device.id, "Lượt ghi bị ngắt vì thiết bị đã được chuyển workspace.");
+    await appendDeviceEvent(device.id, "transfer", {
+      previousOrganizationId,
+      organizationId: transferredDevice.organizationId,
+      ownerUserId: transferredDevice.ownerUserId || transferredDevice.pairedUserId,
+    });
+    sendJson(res, 200, { device: publicDevice(transferredDevice) });
     return;
   }
 
   if (segments.length === 4 && segments[3] === "commands" && method === "POST") {
     const payload = await readJsonBody(req);
     const commandType = readString(payload.type, 80);
-    if (!commandType) {
-      throw httpError(400, "Device command type is required");
+    if (!isSupportedDeviceCommandType(commandType)) {
+      throw httpError(400, "Device command type is unsupported", "DEVICE_COMMAND_TYPE_UNSUPPORTED");
     }
-    const command = {
-      id: createId("cmd"),
-      type: commandType,
-      payload: payload.payload && typeof payload.payload === "object" ? payload.payload : {},
-      createdAt: nowIso(),
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyOperation = `device.command:${device.id}`;
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
+      organizationId: device.organizationId,
+      fingerprint: idempotencyFingerprint,
+    });
+    if (replayedResponse?.command?.id) {
+      const currentCommand = await refreshDeviceCommandExpiry(
+        await findDeviceCommand(device.id, replayedResponse.command.id),
+      );
+      sendJson(res, Number(replayedResponse.responseStatus || 202), {
+        ...replayedResponse,
+        command: publicDeviceCommand(currentCommand) || replayedResponse.command,
+        idempotent: true,
+      });
+      await saveDb();
+      return;
+    }
+    const authenticatedDeviceSocket = getAuthenticatedDeviceSocket(device);
+    if (!authenticatedDeviceSocket) {
+      throw httpError(
+        409,
+        "The device is offline; reconnect it before retrying this command",
+        "DEVICE_COMMAND_DEVICE_OFFLINE",
+      );
+    }
+
+    const envelope = buildDeviceCommand(
+      commandType,
+      payload.payload && typeof payload.payload === "object" ? payload.payload : {},
+      payload.correlationId,
+      readOptionalNumber(payload.ttlMs) || 30_000,
+    );
+    const command = createDeviceCommandRecord({
+      envelope,
+      deviceId: device.id,
+      organizationId: device.organizationId || "",
       requestedByUserId: user.id,
-    };
-    const delivery = publishDeviceCommand(device.id, command);
-    device.lastCommand = {
-      id: command.id,
+      idempotencyKey,
+      requestFingerprint: idempotencyFingerprint,
+    });
+    await saveDeviceCommandRecord(command);
+    await appendDeviceEvent(device.id, "command.accepted", {
+      commandId: command.id,
+      correlationId: command.correlationId,
       type: command.type,
-      status: delivery.delivered ? "sent" : "queued",
-      deliveredVia: delivery,
-      createdAt: command.createdAt,
-    };
-    device.updatedAt = nowIso();
-    await saveDeviceRecord(device);
-    await appendDeviceEvent(device.id, "command", { ...command, delivery });
+      state: command.state,
+      expiresAt: command.expiresAt,
+    });
+    const delivery = publishDeviceCommand(device.id, envelope);
+    applyDeviceCommandDelivery(command, delivery);
+    await saveDeviceCommandRecord(command);
+    await syncDeviceLastCommand(command);
+    await appendDeviceEvent(device.id, `command.${command.state}`, {
+      commandId: command.id,
+      correlationId: command.correlationId,
+      type: command.type,
+      state: command.state,
+      delivery: command.delivery,
+    });
     await appendAudit("device.command", req, {
       resourceType: "device",
       resourceId: device.id,
       organizationId: device.organizationId || "",
-      metadata: { type: command.type, delivery },
+      metadata: {
+        commandId: command.id,
+        correlationId: command.correlationId,
+        type: command.type,
+        state: command.state,
+        delivery: command.delivery,
+      },
     });
-    sendJson(res, 202, { device: publicDevice(device), command, delivery });
+    const responseBody = {
+      device: publicDevice(device),
+      command: publicDeviceCommand(command),
+      delivery: command.delivery,
+      responseStatus: 202,
+    };
+    rememberIdempotentResource(
+      user,
+      idempotencyKey,
+      idempotencyOperation,
+      "device_command",
+      command.id,
+      {
+        organizationId: device.organizationId,
+        fingerprint: idempotencyFingerprint,
+        responseStatus: 202,
+        responseResource: responseBody,
+      },
+    );
+    await saveDb();
+    sendJson(res, 202, responseBody);
     return;
   }
 
   if (segments.length === 4 && segments[3] === "ota" && method === "POST") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(403, "Only a platform device administrator can start OTA", "OTA_PLATFORM_ADMIN_REQUIRED");
+    }
     const payload = await readJsonBody(req);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyOperation = `device.ota:${device.id}`;
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
+      organizationId: device.organizationId,
+      fingerprint: idempotencyFingerprint,
+    });
+    if (replayedResponse?.command?.id) {
+      const currentCommand = await refreshDeviceCommandExpiry(
+        await findDeviceCommand(device.id, replayedResponse.command.id),
+      );
+      sendJson(res, Number(replayedResponse.responseStatus || 202), {
+        ...replayedResponse,
+        command: publicDeviceCommand(currentCommand) || replayedResponse.command,
+        idempotent: true,
+      });
+      await saveDb();
+      return;
+    }
+    const otaDeviceSocket = getAuthenticatedDeviceSocket(device);
+    if (!otaDeviceSocket) {
+      throw httpError(
+        409,
+        "The device is offline; reconnect it before starting OTA",
+        "DEVICE_COMMAND_DEVICE_OFFLINE",
+      );
+    }
+
     const firmwareFileId = readString(payload.firmwareFileId || payload.fileId, 120);
     let firmwareRecord = null;
     if (firmwareFileId) {
@@ -10273,14 +16457,11 @@ async function handleDevicesApi(req, res, segments) {
       }
       assertCanAccessStorageRecord(user, firmwareRecord);
     }
-    const otaId = createId("ota");
+    const otaId = createId("cmd");
     const token = firmwareFileId ? crypto.randomBytes(32).toString("base64url") : "";
     const firmwareUrl = firmwareFileId
       ? buildOtaFirmwareDownloadUrl(req, device.id, otaId, token)
       : readString(payload.url || payload.downloadUrl, 800);
-    if (!firmwareUrl) {
-      throw httpError(400, "Firmware URL or firmwareFileId is required for cloud OTA");
-    }
     const firmwareVersion =
       readString(payload.firmwareVersion, 80) ||
       readString(firmwareRecord?.firmwareVersion, 80) ||
@@ -10288,49 +16469,121 @@ async function handleDevicesApi(req, res, segments) {
     const checksum =
       readString(payload.checksum, 160) ||
       readString(firmwareRecord?.checksum || firmwareRecord?.sha256, 160);
+    let manifest;
+    try {
+      assertOtaUpgradeVersion(device.firmwareVersion, firmwareVersion);
+      manifest = buildSignedOtaManifest({
+        url: firmwareUrl,
+        firmwareVersion,
+        checksum,
+        hardwareTarget: payload.hardwareTarget,
+        partitionTarget: payload.partitionTarget,
+        minimumProtocolVersion: payload.minimumProtocolVersion,
+      });
+    } catch (error) {
+      const statusCode = ["OTA_SIGNER_UNAVAILABLE", "OTA_SIGNER_INVALID"].includes(error.code)
+        ? 503
+        : error.code === "OTA_DOWNGRADE_FORBIDDEN"
+          ? 409
+          : 400;
+      throw httpError(statusCode, error.message || "OTA manifest is invalid", error.code || "OTA_MANIFEST_INVALID");
+    }
+    const envelope = createDeviceCommandEnvelope({
+      id: otaId,
+      type: "ota.update",
+      payload: manifest,
+      correlationId: readString(payload.correlationId, 128) || createId("correlation"),
+      ttlMs: Math.max(30_000, Math.min(10 * 60_000, Number(payload.ttlMs) || 5 * 60_000)),
+    });
+    const command = createDeviceCommandRecord({
+      envelope,
+      deviceId: device.id,
+      organizationId: device.organizationId || "",
+      requestedByUserId: user.id,
+      idempotencyKey,
+      requestFingerprint: idempotencyFingerprint,
+    });
     const ota = {
       id: otaId,
-      firmwareVersion,
-      url: firmwareUrl,
-      checksum,
+      commandId: otaId,
+      correlationId: envelope.correlationId,
+      ...manifest,
       firmwareFileId,
       firmwareFileName: firmwareRecord?.name || "",
-      token,
+      tokenHash: token ? hashOtaDownloadToken(token) : "",
       expiresAt: firmwareFileId ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : "",
-      status: "pending",
+      status: "accepted",
       requestedByUserId: user.id,
-      createdAt: nowIso(),
+      createdAt: envelope.issuedAt,
+      updatedAt: envelope.issuedAt,
+      requestedSessionId: readString(otaDeviceSocket._deviceAuth?.sessionId, 128),
     };
     device.ota = ota;
-    device.otaStatus = "pending";
-    device.lastCommand = {
-      id: ota.id,
-      type: "ota.update",
-      status: "pending",
-      createdAt: ota.createdAt,
-    };
+    device.otaStatus = "accepted";
+    device.lastCommand = publicDeviceCommand(command);
     device.updatedAt = nowIso();
+    await saveDeviceCommandRecord(command);
     await saveDeviceRecord(device);
-    const command = {
-      id: ota.id,
-      type: "ota.update",
-      payload: ota,
-      createdAt: ota.createdAt,
-      requestedByUserId: user.id,
-    };
-    const delivery = publishDeviceCommand(device.id, command);
-    device.lastCommand.status = delivery.delivered ? "sent" : "queued";
-    device.lastCommand.deliveredVia = delivery;
-    device.otaStatus = delivery.delivered ? "sent" : "queued";
+    const delivery = publishDeviceCommand(device.id, envelope);
+    if (delivery.delivered) {
+      applyDeviceCommandDelivery(command, delivery);
+    } else {
+      transitionDeviceCommand(command, "failed", {
+        code: "TRANSPORT_LOST",
+        detail: "Authenticated device transport disconnected before OTA delivery",
+        delivery,
+      });
+    }
+    ota.status = command.state;
+    ota.updatedAt = command.updatedAt;
+    device.otaStatus = command.state;
+    device.lastCommand = publicDeviceCommand(command);
+    await saveDeviceCommandRecord(command);
     await saveDeviceRecord(device);
-    await appendDeviceEvent(device.id, "ota.requested", { ...ota, delivery });
+    await appendDeviceEvent(device.id, "ota.requested", {
+      otaId,
+      commandId: command.id,
+      correlationId: command.correlationId,
+      firmwareVersion: ota.firmwareVersion,
+      checksum: ota.checksum,
+      hardwareTarget: ota.hardwareTarget,
+      partitionTarget: ota.partitionTarget,
+      minimumProtocolVersion: ota.minimumProtocolVersion,
+      state: command.state,
+      delivery: command.delivery,
+    });
     await appendAudit("device.ota", req, {
       resourceType: "device",
       resourceId: device.id,
       organizationId: device.organizationId || "",
-      metadata: { firmwareVersion: ota.firmwareVersion, checksum: ota.checksum, delivery },
+      metadata: {
+        commandId: command.id,
+        correlationId: command.correlationId,
+        firmwareVersion: ota.firmwareVersion,
+        checksum: ota.checksum,
+        hardwareTarget: ota.hardwareTarget,
+        partitionTarget: ota.partitionTarget,
+        minimumProtocolVersion: ota.minimumProtocolVersion,
+        state: command.state,
+        delivery: command.delivery,
+      },
     });
-    sendJson(res, 202, { device: publicDevice(device), ota, command, delivery });
+    const safeDevice = publicDevice(device);
+    const responseBody = {
+      device: safeDevice,
+      ota: safeDevice.ota,
+      command: publicDeviceCommand(command),
+      delivery: command.delivery,
+      responseStatus: 202,
+    };
+    rememberIdempotentResource(user, idempotencyKey, idempotencyOperation, "device_command", command.id, {
+      organizationId: device.organizationId,
+      fingerprint: idempotencyFingerprint,
+      responseStatus: 202,
+      responseResource: responseBody,
+    });
+    await saveDb();
+    sendJson(res, 202, responseBody);
     return;
   }
 
@@ -10342,162 +16595,483 @@ async function handleAiApi(req, res, segments) {
   const user = requireUser(req);
   const workspaceContext = getUserWorkspaceContext(user);
   const organizationId = workspaceContext.currentWorkspaceId || user.organizationId || "";
-  const scopedMessages = () =>
-    db.chatMessages
+  const scopedMessages = async () => {
+    if (repositories && typeof repositories.chatMessages?.listByScope === "function") {
+      return repositories.chatMessages.listByScope(user.id, organizationId);
+    }
+    return db.chatMessages
       .filter((message) => message.userId === user.id && message.organizationId === organizationId)
       .slice(-100);
+  };
 
   if (segments.length === 3 && segments[2] === "chat" && method === "GET") {
-    sendJson(res, 200, { messages: scopedMessages() });
+    sendJson(res, 200, { messages: await scopedMessages(), availability: getAiProviderAvailability() });
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "settings" && method === "GET") {
+    sendJson(res, 200, {
+      settings: normalizeAiSettings(getEffectiveSettingsForUser(user).ai),
+      runtime: buildAiRuntimeStatus(process.env),
+    });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "chat" && method === "POST") {
+    const availability = getAiProviderAvailability();
+    if (!availability.available) {
+      throw httpError(
+        503,
+        "AI provider is not configured",
+        "AI_PROVIDER_UNAVAILABLE",
+        { availability },
+      );
+    }
     const payload = await readJsonBody(req);
-    const userMessage = {
-      id: createId("msg"),
-      role: "user",
-      content: readString(payload.message, 2000),
-      userId: user.id,
+    const content = readString(payload.message, 2000);
+    if (!content) {
+      throw httpError(400, "AI message is required", "AI_MESSAGE_REQUIRED");
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyOperation = "ai.chat";
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
       organizationId,
-      createdAt: nowIso(),
+      fingerprint: idempotencyFingerprint,
+    });
+    if (replayedResponse) {
+      sendJson(res, 200, { ...replayedResponse, idempotent: true });
+      await saveDb();
+      return;
+    }
+
+    const createExchange = async (previousMessages) => {
+      const providerResult = await requestAiChat([
+        ...previousMessages.map((message) => ({ role: message.role, content: message.content })),
+        { role: "user", content },
+      ]);
+      const createdAt = nowIso();
+      const userMessage = {
+        id: createId("msg"),
+        role: "user",
+        content,
+        userId: user.id,
+        organizationId,
+        createdAt,
+      };
+      const assistantMessage = {
+        id: createId("msg"),
+        role: "assistant",
+        content: providerResult.content,
+        userId: user.id,
+        organizationId,
+        provider: providerResult.availability.provider,
+        model: providerResult.availability.model,
+        createdAt: nowIso(),
+      };
+      return {
+        messages: [userMessage, assistantMessage],
+        responseStatus: 200,
+        responseBody: {
+          message: assistantMessage,
+          messages: [...previousMessages, userMessage, assistantMessage].slice(-100),
+          availability: providerResult.availability,
+        },
+        auditInput: {
+          action: "ai.chat",
+          actorUserId: user.id,
+          organizationId,
+          resourceType: "ai_message",
+          resourceId: assistantMessage.id,
+          ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+          userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+          metadata: {
+            provider: providerResult.availability.provider,
+            model: providerResult.availability.model,
+            ...(idempotencyKey ? { idempotencyKey } : {}),
+          },
+        },
+      };
     };
-    const assistantMessage = {
-      id: createId("msg"),
-      role: "assistant",
-      content: buildAiReply(userMessage.content),
-      userId: user.id,
-      organizationId,
-      createdAt: nowIso(),
-    };
-    db.chatMessages.push(userMessage, assistantMessage);
-    db.chatMessages = db.chatMessages.slice(-500);
-    addAccessLog("Sử dụng trợ lý AI");
-    saveDb();
-    sendJson(res, 200, { message: assistantMessage, messages: scopedMessages() });
+    const idempotency = idempotencyKey
+      ? {
+          scope: getIdempotencyScope(user, organizationId),
+          operation: idempotencyOperation,
+          key: idempotencyKey,
+          fingerprint: idempotencyFingerprint,
+        }
+      : null;
+    let persistenceResult;
+    if (repositories && typeof repositories.chatMessages?.executeWithAudit === "function") {
+      persistenceResult = await repositories.chatMessages.executeWithAudit({
+        userId: user.id,
+        organizationId,
+        idempotency,
+        responseStatus: 200,
+        createExchange,
+      });
+    } else {
+      const exchange = await createExchange(await scopedMessages());
+      db.chatMessages.push(...exchange.messages);
+      db.chatMessages = db.chatMessages.slice(-500);
+      await appendAudit("ai.chat", req, exchange.auditInput);
+      rememberIdempotentResource(user, idempotencyKey, idempotencyOperation, "ai_chat", exchange.responseBody.message.id, {
+        organizationId,
+        fingerprint: idempotencyFingerprint,
+        responseStatus: 200,
+        responseResource: exchange.responseBody,
+      });
+      persistenceResult = {
+        responseBody: exchange.responseBody,
+        responseStatus: 200,
+        replayed: false,
+      };
+    }
+    if (!persistenceResult.replayed) {
+      addAccessLog("Sử dụng trợ lý AI", { userId: user.id, organizationId });
+      await saveDb();
+    }
+    sendJson(res, persistenceResult.responseStatus || 200, {
+      ...persistenceResult.responseBody,
+      ...(persistenceResult.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "settings" && method === "PATCH") {
     requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
-    const payload = await readJsonBody(req);
-    const { settings, workspace } = getMutableSettingsForUser(user);
-    settings.ai = {
-      ...(settings.ai || {}),
-      ...payload,
-      updatedAt: nowIso(),
-    };
-    addAccessLog("Cập nhật cấu hình AI");
-    await persistMutableSettings(user, settings, workspace);
-    sendJson(res, 200, { settings: settings.ai });
-    return;
+    await readJsonBody(req);
+    throw httpError(
+      422,
+      "Cấu hình phân tích tín hiệu do backend quản lý và chưa hỗ trợ cập nhật mô hình",
+      "AI_SETTINGS_READ_ONLY",
+      { settings: normalizeAiSettings(getEffectiveSettingsForUser(user).ai) },
+    );
   }
 
   if (segments.length === 3 && segments[2] === "update" && method === "POST") {
     requireAnyCapability(user, ["platform.settings.manage", "workspace.settings.manage"], "Không có quyền cập nhật AI");
-    const { settings, workspace } = getMutableSettingsForUser(user);
-    settings.ai = {
-      ...(settings.ai || {}),
-      updatedAt: nowIso(),
-      lastUpdateStatus: "updated",
-    };
-    createNotification("success", "Đã cập nhật mô hình AI", "Mô hình AI đang dùng là phiên bản mới nhất.", {
-      userId: user.id,
-      organizationId,
-    });
-    await persistMutableSettings(user, settings, workspace);
-    sendJson(res, 200, { settings: settings.ai });
-    return;
+    throw httpError(
+      503,
+      "Chưa có nhà cung cấp cập nhật mô hình lâm sàng được cấu hình",
+      "AI_MODEL_UPDATE_UNAVAILABLE",
+      { update: buildAiUpdateStatus(process.env) },
+    );
   }
 
-  sendJson(res, 404, { error: "AI route not found" });
+  throw httpError(404, "AI route not found", "AI_ROUTE_NOT_FOUND");
 }
 
-async function handleExportsApi(req, res, segments) {
+async function handleExportsApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
 
   if (segments.length === 2 && method === "GET") {
     requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền xem bản xuất dữ liệu");
-    sendJson(res, 200, { exports: filterExportsForUser(user, db.exports) });
+    const workspaceContext = getUserWorkspaceContext(user);
+    const requestedOrganizationId = readString(url.searchParams.get("organizationId"), 120);
+    if (
+      !isPlatformAdminUser(user) &&
+      requestedOrganizationId &&
+      requestedOrganizationId !== workspaceContext.currentWorkspaceId
+    ) {
+      throw httpError(403, "The export workspace is outside the current workspace", "EXPORT_SCOPE_DENIED");
+    }
+    const organizationId = isPlatformAdminUser(user)
+      ? requestedOrganizationId
+      : workspaceContext.currentWorkspaceId || "";
+    if (!isPlatformAdminUser(user) && !organizationId) {
+      throw httpError(403, "Select an operational workspace before viewing exports", "EXPORT_WORKSPACE_REQUIRED");
+    }
+    const requestedFormat = readString(url.searchParams.get("format"), 20);
+    const format = requestedFormat ? normalizeExportFormat(requestedFormat) : "";
+    if (requestedFormat && !format) {
+      throw httpError(400, "The export format filter is unsupported", "EXPORT_FORMAT_UNSUPPORTED", {
+        supportedFormats: EXPORT_FORMATS,
+      });
+    }
+    const pageResult = await repositories.exports.listPage({
+      organizationId,
+      createdByUserId:
+        !isPlatformAdminUser(user) && !hasCapability(user, "workspace.exports.manage") ? user.id : "",
+      format,
+      dataset: readString(url.searchParams.get("dataset"), 40),
+      status: readString(url.searchParams.get("status"), 40),
+      page: url.searchParams.get("page"),
+      limit: url.searchParams.get("limit"),
+      sort: readString(url.searchParams.get("sort"), 40),
+    });
+    setWorkspacePaginationHeaders(res, pageResult);
+    const pageCount = pageResult.total === 0 ? 0 : Math.ceil(pageResult.total / pageResult.limit);
+    sendJson(res, 200, {
+      exports: filterExportsForUser(user, pageResult.items).map(publicExportJob),
+      pagination: {
+        page: pageResult.page,
+        limit: pageResult.limit,
+        total: pageResult.total,
+        pageCount,
+        hasNextPage: pageResult.page < pageCount,
+        sort: pageResult.sort,
+      },
+    });
     return;
   }
 
   if (segments.length === 2 && method === "POST") {
     requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền tạo bản xuất dữ liệu");
     const payload = await readJsonBody(req);
-    const scopedScans = filterScansForUser(user, db.scans);
-    const requestedOrganizationId = isPlatformAdminUser(user) ? readString(payload.organizationId, 120) : "";
-    if (requestedOrganizationId && !getClinicById(requestedOrganizationId)) {
-      throw httpError(404, "Target export workspace not found");
+    const format = normalizeExportFormat(readString(payload.format, 20) || "json");
+    if (!format) {
+      throw httpError(
+        422,
+        "The requested export format is unsupported",
+        "EXPORT_FORMAT_UNSUPPORTED",
+        { supportedFormats: EXPORT_FORMATS },
+      );
+    }
+    const dataset = readString(payload.dataset, 40) || "clinical_bundle";
+    if (!["clinical_bundle", "audit_logs"].includes(dataset)) {
+      throw httpError(422, "The requested export dataset is unsupported", "EXPORT_DATASET_UNSUPPORTED", {
+        supportedDatasets: ["clinical_bundle", "audit_logs"],
+      });
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const rawFilters =
+      payload.filters && typeof payload.filters === "object" && !Array.isArray(payload.filters)
+        ? payload.filters
+        : {};
+    const { startDate, endDate } = normalizeExportDateRange({ ...payload, ...rawFilters });
+    const workspaceContext = getUserWorkspaceContext(user);
+    const requestedOrganizationId = readString(payload.organizationId, 120);
+    if (
+      !isPlatformAdminUser(user) &&
+      requestedOrganizationId &&
+      requestedOrganizationId !== workspaceContext.currentWorkspaceId
+    ) {
+      throw httpError(
+        403,
+        "The requested export workspace is outside the current workspace",
+        "EXPORT_SCOPE_DENIED",
+      );
     }
     const organizationId = isPlatformAdminUser(user)
-      ? requestedOrganizationId || getUserWorkspaceContext(user).currentWorkspaceId || ""
-      : getUserWorkspaceContext(user).currentWorkspaceId || "";
+      ? requestedOrganizationId ||
+        (dataset === "audit_logs" ? "" : workspaceContext.currentWorkspaceId || "")
+      : workspaceContext.currentWorkspaceId || "";
+    if (!organizationId && !(isPlatformAdminUser(user) && dataset === "audit_logs")) {
+      throw httpError(
+        400,
+        "Select an operational workspace before creating an export",
+        "EXPORT_WORKSPACE_REQUIRED",
+      );
+    }
+    if (organizationId && !getClinicById(organizationId)) {
+      throw httpError(404, "Target export workspace was not found", "EXPORT_WORKSPACE_NOT_FOUND");
+    }
+    if (!isPlatformAdminUser(user) && !isSameCurrentWorkspace(user, organizationId)) {
+      throw httpError(
+        403,
+        "The requested export workspace is outside the current workspace",
+        "EXPORT_SCOPE_DENIED",
+      );
+    }
+    const scope = resolveExportScope(user, organizationId, dataset);
+    let auditFilters = {};
+    if (dataset === "audit_logs") {
+      requireAnyCapability(user, AUDIT_EXPORT_CAPABILITIES, "Không có quyền xuất audit log");
+      try {
+        auditFilters = normalizeAuditLogQuery({
+          q: rawFilters.q,
+          action: rawFilters.action,
+          resourceType: rawFilters.resourceType,
+          actorUserId: rawFilters.actorUserId,
+          startDate,
+          endDate,
+          sort: rawFilters.sort,
+        });
+      } catch (error) {
+        throw httpError(400, error.message, error.code || "AUDIT_FILTER_INVALID", {
+          field: error.field || "",
+        });
+      }
+      delete auditFilters.page;
+      delete auditFilters.limit;
+      delete auditFilters.organizationId;
+    }
+    const includeAudio = payload.includeAudio !== false;
+    const includeReports = payload.includeReports !== false;
+    const includeHistory = payload.includeHistory !== false;
+    const exportId = createId("export");
+    const generatedAt = nowIso();
+    const snapshot = await repositories.exports.buildSnapshot({
+      exportId,
+      organizationId,
+      generatedAt,
+      dataset,
+      scopeKind: scope.kind,
+      actorUserId: scope.actorUserId,
+      patientIds: scope.patientIds,
+      restrictToPatientIds: scope.restrictToPatientIds,
+      auditFilters,
+      startDate,
+      endDate,
+      includeAudio,
+      includeReports,
+      includeHistory,
+    });
     const exportJob = {
-      id: createId("export"),
+      id: exportId,
       organizationId,
       createdByUserId: user.id,
-      format: readString(payload.format, 20) || "pdf",
-      includeAudio: payload.includeAudio !== false,
-      includeReports: payload.includeReports !== false,
-      includeHistory: payload.includeHistory !== false,
-      startDate: readString(payload.startDate, 40),
-      endDate: readString(payload.endDate, 40),
+      format,
+      dataset,
+      scopeKind: scope.kind,
+      filters: snapshot.filters,
+      rendererVersion: EXPORT_ARTIFACT_RENDERER_VERSION,
+      includeAudio,
+      includeReports,
+      includeHistory,
+      startDate,
+      endDate,
       status: "ready",
-      recordCount: scopedScans.length,
-      downloadUrl: `/api/exports/download/${Date.now()}.json`,
-      protectedMetadata: encryptJson({
-        requestedByUserId: user.id,
-        organizationId,
-        includeAudio: payload.includeAudio !== false,
-        includeReports: payload.includeReports !== false,
-        includeHistory: payload.includeHistory !== false,
-      }),
-      createdAt: nowIso(),
+      recordCount: Number(snapshot.counts?.total || 0),
+      downloadUrl: `/api/v1/exports/download/${encodeURIComponent(exportId)}`,
+      snapshot,
+      createdAt: generatedAt,
+      updatedAt: generatedAt,
     };
-    db.exports.unshift(exportJob);
-    addAccessLog("Tạo bản xuất dữ liệu");
-    createNotification("success", "Đã tạo bản xuất dữ liệu", "Bản xuất dữ liệu đã sẵn sàng để tải xuống.");
-    await appendAudit("export.create", req, {
-      resourceType: "export",
-      resourceId: exportJob.id,
-      organizationId,
-      metadata: { format: exportJob.format, recordCount: exportJob.recordCount },
+    const context = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.exports.createWithAudit(
+      exportJob,
+      {
+        action: "export.create",
+        actorUserId: user.id,
+        organizationId,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: {
+          format,
+          dataset,
+          scopeKind: scope.kind,
+          rendererVersion: EXPORT_ARTIFACT_RENDERER_VERSION,
+          filters: snapshot.filters,
+        },
+      },
+      {
+        scope: getIdempotencyScope(user, organizationId),
+        operation: "export.create",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          organizationId,
+          format,
+          dataset,
+          scope,
+          filters: snapshot.filters,
+          rendererVersion: EXPORT_ARTIFACT_RENDERER_VERSION,
+          startDate,
+          endDate,
+          includeAudio,
+          includeReports,
+          includeHistory,
+        }),
+      },
+      201,
+    );
+    if (result.replayed) {
+      res.setHeader("Idempotency-Replayed", "true");
+    }
+    sendJson(res, Number(result.responseStatus || 201), {
+      export: publicExportJob(result.exportJob),
+      replayed: Boolean(result.replayed),
     });
-    saveDb();
-    sendJson(res, 201, { export: exportJob });
     return;
   }
 
   if (segments.length === 4 && segments[2] === "download" && method === "GET") {
     requireAnyCapability(user, REPORT_EXPORT_CAPABILITIES, "Không có quyền tải bản xuất dữ liệu");
-    const requestedExportId = decodeURIComponent(segments[3] || "");
-    const scopedExport = filterExportsForUser(user, db.exports).find((item) => {
-      return item.id === requestedExportId || path.basename(item.downloadUrl || "") === requestedExportId;
-    });
-    if (!scopedExport && db.exports.length > 0) {
-      throw httpError(403, "Export nam ngoai pham vi workspace hien tai");
+    const requestedExportId = path.basename(decodeURIComponent(segments[3] || ""));
+    const canonicalExportId = requestedExportId.replace(/\.(json|csv|xlsx|pdf)$/i, "");
+    const exportJob = await repositories.exports.findById(canonicalExportId);
+    if (!exportJob) {
+      throw httpError(404, "Export was not found", "EXPORT_NOT_FOUND");
     }
-    const scopedScans = filterScansForUser(user, db.scans);
-    const scopedPatients = filterPatientsForUser(user, db.patients).map(withPatientStats);
-    const scopedExports = filterExportsForUser(user, db.exports);
-    await appendAudit("export.download", req, {
-      resourceType: "export",
-      resourceId: scopedExport?.id || requestedExportId,
-      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || "",
-      metadata: { scanCount: scopedScans.length, patientCount: scopedPatients.length },
+    if (filterExportsForUser(user, [exportJob]).length === 0) {
+      throw httpError(
+        403,
+        "The export is outside the current workspace",
+        "EXPORT_SCOPE_DENIED",
+      );
+    }
+    if (
+      !normalizeExportFormat(exportJob.format) ||
+      exportJob.status !== "ready" ||
+      !exportJob.snapshot ||
+      exportJob.snapshot.exportId !== exportJob.id ||
+      exportJob.snapshot.scope?.organizationId !== exportJob.organizationId
+    ) {
+      throw httpError(
+        409,
+        "The export artifact is not ready or is no longer valid",
+        "EXPORT_NOT_READY",
+      );
+    }
+    let artifact;
+    try {
+      artifact = await buildExportArtifact(
+        exportJob.snapshot,
+        exportJob.format,
+        exportJob.rendererVersion || EXPORT_ARTIFACT_RENDERER_VERSION,
+      );
+    } catch (error) {
+      throw httpError(
+        409,
+        "The export renderer required by this artifact is unavailable",
+        error.code || "EXPORT_RENDERER_UNAVAILABLE",
+      );
+    }
+    const artifactSha256 = crypto.createHash("sha256").update(artifact.buffer).digest("hex");
+    if (exportJob.artifactSha256 && exportJob.artifactSha256 !== artifactSha256) {
+      throw httpError(
+        409,
+        "The export artifact failed its integrity check",
+        "EXPORT_ARTIFACT_INTEGRITY_FAILED",
+      );
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = await repositories.exports.markDownloadedWithAudit(exportJob.id, {
+      action: "export.download",
+      actorUserId: user.id,
+      organizationId: exportJob.organizationId,
+      ip: context.ip || "",
+      userAgent: context.userAgent || "",
+      metadata: {
+        format: exportJob.format,
+        dataset: exportJob.dataset || "clinical_bundle",
+        scopeKind: exportJob.scopeKind || "workspace",
+        rendererVersion: exportJob.rendererVersion || EXPORT_ARTIFACT_RENDERER_VERSION,
+        recordCount: Number(exportJob.recordCount || 0),
+        artifactSha256,
+      },
     });
-    sendJson(res, 200, {
-      generatedAt: nowIso(),
-      patients: scopedPatients,
-      scans: scopedScans,
-      exports: scopedExports,
+    if (!persisted) {
+      throw httpError(404, "Export was not found", "EXPORT_NOT_FOUND");
+    }
+    const filePrefix = exportJob.dataset === "audit_logs" ? "shcare-audit" : "shcare-export";
+    const safeExportId = String(exportJob.id || "export").replace(/[^a-zA-Z0-9._-]/g, "-");
+    sendBuffer(res, 200, artifact.buffer, {
+      "Content-Type": artifact.contentType,
+      "Content-Disposition": `attachment; filename="${filePrefix}-${safeExportId}.${artifact.extension}"`,
+      "Cache-Control": "private, no-store",
+      "X-Shcare-Artifact-SHA256": artifactSha256,
+      "X-Shcare-Renderer-Version": exportJob.rendererVersion || EXPORT_ARTIFACT_RENDERER_VERSION,
     });
     return;
   }
 
-  sendJson(res, 404, { error: "Export route not found" });
+  throw httpError(404, "Export route not found", "EXPORT_ROUTE_NOT_FOUND");
 }
 
 async function handleDataApi(req, res, segments) {
@@ -10525,8 +17099,8 @@ async function handleDataApi(req, res, segments) {
     if (readString(payload.confirm, 40) !== "XOA DU LIEU") {
       throw httpError(400, "Cần nhập XOA DU LIEU để xác nhận");
     }
-    if (activeRecording) {
-      await stopRecording(activeRecording.scanId);
+    for (const recording of listActiveRecordings()) {
+      await stopRecording(recording.scanId);
     }
     db.patients = [];
     db.scans = [];
@@ -10600,7 +17174,7 @@ async function handlePatientPortalApi(req, res, url, segments) {
     delete payload.patientCode;
     delete payload.doctorNotes;
     delete payload.notes;
-    const scan = startRecording({ ...payload, idempotencyKey }, user);
+    const scan = await startRecording({ ...payload, idempotencyKey }, user);
     rememberIdempotentResource(user, idempotencyKey, "start_scan", "scan", scan.id);
     saveDb();
     sendJson(res, 201, { scan });
@@ -10640,12 +17214,16 @@ async function handleDoctorPortalApi(req, res, url, segments) {
   const user = requireRole(req, ["doctor", "admin"]);
 
   if (segments.length === 3 && segments[2] === "dashboard" && method === "GET") {
+    const activeScans = listActiveRecordings()
+      .map((recording) => findScan(recording.scanId))
+      .filter((scan) => scan && canAccessScan(user, scan));
     sendJson(res, 200, {
       status: getStatusPayload(),
       stats: {
         patientCount: filterPatientsForUser(user, db.patients).length,
         scanCount: filterScansForUser(user, db.scans).length,
-        activeScanId: activeRecording ? activeRecording.scanId : null,
+        activeScanId: activeScans[0]?.id || null,
+        activeScanIds: activeScans.map((scan) => scan.id),
       },
       recentScans: filterScansForUser(user, db.scans).slice(0, 5),
     });
@@ -10668,6 +17246,355 @@ async function handleDoctorPortalApi(req, res, url, segments) {
   }
 
   sendJson(res, 404, { error: "Doctor route not found" });
+}
+
+function clinicalWorkflowAuditInput(req, user) {
+  const context = getRequestContext(req) || createRequestContext(req);
+  return {
+    actorUserId: user.id,
+    ip: context.ip || "",
+    userAgent: context.userAgent || readString(req.headers["user-agent"], 240),
+  };
+}
+
+function clinicalWorkflowIdempotency(req, payload, user, organizationId, operation) {
+  const key = getIdempotencyKey(req, payload);
+  if (!key) {
+    throw httpError(
+      400,
+      "Idempotency-Key is required for this clinical workflow mutation",
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  return {
+    scope: getIdempotencyScope(user, organizationId),
+    operation,
+    key,
+    fingerprint: createIdempotencyFingerprint(payload),
+  };
+}
+
+async function findCanonicalClinicalScan(scanId) {
+  const id = readString(scanId, 120);
+  if (!id) return null;
+  return repositories?.scans ? repositories.scans.findById(id) : findScan(id);
+}
+
+async function findCanonicalClinicalDevice(deviceId) {
+  const id = readString(deviceId, 120);
+  if (!id) return null;
+  return repositories?.devices ? repositories.devices.findById(id) : findDevice(id);
+}
+
+async function assertClinicalAlertSourceAccess(user, alert, requireManage = false) {
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+  if (!alert || alert.organizationId !== workspaceId) {
+    throw httpError(403, "Alert is outside the current workspace", "ALERT_SCOPE_DENIED");
+  }
+  if (alert.sourceType === "device") {
+    const device = await findCanonicalClinicalDevice(alert.deviceId || alert.sourceId);
+    if (!device) throw httpError(404, "Alert device source was not found", "ALERT_SOURCE_NOT_FOUND");
+    if (getDeviceWorkspaceId(device) !== alert.organizationId) {
+      throw httpError(403, "Alert source is outside the alert workspace", "ALERT_SCOPE_DENIED");
+    }
+    if (requireManage) assertCanManageDevice(user, device);
+    else assertCanAccessDevice(user, device);
+  } else if (alert.sourceType === "scan") {
+    const scan = await findCanonicalClinicalScan(alert.scanId || alert.sourceId);
+    if (!scan) throw httpError(404, "Alert scan source was not found", "ALERT_SOURCE_NOT_FOUND");
+    if (getScanOrgId(scan) !== alert.organizationId) {
+      throw httpError(403, "Alert source is outside the alert workspace", "ALERT_SCOPE_DENIED");
+    }
+    if (requireManage) assertCanManageScan(user, scan);
+    else assertCanAccessScan(user, scan);
+  } else {
+    throw httpError(409, "Alert source type is not supported", "ALERT_SOURCE_INVALID");
+  }
+}
+
+async function handlePortalReviewQueueApi(req, res, url, segments, user) {
+  const method = req.method || "GET";
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+  if (!workspaceId) throw httpError(403, "An operational workspace is required", "WORKSPACE_MEMBERSHIP_REQUIRED");
+
+  if (segments.length === 3 && method === "GET") {
+    requireAnyCapability(user, ["platform.review.view", "workspace.review.view", "workspace.review.manage"]);
+    const reviews = await repositories.clinicalReviews.list({
+      organizationId: workspaceId,
+      status: readString(url.searchParams.get("status"), 40),
+      limit: Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 50))),
+    });
+    const scopedReviews = (
+      await Promise.all(
+        reviews.map(async (review) => {
+          const scan = await findCanonicalClinicalScan(review.scanId);
+          return scan && canAccessScan(user, scan) ? review : null;
+        }),
+      )
+    ).filter(Boolean);
+    sendJson(res, 200, { reviews: scopedReviews, reviewQueue: scopedReviews });
+    return;
+  }
+
+  if (segments.length === 5 && segments[4] === "decision" && method === "POST") {
+    requireAnyCapability(user, ["platform.review.manage", "workspace.review.manage"]);
+    const scanId = decodeURIComponent(segments[3]);
+    const scan = repositories?.scans ? await repositories.scans.findById(scanId) : findScan(scanId);
+    if (!scan) throw httpError(404, "Scan was not found", "REVIEW_SCAN_NOT_FOUND");
+    assertCanManageScan(user, scan);
+    if (getScanOrgId(scan) !== workspaceId) {
+      throw httpError(403, "Scan review is outside the current workspace", "REVIEW_SCOPE_DENIED");
+    }
+    const payload = await readJsonBody(req);
+    const operation = `scan.review.decision:${scan.id}`;
+    const result = await repositories.clinicalReviews.decide({
+      organizationId: workspaceId,
+      scanId: scan.id,
+      decision: readString(payload.decision, 80),
+      note: readString(payload.note, 4000),
+      reviewerUserId: user.id,
+      expectedVersion: payload.expectedVersion,
+      idempotency: clinicalWorkflowIdempotency(req, payload, user, workspaceId, operation),
+      audit: clinicalWorkflowAuditInput(req, user),
+    });
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, { review: result.review });
+    return;
+  }
+
+  throw httpError(404, "Review queue route not found", "REVIEW_ROUTE_NOT_FOUND");
+}
+
+async function handlePortalAlertsApi(req, res, url, segments, user) {
+  const method = req.method || "GET";
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+  if (!workspaceId) throw httpError(403, "An operational workspace is required", "WORKSPACE_MEMBERSHIP_REQUIRED");
+
+  if (segments.length === 3 && method === "GET") {
+    requireAnyCapability(user, ["platform.alerts.view", "workspace.alerts.view", "workspace.alerts.manage"]);
+    const alerts = await repositories.clinicalAlerts.list({
+      organizationId: workspaceId,
+      status: readString(url.searchParams.get("status"), 40),
+      limit: Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 50))),
+    });
+    const scopedAlerts = (
+      await Promise.all(
+        alerts.map(async (alert) => {
+          try {
+            await assertClinicalAlertSourceAccess(user, alert, false);
+            return alert;
+          } catch {
+            return null;
+          }
+        }),
+      )
+    ).filter(Boolean);
+    sendJson(res, 200, { alerts: scopedAlerts });
+    return;
+  }
+
+  if (segments.length === 3 && method === "POST") {
+    requireAnyCapability(user, ["platform.alerts.manage", "workspace.alerts.manage"]);
+    const payload = await readJsonBody(req);
+    const sourceType = readString(payload.sourceType, 60).toLowerCase();
+    const sourceId = readString(payload.sourceId, 160);
+    let sourcePatientId = "";
+    let sourceDeviceId = "";
+    let sourceScanId = "";
+    if (sourceType === "device") {
+      const device = await findCanonicalClinicalDevice(sourceId);
+      if (!device) throw httpError(404, "Alert device source was not found", "ALERT_SOURCE_NOT_FOUND");
+      assertCanManageDevice(user, device);
+      if (getDeviceWorkspaceId(device) !== workspaceId) throw httpError(403, "Alert source is outside the current workspace", "ALERT_SCOPE_DENIED");
+      sourcePatientId = readString(device.assignedPatientId, 120);
+      sourceDeviceId = device.id;
+    } else if (sourceType === "scan") {
+      const scan = await findCanonicalClinicalScan(sourceId);
+      if (!scan) throw httpError(404, "Alert scan source was not found", "ALERT_SOURCE_NOT_FOUND");
+      assertCanManageScan(user, scan);
+      if (getScanOrgId(scan) !== workspaceId) throw httpError(403, "Alert source is outside the current workspace", "ALERT_SCOPE_DENIED");
+      sourcePatientId = readString(scan.patientId, 120);
+      sourceDeviceId = readString(scan.deviceId, 120);
+      sourceScanId = scan.id;
+    } else {
+      throw httpError(400, "sourceType must be device or scan", "ALERT_SOURCE_INVALID");
+    }
+    const operation = `alert.source:${sourceType}:${sourceId}`;
+    const result = await repositories.clinicalAlerts.upsertSource({
+      organizationId: workspaceId,
+      sourceType,
+      sourceId,
+      severity: readString(payload.severity, 40),
+      title: readString(payload.title, 240),
+      message: readString(payload.message, 2000),
+      patientId: sourcePatientId,
+      deviceId: sourceDeviceId,
+      scanId: sourceScanId,
+      metadata: payload.metadata,
+      actorUserId: user.id,
+      idempotency: clinicalWorkflowIdempotency(req, payload, user, workspaceId, operation),
+      audit: clinicalWorkflowAuditInput(req, user),
+    });
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, result.deduplicated || result.replayed ? 200 : 201, {
+      alert: result.alert,
+      deduplicated: result.deduplicated,
+    });
+    return;
+  }
+
+  if (segments.length === 5 && ["acknowledge", "resolve"].includes(segments[4]) && method === "POST") {
+    requireAnyCapability(user, ["platform.alerts.manage", "workspace.alerts.manage"]);
+    const alertId = decodeURIComponent(segments[3]);
+    const alert = await repositories.clinicalAlerts.findById(alertId);
+    if (!alert) throw httpError(404, "Alert was not found", "ALERT_NOT_FOUND");
+    await assertClinicalAlertSourceAccess(user, alert, true);
+    const payload = await readJsonBody(req);
+    const action = segments[4];
+    const operation = `alert.${action}:${alert.id}`;
+    const result = await repositories.clinicalAlerts.transition({
+      organizationId: workspaceId,
+      alertId: alert.id,
+      action,
+      actorUserId: user.id,
+      expectedVersion: payload.expectedVersion,
+      note: readString(payload.note || payload.reason, 2000),
+      idempotency: clinicalWorkflowIdempotency(req, payload, user, workspaceId, operation),
+      audit: clinicalWorkflowAuditInput(req, user),
+    });
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, { alert: result.alert });
+    return;
+  }
+
+  throw httpError(404, "Alert route not found", "ALERT_ROUTE_NOT_FOUND");
+}
+
+async function handlePortalStaffApi(req, res, url, segments, user) {
+  const method = req.method || "GET";
+
+  if (segments.length === 3 && method === "GET") {
+    requireAnyCapability(user, ["workspace.staff.manage"], "Không có quyền xem nhân sự workspace");
+    const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+    if (!workspaceId || !hasWorkspaceMembership(user, workspaceId)) {
+      throw httpError(403, "An operational workspace membership is required", "WORKSPACE_MEMBERSHIP_REQUIRED");
+    }
+    const workspaceMemberships = db.memberships
+      .filter(
+        (membership) =>
+          membership.organizationId === workspaceId &&
+          readString(membership.status || "active", 40).toLowerCase() !== "revoked",
+      )
+      .sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+    const staff = workspaceMemberships
+      .map((membership) => {
+        const account = db.users.find((candidate) => candidate.id === membership.userId);
+        if (!account) return null;
+        return {
+          ...publicUser(account),
+          workspaceMembership: {
+            id: membership.id,
+            organizationId: membership.organizationId,
+            role: normalizeWorkspaceRole(membership.role || "viewer"),
+            status: readString(membership.status || "active", 40).toLowerCase() || "active",
+            suspendedAt: membership.suspendedAt || "",
+            createdAt: membership.createdAt || "",
+            updatedAt: membership.updatedAt || membership.createdAt || "",
+          },
+        };
+      })
+      .filter(Boolean);
+    sendJson(res, 200, {
+      staff,
+      doctors: staff.filter(
+        (member) => member.role === "doctor" || member.requestedRole === "doctor",
+      ),
+    });
+    return;
+  }
+
+  if (segments.length === 3 && method === "POST") {
+    await handleAdminApi(req, res, url, ["api", "admin", "doctors"]);
+    return;
+  }
+
+  const targetUserId = segments.length >= 4 ? decodeURIComponent(segments[3]) : "";
+  const rawAction = segments.length >= 5 ? readString(segments[4], 40).toLowerCase() : "";
+  let action = "";
+  if (method === "DELETE" && segments.length === 4) action = "revoke";
+  if (method === "PATCH" && ["lock", "suspend"].includes(rawAction)) action = "suspend";
+  if (method === "PATCH" && ["unlock", "reactivate"].includes(rawAction)) action = "reactivate";
+  if (!action || !targetUserId) {
+    throw httpError(404, "Workspace staff route not found", "WORKSPACE_STAFF_ROUTE_NOT_FOUND");
+  }
+
+  requireAnyCapability(user, ["workspace.staff.manage"], "Không có quyền quản lý nhân sự workspace");
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+  if (!workspaceId || !hasWorkspaceMembership(user, workspaceId)) {
+    throw httpError(403, "An operational workspace membership is required", "WORKSPACE_MEMBERSHIP_REQUIRED");
+  }
+  const targetUser = repositories
+    ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
+    : db.users.find((item) => item.id === targetUserId || item.firebaseUid === targetUserId);
+  if (!targetUser) {
+    throw httpError(404, "Workspace staff account was not found", "WORKSPACE_STAFF_NOT_FOUND");
+  }
+
+  const idempotencyKey = getIdempotencyKey(req);
+  if (!idempotencyKey) {
+    throw httpError(
+      400,
+      "Idempotency-Key is required for workspace membership mutations",
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  if (!repositories?.memberships?.changeLifecycle) {
+    throw httpError(
+      503,
+      "Workspace membership storage is unavailable",
+      "MEMBERSHIP_STORAGE_UNAVAILABLE",
+    );
+  }
+
+  const operation = `workspace.membership.${action}`;
+  const fingerprint = createIdempotencyFingerprint({
+    action,
+    organizationId: workspaceId,
+    targetUserId: targetUser.id,
+  });
+  const result = await repositories.memberships.changeLifecycle({
+    organizationId: workspaceId,
+    targetUserId: targetUser.id,
+    action,
+    actorUserId: user.id,
+    idempotency: {
+      scope: getIdempotencyScope(user, workspaceId),
+      operation: `${operation}:${targetUser.id}`,
+      key: idempotencyKey,
+      fingerprint,
+    },
+    audit: {
+      actorUserId: user.id,
+      organizationId: workspaceId,
+      action: operation,
+      resourceType: "membership",
+      ip: req.socket.remoteAddress || "",
+      userAgent: readString(req.headers["user-agent"], 240),
+      metadata: {
+        action,
+        targetUserId: targetUser.id,
+        globalIdentityChanged: false,
+      },
+    },
+  });
+  if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+  sendJson(res, 200, {
+    action,
+    membership: result.membership,
+    revoked: action === "revoke",
+    replayed: result.replayed,
+    user: publicUser(targetUser),
+  });
 }
 
 async function handlePortalApi(req, res, url, segments) {
@@ -10729,6 +17656,16 @@ async function handlePortalApi(req, res, url, segments) {
     return;
   }
 
+  if (resource === "review-queue" || resource === "reviews") {
+    await handlePortalReviewQueueApi(req, res, url, segments, user);
+    return;
+  }
+
+  if (resource === "alerts") {
+    await handlePortalAlertsApi(req, res, url, segments, user);
+    return;
+  }
+
   if (resource === "devices") {
     await handleDevicesApi(req, res, ["api", ...segments.slice(2)]);
     return;
@@ -10743,11 +17680,30 @@ async function handlePortalApi(req, res, url, segments) {
         const status = String(device.status || "").toLowerCase();
         return device.connected === false || status.includes("offline") || status.includes("error") || status.includes("fail");
       });
+      const ledgerAlerts = repositories?.clinicalAlerts
+        ? await repositories.clinicalAlerts.list({
+            organizationId: getUserWorkspaceContext(user).currentWorkspaceId,
+            limit: 50,
+          })
+        : [];
+      const scopedLedgerAlerts = (
+        await Promise.all(
+          ledgerAlerts.map(async (alert) => {
+            try {
+              await assertClinicalAlertSourceAccess(user, alert, false);
+              return alert;
+            } catch {
+              return null;
+            }
+          }),
+        )
+      ).filter(Boolean);
       sendJson(res, 200, {
         status: getStatusPayload(),
         devices,
         scans,
-        alerts: attentionDevices.map((device) => ({
+        alerts: scopedLedgerAlerts,
+        attentionSignals: attentionDevices.map((device) => ({
           id: device.id,
           type: "device",
           severity: "warning",
@@ -10764,7 +17720,13 @@ async function handlePortalApi(req, res, url, segments) {
   }
 
   if (resource === "staff" || resource === "doctors") {
-    await handleAdminApi(req, res, url, ["api", "admin", "doctors", ...segments.slice(3)]);
+    await handlePortalStaffApi(req, res, url, segments, user);
+    return;
+  }
+
+  if (resource === "billing" && segments.length === 3 && method === "GET") {
+    requireAnyCapability(user, ["billing.view"], "Không có quyền xem thông tin billing workspace");
+    sendJson(res, 200, buildPortalBillingSummary(user));
     return;
   }
 
@@ -10791,7 +17753,7 @@ async function handlePortalApi(req, res, url, segments) {
   }
 
   if (resource === "audit-log") {
-    await handleAccessLogsApi(req, res, ["api", "access-logs", ...segments.slice(3)]);
+    await handleAuditLogsApi(req, res, url, ["api", "audit-logs"]);
     return;
   }
 
@@ -10864,7 +17826,7 @@ async function handlePortalApi(req, res, url, segments) {
 
 function isActiveUserAccount(user) {
   const status = readString(user?.accountStatus || "active", 40).toLowerCase();
-  return user && !user.deletedAt && !["locked", "deleted", "disabled", "inactive"].includes(status);
+  return Boolean(user) && !user.deletedAt && status === "active";
 }
 
 function shareTargetWorkspace(org) {
@@ -10896,7 +17858,9 @@ function matchesShareTargetQuery(target, query) {
 }
 
 function getVisibleShareWorkspaces(user) {
-  const activeWorkspaces = db.organizations.filter((org) => String(org.status || "active") === "active");
+  const activeWorkspaces = db.organizations.filter(
+    (org) => !org.deletedAt && String(org.status || "active") === "active",
+  );
   if (isPlatformAdminUser(user) || isPatientUser(user)) {
     return activeWorkspaces;
   }
@@ -10928,9 +17892,8 @@ async function handleShareTargetsApi(req, res, url, segments) {
   const canSeeAllDoctors = isPlatformAdminUser(user) || isPatientUser(user);
 
   const doctors = db.users
-    .filter(isActiveUserAccount)
+    .filter(isApprovedActiveDoctorPrincipal)
     .filter((candidate) => candidate.id !== user.id)
-    .filter((candidate) => candidate.role === "doctor" || isApprovedDoctorRole(candidate))
     .filter((candidate) => canSeeAllDoctors || visibleWorkspaceIds.has(candidate.organizationId))
     .map(shareTargetDoctor)
     .filter((target) => matchesShareTargetQuery(target, query))
@@ -11017,6 +17980,11 @@ async function handleApi(req, res, url) {
 
   await authenticateRequest(req);
 
+  if (segments[1] === "staff-invitations") {
+    await handleStaffInvitationAcceptanceApi(req, res, segments);
+    return;
+  }
+
   if (segments[1] === "auth") {
     await handleAuthApi(req, res, segments);
     return;
@@ -11057,8 +18025,8 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  if (segments[1] === "access-logs") {
-    await handleAccessLogsApi(req, res, segments);
+  if (segments[1] === "access-logs" || segments[1] === "audit-logs") {
+    await handleAuditLogsApi(req, res, url, segments);
     return;
   }
 
@@ -11073,7 +18041,7 @@ async function handleApi(req, res, url) {
   }
 
   if (segments[1] === "exports") {
-    await handleExportsApi(req, res, segments);
+    await handleExportsApi(req, res, url, segments);
     return;
   }
 
@@ -11110,10 +18078,280 @@ async function handleApi(req, res, url) {
   sendJson(res, 404, { error: "API route not found" });
 }
 
+function getPatientMutationAuthorization(user, patient, operation) {
+  return {
+    kind: isPlatformAdminUser(user) ? "platform" : isPatientUser(user) ? "personal" : "workspace",
+    actorUserId: user.id,
+    patientId: patient.id || "",
+    organizationId: patient.organizationId || "",
+    operation,
+  };
+}
+
+function publicPatientImportBatch(batch) {
+  if (!batch) return null;
+  const expired =
+    !["committed", "expired"].includes(batch.status) &&
+    Number.isFinite(Date.parse(batch.expiresAt || "")) &&
+    Date.parse(batch.expiresAt) <= Date.now();
+  return {
+    id: batch.id,
+    organizationId: batch.organizationId || "",
+    fileName: batch.fileName || "patients.csv",
+    fileSizeBytes: Number(batch.fileSizeBytes || 0),
+    status: expired ? "expired" : batch.status,
+    rowCount: Number(batch.rowCount || 0),
+    validCount: Number(batch.validCount || 0),
+    invalidCount: Number(batch.invalidCount || 0),
+    duplicateCount: Number(batch.duplicateCount || 0),
+    importedCount: Number(batch.importedCount || 0),
+    patientIds: Array.isArray(batch.patientIds) ? [...batch.patientIds] : [],
+    rows: (Array.isArray(batch.rows) ? batch.rows : []).map((row) => ({
+      rowNumber: Number(row.rowNumber || 0),
+      status: row.status === "valid" ? "valid" : "invalid",
+      issues: Array.isArray(row.issues) ? row.issues : [],
+      patient: row.patient && typeof row.patient === "object"
+        ? {
+            id: row.patient.id || "",
+            patientCode: row.patient.patientCode || "",
+            name: row.patient.name || "",
+            dateOfBirth: row.patient.dateOfBirth || "",
+            gender: row.patient.gender || "",
+            phone: row.patient.phone || "",
+            email: row.patient.email || "",
+            address: row.patient.address || "",
+            bloodType: row.patient.bloodType || "",
+            allergies: Array.isArray(row.patient.allergies) ? row.patient.allergies : [],
+            emergencyContact:
+              row.patient.emergencyContact && typeof row.patient.emergencyContact === "object"
+                ? row.patient.emergencyContact
+                : {},
+            notes: row.patient.notes || "",
+            profileType: "patient",
+          }
+        : {},
+    })),
+    version: Number(batch.version || 1),
+    expiresAt: batch.expiresAt || "",
+    committedAt: batch.committedAt || "",
+    createdAt: batch.createdAt || "",
+    updatedAt: batch.updatedAt || batch.createdAt || "",
+  };
+}
+
+function getPatientImportWorkspaceId(user, url) {
+  const workspace = getUserWorkspaceContext(user);
+  if (isPlatformAdminUser(user)) {
+    return readString(url.searchParams.get("workspaceId"), 120) || user.organizationId || "org_default_clinic";
+  }
+  return workspace.currentWorkspaceId || user.organizationId || "";
+}
+
+function assertPatientImportBatchAccess(user, batch) {
+  if (!batch) throw httpError(404, "Không tìm thấy batch import", "PATIENT_IMPORT_BATCH_NOT_FOUND");
+  if (isPlatformAdminUser(user)) return;
+  const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "";
+  if (!workspaceId || workspaceId !== batch.organizationId) {
+    throw httpError(403, "Batch import nằm ngoài workspace hiện tại", "PATIENT_IMPORT_SCOPE_DENIED");
+  }
+}
+
+function patientImportAuditInput(req, user, batch, operation) {
+  const context = getRequestContext(req) || createRequestContext(req);
+  return {
+    actorUserId: user.id,
+    organizationId: batch.organizationId || "",
+    authorization: getPatientMutationAuthorization(
+      user,
+      { id: `import_auth_${batch.id}`, organizationId: batch.organizationId || "" },
+      operation,
+    ),
+    ip: context.ip || "",
+    userAgent: context.userAgent || "",
+  };
+}
+
+async function handlePatientImportApi(req, res, url, segments, user) {
+  const method = req.method || "GET";
+  requireAnyCapability(
+    user,
+    ["platform.patients.manage", "workspace.patients.manage"],
+    "Không có quyền import bệnh nhân trong workspace hiện tại",
+  );
+  if (!repositories?.patientImports) {
+    throw httpError(503, "Kho batch import chưa sẵn sàng", "PATIENT_IMPORT_STORAGE_UNAVAILABLE");
+  }
+
+  if (segments.length === 4 && segments[3] === "validate" && method === "POST") {
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const contentType = readString(req.headers["content-type"], 160).toLowerCase().split(";")[0];
+    if (!["text/csv", "application/csv", "application/vnd.ms-excel"].includes(contentType)) {
+      throw httpError(415, "Nội dung import phải là file CSV", "PATIENT_IMPORT_CONTENT_TYPE_INVALID");
+    }
+    const organizationId = getPatientImportWorkspaceId(user, url);
+    if (!organizationId || !getClinicById(organizationId)) {
+      throw httpError(404, "Không tìm thấy workspace", "WORKSPACE_NOT_FOUND");
+    }
+    const buffer = await readRequestBuffer(req, PATIENT_IMPORT_MAX_BYTES + 1);
+    let fileName = readString(req.headers["x-file-name"], 720) || "patients.csv";
+    try {
+      fileName = decodeURIComponent(fileName);
+    } catch {
+      throw httpError(400, "Tên file CSV không hợp lệ", "PATIENT_IMPORT_FILE_NAME_INVALID");
+    }
+    fileName = path.basename(fileName).slice(0, 240) || "patients.csv";
+    const allPatients = await repositories.patients.list();
+    const validation = validatePatientImportCsv(buffer, {
+      fileName,
+      existingPatients: allPatients.filter((patient) => patient.organizationId === organizationId),
+    });
+    const createdAt = nowIso();
+    const batchId = createId("pimport");
+    const rows = validation.rows.map((row) => ({
+      ...row,
+      patient:
+        row.status === "valid"
+          ? createPatientRecord(
+              { ...row.patient, organizationId, profileType: "patient" },
+              { addToRuntime: false },
+            )
+          : { ...row.patient, id: "", organizationId, profileType: "patient" },
+    }));
+    const batch = {
+      id: batchId,
+      organizationId,
+      actorUserId: user.id,
+      fileName: validation.fileName,
+      fileSizeBytes: validation.fileSizeBytes,
+      fileSha256: validation.fileSha256,
+      status: validation.status,
+      rowCount: validation.rowCount,
+      validCount: validation.validCount,
+      invalidCount: validation.invalidCount,
+      duplicateCount: validation.duplicateCount,
+      rows,
+      patientIds: [],
+      importedCount: 0,
+      version: 1,
+      expiresAt: new Date(Date.now() + PATIENT_IMPORT_TTL_MS).toISOString(),
+      committedAt: "",
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const persisted = await repositories.patientImports.createWithAudit(
+      batch,
+      patientImportAuditInput(req, user, batch, "create"),
+      {
+        scope: getIdempotencyScope(user, organizationId),
+        operation: "patient.import.validate",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          organizationId,
+          fileName: validation.fileName,
+          fileSha256: validation.fileSha256,
+        }),
+      },
+      201,
+    );
+    if (persisted.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, Number(persisted.responseStatus || 201), {
+      batch: publicPatientImportBatch(persisted.batch),
+      replayed: Boolean(persisted.replayed),
+    });
+    return;
+  }
+
+  const batchId = segments[3] ? decodeURIComponent(segments[3]) : "";
+  const batch = batchId ? await repositories.patientImports.findById(batchId) : null;
+  assertPatientImportBatchAccess(user, batch);
+
+  if (segments.length === 4 && method === "GET") {
+    sendJson(res, 200, { batch: publicPatientImportBatch(batch) });
+    return;
+  }
+
+  if (segments.length === 5 && segments[4] === "commit" && method === "POST") {
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const persisted = await repositories.patientImports.commitWithAudit(
+      batch.id,
+      patientImportAuditInput(req, user, batch, "create"),
+      {
+        scope: getIdempotencyScope(user, batch.organizationId),
+        operation: `patient.import.commit:${batch.id}`,
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ batchId: batch.id }),
+      },
+      201,
+    );
+    if (persisted.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, Number(persisted.responseStatus || 201), {
+      batch: publicPatientImportBatch(persisted.batch),
+      importedCount: Number(persisted.importedCount || 0),
+      patientIds: Array.isArray(persisted.patientIds) ? persisted.patientIds : [],
+      replayed: Boolean(persisted.replayed),
+    });
+    return;
+  }
+
+  sendJson(res, 404, { error: "Patient import route not found" });
+}
+
 async function handlePatientsApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
+  if (segments[2] === "import") {
+    await handlePatientImportApi(req, res, url, segments, user);
+    return;
+  }
   const patientId = segments[2] ? decodeURIComponent(segments[2]) : "";
+  const isPatientDelete = segments.length === 3 && method === "DELETE";
+  const patientDeleteIdempotencyKey = isPatientDelete ? getIdempotencyKey(req) : "";
+  const patientDeleteIdempotency = patientDeleteIdempotencyKey
+    ? {
+        scope: getIdempotencyScope(user),
+        operation: `patient.delete:${patientId}`,
+        key: patientDeleteIdempotencyKey,
+        fingerprint: createIdempotencyFingerprint({ patientId }),
+      }
+    : null;
+
+  if (isPatientDelete) {
+    requireAnyCapability(
+      user,
+      ["platform.patients.manage", "workspace.patients.manage", "personal.profiles.manage"],
+      "Không có quyền xóa hồ sơ bệnh nhân này",
+    );
+    const replay = patientDeleteIdempotency && repositories?.patients.findMutationReplay
+      ? await repositories.patients.findMutationReplay(patientDeleteIdempotency)
+      : null;
+    if (replay) {
+      if (
+        replay.resourceType !== "patient_delete" ||
+        replay.resourceId !== patientId ||
+        replay.responseResource?.deleted !== true ||
+        replay.responseResource?.patientId !== patientId
+      ) {
+        throw httpError(
+          409,
+          "Kết quả chống gửi lặp không khớp với hồ sơ cần xóa",
+          "IDEMPOTENT_PATIENT_DELETE_MISMATCH",
+        );
+      }
+      res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, Number(replay.responseStatus || 200), {
+        deleted: true,
+        patientId,
+        replayed: true,
+      });
+      return;
+    }
+  }
 
   if (segments.length === 2 && method === "GET") {
     if (repositories) {
@@ -11144,28 +18382,66 @@ async function handlePatientsApi(req, res, url, segments) {
     const payload = await readJsonBody(req);
     const workspaceContext = getUserWorkspaceContext(user);
     const isPlatformAdmin = isPlatformAdminUser(user);
+    if (
+      !isPlatformAdmin &&
+      !isPatientUser(user) &&
+      ["ownerUserId", "guardianUserId", "accountUserId", "familyGroupId"].some((field) =>
+        Object.prototype.hasOwnProperty.call(payload, field),
+      )
+    ) {
+      throw httpError(403, "Liên kết tài khoản bệnh nhân phải dùng workflow được kiểm soát", "PATIENT_LINKAGE_FORBIDDEN");
+    }
     const organizationId = isPlatformAdmin
       ? readString(payload.organizationId, 120) || user.organizationId || "org_default_clinic"
       : workspaceContext.currentWorkspaceId || user.organizationId || "org_default_clinic";
+    if (!getClinicById(organizationId)) {
+      throw httpError(404, "Không tìm thấy workspace", "WORKSPACE_NOT_FOUND");
+    }
+    const requestedOwnerUserId = isPlatformAdmin ? readString(payload.ownerUserId, 120) : "";
+    const requestedGuardianUserId = isPlatformAdmin ? readString(payload.guardianUserId, 120) : "";
+    for (const linkedUserId of [requestedOwnerUserId, requestedGuardianUserId].filter(Boolean)) {
+      if (!db.users.some((candidate) => candidate.id === linkedUserId)) {
+        throw httpError(404, "Không tìm thấy tài khoản liên kết", "PATIENT_LINKED_USER_NOT_FOUND");
+      }
+    }
     const patient = createPatientRecord({
       ...payload,
       organizationId,
-      ownerUserId: isPatientUser(user) ? user.id : readString(payload.ownerUserId, 120),
-      guardianUserId: isPatientUser(user) ? user.id : readString(payload.guardianUserId, 120),
-      profileType: isPatientUser(user) ? readString(payload.profileType, 60) || "dependent" : readString(payload.profileType, 60) || "patient",
+      ownerUserId: isPatientUser(user) ? user.id : requestedOwnerUserId,
+      guardianUserId: isPatientUser(user) ? user.id : requestedGuardianUserId,
+      profileType: isPatientUser(user) ? "dependent" : readString(payload.profileType, 60) || "patient",
+    }, { addToRuntime: false });
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = repositories?.patients.saveWithAudit
+      ? await repositories.patients.saveWithAudit(
+          patient,
+          {
+            action: "patient.create",
+            actorUserId: user.id,
+            organizationId: patient.organizationId || "",
+            authorization: getPatientMutationAuthorization(user, patient, "create"),
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: { profileType: patient.profileType || "patient" },
+          },
+          idempotencyKey
+            ? {
+                scope: getIdempotencyScope(user, patient.organizationId),
+                operation: "patient.create",
+                key: idempotencyKey,
+                fingerprint: createIdempotencyFingerprint(payload),
+              }
+            : null,
+          201,
+        )
+      : null;
+    if (!persisted?.patient) throw httpError(503, "Không thể lưu hồ sơ sức khỏe", "PATIENT_STORAGE_UNAVAILABLE");
+    if (persisted.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, Number(persisted.responseStatus || 201), {
+      patient: withPatientStats(persisted.patient),
+      replayed: Boolean(persisted.replayed),
     });
-    if (repositories) {
-      await repositories.patients.save(patient);
-    } else {
-      saveDb();
-    }
-    await appendAudit("patient.create", req, {
-      actorUserId: user.id,
-      organizationId: patient.organizationId || "",
-      resourceType: "patient",
-      resourceId: patient.id,
-    });
-    sendJson(res, 201, { patient: withPatientStats(patient) });
     return;
   }
 
@@ -11180,11 +18456,7 @@ async function handlePatientsApi(req, res, url, segments) {
     const grants = repositories && repositories.patientShares
       ? await repositories.patientShares.listForPatient(patient.id, { includeRevoked: true })
       : db.doctorPatientAccess.filter((grant) => grant.patientId === patient.id);
-    const shares = grants
-      .map((grant) => ({
-        ...grant,
-        active: isActiveAccessGrant(grant),
-      }));
+    const shares = grants.map(publicPatientShare);
     sendJson(res, 200, { shares });
     return;
   }
@@ -11193,19 +18465,38 @@ async function handlePatientsApi(req, res, url, segments) {
     assertCanAccessPatient(user, patient.id);
     assertCanManagePatientSharing(user, patient);
     const payload = await readJsonBody(req);
-    const doctorUserId = readString(payload.doctorUserId || payload.targetDoctorUserId || payload.targetUserId, 120);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    let doctorUserId = readString(payload.doctorUserId || payload.targetDoctorUserId || payload.targetUserId, 120);
     const organizationId = readString(payload.organizationId || payload.targetWorkspaceId || payload.workspaceId, 120);
     if (!doctorUserId && !organizationId) {
-      throw httpError(400, "Can chon bac si hoac workspace de chia se");
+      throw httpError(400, "Cần chọn bác sĩ hoặc workspace để chia sẻ", "SHARE_PRINCIPAL_REQUIRED");
+    }
+    if (doctorUserId && organizationId) {
+      throw httpError(
+        400,
+        "Chỉ được chọn đúng một đối tượng nhận chia sẻ: bác sĩ hoặc workspace",
+        "SHARE_PRINCIPAL_EXCLUSIVE",
+      );
     }
     if (doctorUserId) {
-      const doctor = db.users.find((item) => item.id === doctorUserId || item.firebaseUid === doctorUserId);
-      if (!doctor || doctor.role !== "doctor") {
+      const doctor = repositories
+        ? await repositories.users.findByIdOrFirebaseUid(doctorUserId)
+        : db.users.find((item) => item.id === doctorUserId || item.firebaseUid === doctorUserId);
+      if (!isApprovedActiveDoctorPrincipal(doctor)) {
         throw httpError(404, "Không tìm thấy bác sĩ nhận chia sẻ");
       }
+      doctorUserId = doctor.id;
     }
-    if (organizationId && !getClinicById(organizationId)) {
-      throw httpError(404, "Không tìm thấy workspace nhận chia sẻ");
+    // Canonical workspace validation belongs to the repository transaction;
+    // a local cache may lag behind another SQL-backed server instance.
+    if (organizationId && !repositories?.patientShares?.saveWithAudit) {
+      const targetWorkspace = getClinicById(organizationId);
+      if (!targetWorkspace || String(targetWorkspace.status || "active") !== "active") {
+        throw httpError(404, "Không tìm thấy workspace nhận chia sẻ", "SHARE_WORKSPACE_NOT_FOUND");
+      }
     }
     const scanIds = Array.isArray(payload.scanIds)
       ? payload.scanIds.map((item) => readString(item, 120)).filter(Boolean)
@@ -11218,40 +18509,105 @@ async function handlePatientsApi(req, res, url, segments) {
         throw httpError(403, "Luot do chia se nam ngoai ho so hien tai");
       }
     }
-    const grant = {
+    const accessLevel = readString(payload.accessLevel, 40) || "read";
+    if (accessLevel !== "read") {
+      throw httpError(
+        422,
+        "Only read access is supported for patient data grants",
+        "SHARE_ACCESS_LEVEL_UNSUPPORTED",
+        { supportedAccessLevels: ["read"] },
+      );
+    }
+    const authorityType = derivePatientShareAuthorityType(user, patient, doctorUserId);
+    const createdAt = nowIso();
+    let grant = {
       id: createId("share"),
       patientId: patient.id,
       doctorUserId,
       doctorId: doctorUserId,
       organizationId,
+      accessLevel,
+      authorityType,
+      purpose: readString(payload.purpose, 2000),
+      consentedAt: authorityType === "patient_consent" ? createdAt : "",
       scope: readString(payload.scope, 80) || (scanIds.length ? "selected_scans" : "patient_profile"),
       scanIds,
       expiresAt: readString(payload.expiresAt, 80),
       grantedByUserId: user.id,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
+      createdAt,
+      updatedAt: createdAt,
     };
-    if (repositories && repositories.patientShares) {
-      await repositories.patientShares.save(grant);
-    } else {
-      db.doctorPatientAccess.unshift(grant);
-      db.doctorPatientAccess = db.doctorPatientAccess.slice(0, 1000);
-    }
-    await appendAudit("patient.share", req, {
+    const auditInput = {
+      action:
+        authorityType === "patient_consent"
+          ? "patient.consent.grant"
+          : authorityType === "clinician_access_grant"
+            ? "patient.access.clinician_grant"
+            : "patient.access.administrative_assignment",
       actorUserId: user.id,
       organizationId: patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
       resourceType: "patient",
       resourceId: patient.id,
-      metadata: { doctorUserId, organizationId, scope: grant.scope, scanIds },
-    });
-    saveDb();
-    sendJson(res, 201, { share: { ...grant, active: true } });
+      authorization: getPatientMutationAuthorization(user, patient, "share"),
+      ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+      userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+      metadata: {
+        doctorUserId,
+        organizationId,
+        authorityType,
+        accessLevel,
+        purpose: grant.purpose,
+        scope: grant.scope,
+        scanIds,
+        expiresAt: grant.expiresAt || "",
+      },
+    };
+    const idempotency = {
+      scope: getIdempotencyScope(user, patient.organizationId),
+      operation: "patient.share",
+      key: idempotencyKey,
+      fingerprint: createIdempotencyFingerprint({
+        patientId: patient.id,
+        doctorUserId,
+        organizationId,
+        authorityType,
+        accessLevel,
+        purpose: grant.purpose,
+        scope: grant.scope,
+        scanIds: [...scanIds].sort(),
+        expiresAt: grant.expiresAt || "",
+      }),
+    };
+    let replayed = false;
+    let responseStatus = 201;
+    if (repositories?.patientShares?.saveWithAudit) {
+      const persisted = await repositories.patientShares.saveWithAudit(
+        grant,
+        auditInput,
+        idempotency,
+        201,
+      );
+      grant = persisted.grant;
+      replayed = Boolean(persisted.replayed);
+      responseStatus = Number(persisted.responseStatus || 201);
+    } else {
+      db.doctorPatientAccess.unshift(grant);
+      db.doctorPatientAccess = db.doctorPatientAccess.slice(0, 1000);
+      await appendAudit(auditInput.action, req, auditInput);
+      await saveDb();
+    }
+    if (replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, responseStatus, { share: publicPatientShare(grant), replayed });
     return;
   }
 
   if (segments.length === 5 && segments[3] === "shares" && method === "DELETE") {
     assertCanAccessPatient(user, patient.id);
     assertCanManagePatientSharing(user, patient);
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
     const grantId = decodeURIComponent(segments[4]);
     const grant = repositories && repositories.patientShares
       ? await repositories.patientShares.findForPatient(patient.id, grantId)
@@ -11259,24 +18615,68 @@ async function handlePatientsApi(req, res, url, segments) {
     if (!grant) {
       throw httpError(404, "Không tìm thấy quyền chia sẻ");
     }
+    const authorityType = resolvePatientShareAuthorityType(grant);
+    const auditInput = {
+      action:
+        authorityType === "patient_consent"
+          ? "patient.consent.revoke"
+          : "patient.access.revoke",
+      actorUserId: user.id,
+      organizationId: patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
+      resourceType: "patient_share",
+      resourceId: grant.id,
+      authorization: getPatientMutationAuthorization(user, patient, "share_revoke"),
+      ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+      userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+      metadata: {
+        patientId: patient.id,
+        authorityType,
+        recipientType: grant.doctorUserId || grant.doctorId ? "doctor" : "workspace",
+        recipientId: grant.doctorUserId || grant.doctorId || grant.organizationId || "",
+      },
+    };
+    const idempotency = {
+      scope: getIdempotencyScope(user, patient.organizationId),
+      operation: "patient.share.revoke",
+      key: idempotencyKey,
+      fingerprint: createIdempotencyFingerprint({
+        patientId: patient.id,
+        grantId,
+        authorityType,
+      }),
+    };
     let revokedGrant = grant;
-    if (repositories && repositories.patientShares) {
-      revokedGrant = await repositories.patientShares.revoke(patient.id, grantId, user.id) || grant;
+    let replayed = false;
+    let responseStatus = 200;
+    if (repositories?.patientShares?.revokeWithAudit) {
+      const persisted = await repositories.patientShares.revokeWithAudit(
+        patient.id,
+        grantId,
+        user.id,
+        auditInput,
+        idempotency,
+        200,
+      );
+      if (!persisted.grant) {
+        throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y quyá»n chia sáº»", "PATIENT_SHARE_NOT_FOUND");
+      }
+      revokedGrant = persisted.grant;
+      replayed = Boolean(persisted.replayed);
+      responseStatus = Number(persisted.responseStatus || 200);
     } else {
       grant.revokedAt = nowIso();
       grant.revokedByUserId = user.id;
       grant.updatedAt = nowIso();
       revokedGrant = grant;
+      await appendAudit(auditInput.action, req, auditInput);
+      await saveDb();
     }
-    await appendAudit("patient.share.revoke", req, {
-      actorUserId: user.id,
-      organizationId: patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "",
-      resourceType: "patient_share",
-      resourceId: grant.id,
-      metadata: { patientId: patient.id },
+    if (replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, responseStatus, {
+      revoked: true,
+      share: publicPatientShare(revokedGrant),
+      replayed,
     });
-    saveDb();
-    sendJson(res, 200, { revoked: true, share: revokedGrant });
     return;
   }
   if (!patient) {
@@ -11297,17 +18697,50 @@ async function handlePatientsApi(req, res, url, segments) {
       "Không có quyền cập nhật hồ sơ bệnh nhân này",
     );
     const payload = await readJsonBody(req);
-    updatePatientRecord(patient, payload);
-    if (!isPlatformAdminUser(user)) {
-      patient.organizationId = patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "";
-      patient.ownerUserId = patient.ownerUserId || user.id;
-    }
-    if (repositories) {
-      await repositories.patients.save(patient);
+    const nextPatient = {
+      ...patient,
+      allergies: Array.isArray(patient.allergies) ? [...patient.allergies] : [],
+      emergencyContact: patient.emergencyContact && typeof patient.emergencyContact === "object" ? { ...patient.emergencyContact } : {},
+    };
+    updatePatientRecord(nextPatient, payload, { allowAdministrativeFields: isPlatformAdminUser(user) });
+    if (isPatientUser(user)) {
+      nextPatient.organizationId = patient.organizationId;
+      nextPatient.ownerUserId = user.id;
+      nextPatient.guardianUserId = patient.guardianUserId || user.id;
+      nextPatient.accountUserId = patient.accountUserId || "";
+      nextPatient.profileType = patient.profileType === "self" ? "self" : "dependent";
     } else {
-      saveDb();
+      nextPatient.organizationId = patient.organizationId;
+      nextPatient.ownerUserId = patient.ownerUserId || "";
     }
-    sendJson(res, 200, { patient: withPatientStats(patient) });
+    const context = getRequestContext(req) || createRequestContext(req);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const persisted = repositories?.patients.saveWithAudit
+      ? await repositories.patients.saveWithAudit(
+          nextPatient,
+          {
+            action: "patient.update",
+            actorUserId: user.id,
+            organizationId: nextPatient.organizationId || "",
+            authorization: getPatientMutationAuthorization(user, nextPatient, "update"),
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: { fields: Object.keys(payload).filter((key) => key !== "idempotencyKey") },
+          },
+          idempotencyKey
+            ? {
+                scope: getIdempotencyScope(user, nextPatient.organizationId),
+                operation: `patient.update:${nextPatient.id}`,
+                key: idempotencyKey,
+                fingerprint: createIdempotencyFingerprint(payload),
+              }
+            : null,
+          200,
+        )
+      : null;
+    if (!persisted?.patient) throw httpError(503, "Không thể cập nhật hồ sơ sức khỏe", "PATIENT_STORAGE_UNAVAILABLE");
+    if (persisted.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, { patient: withPatientStats(persisted.patient), replayed: Boolean(persisted.replayed) });
     return;
   }
 
@@ -11318,23 +18751,151 @@ async function handlePatientsApi(req, res, url, segments) {
       ["platform.patients.manage", "workspace.patients.manage", "personal.profiles.manage"],
       "Không có quyền xóa hồ sơ bệnh nhân này",
     );
-    if (repositories) {
-      await repositories.patients.delete(patient.id);
-    } else {
-      db.patients = db.patients.filter((item) => item.id !== patient.id);
-      saveDb();
+    const linkedSelfUser = db.users.find((item) => item.patientId === patient.id);
+    if (patient.profileType === "self" || linkedSelfUser) {
+      throw httpError(409, "Không thể xóa hồ sơ self của tài khoản", "SELF_PROFILE_DELETE_FORBIDDEN");
     }
-    sendJson(res, 200, { deleted: true });
+    const selfProfile = isPatientUser(user) ? ensurePatientProfileForUser(user) : null;
+    const activeProfileUserId = isPatientUser(user) && user.activePatientId === patient.id ? user.id : "";
+    const fallbackPatientId = activeProfileUserId ? selfProfile?.id || user.patientId || "" : "";
+    const context = getRequestContext(req) || createRequestContext(req);
+    const deletion = repositories?.patients.deleteWithAudit
+      ? await repositories.patients.deleteWithAudit(
+          patient.id,
+          {
+            action: "patient.delete",
+            actorUserId: user.id,
+            organizationId: patient.organizationId || "",
+            authorization: getPatientMutationAuthorization(user, patient, "delete"),
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: { profileType: patient.profileType || "patient" },
+          },
+          { activeProfileUserId, fallbackPatientId, idempotency: patientDeleteIdempotency },
+        )
+      : null;
+    if (!deletion?.patient) throw httpError(503, "Không thể xóa hồ sơ sức khỏe", "PATIENT_STORAGE_UNAVAILABLE");
+    if (deletion.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, Number(deletion.responseStatus || 200), {
+      deleted: true,
+      patientId: patient.id,
+      replayed: Boolean(deletion.replayed),
+    });
     return;
   }
 
   sendJson(res, 404, { error: "Patient route not found" });
 }
 
+function getAppointmentNotificationRecipient(appointment, actorUserId = "") {
+  const patient = appointment.patientId ? findPatient(appointment.patientId) : null;
+  const candidates = [appointment.doctorUserId, patient?.ownerUserId].filter(Boolean);
+  return candidates.find((userId) => userId !== actorUserId) || candidates[0] || "";
+}
+
+async function notifyAppointmentMutation(appointment, event, actorUserId = "") {
+  const eventCopy = {
+    created: ["Lịch hẹn mới", "Lịch hẹn đã được tạo."],
+    updated: ["Lịch hẹn đã cập nhật", "Thông tin lịch hẹn đã được cập nhật."],
+    rescheduled: ["Lịch hẹn đã đổi giờ", "Thời gian lịch hẹn đã được cập nhật."],
+    confirmed: ["Lịch hẹn đã xác nhận", "Lịch hẹn đã được xác nhận."],
+    completed: ["Lịch hẹn đã hoàn tất", "Lịch hẹn đã được đánh dấu hoàn tất."],
+    cancelled: ["Lịch hẹn đã hủy", "Lịch hẹn đã được hủy."],
+    no_show: ["Lịch hẹn vắng mặt", "Lịch hẹn đã được đánh dấu vắng mặt."],
+  }[event] || ["Lịch hẹn đã cập nhật", "Thông tin lịch hẹn đã được cập nhật."];
+  return createBackendNotification({
+    type: event === "cancelled" || event === "no_show" ? "warning" : "info",
+    userId: getAppointmentNotificationRecipient(appointment, actorUserId),
+    organizationId: appointment.organizationId || "",
+    title: eventCopy[0],
+    message: eventCopy[1],
+    metadata: {
+      appointmentId: appointment.id,
+      patientId: appointment.patientId,
+      destination: "appointment_detail",
+      actionPath: `/appointments/${appointment.id}`,
+      status: appointment.status,
+    },
+  });
+}
+
+function upsertRuntimeAppointment(appointment) {
+  const index = db.appointments.findIndex((item) => item.id === appointment.id);
+  if (index >= 0) {
+    db.appointments[index] = appointment;
+  } else {
+    db.appointments.unshift(appointment);
+  }
+}
+
+async function persistAppointmentMutation(appointment, req, detail = {}) {
+  const context = getRequestContext(req) || createRequestContext(req);
+  const auditInput = {
+    action: detail.action || "appointment.update",
+    actorUserId: detail.actorUserId,
+    organizationId: appointment.organizationId || "",
+    resourceType: "appointment",
+    resourceId: appointment.id,
+    ip: context.ip || "",
+    userAgent: context.userAgent || "",
+    metadata: sanitizeAuditMetadata(detail.metadata || {}),
+  };
+  const idempotency = detail.idempotencyKey
+    ? {
+        scope: getIdempotencyScope(detail.user, appointment.organizationId),
+        operation: detail.idempotencyOperation,
+        key: detail.idempotencyKey,
+        fingerprint: detail.idempotencyFingerprint,
+      }
+    : null;
+  if (repositories && typeof repositories.appointments?.saveWithAudit === "function") {
+    return repositories.appointments.saveWithAudit(
+      appointment,
+      auditInput,
+      idempotency,
+      detail.responseStatus || 200,
+    );
+  }
+  if (repositories && repositories.appointments) {
+    await repositories.appointments.save(appointment);
+  } else {
+    upsertRuntimeAppointment(appointment);
+  }
+  await appendAudit(auditInput.action, req, auditInput);
+  if (detail.idempotencyKey) {
+    rememberIdempotentResource(
+      detail.user,
+      detail.idempotencyKey,
+      detail.idempotencyOperation,
+      "appointment",
+      appointment.id,
+      {
+        organizationId: appointment.organizationId,
+        fingerprint: detail.idempotencyFingerprint,
+        responseStatus: detail.responseStatus || 200,
+        responseResource: appointment,
+      },
+    );
+  }
+  await saveDb();
+  return {
+    appointment,
+    auditLog: null,
+    replayed: false,
+    responseStatus: detail.responseStatus || 200,
+  };
+}
+
+function sendAppointmentReplay(res, statusCode, appointment) {
+  res.setHeader("Idempotency-Replayed", "true");
+  sendJson(res, statusCode, { appointment: publicAppointment(appointment) });
+}
+
 async function handleAppointmentsApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
   const appointmentId = segments[2] ? decodeURIComponent(segments[2]) : "";
+  const action = segments[3] ? decodeURIComponent(segments[3]) : "";
 
   if (segments.length === 2 && method === "GET") {
     requireAnyCapability(user, APPOINTMENT_VIEW_CAPABILITIES);
@@ -11363,16 +18924,31 @@ async function handleAppointmentsApi(req, res, url, segments) {
     const payload = await readJsonBody(req);
     const patientId = readString(payload.patientId, 120);
     if (!patientId) {
-      throw httpError(400, "patientId is required");
+      throw httpError(400, "patientId is required", "APPOINTMENT_PATIENT_REQUIRED");
     }
     const patient = repositories ? await repositories.patients.findById(patientId) : findPatient(patientId);
     if (!patient) {
-      throw httpError(404, "Patient assigned to appointment was not found");
+      throw httpError(404, "Patient assigned to appointment was not found", "APPOINTMENT_PATIENT_NOT_FOUND");
     }
     assertCanAccessPatient(user, patient.id);
     const organizationId = isPlatformAdminUser(user)
       ? readString(payload.organizationId, 120) || patient.organizationId || user.organizationId || "org_default_clinic"
       : patient.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "org_default_clinic";
+    if (patient.organizationId && patient.organizationId !== organizationId) {
+      throw httpError(403, "Patient is outside the appointment workspace", "APPOINTMENT_PATIENT_OUTSIDE_WORKSPACE");
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyOperation = "appointment.create";
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const replayedAppointment = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
+      organizationId,
+      fingerprint: idempotencyFingerprint,
+    });
+    if (replayedAppointment) {
+      assertCanAccessAppointment(user, replayedAppointment);
+      sendAppointmentReplay(res, 201, replayedAppointment);
+      return;
+    }
     const doctorUserId = validateAppointmentDoctor(
       readString(payload.doctorUserId || payload.doctorId, 120) || (user.role === "doctor" ? user.id : ""),
       organizationId,
@@ -11385,32 +18961,23 @@ async function handleAppointmentsApi(req, res, url, segments) {
       organizationId,
       createdByUserId: user.id,
     });
-    if (repositories && repositories.appointments) {
-      await repositories.appointments.save(appointment);
-    }
-    await createBackendNotification({
-      type: "info",
-      userId: doctorUserId || patient.ownerUserId || "",
-      organizationId,
-      title: "Lich hen moi",
-      message: `${patient.name || patient.patientCode || "Patient"} co lich hen luc ${new Date(appointment.startsAt).toLocaleString("vi-VN")}`,
-      metadata: {
-        appointmentId: appointment.id,
-        patientId: patient.id,
-        doctorUserId,
-        actionPath: "/appointments",
-        startsAt: appointment.startsAt,
-      },
-    });
-    await appendAudit("appointment.create", req, {
+    await assertNoAppointmentConflict(appointment);
+    const persisted = await persistAppointmentMutation(appointment, req, {
+      action: "appointment.create",
       actorUserId: user.id,
-      organizationId,
-      resourceType: "appointment",
-      resourceId: appointment.id,
       metadata: { patientId: patient.id, doctorUserId },
+      user,
+      idempotencyKey,
+      idempotencyOperation,
+      idempotencyFingerprint,
+      responseStatus: 201,
     });
-    await saveDb();
-    sendJson(res, 201, { appointment: publicAppointment(appointment) });
+    if (persisted.replayed) {
+      sendAppointmentReplay(res, persisted.responseStatus || 201, persisted.appointment);
+      return;
+    }
+    await notifyAppointmentMutation(persisted.appointment, "created", user.id);
+    sendJson(res, 201, { appointment: publicAppointment(persisted.appointment) });
     return;
   }
 
@@ -11418,7 +18985,7 @@ async function handleAppointmentsApi(req, res, url, segments) {
     ? await repositories.appointments.findById(appointmentId)
     : findAppointment(appointmentId);
   if (!appointment) {
-    throw httpError(404, "Appointment was not found");
+    throw httpError(404, "Appointment was not found", "APPOINTMENT_NOT_FOUND");
   }
 
   if (segments.length === 3 && method === "GET") {
@@ -11427,41 +18994,82 @@ async function handleAppointmentsApi(req, res, url, segments) {
     return;
   }
 
-  if (segments.length === 3 && method === "PATCH") {
+  const isPatchUpdate = segments.length === 3 && method === "PATCH";
+  const isReschedule = segments.length === 4 && action === "reschedule" && method === "POST";
+  const isCancel = segments.length === 4 && action === "cancel" && method === "POST";
+  if (isPatchUpdate || isReschedule || isCancel) {
     assertCanManageAppointment(user, appointment);
     const payload = await readJsonBody(req);
-    if (Object.prototype.hasOwnProperty.call(payload, "doctorUserId") || Object.prototype.hasOwnProperty.call(payload, "doctorId")) {
-      payload.doctorUserId = validateAppointmentDoctor(payload.doctorUserId || payload.doctorId, appointment.organizationId, user);
-    }
-    const beforeStatus = appointment.status;
-    updateAppointmentRecord(appointment, payload);
-    if (repositories && repositories.appointments) {
-      await repositories.appointments.save(appointment);
-    }
-    if (beforeStatus !== appointment.status) {
-      await createBackendNotification({
-        type: appointment.status === "cancelled" ? "warning" : "info",
-        userId: appointment.doctorUserId || "",
-        organizationId: appointment.organizationId || "",
-        title: "Cap nhat lich hen",
-        message: `Lich hen ${appointment.id} da chuyen sang ${appointment.status}.`,
-        metadata: {
-          appointmentId: appointment.id,
-          patientId: appointment.patientId,
-          actionPath: "/appointments",
-          status: appointment.status,
-        },
-      });
-    }
-    await appendAudit("appointment.update", req, {
-      actorUserId: user.id,
-      organizationId: appointment.organizationId || "",
-      resourceType: "appointment",
-      resourceId: appointment.id,
-      metadata: { status: appointment.status },
+    const idempotencyOperation = isReschedule
+      ? `appointment.reschedule:${appointment.id}`
+      : isCancel
+        ? `appointment.cancel:${appointment.id}`
+        : `appointment.update:${appointment.id}`;
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const replayedAppointment = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
+      organizationId: appointment.organizationId,
+      fingerprint: idempotencyFingerprint,
     });
-    await saveDb();
-    sendJson(res, 200, { appointment: publicAppointment(appointment) });
+    if (replayedAppointment) {
+      assertCanManageAppointment(user, replayedAppointment);
+      sendAppointmentReplay(res, 200, replayedAppointment);
+      return;
+    }
+
+    const updatePayload = { ...payload };
+    if (isReschedule) {
+      if (!readString(payload.startsAt, 120)) {
+        throw httpError(400, "startsAt is required to reschedule an appointment", "APPOINTMENT_RESCHEDULE_TIME_REQUIRED");
+      }
+      delete updatePayload.status;
+    }
+    if (isCancel) {
+      updatePayload.status = "cancelled";
+      updatePayload.cancellationReason = readString(payload.cancellationReason || payload.reason, 1000);
+    }
+    if (Object.prototype.hasOwnProperty.call(updatePayload, "doctorUserId") || Object.prototype.hasOwnProperty.call(updatePayload, "doctorId")) {
+      updatePayload.doctorUserId = validateAppointmentDoctor(
+        updatePayload.doctorUserId || updatePayload.doctorId,
+        appointment.organizationId,
+        user,
+      );
+    }
+    const updatedAppointment = updateAppointmentRecord(appointment, updatePayload);
+    if (isReschedule) {
+      updatedAppointment.rescheduleReason = readString(payload.reason, 1000);
+      updatedAppointment.rescheduledAt = nowIso();
+      updatedAppointment.rescheduledByUserId = user.id;
+    }
+    await assertNoAppointmentConflict(updatedAppointment);
+    const beforeStatus = appointment.status;
+    const event = isReschedule
+      ? "rescheduled"
+      : beforeStatus !== updatedAppointment.status
+        ? updatedAppointment.status
+        : "updated";
+    const persisted = await persistAppointmentMutation(updatedAppointment, req, {
+      action: isReschedule ? "appointment.reschedule" : isCancel ? "appointment.cancel" : "appointment.update",
+      actorUserId: user.id,
+      metadata: {
+        previousStatus: beforeStatus,
+        status: updatedAppointment.status,
+        startsAt: updatedAppointment.startsAt,
+        endsAt: updatedAppointment.endsAt,
+        reason: isCancel ? updatedAppointment.cancellationReason : isReschedule ? updatedAppointment.rescheduleReason : "",
+      },
+      user,
+      idempotencyKey,
+      idempotencyOperation,
+      idempotencyFingerprint,
+      responseStatus: 200,
+    });
+    if (persisted.replayed) {
+      sendAppointmentReplay(res, persisted.responseStatus || 200, persisted.appointment);
+      return;
+    }
+    await notifyAppointmentMutation(persisted.appointment, event, user.id);
+    sendJson(res, 200, { appointment: publicAppointment(persisted.appointment) });
     return;
   }
 
@@ -11471,7 +19079,6 @@ async function handleAppointmentsApi(req, res, url, segments) {
       await repositories.appointments.delete(appointment.id);
     } else {
       db.appointments = db.appointments.filter((item) => item.id !== appointment.id);
-      saveDb();
     }
     await appendAudit("appointment.delete", req, {
       actorUserId: user.id,
@@ -11487,30 +19094,117 @@ async function handleAppointmentsApi(req, res, url, segments) {
   sendJson(res, 404, { error: "Appointment route not found" });
 }
 
+function readScanPageInteger(value, fallback, label, maximum) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw httpError(400, `${label} must be a positive integer no greater than ${maximum}`, `SCAN_${label.toUpperCase()}_INVALID`);
+  }
+  return parsed;
+}
+
+function readScanDateFilter(value, label) {
+  const raw = readString(value, 80);
+  if (!raw) return "";
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) {
+    throw httpError(400, `${label} must be a valid date-time`, "SCAN_DATE_FILTER_INVALID");
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function getScanListAuthorizationScope(user) {
+  if (isPlatformAdminUser(user)) {
+    return { authorizedPatientIds: undefined, authorizedScanIds: undefined };
+  }
+  const authorizedPatientIds = filterPatientsForUser(user, db.patients).map((patient) => patient.id);
+  const authorizedScanIds = new Set();
+  for (const grant of db.doctorPatientAccess || []) {
+    if (!isActiveAccessGrant(grant) || grant.scope !== "selected_scans") continue;
+    const appliesToUser = getActivePatientGrantsForUser(user, grant.patientId).includes(grant);
+    if (!appliesToUser) continue;
+    for (const id of Array.isArray(grant.scanIds) ? grant.scanIds : []) {
+      if (id) authorizedScanIds.add(String(id));
+    }
+  }
+  return { authorizedPatientIds, authorizedScanIds: [...authorizedScanIds] };
+}
+
 async function handleScansApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
   const scanId = segments[2] ? decodeURIComponent(segments[2]) : "";
 
   if (segments.length === 2 && method === "GET") {
-    const patientId = url.searchParams.get("patientId");
-    const status = url.searchParams.get("status");
-    const organizationId = url.searchParams.get("organizationId");
-    const deviceId = url.searchParams.get("deviceId");
-    const createdFrom = url.searchParams.get("createdFrom");
-    const createdTo = url.searchParams.get("createdTo");
-    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 50)));
-    const sourceScans = repositories
-      ? await repositories.scans.list({ patientId, status, organizationId, deviceId, createdFrom, createdTo, limit })
-      : db.scans;
-    const scans = filterScansForUser(user, sourceScans)
-      .filter((scan) => !patientId || scan.patientId === patientId)
-      .filter((scan) => !status || scan.status === status)
-      .filter((scan) => !organizationId || scan.organizationId === organizationId)
-      .filter((scan) => !deviceId || scan.deviceId === deviceId)
-      .slice(0, limit);
-
-    sendJson(res, 200, { scans });
+    requireAnyCapability(user, ["platform.scans.view", "workspace.scans.view", "workspace.scans.manage", "personal.scans.manage"]);
+    const patientId = readString(url.searchParams.get("patientId"), 120);
+    const status = readString(url.searchParams.get("status"), 60);
+    const requestedOrganizationId = readString(url.searchParams.get("organizationId"), 120);
+    const deviceId = readString(url.searchParams.get("deviceId"), 120);
+    const createdFrom = readScanDateFilter(url.searchParams.get("createdFrom"), "createdFrom");
+    const createdTo = readScanDateFilter(url.searchParams.get("createdTo"), "createdTo");
+    const q = readString(url.searchParams.get("q"), 200);
+    const page = readScanPageInteger(url.searchParams.get("page"), 1, "page", 100000);
+    const limit = readScanPageInteger(url.searchParams.get("limit"), 50, "limit", 200);
+    const sort = readString(url.searchParams.get("sort"), 80) || "createdAt:desc";
+    const currentWorkspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+    if (
+      requestedOrganizationId &&
+      !isPlatformAdminUser(user) &&
+      currentWorkspaceId &&
+      requestedOrganizationId !== currentWorkspaceId
+    ) {
+      throw httpError(403, "Scan list is outside the current workspace", "SCAN_SCOPE_DENIED");
+    }
+    const organizationId = isPlatformAdminUser(user) ? requestedOrganizationId : requestedOrganizationId || "";
+    const authorization = getScanListAuthorizationScope(user);
+    let pageResult;
+    if (repositories?.scans?.listPage) {
+      pageResult = await repositories.scans.listPage({
+        patientId,
+        status,
+        organizationId,
+        deviceId,
+        createdFrom,
+        createdTo,
+        q,
+        page,
+        limit,
+        sort,
+        ...authorization,
+      });
+    } else {
+      const sourceScans = filterScansForUser(user, db.scans)
+        .filter((scan) => !patientId || scan.patientId === patientId)
+        .filter((scan) => !status || scan.status === status)
+        .filter((scan) => !organizationId || scan.organizationId === organizationId)
+        .filter((scan) => !deviceId || scan.deviceId === deviceId);
+      const total = sourceScans.length;
+      pageResult = {
+        items: sourceScans.slice((page - 1) * limit, page * limit),
+        total,
+        page,
+        limit,
+        sort,
+      };
+    }
+    const scans = pageResult.items;
+    const total = Number(pageResult.total || 0);
+    const pageCount = total === 0 ? 0 : Math.ceil(total / limit);
+    const pagination = {
+      page,
+      limit,
+      total,
+      pageCount,
+      hasNextPage: page < pageCount,
+      sort,
+    };
+    res.setHeader("X-Total-Count", String(total));
+    res.setHeader("X-Pagination-Total", String(total));
+    res.setHeader("X-Page", String(page));
+    res.setHeader("X-Page-Limit", String(limit));
+    res.setHeader("X-Page-Count", String(pageCount));
+    sendJson(res, 200, { scans, pagination });
     return;
   }
 
@@ -11550,7 +19244,7 @@ async function handleScansApi(req, res, url, segments) {
       delete payload.doctorNotes;
       delete payload.notes;
     }
-    const scan = startRecording({ ...payload, idempotencyKey }, user);
+    const scan = await startRecording({ ...payload, idempotencyKey }, user);
     rememberIdempotentResource(user, idempotencyKey, "start_scan", "scan", scan.id);
     saveDb();
     sendJson(res, 201, { scan });
@@ -11558,13 +19252,7 @@ async function handleScansApi(req, res, url, segments) {
   }
 
   if (segments.length === 4 && segments[2] === "active" && segments[3] === "stop" && method === "POST") {
-    const activeScan = activeRecording
-      ? findScan(activeRecording.scanId)
-      : db.scans.find((item) => item.status === "recording");
-    if (activeScan) {
-      assertCanManageScan(user, activeScan);
-    }
-    const stopped = await stopActiveRecording();
+    const stopped = await stopActiveRecording(user);
     sendJson(res, 200, { scan: stopped });
     return;
   }
@@ -11584,14 +19272,19 @@ async function handleScansApi(req, res, url, segments) {
     requireAnyCapability(user, ["platform.scans.manage", "workspace.scans.manage"]);
     assertCanManageScan(user, scan);
     const payload = await readJsonBody(req);
-    const editableFields = ["bodySite", "mode", "doctorNotes", "aiLabel", "aiSummary"];
+    const backendOwnedAnalysisFields = ["aiLabel", "aiConfidence", "aiSummary", "aiResultId", "processingStatus"];
+    if (backendOwnedAnalysisFields.some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
+      throw httpError(
+        403,
+        "Analysis fields can only be written by the authenticated processing pipeline",
+        "SCAN_ANALYSIS_FIELDS_READ_ONLY",
+      );
+    }
+    const editableFields = ["bodySite", "mode", "doctorNotes"];
     for (const field of editableFields) {
       if (Object.prototype.hasOwnProperty.call(payload, field)) {
-        scan[field] = readString(payload[field], field === "doctorNotes" || field === "aiSummary" ? 4000 : 200);
+        scan[field] = readString(payload[field], field === "doctorNotes" ? 4000 : 200);
       }
-    }
-    if (Object.prototype.hasOwnProperty.call(payload, "aiConfidence")) {
-      scan.aiConfidence = readOptionalNumber(payload.aiConfidence);
     }
     scan.updatedAt = nowIso();
     await saveScanRecord(scan);
@@ -11627,17 +19320,60 @@ async function handleScansApi(req, res, url, segments) {
   if (segments.length === 4 && segments[3] === "reprocess" && method === "POST") {
     requireAnyCapability(user, ["platform.scans.manage", "workspace.scans.manage"]);
     assertCanManageScan(user, scan);
-    const reprocessed = await reprocessScanAudio(scan);
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const idempotencyFingerprint = createIdempotencyFingerprint({
+      operation: "reprocess_scan",
+      scanId: scan.id,
+    });
+    const outcome = await scanAudioReprocessExecutor.enqueue(scan.id, async () => {
+      const existingReprocess = findIdempotentResource(user, idempotencyKey, "reprocess_scan", {
+        organizationId: scan.organizationId || getScanOrgId(scan),
+        fingerprint: idempotencyFingerprint,
+      });
+      if (existingReprocess) {
+        return { scan: existingReprocess, replayed: true };
+      }
+      const currentScan = repositories
+        ? await repositories.scans.findById(scan.id)
+        : findScan(scan.id);
+      if (!currentScan) {
+        throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y lÆ°á»£t Ä‘o");
+      }
+      const reprocessed = await reprocessScanAudio(currentScan, {
+        forceNewProcessingIntent: true,
+      });
+      rememberIdempotentResource(
+        user,
+        idempotencyKey,
+        "reprocess_scan",
+        "scan",
+        reprocessed.id,
+        {
+          organizationId: reprocessed.organizationId || getScanOrgId(reprocessed),
+          fingerprint: idempotencyFingerprint,
+        },
+      );
+      await saveDb();
+      return { scan: reprocessed, replayed: false };
+    });
+    if (outcome.replayed) {
+      res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, 200, { scan: outcome.scan, idempotent: true });
+      return;
+    }
     await appendAudit("scan.reprocess", req, {
       resourceType: "scan",
-      resourceId: reprocessed.id,
-      organizationId: reprocessed.organizationId || getScanOrgId(reprocessed),
+      resourceId: outcome.scan.id,
+      organizationId: outcome.scan.organizationId || getScanOrgId(outcome.scan),
       metadata: {
-        aiLabel: reprocessed.aiLabel || "",
-        aiConfidence: reprocessed.aiConfidence ?? null,
+        aiLabel: outcome.scan.aiLabel || "",
+        aiConfidence: outcome.scan.aiConfidence ?? null,
       },
     });
-    sendJson(res, 200, { scan: reprocessed });
+    sendJson(res, 200, { scan: outcome.scan });
     return;
   }
 
@@ -11649,21 +19385,30 @@ async function handleScansApi(req, res, url, segments) {
 
   if (segments.length === 4 && segments[3] === "audio-chunks" && method === "POST") {
     assertCanManageScan(user, scan);
-    const chunk = await readRequestBuffer(req);
-    const result = await appendScanAudioChunk(scan, chunk);
+    const metadata = parseScanAudioChunkHeaders(req);
+    const chunk = await readRequestBuffer(req, MAX_SCAN_AUDIO_CHUNK_BYTES);
+    const result = await appendScanAudioChunk(scan, user, metadata, chunk);
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
     sendJson(res, 200, result);
     return;
   }
 
   if (segments.length === 4 && segments[3] === "complete" && method === "POST") {
     assertCanManageScan(user, scan);
-    const completed = await completeUploadedScan(scan);
-    await appendAudit("scan.complete", req, {
-      resourceType: "scan",
-      resourceId: completed.id,
-      organizationId: completed.organizationId || getScanOrgId(completed),
-    });
-    sendJson(res, 200, { scan: completed });
+    const idempotencyKey = readString(req.headers["idempotency-key"], 160);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const completed = await completeUploadedScanIdempotently(scan, user, idempotencyKey);
+    if (completed.replayed) res.setHeader("Idempotency-Replayed", "true");
+    if (!completed.replayed) {
+      await appendAudit("scan.complete", req, {
+        resourceType: "scan",
+        resourceId: completed.response.scan.id,
+        organizationId: completed.response.scan.organizationId || getScanOrgId(completed.response.scan),
+      });
+    }
+    sendJson(res, 200, completed.response);
     return;
   }
 
@@ -11799,7 +19544,14 @@ audioUdp.on("message", (message, rinfo) => {
   const source = rinfo.address;
   const sourceLabel = `${rinfo.address}:${rinfo.port}`;
   const isNewSource = !udpAudioSources.has(source);
-  const accepted = handleIncomingAudio(message, sourceLabel);
+  const accepted = handleIncomingAudio(message, {
+    transport: "udp",
+    label: sourceLabel,
+    authenticated: false,
+    deviceId: "",
+    organizationId: "",
+    sessionId: "",
+  });
 
   if (!accepted) {
     return;
@@ -11829,13 +19581,21 @@ server.on("upgrade", async (req, socket) => {
           ? "listen"
           : "";
     const key = req.headers["sec-websocket-key"];
+    const selectedProtocol =
+      role === "listen" && getOfferedSocketProtocols(req).includes("shcare.realtime.v1")
+          ? "shcare.realtime.v1"
+          : "";
+    const requestedListenerScanId = role === "listen" ? getRequestedListenerScanId(req) : "";
+    const hasForbiddenListenerQueryCredential =
+      role === "listen" &&
+      ["token", "access_token", "authorization"].some((name) => url.searchParams.has(name));
 
     if (!role || !key) {
       socket.destroy();
       return;
     }
 
-    if (role === "listen") {
+    if (role === "listen" && !hasForbiddenListenerQueryCredential) {
       const realtimeToken = getSocketAccessToken(req, url);
       const requiresAuth = AUTH_MODE === "production" && !ALLOW_DEMO_AUTH;
       let wsUser = null;
@@ -11850,44 +19610,87 @@ server.on("upgrade", async (req, socket) => {
         return;
       }
       socket._wsUser = wsUser;
+      socket._authSessionId = req.authSession?.id || "";
+      socket._authSessionKey = req.authSession?.sessionKey || "";
+      socket._firebaseUid = readString(req.firebaseToken?.uid, 160);
+      socket._firebaseAuthTime = normalizeFirebaseAuthTime(req.firebaseToken || {});
+      socket._firebaseExpiresAt = Number(req.firebaseToken?.exp || 0) > 0
+        ? Number(req.firebaseToken.exp) * 1000
+        : 0;
     }
 
-    socket.write(
-      [
+    const handshakeHeaders = [
         "HTTP/1.1 101 Switching Protocols",
         "Upgrade: websocket",
         "Connection: Upgrade",
         `Sec-WebSocket-Accept: ${websocketAcceptKey(key)}`,
-        "",
-        "",
-      ].join("\r\n")
-    );
+      ];
+    if (selectedProtocol) {
+      handshakeHeaders.push(`Sec-WebSocket-Protocol: ${selectedProtocol}`);
+    }
+    handshakeHeaders.push("", "");
+    socket.write(handshakeHeaders.join("\r\n"));
 
     socket._wsRole = role;
     socket._wsBuffer = Buffer.alloc(0);
-    socket._queryDeviceId = readString(url.searchParams.get("deviceId"), 120);
-    socket._querySecret = readString(url.searchParams.get("secret"), 160);
-
+    if (hasForbiddenListenerQueryCredential) {
+      closeSocket(socket, 1008, "URL_CREDENTIALS_FORBIDDEN");
+      return;
+    }
     if (role === "esp") {
-      espClients.add(socket);
-      if (socket._queryDeviceId) {
-        deviceSockets.set(socket._queryDeviceId, socket);
-        socket._deviceId = socket._queryDeviceId;
-      }
-      console.log("ESP connected");
+      console.log("ESP authentication pending");
     } else {
+      if (requestedListenerScanId) {
+        const requestedRecording = getActiveRecordingByScanId(requestedListenerScanId);
+        const requestedScan = findScan(requestedListenerScanId);
+        if (
+          !requestedRecording ||
+          !requestedScan ||
+          !canListenerAccessScan(socket, requestedScan)
+        ) {
+          closeSocket(socket, 1008, "AUDIO_SOURCE_UNAVAILABLE");
+          return;
+        }
+        socket._listenerRequestedScanId = requestedListenerScanId;
+        socket._listenerScanId = requestedListenerScanId;
+      }
       listenClients.add(socket);
+      startRealtimeAuthSessionMonitor(socket);
+      if (socket._firebaseExpiresAt) {
+        const expiresInMs = socket._firebaseExpiresAt - Date.now();
+        if (expiresInMs <= 0) {
+          closeSocket(socket, 1008, "FIREBASE_TOKEN_EXPIRED");
+          return;
+        }
+        socket._firebaseExpiryTimeout = setTimeout(
+          () => closeSocket(socket, 1008, "FIREBASE_TOKEN_EXPIRED"),
+          expiresInMs,
+        );
+        socket._firebaseExpiryTimeout.unref?.();
+      }
       console.log("App/browser connected");
-      sendText(socket, JSON.stringify(getStatusPayload()));
-      sendText(
-        socket,
-        JSON.stringify({
-          type: "metrics",
-          ...liveMetrics,
-          recording: Boolean(activeRecording),
-          activeScanId: activeRecording ? activeRecording.scanId : null,
-        })
-      );
+      sendText(socket, JSON.stringify(getStatusPayload(socket)));
+      const recording = getPrimaryActiveRecordingForListener(socket);
+      if (recording?.confirmed) {
+        sendText(socket, JSON.stringify(getActiveAudioSessionMetadata(recording)));
+        socket._audioSessionId = recording.sessionId;
+        socket._audioProtocolVersion = 2;
+        sendText(
+          socket,
+          JSON.stringify({
+            type: "metrics",
+            ...(recording.liveMetrics || createEmptyLiveMetrics()),
+            workspaceId: recording.organizationId,
+            patientId: recording.patientId,
+            deviceId: recording.deviceId,
+            scanId: recording.scanId,
+            sessionId: recording.sessionId,
+            sampleRate: SAMPLE_RATE,
+            recording: true,
+            updatedAt: recording.liveMetrics?.updatedAt || nowIso(),
+          })
+        );
+      }
     }
 
     socket.on("data", (chunk) => {
@@ -11901,12 +19704,32 @@ server.on("upgrade", async (req, socket) => {
     socket.on("close", () => cleanupSocket(socket));
     socket.on("error", () => cleanupSocket(socket));
 
+    if (role === "esp") {
+      sendText(socket, JSON.stringify(deviceAuthenticator.issueChallenge(socket)));
+      socket._authTimeout = setTimeout(() => {
+        if (!socket._deviceAuth && !socket._cleanedUp) {
+          closeSocket(socket, 1008, "AUTH_TIMEOUT");
+        }
+      }, DEVICE_AUTH_CHALLENGE_TTL_MS + 50);
+      socket._authTimeout.unref?.();
+    }
+
     broadcastStatus();
   } catch (err) {
     console.error(`WebSocket upgrade error: ${err.message}`);
     socket.destroy();
   }
 });
+
+async function reconcileIdentityProviderOperations() {
+  if (!repositories?.identityOperations?.reconcileProviderApplied) return [];
+  const outcomes = await repositories.identityOperations.reconcileProviderApplied(25);
+  const failed = outcomes.filter((item) => !item.completed);
+  if (outcomes.length > 0) {
+    console.log(`Identity provider reconciliation: completed=${outcomes.length - failed.length}, failed=${failed.length}`);
+  }
+  return outcomes;
+}
 
 function startNetworkServers() {
   server.listen(PORT, HOST, () => {
@@ -11926,6 +19749,12 @@ function startNetworkServers() {
   });
 
   setInterval(refreshAudioSourceStatus, 1000);
+  const identityReconciliationInterval = setInterval(() => {
+    void reconcileIdentityProviderOperations().catch((error) => {
+      console.error(`Identity provider reconciliation failed: ${error.message}`);
+    });
+  }, 60 * 1000);
+  identityReconciliationInterval.unref?.();
 }
 
 async function startRuntime() {
@@ -11944,7 +19773,7 @@ async function startRuntime() {
   audioQueue = createAudioQueue(process.env);
   repositories = createRepositories({
     getDb: () => db,
-    saveDb,
+    saveDb: DATA_BACKEND === "postgres" || DATA_BACKEND === "postgresql" ? saveDb : saveDbStrict,
     createId,
     nowIso,
     getPool: () => (dataStore && dataStore.pool ? dataStore.pool : null),
@@ -11953,6 +19782,7 @@ async function startRuntime() {
   if (hydratedCounts) {
     console.log(`PostgreSQL normalized state loaded: users=${hydratedCounts.users}, patients=${hydratedCounts.patients}, appointments=${hydratedCounts.appointments || 0}, devices=${hydratedCounts.devices}, scans=${hydratedCounts.scans}, audioFiles=${hydratedCounts.audioFiles}, aiResults=${hydratedCounts.aiResults}, organizations=${hydratedCounts.organizations}, notifications=${hydratedCounts.notifications}, auditLogs=${hydratedCounts.auditLogs}`);
   }
+  await reconcileIdentityProviderOperations();
   ensureAppDefaults();
   localizeLegacyDbText();
   markInterruptedRecordings();
@@ -11963,7 +19793,10 @@ async function startRuntime() {
       void handleDeviceTelemetry(deviceId, payload).catch((err) => console.error(`MQTT telemetry error: ${err.message}`));
     },
     onEvent: (deviceId, payload) => {
-      void handleDeviceEvent(deviceId, payload).catch((err) => console.error(`MQTT event error: ${err.message}`));
+      void deviceEventExecutor.enqueue(
+        deviceId,
+        () => handleDeviceEvent(deviceId, payload),
+      ).catch((err) => console.error(`MQTT event error: ${err.message}`));
     },
   });
   startNetworkServers();
@@ -11982,8 +19815,8 @@ server.on("error", (err) => {
 
 process.on("SIGINT", async () => {
   try {
-    if (activeRecording) {
-      await stopRecording(activeRecording.scanId);
+    for (const recording of listActiveRecordings()) {
+      await stopRecording(recording.scanId);
     }
     await flushDb();
     if (audioQueue) {

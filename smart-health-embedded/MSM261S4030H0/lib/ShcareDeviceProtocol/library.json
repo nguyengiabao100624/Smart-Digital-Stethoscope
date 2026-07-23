@@ -1,0 +1,8 @@
+{
+  "name": "ShcareDeviceProtocol",
+  "version": "1.0.0",
+  "description": "Versioned Shcare device command contract shared by firmware and host tests",
+  "build": {
+    "includeDir": "src"
+  }
+}

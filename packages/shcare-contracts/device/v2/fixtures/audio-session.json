@@ -1,0 +1,15 @@
+{
+  "type": "audio.session",
+  "protocolVersion": 2,
+  "frameEncoding": "raw_pcm_s16le",
+  "workspaceId": "workspace-fixture-001",
+  "patientId": "patient-fixture-001",
+  "deviceId": "smarthealth-fixture-001",
+  "scanId": "scan-fixture-001",
+  "sessionId": "audio-session-fixture-001",
+  "sampleRate": 16000,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "encoding": "pcm_s16le",
+  "startedAt": "2026-07-14T00:00:00.000Z"
+}

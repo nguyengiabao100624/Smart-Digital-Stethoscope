@@ -1,0 +1,6 @@
+SHCARE-OTA-MANIFEST-V1
+sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+firmwareVersion=1.2.3
+hardwareTarget=MSM261S4030H0
+partitionTarget=app
+minimumProtocolVersion=1

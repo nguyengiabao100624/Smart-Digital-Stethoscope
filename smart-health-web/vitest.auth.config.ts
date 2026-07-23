@@ -1,0 +1,13 @@
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vitest/config";
+import tsconfigPaths from "vite-tsconfig-paths";
+
+export default defineConfig({
+  plugins: [tsconfigPaths(), react()],
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./test/auth/setup.ts"],
+    include: ["test/auth/**/*.test.{ts,tsx}"],
+    restoreMocks: true,
+  },
+});

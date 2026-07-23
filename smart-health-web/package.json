@@ -8,8 +8,12 @@
     "build:firebase": "node scripts/validate-production-env.mjs && vite build --config vite.firebase.config.ts",
     "preview:firebase": "vite preview --config vite.firebase.config.ts --host 127.0.0.1 --port 8080",
     "lint": "eslint .",
+    "test:auth": "vitest run --config vitest.auth.config.ts",
+    "test:contracts": "node --test test/contracts/*.test.ts",
+    "smoke:auth-browser": "node scripts/authBrowserSmokeTest.mjs",
     "smoke:performance": "node scripts/performanceSmokeTest.mjs",
     "smoke:portal-browser": "node scripts/portalBrowserSmokeTest.mjs",
+    "smoke:portal-patients-browser": "node scripts/portalPatientsBrowserSmokeTest.mjs",
     "smoke:portal-mutation": "node scripts/portalMutationSmokeTest.mjs"
   },
   "dependencies": {
@@ -66,21 +70,33 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
     "@eslint/js": "9.39.4",
     "@tailwindcss/vite": "4.2.4",
     "@tanstack/router-plugin": "1.167.28",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.2.0",
     "eslint": "9.39.4",
     "eslint-config-prettier": "10.1.8",
     "globals": "15.15.0",
+    "jsdom": "29.1.1",
     "playwright": "1.61.1",
     "prettier": "3.8.3",
     "tailwindcss": "4.2.4",
     "typescript": "5.9.3",
     "typescript-eslint": "8.59.0",
-    "vite": "7.3.2",
-    "vite-tsconfig-paths": "6.1.1"
+    "vite": "7.3.6",
+    "vite-tsconfig-paths": "6.1.1",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "@tanstack/start-server-core": "1.167.30",
+    "brace-expansion": "1.1.16",
+    "esbuild": "0.28.1",
+    "protobufjs": "7.6.5",
+    "vite": "7.3.6"
   }
 }

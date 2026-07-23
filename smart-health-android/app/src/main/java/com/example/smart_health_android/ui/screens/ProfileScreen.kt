@@ -1,524 +1,824 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.AuthUser
-import com.example.smart_health_android.data.ClinicOption
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.SpecialtyOption
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
-import org.json.JSONObject
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.BuildConfig
+import com.example.smart_health_android.R
+import com.example.smart_health_android.account.AccountProfileAction
+import com.example.smart_health_android.account.AccountProfileConfirmation
+import com.example.smart_health_android.account.AccountProfileEffect
+import com.example.smart_health_android.account.AccountProfileErrorKind
+import com.example.smart_health_android.account.AccountProfileLoadState
+import com.example.smart_health_android.account.AccountProfileUiState
+import com.example.smart_health_android.account.AccountProfileViewModel
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onNavigateBack: () -> Unit,
     onNavigateToVerifyPhoneSettings: () -> Unit,
-    onNavigateToReVerifyContact: (String, String) -> Unit
+    onNavigateToReVerifyContact: (String, String) -> Unit,
+    profileViewModel: AccountProfileViewModel = viewModel(),
 ) {
-    var isEditing by remember { mutableStateOf(false) }
-    var currentUser by remember { mutableStateOf<AuthUser?>(null) }
-    var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
-    var isAvatarBusy by remember { mutableStateOf(false) }
-    var license by remember { mutableStateOf("") }
-    var hospital by remember { mutableStateOf("") }
-    var department by remember { mutableStateOf("") }
-    var organizationId by remember { mutableStateOf("") }
-    var selectedSpecialtyId by remember { mutableStateOf("") }
-    var clinics by remember { mutableStateOf<List<ClinicOption>>(emptyList()) }
-    var specialties by remember { mutableStateOf<List<SpecialtyOption>>(emptyList()) }
-    var email by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
-    var displayName by remember { mutableStateOf("Đang tải...") }
-    var roleLabel by remember { mutableStateOf("Tài khoản Smart Health") }
-    var isSaving by remember { mutableStateOf(false) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+    val state by profileViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var leaveAfterDiscard by remember { mutableStateOf(false) }
 
-    fun applyProfile(user: AuthUser, keepAvatar: Boolean = false) {
-        currentUser = user
-        displayName = user.name.ifBlank { "Tài khoản Smart Health" }
-        roleLabel = when (user.role) {
-            "admin" -> "Quản trị"
-            "doctor" -> "Bác sĩ"
-            "patient" -> "Bệnh nhân"
-            else -> "Tài khoản Smart Health"
-        }
-        license = user.license
-        hospital = user.hospital
-        department = user.department
-        organizationId = user.organizationId.ifBlank {
-            clinics.firstOrNull { it.name.equals(user.hospital, ignoreCase = true) }?.id.orEmpty()
-        }
-        selectedSpecialtyId = specialties.firstOrNull { it.name == user.department || it.name == user.specialty }?.id.orEmpty()
-        email = user.email
-        phone = user.phone
-        address = user.address
-        if (!keepAvatar) {
-            avatarBitmap = null
-        }
-    }
-
-    suspend fun loadAvatar(user: AuthUser) {
-        val hasAvatar = user.avatarUrl.isNotBlank() || user.avatarFileId.isNotBlank()
-        if (!hasAvatar) {
-            avatarBitmap = null
-            return
-        }
-        avatarBitmap = runCatching {
-            val bytes = SmartHealthRepository.api.downloadMyAvatarBytes()
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
-    }
-
-    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            coroutineScope.launch {
-                isAvatarBusy = true
-                try {
-                    val resolver = context.contentResolver
-                    val contentType = resolver.getType(uri) ?: "image/jpeg"
-                    val fileName = "avatar-${System.currentTimeMillis()}.${contentType.substringAfter("/", "jpg")}"
-                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: error("Không đọc được ảnh đã chọn")
-                    val updated = SmartHealthRepository.api.uploadMyAvatar(fileName, contentType, bytes)
-                    currentUser = updated
-                    applyProfile(updated, keepAvatar = true)
-                    loadAvatar(updated)
-                    loadError = null
-                } catch (error: Exception) {
-                    loadError = error.message ?: "Không thể tải avatar"
-                } finally {
-                    isAvatarBusy = false
+    LaunchedEffect(profileViewModel) {
+        profileViewModel.effects.collect { effect ->
+            when (effect) {
+                AccountProfileEffect.StartPhoneEnrollment -> onNavigateToVerifyPhoneSettings()
+                is AccountProfileEffect.ReverifyPhone -> {
+                    onNavigateToReVerifyContact("phone", effect.phone)
                 }
             }
         }
     }
-    val selectedClinic = clinics.firstOrNull { it.id == organizationId }
-    val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
-    val joinDate = currentUser?.createdAt?.let { formatCreatedAt(it) }.orEmpty().ifBlank { "--" }
 
-    LaunchedEffect(Unit) {
-        try {
-            clinics = SmartHealthRepository.api.listClinics()
-            specialties = SmartHealthRepository.api.listSpecialties()
-            val user = SmartHealthRepository.api.getMe()
-            applyProfile(user)
-            loadAvatar(user)
-            loadError = null
-        } catch (error: Exception) {
-            loadError = error.message ?: "Không thể tải hồ sơ"
-        }
-    }
-
-    fun handleSave() {
-        isSaving = true
-        loadError = null
-        coroutineScope.launch {
-            try {
-                val updated = SmartHealthRepository.api.updateMe(
-                    JSONObject()
-                        .put("name", displayName.trim())
-                        .put("phone", phone.trim())
-                        .put("license", license.trim())
-                        .put("organizationId", selectedClinic?.id.orEmpty())
-                        .put("hospital", selectedClinic?.name ?: hospital.trim())
-                        .put("department", selectedSpecialty?.name ?: department.trim())
-                        .put("specialty", selectedSpecialty?.name ?: department.trim())
-                        .put("address", address.trim())
+    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val selected = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val resolver = context.contentResolver
+                        val contentType = resolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+                        val extension = contentType.substringAfter('/', "jpg")
+                        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: byteArrayOf()
+                        Triple("avatar.$extension", contentType, bytes)
+                    }
+                }.getOrElse { Triple("avatar.jpg", "image/jpeg", byteArrayOf()) }
+                profileViewModel.onAction(
+                    AccountProfileAction.AvatarSelected(
+                        fileName = selected.first,
+                        contentType = selected.second,
+                        bytes = selected.third,
+                    )
                 )
-                applyProfile(updated, keepAvatar = true)
-                currentUser = updated
-                loadAvatar(updated)
-                isEditing = false
-            } catch (error: Exception) {
-                loadError = error.message ?: "Không thể lưu hồ sơ"
-            } finally {
-                isSaving = false
             }
         }
     }
 
+    fun leaveProfile() {
+        when {
+            state.isSaving || state.isAvatarBusy -> Unit
+            state.isEditing && state.hasUnsavedChanges -> {
+                leaveAfterDiscard = true
+                profileViewModel.onAction(AccountProfileAction.RequestDiscard)
+            }
+            state.isEditing -> {
+                profileViewModel.onAction(AccountProfileAction.ConfirmDiscard)
+                onNavigateBack()
+            }
+            else -> onNavigateBack()
+        }
+    }
+
+    BackHandler(onBack = ::leaveProfile)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.profile_title)) },
+                navigationIcon = {
+                    IconButton(onClick = ::leaveProfile) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.profile_back),
+                        )
+                    }
+                },
+                actions = {
+                    if (state.loadState == AccountProfileLoadState.Ready) {
+                        TextButton(
+                            onClick = {
+                                profileViewModel.onAction(
+                                    if (state.isEditing) AccountProfileAction.Save
+                                    else AccountProfileAction.StartEditing
+                                )
+                            },
+                            enabled = !state.isSaving && !state.isAvatarBusy,
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            if (state.isSaving) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.size(8.dp))
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.size(8.dp))
+                            }
+                            Text(
+                                stringResource(
+                                    when {
+                                        state.isSaving -> R.string.profile_saving
+                                        state.isEditing -> R.string.profile_save
+                                        else -> R.string.profile_edit
+                                    }
+                                )
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { padding ->
+        when (state.loadState) {
+            AccountProfileLoadState.Loading -> ShcareLoadingState(
+                message = stringResource(R.string.profile_loading),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            AccountProfileLoadState.Error -> ShcareErrorState(
+                onRetry = { profileViewModel.onAction(AccountProfileAction.Retry) },
+                title = stringResource(R.string.profile_load_error_title),
+                message = profileErrorMessage(state.errorKind),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            AccountProfileLoadState.Offline -> ShcareOfflineState(
+                onRetry = { profileViewModel.onAction(AccountProfileAction.Retry) },
+                title = stringResource(R.string.profile_offline_title),
+                message = stringResource(R.string.profile_offline_message),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            AccountProfileLoadState.PermissionDenied -> ShcarePermissionState(
+                onRequestPermission = onNavigateBack,
+                title = stringResource(R.string.profile_permission_title),
+                message = stringResource(R.string.profile_permission_message),
+                actionLabel = stringResource(R.string.profile_back),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            AccountProfileLoadState.Ready -> ProfileContent(
+                state = state,
+                onAction = profileViewModel::onAction,
+                onPickAvatar = { avatarLauncher.launch("image/*") },
+                modifier = Modifier.padding(padding),
+            )
+        }
+    }
+
+    if (state.showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                leaveAfterDiscard = false
+                profileViewModel.onAction(AccountProfileAction.KeepEditing)
+            },
+            title = { Text(stringResource(R.string.profile_discard_title)) },
+            text = { Text(stringResource(R.string.profile_discard_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        profileViewModel.onAction(AccountProfileAction.ConfirmDiscard)
+                        if (leaveAfterDiscard) onNavigateBack()
+                        leaveAfterDiscard = false
+                    },
+                ) {
+                    Text(stringResource(R.string.profile_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        leaveAfterDiscard = false
+                        profileViewModel.onAction(AccountProfileAction.KeepEditing)
+                    },
+                ) {
+                    Text(stringResource(R.string.profile_continue_editing))
+                }
+            },
+        )
+    }
+
+    if (state.showAvatarDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                profileViewModel.onAction(AccountProfileAction.DismissAvatarDelete)
+            },
+            title = { Text(stringResource(R.string.profile_avatar_delete_title)) },
+            text = { Text(stringResource(R.string.profile_avatar_delete_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        profileViewModel.onAction(AccountProfileAction.ConfirmAvatarDelete)
+                    },
+                ) {
+                    Text(stringResource(R.string.profile_avatar_delete_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        profileViewModel.onAction(AccountProfileAction.DismissAvatarDelete)
+                    },
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ProfileContent(
+    state: AccountProfileUiState,
+    onAction: (AccountProfileAction) -> Unit,
+    onPickAvatar: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = ShcareTheme.spacing
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding(),
+        contentPadding = PaddingValues(spacing.large),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+    ) {
+        item {
+            ProfileHero(
+                state = state,
+                onPickAvatar = onPickAvatar,
+                onDeleteAvatar = { onAction(AccountProfileAction.RequestAvatarDelete) },
+            )
+        }
+
+        state.errorKind?.let { errorKind ->
+            item {
+                ProfileStatusMessage(
+                    message = buildString {
+                        append(profileErrorMessage(errorKind))
+                        if (state.requestId.isNotBlank()) {
+                            append(' ')
+                            append(stringResource(R.string.profile_request_id, state.requestId))
+                        }
+                    },
+                    error = true,
+                )
+            }
+        }
+
+        state.confirmation?.let { confirmation ->
+            item {
+                ProfileStatusMessage(
+                    message = stringResource(
+                        when (confirmation) {
+                            AccountProfileConfirmation.ProfileSaved -> R.string.profile_saved
+                            AccountProfileConfirmation.AvatarUpdated -> R.string.profile_avatar_updated
+                            AccountProfileConfirmation.AvatarDeleted -> R.string.profile_avatar_deleted
+                        }
+                    ),
+                    error = false,
+                )
+            }
+        }
+
+        item {
+            ProfileSectionCard(title = stringResource(R.string.profile_personal_section)) {
+                ProfileField(
+                    label = stringResource(R.string.profile_name),
+                    value = state.draft.name,
+                    editing = state.isEditing,
+                    onValueChange = { onAction(AccountProfileAction.ChangeName(it)) },
+                    isError = state.nameInvalid,
+                    supportingText = if (state.nameInvalid) {
+                        stringResource(R.string.profile_name_required)
+                    } else null,
+                )
+                ProfileField(
+                    label = stringResource(R.string.profile_email),
+                    value = state.user?.email.orEmpty(),
+                    editing = false,
+                    onValueChange = {},
+                    supportingText = stringResource(R.string.profile_email_verification_note),
+                )
+                ProfileField(
+                    label = stringResource(R.string.profile_phone),
+                    value = state.draft.phone,
+                    editing = state.isEditing && BuildConfig.SMART_HEALTH_PHONE_AUTH_ENABLED,
+                    onValueChange = { onAction(AccountProfileAction.ChangePhone(it)) },
+                    isError = state.phoneInvalid,
+                    supportingText = if (state.phoneInvalid) {
+                        stringResource(R.string.profile_phone_invalid)
+                    } else if (!BuildConfig.SMART_HEALTH_PHONE_AUTH_ENABLED) {
+                        stringResource(R.string.profile_phone_unavailable)
+                    } else {
+                        stringResource(R.string.profile_phone_verification_note)
+                    },
+                    keyboardType = KeyboardType.Phone,
+                )
+                ProfileField(
+                    label = stringResource(R.string.profile_address),
+                    value = state.draft.address,
+                    editing = state.isEditing,
+                    onValueChange = { onAction(AccountProfileAction.ChangeAddress(it)) },
+                    minLines = 2,
+                )
+            }
+        }
+
+        if (state.isProfessionalProfile) {
+            item {
+                ProfileSectionCard(title = stringResource(R.string.profile_professional_section)) {
+                    ProfileField(
+                        label = stringResource(R.string.profile_license),
+                        value = state.draft.license,
+                        editing = state.isEditing,
+                        onValueChange = { onAction(AccountProfileAction.ChangeLicense(it)) },
+                    )
+                    ProfileCatalogField(
+                        label = stringResource(R.string.profile_clinic),
+                        value = state.draft.hospital,
+                        selectedId = state.draft.organizationId,
+                        options = state.clinics.map { it.id to it.name },
+                        editing = state.isEditing,
+                        onSelect = { onAction(AccountProfileAction.SelectClinic(it)) },
+                        onValueChange = { onAction(AccountProfileAction.ChangeHospital(it)) },
+                    )
+                    ProfileCatalogField(
+                        label = stringResource(R.string.profile_specialty),
+                        value = state.draft.department,
+                        selectedId = state.draft.specialtyId,
+                        options = state.specialties.map { it.id to it.name },
+                        editing = state.isEditing,
+                        onSelect = { onAction(AccountProfileAction.SelectSpecialty(it)) },
+                        onValueChange = { onAction(AccountProfileAction.ChangeDepartment(it)) },
+                    )
+                }
+            }
+        }
+
+        item {
+            ProfileSectionCard(title = stringResource(R.string.profile_account_section)) {
+                ProfileReadOnlyValue(
+                    label = stringResource(R.string.profile_role),
+                    value = profileRoleLabel(state.user?.role.orEmpty()),
+                )
+                ProfileReadOnlyValue(
+                    label = stringResource(R.string.profile_joined),
+                    value = formatCreatedAt(state.user?.createdAt),
+                )
+            }
+        }
+
+        if (state.isEditing) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
+                    Button(
+                        onClick = { onAction(AccountProfileAction.Save) },
+                        enabled = !state.isSaving && !state.isAvatarBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 52.dp),
+                    ) {
+                        if (state.isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.size(8.dp))
+                        }
+                        Text(
+                            stringResource(
+                                if (state.isSaving) R.string.profile_saving else R.string.profile_save
+                            )
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { onAction(AccountProfileAction.RequestDiscard) },
+                        enabled = !state.isSaving && !state.isAvatarBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 52.dp),
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileHero(
+    state: AccountProfileUiState,
+    onPickAvatar: () -> Unit,
+    onDeleteAvatar: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = state.avatarBytes) {
+        value = withContext(Dispatchers.Default) { state.avatarBytes?.decodeImageBitmap() }
+    }
+    val resolvedBitmap = bitmap
+    val displayName = state.draft.name.ifBlank { stringResource(R.string.profile_account_fallback) }
     val initials = remember(displayName) {
         displayName
-            .split(" ")
+            .split(' ')
             .mapNotNull { it.firstOrNull()?.uppercaseChar()?.toString() }
             .take(2)
             .joinToString("")
             .ifBlank { "SH" }
     }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        // Gradient Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                .padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 48.dp)
+        Row(
+            modifier = Modifier.padding(spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(spacing.large),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Box(contentAlignment = Alignment.Center) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(88.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    if (resolvedBitmap != null) {
+                        Image(
+                            bitmap = resolvedBitmap,
+                            contentDescription = stringResource(R.string.profile_avatar_description),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = initials,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
-                        Text("Thông tin cá nhân", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Box(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            .clickable(enabled = !isSaving) { if (isEditing) handleSave() else isEditing = true }
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                }
+                if (state.isAvatarBusy) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.54f),
+                        modifier = Modifier.size(88.dp),
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isSaving) {
-                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                            } else {
-                                Icon(
-                                    if (isEditing) Icons.Default.Check else Icons.Default.Edit,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isSaving) "Đang lưu" else if (isEditing) "Lưu" else "Chỉnh sửa", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.inverseOnSurface,
+                                modifier = Modifier.size(28.dp),
+                            )
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(modifier = Modifier.size(96.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .shadow(8.dp, CircleShape)
-                                .clip(CircleShape)
-                                .background(Color.White),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (avatarBitmap != null) {
-                                Image(
-                                    bitmap = avatarBitmap!!,
-                                    contentDescription = "Ảnh đại diện",
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Text(initials, color = PrimaryBlue, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        if (isEditing) {
-                            Row(
-                                modifier = Modifier.align(Alignment.BottomEnd),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .shadow(4.dp, CircleShape)
-                                        .background(Color.White, CircleShape)
-                                        .border(2.dp, PrimaryBlue, CircleShape)
-                                        .clickable(enabled = !isAvatarBusy) { avatarLauncher.launch("image/*") },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isAvatarBusy) {
-                                        CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                                    } else {
-                                        Icon(Icons.Default.PhotoCamera, contentDescription = "Chọn ảnh", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                                if (currentUser?.avatarUrl?.isNotBlank() == true || currentUser?.avatarFileId?.isNotBlank() == true) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .shadow(4.dp, CircleShape)
-                                            .background(Color.White, CircleShape)
-                                            .border(2.dp, ErrorRed, CircleShape)
-                                            .clickable(enabled = !isAvatarBusy) {
-                                                coroutineScope.launch {
-                                                    isAvatarBusy = true
-                                                    try {
-                                                        val updated = SmartHealthRepository.api.deleteMyAvatar()
-                                                        currentUser = updated
-                                                        applyProfile(updated, keepAvatar = false)
-                                                        loadError = null
-                                                    } catch (error: Exception) {
-                                                        loadError = error.message ?: "Không thể xóa avatar"
-                                                    } finally {
-                                                        isAvatarBusy = false
-                                                    }
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Xóa ảnh", tint = ErrorRed, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("$roleLabel ${department.ifBlank { "" }}", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
             }
-        }
-
-        // Scrollable Content
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .offset(y = (-24).dp)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            loadError?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(12.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(4.dp, RoundedCornerShape(16.dp))
-                    .background(Color.White, RoundedCornerShape(16.dp))
-                    .border(1.dp, Border, RoundedCornerShape(16.dp))
-                    .padding(24.dp)
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(spacing.extraSmall),
             ) {
-                // Section 1
-                Text("THÔNG TIN CHUYÊN MÔN", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                ProfileItemRow(
-                    icon = Icons.Default.Person,
-                    iconColor = Color(0xFF0EA5E9),
-                    label = "Họ và tên",
-                    value = displayName,
-                    isEditing = isEditing,
-                    onValueChange = { displayName = it }
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                ProfileItemRow(
-                    icon = Icons.Default.AssignmentInd,
-                    iconColor = PrimaryBlue,
-                    label = "Số chứng chỉ hành nghề",
-                    value = license,
-                    isEditing = isEditing,
-                    onValueChange = { license = it }
+                Text(
+                    text = profileRoleLabel(state.user?.role.orEmpty()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                ProfileItemRow(
-                    icon = Icons.Default.Business,
-                    iconColor = Color(0xFF8B5CF6),
-                    label = "Cơ sở y tế",
-                    value = hospital,
-                    isEditing = isEditing,
-                    onValueChange = { hospital = it }
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                ProfileItemRow(
-                    icon = Icons.Default.Person,
-                    iconColor = Color(0xFF10B981),
-                    label = "Khoa",
-                    value = department,
-                    isEditing = isEditing,
-                    onValueChange = { department = it }
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-                HorizontalDivider(color = Border)
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Section 2
-                Text("THÔNG TIN LIÊN HỆ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                ProfileItemRow(
-                    icon = Icons.Default.Email,
-                    iconColor = Color(0xFF3B82F6),
-                    label = "Email",
-                    value = email,
-                    isEditing = false,
-                    onValueChange = {}
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                if (phone.isNotBlank()) {
-                    ProfileItemRow(
-                        icon = Icons.Default.Phone,
-                        iconColor = Color(0xFFF97316),
-                        label = "Số điện thoại",
-                        value = phone,
-                        isEditing = isEditing,
-                        onValueChange = { phone = it }
-                    )
-                } else {
-                    ProfileAddPhoneRow(onClick = { isEditing = true })
+                if (state.isEditing) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                        IconButton(
+                            onClick = onPickAvatar,
+                            enabled = !state.isAvatarBusy && !state.isSaving,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PhotoCamera,
+                                contentDescription = stringResource(R.string.profile_avatar_choose),
+                            )
+                        }
+                        if (state.hasAvatar) {
+                            IconButton(
+                                onClick = onDeleteAvatar,
+                                enabled = !state.isAvatarBusy && !state.isSaving,
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.profile_avatar_delete),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                ProfileItemRow(
-                    icon = Icons.Default.LocationOn,
-                    iconColor = Color(0xFFEC4899),
-                    label = "Địa chỉ",
-                    value = address,
-                    isEditing = isEditing,
-                    onValueChange = { address = it },
-                    isTextArea = true
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                ProfileItemRow(
-                    icon = Icons.Default.DateRange,
-                    iconColor = PrimaryTeal,
-                    label = "Ngày tham gia",
-                    value = joinDate,
-                    isEditing = false, // Never edit join date
-                    onValueChange = {}
-                )
             }
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
-private fun formatCreatedAt(value: String): String {
+@Composable
+private fun ProfileStatusMessage(message: String, error: Boolean) {
+    Surface(
+        color = if (error) MaterialTheme.colorScheme.errorContainer else ShcareTheme.colors.successContainer,
+        contentColor = if (error) MaterialTheme.colorScheme.onErrorContainer else ShcareTheme.colors.onSuccessContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = if (error) LiveRegionMode.Assertive else LiveRegionMode.Polite
+            },
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+        )
+    }
+}
+
+@Composable
+private fun ProfileSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ProfileField(
+    label: String,
+    value: String,
+    editing: Boolean,
+    onValueChange: (String) -> Unit,
+    isError: Boolean = false,
+    supportingText: String? = null,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    minLines: Int = 1,
+) {
+    if (editing) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            isError = isError,
+            supportingText = supportingText?.let { text -> ({ Text(text) }) },
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            singleLine = minLines == 1,
+            minLines = minLines,
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp),
+        )
+    } else {
+        ProfileReadOnlyValue(label = label, value = value, supportingText = supportingText)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileCatalogField(
+    label: String,
+    value: String,
+    selectedId: String,
+    options: List<Pair<String, String>>,
+    editing: Boolean,
+    onSelect: (String) -> Unit,
+    onValueChange: (String) -> Unit,
+) {
+    if (!editing) {
+        ProfileReadOnlyValue(label = label, value = value)
+        return
+    }
+    if (options.isEmpty()) {
+        ProfileField(
+            label = label,
+            value = value,
+            editing = true,
+            onValueChange = onValueChange,
+        )
+        return
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.first == selectedId }?.second ?: value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (id, name) ->
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = {
+                        onSelect(id)
+                        expanded = false
+                    },
+                    leadingIcon = if (id == selectedId) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.VerifiedUser,
+                                contentDescription = null,
+                            )
+                        }
+                    } else null,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileReadOnlyValue(
+    label: String,
+    value: String,
+    supportingText: String? = null,
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = value.ifBlank { stringResource(R.string.profile_not_provided) },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        },
+        overlineContent = { Text(label) },
+        supportingContent = supportingText?.let { text -> ({ Text(text) }) },
+        colors = androidx.compose.material3.ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    )
+}
+
+@Composable
+private fun profileErrorMessage(kind: AccountProfileErrorKind?): String = stringResource(
+    when (kind) {
+        AccountProfileErrorKind.Save -> R.string.profile_save_error
+        AccountProfileErrorKind.ServerUnconfirmed -> R.string.profile_server_unconfirmed
+        AccountProfileErrorKind.AvatarRead -> R.string.profile_avatar_read_error
+        AccountProfileErrorKind.AvatarType -> R.string.profile_avatar_type_error
+        AccountProfileErrorKind.AvatarSize -> R.string.profile_avatar_size_error
+        AccountProfileErrorKind.AvatarUpload -> R.string.profile_avatar_upload_error
+        AccountProfileErrorKind.AvatarUnconfirmed -> R.string.profile_avatar_unconfirmed
+        AccountProfileErrorKind.AvatarRefresh -> R.string.profile_avatar_refresh_error
+        AccountProfileErrorKind.AvatarDelete -> R.string.profile_avatar_delete_error
+        AccountProfileErrorKind.AvatarDeleteUnconfirmed -> R.string.profile_avatar_delete_unconfirmed
+        AccountProfileErrorKind.Load, null -> R.string.profile_load_error_message
+    }
+)
+
+@Composable
+private fun profileRoleLabel(role: String): String = stringResource(
+    when (role) {
+        "doctor" -> R.string.workspace_role_doctor
+        "owner" -> R.string.workspace_role_owner
+        "admin" -> R.string.workspace_role_admin
+        "nurse" -> R.string.workspace_role_nurse
+        "technician" -> R.string.workspace_role_technician
+        "billing" -> R.string.workspace_role_billing
+        "viewer" -> R.string.workspace_role_viewer
+        "patient" -> R.string.workspace_role_patient
+        else -> R.string.workspace_role_member
+    }
+)
+
+@Composable
+private fun formatCreatedAt(value: String?): String {
+    if (value.isNullOrBlank()) return stringResource(R.string.profile_not_provided)
     return runCatching {
-        val instant = Instant.parse(value)
         DateTimeFormatter.ofPattern("dd/MM/yyyy")
             .withZone(ZoneId.systemDefault())
-            .format(instant)
+            .format(Instant.parse(value))
     }.getOrDefault(value)
 }
 
-@Composable
-fun ProfileAddPhoneRow(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(Color(0xFFF97316).copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFFF97316), modifier = Modifier.size(20.dp))
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text("Số điện thoại", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "+ Thêm số điện thoại",
-                color = PrimaryBlue,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable(onClick = onClick)
-            )
-        }
-    }
-}
-
-@Composable
-fun ProfileItemRow(
-    icon: ImageVector,
-    iconColor: Color,
-    label: String,
-    value: String,
-    isEditing: Boolean,
-    onValueChange: (String) -> Unit,
-    isTextArea: Boolean = false
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = if (isEditing && isTextArea) Alignment.Top else Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(top = if (isEditing && isTextArea) 8.dp else 0.dp)
-                .size(40.dp)
-                .background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            if (isEditing) {
-                Spacer(modifier = Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    modifier = if (isTextArea) Modifier.fillMaxWidth().height(80.dp) else Modifier.fillMaxWidth(),
-                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
-                        focusedBorderColor = PrimaryBlue,
-                        unfocusedBorderColor = Border
-                    ),
-                    singleLine = !isTextArea,
-                    shape = RoundedCornerShape(8.dp)
-                )
-            } else {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(value, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-    }
-}
+private fun ByteArray.decodeImageBitmap(): ImageBitmap? = runCatching {
+    BitmapFactory.decodeByteArray(this, 0, size)?.asImageBitmap()
+}.getOrNull()

@@ -92,7 +92,7 @@ fun StethoscopeSettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text("Cài đặt ống nghe", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Thiết bị AI Stethoscope Pro", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                        Text("Ống nghe số Shcare", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                     }
                 }
                 
@@ -275,8 +275,8 @@ fun StethoscopeSettingsScreen(
                         }
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Khử nhiễu AI", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Lọc tiếng ồn môi trường", color = TextSecondary, fontSize = 14.sp)
+                            Text("Lọc tiếng ồn", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Giảm tiếng ồn theo cấu hình thiết bị", color = TextSecondary, fontSize = 14.sp)
                         }
                         Spacer(modifier = Modifier.width(16.dp))
                         Switch(

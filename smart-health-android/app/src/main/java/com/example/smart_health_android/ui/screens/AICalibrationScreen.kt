@@ -1,394 +1,605 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
-import org.json.JSONObject
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.ai.SignalAnalysisLoadState
+import com.example.smart_health_android.ai.SignalAnalysisUiAction
+import com.example.smart_health_android.ai.SignalAnalysisUiState
+import com.example.smart_health_android.ai.SignalAnalysisViewModel
+import com.example.smart_health_android.data.SignalAnalysisStatus
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AICalibrationScreen(onNavigateBack: () -> Unit) {
-    var selectedModel by remember { mutableStateOf("balanced") }
-    var isUpdating by remember { mutableStateOf(false) }
-    var actionMessage by remember { mutableStateOf<String?>(null) }
-    var actionError by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+fun AICalibrationScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: SignalAnalysisViewModel = viewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    fun updateAiMode(mode: String) {
-        selectedModel = mode
-        coroutineScope.launch {
-            try {
-                SmartHealthRepository.api.updateAiSettings(JSONObject().put("model", mode))
-                actionMessage = "Đã cập nhật chế độ phân tích"
-                actionError = null
-            } catch (error: Exception) {
-                actionError = error.message ?: "Không thể cập nhật AI"
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        try {
-            val settings = SmartHealthRepository.api.getSettings().ai
-            selectedModel = settings.optString("model", selectedModel)
-            actionError = null
-        } catch (error: Exception) {
-            actionError = error.message ?: "Không thể tải cấu hình AI"
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
-        // Gradient Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 24.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text("Hiệu chuẩn mô hình AI", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Tối ưu hiệu suất phân tích", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-                }
-            }
-        }
-
-        // Scrollable Content
-        Column(
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.signal_analysis_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.signal_analysis_back),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.onAction(SignalAnalysisUiAction.Retry) },
+                        enabled = state.loadState != SignalAnalysisLoadState.Loading,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.signal_analysis_refresh),
+                        )
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        SignalAnalysisBody(
+            state = state,
+            onRetry = { viewModel.onAction(SignalAnalysisUiAction.Retry) },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            actionError?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            }
-            actionMessage?.let { message ->
-                Text(message, color = SuccessGreen, fontSize = 13.sp)
-            }
+                .padding(innerPadding),
+        )
+    }
+}
 
-            // Current Model Card
-            Column(
+@Composable
+private fun SignalAnalysisBody(
+    state: SignalAnalysisUiState,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        when (state.loadState) {
+            SignalAnalysisLoadState.Loading -> ShcareLoadingState(
+                message = stringResource(R.string.signal_analysis_loading),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Brush.linearGradient(listOf(PrimaryBlue.copy(alpha = 0.1f), PrimaryTeal.copy(alpha = 0.1f))), RoundedCornerShape(16.dp))
-                    .border(1.dp, PrimaryBlue.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                    .padding(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(Color.White, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Psychology, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(24.dp))
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text("Mô hình hiện tại", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text("AI Medical Analysis v3.2.1", color = TextSecondary, fontSize = 14.sp)
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFF10B981).copy(alpha = 0.1f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text("Đã cập nhật", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(12.dp))
-                        .border(1.dp, Border, RoundedCornerShape(12.dp))
-                        .clickable(enabled = !isUpdating) {
-                            isUpdating = true
-                            coroutineScope.launch {
-                                try {
-                                    SmartHealthRepository.api.updateAiModel()
-                                    actionMessage = "Mô hình AI đã được cập nhật"
-                                    actionError = null
-                                } catch (error: Exception) {
-                                    actionError = error.message ?: "Không thể cập nhật mô hình AI"
-                                } finally {
-                                    isUpdating = false
-                                }
-                            }
-                        }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isUpdating) {
-                            CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                        } else {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isUpdating) "Đang cập nhật" else "Cập nhật mô hình mới", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
+                    .fillMaxSize()
+                    .testTag("signal_analysis.loading"),
+            )
+
+            SignalAnalysisLoadState.Offline -> SignalAnalysisFailurePane(
+                state = state,
+                onRetry = onRetry,
+                offline = true,
+            )
+
+            SignalAnalysisLoadState.PermissionDenied -> SignalAnalysisPermissionPane(
+                state = state,
+                onRetry = onRetry,
+            )
+
+            SignalAnalysisLoadState.Error -> SignalAnalysisFailurePane(
+                state = state,
+                onRetry = onRetry,
+                offline = false,
+            )
+
+            SignalAnalysisLoadState.Ready -> {
+                val status = state.status
+                if (status == null) {
+                    SignalAnalysisFailurePane(
+                        state = state,
+                        onRetry = onRetry,
+                        offline = false,
+                    )
+                } else {
+                    SignalAnalysisReadyContent(status)
                 }
             }
-
-            // Section 1: Chế Độ Phân Tích
-            Column {
-                Text("CHẾ ĐỘ PHÂN TÍCH", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ModelRadioCard(
-                        id = "fast",
-                        name = "Nhanh",
-                        description = "Phân tích nhanh, độ chính xác cơ bản",
-                        accuracy = "92%",
-                        speed = "Rất nhanh (< 1s)",
-                        selected = selectedModel == "fast",
-                        onClick = { updateAiMode("fast") }
-                    )
-                    ModelRadioCard(
-                        id = "balanced",
-                        name = "Cân bằng",
-                        description = "Cân bằng giữa tốc độ và độ chính xác",
-                        accuracy = "96%",
-                        speed = "Nhanh (1-2s)",
-                        selected = selectedModel == "balanced",
-                        onClick = { updateAiMode("balanced") }
-                    )
-                    ModelRadioCard(
-                        id = "accurate",
-                        name = "Chính xác cao",
-                        description = "Độ chính xác tối đa, thời gian xử lý lâu hơn",
-                        accuracy = "98.5%",
-                        speed = "Trung bình (2-4s)",
-                        selected = selectedModel == "accurate",
-                        onClick = { updateAiMode("accurate") }
-                    )
-                }
-            }
-
-            // Section 2: Hiệu Suất Mô Hình
-            Column {
-                Text("HIỆU SUẤT MÔ HÌNH", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.Timeline,
-                        iconColor = Color(0xFF10B981),
-                        label = "Phát hiện bệnh tim",
-                        value = "96.8%",
-                        change = "+2.3%"
-                    )
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.TrendingUp,
-                        iconColor = PrimaryBlue,
-                        label = "Phát hiện bệnh phổi",
-                        value = "94.2%",
-                        change = "+1.8%"
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.Speed,
-                        iconColor = Color(0xFF8B5CF6),
-                        label = "Độ nhạy tổng thể",
-                        value = "95.5%",
-                        change = "+0.9%"
-                    )
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.BarChart,
-                        iconColor = Color(0xFFF97316),
-                        label = "Độ đặc hiệu",
-                        value = "97.1%",
-                        change = "+1.2%"
-                    )
-                }
-            }
-
-            // Section 3: Tùy Chỉnh Nâng Cao
-            Column {
-                Text("TÙY CHỈNH NÂNG CAO", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
-                ) {
-                    SettingActionRow(
-                        icon = Icons.Default.Psychology,
-                        iconColor = Color(0xFF8B5CF6),
-                        title = "Huấn luyện mô hình",
-                        subtitle = "Tối ưu dựa trên dữ liệu của bạn",
-                        showDivider = true,
-                        trailingIcon = Icons.Default.ChevronRight
-                    )
-                    SettingActionRow(
-                        icon = Icons.Default.Speed,
-                        iconColor = Color(0xFFF97316),
-                        title = "Ngưỡng phát hiện",
-                        subtitle = "Điều chỉnh độ nhạy cảnh báo",
-                        showDivider = true,
-                        trailingIcon = Icons.Default.ChevronRight
-                    )
-                    SettingActionRow(
-                        icon = Icons.Default.Refresh,
-                        iconColor = PrimaryBlue,
-                        title = "Reset về mặc định",
-                        subtitle = "Khôi phục cài đặt gốc",
-                        showDivider = false,
-                        trailingIcon = Icons.Default.ChevronRight
-                    )
-                }
-            }
-
-            // Alert Box
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFFEF3C7), RoundedCornerShape(16.dp))
-                    .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(16.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.padding(top = 2.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text("Lưu ý quan trọng", color = Color(0xFF78350F), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Mô hình AI được đào tạo trên hàng triệu mẫu dữ liệu y khoa. Kết quả chỉ mang tính tham khảo, quyết định cuối cùng phải dựa trên đánh giá lâm sàng của bác sĩ.",
-                        color = Color(0xFF92400E),
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-fun ModelRadioCard(
-    id: String,
-    name: String,
-    description: String,
-    accuracy: String,
-    speed: String,
-    selected: Boolean,
-    onClick: () -> Unit
+private fun SignalAnalysisFailurePane(
+    state: SignalAnalysisUiState,
+    onRetry: () -> Unit,
+    offline: Boolean,
 ) {
-    Column(
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (offline) {
+            ShcareOfflineState(
+                onRetry = onRetry,
+                title = stringResource(R.string.signal_analysis_offline_title),
+                message = stringResource(R.string.signal_analysis_offline_message),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag("signal_analysis.offline"),
+            )
+        } else {
+            ShcareErrorState(
+                onRetry = onRetry,
+                title = stringResource(R.string.signal_analysis_error_title),
+                message = stringResource(R.string.signal_analysis_error_message),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag("signal_analysis.error"),
+            )
+        }
+        SignalAnalysisRequestId(state.requestId)
+    }
+}
+
+@Composable
+private fun SignalAnalysisPermissionPane(
+    state: SignalAnalysisUiState,
+    onRetry: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        ShcarePermissionState(
+            onRequestPermission = onRetry,
+            title = stringResource(R.string.signal_analysis_permission_title),
+            message = stringResource(R.string.signal_analysis_permission_message),
+            actionLabel = stringResource(R.string.shcare_action_retry),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .testTag("signal_analysis.permission"),
+        )
+        SignalAnalysisRequestId(state.requestId)
+    }
+}
+
+@Composable
+private fun SignalAnalysisRequestId(requestId: String) {
+    if (requestId.isBlank()) return
+    Text(
+        text = stringResource(R.string.signal_analysis_request_id, requestId),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) PrimaryBlue else Border,
-                shape = RoundedCornerShape(16.dp)
-            )
-            .clickable { onClick() }
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            .padding(ShcareTheme.spacing.large),
+    )
+}
+
+@Composable
+private fun SignalAnalysisReadyContent(status: SignalAnalysisStatus) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val useTwoColumns = maxWidth >= 720.dp
+        LazyColumn(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 960.dp)
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .testTag("signal_analysis.ready"),
+            contentPadding = PaddingValues(
+                horizontal = if (useTwoColumns) ShcareTheme.spacing.doubleExtraLarge else ShcareTheme.spacing.large,
+                vertical = ShcareTheme.spacing.extraLarge,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraLarge),
         ) {
-            Text(name, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            if (selected) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+            item(key = "overview") {
+                SignalAnalysisOverview()
             }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(description, color = TextSecondary, fontSize = 14.sp)
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Row {
-                Text("Độ chính xác: ", color = TextSecondary, fontSize = 14.sp)
-                Text(accuracy, color = Color(0xFF10B981), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            item(key = "status") {
+                if (useTwoColumns) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraLarge),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        SignalAnalysisConfigurationPanel(
+                            status = status,
+                            modifier = Modifier.weight(1f),
+                        )
+                        SignalAnalysisRuntimePanel(
+                            status = status,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraLarge)) {
+                        SignalAnalysisConfigurationPanel(status = status)
+                        SignalAnalysisRuntimePanel(status = status)
+                    }
+                }
             }
-            Row {
-                Text("Tốc độ: ", color = TextSecondary, fontSize = 14.sp)
-                Text(speed, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            item(key = "read-only") {
+                SignalAnalysisReadOnlyNotice()
             }
         }
     }
 }
 
 @Composable
-fun MetricCard(
+private fun SignalAnalysisOverview() {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(ShcareTheme.spacing.extraLarge),
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+                Text(
+                    text = stringResource(R.string.signal_analysis_overview_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = stringResource(R.string.signal_analysis_overview_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SignalAnalysisConfigurationPanel(
+    status: SignalAnalysisStatus,
     modifier: Modifier = Modifier,
+) {
+    val settings = status.settings
+    val analysisKind = settings.analysisKind.ifBlank { status.runtime.scanAnalysis.analysisKind }
+    val analyzerVersion = settings.analyzerVersion
+        .ifBlank { settings.version }
+        .ifBlank { status.runtime.scanAnalysis.analyzerVersion }
+    val scopeText = if (analysisKind == "signal_quality") {
+        stringResource(R.string.signal_analysis_scope_signal_quality)
+    } else {
+        stringResource(R.string.signal_analysis_scope_unknown)
+    }
+    val analyzerText = if (analyzerVersion == "signal_quality_rules_v1") {
+        stringResource(R.string.signal_analysis_analyzer_rules_v1)
+    } else {
+        stringResource(R.string.signal_analysis_value_unreported)
+    }
+    val modeText = if (settings.status == "local_signal_quality_only") {
+        stringResource(R.string.signal_analysis_mode_local_rules)
+    } else {
+        stringResource(R.string.signal_analysis_mode_unknown)
+    }
+
+    SignalAnalysisPanel(
+        title = stringResource(R.string.signal_analysis_configuration_heading),
+        modifier = modifier.testTag("signal_analysis.configuration"),
+    ) {
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.Analytics,
+            label = stringResource(R.string.signal_analysis_scope_label),
+            value = scopeText,
+            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            iconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            testTag = "signal_analysis.row.scope",
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.SettingsSuggest,
+            label = stringResource(R.string.signal_analysis_analyzer_label),
+            value = analyzerText,
+            support = analyzerVersion.takeIf { it.isNotBlank() }?.let {
+                stringResource(R.string.signal_analysis_technical_id, it)
+            }.orEmpty(),
+            iconContainerColor = ShcareTheme.colors.infoContainer,
+            iconContentColor = ShcareTheme.colors.onInfoContainer,
+            testTag = "signal_analysis.row.analyzer",
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.signal_analysis_mode_label),
+            value = modeText,
+            iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            iconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            testTag = "signal_analysis.row.mode",
+        )
+    }
+}
+
+@Composable
+private fun SignalAnalysisRuntimePanel(
+    status: SignalAnalysisStatus,
+    modifier: Modifier = Modifier,
+) {
+    val settings = status.settings
+    val runtime = status.runtime
+    val scanAvailable = runtime.scanAnalysis.available
+    val clinicalEnabled = settings.clinicalDecisionSupport || runtime.scanAnalysis.clinicalDecisionSupport
+    val updateAvailable = settings.updateSupported && runtime.modelUpdate.available
+
+    SignalAnalysisPanel(
+        title = stringResource(R.string.signal_analysis_runtime_heading),
+        modifier = modifier.testTag("signal_analysis.runtime"),
+    ) {
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.signal_analysis_scan_label),
+            value = stringResource(
+                if (scanAvailable) R.string.signal_analysis_scan_available
+                else R.string.signal_analysis_scan_unavailable,
+            ),
+            iconContainerColor = if (scanAvailable) {
+                ShcareTheme.colors.successContainer
+            } else {
+                ShcareTheme.colors.offlineContainer
+            },
+            iconContentColor = if (scanAvailable) {
+                ShcareTheme.colors.onSuccessContainer
+            } else {
+                ShcareTheme.colors.onOfflineContainer
+            },
+            testTag = "signal_analysis.row.scan",
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.HealthAndSafety,
+            label = stringResource(R.string.signal_analysis_clinical_label),
+            value = stringResource(
+                if (clinicalEnabled) R.string.signal_analysis_clinical_enabled
+                else R.string.signal_analysis_clinical_disabled,
+            ),
+            iconContainerColor = if (clinicalEnabled) {
+                ShcareTheme.colors.successContainer
+            } else {
+                ShcareTheme.colors.warningContainer
+            },
+            iconContentColor = if (clinicalEnabled) {
+                ShcareTheme.colors.onSuccessContainer
+            } else {
+                ShcareTheme.colors.onWarningContainer
+            },
+            testTag = "signal_analysis.row.clinical",
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.SystemUpdate,
+            label = stringResource(R.string.signal_analysis_update_label),
+            value = stringResource(
+                if (updateAvailable) R.string.signal_analysis_update_available
+                else R.string.signal_analysis_update_unavailable,
+            ),
+            iconContainerColor = ShcareTheme.colors.warningContainer,
+            iconContentColor = ShcareTheme.colors.onWarningContainer,
+            testTag = "signal_analysis.row.update",
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.Verified,
+            label = stringResource(R.string.signal_analysis_accuracy_label),
+            value = stringResource(
+                if (settings.accuracyMetricsAvailable) R.string.signal_analysis_accuracy_available
+                else R.string.signal_analysis_accuracy_unavailable,
+            ),
+            iconContainerColor = ShcareTheme.colors.infoContainer,
+            iconContentColor = ShcareTheme.colors.onInfoContainer,
+            testTag = "signal_analysis.row.accuracy",
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SignalAnalysisStatusRow(
+            icon = Icons.Default.Forum,
+            label = stringResource(R.string.signal_analysis_chat_label),
+            value = stringResource(
+                if (runtime.chatProvider.available) R.string.signal_analysis_chat_available
+                else R.string.signal_analysis_chat_unavailable,
+            ),
+            iconContainerColor = if (runtime.chatProvider.available) {
+                ShcareTheme.colors.successContainer
+            } else {
+                ShcareTheme.colors.offlineContainer
+            },
+            iconContentColor = if (runtime.chatProvider.available) {
+                ShcareTheme.colors.onSuccessContainer
+            } else {
+                ShcareTheme.colors.onOfflineContainer
+            },
+            testTag = "signal_analysis.row.chat",
+        )
+    }
+}
+
+@Composable
+private fun SignalAnalysisPanel(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(
+                        start = ShcareTheme.spacing.large,
+                        end = ShcareTheme.spacing.large,
+                        top = ShcareTheme.spacing.large,
+                        bottom = ShcareTheme.spacing.medium,
+                    )
+                    .semantics { heading() },
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.SignalAnalysisStatusRow(
     icon: ImageVector,
-    iconColor: Color,
     label: String,
     value: String,
-    change: String
+    iconContainerColor: Color,
+    iconContentColor: Color,
+    testTag: String,
+    support: String = "",
 ) {
-    Column(
-        modifier = modifier
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
-            .padding(16.dp)
+    val spokenStatus = listOf(label, value, support)
+        .filter { it.isNotBlank() }
+        .joinToString(". ")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+            .semantics(mergeDescendants = true) { stateDescription = spokenStatus }
+            .padding(ShcareTheme.spacing.large),
+        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            color = iconContainerColor,
+            contentColor = iconContentColor,
+            shape = MaterialTheme.shapes.medium,
+        ) {
             Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
+                modifier = Modifier.size(40.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(16.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(label, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(value, color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(14.dp))
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(change, color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (support.isNotBlank()) {
+                Text(
+                    text = support,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SignalAnalysisReadOnlyNotice() {
+    Surface(
+        color = ShcareTheme.colors.infoContainer,
+        contentColor = ShcareTheme.colors.onInfoContainer,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall)) {
+                Text(
+                    text = stringResource(R.string.signal_analysis_read_only_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.signal_analysis_read_only_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }

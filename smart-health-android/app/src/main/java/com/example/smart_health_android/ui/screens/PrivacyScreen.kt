@@ -1,642 +1,704 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Launch
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
 import com.example.smart_health_android.data.AuthSession
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
+import com.example.smart_health_android.data.formatIso
+import com.example.smart_health_android.security.AccountSecurityAction
+import com.example.smart_health_android.security.AccountSecurityLoadState
+import com.example.smart_health_android.security.AccountSecurityUiState
+import com.example.smart_health_android.security.AccountSecurityViewModel
+import com.example.smart_health_android.security.TwoFactorSetupStep
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrivacyScreen(
     onNavigateBack: () -> Unit,
     onNavigateToChangePassword: () -> Unit,
     onNavigateToDataAccess: () -> Unit,
-    onNavigateToAccessLog: () -> Unit
+    onNavigateToAccessLog: () -> Unit,
+    viewModel: AccountSecurityViewModel = viewModel(),
 ) {
-    var biometric by remember { mutableStateOf(false) }
-    var twoFactor by remember { mutableStateOf(false) }
-    var twoFactorMethod by remember { mutableStateOf("") }
-    var twoFactorSecretPreview by remember { mutableStateOf("") }
-    var recoveryCodes by remember { mutableStateOf<List<String>>(emptyList()) }
-    var sessions by remember { mutableStateOf<List<AuthSession>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var isLoadingSessions by remember { mutableStateOf(true) }
-    var isSavingTwoFactor by remember { mutableStateOf(false) }
-    var revokingSessionId by remember { mutableStateOf<String?>(null) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var securityNotice by remember {
-        mutableStateOf("Sinh trắc học và 2FA trên app sẽ được bật khi nối native biometric/SMS provider thật.")
-    }
-    val coroutineScope = rememberCoroutineScope()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val spacing = ShcareTheme.spacing
 
-    fun applyTwoFactorState(enabled: Boolean, method: String, secretPreview: String = "") {
-        twoFactor = enabled
-        twoFactorMethod = method
-        twoFactorSecretPreview = secretPreview
-        securityNotice = if (enabled) {
-            val methodLabel = if (method == "sms") "SMS" else "ứng dụng OTP"
-            "Cấu hình 2FA backend đang bật qua $methodLabel. OTP provider thật vẫn cần được kích hoạt ở hạ tầng."
-        } else {
-            "2FA đang tắt. Bật 2FA sẽ lưu cấu hình bảo mật trên backend và cấp mã khôi phục."
-        }
-    }
-
-    suspend fun refreshSessions() {
-        isLoadingSessions = true
-        try {
-            sessions = SmartHealthRepository.api.listAuthSessions()
-        } catch (error: Exception) {
-            errorMessage = error.toVietnameseMessage("Không thể tải phiên đăng nhập")
-        } finally {
-            isLoadingSessions = false
-        }
-    }
-
-    fun updateTwoFactor(enabled: Boolean) {
-        if (isSavingTwoFactor) return
-        isSavingTwoFactor = true
-        errorMessage = null
-        recoveryCodes = emptyList()
-        coroutineScope.launch {
-            try {
-                val result = SmartHealthRepository.api.updateTwoFactor(enable = enabled, method = "app")
-                applyTwoFactorState(result.enabled, result.method, result.secretPreview)
-                recoveryCodes = result.recoveryCodes
-                if (result.note.isNotBlank()) {
-                    securityNotice = result.note
-                }
-            } catch (error: Exception) {
-                errorMessage = error.toVietnameseMessage("Không thể cập nhật 2FA")
-            } finally {
-                isSavingTwoFactor = false
-            }
-        }
-    }
-
-    fun revokeSession(session: AuthSession) {
-        if (session.current || !session.revokedAt.isNullOrBlank() || revokingSessionId != null) return
-        revokingSessionId = session.id
-        errorMessage = null
-        coroutineScope.launch {
-            try {
-                SmartHealthRepository.api.revokeAuthSession(session.id)
-                refreshSessions()
-                securityNotice = "Đã thu hồi phiên đăng nhập ${session.device.ifBlank { "khác" }}."
-            } catch (error: Exception) {
-                errorMessage = error.toVietnameseMessage("Không thể thu hồi phiên đăng nhập")
-            } finally {
-                revokingSessionId = null
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        isLoading = true
-        isLoadingSessions = true
-        errorMessage = null
-        runCatching {
-            val user = SmartHealthRepository.api.getMe()
-            applyTwoFactorState(user.twoFactorEnabled, user.twoFactorMethod, user.twoFactorSecretPreview)
-        }.onFailure {
-            errorMessage = it.toVietnameseMessage("Không thể tải cấu hình bảo mật")
-        }
-        refreshSessions()
-        isLoading = false
-    }
-
-    Column(
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.security_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.security_back),
+                        )
+                    }
+                },
+            )
+        },
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
-    ) {
-        // Gradient Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 24.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text("Bảo mật & Quyền riêng tư", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Quản lý bảo mật tài khoản", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-                }
-            }
-        }
+            .navigationBarsPadding()
+            .imePadding(),
+    ) { innerPadding ->
+        when (state.loadState) {
+            AccountSecurityLoadState.Loading -> ShcareLoadingState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                message = stringResource(R.string.security_loading),
+            )
 
-        // Scrollable Content
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            if (isLoading || isSavingTwoFactor) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = PrimaryTeal,
-                    trackColor = Border
-                )
-            }
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-            }
-            // Section 1: Xác Thực
-            Column {
-                Text("XÁC THỰC", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
-                ) {
-                    PrivacyToggleRow(
-                        icon = Icons.Default.Fingerprint,
-                        iconColor = Color(0xFF10B981),
-                        title = "Xác thực sinh trắc học",
-                        subtitle = "Chưa khả dụng cho bản Android hiện tại",
-                        checked = biometric,
-                        onCheckedChange = {
-                            securityNotice = "Sinh trắc học cần tích hợp Android BiometricPrompt trước khi bật trong bản phát hành."
-                        },
-                        enabled = false,
-                        showDivider = true
-                    )
-                    PrivacyToggleRow(
-                        icon = Icons.Default.Smartphone,
-                        iconColor = PrimaryBlue,
-                        title = "Xác thực 2 yếu tố (2FA)",
-                        subtitle = if (twoFactor) {
-                            listOf("Đang bật", twoFactorMethod.uppercase(), twoFactorSecretPreview)
-                                .filter { it.isNotBlank() }
-                                .joinToString(" • ")
-                        } else {
-                            "Lưu cấu hình 2FA và mã khôi phục trên backend"
-                        },
-                        checked = twoFactor,
-                        onCheckedChange = { updateTwoFactor(it) },
-                        enabled = !isLoading && !isSavingTwoFactor,
-                        showDivider = false
+            AccountSecurityLoadState.Error -> ShcareErrorState(
+                onRetry = { viewModel.onAction(AccountSecurityAction.Retry) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.security_load_error_title),
+                message = state.errorMessage.ifBlank {
+                    stringResource(R.string.security_load_error_message)
+                },
+            )
+
+            AccountSecurityLoadState.Offline -> ShcareOfflineState(
+                onRetry = { viewModel.onAction(AccountSecurityAction.Retry) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.security_offline_title),
+                message = stringResource(R.string.security_offline_message),
+            )
+
+            AccountSecurityLoadState.PermissionDenied -> ShcarePermissionState(
+                onRequestPermission = onNavigateBack,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.security_permission_title),
+                message = stringResource(R.string.security_permission_message),
+                actionLabel = stringResource(R.string.security_back),
+            )
+
+            AccountSecurityLoadState.Ready,
+            AccountSecurityLoadState.Unavailable,
+            -> LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(
+                    start = spacing.large,
+                    top = spacing.medium,
+                    end = spacing.large,
+                    bottom = spacing.tripleExtraLarge,
+                ),
+                verticalArrangement = Arrangement.spacedBy(spacing.large),
+            ) {
+                item {
+                    Text(
+                        text = stringResource(R.string.security_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    securityNotice,
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-                if (recoveryCodes.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFEFF6FF), RoundedCornerShape(14.dp))
-                            .border(1.dp, Color(0xFFBFDBFE), RoundedCornerShape(14.dp))
-                            .padding(14.dp)
-                    ) {
-                        Text("Mã khôi phục vừa cấp", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(6.dp))
+                item {
+                    TwoFactorCard(
+                        state = state,
+                        available = state.loadState == AccountSecurityLoadState.Ready,
+                        onAction = viewModel::onAction,
+                    )
+                }
+                item {
+                    SecurityNavigationCard(
+                        onNavigateToChangePassword = onNavigateToChangePassword,
+                        onNavigateToDataAccess = onNavigateToDataAccess,
+                        onNavigateToAccessLog = onNavigateToAccessLog,
+                    )
+                }
+                item {
+                    Text(
+                        text = stringResource(R.string.security_sessions_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                }
+                if (state.sessionsLoading) {
+                    item {
+                        ShcareLoadingState(message = stringResource(R.string.security_sessions_loading))
+                    }
+                } else if (state.sessions.isEmpty()) {
+                    item {
+                        Surface(
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.security_sessions_empty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(spacing.large),
+                            )
+                        }
+                    }
+                } else {
+                    items(state.sessions, key = AuthSession::id) { session ->
+                        SessionCard(
+                            session = session,
+                            revoking = state.revokingSessionId == session.id,
+                            onRevoke = {
+                                viewModel.onAction(AccountSecurityAction.RevokeSession(session.id))
+                            },
+                        )
+                    }
+                }
+                if (state.sessionsError.isNotBlank() || state.sessionRevokeUnconfirmed) {
+                    item {
                         Text(
-                            recoveryCodes.joinToString("  •  "),
-                            color = TextPrimary,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp
+                            text = if (state.sessionRevokeUnconfirmed) {
+                                stringResource(R.string.security_session_revoke_unconfirmed)
+                            } else {
+                                state.sessionsError
+                            },
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
                         )
                     }
                 }
             }
+        }
+    }
+}
 
-            // Section 2: Phiên Đăng Nhập
-            Column {
-                Text("PHIÊN ĐĂNG NHẬP", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
+@Composable
+private fun TwoFactorCard(
+    state: AccountSecurityUiState,
+    available: Boolean,
+    onAction: (AccountSecurityAction) -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+    var copyAnnouncement by remember { mutableStateOf("") }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("security-two-factor-card"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    color = if (state.twoFactor.enabled) {
+                        semanticColors.successContainer
+                    } else {
+                        semanticColors.infoContainer
+                    },
+                    shape = MaterialTheme.shapes.medium,
                 ) {
-                    when {
-                        isLoadingSessions -> {
-                            Row(
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = if (state.twoFactor.enabled) {
+                            semanticColors.onSuccessContainer
+                        } else {
+                            semanticColors.onInfoContainer
+                        },
+                        modifier = Modifier.padding(spacing.medium),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.security_two_factor_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = if (state.twoFactor.enabled) {
+                            stringResource(R.string.security_two_factor_enabled)
+                        } else {
+                            stringResource(R.string.security_two_factor_disabled)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (!available) {
+                Surface(
+                    color = semanticColors.warningContainer,
+                    contentColor = semanticColors.onWarningContainer,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(
+                        text = stringResource(R.string.security_two_factor_unavailable),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(spacing.medium),
+                    )
+                }
+                return@Column
+            }
+
+            if (state.isMutating) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = stringResource(R.string.security_two_factor_saving),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            when (state.step) {
+                TwoFactorSetupStep.Status -> {
+                    Text(
+                        text = if (state.twoFactor.enabled) {
+                            stringResource(R.string.security_two_factor_enabled_description)
+                        } else {
+                            stringResource(R.string.security_two_factor_disabled_description)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.twoFactor.enabled) {
+                        OutlinedButton(
+                            onClick = { onAction(AccountSecurityAction.RequestDisable) },
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            Text(stringResource(R.string.security_two_factor_disable_action))
+                        }
+                    } else {
+                        Button(
+                            onClick = { onAction(AccountSecurityAction.StartEnrollment) },
+                            enabled = !state.isMutating,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            Icon(Icons.Default.Security, contentDescription = null)
+                            Text(
+                                text = stringResource(R.string.security_two_factor_start_action),
+                                modifier = Modifier.padding(start = spacing.small),
+                            )
+                        }
+                    }
+                }
+
+                TwoFactorSetupStep.Verify -> {
+                    val enrollment = state.enrollment
+                    Text(
+                        text = stringResource(R.string.security_two_factor_enrollment_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (enrollment != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            Text(
+                                text = enrollment.manualKey,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontFamily = FontFamily.Monospace,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    color = PrimaryTeal,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text("Đang tải phiên đăng nhập", color = TextSecondary, fontSize = 14.sp)
-                            }
-                        }
-                        sessions.isEmpty() -> {
-                            Text(
-                                "Chưa có phiên đăng nhập nào được backend ghi nhận cho tài khoản này.",
-                                color = TextSecondary,
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(16.dp)
+                                    .padding(spacing.medium),
                             )
                         }
-                        else -> {
-                            sessions.forEachIndexed { index, session ->
-                                PrivacySessionRow(
-                                    session = session,
-                                    isRevoking = revokingSessionId == session.id,
-                                    showDivider = index < sessions.lastIndex,
-                                    onRevoke = { revokeSession(session) }
-                                )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(enrollment.manualKey))
+                                    copyAnnouncement = "copied"
+                                },
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null)
+                                Text(stringResource(R.string.security_copy_key))
+                            }
+                            TextButton(
+                                onClick = { uriHandler.openUri(enrollment.otpauthUri) },
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Icon(Icons.Default.Launch, contentDescription = null)
+                                Text(stringResource(R.string.security_open_authenticator))
+                            }
+                        }
+                        if (copyAnnouncement.isNotBlank()) {
+                            Text(
+                                text = stringResource(R.string.security_copied),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = semanticColors.success,
+                                modifier = Modifier.semantics {
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                            )
+                        }
+                        OtpField(
+                            value = state.otp,
+                            label = stringResource(R.string.security_otp_label),
+                            error = state.errorMessage,
+                            onValueChange = { onAction(AccountSecurityAction.OtpChanged(it)) },
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.security_enrollment_expires,
+                                formatIso(enrollment.expiresAt, "HH:mm dd/MM/yyyy"),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                            Button(
+                                onClick = { onAction(AccountSecurityAction.VerifyEnrollment) },
+                                enabled = state.otp.length == 6 && !state.isMutating,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text(stringResource(R.string.security_verify_and_enable))
+                            }
+                            OutlinedButton(
+                                onClick = { onAction(AccountSecurityAction.CancelStep) },
+                                enabled = !state.isMutating,
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text(stringResource(R.string.action_cancel))
                             }
                         }
                     }
                 }
-            }
 
-            // Section 3: Mật Khẩu
-            Column {
-                Text("MẬT KHẨU", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
-                ) {
-                    PrivacyActionRow(
-                        icon = Icons.Default.Lock,
-                        iconColor = Color(0xFF8B5CF6),
-                        title = "Đổi mật khẩu",
-                        subtitle = "Cập nhật lần cuối: 2 tháng trước",
-                        showDivider = true,
-                        onClick = onNavigateToChangePassword
+                TwoFactorSetupStep.Recovery -> {
+                    Text(
+                        text = stringResource(R.string.security_recovery_title),
+                        style = MaterialTheme.typography.titleSmall,
                     )
-                    
-                    // Password Strength
-                    Row(
+                    Text(
+                        text = stringResource(R.string.security_recovery_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+                        state.recoveryCodes.forEach { code ->
+                            Surface(
+                                color = semanticColors.warningContainer,
+                                contentColor = semanticColors.onWarningContainer,
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Text(
+                                    text = code,
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(spacing.medium),
+                                )
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(state.recoveryCodes.joinToString("\n")))
+                            copyAnnouncement = "copied"
+                        },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null)
+                        Text(stringResource(R.string.security_copy_recovery))
+                    }
+                    Row(verticalAlignment = Alignment.Top) {
+                        Checkbox(
+                            checked = state.recoveryAcknowledged,
+                            onCheckedChange = {
+                                onAction(AccountSecurityAction.RecoveryAcknowledged(it))
+                            },
+                        )
+                        Text(
+                            text = stringResource(R.string.security_recovery_acknowledge),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = spacing.medium),
+                        )
+                    }
+                    Button(
+                        onClick = { onAction(AccountSecurityAction.CompleteRecovery) },
+                        enabled = state.recoveryAcknowledged,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.Top
+                            .defaultMinSize(minHeight = 48.dp),
                     ) {
-                        Box(
+                        Text(stringResource(R.string.action_complete))
+                    }
+                }
+
+                TwoFactorSetupStep.Disable -> {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.security_disable_warning),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(spacing.medium),
+                        )
+                    }
+                    OtpField(
+                        value = state.otp,
+                        label = stringResource(R.string.security_current_otp_label),
+                        error = state.errorMessage,
+                        onValueChange = { onAction(AccountSecurityAction.OtpChanged(it)) },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                        Button(
+                            onClick = { onAction(AccountSecurityAction.ConfirmDisable) },
+                            enabled = state.otp.length == 6 && !state.isMutating,
                             modifier = Modifier
-                                .padding(top = 4.dp)
-                                .size(40.dp)
-                                .background(Color(0xFFF97316).copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 48.dp),
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFF97316), modifier = Modifier.size(20.dp))
+                            Text(stringResource(R.string.security_confirm_disable))
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Độ mạnh mật khẩu", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(Border)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.75f)
-                                            .fillMaxHeight()
-                                            .background(Brush.horizontalGradient(listOf(Color(0xFF10B981), PrimaryTeal)))
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Mạnh", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Khuyến nghị đổi mật khẩu mỗi 3 tháng", color = TextSecondary, fontSize = 14.sp)
+                        OutlinedButton(
+                            onClick = { onAction(AccountSecurityAction.CancelStep) },
+                            enabled = !state.isMutating,
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            Text(stringResource(R.string.security_keep_enabled))
                         }
                     }
                 }
             }
-
-            // Section 4: Quyền Riêng Tư
-            Column {
-                Text("QUYỀN RIÊNG TƯ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
-                ) {
-                    PrivacyActionRow(
-                        icon = Icons.Default.Shield,
-                        iconColor = Color(0xFF3B82F6),
-                        title = "Quyền truy cập dữ liệu",
-                        subtitle = "Quản lý ai có thể truy cập hồ sơ",
-                        showDivider = true,
-                        onClick = onNavigateToDataAccess
-                    )
-                    PrivacyBadgeRow(
-                        icon = Icons.Default.VpnKey,
-                        iconColor = PrimaryTeal,
-                        title = "Mã hóa dữ liệu",
-                        subtitle = "AES-256 end-to-end encryption",
-                        badgeText = "Đang bật",
-                        badgeColor = Color(0xFF10B981),
-                        showDivider = true
-                    )
-                    PrivacyActionRow(
-                        icon = Icons.Default.Visibility,
-                        iconColor = Color(0xFFEC4899),
-                        title = "Nhật ký truy cập",
-                        subtitle = "Xem lịch sử đăng nhập",
-                        showDivider = false,
-                        onClick = onNavigateToAccessLog
-                    )
-                }
-            }
-
-            // Security note
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFFEF3C7), RoundedCornerShape(16.dp))
-                    .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(16.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.padding(top = 2.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text("Bảo mật dữ liệu y tế", color = Color(0xFF78350F), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Dữ liệu y tế được bảo vệ bằng xác thực Firebase, phân quyền backend và kênh truyền HTTPS. Chứng nhận y tế chính thức sẽ nằm ở giai đoạn triển khai thương mại.",
-                        color = Color(0xFF92400E),
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-fun PrivacySessionRow(
+private fun OtpField(
+    value: String,
+    label: String,
+    error: String,
+    onValueChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        supportingText = if (error.isNotBlank()) {
+            { Text(error) }
+        } else {
+            null
+        },
+        isError = error.isNotBlank(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("security-otp-field"),
+    )
+}
+
+@Composable
+private fun SecurityNavigationCard(
+    onNavigateToChangePassword: () -> Unit,
+    onNavigateToDataAccess: () -> Unit,
+    onNavigateToAccessLog: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        SecurityNavigationRow(
+            icon = Icons.Default.Lock,
+            title = stringResource(R.string.security_change_password),
+            onClick = onNavigateToChangePassword,
+        )
+        HorizontalDivider()
+        SecurityNavigationRow(
+            icon = Icons.Default.Key,
+            title = stringResource(R.string.security_data_access),
+            onClick = onNavigateToDataAccess,
+        )
+        HorizontalDivider()
+        SecurityNavigationRow(
+            icon = Icons.Default.Logout,
+            title = stringResource(R.string.security_access_log),
+            onClick = onNavigateToAccessLog,
+        )
+    }
+}
+
+@Composable
+private fun SecurityNavigationRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.extraSmall,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 56.dp),
+    ) {
+        Icon(icon, contentDescription = null)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = ShcareTheme.spacing.medium),
+        )
+        Icon(Icons.Default.ChevronRight, contentDescription = null)
+    }
+}
+
+@Composable
+private fun SessionCard(
     session: AuthSession,
-    isRevoking: Boolean,
-    showDivider: Boolean,
-    onRevoke: () -> Unit
+    revoking: Boolean,
+    onRevoke: () -> Unit,
 ) {
-    val isRevoked = !session.revokedAt.isNullOrBlank()
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+    val spacing = ShcareTheme.spacing
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.small),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(PrimaryBlue.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Smartphone, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        session.device.ifBlank { "Smart Health" },
-                        color = TextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 20.sp,
-                        maxLines = 2,
-                        modifier = Modifier.weight(1f, fill = false)
+                        text = session.device.ifBlank {
+                            session.userAgent.ifBlank {
+                                stringResource(R.string.security_session_unknown_device)
+                            }
+                        },
+                        style = MaterialTheme.typography.titleSmall,
                     )
-                    if (session.current) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF10B981).copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text("Hiện tại", color = Color(0xFF047857), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
+                    Text(
+                        text = listOfNotNull(
+                            session.provider.takeIf(String::isNotBlank),
+                            session.ip.takeIf(String::isNotBlank),
+                            (session.lastSeenAt.ifBlank { session.createdAt })
+                                .takeIf(String::isNotBlank)
+                                ?.let { formatIso(it, "HH:mm dd/MM/yyyy") },
+                        ).joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                if (session.current) {
+                    Text(
+                        text = stringResource(R.string.security_session_current),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = ShcareTheme.colors.success,
+                    )
+                }
+            }
+            if (!session.current && session.revokedAt.isNullOrBlank()) {
+                TextButton(
+                    onClick = onRevoke,
+                    enabled = !revoking,
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    if (revoking) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                    Text(stringResource(R.string.security_session_revoke))
+                }
+            } else if (!session.revokedAt.isNullOrBlank()) {
                 Text(
-                    listOf(
-                        session.provider.ifBlank { "backend" },
-                        session.ip.ifBlank { "không rõ IP" },
-                        session.lastSeenAt.ifBlank { session.createdAt }.ifBlank { "chưa có thời gian" }
-                    ).joinToString(" • "),
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
+                    text = stringResource(R.string.security_session_revoked),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            when {
-                session.current -> {
-                    Text("Đang dùng", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
-                isRevoked -> {
-                    Text("Đã thu hồi", color = Color(0xFFD97706), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
-                else -> {
-                    TextButton(
-                        onClick = onRevoke,
-                        enabled = !isRevoking,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        if (isRevoking) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                color = PrimaryTeal,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Thu hồi", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-        if (showDivider) {
-            HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
-        }
-    }
-}
-
-@Composable
-fun PrivacyToggleRow(
-    icon: ImageVector,
-    iconColor: Color,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-    showDivider: Boolean
-) {
-    Column(modifier = Modifier.alpha(if (enabled) 1f else 0.55f)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = enabled) { onCheckedChange(!checked) }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, color = TextSecondary, fontSize = 14.sp)
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color(0xFF10B981),
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color(0xFFE2E8F0)
-                )
-            )
-        }
-        if (showDivider) {
-            HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
-        }
-    }
-}
-
-@Composable
-fun PrivacyActionRow(
-    icon: ImageVector,
-    iconColor: Color,
-    title: String,
-    subtitle: String,
-    showDivider: Boolean,
-    onClick: () -> Unit = {}
-) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, color = TextSecondary, fontSize = 14.sp)
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextSecondary.copy(alpha = 0.5f))
-        }
-        if (showDivider) {
-            HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
-        }
-    }
-}
-
-@Composable
-fun PrivacyBadgeRow(
-    icon: ImageVector,
-    iconColor: Color,
-    title: String,
-    subtitle: String,
-    badgeText: String,
-    badgeColor: Color,
-    showDivider: Boolean
-) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, color = TextSecondary, fontSize = 14.sp)
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Box(
-                modifier = Modifier
-                    .background(badgeColor.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text(badgeText, color = badgeColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-        if (showDivider) {
-            HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
         }
     }
 }

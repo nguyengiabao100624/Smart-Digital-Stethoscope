@@ -37,8 +37,10 @@
   --clinical-radius-lg: 16px;
   --clinical-content-width: 1360px;
   --clinical-display: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --clinical-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --clinical-data: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --clinical-ui:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --clinical-data:
+    ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 html.dark {
@@ -564,6 +566,25 @@ html.dark .shc-public-layout > .shc-announcement {
   border: 1px solid var(--clinical-line);
 }
 
+.clinical-sidebar-brand > a {
+  min-height: 44px;
+}
+
+.clinical-sidebar-close {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--clinical-radius-sm);
+  color: var(--clinical-muted);
+}
+
+.clinical-sidebar-close:hover {
+  background: var(--clinical-canvas-raised);
+  color: var(--clinical-ink);
+}
+
 .clinical-workspace-link {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
@@ -633,7 +654,7 @@ html.dark .shc-public-layout > .shc-announcement {
   display: flex;
   align-items: center;
   gap: 0.72rem;
-  min-height: 40px;
+  min-height: 44px;
   border-radius: var(--clinical-radius-sm);
   color: var(--clinical-muted);
   padding: 0.55rem 0.72rem;
@@ -652,7 +673,11 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .clinical-side-nav a.is-active,
 .clinical-side-footer a.is-active {
-  background: color-mix(in srgb, var(--clinical-primary) 11%, var(--clinical-surface));
+  background: color-mix(
+    in srgb,
+    var(--clinical-primary) 11%,
+    var(--clinical-surface)
+  );
   color: var(--clinical-primary);
   font-weight: 750;
 }
@@ -739,8 +764,8 @@ html.dark .shc-public-layout > .shc-announcement {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 44px;
+  min-height: 44px;
   border: 1px solid transparent;
   border-radius: var(--clinical-radius-sm);
   color: var(--clinical-muted);
@@ -768,7 +793,11 @@ html.dark .shc-public-layout > .shc-announcement {
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--clinical-primary) 14%, var(--clinical-surface));
+  background: color-mix(
+    in srgb,
+    var(--clinical-primary) 14%,
+    var(--clinical-surface)
+  );
   color: var(--clinical-primary);
 }
 

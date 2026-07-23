@@ -1,8 +1,33 @@
-﻿import React, { useState } from "react";
+﻿import React, { useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Building2, Calendar, Hash, Loader2, Stethoscope, Wifi, X } from "lucide-react";
+import { useEffect } from "react";
+import {
+  AlertTriangle,
+  Building2,
+  Calendar,
+  Check,
+  Clipboard,
+  Clock3,
+  Download,
+  Hash,
+  Loader2,
+  ShieldCheck,
+  Stethoscope,
+  Wifi,
+  X,
+} from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { smartHealthApi } from "@/lib/smart-health-api";
+import {
+  createProvisionArtifactFilename,
+  getProvisionArtifactStatus,
+  parseProvisionArtifact,
+  serializeProvisionQrPayload,
+  type DeviceProvisionArtifact,
+} from "@/lib/device-provisioning";
+import { getDeviceSecretValidationError } from "@/lib/device-secret";
+import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { useAdminAccess } from "../useAdminAccess";
 
 type DeviceFormData = {
@@ -14,6 +39,8 @@ type DeviceFormData = {
   model: string;
   serialNumber: string;
   purchaseDate: string;
+  deviceSecret: string;
+  confirmDeviceSecret: string;
 };
 
 interface AddDeviceDialogProps {
@@ -31,50 +58,217 @@ const emptyForm: DeviceFormData = {
   model: "",
   serialNumber: "",
   purchaseDate: "",
+  deviceSecret: "",
+  confirmDeviceSecret: "",
 };
+
+function createProvisionIdempotencyKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `device-provision-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function formatProvisionExpiry(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
 
 export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDialogProps) {
   const [formData, setFormData] = useState<DeviceFormData>(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [claimCode, setClaimCode] = useState("");
+  const [provisionArtifact, setProvisionArtifact] = useState<DeviceProvisionArtifact | null>(null);
+  const [artifactClock, setArtifactClock] = useState(() => Date.now());
+  const [copiedField, setCopiedField] = useState<"device" | "claim" | "payload" | "">("");
+  const [secretError, setSecretError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const submitInFlightRef = useRef<boolean>(false);
+  const provisionIdempotencyKeyRef = useRef<string | null>(null);
+  const qrRef = useRef<SVGSVGElement | null>(null);
   const { isPlatformAdmin } = useAdminAccess();
+
+  const isDismissBlocked = () => isSubmitting || submitInFlightRef.current;
+  const updateFormData = (update: React.SetStateAction<DeviceFormData>) => {
+    provisionIdempotencyKeyRef.current = null;
+    setProvisionArtifact(null);
+    setCopiedField("");
+    setSubmitError("");
+    setFormData(update);
+  };
+
+  useEffect(() => {
+    if (!provisionArtifact) return undefined;
+    setArtifactClock(Date.now());
+    const timer = window.setInterval(() => setArtifactClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [provisionArtifact]);
+
+  const copyArtifactValue = async (
+    field: "device" | "claim" | "payload",
+    value: string,
+    label: string,
+  ) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(field);
+      window.setTimeout(() => {
+        setCopiedField((current) => (current === field ? "" : current));
+      }, 1_800);
+      toast.success(`Đã sao chép ${label}`);
+    } catch {
+      toast.error(`Không thể sao chép ${label}`, {
+        description: "Trình duyệt chưa cấp quyền clipboard. Hãy chọn và sao chép thủ công.",
+      });
+    }
+  };
+
+  const downloadProvisionQr = () => {
+    if (!provisionArtifact || !qrRef.current) return;
+    const serialized = new XMLSerializer().serializeToString(qrRef.current);
+    const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${serialized}`], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = createProvisionArtifactFilename(provisionArtifact);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitInFlightRef.current) return;
+
+    const validationError = getDeviceSecretValidationError(formData.deviceSecret);
+    if (validationError) {
+      setSecretError(validationError);
+      return;
+    }
+    if (formData.deviceSecret !== formData.confirmDeviceSecret) {
+      setSecretError("Hai giá trị secret thiết bị không khớp.");
+      return;
+    }
+    setSecretError("");
+    setSubmitError("");
+    submitInFlightRef.current = true;
     setIsSubmitting(true);
+    setProvisionArtifact(null);
+    setCopiedField("");
+
+    const provisionIdempotencyKey =
+      provisionIdempotencyKeyRef.current ??
+      (provisionIdempotencyKeyRef.current = createProvisionIdempotencyKey());
+
     try {
-      const response = await smartHealthApi.createDeviceProvision({
-        deviceId: formData.deviceId || undefined,
-        name: formData.deviceName,
-        organizationId: isPlatformAdmin ? formData.clinic || undefined : undefined,
-      });
-      setClaimCode(response.claim.claimCode);
+      let response: Awaited<ReturnType<typeof smartHealthApi.createDeviceProvision>>;
+      try {
+        response = await smartHealthApi.createDeviceProvision(
+          {
+            deviceId: formData.deviceId || undefined,
+            name: formData.deviceName,
+            type: formData.deviceType,
+            manufacturer: formData.manufacturer || undefined,
+            model: formData.model || undefined,
+            serialNumber: formData.serialNumber || undefined,
+            purchaseDate: formData.purchaseDate || undefined,
+            organizationId: isPlatformAdmin ? formData.clinic || undefined : undefined,
+            deviceSecret: formData.deviceSecret,
+          },
+          provisionIdempotencyKey,
+        );
+      } catch (error) {
+        setSubmitError(toVietnameseErrorMessage(error, "Vui lòng kiểm tra kết nối rồi thử lại."));
+        toast.error("Không thể đăng ký thiết bị", {
+          description: toVietnameseErrorMessage(error, "Vui lòng kiểm tra backend."),
+        });
+        return;
+      }
+
+      let artifact: DeviceProvisionArtifact;
+      try {
+        artifact = parseProvisionArtifact(response);
+      } catch (error) {
+        const message = toVietnameseErrorMessage(
+          error,
+          "Backend trả về QR setup không đầy đủ. Không sử dụng artifact này.",
+        );
+        setSubmitError(message);
+        toast.error("Thiết bị có thể đã được tạo nhưng QR không an toàn", {
+          description: `${message} Thử lại cùng dữ liệu để kiểm tra kết quả idempotent.`,
+        });
+        return;
+      }
+
+      setProvisionArtifact(artifact);
+      setArtifactClock(Date.now());
+      setFormData((current) => ({
+        ...current,
+        deviceSecret: "",
+        confirmDeviceSecret: "",
+      }));
+      provisionIdempotencyKeyRef.current = null;
       toast.success("Đã đăng ký thiết bị", {
-        description: `Claim code: ${response.claim.claimCode}`,
+        description: "Tải hoặc bàn giao QR setup trước khi đóng hộp thoại.",
       });
-      await onCreated?.();
-    } catch (error) {
-      toast.error("Không thể đăng ký thiết bị", {
-        description: error instanceof Error ? error.message : "Vui lòng kiểm tra backend.",
-      });
+
+      try {
+        await onCreated?.();
+      } catch (refreshError) {
+        toast.error("Đã tạo thiết bị nhưng chưa làm mới danh sách", {
+          description: toVietnameseErrorMessage(
+            refreshError,
+            "Thiết bị đã được tạo; hãy thử tải lại danh sách.",
+          ),
+        });
+      }
     } finally {
+      submitInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
 
-  const closeAndReset = (open: boolean) => {
-    onOpenChange(open);
-    if (!open) {
+  const closeAndReset = (nextOpen: boolean) => {
+    if (!nextOpen && isDismissBlocked()) return;
+
+    onOpenChange(nextOpen);
+    if (!nextOpen) {
+      provisionIdempotencyKeyRef.current = null;
       setFormData(emptyForm);
-      setClaimCode("");
+      setProvisionArtifact(null);
+      setCopiedField("");
+      setSecretError("");
+      setSubmitError("");
     }
   };
+
+  const artifactStatus = provisionArtifact
+    ? getProvisionArtifactStatus(provisionArtifact, artifactClock)
+    : null;
 
   return (
     <Dialog.Root open={open} onOpenChange={closeAndReset}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 backdrop-blur-sm motion-reduce:animate-none" />
+        <Dialog.Content
+          aria-busy={isDismissBlocked()}
+          onEscapeKeyDown={(event) => {
+            if (isDismissBlocked()) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (isDismissBlocked()) event.preventDefault();
+          }}
+          onInteractOutside={(event) => {
+            if (isDismissBlocked()) event.preventDefault();
+          }}
+          className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95 motion-reduce:animate-none"
+        >
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -87,47 +281,237 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                 </Dialog.Description>
               </div>
             </div>
-            <Dialog.Close className="text-muted-foreground transition-colors hover:text-foreground">
+            <Dialog.Close
+              disabled={isDismissBlocked()}
+              aria-label="Đóng hộp thoại thêm thiết bị"
+              className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               <X className="h-5 w-5" />
             </Dialog.Close>
           </div>
 
           <form method="post" onSubmit={handleSubmit} className="space-y-6 p-6">
-            {claimCode && (
-              <div className="rounded-lg border border-success/20 bg-success/10 p-4 text-sm text-success">
-                <div className="font-semibold">Thiết bị đã được tạo</div>
-                <div className="mt-1 font-mono text-base tracking-wide">
-                  Claim code: {claimCode}
+            {provisionArtifact && artifactStatus ? (
+              <section
+                role="status"
+                aria-live="polite"
+                aria-label="Artifact ghép thiết bị vừa tạo"
+                className={`rounded-xl border p-4 sm:p-5 ${
+                  artifactStatus === "expired"
+                    ? "border-destructive/30 bg-destructive/5"
+                    : artifactStatus === "expiring"
+                      ? "border-warning/30 bg-warning/5"
+                      : "border-success/30 bg-success/5"
+                }`}
+              >
+                <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+                  <div className="min-w-0 space-y-4">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-foreground">Thiết bị đã được tạo</h3>
+                        <span
+                          className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-medium ${
+                            artifactStatus === "expired"
+                              ? "bg-destructive/10 text-destructive"
+                              : artifactStatus === "expiring"
+                                ? "bg-warning/10 text-warning-foreground"
+                                : "bg-success/10 text-success"
+                          }`}
+                        >
+                          {artifactStatus === "expired"
+                            ? "Đã hết hạn"
+                            : artifactStatus === "expiring"
+                              ? "Sắp hết hạn"
+                              : "Sẵn sàng bàn giao"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Đây là artifact một lần. Tải QR hoặc bàn giao trực tiếp trước khi sửa biểu
+                        mẫu hay đóng hộp thoại.
+                      </p>
+                    </div>
+
+                    <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <dt className="text-muted-foreground">Device ID</dt>
+                        <dd className="mt-1 flex min-w-0 items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all font-mono text-foreground">
+                            {provisionArtifact.deviceId}
+                          </code>
+                          <button
+                            type="button"
+                            aria-label="Sao chép Device ID"
+                            onClick={() =>
+                              void copyArtifactValue(
+                                "device",
+                                provisionArtifact.deviceId,
+                                "Device ID",
+                              )
+                            }
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {copiedField === "device" ? (
+                              <Check className="h-4 w-4 text-success" />
+                            ) : (
+                              <Clipboard className="h-4 w-4" />
+                            )}
+                          </button>
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-muted-foreground">Claim code</dt>
+                        <dd className="mt-1 flex min-w-0 items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all font-mono text-foreground">
+                            Claim code: {provisionArtifact.claimCode}
+                          </code>
+                          <button
+                            type="button"
+                            disabled={artifactStatus === "expired"}
+                            aria-label="Sao chép claim code"
+                            onClick={() =>
+                              void copyArtifactValue(
+                                "claim",
+                                provisionArtifact.claimCode,
+                                "claim code",
+                              )
+                            }
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {copiedField === "claim" ? (
+                              <Check className="h-4 w-4 text-success" />
+                            ) : (
+                              <Clipboard className="h-4 w-4" />
+                            )}
+                          </button>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Setup AP</dt>
+                        <dd className="mt-1 font-mono text-foreground">
+                          {provisionArtifact.qrPayload.setupAp.ssid}
+                        </dd>
+                        <dd className="mt-1 text-xs text-muted-foreground">
+                          WPA2 • proof-of-possession nằm trong QR
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Có hiệu lực đến</dt>
+                        <dd className="mt-1 flex items-center gap-2 text-foreground">
+                          <Clock3 className="h-4 w-4 text-muted-foreground" />
+                          {formatProvisionExpiry(provisionArtifact.expiresAt)}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="rounded-lg bg-background/80 p-3 text-sm leading-6 text-muted-foreground">
+                      <div className="flex items-start gap-2">
+                        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                        <p>
+                          Setup AP chỉ mở khi thiết bị còn ở factory state hoặc người dùng thực hiện
+                          thao tác vật lý trên thiết bị. Sau khi claim backend, App sẽ hướng dẫn kết
+                          nối đúng SSID này và mở portal cục bộ có thời hạn.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={artifactStatus === "expired"}
+                        onClick={() =>
+                          void copyArtifactValue(
+                            "payload",
+                            serializeProvisionQrPayload(provisionArtifact),
+                            "payload QR",
+                          )
+                        }
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {copiedField === "payload" ? (
+                          <Check className="h-4 w-4 text-success" />
+                        ) : (
+                          <Clipboard className="h-4 w-4" />
+                        )}
+                        Sao chép payload
+                      </button>
+                      <button
+                        type="button"
+                        disabled={artifactStatus === "expired"}
+                        onClick={downloadProvisionQr}
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Download className="h-4 w-4" />
+                        Tải QR SVG
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-[220px] items-center justify-center rounded-lg bg-white p-3">
+                    {artifactStatus === "expired" ? (
+                      <div className="max-w-[180px] text-center text-sm text-destructive">
+                        <AlertTriangle className="mx-auto mb-2 h-7 w-7" />
+                        QR đã hết hạn và không còn được phép sử dụng.
+                      </div>
+                    ) : (
+                      <QRCodeSVG
+                        ref={qrRef}
+                        value={serializeProvisionQrPayload(provisionArtifact)}
+                        title={`QR setup thiết bị ${provisionArtifact.deviceId}`}
+                        aria-label={`Quét để claim và setup thiết bị ${provisionArtifact.deviceId}`}
+                        role="img"
+                        size={196}
+                        level="M"
+                        marginSize={4}
+                        bgColor="#FFFFFF"
+                        fgColor="#0B1F33"
+                      />
+                    )}
+                  </div>
                 </div>
+              </section>
+            ) : null}
+
+            {submitError ? (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                {submitError}
               </div>
-            )}
+            ) : null}
 
             <section className="space-y-4">
               <h3 className="font-medium text-foreground">Thông tin thiết bị</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Device ID" icon={<Hash className="h-4 w-4" />}>
+                <Field id="deviceId" label="Device ID" icon={<Hash className="h-4 w-4" />}>
                   <input
+                    id="deviceId"
+                    name="deviceId"
                     value={formData.deviceId}
-                    onChange={(e) => setFormData({ ...formData, deviceId: e.target.value })}
+                    onChange={(e) => updateFormData({ ...formData, deviceId: e.target.value })}
                     placeholder="Tự sinh nếu bỏ trống"
-                    className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
-                <Field label="Tên thiết bị" required>
+                <Field id="deviceName" label="Tên thiết bị" required>
                   <input
+                    id="deviceName"
+                    name="deviceName"
                     required
                     value={formData.deviceName}
-                    onChange={(e) => setFormData({ ...formData, deviceName: e.target.value })}
+                    onChange={(e) => updateFormData({ ...formData, deviceName: e.target.value })}
                     placeholder="VD: Stetho-AI Pro"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
-                <Field label="Loại thiết bị" required>
+                <Field id="deviceType" label="Loại thiết bị" required>
                   <select
+                    id="deviceType"
+                    name="deviceType"
                     required
                     value={formData.deviceType}
-                    onChange={(e) => setFormData({ ...formData, deviceType: e.target.value })}
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+                    onChange={(e) => updateFormData({ ...formData, deviceType: e.target.value })}
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring"
                   >
                     <option value="stethoscope">Ống nghe thông minh</option>
                     <option value="respiratory">Thiết bị hô hấp</option>
@@ -135,12 +519,18 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                   </select>
                 </Field>
                 {isPlatformAdmin && (
-                  <Field label="Workspace ID" icon={<Building2 className="h-4 w-4" />}>
+                  <Field
+                    id="organizationId"
+                    label="Workspace ID"
+                    icon={<Building2 className="h-4 w-4" />}
+                  >
                     <input
+                      id="organizationId"
+                      name="organizationId"
                       value={formData.clinic}
-                      onChange={(e) => setFormData({ ...formData, clinic: e.target.value })}
+                      onChange={(e) => updateFormData({ ...formData, clinic: e.target.value })}
                       placeholder="organizationId hoặc để trống"
-                      className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                      className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                     />
                   </Field>
                 )}
@@ -148,38 +538,99 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
             </section>
 
             <section className="space-y-4 border-t border-border pt-4">
+              <div>
+                <h3 className="font-medium text-foreground">Credential thiết bị</h3>
+                <p id="device-secret-help" className="mt-1 text-sm text-muted-foreground">
+                  Nhập đúng secret 32–95 byte đã được nạp an toàn vào firmware. Backend chỉ lưu giá
+                  trị băm; secret không nằm trong QR và không được hiển thị lại sau khi gửi.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field id="deviceSecret" label="Secret thiết bị" required>
+                  <input
+                    id="deviceSecret"
+                    name="deviceSecret"
+                    required
+                    type="password"
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    aria-describedby="device-secret-help device-secret-error"
+                    aria-invalid={Boolean(secretError)}
+                    value={formData.deviceSecret}
+                    onChange={(event) => {
+                      setSecretError("");
+                      updateFormData({ ...formData, deviceSecret: event.target.value });
+                    }}
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                  />
+                </Field>
+                <Field id="confirmDeviceSecret" label="Nhập lại secret" required>
+                  <input
+                    id="confirmDeviceSecret"
+                    name="confirmDeviceSecret"
+                    required
+                    type="password"
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    aria-describedby="device-secret-error"
+                    aria-invalid={Boolean(secretError)}
+                    value={formData.confirmDeviceSecret}
+                    onChange={(event) => {
+                      setSecretError("");
+                      updateFormData({ ...formData, confirmDeviceSecret: event.target.value });
+                    }}
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                  />
+                </Field>
+              </div>
+              {secretError ? (
+                <p id="device-secret-error" role="alert" className="text-sm text-destructive">
+                  {secretError}
+                </p>
+              ) : null}
+            </section>
+
+            <section className="space-y-4 border-t border-border pt-4">
               <h3 className="font-medium text-foreground">Thông tin kỹ thuật</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Nhà sản xuất">
+                <Field id="manufacturer" label="Nhà sản xuất">
                   <input
+                    id="manufacturer"
+                    name="manufacturer"
                     value={formData.manufacturer}
-                    onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+                    onChange={(e) => updateFormData({ ...formData, manufacturer: e.target.value })}
                     placeholder="VD: Smart Health"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
-                <Field label="Model">
+                <Field id="model" label="Model">
                   <input
+                    id="model"
+                    name="model"
                     value={formData.model}
-                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                    onChange={(e) => updateFormData({ ...formData, model: e.target.value })}
                     placeholder="VD: SH-STETHO-X1"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
-                <Field label="Số serial">
+                <Field id="serialNumber" label="Số serial">
                   <input
+                    id="serialNumber"
+                    name="serialNumber"
                     value={formData.serialNumber}
-                    onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
+                    onChange={(e) => updateFormData({ ...formData, serialNumber: e.target.value })}
                     placeholder="VD: SN123456789"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
-                <Field label="Ngày mua" icon={<Calendar className="h-4 w-4" />}>
+                <Field id="purchaseDate" label="Ngày mua" icon={<Calendar className="h-4 w-4" />}>
                   <input
+                    id="purchaseDate"
+                    name="purchaseDate"
                     type="date"
                     value={formData.purchaseDate}
-                    onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
-                    className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    onChange={(e) => updateFormData({ ...formData, purchaseDate: e.target.value })}
+                    className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
               </div>
@@ -189,8 +640,8 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               <div className="flex items-start gap-3">
                 <Wifi className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
                 <p className="text-sm text-muted-foreground">
-                  QR/claim code chỉ chứa Device ID và claim code. Secret thiết bị sẽ do backend cấp
-                  sau khi claim thành công.
+                  QR setup chứa Device ID, one-time claim code và proof WPA2 theo từng thiết bị. QR
+                  không chứa device secret hoặc mật khẩu Wi-Fi của người dùng.
                 </p>
               </div>
             </div>
@@ -199,15 +650,16 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                  disabled={isDismissBlocked()}
+                  className="min-h-11 flex-1 rounded-md border border-border px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   Đóng
                 </button>
               </Dialog.Close>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                disabled={isDismissBlocked()}
+                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
                 Tạo claim code
@@ -221,11 +673,13 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
 }
 
 function Field({
+  id,
   label,
   required,
   icon,
   children,
 }: {
+  id: string;
   label: string;
   required?: boolean;
   icon?: React.ReactNode;
@@ -233,7 +687,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-foreground">
+      <label htmlFor={id} className="mb-2 block text-sm font-medium text-foreground">
         {label} {required && <span className="text-destructive">*</span>}
       </label>
       {icon ? (

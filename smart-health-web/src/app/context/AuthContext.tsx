@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   hasFirebaseWebConfig,
   isProductionAuthMode,
@@ -15,9 +16,12 @@ import {
 } from "../../lib/firebase-client";
 import {
   smartHealthApi,
+  type ApiError,
   type ApiUser,
+  type TwoFactorChallengeDetails,
   type WorkspaceMembership,
 } from "../../lib/smart-health-api";
+import { isolatePortalWorkspaceQueries } from "../../lib/workspace-query-cache";
 
 export type UserRole =
   | "doctor"
@@ -67,12 +71,25 @@ function toCount(...values: unknown[]) {
 
 interface AuthContextValue {
   user: AuthUser | null;
+  identityUser: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  twoFactorChallenge: TwoFactorChallengeDetails | null;
   login: (
     email: string,
     password: string,
   ) => Promise<{ success: boolean; error?: string }>;
+  loginForStaffInvitation: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  completeTwoFactorLogin: (
+    code: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  completeStaffInvitationTwoFactorLogin: (
+    code: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  cancelTwoFactorLogin: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
   switchWorkspace: (workspaceId: string) => Promise<void>;
@@ -198,19 +215,54 @@ function isOnboardingAccessError(error: string) {
   ].includes(error);
 }
 
+function isStaffInvitationAcceptanceLocation() {
+  return (
+    typeof window !== "undefined" &&
+    window.location.pathname === "/staff-invitations/accept"
+  );
+}
+
+function readTwoFactorChallenge(error: unknown) {
+  if (!error || typeof error !== "object") return null;
+  const apiError = error as ApiError;
+  if (apiError.code !== "TWO_FACTOR_REQUIRED") return null;
+  const details = apiError.details;
+  if (!details || typeof details !== "object") return null;
+  const candidate = details as Partial<TwoFactorChallengeDetails>;
+  if (
+    !candidate.challengeId ||
+    candidate.method !== "app" ||
+    !candidate.expiresAt
+  ) {
+    return null;
+  }
+  return candidate as TwoFactorChallengeDetails;
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [identityUser, setIdentityUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [twoFactorChallenge, setTwoFactorChallenge] =
+    useState<TwoFactorChallengeDetails | null>(null);
 
   const refreshUser = async () => {
     if (!smartHealthApi.hasToken()) {
       setUser(null);
+      setIdentityUser(null);
       return null;
     }
     const result = await smartHealthApi.me();
     const next = mapUser(result.user);
+    setIdentityUser(next);
+    const accessError = getPortalAccessError(next);
+    if (accessError && !isOnboardingAccessError(accessError)) {
+      setUser(null);
+      return null;
+    }
     setUser(next);
     return next;
   };
@@ -222,23 +274,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           if (!firebaseUser) {
             smartHealthApi.clearToken();
+            if (!cancelled) setTwoFactorChallenge(null);
             if (!cancelled) setUser(null);
+            if (!cancelled) setIdentityUser(null);
             return;
           }
           const token = await firebaseUser.getIdToken();
           const result = await smartHealthApi.authenticateFirebase(token);
           const next = mapUser(result.user);
+          if (!cancelled) setIdentityUser(next);
           const accessError = getPortalAccessError(next);
           if (accessError && !isOnboardingAccessError(accessError)) {
+            if (isStaffInvitationAcceptanceLocation()) {
+              if (!cancelled) setUser(null);
+              return;
+            }
             smartHealthApi.clearToken();
             await signOutFirebase().catch(() => undefined);
             if (!cancelled) setUser(null);
+            if (!cancelled) setIdentityUser(null);
             return;
           }
           if (!cancelled) setUser(next);
-        } catch {
-          smartHealthApi.clearToken();
-          if (!cancelled) setUser(null);
+        } catch (error) {
+          const challenge = readTwoFactorChallenge(error);
+          if (challenge) {
+            if (!cancelled) {
+              setTwoFactorChallenge(challenge);
+              setUser(null);
+              setIdentityUser(null);
+            }
+          } else {
+            smartHealthApi.clearToken();
+            if (!cancelled) {
+              setTwoFactorChallenge(null);
+              setUser(null);
+              setIdentityUser(null);
+            }
+          }
         } finally {
           if (!cancelled) setIsLoading(false);
         }
@@ -257,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
+    setTwoFactorChallenge(null);
     try {
       const result =
         isProductionAuthMode() && hasFirebaseWebConfig()
@@ -264,7 +338,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               await signInWithFirebaseEmail(email, password),
             )
           : await smartHealthApi.login(email, password);
+      if ("twoFactorRequired" in result && result.twoFactorRequired) {
+        const details = "details" in result ? result.details : result;
+        setTwoFactorChallenge(details);
+        setUser(null);
+        return { success: false, error: "two_factor_required" };
+      }
+      if (!("user" in result)) {
+        return { success: false, error: "auth_response_invalid" };
+      }
       const next = mapUser(result.user);
+      setIdentityUser(next);
       const accessError = getPortalAccessError(next);
       if (accessError) {
         if (isOnboardingAccessError(accessError)) {
@@ -274,11 +358,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await smartHealthApi.logout();
         if (isProductionAuthMode() && hasFirebaseWebConfig())
           await signOutFirebase();
+        setIdentityUser(null);
         return { success: false, error: accessError };
       }
       setUser(next);
       return { success: true };
     } catch (error) {
+      const challenge = readTwoFactorChallenge(error);
+      if (challenge) {
+        setTwoFactorChallenge(challenge);
+        setUser(null);
+        return { success: false, error: "two_factor_required" };
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : "Đăng nhập thất bại.",
@@ -286,32 +377,155 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginForStaffInvitation = async (email: string, password: string) => {
+    setTwoFactorChallenge(null);
+    try {
+      const result =
+        isProductionAuthMode() && hasFirebaseWebConfig()
+          ? await smartHealthApi.authenticateFirebase(
+              await signInWithFirebaseEmail(email, password),
+            )
+          : await smartHealthApi.login(email, password);
+      if ("twoFactorRequired" in result && result.twoFactorRequired) {
+        const details = "details" in result ? result.details : result;
+        setTwoFactorChallenge(details);
+        setIdentityUser(null);
+        setUser(null);
+        return { success: false, error: "two_factor_required" };
+      }
+      if (!("user" in result)) {
+        return { success: false, error: "auth_response_invalid" };
+      }
+      const next = mapUser(result.user);
+      setIdentityUser(next);
+      const accessError = getPortalAccessError(next);
+      setUser(accessError && !isOnboardingAccessError(accessError) ? null : next);
+      return { success: true };
+    } catch (error) {
+      const challenge = readTwoFactorChallenge(error);
+      if (challenge) {
+        setTwoFactorChallenge(challenge);
+        setIdentityUser(null);
+        setUser(null);
+        return { success: false, error: "two_factor_required" };
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Xác thực tài khoản thất bại.",
+      };
+    }
+  };
+
+  const completeTwoFactorLoginForMode = async (
+    code: string,
+    identityOnly: boolean,
+  ) => {
+    if (!twoFactorChallenge) {
+      return { success: false, error: "two_factor_expired" };
+    }
+    try {
+      const challengeResult = await smartHealthApi.completeTwoFactorChallenge({
+        challengeId: twoFactorChallenge.challengeId,
+        code,
+      });
+      const raw = challengeResult.user || (await smartHealthApi.me()).user;
+      const next = mapUser(raw);
+      setIdentityUser(next);
+      const accessError = getPortalAccessError(next);
+      if (accessError) {
+        if (identityOnly) {
+          setUser(isOnboardingAccessError(accessError) ? next : null);
+          setTwoFactorChallenge(null);
+          return { success: true };
+        }
+        if (isOnboardingAccessError(accessError)) {
+          setUser(next);
+          setTwoFactorChallenge(null);
+          return { success: false, error: accessError };
+        }
+        await smartHealthApi.logout().catch(() => undefined);
+        if (isProductionAuthMode() && hasFirebaseWebConfig()) {
+          await signOutFirebase().catch(() => undefined);
+        }
+        setTwoFactorChallenge(null);
+        setIdentityUser(null);
+        return { success: false, error: accessError };
+      }
+      setUser(next);
+      setTwoFactorChallenge(null);
+      return { success: true };
+    } catch (error) {
+      const nextChallenge = readTwoFactorChallenge(error);
+      if (nextChallenge) setTwoFactorChallenge(nextChallenge);
+      return {
+        success: false,
+        error:
+          error && typeof error === "object" && (error as ApiError).code
+            ? (error as ApiError).code
+            : error instanceof Error
+              ? error.message
+              : "TWO_FACTOR_VERIFICATION_FAILED",
+      };
+    }
+  };
+
+  const completeTwoFactorLogin = (code: string) =>
+    completeTwoFactorLoginForMode(code, false);
+
+  const completeStaffInvitationTwoFactorLogin = (code: string) =>
+    completeTwoFactorLoginForMode(code, true);
+
+  const cancelTwoFactorLogin = async () => {
+    smartHealthApi.clearToken();
+    if (isProductionAuthMode() && hasFirebaseWebConfig()) {
+      await signOutFirebase().catch(() => undefined);
+    }
+    setTwoFactorChallenge(null);
+    setUser(null);
+    setIdentityUser(null);
+  };
+
   const logout = async () => {
     await smartHealthApi.logout().catch(() => undefined);
     if (isProductionAuthMode() && hasFirebaseWebConfig())
       await signOutFirebase().catch(() => undefined);
     setUser(null);
+    setIdentityUser(null);
+    setTwoFactorChallenge(null);
   };
 
   const switchWorkspace = async (workspaceId: string) => {
     const result = await smartHealthApi.updateMe({
       organizationId: workspaceId,
     });
-    setUser(mapUser(result.user));
+    const next = mapUser(result.user);
+    if (next.currentWorkspace.id !== workspaceId) {
+      throw new Error(
+        "Backend chưa xác nhận chuyển workspace. Workspace hiện tại vẫn được giữ nguyên; vui lòng thử lại.",
+      );
+    }
+    await isolatePortalWorkspaceQueries(queryClient);
+    setUser(next);
   };
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
+      identityUser,
       isAuthenticated: Boolean(user),
       isLoading,
+      twoFactorChallenge,
       login,
+      loginForStaffInvitation,
+      completeTwoFactorLogin,
+      completeStaffInvitationTwoFactorLogin,
+      cancelTwoFactorLogin,
       logout,
       refreshUser,
       switchWorkspace,
       switchRole: () => undefined,
     }),
-    [user, isLoading],
+    [user, identityUser, isLoading, twoFactorChallenge],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

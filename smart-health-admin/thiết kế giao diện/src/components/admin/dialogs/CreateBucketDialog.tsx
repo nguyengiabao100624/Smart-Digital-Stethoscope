@@ -1,6 +1,7 @@
 ﻿import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  CircleAlert,
   Archive,
   Bot,
   BrainCircuit,
@@ -9,10 +10,8 @@ import {
   FileCheck,
   FileText,
   FolderPlus,
-  Globe2,
   HardDrive,
   Image,
-  Lock,
   Shield,
   Stethoscope,
   UserRound,
@@ -20,8 +19,8 @@ import {
   AudioWaveform,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import { createStorageOperationIdempotencyKey } from "@/lib/storage-operations";
 
 export type BucketCreatePayload = {
   name: string;
@@ -29,19 +28,15 @@ export type BucketCreatePayload = {
   iconKey?: string;
   colorKey?: string;
   category?: string;
-  quotaGb?: number;
-  visibility?: string;
   allowedExtensions?: string[];
   allowedMimeTypes?: string[];
   maxFileSizeMb?: number;
-  retentionDays?: number;
-  encryptionRequired?: boolean;
 };
 
 interface CreateBucketDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate?: (payload: BucketCreatePayload) => Promise<void> | void;
+  onCreate: (payload: BucketCreatePayload, idempotencyKey: string) => Promise<void> | void;
 }
 
 const BUCKET_TYPES = [
@@ -194,15 +189,17 @@ function splitList(value: string) {
 export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucketDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<"private" | "public">("private");
-  const [quota, setQuota] = useState("100");
   const [allowed, setAllowed] = useState("pdf, jpg, png, wav, json");
-  const [retentionDays, setRetentionDays] = useState("3650");
-  const [encrypt, setEncrypt] = useState(true);
   const [typeKey, setTypeKey] = useState("database");
   const [colorKey, setColorKey] = useState("blue");
   const [maxFileSizeMb, setMaxFileSizeMb] = useState("500");
   const [submitting, setSubmitting] = useState(false);
+  const [nameError, setNameError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const attemptRef = React.useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   const selectedType = BUCKET_TYPES.find((item) => item.key === typeKey) || BUCKET_TYPES[0];
 
@@ -217,44 +214,56 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Vui lòng nhập tên bucket");
+    const normalizedName = name.trim();
+    setNameError("");
+    setSubmitError("");
+    if (!normalizedName) {
+      setNameError("Vui lòng nhập tên bucket.");
       return;
     }
 
     const payload: BucketCreatePayload = {
-      name,
-      description,
+      name: normalizedName,
+      description: description.trim() || undefined,
       iconKey: typeKey,
       colorKey,
       category: selectedType.category,
-      quotaGb: Number(quota) || 100,
-      visibility,
       allowedExtensions: splitList(allowed),
       maxFileSizeMb: Number(maxFileSizeMb) || selectedType.maxFileSizeMb,
-      retentionDays: Number(retentionDays) || 3650,
-      encryptionRequired: encrypt,
     };
+    const fingerprint = JSON.stringify(payload);
+    const idempotencyKey =
+      attemptRef.current?.fingerprint === fingerprint
+        ? attemptRef.current.idempotencyKey
+        : createStorageOperationIdempotencyKey("bucket-create", normalizedName);
+    attemptRef.current = { fingerprint, idempotencyKey };
 
     setSubmitting(true);
     try {
-      if (onCreate) {
-        await onCreate(payload);
-      } else {
-        toast.success(`Đã tạo bucket "${name}"`);
-      }
+      await onCreate(payload, idempotencyKey);
+      attemptRef.current = null;
       onOpenChange(false);
       setName("");
       setDescription("");
     } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể tạo bucket."));
+      setSubmitError(toVietnameseErrorMessage(error, "Không thể tạo bucket."));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (submitting) return;
+    if (!nextOpen) {
+      attemptRef.current = null;
+      setNameError("");
+      setSubmitError("");
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
@@ -268,49 +277,75 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                   Tạo bucket mới
                 </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
-                  Chọn biểu tượng, quota và chính sách lưu trữ cho bucket production.
+                  Chỉ Platform Admin có thể tạo bucket. Bucket mới luôn ở chế độ riêng tư.
                 </Dialog.Description>
               </div>
             </div>
-            <Dialog.Close className="text-muted-foreground hover:text-foreground">
+            <Dialog.Close
+              aria-label="Đóng hộp thoại tạo bucket"
+              disabled={submitting}
+              className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
               <X className="h-5 w-5" />
             </Dialog.Close>
           </div>
 
           <form method="post" onSubmit={submit} className="space-y-5 p-6">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium">Tên bucket</label>
-                <input
-                  value={name}
-                  onChange={(e) =>
-                    setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))
-                  }
-                  placeholder="vd: clinic-reports"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring"
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Quota (GB)</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={quota}
-                  onChange={(e) => setQuota(e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-                />
-              </div>
+            <div>
+              <label htmlFor="bucket-name" className="mb-2 block text-sm font-medium">
+                Tên bucket
+              </label>
+              <input
+                id="bucket-name"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
+                  setNameError("");
+                }}
+                placeholder="vd: clinic-reports"
+                required
+                maxLength={80}
+                aria-invalid={Boolean(nameError)}
+                aria-describedby={nameError ? "bucket-name-error" : "bucket-name-hint"}
+                className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              />
+              <p id="bucket-name-hint" className="mt-1 text-xs text-muted-foreground">
+                Chỉ dùng chữ thường, số và dấu gạch ngang.
+              </p>
+              {nameError ? (
+                <p id="bucket-name-error" role="alert" className="mt-1 text-sm text-destructive">
+                  {nameError}
+                </p>
+              ) : null}
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium">Mô tả</label>
+              <label htmlFor="bucket-description" className="mb-2 block text-sm font-medium">
+                Mô tả
+              </label>
               <textarea
+                id="bucket-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
+                maxLength={300}
                 placeholder="Bucket dùng để lưu..."
-                className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+                className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
               />
+            </div>
+
+            <div
+              role="note"
+              className="flex gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"
+            >
+              <CircleAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+              <div>
+                <p className="font-medium text-foreground">Các chính sách chưa khả dụng</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Chưa có hợp đồng thực thi cho quota tổng, thời hạn lưu, quyền công khai hoặc xác
+                  nhận mã hóa. Giao diện không gửi các trường này cho đến khi backend hỗ trợ thật.
+                </p>
+              </div>
             </div>
 
             <div>
@@ -359,86 +394,49 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-2 block text-sm font-medium">Quyền mặc định</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("private")}
-                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "private"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border"
-                    }`}
-                  >
-                    <Lock className="h-4 w-4" /> Riêng tư
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("public")}
-                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "public"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border"
-                    }`}
-                  >
-                    <Globe2 className="h-4 w-4" /> Công khai
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Giữ dữ liệu (ngày)</label>
+                <label htmlFor="bucket-max-file-size" className="mb-2 block text-sm font-medium">
+                  Dung lượng tối đa mỗi tệp (MB)
+                </label>
                 <input
-                  type="number"
-                  min={0}
-                  value={retentionDays}
-                  onChange={(e) => setRetentionDays(e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Dung lượng/tệp (MB)</label>
-                <input
+                  id="bucket-max-file-size"
                   type="number"
                   min={1}
                   value={maxFileSizeMb}
                   onChange={(e) => setMaxFileSizeMb(e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+                  className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                />
+              </div>
+              <div>
+                <label htmlFor="bucket-extensions" className="mb-2 block text-sm font-medium">
+                  Loại tệp cho phép
+                </label>
+                <input
+                  id="bucket-extensions"
+                  value={allowed}
+                  onChange={(e) => setAllowed(e.target.value)}
+                  placeholder="dcm, jpg, png, pdf..."
+                  className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium">Loại file cho phép</label>
-              <input
-                value={allowed}
-                onChange={(e) => setAllowed(e.target.value)}
-                placeholder="dcm, jpg, png, pdf..."
-                className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring"
-              />
-            </div>
-
-            <label className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-3 text-sm">
-              <span>
-                <span className="font-medium">Bắt buộc mã hóa dữ liệu nhạy cảm</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Nên bật cho audio, DICOM, báo cáo và dữ liệu bệnh nhân.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={encrypt}
-                onChange={(e) => setEncrypt(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-            </label>
+            {submitError ? (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                {submitError}
+              </div>
+            ) : null}
 
             <div className="flex gap-3 pt-2">
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                  disabled={submitting}
+                  className="min-h-11 flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
                   Hủy
                 </button>
@@ -446,7 +444,7 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                className="min-h-11 flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               >
                 {submitting ? "Đang tạo..." : "Tạo bucket"}
               </button>

@@ -6,15 +6,15 @@ import { useSEO } from "@/lib/useSEO";
 const faqs = [
   {
     q: "Tôi cần tải app ở đâu?",
-    a: "Ứng dụng Android đang được cung cấp theo chương trình triển khai Smart Health. Hãy gửi yêu cầu để nhận đúng bản cài đặt và hướng dẫn kết nối thiết bị.",
+    a: "Ứng dụng Android đang được cung cấp theo từng chương trình triển khai Shcare. Hãy gửi yêu cầu để nhận đúng bản cài đặt và hướng dẫn kết nối thiết bị.",
   },
   {
     q: "Thiết bị ống nghe có phức tạp không?",
-    a: "Không. Kết nối Bluetooth với app, đặt đúng vị trí theo hướng dẫn trong app và nhấn nút đo.",
+    a: "Ứng dụng hướng dẫn quét QR, cấu hình Wi-Fi và xác nhận thiết bị online trước khi đo.",
   },
   {
     q: "Dữ liệu của tôi có an toàn không?",
-    a: "Dữ liệu được mã hóa. Chỉ bác sĩ/phòng khám bạn chấp nhận consent mới xem được.",
+    a: "Hệ thống bảo vệ dữ liệu khi truyền và áp dụng phân quyền workspace. Quyền xem còn phụ thuộc consent và capability do backend xác nhận.",
   },
   {
     q: "Làm sao để thu hồi quyền của bác sĩ?",
@@ -24,9 +24,9 @@ const faqs = [
 
 export default function PatientHomePage() {
   useSEO({
-    title: "Theo dõi sức khỏe tại nhà cho bệnh nhân | Smart Health Care",
+    title: "Theo dõi sức khỏe tại nhà cho bệnh nhân | Shcare",
     description:
-      "Hướng dẫn bệnh nhân sử dụng ống nghe thông minh và ứng dụng Android Smart Health để theo dõi sức khỏe tim phổi tại nhà an toàn.",
+      "Hướng dẫn bệnh nhân sử dụng ống nghe thông minh và ứng dụng Android Shcare để thực hiện lượt đo tim phổi tại nhà.",
     path: "/giai-phap/benh-nhan-tai-nha",
   });
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -59,7 +59,7 @@ export default function PatientHomePage() {
             Nhận ứng dụng Android
           </Link>
           <p className="mt-4 text-sm text-white/55">
-            Yêu cầu Android 8.0 trở lên · Miễn phí hoàn toàn cho bệnh nhân
+            Phiên bản Android và điều kiện sử dụng được xác nhận theo từng chương trình triển khai
           </p>
         </div>
       </section>
@@ -79,7 +79,7 @@ export default function PatientHomePage() {
                 icon: "📱",
                 step: 2,
                 title: "Tải và đăng nhập app",
-                desc: "Cài app Smart Health từ Google Play và đăng nhập bằng số điện thoại.",
+                desc: "Cài bản Android do chương trình triển khai cung cấp và đăng nhập bằng phương thức đã được hệ thống bật.",
               },
               {
                 icon: "💙",
@@ -91,7 +91,7 @@ export default function PatientHomePage() {
                 icon: "🎯",
                 step: 4,
                 title: "Đo và gửi kết quả",
-                desc: "Đặt ống nghe đúng vị trí, bấm đo — kết quả tự động gửi cho bác sĩ.",
+                desc: "Đặt ống nghe đúng vị trí, bắt đầu đo và theo dõi trạng thái tải lên cho đến khi backend xác nhận.",
               },
             ].map((s) => (
               <div key={s.step} className="premium-card p-5 text-center">
@@ -117,7 +117,7 @@ export default function PatientHomePage() {
         <div className="max-w-4xl mx-auto px-6">
           <h2 className="brand-gradient-text text-center mb-4">Bạn kiểm soát dữ liệu của mình</h2>
           <p className="text-center text-[#8aa5ba] mb-10">
-            Smart Health được thiết kế để bệnh nhân luôn là chủ sở hữu dữ liệu.
+            Shcare giúp bệnh nhân nhìn rõ phạm vi chia sẻ và chủ động quản lý consent.
           </p>
           <div className="grid md:grid-cols-3 gap-5">
             {[
@@ -130,13 +130,13 @@ export default function PatientHomePage() {
               {
                 icon: Smartphone,
                 title: "Thu hồi trong tích tắc",
-                desc: "Thu hồi quyền của bất kỳ bác sĩ nào ngay trong app, có hiệu lực ngay lập tức.",
+                desc: "Gửi yêu cầu thu hồi trong app và chỉ xem là hoàn tất sau khi backend xác nhận.",
                 color: "#4AA4E0",
               },
               {
                 icon: Heart,
                 title: "Dữ liệu được mã hóa",
-                desc: "Tất cả dữ liệu sức khỏe được mã hóa end-to-end từ thiết bị đến server.",
+                desc: "Dữ liệu được bảo vệ khi truyền; quyền truy cập do backend kiểm tra theo workspace, vai trò và consent.",
                 color: "#FF4B4B",
               },
             ].map((item) => (

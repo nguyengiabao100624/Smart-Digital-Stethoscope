@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/auth-challenge.schema.json",
+  "title": "Shcare device authentication challenge v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "protocolVersion", "challengeId", "nonce", "expiresAt"],
+  "properties": {
+    "type": { "const": "auth.challenge" },
+    "protocolVersion": { "const": 1 },
+    "challengeId": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "nonce": { "type": "string", "minLength": 16, "maxLength": 128 },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  }
+}

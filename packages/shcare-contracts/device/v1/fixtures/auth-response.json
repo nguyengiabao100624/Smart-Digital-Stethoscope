@@ -1,0 +1,12 @@
+{
+  "type": "auth.response",
+  "protocolVersion": 1,
+  "deviceId": "smarthealth-fixture-001",
+  "challengeId": "challenge-fixture-001",
+  "proof": "cHJvb2YtZml4dHVyZS0wMDEtMDEyMzQ1Njc4OWFiY2RlZg",
+  "telemetry": {
+    "firmwareVersion": "0.2.0",
+    "protocolVersion": 1,
+    "audioStatus": "ready"
+  }
+}

@@ -1,3 +1,5 @@
+// LEGACY REFERENCE ONLY. This file is excluded from production builds.
+// Canonical MSM261S4030H0 firmware source: src/main.cpp.
 #include "driver/i2s.h"
 #include <Arduino.h>
 #include <WiFi.h>

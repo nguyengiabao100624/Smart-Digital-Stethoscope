@@ -92,28 +92,38 @@ async function main() {
     assert.equal(registered.response.status, 200, JSON.stringify(registered.body));
     assert.equal(registered.body.device.enabled, true);
 
-    const created = await request("/api/v1/notifications", {
+    const before = await request("/api/v1/notifications", { headers: authHeaders });
+    assert.equal(before.response.status, 200, JSON.stringify(before.body));
+    const existingNotificationIds = new Set(
+      (before.body.notifications || []).map((notification) => notification.id),
+    );
+
+    const changedPassword = await request("/api/v1/me/password", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
-        type: "info",
-        title: "Notification push smoke",
-        message: "Verify FCM delivery state does not break notification creation.",
-        userId,
+        currentPassword: "12345678",
+        newPassword: "87654321",
       }),
     });
-    assert.equal(created.response.status, 201, JSON.stringify(created.body));
-    const notificationId = created.body.notification.id;
+    assert.equal(changedPassword.response.status, 200, JSON.stringify(changedPassword.body));
 
-    let notification = created.body.notification;
+    let notification = null;
     const deadline = Date.now() + 4000;
-    while (Date.now() < deadline && (!notification.pushStatus || notification.pushStatus === "ready")) {
+    while (
+      Date.now() < deadline &&
+      (!notification || !notification.pushStatus || notification.pushStatus === "ready")
+    ) {
       await delay(200);
       const listed = await request("/api/v1/notifications", { headers: authHeaders });
       assert.equal(listed.response.status, 200, JSON.stringify(listed.body));
-      notification = listed.body.notifications.find((item) => item.id === notificationId) || notification;
+      notification =
+        listed.body.notifications.find(
+          (item) => item.userId === userId && !existingNotificationIds.has(item.id),
+        ) || notification;
     }
 
+    assert.ok(notification, "password change should create a direct notification for the user");
     assert.equal(notification.pushStatus, "skipped");
     assert.match(notification.pushErrorMessage || "", /Firebase Admin messaging is not configured/);
     assert.ok(Array.isArray(notification.pushAttempts), "notification should include push attempt history");

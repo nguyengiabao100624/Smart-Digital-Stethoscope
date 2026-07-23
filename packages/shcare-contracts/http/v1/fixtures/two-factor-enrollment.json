@@ -1,0 +1,10 @@
+{
+  "twoFactor": { "enabled": false, "method": "", "enrollmentPending": true },
+  "enrollment": {
+    "id": "tfa_enroll_fixture_01",
+    "method": "app",
+    "manualKey": "JBSWY3DPEHPK3PXP",
+    "otpauthUri": "otpauth://totp/Shcare:user%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Shcare",
+    "expiresAt": "2026-07-14T14:15:00.000Z"
+  }
+}

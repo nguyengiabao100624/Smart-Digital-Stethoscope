@@ -1,0 +1,14 @@
+{
+  "protocolVersion": 2,
+  "workspaceId": "workspace-fixture-001",
+  "patientId": "patient-fixture-001",
+  "deviceId": "smarthealth-fixture-001",
+  "scanId": "scan-fixture-001",
+  "sessionId": "audio-session-fixture-001",
+  "sequence": 42,
+  "timestampMs": 1783987200123,
+  "sampleRate": 16000,
+  "sampleCount": 128,
+  "encoding": "pcm_s16le",
+  "flags": []
+}

@@ -1,6 +1,6 @@
 # Smart Health - Prompt Requirements Handoff
 
-Last updated: 2026-07-10
+Last updated: 2026-07-23
 
 Source prompt: `C:\Users\baobe\.codex\attachments\05fe3f5d-461a-44e0-a201-f791d201f845\pasted-text.txt`
 
@@ -33,6 +33,20 @@ This map is a product-system map. Use it to decide which adjacent apps/services 
 - Shcare Web portal: `smart-health-web`
 - Platform Admin UI: `smart-health-admin/thiet ke giao dien` in the Vietnamese-named folder
 - Handoff docs: `docs/SMART_HEALTH_PROJECT_INDEX.md`, `docs/SMART_HEALTH_CONTEXT_NEW_CHAT.md`, `docs/SMART_HEALTH_IMPLEMENTATION_STATUS.md`, `docs/SMART_HEALTH_PRODUCTION_BACKLOG.md`, `docs/SMART_HEALTH_COMMANDS_GUIDE.md`
+
+## KLTN Thesis Gate - Current Main Priority
+
+When the user says to focus the "main" work and leave product-development goals for later, use `docs/SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md` before adding new product modules. That file is the KLTN/report gate and records the required thesis deliverables.
+
+Mandatory KLTN focus before more production-direction development:
+
+- Keep the scope framed as a working end-to-end prototype: ESP32-S3 + MSM261S4030H0 MEMS/I2S microphone, realtime audio path, backend scan/session API, Android app, web admin/workspace portal direction, and basic AI/TinyML/chatbot support.
+- Use `docs/khoaluan` as the KLTN contract pack before adding more production-direction modules. It contains the shared system contract, audio packet/WebSocket contract, demo evidence checklist, and KLTN test/gap matrix.
+- Separate report claims into implemented demo, partial/scaffold, and future production/clinical work.
+- Finish/report evidence for firmware build, backend checks and runtime smoke, Android build/screenshots, web/admin build/screenshots, saved audio/waveform evidence, and a clear end-to-end demo path.
+- Do not overclaim medical certification, diagnostic accuracy, UDP production security, JSON demo persistence, chatbot medical advice, or device quota as patient capacity.
+- Treat missing physical ESP32-S3 serial/audio proof, deeper authenticated Android screenshots, and a fresh physical-device end-to-end audio session as KLTN evidence gaps, not optional polish.
+- Only after the KLTN evidence/report gate is closed should the next chat return to production-direction work such as MQTT control plane, authenticated WSS/HTTPS scan transport, production PostgreSQL/object storage hardening, secure provisioning, or provider integrations.
 
 ## Closed Slices From This Prompt
 
@@ -72,10 +86,11 @@ Do not repeat these as unresolved unless new evidence regresses them.
 | Android workspace switcher and dashboard context | Closed in source/build/backend-smoke | Android now parses backend `currentWorkspace`, `currentMembership`, and `memberships`, Settings has a real workspace switcher route, doctor/patient dashboards show current workspace context, and `smoke:workspace-access` verifies a joined doctor can switch workspace through `/api/v1/me` and switch back. |
 | Backend audio worker queue persistence | Closed in source/build/backend-smoke | `src/audioProcessingWorker.js` persists queued audio processing output into scan/audio/AI repositories; `scripts/worker.js` now uses the same data-store/repository/storage path instead of only logging results; backend complete/reprocess avoids duplicate inline + queued processing when Redis enqueue succeeds. Verified with backend `npm.cmd test`, `npm.cmd run check`, `npm.cmd run smoke:workspace-access`, and no-Redis worker startup. Live Redis/BullMQ runtime proof remains pending. |
 | Shcare Portal appointments/consultations | Closed in deployed source and production schema | `/api/v1/appointments`, `/api/portal/appointments`, and `/portal/appointments` now exist with scoped CRUD, validation, role capabilities, audit/notification side effects, JSON/SQL repository support, migration `010_appointments.sql`, browser/performance smoke route coverage, and backend workspace smoke for list/create/confirm/delete/cross-workspace denial. Supabase migration `20260710054623 appointments` is applied and verified on project `mahvymyncxszvuhlycwp`; commit `b9a6d4cb` is pushed; Firebase `shcare` release `1783662693801000` is live; live mutation run `portal-mutation-mreisktg` created/confirmed/deleted appointment `appt_20260710055434_71922d95` with cleanup. |
+| KLTN unified contract pack | Closed in docs/source-contract smoke | `docs/khoaluan` now holds the thesis system contract, PCM16/WebSocket audio contract, demo evidence checklist, and KLTN test/gap matrix. Backend `npm.cmd run smoke:klt-contract` verifies the docs exist and firmware/backend/Android source still matches the documented core audio contract. Additional source/build verification passed with backend `npm.cmd run check`, MSM261 PlatformIO normal/OTA builds, and Android `compileDebugKotlin`. Physical board and Android device runtime proof remain separate blockers. |
 
 ## Verification Ledger
 
-- Backend local: `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:notification-push`, `npm.cmd run smoke:storage`
+- Backend local: `npm.cmd run smoke:klt-contract`, `npm.cmd run check`, `npm.cmd test`, `npm.cmd run smoke:workspace-access`, `npm.cmd run smoke:repositories`, `npm.cmd run smoke:notification-push`, `npm.cmd run smoke:storage`
 - Web local: `bunx tsc --noEmit --pretty false`, `bun run lint`, `bun run build:firebase`
 - Admin local: `npm.cmd run lint`, `npm.cmd run build:firebase:admin`
 - Android local: `.\gradlew.bat :app:compileDebugKotlin`
@@ -153,3 +168,142 @@ When another slice is completed, append it here with commit/version/run ids and 
 - `docs/SMART_HEALTH_IMPLEMENTATION_STATUS.md`
 - `docs/SMART_HEALTH_PRODUCTION_BACKLOG.md`
 - `docs/SMART_HEALTH_COMMANDS_GUIDE.md` only if commands/env/runbooks changed
+
+## 2026-07-17 Phase 3 Identity/Profile Handoff
+
+- Phase 3 is closed at source/build/local/simulated proof. Web, Android and the frozen backend identity/security snapshot have no known open P0/P1 after the integrated regression rerun. This is not a provider-live, emulator/device or production-release claim.
+- Web proof: session revoke uses a stable retry idempotency key and requires `revokedAt`; 31/31 Auth/account tests, 14/14 contracts, TypeScript, ESLint and production build passed. No new live mutation/deploy evidence is claimed.
+- Android proof: Profile/Family/Workspace/Account Security native state handling, stable idempotency and backend-confirmed outcomes; session revoke requires matching backend `revokedAt`; 108/108 unit tests across 19 suites, `assembleDebug`, and `lintDebug` passed with zero Error/Fatal. Pending-registration PII uses Android Keystore AES-256-GCM.
+- Backend proof: managed-admin three-stage activation, retry/COMMIT reconciliation, last-admin protection, canonical membership/session truth, migration/import fail-closed behavior, approved doctor/share authority and notification tenant isolation are covered by the new managed-admin, identity-migration, repository and workspace negative smokes. `check`, base smoke, 15/15 2FA, 4/4 Firebase compatibility and `smoke:klt-contract` also passed on the integrated repo.
+- Preservation proof: 24/24 allowlisted files match the frozen snapshot hash; originals and manifests are at `C:\Users\baobe\Documents\Codex\2026-07-13\lam\outputs\phase3-backup-20260717-043549`. No reset/stash/broad staging was used.
+- Runtime/provider blockers: no attached Android target and no fresh real PostgreSQL/Firebase provider mutation proof. Keep emulator/device, TalkBack, process-death, FCM, live migration/row-lock and provider-live evidence marked `BLOCKED`. Bundled `data/db.json` requires tenant remediation before import.
+- Next source slice is Phase 4 device provisioning/command/OTA compatibility. Do not reopen BLE; canonical pairing remains QR/manual claim plus secure Wi-Fi provisioning and authenticated WSS presence.
+- Detailed evidence and current bug/impact records live in `docs/SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md`.
+
+## 2026-07-17 Phase 4 Device Provision/Inventory Handoff
+
+- The Phase 4 source slice is still `IN_PROGRESS`, not a live-release claim. Backend provision QR now uses a required idempotency key and an audited atomic device/claim mutation; replay does not persist raw claim code. Admin Add Device uses the same retry contract and has pending-dismissal protection.
+- Inventory fields are now contract-complete across Admin, backend JSON, SQL upsert and JSON→PostgreSQL reconciliation. Apply migration 024 before 025. Empty purchase date must remain nullable.
+- Local proof: backend device-security 31/31, backend check/base/repository/workspace/identity/KLT smokes; Admin 28/28 contracts, typecheck, lint/build; firmware three PlatformIO builds and six shared fixtures. Native firmware tests, emulator/device, real Postgres/Firebase/provider, authenticated browser mutation and physical board proof are `BLOCKED`.
+- Do not reopen BLE or claim setup AP/OTA completion. Open P1/P2 work is secure setup AP physical gesture/PoP/expiry/CSRF, two-phase secret rotation, SQL claim ledger hydration/update on pair/revoke, firmware telemetry ACK and durable command dedupe, plus external proof.
+- When continuing, keep the progress strip updated at the phase boundary and append the next evidence rather than rewriting the historical Phase 3 entry.
+
+## 2026-07-17 Phase 4 Secure Setup and Telemetry Handoff
+
+- Setup recovery source slice is now present: factory-state/physical-gesture gate, ten-minute expiry, constant-time CSRF and restrictive local-portal headers. Do not mark per-device PoP/WPA2 or hardware runtime as complete.
+- Device telemetry is now a versioned optional snapshot across firmware → WSS telemetry → backend allowlist/SQL migration `026_device_telemetry.sql` → Web/Admin/Android models. It includes uptime, reset reason, free heap, I2S health, packet counters, last command and OTA status; unknown fields and credential-shaped fields are discarded.
+- Fresh local evidence: backend device-security `33/33`; Web lint/build; Admin contracts `28/28`, typecheck/lint/build; Android compile/unit-test build; firmware three profile builds and embedded test-target compilation. `pio test -e native` is blocked by missing `gcc/g++`; no board/provider/live-browser proof.
+- Next bounded work remains two-phase credential rotation with device ACK, SQL claim hydration/update during pair/revoke and durable command dedupe. Keep the progress strip updated at each phase boundary.
+
+## 2026-07-18 Phase 5 Scan/Audio/Review/Alert Handoff
+
+- Phase 5 is closed only for source/build/local/simulated proof. Portal PHI caches are workspace-scoped; scan/live identity is source-bound; review and alert ledgers are real tenant/capability/audit mutations; Admin/Android AI surfaces do not fabricate clinical data or success.
+- The upload contract is now fixed: required idempotency, contiguous sequence and SHA-256 content; exact replay after completion; 1 MiB/chunk, 32 MiB/scan and 32,768 chunks; a 15-minute completion lease with stale-token rejection; composite scan/workspace scope; and cleanup of unreferenced temporary PCM.
+- Processing/reprocess is durable and retry-safe through generation, intent, artifact fingerprint and deterministic run/audio/AI IDs. Worker persistence is atomic; terminal failure can update only the matching generation. Reprocess requires `Idempotency-Key`; the same key replays and a new key creates a new generation.
+- Fresh evidence: backend scan upload 15/15, worker 6/6, clinical workflow 8/8, device security 41/41, audio protocol 4/4, AI 5/5 plus full check/test/repository/workspace/identity/KLT/concurrency/setup gates; Web contracts 24/24 and Auth 84/84 plus lint/type/build/browser; Admin contracts 59/59 plus lint/type/client+SSR build; Android 158/158 across 26 suites plus assemble/lint/debug-instrumentation compile. APK SHA-256 is `E19F5D525AECB53295D56DCC99B62352D214A102A431AC41A5273E3BD0D4180B`.
+- Live PostgreSQL/Redis, provider delivery, authenticated production mutation, Android runtime/TalkBack/FCM and physical firmware proof remain `BLOCKED`; no deployment occurred. Do not repeat the seven remediated audio P1s unless a concrete regression is reproduced.
+- Next active source work is Phase 6–7: close the smallest verified gap across appointment/consent/alert/notification/staff and remaining Admin operation truthfulness while preserving Web/Android UI independence. Keep the progress strip updated at the phase boundary.
+
+## 2026-07-18 Phase 6–7 Consent, Admin Settings And Membership Authority Handoff
+
+- Consent/data access is closed only at source/build/local proof. Backend authority types are now explicit (`patient_consent`, `clinician_access_grant`, `administrative_assignment`) and carry purpose, canonical recipient, lifecycle, guardian scope, expiry, idempotency and audit through migration 036 and OpenAPI.
+- Web Portal and Android implement the same business contract with different UI/UX. Web uses browser/desktop Portal states and exact read-after-write checks; Android uses native Compose repository/ViewModel state, adaptive layout and mobile navigation. Neither client reconstructs a missing recipient/status or displays success for an incomplete mutation response.
+- Admin Settings is fail-closed: only system, branding and webhook URL values with real persistence remain mutable. Provider status is read-only; unavailable backup, API-key, device-default, notification-policy and security-policy controls are labeled unavailable rather than producing fake success.
+- Membership authority was re-audited across owner, notification, account switch, patient mutation/share, appointment, scan/audio and devices. A suspended membership no longer grants any of those operational rights. Stale JSON import preserves canonical suspension; JSON and SQL device ownership both require an active membership except for an active Platform Admin.
+- Fresh gates: backend check/base/repository/identity/workspace/device-ownership/KLT pass; Web 32/32 contracts plus type/lint/build; Admin 73/73 contracts plus type/lint/build; Android 174/174 plus compile/lint/assemble. Android APK SHA-256: `240D7AB72415BDCDA7C1CB33636A711B79E3BC0B0FA465989FBD6AA670952E6F`.
+- No deploy occurred. Live PostgreSQL migration/row locks, authenticated Portal/Admin browser mutation, provider delivery, Android emulator/TalkBack/FCM and physical hardware remain `BLOCKED`. Firmware is `N/A` for this consent/settings slice.
+- Next bounded source slice is the smallest truthful remaining Platform Admin operation (Devices, Packages or Storage) selected from current backend evidence; keep the visible progress strip updated and do not reopen completed Web/Android UI foundations without a reproduced regression.
+
+## 2026-07-19 Phase 6–7 Packages And Storage Handoff
+
+- Packages and Storage are closed only for source/build/local/simulated proof. Package migration 037 and storage migration 038 are additive; JSON/PostgreSQL repositories use transactional audit plus stable idempotency and exact replay.
+- Admin mutations fail closed on malformed outcomes. Storage no longer claims quota, public access, AES-256 or fabricated history, retries only failed files and exposes bucket lifecycle only to Platform Admin. Settings branding upload uses the same private canonical file contract.
+- Signed sharing requires the real S3 provider and an HTTPS 900-second URL. Local storage now returns `STORAGE_SHARE_PROVIDER_UNAVAILABLE`; do not restore the old local endpoint-as-share behavior.
+- Fresh gates: backend package 3/3, storage 6/6, check/base/repository/identity/workspace/KLT; Admin 91/91 plus type/lint/build; OpenAPI 0.3.0 parsed; scoped diff check passed.
+- Live PostgreSQL migrations, S3 signed URL, authenticated browser mutation and deploy remain `BLOCKED`. Android/firmware are `N/A` for these platform-only operations. Continue by auditing the smallest remaining Admin operation; keep the progress strip updated.
+
+## 2026-07-19 Phase 6–7 Staff Invitation Handoff
+
+- Staff invitation is closed only for source/build/local proof. Migration 039, JSON/PostgreSQL repositories and OpenAPI cover list/create/resend/revoke/accept with six workspace roles, stable idempotency, tenant/RBAC negatives and transaction-bound audit.
+- Never persist or log raw invitation tokens. Only the SHA-256 hash is stored; replay omits token/URL. The canonical link is the Web Auth route `/staff-invitations/accept`, and delivery must remain `ready|unavailable|sent|failed` rather than a generic success toast.
+- Admin Doctors, Portal Staff and Web Auth have different UI/UX but share the backend lifecycle. Auth uses identity-only login/2FA/signup/email verification and grants Portal only after exact accepted invitation + active membership + refreshed authority.
+- Fresh local gates: backend staff 7/7 plus check/base/workspace/repository/identity/KLT/OpenAPI; Admin 12/12 focused and 103/103 full plus type/lint/build; Web 43/43 contracts and 91/91 Auth plus type/lint/build; Auth browser matrix 9/9 with zero serious/critical axe/runtime/layout findings.
+- Live migration 039, email provider/inbox, authenticated production mutation and deploy remain `BLOCKED`; bundled JSON tenant remediation is still required. Android keeps its separate native UI and only consumes membership/workspace state; firmware is `N/A`. Continue Clinics/Workspace lifecycle P0/P1 next and keep the progress strip visible.
+
+## 2026-07-23 Phase 6–7 Clinics/Workspace And Theme QA Handoff
+
+- Clinics/Workspace lifecycle is closed only at source/build/local proof. Migration 040, JSON/PostgreSQL repositories and OpenAPI now share create/edit/transition/archive, optimistic version, tombstone, stable idempotency and transaction-bound audit behavior.
+- Owner approval uses the canonical lifecycle repository. Owner transfer requires `expectedVersion`, increments once and replays the same operation ID. Workspace-request creation persists pending workspace, owner intent and audit/idempotency state as one operation.
+- The restart regression proves an archived `org_default_clinic` remains excluded from catalog and role requests after a backend restart against the same JSON database; legacy hydration cannot resurrect an explicit tombstone.
+- Admin Clinics has independent dense-management UI with exact receipt validation and full loading/stale/offline/empty/permission/retry/destructive states. Admin also has an independent light/dark/system theme adapter over shared brand semantics, while Web separately fixed system-preference pre-paint persistence. Do not copy the Web layout or components into Admin or Android.
+- Fresh gates: backend lifecycle 7/7 plus check/base/workspace/repository/identity/KLT and OpenAPI 53 paths/38 schemas; Admin 122/122 plus type/lint/client+SSR/Firebase build and browser 27/27; Web 44/44 contracts, 94/94 Auth, type/lint/client+SSR/Firebase build and Auth browser 135/135.
+- No live migration 040, provider/browser preview mutation cleanup or deploy occurred. Bundled JSON tenant remediation and external provider/live proof remain `BLOCKED`; Android only consumes membership/workspace status in native UX and firmware is `N/A`. Continue with Phase 6–7C by selecting the next smallest real operation or fake-state gap from the ledger.
+
+## 2026-07-23 Phase 6–7C Notification Campaign Handoff
+
+- Notifications is closed only at source/build/local proof. Migration 041 plus JSON/PostgreSQL repositories provide recipient-scoped workspace/role/user campaigns, required idempotency, transaction-bound audit and separate in-app/email/push delivery states.
+- Admin has an independent campaign-management UI with real audience/provider options, strict receipt validation and accessible responsive states. Web and Android only consume the shared delivery contract; Android retains native notification UI and does not receive a copied Admin composer. Firmware is `N/A`.
+- Fresh gates: backend campaign `5/5` plus check/base/push/workspace/repository/identity/KLT; Admin `128/128`, type/lint/build/Firebase build and browser `36/36` with a real temporary campaign/cleanup; Web `94/94` Auth and `44/44` contracts plus lint/builds; Android `176/176` plus compile/assemble.
+- Live migration 041, Brevo/FCM delivery, Android runtime/deep-link/channel proof, preview/live mutation cleanup and deploy remain `BLOCKED`. Continue Phase 6–7D with the next concrete ledger gap; do not reopen Notifications without regression evidence and keep the progress strip updated.
+
+## 2026-07-23 Phase 6–7D1 Overview Truthfulness Handoff
+
+- Platform Admin/Portal Overview is closed at source/build/local proof. Its `today|7d|30d` API uses real timestamp buckets and timezone metadata; bucket totals must match range-scoped scan totals, stable lifecycle keys are required and invalid ranges fail closed.
+- Admin removed fake fallback zeros, percentage-distributed chart data, hardcoded trends, fake progress and the synthetic alert timeline. First-load errors render error/retry only; confirmed prior data is retained solely as an explicitly stale refresh state. UI remains independently optimized for Admin/Portal and is not copied into Android.
+- Fresh gates: backend overview `4/4` plus check/base/workspace/repository; OpenAPI 56 paths/53 schemas; Admin `135/135`, type/lint/client+SSR/Firebase builds and browser `45/45` across 390/768/1440 plus light/dark/system with zero blocking axe/runtime/request/layout/target findings.
+- No live deployment occurred. Android is `N/A` because native patient/doctor dashboards have different actors and information architecture; firmware is `N/A`. Continue Phase 6–7D2 with the next concrete `DATA-FAKE-011` gap and keep the progress strip current.
+
+## 2026-07-23 Phase 6–7D2A Storage State Handoff
+
+- Storage D2A is closed only at source/build/local proof. The first-load guard was already preventing the dormant default object from showing on an ordinary total failure; the real fixed defect was coupled `Promise.all` behavior that discarded partial success and destroyed confirmed data after a failed refresh.
+- Stats and files now settle and retry independently, pass strict parsers, retain only explicitly stale confirmed data, and never replace an unavailable section with zero facts. Upload is unavailable until the backend bucket catalog is confirmed; Devices reuses the strict file parser for firmware inventory.
+- Fresh gates: Storage `13/13`, full Admin `138/138`, TypeScript, ESLint, client/SSR and Firebase Admin builds, plus browser `54/54` at 390/768/1440 and light/dark/system with zero blocking axe/runtime/request/overflow/theme/target findings.
+- No backend schema, Android UI or firmware protocol changed. Live S3/provider, authenticated preview/live mutation and deploy proof remain `BLOCKED`. Continue D2 with the next concrete ledger gap and keep the progress strip current.
+
+## 2026-07-23 Phase 6–7D2B Patient CRUD Handoff
+
+- D2B is closed at source/build/local/browser proof. Canonical `patientId` is never interchangeable with `patientCode`; structured create/edit/delete has strict parsing, exact receipts, stable retry keys, tenant/capability enforcement, audit and JSON rollback/concurrency protection.
+- Admin and Portal remain visually and interactionally independent. Admin browser passed `63` checks plus real CRUD; Portal Patients passed `9` responsive/theme checks plus create/update/delete replay and cleanup. Shared Portal shell target-size and ARIA regressions found by the new smoke were fixed.
+- Fresh gates: backend check/base/repositories/workspace/KLT; Admin `146/146` plus type/lint/builds; Web `53/53`, Auth/UI `96/96` plus type/lint/builds; Android family-profile tests plus debug unit/build. No live deploy, emulator/device or hardware proof is claimed.
+- Continue D2C at Patient Import. Do not describe the existing sequential client row creation as batch import; completion requires backend `validate → preview → commit`, 24-hour expiry, duplicate reporting, all-or-nothing transaction, idempotency and cleanup proof. Keep the progress strip current.
+
+## 2026-07-23 Phase 6–7D2C Patient CSV Import Handoff
+
+- D2C is closed at source/build/local/browser proof. The legacy sequential client create path is gone; backend validation and an expiring persisted batch now own CSV parsing, structured errors, duplicate detection and exact idempotency, while commit creates all patients and the audit receipt atomically or creates none.
+- Migration 042, OpenAPI `59/59`, JSON→PostgreSQL reconciliation, import tests `8/8`, integrated backend gates, Web `57/57` contracts, `97/97` Auth/UI, both builds and the `18/18` Portal Patients/Import browser matrix are green. The browser journey performs real validate/commit/replay and cleanup.
+- No live deploy or PostgreSQL transaction proof is claimed. Apply backend/migration before Portal and repeat controlled import/cleanup on preview/live. Android and firmware are `N/A` because bulk workspace import is desktop-only; retain native mobile family-profile CRUD rather than copying the Portal screen.
+- Continue Phase 6–7D2 from the next reproduced Admin/Portal truthfulness gap and keep the progress strip current.
+
+## 2026-07-23 Phase 6–7D2D Audit/Export Handoff
+
+- D2D is closed at backend/source-local proof. The canonical ledger is `/api/v1/audit-logs`; `/api/v1/access-logs` and `/api/v1/portal/audit-log` are compatibility aliases with the same server-side filter, sort and pagination semantics. Audit metadata is secret-redacted before persistence, and JSON fallback remains append-only like the protected PostgreSQL ledger.
+- Migration 043 and `shcare.export-artifact.v1` create immutable backend JSON, UTF-8 CSV, OpenXML XLSX and PDF artifacts with persisted dataset/scope/filter metadata and SHA-256. Do not reintroduce client-only CSV, a CSV label over JSON, or a success toast before the backend artifact downloads.
+- Authority is explicit: Platform Admin may export the platform-global audit ledger; workspace owner/admin is current-workspace scoped; doctor clinical output is active-grant scoped; patient output is own/dependent scoped; billing/viewer are denied. Job listing/downloading remains tenant and creator/manager scoped.
+- Create is idempotent and transaction-audited, replay does not append another create audit event, download is separately audited, and temporary doctor access used by the regression is revoked during cleanup.
+- Backend proof passed `check:audit-export`, audit/export `12/12`, repositories, identity migrations, workspace access, base test, KLT contract and OpenAPI `0.4.0`. Bundled JSON tenant/dangling-owner remediation is explicitly audited and the identity gate passes; older blocker notes are historical, not current.
+- Platform Admin proof passed TypeScript, ESLint, `151/151` contracts, build and browser `72/72` across 390/768/1440 and light/dark/system. The browser verified real audit filter/metadata behavior plus a platform CSV Blob with SHA-256, `Content-Disposition`, UTF-8 BOM and cleanup, with zero blocking axe/runtime/request/layout/theme/target issue. `xlsx` advisories are removed; 17 other dependency advisories remain, none critical.
+- Portal proof passed focused `8/8`, full Vitest `29` files/`105` tests, contracts `60/60`, TypeScript, ESLint, diff check and Firebase build. Targeted browser proof filtered 147 audit rows to 11 server-side matches, downloaded 11 CSV rows with SHA prefix `4e031d2e6faa`, observed the create/download ledger pair, rendered real Reports totals and cleaned backend/ports/temp data/credentials. Platform scope and workspace/hash/renderer drift fail closed.
+- The full Portal route smoke is still an explicit proof gap: legacy selectors were repaired, but the latest rerun ended on dev-server timeout/`ERR_CONNECTION_REFUSED` before a product assertion. Do not call that matrix passed or a product failure. Portal `bun audit` retains 5 advisories (1 high, 3 moderate, 1 low).
+- No live PostgreSQL migration 043, provider/live query, authenticated preview/live artifact journey or deploy was performed. Android workspace/platform audit UI is `N/A`; personal export/access-history is a separate native Settings/Security slice. Firmware is `N/A`.
+- Continue from the next reproduced Admin/Portal truthfulness gap and keep the visible progress strip current; reopen D2D only for regression or release evidence.
+
+## 2026-07-23 Phase 8B/8C handoff
+
+- The former full Portal route-smoke gap is closed locally. The isolated run
+  returns `ok: true` after fixing demo membership truth, RBAC navigation/query
+  parity, consent harness drift, explicit unavailable 2FA and appointment/staff
+  permission separation.
+- Final Portal gates are `105/105` Auth/UI, `63/63` contracts, type/lint/build;
+  backend check/base smoke also pass.
+- Portal dependency remediation is current: Vite `7.3.6` and compatible
+  transitive overrides leave `bun audit` with no findings, followed by a green
+  test/type/lint/build and local browser rerun. Admin production-only audit has
+  one low Windows development-server advisory and no high/critical finding.
+- Fresh candidate builds pass for Admin, Android (`176/176`), brand/contracts
+  and all three firmware profiles. Version/hash/compatibility facts are in
+  `SMART_HEALTH_RELEASE_CANDIDATE_MANIFEST.md`.
+- Continue with an intentional candidate index and clean release worktree.
+  Exclude unrelated CV, office/report evidence, debug images, local config,
+  credentials and generated runtime/build directories.
+- Provider/live database, Android production signing/runtime and hardware proof
+  remain `BLOCKED`; do not promote or report them complete without evidence.

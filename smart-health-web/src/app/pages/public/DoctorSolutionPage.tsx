@@ -11,12 +11,12 @@ const features = [
   {
     icon: Bell,
     title: "Cảnh báo kịp thời",
-    desc: "Nhận thông báo ngay khi có scan mới cần xem, thiết bị offline hoặc pin yếu.",
+    desc: "Nhận thông báo khi có lượt đo mới cần xem, thiết bị offline hoặc cảnh báo phù hợp quyền.",
   },
   {
     icon: FileText,
     title: "Lịch sử lượt đo đầy đủ",
-    desc: "Xem waveform, kết quả hỗ trợ phân tích AI và ghi chú lâm sàng của mọi lượt đo.",
+    desc: "Xem waveform, trạng thái chất lượng tín hiệu và ghi chú lâm sàng của mọi lượt đo.",
   },
   {
     icon: Shield,
@@ -30,10 +30,10 @@ export default function DoctorSolutionPage() {
   const isIndex = pathname === "/giai-phap" || pathname === "/giai-phap/";
   useSEO({
     title: isIndex
-      ? "Giải pháp Smart Health Care cho bác sĩ và phòng khám"
-      : "Giải pháp cho bác sĩ cá nhân | Smart Health Care",
+      ? "Giải pháp Shcare cho bác sĩ và phòng khám"
+      : "Giải pháp cho bác sĩ cá nhân | Shcare",
     description: isIndex
-      ? "Khám phá các giải pháp Smart Health Care dành cho bác sĩ, phòng khám và bệnh nhân theo dõi sức khỏe tim phổi từ xa."
+      ? "Khám phá các giải pháp Shcare dành cho bác sĩ, phòng khám và bệnh nhân theo dõi sức khỏe tim phổi từ xa."
       : "Workspace cho bác sĩ cá nhân theo dõi bệnh nhân ngoại trú với cảnh báo, lịch sử lượt đo và consent minh bạch.",
     path: isIndex ? "/giai-phap" : "/giai-phap/bac-si-ca-nhan",
   });
@@ -54,7 +54,7 @@ export default function DoctorSolutionPage() {
               Theo dõi bệnh nhân từ xa — không rời phòng khám
             </h1>
             <p className="text-[#8aa5ba] text-lg leading-relaxed mb-8">
-              Smart Health giúp bác sĩ tư và bác sĩ hành nghề độc lập quản lý bệnh nhân ngoại trú,
+              Shcare giúp bác sĩ tư và bác sĩ hành nghề độc lập quản lý bệnh nhân ngoại trú,
               nhận cảnh báo kịp thời và xem lịch sử lượt đo từ bất cứ đâu.
             </p>
             <Link to="/register/doctor" className="premium-button inline-block">
@@ -143,7 +143,7 @@ export default function DoctorSolutionPage() {
               {
                 step: "01",
                 label: "Đăng ký & xác minh",
-                desc: "Điền hồ sơ bác sĩ, chờ xét duyệt 1-3 ngày.",
+                desc: "Điền hồ sơ bác sĩ và theo dõi trạng thái xét duyệt do backend cung cấp.",
               },
               {
                 step: "02",
@@ -158,12 +158,12 @@ export default function DoctorSolutionPage() {
               {
                 step: "04",
                 label: "Bệnh nhân đo",
-                desc: "Bệnh nhân tự đo tại nhà. Kết quả tự động gửi về.",
+                desc: "Bệnh nhân thực hiện lượt đo và theo dõi tải lên cho đến khi backend xác nhận.",
               },
               {
                 step: "05",
                 label: "Bác sĩ xem xét",
-                desc: "Xem waveform, kết quả AI và thêm ghi chú lâm sàng.",
+                desc: "Xem dạng sóng, chất lượng tín hiệu và thêm ghi chú lâm sàng.",
               },
             ].map((s, idx) => (
               <div key={s.step} className="relative text-center">
@@ -205,7 +205,7 @@ export default function DoctorSolutionPage() {
             </Link>
           </div>
           <div className="flex items-center justify-center gap-6 mt-8 text-xs text-[#8aa5ba] flex-wrap">
-            {["Miễn phí cho bác sĩ tư", "Xét duyệt 1-3 ngày", "Hỗ trợ onboarding"].map((t) => (
+            {["Quy trình đăng ký rõ ràng", "Trạng thái xét duyệt minh bạch", "Hỗ trợ onboarding"].map((t) => (
               <span key={t} className="flex items-center gap-1">
                 <CheckCircle size={12} className="text-[#00FFD1]" /> {t}
               </span>

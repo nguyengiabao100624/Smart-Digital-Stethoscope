@@ -148,10 +148,10 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            SettingsGroup("THIẾT BỊ & AI") {
+            SettingsGroup("THIẾT BỊ & PHÂN TÍCH") {
                 SettingsItem(Icons.Default.Build, "Cài đặt ống nghe", Color(0xFFA855F7), onClick = onNavigateToStethoscopeSettings)
                 HorizontalDivider(color = Border)
-                SettingsItem(Icons.Default.Settings, "Hiệu chuẩn mô hình AI", Color(0xFFF97316), onClick = onNavigateToAICalibration)
+                SettingsItem(Icons.Default.Settings, "Trạng thái phân tích tín hiệu", Color(0xFFF97316), onClick = onNavigateToAICalibration)
                 HorizontalDivider(color = Border)
                 SettingsItem(Icons.Default.Share, "Lưu trữ dữ liệu cục bộ", PrimaryBlue, onClick = onNavigateToDataStorage)
             }

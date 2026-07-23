@@ -1,9 +1,19 @@
-﻿import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, FileText, Globe2, Lock, Tag, Trash2, UploadCloud, X } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Tag,
+  Trash2,
+  UploadCloud,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import { createStorageOperationIdempotencyKey } from "@/lib/storage-operations";
 
 type BucketOption = {
   id: string;
@@ -11,39 +21,36 @@ type BucketOption = {
   desc?: string;
   allowedExtensions?: string[];
   maxFileSizeMb?: number;
-  visibility?: string;
 };
 
 type UploadPayload = {
   bucket: string;
   file: File;
-  visibility: string;
   tags: string[];
+  idempotencyKey: string;
 };
 
 interface UploadFileDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultBucket?: string;
-  buckets?: BucketOption[];
-  onUpload?: (payload: UploadPayload) => Promise<void> | void;
+  buckets: BucketOption[];
+  onUpload: (payload: UploadPayload) => Promise<void> | void;
 }
 
 interface PendingFile {
   id: string;
   file: File;
-  progress: number;
-  done: boolean;
+  idempotencyKey: string;
+  status: "ready" | "uploading" | "succeeded" | "failed" | "invalid";
   error?: string;
 }
 
-const FALLBACK_BUCKETS: BucketOption[] = [
-  { id: "medical-images", name: "Hình ảnh y khoa", allowedExtensions: ["dcm", "jpg", "png"] },
-  { id: "heart-audio", name: "Âm thanh tim/phổi", allowedExtensions: ["wav", "mp3", "json"] },
-  { id: "patient-reports", name: "Báo cáo bệnh nhân", allowedExtensions: ["pdf", "xlsx", "csv"] },
-  { id: "device-firmware", name: "Firmware thiết bị", allowedExtensions: ["bin", "json"] },
-  { id: "avatars", name: "Ảnh đại diện", allowedExtensions: ["jpg", "png", "webp"] },
-];
+type UploadSummary = {
+  succeeded: number;
+  failed: number;
+  invalid: number;
+};
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -63,155 +70,289 @@ function extensionOf(file: File) {
   return file.name.split(".").pop()?.toLowerCase() || "";
 }
 
+function validateFile(file: File, bucket?: BucketOption) {
+  const allowed = bucket?.allowedExtensions || [];
+  const extension = extensionOf(file);
+  const maxFileSizeMb = Number(bucket?.maxFileSizeMb || 500);
+  const maxBytes = maxFileSizeMb * 1024 * 1024;
+
+  if (allowed.length > 0 && extension && !allowed.includes(extension)) {
+    return `Bucket không cho phép tệp .${extension}`;
+  }
+  if (file.size > maxBytes) {
+    return `Tệp vượt quá ${maxFileSizeMb} MB`;
+  }
+  return undefined;
+}
+
 export function UploadFileDialog({
   open,
   onOpenChange,
   defaultBucket,
-  buckets = FALLBACK_BUCKETS,
+  buckets,
   onUpload,
 }: UploadFileDialogProps) {
-  const [bucket, setBucket] = useState(defaultBucket || buckets[0]?.id || "heart-audio");
-  const [visibility, setVisibility] = useState<"private" | "public">("private");
+  const [bucket, setBucket] = useState("");
   const [tags, setTags] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [summary, setSummary] = useState<UploadSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!open) return;
+    setBucket((current) => {
+      if (defaultBucket && buckets.some((item) => item.id === defaultBucket)) {
+        return defaultBucket;
+      }
+      if (buckets.some((item) => item.id === current)) {
+        return current;
+      }
+      return buckets[0]?.id || "";
+    });
+  }, [buckets, defaultBucket, open]);
+
   const selectedBucket = buckets.find((item) => item.id === bucket);
+  const hasCompletedAttempt = files.some(
+    (item) => item.status === "succeeded" || item.status === "failed",
+  );
+  const hasFailedUploads = files.some((item) => item.status === "failed");
+  const retryableFiles = files.filter((item) =>
+    hasFailedUploads ? item.status === "failed" : item.status === "ready",
+  );
+
+  const resetDialog = () => {
+    setFiles([]);
+    setTags("");
+    setFormError("");
+    setSummary(null);
+    setDragOver(false);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (submitting) return;
+    if (!nextOpen) resetDialog();
+    onOpenChange(nextOpen);
+  };
 
   const addFiles = (list: File[]) => {
-    const allowed = selectedBucket?.allowedExtensions || [];
-    const next = list.map((file) => {
-      const ext = extensionOf(file);
-      const maxBytes = Number(selectedBucket?.maxFileSizeMb || 500) * 1024 * 1024;
-      const blockedByExt = allowed.length > 0 && ext && !allowed.includes(ext);
-      const blockedBySize = file.size > maxBytes;
+    if (!selectedBucket || submitting || hasCompletedAttempt) return;
+    const now = Date.now();
+    const next = list.map((file, index): PendingFile => {
+      const validationError = validateFile(file, selectedBucket);
       return {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: `${now}-${index}-${file.name}`,
         file,
-        progress: 0,
-        done: false,
-        error: blockedByExt
-          ? `Bucket không cho phép file .${ext}`
-          : blockedBySize
-            ? `File vượt quá ${selectedBucket?.maxFileSizeMb || 500} MB`
-            : undefined,
+        idempotencyKey: createStorageOperationIdempotencyKey(
+          "file-upload",
+          `${selectedBucket.id}-${now}-${index}`,
+        ),
+        status: validationError ? "invalid" : "ready",
+        error: validationError,
       };
     });
-    setFiles((prev) => [...prev, ...next]);
+    setFiles((previous) => [...previous, ...next]);
+    setFormError("");
+    setSummary(null);
   };
 
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
+  const onDrop = (event: React.DragEvent) => {
+    event.preventDefault();
     setDragOver(false);
-    if (e.dataTransfer.files?.length) addFiles(Array.from(e.dataTransfer.files));
+    if (event.dataTransfer.files?.length) addFiles(Array.from(event.dataTransfer.files));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!files.length) {
-      toast.error("Vui lòng chọn ít nhất một tệp");
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setFormError("");
+
+    if (!selectedBucket) {
+      setFormError("Chưa có bucket hợp lệ để tải tệp.");
       return;
     }
-    const readyFiles = files.filter((file) => !file.error);
-    if (!readyFiles.length) {
-      toast.error("Không có tệp hợp lệ để tải lên");
+    if (!files.length) {
+      setFormError("Vui lòng chọn ít nhất một tệp.");
+      return;
+    }
+    if (!retryableFiles.length) {
+      setFormError(
+        hasFailedUploads ? "Không còn tệp lỗi có thể thử lại." : "Không có tệp hợp lệ để tải lên.",
+      );
       return;
     }
 
     setSubmitting(true);
-    try {
-      for (const item of readyFiles) {
-        setFiles((prev) =>
-          prev.map((file) => (file.id === item.id ? { ...file, progress: 35 } : file)),
+    setSummary(null);
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const item of retryableFiles) {
+      setFiles((previous) =>
+        previous.map((file) =>
+          file.id === item.id ? { ...file, status: "uploading", error: undefined } : file,
+        ),
+      );
+
+      try {
+        await onUpload({
+          bucket: selectedBucket.id,
+          file: item.file,
+          tags: splitTags(tags),
+          idempotencyKey: item.idempotencyKey,
+        });
+        succeeded += 1;
+        setFiles((previous) =>
+          previous.map((file) =>
+            file.id === item.id ? { ...file, status: "succeeded", error: undefined } : file,
+          ),
         );
-        if (onUpload) {
-          await onUpload({
-            bucket,
-            file: item.file,
-            visibility,
-            tags: splitTags(tags),
-          });
-        }
-        setFiles((prev) =>
-          prev.map((file) => (file.id === item.id ? { ...file, progress: 100, done: true } : file)),
+      } catch (error) {
+        failed += 1;
+        const message = toVietnameseErrorMessage(error, "Không thể tải tệp lên storage.");
+        setFiles((previous) =>
+          previous.map((file) =>
+            file.id === item.id ? { ...file, status: "failed", error: message } : file,
+          ),
         );
       }
-      toast.success(`Đã tải lên ${readyFiles.length} tệp vào ${bucket}`);
+    }
+
+    const previousSucceeded = files.filter((item) => item.status === "succeeded").length;
+    const invalid = files.filter((item) => item.status === "invalid").length;
+    const totalSucceeded = previousSucceeded + succeeded;
+    setSummary({ succeeded: totalSucceeded, failed, invalid });
+    setSubmitting(false);
+
+    if (failed === 0 && invalid === 0) {
+      toast.success(`Đã tải lên ${totalSucceeded} tệp vào ${selectedBucket.id}`);
+      resetDialog();
       onOpenChange(false);
-      setFiles([]);
-      setTags("");
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể tải tệp lên storage."));
-    } finally {
-      setSubmitting(false);
     }
   };
 
+  const statusLabel = (item: PendingFile) => {
+    if (item.status === "uploading") return "Đang tải lên…";
+    if (item.status === "succeeded") return "Đã tải lên";
+    if (item.status === "failed") return "Tải lên thất bại";
+    if (item.status === "invalid") return "Tệp không hợp lệ";
+    return "Sẵn sàng";
+  };
+
+  const accept = selectedBucket?.allowedExtensions?.length
+    ? selectedBucket.allowedExtensions.map((extension) => `.${extension}`).join(",")
+    : undefined;
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-in fade-in" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-5 sm:p-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
                 <UploadCloud className="h-5 w-5 text-primary" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Dialog.Title className="font-semibold text-foreground">Tải lên tệp</Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
-                  Tệp được lưu vào object storage và ghi audit theo tài khoản quản trị.
+                  Mỗi tệp chỉ được đánh dấu thành công sau khi backend xác nhận.
                 </Dialog.Description>
               </div>
             </div>
-            <Dialog.Close className="text-muted-foreground hover:text-foreground">
+            <Dialog.Close
+              aria-label="Đóng hộp thoại tải tệp"
+              disabled={submitting}
+              className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
               <X className="h-5 w-5" />
             </Dialog.Close>
           </div>
 
-          <form method="post" onSubmit={handleSubmit} className="space-y-5 p-6">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-foreground">Bucket đích</label>
-              <select
-                value={bucket}
-                onChange={(e) => setBucket(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-              >
-                {buckets.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.id} - {item.name || item.desc || "Bucket lưu trữ"}
-                  </option>
-                ))}
-              </select>
-              {selectedBucket?.allowedExtensions?.length ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Cho phép: {selectedBucket.allowedExtensions.join(", ")}. Tối đa{" "}
-                  {selectedBucket.maxFileSizeMb || 500} MB/tệp.
-                </p>
-              ) : null}
-            </div>
+          <form method="post" onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-6">
+            {buckets.length === 0 ? (
+              <div role="status" className="rounded-lg border border-warning/30 bg-warning/5 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Chưa có bucket từ backend</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Platform Admin cần tạo bucket trước khi tải tệp. Không có bucket mẫu được chèn
+                      tại client.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="upload-bucket"
+                  className="mb-2 block text-sm font-medium text-foreground"
+                >
+                  Bucket đích
+                </label>
+                <select
+                  id="upload-bucket"
+                  value={bucket}
+                  onChange={(event) => {
+                    setBucket(event.target.value);
+                    setFiles([]);
+                    setFormError("");
+                    setSummary(null);
+                  }}
+                  disabled={submitting || hasCompletedAttempt}
+                  className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
+                >
+                  {buckets.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.id} - {item.name || item.desc || "Bucket lưu trữ"}
+                    </option>
+                  ))}
+                </select>
+                {selectedBucket?.allowedExtensions?.length ? (
+                  <p id="upload-bucket-hint" className="mt-1 text-xs text-muted-foreground">
+                    Cho phép: {selectedBucket.allowedExtensions.join(", ")}. Tối đa{" "}
+                    {selectedBucket.maxFileSizeMb || 500} MB/tệp.
+                  </p>
+                ) : null}
+              </div>
+            )}
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-foreground">Tệp</label>
+              <span className="mb-2 block text-sm font-medium text-foreground">Tệp</span>
               <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOver(true);
+                role="button"
+                tabIndex={selectedBucket && !submitting && !hasCompletedAttempt ? 0 : -1}
+                aria-disabled={!selectedBucket || submitting || hasCompletedAttempt}
+                aria-describedby="upload-drop-hint"
+                onKeyDown={(event) => {
+                  if ((event.key === "Enter" || event.key === " ") && !submitting) {
+                    event.preventDefault();
+                    inputRef.current?.click();
+                  }
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  if (!submitting && !hasCompletedAttempt) setDragOver(true);
                 }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={onDrop}
-                onClick={() => inputRef.current?.click()}
-                className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-                  dragOver
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/40 hover:bg-muted/30"
+                onClick={() => {
+                  if (!submitting && !hasCompletedAttempt) inputRef.current?.click();
+                }}
+                className={`rounded-xl border-2 border-dashed p-7 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  !selectedBucket || submitting || hasCompletedAttempt
+                    ? "cursor-not-allowed border-border bg-muted/30 opacity-60"
+                    : dragOver
+                      ? "cursor-pointer border-primary bg-primary/5"
+                      : "cursor-pointer border-border hover:border-primary/40 hover:bg-muted/30"
                 }`}
               >
                 <UploadCloud className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                 <div className="text-sm font-medium text-foreground">Kéo thả tệp vào đây</div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div id="upload-drop-hint" className="mt-1 text-xs text-muted-foreground">
                   hoặc bấm để chọn nhiều tệp từ máy tính.
                 </div>
                 <input
@@ -219,125 +360,157 @@ export function UploadFileDialog({
                   type="file"
                   multiple
                   hidden
-                  onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))}
+                  accept={accept}
+                  disabled={!selectedBucket || submitting || hasCompletedAttempt}
+                  aria-label="Chọn tệp tải lên"
+                  onChange={(event) => {
+                    if (event.target.files) addFiles(Array.from(event.target.files));
+                    event.target.value = "";
+                  }}
                 />
               </div>
             </div>
 
-            <AnimatePresence>
-              {files.length > 0 && (
+            <AnimatePresence initial={false}>
+              {files.length > 0 ? (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
                   className="space-y-2"
+                  aria-live="polite"
                 >
                   {files.map((item) => (
                     <div key={item.id} className="rounded-lg border border-border bg-muted/30 p-3">
                       <div className="flex items-center gap-3">
                         <FileText className="h-5 w-5 flex-shrink-0 text-primary" />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{item.file.name}</div>
-                          <div
-                            className={
-                              item.error
-                                ? "text-xs text-destructive"
-                                : "text-xs text-muted-foreground"
-                            }
-                          >
-                            {item.error || formatSize(item.file.size)}
+                          <div className="truncate text-sm font-medium" title={item.file.name}>
+                            {item.file.name}
                           </div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatSize(item.file.size)} · {statusLabel(item)}
+                          </div>
+                          {item.error ? (
+                            <p className="mt-1 break-words text-xs text-destructive">
+                              {item.error}
+                            </p>
+                          ) : null}
                         </div>
-                        {item.done ? (
-                          <CheckCircle2 className="h-4 w-4 text-success" />
-                        ) : (
-                          <span className="text-xs font-medium text-muted-foreground">
-                            {Math.round(item.progress)}%
-                          </span>
-                        )}
+                        {item.status === "uploading" ? (
+                          <Loader2
+                            aria-label="Đang tải lên"
+                            className="h-4 w-4 animate-spin text-primary motion-reduce:animate-none"
+                          />
+                        ) : item.status === "succeeded" ? (
+                          <CheckCircle2 aria-label="Đã tải lên" className="h-4 w-4 text-success" />
+                        ) : item.status === "failed" || item.status === "invalid" ? (
+                          <AlertCircle aria-label="Có lỗi" className="h-4 w-4 text-destructive" />
+                        ) : null}
                         <button
                           type="button"
-                          onClick={() =>
-                            setFiles((prev) => prev.filter((file) => file.id !== item.id))
-                          }
-                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={`Bỏ tệp ${item.file.name}`}
+                          disabled={submitting || item.status === "uploading"}
+                          onClick={() => {
+                            setFiles((previous) => previous.filter((file) => file.id !== item.id));
+                            setSummary(null);
+                            setFormError("");
+                          }}
+                          className="rounded-md p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
+                      {item.status === "uploading" ? (
                         <div
-                          className={`h-full transition-all ${item.error ? "bg-destructive" : item.done ? "bg-success" : "bg-primary"}`}
-                          style={{ width: `${item.error ? 100 : item.progress}%` }}
-                        />
-                      </div>
+                          role="progressbar"
+                          aria-label={`Đang tải ${item.file.name}`}
+                          className="mt-2 h-1.5 overflow-hidden rounded-full bg-border"
+                        >
+                          <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-foreground">
-                  Quyền truy cập
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("private")}
-                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "private"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border"
-                    }`}
-                  >
-                    <Lock className="h-4 w-4" /> Riêng tư
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("public")}
-                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                      visibility === "public"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border"
-                    }`}
-                  >
-                    <Globe2 className="h-4 w-4" /> Công khai
-                  </button>
-                </div>
+            <div>
+              <label
+                htmlFor="upload-tags"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Tags
+              </label>
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="upload-tags"
+                  type="text"
+                  value={tags}
+                  onChange={(event) => setTags(event.target.value)}
+                  disabled={submitting || hasCompletedAttempt}
+                  maxLength={300}
+                  placeholder="VD: tim, tháng-5, báo-cáo"
+                  className="min-h-11 w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
+                />
               </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-foreground">Tags</label>
-                <div className="relative">
-                  <Tag className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    value={tags}
-                    onChange={(e) => setTags(e.target.value)}
-                    placeholder="VD: tim, tháng-5, báo-cáo"
-                    className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Tệp được tải ở chế độ riêng tư; quyền công khai chưa có contract thực thi.
+              </p>
             </div>
 
-            <div className="flex gap-3 pt-2">
+            {summary ? (
+              <div
+                role="status"
+                className={`rounded-lg border p-3 text-sm ${
+                  summary.failed > 0 || summary.invalid > 0
+                    ? "border-warning/30 bg-warning/5"
+                    : "border-success/30 bg-success/5"
+                }`}
+              >
+                <p className="font-medium text-foreground">
+                  Kết quả: {summary.succeeded} thành công, {summary.failed} thất bại
+                  {summary.invalid > 0 ? `, ${summary.invalid} không hợp lệ` : ""}.
+                </p>
+                {summary.failed > 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Chỉ những tệp lỗi sẽ được thử lại; tệp thành công không được gửi lại.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {formError ? (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                {formError}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                  disabled={submitting}
+                  className="min-h-11 flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
-                  Hủy
+                  {hasCompletedAttempt ? "Đóng" : "Hủy"}
                 </button>
               </Dialog.Close>
               <button
                 type="submit"
-                disabled={submitting}
-                className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                disabled={submitting || !selectedBucket || retryableFiles.length === 0}
+                className="min-h-11 flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? "Đang tải lên..." : "Tải lên storage"}
+                {submitting
+                  ? `Đang xử lý ${retryableFiles.length} tệp…`
+                  : hasFailedUploads
+                    ? `Thử lại ${retryableFiles.length} tệp lỗi`
+                    : `Tải lên ${retryableFiles.length || ""} tệp`.replace("  ", " ")}
               </button>
             </div>
           </form>

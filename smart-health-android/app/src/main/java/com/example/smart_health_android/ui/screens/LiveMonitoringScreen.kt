@@ -1,42 +1,55 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Air
-import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,97 +58,195 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.smart_health_android.data.LiveAudioClient
 import com.example.smart_health_android.data.LiveMetrics
 import com.example.smart_health_android.data.SmartDevice
 import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.StartScanRequest
-import com.example.smart_health_android.ui.theme.*
+import com.example.smart_health_android.scan.LiveAudioExpectation
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 import kotlinx.coroutines.launch
 
 @Composable
-fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Unit) {
-    var isRecording by remember { mutableStateOf(!initialScanId.isNullOrBlank()) }
+fun LiveMonitoringScreen(
+    initialScanId: String? = null,
+    onNavigateBack: () -> Unit,
+    onCreateScan: () -> Unit,
+) {
+    val context = LocalContext.current
+    val spacing = ShcareTheme.spacing
+    var isRecording by remember { mutableStateOf(false) }
     var activeScanId by remember(initialScanId) { mutableStateOf(initialScanId) }
     var mode by remember { mutableStateOf("heart") }
-    var heartRate by remember { mutableStateOf(0) }
-    var sqi by remember { mutableStateOf(0) }
+    var heartRate by remember { mutableIntStateOf(0) }
+    var sqi by remember { mutableIntStateOf(0) }
     var devices by remember { mutableStateOf<List<SmartDevice>>(emptyList()) }
     var selectedDeviceId by remember { mutableStateOf("") }
-    var connectionText by remember { mutableStateOf("Đang kết nối máy chủ...") }
+    var connectionText by remember { mutableStateOf("Đang kết nối máy chủ…") }
     var isConnected by remember { mutableStateOf(false) }
     var liveMetrics by remember { mutableStateOf(LiveMetrics()) }
-    var waveformSamples by remember { mutableStateOf(FloatArray(1024)) }
+    var hasMetrics by remember { mutableStateOf(false) }
+    var waveformSamples by remember { mutableStateOf(FloatArray(WAVEFORM_SAMPLE_COUNT)) }
     var actionError by remember { mutableStateOf<String?>(null) }
+    var preparationError by remember { mutableStateOf<String?>(null) }
+    var interruptionMessage by remember { mutableStateOf<String?>(null) }
+    var terminalNotice by remember { mutableStateOf<String?>(null) }
     var isBusy by remember { mutableStateOf(false) }
+    var isPreparing by remember { mutableStateOf(true) }
+    var isStopPending by remember { mutableStateOf(false) }
+    var liveExpectation by remember { mutableStateOf<LiveAudioExpectation?>(null) }
+    var droppedPackets by remember { mutableLongStateOf(0L) }
+    var navigateAfterStop by remember { mutableStateOf(false) }
+    var preparationAttempt by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
-    val liveClient = remember {
-        LiveAudioClient(
-            onConnectionChanged = { connected, message ->
-                isConnected = connected
-                connectionText = message
-            },
-            onStatus = { status ->
-                if (status.recording) {
-                    activeScanId = status.activeScanId ?: activeScanId
-                    isRecording = true
-                } else {
-                    activeScanId = null
-                    isRecording = false
-                }
-            },
-            onMetrics = { metrics ->
-                liveMetrics = metrics
-                if (metrics.recording) {
-                    activeScanId = metrics.activeScanId ?: activeScanId
-                }
-                heartRate = metrics.bpm.coerceAtLeast(0)
-                sqi = metrics.levelPercent.coerceIn(0, 100)
-            },
-            onSamples = { samples -> waveformSamples = samples }
-        )
+
+    fun resetRealtimeMeasurements() {
+        heartRate = 0
+        sqi = 0
+        liveMetrics = LiveMetrics()
+        hasMetrics = false
+        waveformSamples = FloatArray(WAVEFORM_SAMPLE_COUNT)
+        droppedPackets = 0L
     }
 
-    DisposableEffect(Unit) {
-        liveClient.connect()
-        onDispose { liveClient.close() }
+    val liveClient = remember(liveExpectation) {
+        liveExpectation?.let { expectation ->
+            LiveAudioClient(
+                context = context,
+                expected = expectation,
+                onConnectionChanged = { connected, message ->
+                    isConnected = connected
+                    connectionText = message
+                },
+                onStatus = { status ->
+                    if (status.recording) {
+                        activeScanId = status.activeScanId
+                        isRecording = true
+                    } else {
+                        isRecording = false
+                    }
+                },
+                onMetrics = { metrics ->
+                    liveMetrics = metrics
+                    hasMetrics = true
+                    if (metrics.recording) {
+                        activeScanId = metrics.activeScanId ?: activeScanId
+                    }
+                    heartRate = metrics.bpm.coerceAtLeast(0)
+                    sqi = metrics.levelPercent.coerceIn(0, 100)
+                },
+                onSamples = { samples -> waveformSamples = samples },
+                onScanLifecycle = { scanId, state ->
+                    if (
+                        scanId == activeScanId &&
+                        (state == "scan_stopped" || state == "scan_interrupted")
+                    ) {
+                        activeScanId = null
+                        isRecording = false
+                        isConnected = false
+                        isStopPending = false
+                        liveExpectation = null
+                        resetRealtimeMeasurements()
+                        if (state == "scan_interrupted") {
+                            interruptionMessage =
+                                "Luồng âm thanh đã bị gián đoạn trước khi thiết bị xác nhận hoàn tất."
+                        } else {
+                            terminalNotice =
+                                "Thiết bị đã xác nhận dừng lượt đo. Dữ liệu đã nhận có thể xem trong hồ sơ."
+                        }
+                        if (navigateAfterStop) onNavigateBack()
+                    }
+                },
+                onDroppedPackets = { droppedPackets = it },
+            )
+        }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "monitoring-wave")
-    val phase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave-phase"
-    )
+    DisposableEffect(liveClient) {
+        liveClient?.connect()
+        onDispose { liveClient?.close() }
+    }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(initialScanId, preparationAttempt) {
+        isPreparing = true
+        preparationError = null
+        actionError = null
+        interruptionMessage = null
+        terminalNotice = null
+        isStopPending = false
+        isConnected = false
+        isRecording = false
+        connectionText = "Đang kết nối máy chủ…"
+        liveExpectation = null
+        activeScanId = initialScanId
+        resetRealtimeMeasurements()
+
         runCatching {
-            SmartHealthRepository.api.listDevices()
+            val user = SmartHealthRepository.api.getMe()
+            val scan = initialScanId?.takeIf { it.isNotBlank() }?.let {
+                SmartHealthRepository.api.getScan(it)
+            }
+            val loadedDevices = SmartHealthRepository.api.listDevices()
                 .filter { it.type == "stethoscope" || it.type.isBlank() }
                 .sortedWith(
                     compareByDescending<SmartDevice> { it.online || it.connected }
-                        .thenByDescending { it.lastSeenAt.orEmpty() }
+                        .thenByDescending { it.lastSeenAt.orEmpty() },
                 )
-        }.onSuccess { loaded ->
+            Triple(user, scan, loadedDevices)
+        }.onSuccess { (user, scan, loaded) ->
             devices = loaded
-            if (selectedDeviceId.isBlank() && loaded.isNotEmpty()) {
-                selectedDeviceId = loaded.first().id
+            if (scan != null) {
+                selectedDeviceId = scan.deviceId
+                mode = scan.mode
+                when (scan.status) {
+                    "completed" -> {
+                        activeScanId = null
+                        terminalNotice =
+                            "Lượt đo này đã kết thúc. Mở hồ sơ để xem dữ liệu đã được lưu."
+                    }
+                    "interrupted" -> {
+                        activeScanId = null
+                        interruptionMessage =
+                            "Lượt đo này đã bị gián đoạn. Hãy kiểm tra kết nối trước khi đo lại."
+                    }
+                    else -> {
+                        val workspaceId = user.currentWorkspaceId
+                            .ifBlank { user.currentWorkspace?.id.orEmpty() }
+                            .ifBlank { user.organizationId }
+                        liveExpectation = LiveAudioExpectation(
+                            workspaceId = workspaceId,
+                            patientId = scan.patientId,
+                            deviceId = scan.deviceId,
+                            scanId = scan.id,
+                        )
+                        activeScanId = scan.id
+                    }
+                }
+            } else {
+                activeScanId = null
+                selectedDeviceId = loaded.firstOrNull()?.id.orEmpty()
             }
-        }.onFailure {
-            actionError = it.message ?: "Không tải được danh sách thiết bị"
+            isPreparing = false
+        }.onFailure { error ->
+            liveExpectation = null
+            activeScanId = null
+            isPreparing = false
+            preparationError = error.message ?: "Không chuẩn bị được phiên theo dõi."
         }
     }
 
@@ -146,312 +257,426 @@ fun LiveMonitoringScreen(initialScanId: String? = null, onNavigateBack: () -> Un
             isBusy = true
             var shouldNavigateBack = false
             runCatching {
-                val scanId = activeScanId ?: liveMetrics.activeScanId
-                if (scanId.isNullOrBlank()) {
-                    SmartHealthRepository.api.stopActiveScan()
-                } else {
-                    SmartHealthRepository.api.stopScan(scanId)
-                }
+                val scanId = activeScanId ?: error("Không có lượt đo cụ thể để dừng.")
+                SmartHealthRepository.api.stopScan(scanId)
             }.onSuccess {
-                activeScanId = null
-                isRecording = false
                 shouldNavigateBack = navigateBackAfterStop
-            }.onFailure {
-                actionError = it.message ?: "Không dừng được lượt ghi"
-            }
-            isBusy = false
-            if (shouldNavigateBack) {
-                onNavigateBack()
-            }
-        }
-    }
-
-    fun startRecording() {
-        if (isBusy) return
-        coroutineScope.launch {
-            actionError = null
-            isBusy = true
-            runCatching {
-                val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId }
-                    ?: error("Hãy liên kết và chọn ống nghe trước khi bắt đầu ghi")
-                SmartHealthRepository.api.startScan(
-                    StartScanRequest(
-                        mode = mode,
-                        patientName = "Bệnh nhân vãng lai",
-                        deviceId = selectedDevice.id
-                    )
-                )
-            }.onSuccess { scan ->
-                activeScanId = scan.id
-                isRecording = true
+                navigateAfterStop = navigateBackAfterStop
+                isStopPending = true
+                connectionText = "Máy chủ đã nhận yêu cầu; đang chờ thiết bị xác nhận dừng…"
             }.onFailure { error ->
-                runCatching { SmartHealthRepository.api.getStatus() }
-                    .onSuccess { status ->
-                        if (status.recording) {
-                            activeScanId = status.activeScanId
-                            isRecording = true
-                            actionError = "Máy chủ đang có lượt ghi khác. Bấm Dừng ghi và lưu để kết thúc."
-                        } else {
-                            actionError = error.message ?: "Không bắt đầu được lượt ghi"
-                        }
-                    }
-                    .onFailure {
-                        actionError = error.message ?: "Không bắt đầu được lượt ghi"
-                    }
+                isStopPending = false
+                actionError = error.message ?: "Không gửi được yêu cầu dừng lượt đo."
             }
             isBusy = false
+            if (shouldNavigateBack && activeScanId == null) onNavigateBack()
         }
     }
 
     val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId }
-    val hasLiveSamples = waveformSamples.any { kotlin.math.abs(it) > 0.0001f }
-    val signalQualityAlert = isRecording && isConnected && sqi in 1..25
+    val hasLiveSamples = waveformSamples.any { kotlin.math.abs(it) > LIVE_SAMPLE_EPSILON }
+    val signalQualityAlert = isRecording && isConnected && hasMetrics && sqi <= LOW_SIGNAL_THRESHOLD
     val primaryValue = when {
-        mode == "heart" && heartRate > 0 -> heartRate.toString()
-        mode == "lung" && liveMetrics.rms > 0 -> liveMetrics.rms.toString()
-        else -> "--"
+        !hasMetrics -> "--"
+        mode == "heart" -> heartRate.toString()
+        else -> liveMetrics.rms.coerceAtLeast(0).toString()
     }
     val primaryUnit = if (mode == "heart") "BPM" else "RMS"
-    val sqiValue = if (sqi > 0) sqi.toString() else "--"
+    val sqiValue = if (hasMetrics) sqi.toString() else "--"
+    val connectionRejected = connectionText.contains("từ chối", ignoreCase = true)
+    val connectionState = when {
+        interruptionMessage != null -> MonitorVisualState.Interrupted
+        actionError != null || connectionRejected -> MonitorVisualState.Error
+        terminalNotice != null -> MonitorVisualState.Finished
+        activeScanId == null -> MonitorVisualState.Ready
+        isStopPending -> MonitorVisualState.Stopping
+        isRecording && isConnected -> MonitorVisualState.Recording
+        isConnected -> MonitorVisualState.Pending
+        connectionText.startsWith("Đang kết nối", ignoreCase = true) -> MonitorVisualState.Connecting
+        else -> MonitorVisualState.Offline
+    }
 
     fun toggleRecording() {
-        if (isRecording) {
+        if (activeScanId != null) {
             stopRecording()
         } else {
-            startRecording()
+            onCreateScan()
         }
     }
 
     BackHandler {
-        if (isRecording) {
+        if (activeScanId != null) {
             stopRecording(navigateBackAfterStop = true)
         } else {
             onNavigateBack()
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF9FAFB))
-    ) {
-        MonitoringHeader(
-            onNavigateBack = {
-                if (isRecording) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            MonitoringHeader(onNavigateBack = {
+                if (activeScanId != null) {
                     stopRecording(navigateBackAfterStop = true)
                 } else {
                     onNavigateBack()
                 }
-            }
-        )
-        PatientInfoStrip(device = selectedDevice, activeScanId = activeScanId)
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            WaveformCard(
-                mode = mode,
-                isRecording = isRecording,
-                hasAlert = signalQualityAlert,
-                phase = phase,
-                samples = waveformSamples
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                VitalCard(
-                    modifier = Modifier.weight(1f),
-                    label = if (mode == "heart") "Nhịp Tim" else "Cường Độ Âm Phổi",
-                    value = primaryValue,
-                    unit = primaryUnit,
-                    icon = if (mode == "heart") Icons.Default.Favorite else Icons.Default.Air,
-                    accent = if (mode == "heart") ErrorRed else PrimaryTeal,
-                    valueColor = TextPrimary,
-                    isActive = isRecording
-                )
-                VitalCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Chất Lượng Tín Hiệu",
-                    value = sqiValue,
-                    unit = "% SQI",
-                    icon = Icons.Default.VerifiedUser,
-                    accent = PrimaryTeal,
-                    valueColor = PrimaryTeal,
-                    isActive = true
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = if (isConnected) connectionText else "Máy chủ: $connectionText",
-                color = if (isConnected) PrimaryTeal else ErrorRed,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
-            )
-            actionError?.let {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(it, color = ErrorRed, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (!hasLiveSamples) {
-                Text(
-                    text = if (isConnected) {
-                        "Đã kết nối backend, đang chờ gói âm thanh từ ống nghe."
-                    } else {
-                        "Chưa có luồng audio realtime. Kiểm tra thiết bị online và backend."
-                    },
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            AnimatedVisibility(visible = isRecording) {
-                EdgeAiAlert(hasAlert = signalQualityAlert)
-            }
-
-            if (isRecording) Spacer(modifier = Modifier.height(16.dp))
-
-            AnalysisModeCard(
-                mode = mode,
-                onModeChange = {
-                    mode = it
-                }
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            RecordButton(
-                isRecording = isRecording,
-                enabled = !isBusy,
-                onClick = ::toggleRecording
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = ::toggleRecording,
-                enabled = !isBusy,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRecording) ErrorRed else PrimaryBlue,
-                    contentColor = Color.White
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (isBusy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White
+            })
+        },
+    ) { contentPadding ->
+        when {
+            isPreparing -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding)
+                        .imePadding(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ShcareLoadingState(
+                        message = "Đang chuẩn bị phiên theo dõi an toàn…",
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
                 }
-                Text(if (isRecording) "Dừng ghi và lưu" else "Bắt đầu ghi")
             }
-
-            Spacer(modifier = Modifier.height(32.dp))
+            preparationError != null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding)
+                        .imePadding(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ShcareErrorState(
+                        title = "Không mở được phiên theo dõi",
+                        message = preparationError,
+                        retryLabel = "Thử tải lại",
+                        onRetry = { preparationAttempt += 1 },
+                    )
+                }
+            }
+            else -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding)
+                        .imePadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = spacing.large, vertical = spacing.medium),
+                    verticalArrangement = Arrangement.spacedBy(spacing.large),
+                ) {
+                    DeviceContextCard(
+                        device = selectedDevice,
+                        activeScanId = activeScanId,
+                    )
+                    MonitorStatusCard(
+                        state = connectionState,
+                        connectionText = connectionText,
+                        actionError = actionError,
+                        interruptionMessage = interruptionMessage,
+                        terminalNotice = terminalNotice,
+                        hasDevice = selectedDevice != null,
+                    )
+                    WaveformCard(
+                        mode = mode,
+                        isRecording = isRecording,
+                        hasLiveSamples = hasLiveSamples,
+                        samples = waveformSamples,
+                        heartRate = heartRate,
+                        rms = liveMetrics.rms.coerceAtLeast(0),
+                        sqi = sqi,
+                        hasMetrics = hasMetrics,
+                        droppedPackets = droppedPackets,
+                    )
+                    AdaptiveVitalMetrics(
+                        mode = mode,
+                        primaryValue = primaryValue,
+                        primaryUnit = primaryUnit,
+                        sqiValue = sqiValue,
+                        hasMetrics = hasMetrics,
+                        signalQualityAlert = signalQualityAlert,
+                        isRecording = isRecording,
+                    )
+                    if (isRecording) {
+                        SignalGuidanceCard(
+                            hasLowQuality = signalQualityAlert,
+                            hasMetrics = hasMetrics,
+                        )
+                    }
+                    if (droppedPackets > 0) {
+                        DroppedPacketsCard(droppedPackets = droppedPackets)
+                    }
+                    MonitoringAction(
+                        hasActiveScan = activeScanId != null,
+                        isRecording = isRecording,
+                        isBusy = isBusy,
+                        onClick = ::toggleRecording,
+                    )
+                    Spacer(modifier = Modifier.height(spacing.large))
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun MonitoringHeader(onNavigateBack: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .border(1.dp, Color(0xFFE5E7EB))
-            .statusBarsPadding()
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val spacing = ShcareTheme.spacing
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
     ) {
-        IconButton(onClick = onNavigateBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color(0xFF4B5563))
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = spacing.extraSmall, vertical = spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "Theo Dõi Tín Hiệu",
-                color = TextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryTeal, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
+            IconButton(onClick = onNavigateBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Quay lại",
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = spacing.small),
+            ) {
                 Text(
-                    "Backend cloud audio",
-                    color = PrimaryTeal,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
+                    text = "Theo dõi tín hiệu",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = "Âm thanh trực tiếp từ lượt đo đang chọn",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        Icon(
-            Icons.Default.BatteryFull,
-            contentDescription = null,
-            tint = Color(0xFF9CA3AF),
-            modifier = Modifier.padding(end = 12.dp).size(22.dp)
-        )
     }
 }
 
 @Composable
-private fun PatientInfoStrip(device: SmartDevice?, activeScanId: String?) {
+private fun DeviceContextCard(device: SmartDevice?, activeScanId: String?) {
+    val spacing = ShcareTheme.spacing
     val isOnline = device?.let { it.online || it.connected } == true
-    Row(
+    val deviceName = device?.name?.ifBlank { device.id } ?: "Chưa chọn ống nghe"
+    val metadata = listOfNotNull(
+        activeScanId?.let { "Lượt đo: $it" },
+        device?.wifiSsid?.takeIf { it.isNotBlank() }?.let { "Wi-Fi: $it" },
+        device?.firmwareVersion?.takeIf { it.isNotBlank() }?.let { "Firmware: $it" },
+    ).joinToString(" • ").ifBlank {
+        "Liên kết thiết bị trước khi bắt đầu một lượt đo mới."
+    }
+    val spokenState = "$deviceName. ${if (isOnline) "Thiết bị đang trực tuyến" else "Thiết bị đang ngoại tuyến"}. $metadata"
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
-            .border(1.dp, Color(0xFFE5E7EB))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .semantics(mergeDescendants = true) { stateDescription = spokenState },
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
+        shape = MaterialTheme.shapes.medium,
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(Color(0xFFEFF6FF), CircleShape)
-                .border(1.dp, Color(0xFFDBEAFE), CircleShape),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            Text("BN", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = deviceName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = metadata,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            DevicePresenceBadge(isOnline = isOnline)
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                device?.name?.ifBlank { device.id } ?: "Chưa chọn ống nghe",
-                color = TextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
+    }
+}
+
+@Composable
+private fun DevicePresenceBadge(isOnline: Boolean) {
+    val semanticColors = ShcareTheme.colors
+    val spacing = ShcareTheme.spacing
+    val containerColor = if (isOnline) {
+        semanticColors.successContainer
+    } else {
+        semanticColors.offlineContainer
+    }
+    val contentColor = if (isOnline) {
+        semanticColors.onSuccessContainer
+    } else {
+        semanticColors.onOfflineContainer
+    }
+    val label = if (isOnline) "Thiết bị trực tuyến" else "Thiết bị ngoại tuyến"
+
+    Surface(
+        modifier = Modifier.semantics { stateDescription = label },
+        color = containerColor,
+        contentColor = contentColor,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = spacing.medium, vertical = spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.small),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(contentColor, CircleShape),
             )
-            Text(
-                listOf(
-                    activeScanId?.let { "Scan: $it" }.orEmpty(),
-                    device?.wifiSsid?.takeIf { it.isNotBlank() }?.let { "WiFi: $it" }.orEmpty(),
-                    device?.firmwareVersion?.takeIf { it.isNotBlank() }?.let { "FW: $it" }.orEmpty()
-                ).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { "Thiết bị phải online để nghe realtime" },
-                color = TextSecondary,
-                fontSize = 12.sp
-            )
+            Text(text = label, style = MaterialTheme.typography.labelMedium)
         }
-        Text(
-            if (isOnline) "Online" else "Offline",
-            color = if (isOnline) PrimaryTeal else TextSecondary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .background((if (isOnline) PrimaryTeal else TextSecondary).copy(alpha = 0.1f), RoundedCornerShape(6.dp))
-                .border(1.dp, (if (isOnline) PrimaryTeal else TextSecondary).copy(alpha = 0.2f), RoundedCornerShape(6.dp))
-                .padding(horizontal = 10.dp, vertical = 5.dp)
+    }
+}
+
+@Composable
+private fun MonitorStatusCard(
+    state: MonitorVisualState,
+    connectionText: String,
+    actionError: String?,
+    interruptionMessage: String?,
+    terminalNotice: String?,
+    hasDevice: Boolean,
+) {
+    val semanticColors = ShcareTheme.colors
+    val spacing = ShcareTheme.spacing
+    val presentation = when (state) {
+        MonitorVisualState.Ready -> MonitorStatusPresentation(
+            title = "Sẵn sàng tạo lượt đo",
+            message = if (hasDevice) {
+                "Chọn tạo lượt đo mới để xác định hồ sơ, vị trí nghe và thiết bị."
+            } else {
+                "Chưa có ống nghe được liên kết. Hãy ghép thiết bị trước khi tạo lượt đo."
+            },
+            icon = Icons.Default.GraphicEq,
+            containerColor = semanticColors.infoContainer,
+            contentColor = semanticColors.onInfoContainer,
         )
+        MonitorVisualState.Connecting -> MonitorStatusPresentation(
+            title = "Đang kết nối an toàn",
+            message = connectionText,
+            icon = Icons.Default.Wifi,
+            containerColor = semanticColors.infoContainer,
+            contentColor = semanticColors.onInfoContainer,
+        )
+        MonitorVisualState.Pending -> MonitorStatusPresentation(
+            title = "Đang chờ thiết bị gửi tín hiệu",
+            message = connectionText,
+            icon = Icons.Default.Wifi,
+            containerColor = semanticColors.infoContainer,
+            contentColor = semanticColors.onInfoContainer,
+        )
+        MonitorVisualState.Stopping -> MonitorStatusPresentation(
+            title = "Đã gửi yêu cầu dừng",
+            message = "Máy chủ đã nhận yêu cầu. Lượt đo chỉ kết thúc sau khi thiết bị xác nhận.",
+            icon = Icons.Default.Wifi,
+            containerColor = semanticColors.warningContainer,
+            contentColor = semanticColors.onWarningContainer,
+        )
+        MonitorVisualState.Recording -> MonitorStatusPresentation(
+            title = "Đang nhận tín hiệu trực tiếp",
+            message = "Thiết bị đã xác nhận phiên và đang gửi dữ liệu âm thanh hợp lệ.",
+            icon = Icons.Default.GraphicEq,
+            containerColor = semanticColors.successContainer,
+            contentColor = semanticColors.onSuccessContainer,
+        )
+        MonitorVisualState.Offline -> MonitorStatusPresentation(
+            title = "Mất kết nối realtime",
+            message = "$connectionText Hệ thống sẽ tự kết nối lại khi mạng sẵn sàng.",
+            icon = Icons.Default.WifiOff,
+            containerColor = semanticColors.offlineContainer,
+            contentColor = semanticColors.onOfflineContainer,
+        )
+        MonitorVisualState.Interrupted -> MonitorStatusPresentation(
+            title = "Lượt đo bị gián đoạn",
+            message = interruptionMessage ?: "Luồng âm thanh đã dừng ngoài dự kiến.",
+            icon = Icons.Default.Warning,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        MonitorVisualState.Error -> MonitorStatusPresentation(
+            title = "Không thể hoàn tất thao tác",
+            message = actionError ?: connectionText,
+            icon = Icons.Default.Warning,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        MonitorVisualState.Finished -> MonitorStatusPresentation(
+            title = "Lượt đo đã kết thúc",
+            message = terminalNotice ?: "Mở hồ sơ để xem dữ liệu đã nhận.",
+            icon = Icons.Default.VerifiedUser,
+            containerColor = semanticColors.successContainer,
+            contentColor = semanticColors.onSuccessContainer,
+        )
+    }
+    val spokenState = "${presentation.title}. ${presentation.message}"
+    val liveRegionMode = when (state) {
+        MonitorVisualState.Error,
+        MonitorVisualState.Interrupted,
+        MonitorVisualState.Offline,
+        -> LiveRegionMode.Assertive
+        else -> LiveRegionMode.Polite
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = spokenState
+                liveRegion = liveRegionMode
+            },
+        color = presentation.containerColor,
+        contentColor = presentation.contentColor,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Row(
+            modifier = Modifier.padding(spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = presentation.icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(spacing.extraSmall),
+            ) {
+                Text(text = presentation.title, style = MaterialTheme.typography.titleSmall)
+                Text(text = presentation.message, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 
@@ -459,161 +684,186 @@ private fun PatientInfoStrip(device: SmartDevice?, activeScanId: String?) {
 private fun WaveformCard(
     mode: String,
     isRecording: Boolean,
-    hasAlert: Boolean,
-    phase: Float,
-    samples: FloatArray
+    hasLiveSamples: Boolean,
+    samples: FloatArray,
+    heartRate: Int,
+    rms: Int,
+    sqi: Int,
+    hasMetrics: Boolean,
+    droppedPackets: Long,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 300.dp)
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.GraphicEq, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    if (mode == "heart") "Tín Hiệu Âm Tim (PCG)" else "Tín Hiệu Âm Phổi",
-                    color = TextPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isRecording) {
-                    Row(
-                        modifier = Modifier
-                            .background(Color(0xFFFEE2E2), RoundedCornerShape(6.dp))
-                            .border(1.dp, Color(0xFFFECACA), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(modifier = Modifier.size(8.dp).background(ErrorRed, CircleShape))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("ĐANG GHI", color = ErrorRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                Text(
-                    "25 mm/s",
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .background(Color(0xFFF3F4F6), RoundedCornerShape(6.dp))
-                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    val isHeartMode = mode == "heart"
+    val title = if (isHeartMode) "Tín hiệu âm tim" else "Tín hiệu âm phổi"
+    val waveformDescription = buildList {
+        add(title)
+        add(if (hasLiveSamples) "Đang hiển thị mẫu âm thanh hợp lệ" else "Chưa có mẫu âm thanh hợp lệ")
+        if (hasMetrics) {
+            if (isHeartMode) add("Nhịp tim $heartRate BPM") else add("Cường độ RMS $rms")
+            add("Chất lượng tín hiệu $sqi phần trăm")
         }
+        if (droppedPackets > 0) add("$droppedPackets gói bị gián đoạn")
+    }.joinToString(". ")
+    val chartSurface = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+    val gridMinor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+    val gridMajor = MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
+    val waveColor = if (isHeartMode) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(230.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.White)
-                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            MedicalWaveformCanvas(
-                mode = mode,
-                hasAlert = hasAlert,
-                isRecording = isRecording,
-                phase = phase,
-                samples = samples,
-                modifier = Modifier.fillMaxSize()
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.GraphicEq,
+                    contentDescription = null,
+                    tint = waveColor,
+                    modifier = Modifier.size(24.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Dữ liệu âm thanh thô, không phải kết luận lâm sàng",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isRecording) {
+                    Surface(
+                        color = semanticColors.successContainer,
+                        contentColor = semanticColors.onSuccessContainer,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            text = "Đang thu",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(
+                                horizontal = spacing.medium,
+                                vertical = spacing.small,
+                            ),
+                        )
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .width(28.dp)
-                    .align(Alignment.CenterStart)
-                    .background(Brush.horizontalGradient(listOf(Color.White, Color.White.copy(alpha = 0f))))
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(28.dp)
-                    .align(Alignment.CenterEnd)
-                    .background(Brush.horizontalGradient(listOf(Color.White.copy(alpha = 0f), Color.White)))
-            )
+                    .fillMaxWidth()
+                    .heightIn(min = 220.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(chartSurface)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Biểu đồ dạng sóng âm thanh trực tiếp"
+                        stateDescription = waveformDescription
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                MedicalWaveformCanvas(
+                    samples = samples,
+                    minorGridColor = gridMinor,
+                    majorGridColor = gridMajor,
+                    waveColor = waveColor,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (!hasLiveSamples) {
+                    Text(
+                        text = if (isRecording) {
+                            "Đang chờ khung âm thanh hợp lệ…"
+                        } else {
+                            "Chưa có tín hiệu để hiển thị"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(spacing.extraLarge),
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun MedicalWaveformCanvas(
-    mode: String,
-    hasAlert: Boolean,
-    isRecording: Boolean,
-    phase: Float,
     samples: FloatArray,
-    modifier: Modifier = Modifier
+    minorGridColor: Color,
+    majorGridColor: Color,
+    waveColor: Color,
+    modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
         val centerY = height / 2f
-        val minor = 10.dp.toPx()
-        val major = 50.dp.toPx()
+        val minorGridStep = 10.dp.toPx()
+        val majorGridStep = 50.dp.toPx()
 
         var xGrid = 0f
         while (xGrid <= width) {
             drawLine(
-                color = Color(0xFFFF748B).copy(alpha = 0.15f),
+                color = minorGridColor,
                 start = Offset(xGrid, 0f),
                 end = Offset(xGrid, height),
-                strokeWidth = 1f
+                strokeWidth = 1f,
             )
-            xGrid += minor
+            xGrid += minorGridStep
         }
 
         var yGrid = 0f
         while (yGrid <= height) {
             drawLine(
-                color = Color(0xFFFF748B).copy(alpha = 0.15f),
+                color = minorGridColor,
                 start = Offset(0f, yGrid),
                 end = Offset(width, yGrid),
-                strokeWidth = 1f
+                strokeWidth = 1f,
             )
-            yGrid += minor
+            yGrid += minorGridStep
         }
 
         xGrid = 0f
         while (xGrid <= width) {
             drawLine(
-                color = Color(0xFFFF748B).copy(alpha = 0.35f),
+                color = majorGridColor,
                 start = Offset(xGrid, 0f),
                 end = Offset(xGrid, height),
-                strokeWidth = 1.2f
+                strokeWidth = 1.2f,
             )
-            xGrid += major
+            xGrid += majorGridStep
         }
 
         yGrid = 0f
         while (yGrid <= height) {
             drawLine(
-                color = Color(0xFFFF748B).copy(alpha = 0.35f),
+                color = majorGridColor,
                 start = Offset(0f, yGrid),
                 end = Offset(width, yGrid),
-                strokeWidth = 1.2f
+                strokeWidth = 1.2f,
             )
-            yGrid += major
+            yGrid += majorGridStep
         }
 
         val path = Path()
-        val hasLiveSamples = samples.any { kotlin.math.abs(it) > 0.0001f }
-
+        val hasLiveSamples = samples.any { kotlin.math.abs(it) > LIVE_SAMPLE_EPSILON }
         if (hasLiveSamples) {
             samples.forEachIndexed { index, sample ->
                 val x = (index.toFloat() / (samples.size - 1).coerceAtLeast(1)) * width
@@ -627,214 +877,322 @@ private fun MedicalWaveformCanvas(
 
         drawPath(
             path = path,
-            color = if (mode == "heart") PrimaryBlue else PrimaryTeal,
-            style = Stroke(width = 2.5.dp.toPx())
+            color = waveColor,
+            style = Stroke(width = 2.5.dp.toPx()),
         )
     }
 }
 
 @Composable
-private fun VitalCard(
-    modifier: Modifier = Modifier,
+private fun AdaptiveVitalMetrics(
+    mode: String,
+    primaryValue: String,
+    primaryUnit: String,
+    sqiValue: String,
+    hasMetrics: Boolean,
+    signalQualityAlert: Boolean,
+    isRecording: Boolean,
+) {
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    val isHeartMode = mode == "heart"
+    val firstMetric: @Composable (Modifier) -> Unit = { modifier ->
+        VitalMetricCard(
+            modifier = modifier,
+            label = if (isHeartMode) "Nhịp tim" else "Cường độ âm phổi",
+            value = primaryValue,
+            unit = primaryUnit,
+            icon = if (isHeartMode) Icons.Default.Favorite else Icons.Default.Air,
+            accent = if (isHeartMode) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.secondary
+            },
+            hasValue = hasMetrics,
+            isActive = isRecording,
+        )
+    }
+    val qualityMetric: @Composable (Modifier) -> Unit = { modifier ->
+        VitalMetricCard(
+            modifier = modifier,
+            label = "Chất lượng tín hiệu",
+            value = sqiValue,
+            unit = "% SQI",
+            icon = Icons.Default.VerifiedUser,
+            accent = if (signalQualityAlert) semanticColors.warning else MaterialTheme.colorScheme.secondary,
+            hasValue = hasMetrics,
+            isActive = isRecording,
+        )
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth >= TABLET_METRIC_BREAKPOINT) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.large),
+            ) {
+                firstMetric(Modifier.weight(1f))
+                qualityMetric(Modifier.weight(1f))
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(spacing.medium),
+            ) {
+                firstMetric(Modifier.fillMaxWidth())
+                qualityMetric(Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+private fun VitalMetricCard(
     label: String,
     value: String,
     unit: String,
     icon: ImageVector,
     accent: Color,
-    valueColor: Color,
-    isActive: Boolean
-) {
-    Column(
-        modifier = modifier
-            .height(150.dp)
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                label,
-                color = TextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (isActive) accent else Color(0xFF9CA3AF),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, color = valueColor, fontSize = 42.sp, fontWeight = FontWeight.Bold, lineHeight = 44.sp)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(unit, color = valueColor.copy(alpha = 0.7f), fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 5.dp))
-        }
-    }
-}
-
-@Composable
-private fun EdgeAiAlert(hasAlert: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (hasAlert) Color(0xFFFEF2F2) else Color(0xFFEFF6FF), RoundedCornerShape(16.dp))
-            .border(1.dp, if (hasAlert) Color(0xFFFECACA) else Color(0xFFBFDBFE), RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Icon(
-            if (hasAlert) Icons.Default.Warning else Icons.Default.GraphicEq,
-            contentDescription = null,
-            tint = if (hasAlert) ErrorRed else PrimaryBlue,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(
-                if (hasAlert) "Cảnh báo chất lượng tín hiệu" else "Theo dõi tín hiệu realtime",
-                color = if (hasAlert) Color(0xFFB91C1C) else PrimaryBlue,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                if (hasAlert) {
-                    "Tín hiệu hiện quá yếu hoặc không ổn định. Hãy kiểm tra tiếp xúc cảm biến, WiFi và vị trí đặt đầu nghe trước khi lưu kết quả."
-                } else {
-                    "Đang nhận dữ liệu âm thanh từ hệ thống Smart Health. Kết quả chẩn đoán chỉ hiển thị khi hệ thống phân tích xong dữ liệu thật."
-                },
-                color = if (hasAlert) Color(0xFF7F1D1D) else Color(0xFF1E3A8A),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                lineHeight = 20.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun AnalysisModeCard(mode: String, onModeChange: (String) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Chế độ phân tích", color = Color(0xFF374151), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Chuẩn Bell & Diaphragm",
-                color = PrimaryTeal,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.background(PrimaryTeal.copy(alpha = 0.1f), RoundedCornerShape(999.dp)).padding(horizontal = 8.dp, vertical = 3.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            ModeButton(
-                modifier = Modifier.weight(1f),
-                label = "Tim mạch",
-                icon = Icons.Default.Favorite,
-                selected = mode == "heart",
-                selectedColor = PrimaryBlue,
-                onClick = { onModeChange("heart") }
-            )
-            ModeButton(
-                modifier = Modifier.weight(1f),
-                label = "Hô hấp",
-                icon = Icons.Default.Air,
-                selected = mode == "lung",
-                selectedColor = PrimaryTeal,
-                onClick = { onModeChange("lung") }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModeButton(
+    hasValue: Boolean,
+    isActive: Boolean,
     modifier: Modifier = Modifier,
-    label: String,
-    icon: ImageVector,
-    selected: Boolean,
-    selectedColor: Color,
-    onClick: () -> Unit
 ) {
-    Row(
+    val spacing = ShcareTheme.spacing
+    val spokenValue = if (hasValue) "$value $unit" else "Chưa có dữ liệu"
+    val spokenState = "$label. $spokenValue. ${if (isActive) "Đang cập nhật" else "Chưa cập nhật trực tiếp"}"
+
+    Card(
         modifier = modifier
-            .height(44.dp)
-            .background(if (selected) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
-            .border(1.dp, if (selected) Color(0xFFE5E7EB) else Color.Transparent, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+            .heightIn(min = 112.dp)
+            .semantics(mergeDescendants = true) { stateDescription = spokenState },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.large,
     ) {
-        Icon(icon, contentDescription = null, tint = if (selected) selectedColor else TextSecondary, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            label,
-            color = if (selected) selectedColor else TextSecondary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
-private fun RecordButton(isRecording: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val buttonSize by animateDpAsState(
-        targetValue = if (isRecording) 80.dp else 72.dp,
-        animationSpec = tween(250),
-        label = "record-button-size"
-    )
-
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Box(
-            modifier = Modifier
-                .size(buttonSize + 16.dp)
-                .background(
-                    if (isRecording) ErrorRed.copy(alpha = 0.12f) else PrimaryBlue.copy(alpha = 0.1f),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(buttonSize)
-                    .background(if (isRecording) ErrorRed else PrimaryBlue, CircleShape)
-                    .border(3.dp, Color.White, CircleShape)
-                    .clickable(enabled = enabled, onClick = onClick),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (isRecording) {
-                    Box(modifier = Modifier.size(28.dp).background(Color.White, RoundedCornerShape(4.dp)))
-                } else {
-                    Box(modifier = Modifier.size(32.dp).background(Color.White, CircleShape))
-                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isActive) accent else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Column {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = if (hasValue) unit else "Chưa có dữ liệu",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
+
+@Composable
+private fun SignalGuidanceCard(hasLowQuality: Boolean, hasMetrics: Boolean) {
+    val semanticColors = ShcareTheme.colors
+    val spacing = ShcareTheme.spacing
+    val showWarning = hasMetrics && hasLowQuality
+    val containerColor = if (showWarning) {
+        semanticColors.warningContainer
+    } else {
+        semanticColors.infoContainer
+    }
+    val contentColor = if (showWarning) {
+        semanticColors.onWarningContainer
+    } else {
+        semanticColors.onInfoContainer
+    }
+    val title = if (showWarning) "Chất lượng tín hiệu thấp" else "Đang thu dữ liệu thô"
+    val message = if (showWarning) {
+        "Kiểm tra vị trí đầu nghe, tiếp xúc cảm biến và kết nối Wi-Fi trước khi lưu dữ liệu."
+    } else {
+        "Giữ đầu nghe ổn định và theo dõi dạng sóng. Màn hình này không đưa ra chẩn đoán."
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) { stateDescription = "$title. $message" },
+        color = containerColor,
+        contentColor = contentColor,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Row(
+            modifier = Modifier.padding(spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = if (showWarning) Icons.Default.Warning else Icons.Default.GraphicEq,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(spacing.extraSmall),
+            ) {
+                Text(text = title, style = MaterialTheme.typography.titleSmall)
+                Text(text = message, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DroppedPacketsCard(droppedPackets: Long) {
+    val semanticColors = ShcareTheme.colors
+    val spacing = ShcareTheme.spacing
+    val message =
+        "$droppedPackets gói âm thanh bị gián đoạn. Chỉ dữ liệu đúng phiên và đúng thứ tự được hiển thị."
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = message
+                liveRegion = LiveRegionMode.Assertive
+            },
+        color = semanticColors.warningContainer,
+        contentColor = semanticColors.onWarningContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Row(
+            modifier = Modifier.padding(spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MonitoringAction(
+    hasActiveScan: Boolean,
+    isRecording: Boolean,
+    isBusy: Boolean,
+    onClick: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val containerColor = if (hasActiveScan) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    val contentColor = if (hasActiveScan) {
+        MaterialTheme.colorScheme.onError
+    } else {
+        MaterialTheme.colorScheme.onPrimary
+    }
+    val actionLabel = when {
+        isBusy -> "Đang gửi yêu cầu…"
+        hasActiveScan -> "Gửi yêu cầu dừng"
+        else -> "Tạo lượt đo mới"
+    }
+    val supportingText = when {
+        hasActiveScan && isRecording ->
+            "Nút dừng chỉ gửi yêu cầu; lượt đo kết thúc sau khi thiết bị xác nhận."
+        hasActiveScan ->
+            "Phiên đang chờ thiết bị. Bạn vẫn có thể gửi yêu cầu dừng an toàn."
+        else ->
+            "Bạn sẽ chọn hồ sơ, vị trí nghe và thiết bị ở bước tiếp theo."
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.small),
+    ) {
+        Button(
+            onClick = onClick,
+            enabled = !isBusy,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = containerColor,
+                contentColor = contentColor,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 52.dp)
+                .semantics {
+                    stateDescription = if (isBusy) {
+                        "Đang xử lý"
+                    } else if (hasActiveScan) {
+                        "Có lượt đo đang hoạt động"
+                    } else {
+                        "Chưa có lượt đo đang hoạt động"
+                    }
+                },
+        ) {
+            if (isBusy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = contentColor,
+                )
+                Spacer(modifier = Modifier.width(spacing.small))
+            }
+            Text(text = actionLabel, style = MaterialTheme.typography.labelLarge)
+        }
+        Text(
+            text = supportingText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private enum class MonitorVisualState {
+    Ready,
+    Connecting,
+    Pending,
+    Stopping,
+    Recording,
+    Offline,
+    Interrupted,
+    Error,
+    Finished,
+}
+
+private data class MonitorStatusPresentation(
+    val title: String,
+    val message: String,
+    val icon: ImageVector,
+    val containerColor: Color,
+    val contentColor: Color,
+)
+
+private const val WAVEFORM_SAMPLE_COUNT = 1_024
+private const val LIVE_SAMPLE_EPSILON = 0.0001f
+private const val LOW_SIGNAL_THRESHOLD = 25
+private val TABLET_METRIC_BREAKPOINT = 600.dp

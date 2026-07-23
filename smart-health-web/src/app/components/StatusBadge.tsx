@@ -172,19 +172,62 @@ const statusConfig: Record<
   },
 };
 
+type StatusTone = "success" | "info" | "warning" | "danger" | "neutral";
+
+const statusTone: Record<string, StatusTone> = {
+  online: "success",
+  active: "success",
+  accepted: "success",
+  consent_accepted: "success",
+  reviewed: "success",
+  low: "success",
+  nurse: "success",
+  measuring: "info",
+  new: "info",
+  processing: "info",
+  doctor: "info",
+  pending: "warning",
+  pending_consent: "warning",
+  needs_review: "warning",
+  medium: "warning",
+  low_battery: "warning",
+  offline: "danger",
+  revoked: "danger",
+  consent_revoked: "danger",
+  error: "danger",
+  high: "danger",
+  unassigned: "neutral",
+  paused: "neutral",
+  expired: "neutral",
+  technician: "neutral",
+  clinic_manager: "neutral",
+};
+
+function resolveStatusTone(status: string): StatusTone {
+  return statusTone[status] ?? "neutral";
+}
+
 export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
-  const config = statusConfig[status] || {
+  const rawConfig = statusConfig[status] || {
     label: status,
     bg: "rgba(255,255,255,0.06)",
     color: "#94b8d0",
     border: "rgba(255,255,255,0.12)",
+  };
+  const tone = resolveStatusTone(status);
+  const config = {
+    ...rawConfig,
+    bg: `var(--status-${tone}-bg)`,
+    color: `var(--status-${tone}-fg)`,
+    border: `var(--status-${tone}-border)`,
+    dot: rawConfig.dot ? `var(--status-${tone}-dot)` : undefined,
   };
   const padding = size === "sm" ? "2px 8px" : "3px 10px";
   const fontSize = size === "sm" ? 11 : 12;
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full font-semibold"
+      className={`status-badge status-badge-${tone} inline-flex items-center gap-1.5 rounded-full font-semibold`}
       style={{
         background: config.bg,
         color: config.color,
@@ -192,7 +235,7 @@ export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
         padding,
         fontSize: `${fontSize}px`,
         whiteSpace: "nowrap",
-        letterSpacing: "0.01em",
+        letterSpacing: "0",
       }}
     >
       {config.dot && (

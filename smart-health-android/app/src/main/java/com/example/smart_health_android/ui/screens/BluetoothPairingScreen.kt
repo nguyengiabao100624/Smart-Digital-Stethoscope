@@ -100,6 +100,9 @@ data class BluetoothDevice(
     val signal: Int
 )
 
+@Deprecated(
+    message = "Legacy demo flow. Production navigation uses DevicePairingScreen with QR claim and WSS confirmation.",
+)
 @Composable
 fun BluetoothPairingScreen(
     onNavigateBack: () -> Unit,
@@ -281,8 +284,8 @@ private fun QrScannerScreen(
                 name = "Stetho-AI-Pro",
                 connectionMethod = PairingMethod.Qr.backendValue
             )
-        }.onSuccess { device ->
-            onConnectionSuccess(device.name.ifBlank { "Stetho-AI-Pro" })
+        }.onSuccess { response ->
+            onConnectionSuccess(response.device.name.ifBlank { "Stetho-AI-Pro" })
         }.onFailure {
             error = it.message ?: "Không thể kết nối thiết bị"
             isPairing = false
@@ -417,8 +420,8 @@ private fun ManualCodeScreen(
                     claimCode = payload.claimCode,
                     connectionMethod = PairingMethod.Manual.backendValue
                 )
-            }.onSuccess { device ->
-                onConnectionSuccess(device.name.ifBlank { payload.name.ifBlank { "Stetho-AI-Pro" } })
+            }.onSuccess { response ->
+                onConnectionSuccess(response.device.name.ifBlank { payload.name.ifBlank { "Stetho-AI-Pro" } })
             }.onFailure {
                 error = it.message ?: "Không thể kết nối thiết bị"
                 isPairing = false
@@ -587,8 +590,8 @@ private fun BluetoothRadarScreen(
                     name = device.name,
                     connectionMethod = PairingMethod.Bluetooth.backendValue
                 )
-            }.onSuccess {
-                onConnectionSuccess(it.name.ifBlank { device.name })
+            }.onSuccess { response ->
+                onConnectionSuccess(response.device.name.ifBlank { device.name })
             }.onFailure {
                 scanError = it.message ?: "Không thể kết nối thiết bị"
                 connectingTo = null

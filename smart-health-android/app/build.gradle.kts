@@ -11,6 +11,12 @@ val smartHealthBaseUrl = providers
     .orElse(if (releaseBuildRequested) "" else "https://smart-health-api-r5is.onrender.com")
     .get()
     .trimEnd('/')
+val phoneAuthEnabled = providers
+    .gradleProperty("SMART_HEALTH_PHONE_AUTH_ENABLED")
+    .orElse("false")
+    .get()
+    .toBooleanStrictOrNull()
+    ?: false
 
 if (releaseBuildRequested) {
     require(smartHealthBaseUrl.isNotBlank()) {
@@ -38,16 +44,22 @@ android {
         applicationId = "com.example.smart_health_android"
         minSdk = 27
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.0-rc.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SMART_HEALTH_BASE_URL", "\"$smartHealthBaseUrl\"")
+        buildConfigField("boolean", "SMART_HEALTH_PHONE_AUTH_ENABLED", phoneAuthEnabled.toString())
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
             isMinifyEnabled = false
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -67,6 +79,9 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(platform(libs.firebase.bom))
@@ -79,7 +94,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(libs.firebase.auth)
     implementation(libs.firebase.messaging)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     testImplementation(libs.junit)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.json:json:20240303")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

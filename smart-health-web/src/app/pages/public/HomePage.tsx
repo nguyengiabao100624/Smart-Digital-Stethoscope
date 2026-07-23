@@ -36,7 +36,7 @@ const workflow = [
   },
   {
     title: "Bác sĩ xác nhận",
-    description: "AI chỉ hỗ trợ đọc tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ chốt.",
+    description: "Hệ thống kiểm tra chất lượng tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ chốt.",
     icon: CheckCircle2,
   },
 ];
@@ -44,7 +44,7 @@ const workflow = [
 const operatingCards = [
   {
     title: "Live monitoring",
-    body: "Theo dõi phiên đo đang diễn ra, pin/kết nối thiết bị và trạng thái bệnh nhân.",
+    body: "Theo dõi phiên đo đang diễn ra, kết nối thiết bị và trạng thái bệnh nhân.",
     meta: "Realtime",
     icon: Wifi,
   },
@@ -83,7 +83,7 @@ const proofCards = [
   },
   {
     title: "Không bỏ rơi ca live",
-    body: "Workspace hiển thị thiết bị online/offline, pin, phiên đang đo và cảnh báo cần xem lại.",
+    body: "Workspace hiển thị thiết bị online/offline, phiên đang đo và cảnh báo cần xem lại.",
     icon: Radio,
   },
   {
@@ -93,13 +93,13 @@ const proofCards = [
   },
   {
     title: "Bác sĩ là người chốt",
-    body: "AI chỉ hỗ trợ phân tích tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ xác nhận.",
+    body: "Bộ quy tắc chỉ kiểm tra chất lượng tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ xác nhận.",
     icon: Monitor,
   },
 ];
 
 const handoffRows = [
-  ["Thiết bị", "Heartbeat, pin, kết nối, file âm thanh và metadata phiên đo."],
+  ["Thiết bị", "Heartbeat, kết nối, file âm thanh và metadata phiên đo."],
   ["Ứng dụng", "Người bệnh, consent, hướng dẫn đo và thông báo theo tài khoản."],
   ["Backend", "Xác thực Firebase, lưu hồ sơ, phân quyền workspace và audit thao tác."],
   ["Portal", "Review queue, live monitoring, records, reports và thiết bị cần xử lý."],
@@ -109,7 +109,7 @@ function ClinicalPreview({ reducedMotion }: { reducedMotion: boolean | null }) {
   return (
     <motion.div
       className="shc-preview"
-      aria-label="Minh họa dashboard Smart Health"
+      aria-label="Minh họa dashboard Shcare"
       style={{
         backdropFilter: "blur(8px) saturate(120%)",
         WebkitBackdropFilter: "blur(8px) saturate(120%)",
@@ -241,9 +241,9 @@ export default function HomePage() {
   }, [reducedMotion]);
 
   useSEO({
-    title: "Smart Health Care | Workspace theo dõi tim phổi từ xa",
+    title: "Shcare | Workspace theo dõi tim phổi từ xa",
     description:
-      "Smart Health Care giúp bác sĩ và cơ sở y tế quản lý thiết bị, lượt đo, cảnh báo, consent và hồ sơ tim phổi từ xa trên một workspace rõ ràng.",
+      "Shcare giúp bác sĩ và cơ sở y tế quản lý thiết bị, lượt đo, cảnh báo, consent và hồ sơ tim phổi từ xa trên một workspace rõ ràng.",
     path: "/",
   });
 
@@ -285,16 +285,16 @@ export default function HomePage() {
             <p className="shc-hero-note">Workspace vận hành cho theo dõi tim phổi từ xa</p>
             <h1>Biết hồ sơ nào cần xem trước.</h1>
             <p className="shc-hero-lede">
-              Smart Health Care kết nối ống nghe thông minh, hồ sơ lượt đo, cảnh báo và phân quyền
+              Shcare kết nối ống nghe thông minh, hồ sơ lượt đo, cảnh báo và phân quyền
               workspace để bác sĩ theo dõi tín hiệu từ xa mà không lẫn giữa thiết bị, người bệnh và
               trạng thái xử lý.
             </p>
             <div className="shc-hero-actions">
               <Link to="/register" className="shc-button shc-button-primary">
-                Khởi tạo workspace <ArrowRight size={18} />
+                Đăng ký sử dụng <ArrowRight size={18} />
               </Link>
               <Link to="/san-pham" className="shc-button shc-button-secondary">
-                Xem cách hệ thống chạy
+                Xem giải pháp
               </Link>
             </div>
             <div className="shc-hero-assurance" aria-label="Điểm tin cậy">
@@ -404,7 +404,7 @@ export default function HomePage() {
 
           <motion.div
             className="shc-handoff-panel"
-            aria-label="Các tầng dữ liệu Smart Health"
+            aria-label="Các tầng dữ liệu Shcare"
             {...revealFrom("right", 0.12)}
           >
             <div className="shc-handoff-panel-head">

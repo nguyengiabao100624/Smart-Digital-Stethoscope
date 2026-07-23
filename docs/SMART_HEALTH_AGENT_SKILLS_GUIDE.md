@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-09
 
-## 2026-07-09 Skill Bundle Rule
+## 2026-07-10 Skill Bundle Rule
 
 For broad Smart Health work such as "complete everything", "sync the whole system", "audit all functions", or cross-repo parity, do not stop at one project skill. Use the smallest effective bundle:
 
@@ -22,7 +22,7 @@ Mặc định mọi task đều có routing gate nhẹ cho toàn bộ skill/tool
 
 - Skill dự án chính: `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md`
 - Thư mục skill bên thứ ba dùng chung: `C:\Users\baobe\.agents\skills`; không còn bản skill project-local trong `D:\Study\KLTN`.
-- Skill global chọn lọc: 26 skill Matt Pocock hiện hành, `impeccable`, 11/13 Taste skills, `academic-research-suite`, `context-budget`, `strategic-compact`, và `agent-reach`.
+- Skill global chọn lọc: full `mattpocock/skills` hiện hành đã được refresh, gồm cả `setup-matt-pocock-skills`, `wayfinder`, `to-spec`, `to-tickets`, `implement`, `tdd`, `code-review`, `diagnosing-bugs`, `codebase-design`, `domain-modeling`, grill/handoff/writing helpers. Nhóm từng thiếu lock source cũng đã được refresh từ GitHub chính chủ: `pbakaus/impeccable`, `leonxlnx/taste-skill`, `Panniantong/Agent-Reach`, `affaan-m/ECC`, `upstash/context7`, và `Imbad0202/academic-research-skills-codex`.
 - Sau khi cài skill mới bằng `npx skills@latest add ...`, nên khởi động lại Codex/new chat để hệ thống tự nhận danh sách skill mới.
 
 ## Quy Tắc Chọn Skill
@@ -31,13 +31,17 @@ Mặc định mọi task đều có routing gate nhẹ cho toàn bộ skill/tool
 | --- | --- | --- |
 | Bất kỳ code/config Smart Health | `smart-health-project` | Luôn đọc trước vì chứa quy tắc cập nhật context, phạm vi dự án và yêu cầu final. |
 | Debug lỗi thật | `diagnosing-bugs` | Dùng vòng lặp tái hiện lỗi, thu nhỏ nguyên nhân, sửa, rồi regression test. |
+| Chưa rõ nên dùng flow nào | `ask-matt` | Dùng như router cho Matt Pocock flow khi task là shaping/spec/issue/TDD/prototype/handoff, không dùng thay `smart-health-project` cho luật domain Smart Health. |
+| Tạo spec/ticket từ yêu cầu lớn | `wayfinder`, `to-spec`, `to-tickets` | Dùng khi cần chia prompt rộng thành spec và lát cắt triển khai. Với Smart Health broad prompt, vẫn phải giữ bundle `smart-health-project` + QA/security/docs. |
+| Làm test-first | `tdd` | Dùng khi sửa bug/feature có seam kiểm thử rõ; ưu tiên behavior qua public interface, không test implementation detail. |
+| Thiết kế seam/kiến trúc module | `codebase-design`, `domain-modeling`, `improve-codebase-architecture` | Dùng khi cần làm rõ module/interface/domain language trước khi sửa rộng hoặc khi kiến trúc đang khó test/khó điều hướng. |
 | QA Android/app | `test-android-apps` plugin nếu cần, kèm `diagnosing-bugs` | Ưu tiên build Gradle, ADB/emulator, UI tree, logcat. |
 | QA web/admin | Chrome/Browser plugin, `build-web-apps:frontend-testing-debugging` khi cần | Không chỉ build, phải smoke giao diện nếu sửa UI quan trọng. |
 | Handoff ngắn sau phiên dài | `handoff` | Chỉ dùng để tạo ghi chú tạm/compact; nguồn trạng thái chính vẫn là các file `SMART_HEALTH_*`. Không ghi secret. |
 | Mọi công việc giao diện | UI/UX Skill Pool trong global registry | Luôn mở `impeccable` + `gpt-taste`, rồi mở mọi skill UI/UX phù hợp với surface: visual design, frontend implementation, accessibility, responsive, motion, Figma/image-to-code, platform UI, UI QA hoặc UI performance. Design system và yêu cầu sản phẩm có quyền ưu tiên khi quy tắc chung xung đột. |
 | Style/workflow UI chuyên biệt | Mọi Taste/UI skill phù hợp | Không còn giới hạn tối đa một skill. Thêm tất cả skill phù hợp trong `redesign-existing-projects`, `image-to-code`, imagegen web/mobile, minimalist, brutalist, premium, brandkit, Stitch, output enforcement, frontend/testing, Figma, Android/iOS UI QA hoặc visual asset khi task cần. |
 | Review code theo checklist | `code-reviewer` hoặc `gstack-review` | Dùng khi user yêu cầu review; findings trước, summary sau. |
-| Tạo PRD/issue từ yêu cầu | `to-prd`, `to-issues` | Chỉ dùng khi cần biến yêu cầu dài thành tài liệu backlog/issue. |
+| Tạo PRD/issue legacy từ yêu cầu | `to-prd`, `to-issues` | Vẫn còn trên disk nhưng không còn nằm trong discovery set mới nhất của `mattpocock/skills`; chỉ dùng fallback. Ưu tiên `wayfinder`, `to-spec`, `to-tickets`. |
 | Supabase/Postgres | `supabase:supabase` hoặc `supabase:supabase-postgres-best-practices` | Dùng plugin Supabase hiện hành; bản project-local trùng đã được bỏ khỏi discovery. |
 | Viết/nghiên cứu báo cáo luận văn | `academic-research-suite` | Dùng một router duy nhất cho literature review, dàn ý, viết, kiểm tra trích dẫn, peer review và revision. |
 | Nghiên cứu web/YouTube/GitHub/RSS | `agent-reach` | Dùng các kênh zero-config trước; kênh cần cookie chỉ bật khi user cung cấp đăng nhập/credential. |
@@ -48,13 +52,13 @@ Mặc định mọi task đều có routing gate nhẹ cho toàn bộ skill/tool
 
 - Không xóa skill hệ thống/plugin trong `C:\Users\baobe\.codex\skills` hoặc cache plugin vì đó là tài nguyên dùng chung.
 - Không tạo lại `.ai_skills`, `.agents/skills`, hoặc `skills-lock.json` trong từng repo Smart Health. Skill bên thứ ba dùng bản user-wide ở `C:\Users\baobe\.agents\skills`.
-- Bộ Matt Pocock global đã lọc bỏ deprecated/trùng/Claude-only: `design-an-interface`, `qa`, `review`, `request-refactor-plan`, `ubiquitous-language`, `git-guardrails-claude-code`, `setup-matt-pocock-skills`, và `migrate-to-shoehorn`.
+- Full bộ Matt Pocock global và các skill user-wide chính đã được cài lại để không bỏ sót skill tốt. Audit sau refresh: `.agents\skills` có 198 thư mục skill, `.agents\.skill-lock.json` tracking 195 skill từ 9 source GitHub chính chủ; 3 skill còn untracked là `decision-mapping`, `to-prd`, `to-issues` vì Matt latest không publish chúng qua CLI discovery nữa. Audit 2026-07-10 trên toàn bộ 384 `SKILL.md` cho thấy không thiếu `name`/`description`, nhưng có 25 tên trùng ở mức metadata, chủ yếu do plugin cache current/remote. Các trùng ảnh hưởng routing cần nhớ: `qa` giữa Matt và Codex `gstack-qa` (Smart Health QA ưu tiên `gstack-qa`/browser/emulator smoke), `pdf` giữa user-wide và primary runtime (ưu tiên `pdf:pdf` runtime), và `gstack-upgrade` hai bản Codex (ưu tiên bản top-level).
 - Taste global giữ 11 skill có vai trò riêng; bỏ `design-taste-frontend-v1` vì cũ và bỏ `design-taste-frontend` vì trùng trực tiếp với `gpt-taste` dành cho Codex.
 - Mục tiêu tiết kiệm token là chọn đúng skill cho từng việc, không phải xóa sạch mọi skill dự phòng. Riêng UI/UX là ngoại lệ: mở base pair và mọi skill UI/UX thật sự phù hợp, không dừng ở 1-2 skill nếu task cần nhiều hơn.
 
 Kết quả so sánh nhanh:
 
-- `diagnosing-bugs`, `handoff`, `to-prd`, `to-issues`, `tdd`, `triage`, `codebase-design`, và `improve-codebase-architecture` hữu ích khi có nhiệm vụ đúng loại.
+- `ask-matt`, `setup-matt-pocock-skills`, `wayfinder`, `to-spec`, `to-tickets`, `diagnosing-bugs`, `handoff`, `to-prd`, `to-issues`, `tdd`, `triage`, `code-review`, `codebase-design`, `domain-modeling`, và `improve-codebase-architecture` hữu ích khi có nhiệm vụ đúng loại.
 - Các skill writing/in-progress còn lại dùng có chọn lọc, không dùng mặc định cho code Android/firmware/backend.
 
 ## Handoff Chuẩn Cho Smart Health

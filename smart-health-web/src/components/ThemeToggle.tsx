@@ -1,65 +1,73 @@
 import { useEffect, useState } from "react";
-import { Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 
-export const THEME_STORAGE_KEY = "shcare-theme";
+import {
+  applyThemePreference,
+  nextThemePreference,
+  normalizeThemePreference,
+  persistThemePreference,
+  readThemePreference,
+  THEME_STORAGE_KEY,
+  type ThemePreference,
+} from "../lib/theme";
 
-function getInitialTheme(): "dark" | "light" {
-  if (typeof window === "undefined") return "light";
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark") return stored;
-  } catch {
-    // localStorage may be unavailable in privacy-restricted browser contexts.
-  }
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
-}
+export { THEME_STORAGE_KEY } from "../lib/theme";
 
-function applyTheme(theme: "dark" | "light") {
-  const root = document.documentElement;
-  if (theme === "dark") root.classList.add("dark");
-  else root.classList.remove("dark");
-  root.dataset.theme = theme;
-  root.style.colorScheme = theme;
-}
+const preferenceLabels: Record<ThemePreference, string> = {
+  system: "Theo hệ thống",
+  light: "Sáng",
+  dark: "Tối",
+};
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"dark" | "light">("light");
+  const [preference, setPreference] = useState<ThemePreference>("system");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const initial = getInitialTheme();
-    setTheme(initial);
-    applyTheme(initial);
+    setPreference(readThemePreference(window.localStorage));
     setMounted(true);
   }, []);
 
-  const toggle = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    applyTheme(next);
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      // Theme still applies for the current page when persistence is unavailable.
-    }
-  };
+  useEffect(() => {
+    if (!mounted) return;
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    applyThemePreference(preference, document.documentElement, media.matches);
+    persistThemePreference(window.localStorage, preference);
+
+    if (preference !== "system") return;
+    const handleSystemTheme = (event: MediaQueryListEvent) => {
+      applyThemePreference("system", document.documentElement, event.matches);
+    };
+    media.addEventListener("change", handleSystemTheme);
+    return () => media.removeEventListener("change", handleSystemTheme);
+  }, [mounted, preference]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== THEME_STORAGE_KEY) return;
+      setPreference(normalizeThemePreference(event.newValue));
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   if (!mounted) return null;
-  const isDark = theme === "dark";
+
+  const nextPreference = nextThemePreference(preference);
+  const label = `Giao diện: ${preferenceLabels[preference]}. Chuyển sang ${preferenceLabels[nextPreference]}.`;
+  const Icon = preference === "system" ? Monitor : preference === "dark" ? Moon : Sun;
 
   return (
     <button
       type="button"
-      onClick={toggle}
-      aria-label={isDark ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"}
-      title={isDark ? "Chế độ sáng" : "Chế độ tối"}
-      className="theme-toggle fixed bottom-5 right-5 z-[100] inline-flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card/85 text-foreground backdrop-blur-xl transition-all hover:scale-110 hover:border-primary/60"
+      onClick={() => setPreference(nextPreference)}
+      aria-label={label}
+      title={label}
+      data-theme-preference={preference}
+      className="theme-toggle fixed bottom-5 right-5 z-[100] inline-flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition-[transform,border-color] duration-200 hover:scale-105 hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
-      {isDark ? (
-        <Sun size={18} className="text-primary" />
-      ) : (
-        <Moon size={18} className="text-primary" />
-      )}
+      <Icon size={19} aria-hidden="true" />
     </button>
   );
 }

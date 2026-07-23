@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/two-factor.schema.json",
+  "title": "Shcare two-factor authentication responses",
+  "oneOf": [
+    { "$ref": "#/$defs/statusResponse" },
+    { "$ref": "#/$defs/enrollmentResponse" },
+    { "$ref": "#/$defs/verifiedResponse" },
+    { "$ref": "#/$defs/challengeRequiredError" },
+    { "$ref": "#/$defs/challengeResponse" },
+    { "$ref": "#/$defs/disabledResponse" }
+  ],
+  "$defs": {
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "status", "methods", "reason"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "status": { "enum": ["available", "unavailable"] },
+        "methods": { "type": "array", "uniqueItems": true, "items": { "const": "app" } },
+        "reason": { "type": "string", "maxLength": 160 }
+      }
+    },
+    "twoFactorState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "method", "enrollmentPending"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "method": { "enum": ["", "app"] },
+        "enrollmentPending": { "type": "boolean" }
+      }
+    },
+    "enrollment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "method", "manualKey", "otpauthUri", "expiresAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "method": { "const": "app" },
+        "manualKey": { "type": "string", "pattern": "^[A-Z2-7]{16,128}$" },
+        "otpauthUri": { "type": "string", "pattern": "^otpauth://totp/" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "statusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "twoFactor"],
+      "properties": {
+        "availability": { "$ref": "#/$defs/availability" },
+        "twoFactor": { "$ref": "#/$defs/twoFactorState" }
+      }
+    },
+    "enrollmentResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["twoFactor", "enrollment"],
+      "properties": {
+        "twoFactor": { "$ref": "#/$defs/twoFactorState" },
+        "enrollment": { "$ref": "#/$defs/enrollment" }
+      }
+    },
+    "verifiedResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["twoFactor", "recoveryCodes", "twoFactorToken", "tokenExpiresAt"],
+      "properties": {
+        "twoFactor": { "$ref": "#/$defs/twoFactorState" },
+        "recoveryCodes": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 8, "maxLength": 64 }
+        },
+        "twoFactorToken": { "type": "string", "minLength": 32, "maxLength": 1024 },
+        "tokenExpiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "challengeRequiredError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "requestId", "details"],
+      "properties": {
+        "code": { "const": "TWO_FACTOR_REQUIRED" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["challengeId", "method", "expiresAt"],
+          "properties": {
+            "challengeId": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "method": { "const": "app" },
+            "expiresAt": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    },
+    "challengeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["twoFactorToken", "expiresAt"],
+      "properties": {
+        "twoFactorToken": { "type": "string", "minLength": 32, "maxLength": 1024 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "token": { "type": "string", "minLength": 32, "maxLength": 1024 },
+        "user": { "type": "object" }
+      }
+    },
+    "disabledResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["twoFactor"],
+      "properties": { "twoFactor": { "$ref": "#/$defs/twoFactorState" } }
+    }
+  }
+}

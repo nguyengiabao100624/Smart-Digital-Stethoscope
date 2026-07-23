@@ -1,651 +1,721 @@
-import React, { useState } from "react";
+import { useRef, useState } from "react";
+import { Building2, FileCheck2, UploadCloud, UsersRound } from "lucide-react";
 import { Link } from "react-router";
-import { CheckCircle, Upload, Loader2, Database } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+
+import {
+  AuthAlert,
+  AuthField,
+  AuthPageIntro,
+  AuthPrimaryButton,
+  AuthSecondaryButton,
+  AuthStepper,
+  AuthSubmissionStatus,
+  AuthUnsavedChangesGuard,
+} from "../../components/auth/AuthPrimitives";
+import {
+  getSafeAuthErrorMessage,
+  validateClinicRegistrationStep,
+  type AuthFieldErrors,
+} from "../../auth/auth-form";
 import { createFirebaseAccount } from "../../../lib/firebase-client";
 import { smartHealthApi } from "../../../lib/smart-health-api";
+import {
+  createWorkspaceRequestIdempotencyKey,
+  parseWorkspaceRequestReceipt,
+} from "../../../lib/workspace-request-contract";
 import { useSEO } from "@/lib/useSEO";
 
-const steps = ["Tài khoản", "Cơ sở", "Quy mô", "Chứng thực", "Xác nhận"];
+const steps = ["Người đại diện", "Cơ sở", "Quy mô", "Xác minh", "Xác nhận"];
+const acceptedDocumentTypes = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
+const maxDocumentSize = 10 * 1024 * 1024;
+const needs = [
+  "Theo dõi trực tiếp",
+  "Quản lý thiết bị",
+  "Báo cáo dữ liệu",
+  "Chăm sóc từ xa",
+  "Phân quyền nhân sự",
+];
+
+type ClinicForm = {
+  repName: string;
+  repEmail: string;
+  repPhone: string;
+  repRole: string;
+  password: string;
+  confirmPassword: string;
+  clinicName: string;
+  clinicType: string;
+  address: string;
+  clinicPhone: string;
+  clinicEmail: string;
+  website: string;
+  staffCount: string;
+  patientCount: string;
+  deviceCount: string;
+  needs: string[];
+  agreed: boolean;
+};
+
+const initialForm: ClinicForm = {
+  repName: "",
+  repEmail: "",
+  repPhone: "",
+  repRole: "",
+  password: "",
+  confirmPassword: "",
+  clinicName: "",
+  clinicType: "",
+  address: "",
+  clinicPhone: "",
+  clinicEmail: "",
+  website: "",
+  staffCount: "",
+  patientCount: "",
+  deviceCount: "",
+  needs: [],
+  agreed: false,
+};
 
 export default function RegisterClinicPage() {
   useSEO({
-    title: "Đăng ký cơ sở y tế | Smart Health Care",
+    title: "Đăng ký cơ sở y tế | Shcare",
     description:
-      "Gửi yêu cầu tạo workspace cho phòng khám, trung tâm chuyên khoa hoặc bệnh viện sử dụng Smart Health Care.",
+      "Gửi yêu cầu tạo workspace Shcare cho phòng khám hoặc cơ sở y tế.",
     path: "/register/phong-kham",
   });
 
   const [step, setStep] = useState(0);
+  const [form, setForm] = useState<ClinicForm>(initialForm);
+  const [errors, setErrors] = useState<AuthFieldErrors>({});
+  const [licenseFile, setLicenseFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submissionStage, setSubmissionStage] = useState("");
   const [done, setDone] = useState(false);
   const [verificationDelivery, setVerificationDelivery] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
-  const [form, setForm] = useState({
-    repName: "",
-    repEmail: "",
-    repPhone: "",
-    repRole: "",
-    password: "",
-    confirmPassword: "",
-    clinicName: "",
-    clinicType: "",
-    address: "",
-    clinicPhone: "",
-    clinicEmail: "",
-    website: "",
-    staffCount: "",
-    patientCount: "",
-    deviceCount: "",
-    needs: [] as string[],
-    licenseUploaded: false,
-    logoUploaded: false,
-    agreed: false,
+  const checkpoint = useRef({
+    idToken: "",
+    authenticated: false,
+    workspaceRequested: false,
+    workspaceRequestKey: "",
+    documentUploaded: false,
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [licenseFile, setLicenseFile] = useState<File | null>(null);
-  const update = (k: string, v: unknown) => {
-    setForm((f) => ({ ...f, [k]: v }));
-    setErrors((e) => ({ ...e, [k]: "" }));
+
+  const update = <K extends keyof ClinicForm>(key: K, value: ClinicForm[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setErrors((current) => ({ ...current, [key]: "", submit: "" }));
   };
 
-  const toggleNeed = (n: string) => {
-    setForm((f) => ({
-      ...f,
-      needs: f.needs.includes(n)
-        ? f.needs.filter((x) => x !== n)
-        : [...f.needs, n],
+  const toggleNeed = (need: string) => {
+    setForm((current) => ({
+      ...current,
+      needs: current.needs.includes(need)
+        ? current.needs.filter((item) => item !== need)
+        : [...current.needs, need],
     }));
+    setErrors((current) => ({ ...current, submit: "" }));
   };
 
-  const next = async () => {
-    if (step === steps.length - 1) {
-      if (
-        !form.repName ||
-        !form.repEmail ||
-        !form.clinicName ||
-        !form.password ||
-        form.password.length < 8 ||
-        form.password !== form.confirmPassword ||
-        !licenseFile ||
-        !form.agreed
-      ) {
-        setErrors({
-          submit:
-            "Vui lòng điền đủ thông tin, mật khẩu khớp nhau, giấy phép và đồng ý điều khoản.",
-        });
-        return;
-      }
-      setSubmitting(true);
-      setVerificationDelivery(null);
-      try {
+  const dirty =
+    !done &&
+    !submitting &&
+    (licenseFile !== null ||
+      Object.entries(form).some(([key, value]) =>
+        key === "needs" ? (value as string[]).length > 0 : Boolean(value),
+      ));
+
+  const validateCurrentStep = () => {
+    const nextErrors = validateClinicRegistrationStep(step, {
+      ...form,
+      licenseFile,
+    });
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const submitRegistration = async () => {
+    if (submitting || !licenseFile) return;
+    setSubmitting(true);
+    setErrors({});
+    setVerificationDelivery(null);
+
+    try {
+      if (!checkpoint.current.idToken) {
+        setSubmissionStage("Đang tạo tài khoản xác thực...");
         const account = await createFirebaseAccount(
-          form.repEmail,
+          form.repEmail.trim(),
           form.password,
         );
-        await smartHealthApi.authenticateFirebase(account.idToken);
-        await smartHealthApi.requestWorkspace({
-          name: form.clinicName,
-          workspaceType: form.clinicType === "hospital" ? "hospital" : "clinic",
-          address: form.address,
-          phone: form.clinicPhone || form.repPhone,
-          email: form.clinicEmail || form.repEmail,
-          website: form.website,
-          representative: form.repName,
-          metadata: {
-            repRole: form.repRole,
-            staffCount: form.staffCount,
-            patientCount: form.patientCount,
-            deviceCount: form.deviceCount,
-            needs: form.needs,
-          },
-        });
-        await smartHealthApi.uploadRoleRequestDocument(licenseFile);
-        try {
-          const delivery = await smartHealthApi.sendEmailVerification();
-          setVerificationDelivery({
-            ok: true,
-            message:
-              delivery.status === "verified"
-                ? "Email đã được xác minh. Bạn có thể theo dõi trạng thái workspace."
-                : `Email xác minh đã được gửi đến ${delivery.email}${delivery.provider ? ` qua ${delivery.provider}` : ""}.`,
-          });
-        } catch (deliveryError) {
-          setVerificationDelivery({
-            ok: false,
-            message:
-              deliveryError instanceof Error
-                ? `Yêu cầu workspace đã được gửi, nhưng email xác minh chưa gửi được: ${deliveryError.message}`
-                : "Yêu cầu workspace đã được gửi, nhưng email xác minh chưa gửi được.",
-          });
-        }
-        setDone(true);
-      } catch (error) {
-        setErrors({
-          submit:
-            error instanceof Error
-              ? error.message
-              : "Không thể gửi yêu cầu workspace.",
-        });
-      } finally {
-        setSubmitting(false);
+        checkpoint.current.idToken = account.idToken;
       }
-    } else {
-      setStep((s) => s + 1);
+
+      if (!checkpoint.current.authenticated) {
+        setSubmissionStage("Đang xác nhận tài khoản với Shcare...");
+        await smartHealthApi.authenticateFirebase(checkpoint.current.idToken);
+        checkpoint.current.authenticated = true;
+      }
+
+      if (!checkpoint.current.workspaceRequested) {
+        setSubmissionStage("Đang gửi yêu cầu tạo workspace...");
+        const workspaceType =
+          form.clinicType === "hospital" ? "hospital" : "clinic";
+        const workspaceName = form.clinicName.trim();
+        checkpoint.current.workspaceRequestKey ||=
+          createWorkspaceRequestIdempotencyKey(form.repEmail);
+        const response = await smartHealthApi.requestWorkspace(
+          {
+            name: form.clinicName.trim(),
+            workspaceType,
+            address: form.address.trim(),
+            phone: form.clinicPhone.trim() || form.repPhone.trim(),
+            email: form.clinicEmail.trim() || form.repEmail.trim(),
+            website: form.website.trim(),
+            representative: form.repName.trim(),
+            metadata: {
+              repRole: form.repRole,
+              staffCount: form.staffCount,
+              patientCount: form.patientCount,
+              deviceCount: form.deviceCount,
+              needs: form.needs,
+            },
+          },
+          checkpoint.current.workspaceRequestKey,
+        );
+        parseWorkspaceRequestReceipt(response, {
+          name: workspaceName,
+          workspaceType,
+        });
+        checkpoint.current.workspaceRequested = true;
+      }
+
+      if (!checkpoint.current.documentUploaded) {
+        setSubmissionStage("Đang tải giấy phép hoạt động...");
+        await smartHealthApi.uploadRoleRequestDocument(licenseFile);
+        checkpoint.current.documentUploaded = true;
+      }
+
+      setSubmissionStage("Đang gửi email xác minh...");
+      try {
+        const delivery = await smartHealthApi.sendEmailVerification();
+        setVerificationDelivery({
+          ok: true,
+          message:
+            delivery.status === "verified"
+              ? "Email đã được xác minh. Bạn có thể theo dõi trạng thái workspace."
+              : `Email xác minh đã được gửi đến ${delivery.email}.`,
+        });
+      } catch (_error) {
+        setVerificationDelivery({
+          ok: false,
+          message:
+            "Yêu cầu workspace đã được tiếp nhận nhưng email xác minh chưa gửi được. Bạn có thể gửi lại ở bước xác minh email.",
+        });
+      }
+      setDone(true);
+    } catch (error) {
+      setErrors({
+        submit: getSafeAuthErrorMessage(
+          error,
+          "Không thể gửi yêu cầu tạo workspace. Vui lòng thử lại.",
+        ),
+      });
+    } finally {
+      setSubmitting(false);
+      setSubmissionStage("");
     }
+  };
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!validateCurrentStep()) return;
+    if (step === steps.length - 1) {
+      void submitRegistration();
+      return;
+    }
+    setStep((current) => current + 1);
+  };
+
+  const selectLicenseFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setLicenseFile(null);
+      return;
+    }
+    if (!acceptedDocumentTypes.has(file.type)) {
+      setErrors((current) => ({
+        ...current,
+        licenseFile: "Giấy phép cần là PDF, JPG hoặc PNG.",
+      }));
+      event.target.value = "";
+      return;
+    }
+    if (file.size > maxDocumentSize) {
+      setErrors((current) => ({
+        ...current,
+        licenseFile: "Giấy phép không được vượt quá 10 MB.",
+      }));
+      event.target.value = "";
+      return;
+    }
+    setLicenseFile(file);
+    setErrors((current) => ({ ...current, licenseFile: "", submit: "" }));
   };
 
   if (done) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="text-center py-6"
-      >
-        <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 bg-[#00FFD1]/10 border border-[#00FFD1]/30 shadow-[0_0_30px_rgba(0,255,209,0.2)]">
-          <CheckCircle size={40} className="text-[#00FFD1]" />
-        </div>
-        <h2 className="text-2xl font-black text-white mb-3">
-          Yêu cầu workspace đã được gửi
-        </h2>
-        <p className="text-white/70 text-sm leading-relaxed mb-4">
-          Đội ngũ Smart Health Care sẽ xác thực thông tin và liên hệ với{" "}
-          <strong className="text-[#00FFD1]">
-            {form.clinicName || "cơ sở"}
-          </strong>{" "}
-          trong 1-2 ngày làm việc. Email đại diện vẫn cần được xác minh để hoàn
-          tất onboarding.
-        </p>
-        {verificationDelivery && (
-          <div
-            className={`mb-6 rounded-xl border px-4 py-3 text-left text-xs leading-relaxed ${
-              verificationDelivery.ok
-                ? "border-[#00FFD1]/30 bg-[#00FFD1]/10 text-[#B9FFF1]"
-                : "border-[#F59E0B]/40 bg-[#F59E0B]/10 text-[#FDE68A]"
-            }`}
-          >
+      <section className="shc-auth-page shc-auth-complete">
+        <AuthPageIntro
+          icon={FileCheck2}
+          title="Yêu cầu workspace đã được tiếp nhận"
+          description="Workspace chỉ được kích hoạt sau khi quản trị viên kiểm tra cơ sở và giấy phép."
+        />
+        {verificationDelivery ? (
+          <AuthAlert tone={verificationDelivery.ok ? "success" : "warning"}>
             {verificationDelivery.message}
-          </div>
-        )}
-        <Link
-          to="/xac-thuc-email"
-          className="block w-full text-center py-3.5 rounded-xl bg-gradient-to-r from-[#0B5C9A] to-[#00FFD1] text-[#0d1a30] font-bold uppercase tracking-widest shadow-[0_0_20px_rgba(0,255,209,0.3)] mb-4 hover:scale-[1.02] transition-transform"
-        >
-          Xác thực email
-        </Link>
-        <Link
-          to="/login"
-          className="block text-center text-[11px] font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors"
-        >
-          Về cổng đăng nhập
-        </Link>
-      </motion.div>
+          </AuthAlert>
+        ) : null}
+        <div className="shc-auth-next-steps" aria-label="Các bước tiếp theo">
+          <h2>Tiếp theo</h2>
+          <ol>
+            <li>Xác minh địa chỉ email đăng nhập.</li>
+            <li>Theo dõi trạng thái yêu cầu trên trang chờ duyệt.</li>
+            <li>
+              Không chia sẻ mật khẩu hoặc tài liệu nhạy cảm qua kênh không chính
+              thức.
+            </li>
+          </ol>
+        </div>
+        <div className="shc-auth-actions shc-auth-actions-stack">
+          <Link className="shc-auth-primary-link" to="/xac-nhan-email">
+            Mở trang xác minh email
+          </Link>
+          <Link className="shc-auth-text-link" to="/login">
+            Về trang đăng nhập
+          </Link>
+        </div>
+      </section>
     );
   }
 
   return (
-    <div>
-      <div className="mb-8 text-center">
-        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#0B5C9A]/40 to-[#00FFD1]/20 mx-auto flex items-center justify-center mb-4 border border-[#00FFD1]/20 shadow-[0_0_20px_rgba(0,255,209,0.15)]">
-          <Database size={24} className="text-[#00FFD1]" />
-        </div>
-        <h1 className="text-2xl font-black text-white tracking-tight mb-2">
-          Đăng ký Workspace
-        </h1>
-        <p className="text-[11px] uppercase tracking-widest text-[#4AA4E0]">
-          Tổ chức & Trung Tâm Y Tế
-        </p>
-      </div>
+    <section className="shc-auth-page shc-auth-registration-page">
+      <AuthUnsavedChangesGuard when={dirty} />
+      <AuthPageIntro
+        icon={Building2}
+        title="Đăng ký cơ sở y tế"
+        description="Tạo yêu cầu workspace theo từng bước. Shcare không kích hoạt cơ sở trước khi hoàn tất kiểm tra."
+      />
+      <AuthStepper steps={steps} current={step} />
 
-      <div className="shc-auth-stepper flex items-center mb-8 overflow-x-auto pb-4 scrollbar-hide">
-        {steps.map((s, idx) => (
-          <div key={s} className="flex items-center flex-shrink-0">
-            <div className="flex flex-col items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
-                  idx < step
-                    ? "bg-[#00FFD1] text-[#0d1a30] shadow-[0_0_10px_rgba(0,255,209,0.5)]"
-                    : idx === step
-                      ? "bg-white/10 border-2 border-[#00FFD1] text-[#00FFD1] shadow-[0_0_15px_rgba(0,255,209,0.3)]"
-                      : "bg-white/8 border border-white/10 text-white/55"
-                }`}
+      <form className="shc-auth-form" noValidate onSubmit={handleSubmit}>
+        <div className="shc-auth-step-panel" key={step}>
+          {step === 0 ? (
+            <>
+              <AuthField
+                id="clinic-representative-name"
+                label="Người đại diện"
+                required
+                error={errors.repName}
               >
-                {idx < step ? "✓" : idx + 1}
-              </div>
-              <span
-                className={`text-[9px] uppercase tracking-widest font-bold whitespace-nowrap ${idx === step ? "text-[#00FFD1]" : "text-white/55"}`}
+                <input
+                  autoComplete="name"
+                  value={form.repName}
+                  onChange={(event) => update("repName", event.target.value)}
+                />
+              </AuthField>
+              <AuthField
+                id="clinic-representative-email"
+                label="Email đăng nhập"
+                required
+                error={errors.repEmail}
               >
-                {s}
-              </span>
-            </div>
-            {idx < steps.length - 1 && (
-              <div className="w-6 mx-2 h-[2px] rounded-full relative -top-3 overflow-hidden bg-white/10">
-                <div
-                  className="absolute top-0 left-0 h-full bg-[#00FFD1] transition-all duration-500"
-                  style={{ width: idx < step ? "100%" : "0%" }}
-                ></div>
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={form.repEmail}
+                  onChange={(event) => update("repEmail", event.target.value)}
+                />
+              </AuthField>
+              <AuthField
+                id="clinic-representative-phone"
+                label="Số điện thoại"
+                required
+                error={errors.repPhone}
+              >
+                <input
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={form.repPhone}
+                  onChange={(event) => update("repPhone", event.target.value)}
+                />
+              </AuthField>
+              <AuthField
+                id="clinic-representative-role"
+                label="Vai trò quản trị"
+                required
+                error={errors.repRole}
+              >
+                <select
+                  value={form.repRole}
+                  onChange={(event) => update("repRole", event.target.value)}
+                >
+                  <option value="">Chọn vai trò</option>
+                  <option value="owner">Chủ cơ sở</option>
+                  <option value="director">Giám đốc y khoa</option>
+                  <option value="manager">Quản trị vận hành</option>
+                </select>
+              </AuthField>
+              <AuthField
+                id="clinic-password"
+                label="Mật khẩu"
+                required
+                hint="Dùng ít nhất 8 ký tự."
+                error={errors.password}
+              >
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(event) => update("password", event.target.value)}
+                />
+              </AuthField>
+              <AuthField
+                id="clinic-password-confirmation"
+                label="Xác nhận mật khẩu"
+                required
+                error={errors.confirmPassword}
+              >
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.confirmPassword}
+                  onChange={(event) =>
+                    update("confirmPassword", event.target.value)
+                  }
+                />
+              </AuthField>
+            </>
+          ) : null}
+
+          {step === 1 ? (
+            <>
+              <AuthField
+                id="clinic-name"
+                label="Tên cơ sở"
+                required
+                error={errors.clinicName}
+              >
+                <input
+                  value={form.clinicName}
+                  onChange={(event) => update("clinicName", event.target.value)}
+                />
+              </AuthField>
+              <AuthField
+                id="clinic-type"
+                label="Loại hình cơ sở"
+                required
+                error={errors.clinicType}
+              >
+                <select
+                  value={form.clinicType}
+                  onChange={(event) => update("clinicType", event.target.value)}
+                >
+                  <option value="">Chọn loại hình</option>
+                  <option value="private">
+                    Phòng khám đa khoa hoặc tư nhân
+                  </option>
+                  <option value="specialist">Trung tâm chuyên khoa</option>
+                  <option value="hospital">Bệnh viện</option>
+                </select>
+              </AuthField>
+              <AuthField
+                id="clinic-address"
+                label="Địa chỉ cơ sở"
+                required
+                error={errors.address}
+              >
+                <input
+                  autoComplete="street-address"
+                  value={form.address}
+                  onChange={(event) => update("address", event.target.value)}
+                />
+              </AuthField>
+              <div className="shc-auth-field-grid">
+                <AuthField
+                  id="clinic-phone"
+                  label="Hotline cơ sở"
+                  required
+                  error={errors.clinicPhone}
+                >
+                  <input
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={form.clinicPhone}
+                    onChange={(event) =>
+                      update("clinicPhone", event.target.value)
+                    }
+                  />
+                </AuthField>
+                <AuthField id="clinic-email" label="Email cơ sở">
+                  <input
+                    type="email"
+                    inputMode="email"
+                    value={form.clinicEmail}
+                    onChange={(event) =>
+                      update("clinicEmail", event.target.value)
+                    }
+                  />
+                </AuthField>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+              <AuthField
+                id="clinic-website"
+                label="Website cơ sở"
+                hint="Không bắt buộc."
+              >
+                <input
+                  inputMode="url"
+                  value={form.website}
+                  onChange={(event) => update("website", event.target.value)}
+                />
+              </AuthField>
+            </>
+          ) : null}
 
-      <form
-        method="post"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void next();
-        }}
-      >
-        <div className="space-y-5 mb-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-4"
-            >
-              {step === 0 && (
-                <>
-                  <FieldC label="Người đại diện">
-                    <input
-                      autoComplete="name"
-                      value={form.repName}
-                      onChange={(e) => update("repName", e.target.value)}
-                      placeholder="Tên người đại diện pháp luật"
-                    />
-                  </FieldC>
-                  <FieldC label="Email liên hệ">
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      value={form.repEmail}
-                      onChange={(e) => update("repEmail", e.target.value)}
-                      placeholder="admin@clinic.vn"
-                    />
-                  </FieldC>
-                  <FieldC label="Số điện thoại">
-                    <input
-                      autoComplete="tel"
-                      inputMode="tel"
-                      value={form.repPhone}
-                      onChange={(e) => update("repPhone", e.target.value)}
-                      placeholder="0901234567"
-                    />
-                  </FieldC>
-                  <FieldC label="Mật khẩu">
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      value={form.password}
-                      onChange={(e) => update("password", e.target.value)}
-                      placeholder="Tối thiểu 8 ký tự"
-                    />
-                  </FieldC>
-                  <FieldC label="Xác nhận mật khẩu">
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      value={form.confirmPassword}
-                      onChange={(e) =>
-                        update("confirmPassword", e.target.value)
-                      }
-                      placeholder="Nhập lại mật khẩu"
-                    />
-                  </FieldC>
-                  <FieldC label="Vai trò quản trị">
-                    <select
-                      value={form.repRole}
-                      onChange={(e) => update("repRole", e.target.value)}
-                      className="appearance-none"
+          {step === 2 ? (
+            <>
+              <div className="shc-auth-section-heading">
+                <span aria-hidden="true">
+                  <UsersRound size={20} />
+                </span>
+                <div>
+                  <h2>Quy mô dự kiến</h2>
+                  <p>Các số liệu này không bắt buộc và có thể cập nhật sau.</p>
+                </div>
+              </div>
+              <div className="shc-auth-field-grid shc-auth-field-grid-three">
+                <AuthField
+                  id="clinic-staff-count"
+                  label="Nhân sự"
+                  error={errors.staffCount}
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={form.staffCount}
+                    onChange={(event) =>
+                      update("staffCount", event.target.value)
+                    }
+                  />
+                </AuthField>
+                <AuthField
+                  id="clinic-patient-count"
+                  label="Bệnh nhân"
+                  error={errors.patientCount}
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={form.patientCount}
+                    onChange={(event) =>
+                      update("patientCount", event.target.value)
+                    }
+                  />
+                </AuthField>
+                <AuthField
+                  id="clinic-device-count"
+                  label="Thiết bị"
+                  error={errors.deviceCount}
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={form.deviceCount}
+                    onChange={(event) =>
+                      update("deviceCount", event.target.value)
+                    }
+                  />
+                </AuthField>
+              </div>
+              <fieldset className="shc-auth-fieldset">
+                <legend>Nhu cầu sử dụng</legend>
+                <p>Chọn các nhóm chức năng cơ sở quan tâm.</p>
+                <div className="shc-auth-chip-list">
+                  {needs.map((need) => (
+                    <button
+                      key={need}
+                      type="button"
+                      className="shc-auth-filter-chip"
+                      aria-pressed={form.needs.includes(need)}
+                      onClick={() => toggleNeed(need)}
                     >
-                      <option value="" disabled hidden>
-                        Quyền quản trị
-                      </option>
-                      <option value="owner" className="bg-[#0d1a30] text-white">
-                        Chủ phòng khám (Owner)
-                      </option>
-                      <option
-                        value="director"
-                        className="bg-[#0d1a30] text-white"
-                      >
-                        Giám đốc Y khoa (Director)
-                      </option>
-                      <option
-                        value="manager"
-                        className="bg-[#0d1a30] text-white"
-                      >
-                        Quản trị Vận hành (Manager)
-                      </option>
-                    </select>
-                  </FieldC>
-                </>
-              )}
-
-              {step === 1 && (
-                <>
-                  <FieldC label="Tên cơ sở">
-                    <input
-                      value={form.clinicName}
-                      onChange={(e) => update("clinicName", e.target.value)}
-                      placeholder="Phòng khám Tim mạch An Khang"
-                    />
-                  </FieldC>
-                  <FieldC label="Loại hình cơ sở">
-                    <select
-                      value={form.clinicType}
-                      onChange={(e) => update("clinicType", e.target.value)}
-                      className="appearance-none"
-                    >
-                      <option value="" disabled hidden>
-                        Chọn loại hình
-                      </option>
-                      <option
-                        value="private"
-                        className="bg-[#0d1a30] text-white"
-                      >
-                        Phòng khám đa khoa / tư nhân
-                      </option>
-                      <option
-                        value="specialist"
-                        className="bg-[#0d1a30] text-white"
-                      >
-                        Trung tâm Chuyên khoa (Tim/Phổi)
-                      </option>
-                      <option
-                        value="hospital"
-                        className="bg-[#0d1a30] text-white"
-                      >
-                        Bệnh viện quy mô vừa & nhỏ
-                      </option>
-                    </select>
-                  </FieldC>
-                  <FieldC label="Địa chỉ">
-                    <input
-                      value={form.address}
-                      onChange={(e) => update("address", e.target.value)}
-                      placeholder="123 Đường Số 1, TP. HCM"
-                    />
-                  </FieldC>
-                  <div className="grid grid-cols-2 gap-4">
-                    <FieldC label="Hotline">
-                      <input
-                        value={form.clinicPhone}
-                        onChange={(e) => update("clinicPhone", e.target.value)}
-                        placeholder="028 1234 5678"
-                      />
-                    </FieldC>
-                    <FieldC label="Website cơ sở">
-                      <input
-                        value={form.website}
-                        onChange={(e) => update("website", e.target.value)}
-                        placeholder="domain.vn"
-                      />
-                    </FieldC>
-                  </div>
-                </>
-              )}
-
-              {step === 2 && (
-                <>
-                  <div className="grid grid-cols-3 gap-4">
-                    <FieldC label="Nhân sự">
-                      <input
-                        type="number"
-                        value={form.staffCount}
-                        onChange={(e) => update("staffCount", e.target.value)}
-                        placeholder="VD: 5"
-                      />
-                    </FieldC>
-                    <FieldC label="Bệnh nhân">
-                      <input
-                        type="number"
-                        value={form.patientCount}
-                        onChange={(e) => update("patientCount", e.target.value)}
-                        placeholder="VD: 100"
-                      />
-                    </FieldC>
-                    <FieldC label="Thiết bị">
-                      <input
-                        type="number"
-                        value={form.deviceCount}
-                        onChange={(e) => update("deviceCount", e.target.value)}
-                        placeholder="VD: 10"
-                      />
-                    </FieldC>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-widest text-white/60 mb-3 mt-2">
-                      Nhu cầu sử dụng
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "Theo dõi live",
-                        "Quản lý thiết bị",
-                        "Báo cáo dữ liệu",
-                        "Chăm sóc từ xa",
-                        "Phân quyền nhân sự",
-                      ].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => toggleNeed(n)}
-                          className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${
-                            form.needs.includes(n)
-                              ? "bg-[#00FFD1]/20 border-[#00FFD1]/50 text-[#00FFD1] shadow-[inset_0_0_10px_rgba(0,255,209,0.2)]"
-                              : "bg-white/8 border-white/10 text-white/60 hover:text-white hover:border-white/30"
-                          }`}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-4">
-                  {[
-                    {
-                      key: "licenseUploaded",
-                      label: "Giấy phép hoạt động (Bắt buộc)",
-                      required: true,
-                    },
-                    {
-                      key: "logoUploaded",
-                      label: "Logo cơ sở (Tùy chọn)",
-                      required: false,
-                    },
-                  ].map((f) => (
-                    <div
-                      key={f.key}
-                      className={`relative border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-300 ${
-                        (form as Record<string, unknown>)[f.key]
-                          ? "border-[#00FFD1] bg-[#00FFD1]/5 shadow-[inset_0_0_20px_rgba(0,255,209,0.1)]"
-                          : "border-white/20 hover:border-[#00FFD1]/50 hover:bg-white/8"
-                      }`}
-                    >
-                      <input
-                        type="file"
-                        accept={
-                          f.key === "licenseUploaded"
-                            ? "application/pdf,image/jpeg,image/png"
-                            : "image/jpeg,image/png"
-                        }
-                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] || null;
-                          if (f.key === "licenseUploaded") setLicenseFile(file);
-                          update(f.key, Boolean(file));
-                        }}
-                      />
-                      {(form as Record<string, unknown>)[f.key] ? (
-                        <div className="flex items-center justify-center gap-2 text-sm font-bold text-[#00FFD1] uppercase tracking-wider">
-                          <CheckCircle
-                            size={20}
-                            className="drop-shadow-[0_0_10px_rgba(0,255,209,0.5)]"
-                          />{" "}
-                          Đã chọn tài liệu
-                        </div>
-                      ) : (
-                        <>
-                          <Upload
-                            size={24}
-                            className="mx-auto mb-2 text-white/55"
-                          />
-                          <div className="text-xs font-bold text-white/70 uppercase tracking-widest mb-1">
-                            {f.label}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                      {need}
+                    </button>
                   ))}
                 </div>
-              )}
+              </fieldset>
+            </>
+          ) : null}
 
-              {step === 4 && (
+          {step === 3 ? (
+            <div className="shc-auth-upload-section">
+              <div className="shc-auth-section-heading">
+                <span aria-hidden="true">
+                  <UploadCloud size={20} />
+                </span>
                 <div>
-                  <div className="p-5 rounded-2xl border border-[#4AA4E0]/30 bg-gradient-to-br from-white/5 to-[#4AA4E0]/10 mb-6 shadow-[inset_0_0_20px_rgba(74,164,224,0.05)]">
-                    <h4 className="text-[11px] font-bold uppercase tracking-widest text-[#4AA4E0] mb-4 flex items-center gap-2">
-                      <Database size={14} /> Kiểm tra thông tin
-                    </h4>
-                    <div className="space-y-3">
-                      {[
-                        ["Đại diện", form.repName],
-                        ["Email quản trị", form.repEmail],
-                        ["Workspace", form.clinicName],
-                        ["Loại Hình", form.clinicType],
-                        ["Tọa độ", form.address],
-                      ]
-                        .filter(([, v]) => v)
-                        .map(([k, v]) => (
-                          <div
-                            key={k}
-                            className="flex gap-4 text-sm py-1.5 border-b border-white/5"
-                          >
-                            <span className="text-white/60 uppercase tracking-wider text-[10px] font-bold w-24 pt-0.5">
-                              {k}
-                            </span>
-                            <span className="text-white font-medium">{v}</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                  <label className="flex items-start gap-3 cursor-pointer group">
-                    <div
-                      className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center border transition-colors ${form.agreed ? "bg-[#00FFD1] border-[#00FFD1]" : "border-white/30 group-hover:border-[#00FFD1]/50"}`}
-                    >
-                      {form.agreed && (
-                        <CheckCircle size={12} className="text-[#0d1a30]" />
-                      )}
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={form.agreed}
-                      onChange={(e) => update("agreed", e.target.checked)}
-                      className="hidden"
-                    />
-                    <span className="text-xs text-white/70 leading-relaxed font-medium">
-                      Tôi xác nhận việc khởi tạo Workspace tuân thủ{" "}
-                      <Link
-                        to="/bao-mat"
-                        className="text-[#00FFD1] hover:underline"
-                      >
-                        Kiểm soát truy cập
-                      </Link>{" "}
-                      và{" "}
-                      <Link
-                        to="/phap-ly"
-                        className="text-[#00FFD1] hover:underline"
-                      >
-                        Điều khoản triển khai
-                      </Link>
-                      .
-                    </span>
-                  </label>
+                  <h2>Giấy phép hoạt động</h2>
+                  <p>Chọn một bản PDF, JPG hoặc PNG, tối đa 10 MB.</p>
                 </div>
-              )}
-            </motion.div>
-          </AnimatePresence>
+              </div>
+              <label
+                className="shc-auth-upload"
+                data-selected={licenseFile ? "true" : undefined}
+              >
+                <input
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  aria-describedby={
+                    errors.licenseFile
+                      ? "clinic-license-error"
+                      : "clinic-license-hint"
+                  }
+                  aria-invalid={Boolean(errors.licenseFile)}
+                  onChange={selectLicenseFile}
+                />
+                <UploadCloud size={26} aria-hidden="true" />
+                <span>
+                  {licenseFile ? licenseFile.name : "Chọn giấy phép hoạt động"}
+                </span>
+                <small id="clinic-license-hint">
+                  {licenseFile
+                    ? "Tài liệu sẽ được tải lên khi bạn gửi yêu cầu."
+                    : "PDF, JPG hoặc PNG · tối đa 10 MB"}
+                </small>
+              </label>
+              {errors.licenseFile ? (
+                <p
+                  id="clinic-license-error"
+                  className="shc-auth-field-error"
+                  role="alert"
+                >
+                  {errors.licenseFile}
+                </p>
+              ) : null}
+              <AuthAlert tone="info">
+                Logo cơ sở chưa có API tải lên nên không được thu thập trong
+                bước này.
+              </AuthAlert>
+            </div>
+          ) : null}
+
+          {step === 4 ? (
+            <>
+              <div className="shc-auth-review">
+                <div className="shc-auth-section-heading">
+                  <span aria-hidden="true">
+                    <Building2 size={20} />
+                  </span>
+                  <div>
+                    <h2>Kiểm tra yêu cầu</h2>
+                    <p>Xác nhận thông tin trước khi gửi.</p>
+                  </div>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Người đại diện</dt>
+                    <dd>{form.repName}</dd>
+                  </div>
+                  <div>
+                    <dt>Email</dt>
+                    <dd>{form.repEmail}</dd>
+                  </div>
+                  <div>
+                    <dt>Cơ sở</dt>
+                    <dd>{form.clinicName}</dd>
+                  </div>
+                  <div>
+                    <dt>Loại hình</dt>
+                    <dd>{form.clinicType}</dd>
+                  </div>
+                  <div>
+                    <dt>Giấy phép</dt>
+                    <dd>{licenseFile?.name}</dd>
+                  </div>
+                </dl>
+              </div>
+              <label
+                className="shc-auth-checkbox"
+                data-invalid={errors.agreed ? "true" : undefined}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.agreed}
+                  onChange={(event) => update("agreed", event.target.checked)}
+                />
+                <span>
+                  Tôi xác nhận có thẩm quyền gửi yêu cầu và đồng ý với{" "}
+                  <Link target="_blank" rel="noreferrer" to="/dieu-khoan">
+                    điều khoản sử dụng
+                  </Link>{" "}
+                  và{" "}
+                  <Link target="_blank" rel="noreferrer" to="/bao-mat">
+                    chính sách bảo mật
+                  </Link>
+                  .
+                </span>
+              </label>
+              {errors.agreed ? (
+                <p className="shc-auth-field-error" role="alert">
+                  {errors.agreed}
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </div>
 
-        <div className="flex gap-4">
-          {errors.submit && (
-            <p className="mb-4 rounded-xl border border-[#FF4B4B]/30 bg-[#FF4B4B]/10 p-3 text-xs text-[#FF6B6B]">
-              {errors.submit}
-            </p>
-          )}
-          {step > 0 && (
-            <button
+        {errors.submit ? (
+          <AuthAlert tone="error">{errors.submit}</AuthAlert>
+        ) : null}
+        {submitting && submissionStage ? (
+          <AuthSubmissionStatus label={submissionStage} />
+        ) : null}
+
+        <div className="shc-auth-actions">
+          {step > 0 ? (
+            <AuthSecondaryButton
               type="button"
-              onClick={() => setStep((s) => s - 1)}
-              className="flex-1 py-3.5 rounded-xl border border-white/10 bg-white/8 text-white/60 text-xs font-bold uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all"
+              disabled={submitting}
+              onClick={() => {
+                setErrors({});
+                setStep((current) => current - 1);
+              }}
             >
-              Lùi Lại
-            </button>
+              Quay lại
+            </AuthSecondaryButton>
+          ) : (
+            <Link className="shc-auth-text-link" to="/login">
+              Đã có tài khoản?
+            </Link>
           )}
-          <button
+          <AuthPrimaryButton
             type="submit"
-            disabled={submitting}
-            className={`flex-[2] py-3.5 rounded-xl text-[#0d1a30] text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,255,209,0.2)] hover:shadow-[0_0_30px_rgba(0,255,209,0.4)] hover:scale-[1.02] ${submitting ? "bg-white/20 text-white/70" : "bg-gradient-to-r from-[#0B5C9A] to-[#00FFD1]"}`}
+            loading={submitting}
+            loadingLabel="Đang gửi yêu cầu..."
           >
-            {submitting ? (
-              <>
-                <Loader2 size={16} className="animate-spin text-[#00FFD1]" />{" "}
-                Đang gửi...
-              </>
-            ) : step === steps.length - 1 ? (
-              "Gửi yêu cầu workspace"
-            ) : (
-              "Tiến Tới"
-            )}
-          </button>
+            {step === steps.length - 1 ? "Gửi yêu cầu" : "Tiếp tục"}
+          </AuthPrimaryButton>
         </div>
       </form>
-    </div>
-  );
-}
-
-function FieldC({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactElement<{
-    className?: string;
-    id?: string;
-    name?: string;
-    style?: React.CSSProperties;
-  }>;
-}) {
-  const fieldName = `clinic-${label
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase()}`;
-  return (
-    <div>
-      <label
-        htmlFor={children.props.id || fieldName}
-        className="block text-[11px] font-bold uppercase tracking-widest text-white/60 mb-2"
-      >
-        {label}
-      </label>
-      {React.cloneElement(children, {
-        id: children.props.id || fieldName,
-        name: children.props.name || fieldName,
-        className: `w-full px-4 h-12 rounded-xl border bg-white/8 outline-none text-white text-sm transition-all backdrop-blur-md placeholder:text-white/20 focus:border-[#00FFD1]/50 focus:ring-1 focus:ring-[#00FFD1]/50 ${children.props.className || ""}`,
-        style: {
-          borderColor: "rgba(255,255,255,0.1)",
-          ...children.props.style,
-        },
-      })}
-    </div>
+    </section>
   );
 }

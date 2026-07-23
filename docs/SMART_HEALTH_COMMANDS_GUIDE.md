@@ -1,6 +1,6 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-07-10
+Last updated: 2026-07-23
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
@@ -14,13 +14,105 @@ D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_INDEX.md
 
 Use that file first for active source folders, handoff order, live URLs, cleanup rules, and focused smoke commands.
 
+## KLTN thesis contract and evidence commands
+
+KLTN-focused work should start from:
+
+```text
+D:\Study\KLTN\docs\SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md
+D:\Study\KLTN\docs\khoaluan\README.md
+```
+
+The source-contract smoke checks that the thesis contract docs exist and that firmware/backend/Android still match the documented PCM16/WebSocket/UDP live-audio contract:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:klt-contract
+```
+
+This smoke is documentation/source-contract proof only. It does not replace physical ESP32-S3/MSM261S4030H0 serial/audio evidence or Android device/emulator runtime screenshots.
+
+## Tooling / skills refresh
+
+Use these commands when the user asks to update installed skills/tools:
+
+```powershell
+npx -y skills@latest update -g -y
+codex plugin marketplace upgrade --json
+
+# Source-refresh skills that are on disk but missing from .agents\.skill-lock.json
+npx -y skills@latest add pbakaus/impeccable@impeccable -g --copy --agent codex -y
+npx -y skills@latest add leonxlnx/taste-skill -g --copy --agent codex --skill gpt-taste --skill brandkit --skill image-to-code --skill imagegen-frontend-web --skill imagegen-frontend-mobile --skill redesign-existing-projects --skill high-end-visual-design --skill minimalist-ui --skill industrial-brutalist-ui --skill stitch-design-taste --skill full-output-enforcement -y
+npx -y skills@latest add panniantong/agent-reach@agent-reach -g --copy --agent codex -y
+npx -y skills@latest add affaan-m/ecc -g --copy --agent codex --skill context-budget --skill strategic-compact -y
+npx -y skills@latest add upstash/context7@find-docs -g --copy --agent codex -y
+npx -y skills@latest add imbad0202/academic-research-skills-codex@academic-research-suite -g --copy --agent codex -y
+```
+
+2026-07-10 result: `.agents\skills` has 198 skill folders and `.agents\.skill-lock.json` tracks 195 of them from official GitHub sources. The only remaining untracked folders are legacy Matt skills `decision-mapping`, `to-prd`, and `to-issues`; prefer `wayfinder`, `to-spec`, and `to-tickets`.
+
 ## Shcare Workspace Portal — current build, deploy, and smoke
 
 `shcare.web.app` is built from `D:\Study\KLTN\smart-health-web` and Firebase Hosting target `webapp`. Older commands aimed at the Web Admin repository or target `admin` are for `shcare-admin.web.app`, not this portal.
 
 Current active backend after the 2026-07-09 Render account migration is `https://smart-health-api-r5is.onrender.com` with API base `https://smart-health-api-r5is.onrender.com/api`. The previous `smart-health-api-xj0a` URL belongs to the old Render workspace that exhausted the free outbound bandwidth allocation.
 
-Latest confirmed live deploy after the 2026-07-09 Render migration, portal settings/consent/workspace-summary follow-ups, portal UI density/search-field polish, and 2026-07-10 appointments deployment: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/044ec7e04023ffb8`, release `projects/162993928259/sites/shcare/channels/live/releases/1783662693801000`. The deployed login flow keeps distinct Android-only/patient, pending, needs-info, rejected, portal-denied, platform-admin, and invalid-credential messages without exposing raw Firebase `auth/*` text. `npm.cmd run smoke:portal-browser` confirms live Firebase login, portal API reads, records filters, sidebar route buttons, avatar menu, notification menu, device claim route, consent/share controls, audit navigation, portal settings profile/security/notification/workspace controls, `/portal/workspace` numeric summaries from backend `/me`, and `/portal/appointments` route/form controls with `/api/portal/appointments` HTTP 200. The latest UI visual QA also confirms portal search icons no longer overlap placeholder text on Patients/Records/Audit/Help, portal titles are normalized to `21.44px`, search inputs to `44px` height with `14px` text and about `12.809px` icon-to-text gap, and checked desktop/mobile routes have zero horizontal overflow. `npm.cmd run smoke:portal-mutation` last passed against the new backend with run id `portal-mutation-mreisktg`, including appointment create/list/confirm/delete for `appt_20260710055434_71922d95`, patient share create/revoke, account profile, workspace settings, notification-preference restore cleanup, device cleanup, support cleanup, logout, and session recovery.
+2026-07-10 account-profile persistence follow-up: commits `c9181740` and `bf0d08cd` are pushed to `origin/main` and fix `/api/me` profile persistence through repository SQL `UPDATE users ... RETURNING *`. Local checks pass, but live verification is currently blocked because the active Render backend returns `503 Service Suspended` for `/api/health`. After Render is unsuspended/restarted, rerun:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:public-deployment
+
+cd D:\Study\KLTN\smart-health-web
+bun run smoke:portal-mutation
+```
+
+The account profile regression is covered locally by these source checks:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+node --check .\server.js
+node --check .\src\repositories.js
+node --check .\scripts\repositoriesSmokeTest.js
+node --check .\scripts\workspaceAccessSmokeTest.js
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run check
+npm.cmd test
+
+cd D:\Study\KLTN\smart-health-web
+node --check .\scripts\portalMutationSmokeTest.mjs
+bun run lint
+bunx tsc --noEmit --pretty false
+bun run build
+bun run build:firebase
+```
+
+2026-07-10 Shcare Portal billing source follow-up: `/portal/billing` now calls `GET /api/portal/billing`, backend enforces `billing.view`, migration `011_workspace_billing_metadata.sql` adds workspace billing metadata columns, `repositories.organizations` persists package/subscription/contact metadata, `PortalLayout` guards direct portal URLs by capability, and portal onboarding builds steps from role capabilities so billing/viewer users do not call forbidden patient/device APIs. Local verification for this slice:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run lint
+npm.cmd run build
+```
+
+Live verification is currently blocked while `smart-health-api-r5is` returns non-JSON Render HTML. After Render is unsuspended/restarted and migrations are applied, rerun:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:public-deployment
+
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run smoke:portal-browser
+npm.cmd run smoke:portal-mutation
+```
+
+Latest confirmed live deploy after the 2026-07-09 Render migration, portal settings/consent/workspace-summary follow-ups, portal UI density/search-field polish, 2026-07-10 appointments deployment, and full Shcare Web UI/UX polish: Firebase Hosting site `shcare`, version `projects/162993928259/sites/shcare/versions/ce8149834356fa86`, release `projects/162993928259/sites/shcare/channels/live/releases/1783667033816000`. The deployed HTML serves `index-PQOT0AAG.css` and `index-CuomDxzU.js`. The deployed login flow keeps distinct Android-only/patient, pending, needs-info, rejected, portal-denied, platform-admin, and invalid-credential messages without exposing raw Firebase `auth/*` text. `bun run smoke:portal-browser` confirms live Firebase login, portal API reads, records filters, sidebar route buttons, avatar menu, notification menu, device claim route, consent/share controls, audit navigation, portal settings profile/security/notification/workspace controls, `/portal/workspace` numeric summaries from backend `/me`, and `/portal/appointments` route/form controls with `/api/portal/appointments` HTTP 200. The latest live UI route sweep checked 63 public/auth/portal URLs at desktop and mobile (`checkedRoutes=126`) with `hardIssueCount=0` and `eventIssueCount=0`. `npm.cmd run smoke:portal-mutation` last passed against the new backend with run id `portal-mutation-mreisktg`, including appointment create/list/confirm/delete for `appt_20260710055434_71922d95`, patient share create/revoke, account profile, workspace settings, notification-preference restore cleanup, device cleanup, support cleanup, logout, and session recovery.
 
 Web Admin current live deploy after the migration, production-backend guard, and expanded admin mutation closure: Firebase Hosting site `shcare-admin`, version `projects/162993928259/sites/shcare-admin/versions/c6371f255aa5f85f`, release `projects/162993928259/sites/shcare-admin/channels/live/releases/1783635730840000`. Platform Admin navigation exposes `/devices` and `/ai-measurements` for full-right accounts. Shcare Web and Web Admin forms now use `method="post"` so native/pre-hydration submit does not leak credentials through URL query strings; a custom Playwright smoke verified no-query-leak behavior plus hydrated admin/portal logins. Web Admin production build validation rejects the retired `smart-health-api-xj0a` backend and requires `VITE_SMART_HEALTH_API_BASE_URL` to match `VITE_SMART_HEALTH_BASE_URL + /api`.
 
@@ -56,7 +148,7 @@ node scripts\worker.js
 
 `npm.cmd test` includes a focused regression that writes a tiny WAV file and verifies `src/audioProcessingWorker.js` persists scan/audio/AI state through repository-style saves. `node scripts\worker.js` should print `REDIS_URL is not set; audio worker is disabled.` when Redis is not configured. A real queue runtime proof still requires setting `REDIS_URL` and running backend + worker against the same data/storage env; do not claim live BullMQ processing from the no-Redis check alone.
 
-2026-07-09/10 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. Supabase migration `20260710054623 appointments` is applied on project `mahvymyncxszvuhlycwp`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `npm.cmd run smoke:portal-browser`, `npm.cmd run smoke:portal-mutation` run `portal-mutation-mreisktg` after the appointments follow-up, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mre2pt6i`, and targeted Playwright visual QA after the portal density/search-field deploy. A follow-up density sweep checked 19 portal routes for overflow, H1/input/button/search sizing, search icon gap, logo image loading, and severe console/page errors; it passed with no failing routes.
+2026-07-09/10 migration/workspace/UI QA: Render backend `smart-health-api-r5is` returned HTTP 200 for `/api/health` and `/api/v1/health`, and expected HTTP 401 for unauthenticated `/api/me`. Supabase migration `20260710054623 appointments` is applied on project `mahvymyncxszvuhlycwp`. After Firebase deploys, live verification passed with `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:production-roles`, `npm.cmd run smoke:portal-production`, `bun run smoke:portal-browser`, `npm.cmd run smoke:portal-mutation` run `portal-mutation-mreisktg`, `npm.cmd run smoke:admin-mutation` run `admin-mutation-mre2pt6i`, and targeted Playwright visual QA. The latest Shcare Web full UI/UX production sweep checked 63 public/auth/portal routes at desktop/mobile (`checkedRoutes=126`, `hardIssueCount=0`, `eventIssueCount=0`) after the live Firebase version `ce8149834356fa86` deploy.
 
 Web Admin build/deploy/smoke:
 
@@ -135,11 +227,25 @@ bun run build:firebase
 
 As of 2026-07-05, `bun run build:firebase` loads production web env through `scripts/production-env.js` before validation and Vite config execution. Override with explicit process envs or `SHCARE_WEB_ENV_FILE` only when you intentionally need a different backend/site. The default fallback uses the existing Web Admin `.env.production` and safe public defaults for Render API and `https://shcare.web.app`; it must not print secret values.
 
+For local authenticated Shcare Web portal QA against the active Render backend, start Vite with the same production env loader. Plain `bun run dev` can lack Firebase Web config, fall back to `/auth/login`, and fail with production 403 `Demo password auth is disabled in production mode`.
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+node -e "import('./scripts/production-env.js').then(({loadProductionEnv})=>{loadProductionEnv(); const {spawn}=require('node:child_process'); const child=spawn('bun',['run','dev'],{stdio:'inherit',env:process.env}); child.on('exit', code=>process.exit(code ?? 0));})"
+
+$env:SMART_HEALTH_WEB_URL='http://127.0.0.1:8081'
+$env:SMART_HEALTH_API_BASE_URL='https://smart-health-api-r5is.onrender.com/api'
+$env:SMOKE_DISABLE_WEB_SECURITY='1'
+bun run smoke:portal-browser
+```
+
 Deploy the generated `dist-firebase` directory:
 
 ```powershell
+cd D:\Study\KLTN\smart-health-web
 $env:GOOGLE_APPLICATION_CREDENTIALS = 'D:\Study\KLTN\firebase\smart-health-stethoscope-firebase-adminsdk-fbsvc-7dc21dbffc.json'
 $env:npm_config_cache = 'D:\Study\KLTN\.npm-cache'
+$env:XDG_CONFIG_HOME = 'D:\Study\KLTN\.config'
 npx.cmd firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
 ```
 
@@ -171,7 +277,7 @@ npm.cmd run smoke:production-roles
 
 Set `PUBLIC_BACKEND_URL` explicitly in this workspace. If omitted, `smoke:production-roles` can read a web/admin env URL and receive Firebase Hosting HTML instead of backend JSON.
 
-`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. The workspace switcher route smoke asserts workspace cards, numeric patient/device/alert summaries, and an active workspace card. The consent route smoke asserts patient/target/scope/expiry/share-submit controls plus selected-scan scope UI. The settings route smoke asserts profile, security/password/session/2FA, notification, and workspace controls. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
+`smoke:portal-browser` reads `smart-health-embedded\web-monitor\.test-data\production-role-smoke-credentials.json`, signs into `https://shcare.web.app` with the workspace smoke account, and checks Firebase `/api/auth/firebase`, key portal API responses, records search/status filters, avatar dropdown, notification dropdown, sidebar route navigation, direct read-only routes, and the audit link from the avatar menu. Current source route coverage includes dashboard, patients, live monitoring, devices, device claim, consent, records, staff, reports, alerts, settings, notifications, onboarding, help, workspace switcher, billing, review queue, device assignment, and audit. The workspace switcher route smoke asserts workspace cards, numeric patient/device/alert summaries, and an active workspace card. The onboarding route is capability-aware in source, so roles without patient/device capabilities should not trigger those forbidden calls. The consent route smoke asserts patient/target/scope/expiry/share-submit controls plus selected-scan scope UI. The settings route smoke asserts profile, security/password/session/2FA, notification, and workspace controls. The billing route smoke now watches `/api/portal/billing` and asserts plan, usage, and billing-contact sections. It redacts auth headers and does not print passwords or ID tokens. Current source also fails the smoke if a visible portal popover lacks `backdrop-filter: blur(...)`.
 
 Controlled live portal mutation smoke:
 
@@ -260,6 +366,16 @@ C:\Users\baobe\.agents\skills
 
 Do not recreate `D:\Study\KLTN\<repo>\.agents\skills` or repo-local `skills-lock.json` files. Matt Pocock, Impeccable, Academic Research, Taste, Agent Reach, and context/token skills are installed user-wide.
 
+Refresh global skills and plugin marketplace snapshots:
+
+```powershell
+npx -y skills@latest update -g -y
+npx -y skills@latest add mattpocock/skills -g --all --copy
+codex plugin marketplace upgrade --json
+```
+
+2026-07-10 note: `skills update -g -y` reported global skills up to date, but warned that many old `K-Dense-AI/scientific-agent-skills` entries and `code-reviewer` appear deleted upstream and were not removed in non-interactive mode. Full `mattpocock/skills` was refreshed, including `setup-matt-pocock-skills`, `wayfinder`, `to-spec`, `to-tickets`, `code-review`, `research`, `wizard`, and `loop-me`. A duplicate `qa` name now exists in both Matt and Codex/gstack skill roots; use Codex `gstack-qa` for Smart Health QA unless the user explicitly asks for Matt `qa`.
+
 Workspace local-copy audit:
 
 ```powershell
@@ -314,7 +430,7 @@ Skill selection guide:
 D:\Study\KLTN\docs\SMART_HEALTH_AGENT_SKILLS_GUIDE.md
 ```
 
-Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Select only required user-wide skills from `C:\Users\baobe\.agents\skills`; do not load the whole set. Every task starts with a lightweight routing/token gate: infer the smallest relevant installed skill/tool, apply `context-budget` to scope before reading, and apply `strategic-compact` to decide whether compact/handoff is useful at the current phase. For every UI task, load `impeccable` and `gpt-taste` together, then consult the registry UI/UX Skill Pool and load every additional UI/UX skill that materially applies to visual design, frontend implementation, accessibility, responsiveness, motion, Figma/image-to-code, platform UI, UI QA, or UI performance. Restart Codex/new chat after installing skills so the session can auto-detect them.
+Use `C:\Users\baobe\.codex\skills\smart-health-project\SKILL.md` for Smart Health rules first. Select only required user-wide skills from `C:\Users\baobe\.agents\skills`; do not load the whole set. Every task starts with a lightweight routing/token gate: infer the smallest relevant installed skill/tool, apply `context-budget` to scope before reading, and apply `strategic-compact` to decide whether compact/handoff is useful at the current phase. Use Matt skills such as `ask-matt`, `setup-matt-pocock-skills`, `wayfinder`, `to-spec`, `to-tickets`, `implement`, `tdd`, `code-review`, `diagnosing-bugs`, `codebase-design`, and `domain-modeling` when the task is shaping/spec/ticket/TDD/review/deep-module work. For every UI task, load `impeccable` and `gpt-taste` together, then consult the registry UI/UX Skill Pool and load every additional UI/UX skill that materially applies to visual design, frontend implementation, accessibility, responsiveness, motion, Figma/image-to-code, platform UI, UI QA, or UI performance. Restart Codex/new chat after installing skills so the session can auto-detect them.
 
 ## 0.1. Current Production Runbook And GitHub Actions
 
@@ -1149,6 +1265,21 @@ C:\Users\baobe\.agents\skills\context-budget
 C:\Users\baobe\.agents\skills\strategic-compact
 C:\Users\baobe\.agents\skills\agent-reach
 C:\Users\baobe\.agents\skills\impeccable
+```
+
+Full Matt Pocock skill set is installed under `C:\Users\baobe\.agents\skills`; key engineering-flow entries are:
+
+```text
+C:\Users\baobe\.agents\skills\ask-matt
+C:\Users\baobe\.agents\skills\setup-matt-pocock-skills
+C:\Users\baobe\.agents\skills\wayfinder
+C:\Users\baobe\.agents\skills\to-spec
+C:\Users\baobe\.agents\skills\to-tickets
+C:\Users\baobe\.agents\skills\implement
+C:\Users\baobe\.agents\skills\tdd
+C:\Users\baobe\.agents\skills\code-review
+C:\Users\baobe\.agents\skills\diagnosing-bugs
+C:\Users\baobe\.agents\skills\codebase-design
 ```
 
 Default routing rule: the assistant should infer the right skill/tool from the task and registry. The user does not need to name exact skills. Load full `context-budget` and `strategic-compact` only for non-trivial, broad, long-running, multi-repo, or tooling/audit work; trivial tasks use the short checklist.
@@ -2132,7 +2263,7 @@ route canary: doctor.viewer.smoke@smarthealth.test has workspace.devices.view, n
 
 The tooling commit changed backend `npm start` to `node scripts/start.js`. On hosts with `DATABASE_URL`, `scripts/start.js` runs `scripts/migrate.js` first, then starts `server.js`; without `DATABASE_URL`, it starts normally. Migration `006_secure_public_tables.sql` enables RLS and revokes direct Supabase `anon`/`authenticated` table access so web/mobile clients continue to use the Render backend API.
 
-As of 2026-07-10, appointment scheduling adds migration `010_appointments.sql`. Local `npm.cmd run migrate` still requires `DATABASE_URL`; if the shell lacks it, the command exits with `DATABASE_URL is required to run migrations` and the migration must be applied by the Postgres-backed deploy/start path or a shell with database envs.
+As of 2026-07-10, appointment scheduling adds migration `010_appointments.sql`, and portal billing metadata adds migration `011_workspace_billing_metadata.sql`. Local `npm.cmd run migrate` still requires `DATABASE_URL`; if the shell lacks it, the command exits with `DATABASE_URL is required to run migrations` and the migration must be applied by the Postgres-backed deploy/start path or a shell with database envs.
 
 In a local demo env, `check:production:strict` is still expected to fail with `BLOCKED`; pass requires real provider envs on the backend host.
 
@@ -2212,3 +2343,337 @@ npm.cmd run windows:restart
 ```
 
 Do this only after active bridge-launched jobs finish; otherwise the running task can be interrupted.
+
+## 2026-07-17 Shcare Phase 4 device checkpoint
+
+Run the source/local device gate from the backend:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+node scripts\deviceSecuritySmokeTest.js
+npm.cmd run check
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:klt-contract
+```
+
+Then run the Admin gate:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+.\node_modules\.bin\tsc.cmd --noEmit
+npm.cmd run lint
+npm.cmd run build
+```
+
+Firmware proof must be recorded separately:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-development
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-ota
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe test -e native
+```
+
+The three builds are source/build evidence. If `pio test -e native` reports missing `gcc/g++`, mark native tests `BLOCKED`; never substitute a stale binary. A detected board, serial/I2S/WSS log, real PostgreSQL/provider mutation and production deploy are separate proof classes.
+
+For the Phase 4 telemetry contract, run the backend smoke after applying migrations in order:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+node scripts\deviceSecuritySmokeTest.js
+npm.cmd run check
+```
+
+Migration `026_device_telemetry.sql` is additive and must follow `024_device_command_lifecycle.sql` and `025_device_inventory_metadata.sql`. The smoke verifies telemetry allowlisting, secret-field stripping, SQL/JSON persistence and authenticated WSS ingestion. Passing this command is source/local evidence only; it does not prove a live provider or physical device.
+
+## 2026-07-18 Phase 4 source/local release gate
+
+Run the backend security and persistence regression from the canonical backend:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:device-security
+npm.cmd run smoke:device-ownership-repository
+npm.cmd run smoke:device-setup-security
+npm.cmd run smoke:data-store-concurrency
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:klt-contract
+```
+
+Run the independent Web and Platform Admin client gates:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+npx.cmd vitest run --config vitest.auth.config.ts test/auth/claim-device-page.test.tsx test/auth/device-pairing-api.test.ts
+npm.cmd run test:auth
+npm.cmd run lint
+npm.cmd run build
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+.\node_modules\.bin\tsc.cmd --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd audit --omit=dev
+```
+
+Run Android source/build proof separately from device runtime proof:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat testDebugUnitTest --rerun-tasks --no-daemon
+.\gradlew.bat :app:compileDebugKotlin --no-daemon
+.\gradlew.bat :app:assembleDebug --rerun-tasks --no-daemon
+.\gradlew.bat :app:lintDebug --rerun-tasks --no-daemon
+C:\Users\baobe\AppData\Local\Android\Sdk\platform-tools\adb.exe devices -l
+Get-FileHash -Algorithm SHA256 .\app\build\outputs\apk\debug\app-debug.apk
+```
+
+Run all canonical firmware build profiles and compile the embedded test target:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
+$pio = "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe"
+& $pio run -e esp32-s3-devkitm-1
+& $pio run -e esp32-s3-development
+& $pio run -e esp32-s3-ota
+& $pio test -e esp32-s3-devkitm-1 --without-uploading --without-testing
+& $pio test -e native
+```
+
+`esp32-s3-ota` compiling successfully does not mean an OTA upload occurred; without `upload_port` it remains build-only evidence. The current board definition reports 8 MB even though `board_build.flash_size=16MB` and the partition CSV ends at `0x1000000`; actual flash capacity and partition behavior must remain `BLOCKED` until verified on the physical board. Likewise, an empty `adb devices -l`, missing native `gcc/g++`, missing provider credentials, or no live `DATABASE_URL` must be recorded as separate blockers rather than converted into a successful runtime claim.
+
+The embedded test compile reuses `.pio\build\esp32-s3-devkitm-1` and can replace that environment's `firmware.bin` with a test image. After the test compile, rerun `platformio.exe run -e esp32-s3-devkitm-1` before calculating the production SHA-256; never publish the pre-rebuild test artifact as product firmware.
+
+## 2026-07-19 Staff invitation source/local gates
+
+Run the invitation repository and integrated backend contract gates before changing Admin/Portal staff behavior:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:staff-invitations
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:klt-contract
+```
+
+Run the two independent web surfaces separately:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run test:contracts
+npm.cmd run test:auth
+bunx tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+$env:SMART_HEALTH_WEB_URL = "http://127.0.0.1:8080"
+npm.cmd run smoke:auth-browser -- --route=staff-invitation
+```
+
+The browser smoke needs a local Web server on the selected URL. A green source/local run does not prove live migration 039, Firebase Admin, email provider/inbox delivery, authenticated production mutation or deploy.
+
+## 2026-07-23 Clinics/Workspace lifecycle and theme gates
+
+Run backend lifecycle, authority and documentation contracts:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:workspace-lifecycle
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:klt-contract
+```
+
+Run Platform Admin contracts, production builds and the self-starting authenticated browser matrix:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run build:firebase:admin
+npm.cmd run smoke:clinics-browser
+```
+
+Run the independent Web/Auth gates:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run test:contracts
+npm.cmd run test:auth
+bunx tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run build:firebase
+npm.cmd run smoke:auth-browser
+```
+
+The Clinics browser smoke starts and cleans its own local JSON backend and Vite server. These commands prove source/build/local behavior only; they do not prove live migration 040, provider credentials, preview/live mutation cleanup or deployment.
+
+## 2026-07-23 Notification campaign and delivery-truth gates
+
+Run backend contract, campaign transaction and tenant/provider-state gates:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:notification-campaigns
+npm.cmd run smoke:notification-push
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:klt-contract
+```
+
+Run Platform Admin contract/build and self-starting browser operations smoke:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run build:firebase:admin
+npm.cmd run smoke:admin-operations-browser
+```
+
+Run shared Web model and independent Android contract gates:
+
+```powershell
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run build:firebase
+
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat testDebugUnitTest compileDebugKotlin assembleDebug --no-daemon --console=plain
+```
+
+The Admin operations smoke starts isolated backend/Vite processes, verifies Overview `today` and `7d`, validates real Storage stats/files totals and private visibility, confirms disabled provider channels, creates one real in-app campaign, runs 54 route/viewport/theme accessibility checks and removes its temporary data directory. A green local run does not prove migration 041 on live PostgreSQL, Brevo/FCM delivery, S3 signed-link behavior, Android display/deep-link behavior, authenticated preview/live cleanup or deployment.
+
+Overview timestamp/range contract and tenant integration:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:overview-stats
+npm.cmd run smoke:workspace-access
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run smoke:admin-operations-browser
+```
+
+The focused contract uses a fixed clock and UTC+07:00 fixtures to prove real bucket boundaries, zero-fill behavior and invalid-filter denial. The workspace smoke verifies the HTTP aliases and tenant scope. The browser smoke verifies responsive light/dark/system UI, changes the range through the real select and validates Storage read-model invariants; none of these local gates prove a live deployment.
+
+Patient CRUD canonical identity and browser mutation proof:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+npm.cmd run smoke:admin-operations-browser
+
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run test:contracts
+npm.cmd run test:auth
+npm.cmd run smoke:portal-patients-browser
+
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon --console=plain
+```
+
+The two browser smokes start isolated backend/frontends, perform real create/update/delete using canonical IDs, verify exact receipts and remove temporary data. The Portal smoke additionally replays every mutation with the same idempotency key. These local commands do not prove live PostgreSQL compatibility, Firebase promotion or Android emulator/device UX; the separate import gate below is required for the Patient CSV Import lifecycle.
+
+Patient CSV Import atomic-batch proof:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:patient-import
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:klt-contract
+
+cd D:\Study\KLTN\smart-health-web
+node_modules\.bin\tsc.exe --noEmit
+npm.cmd run lint
+npm.cmd run test:contracts
+npm.cmd run test:auth
+npm.cmd run build
+npm.cmd run build:firebase
+npm.cmd run smoke:portal-patients-browser
+```
+
+The focused import gate covers UTF-8/size/row bounds, CSV quoting, structured validation, duplicates, stable generated codes, concurrent exact replay, rollback, expiry and post-preview conflict. The browser smoke starts isolated services, checks Patients and Import at 390/768/1440 in light/dark/system, commits a real two-row batch, replays both stages and deletes the imported patients. These commands remain source/local proof; migration 042 and transaction locking still need candidate PostgreSQL evidence before promotion.
+
+Audit ledger and multi-format export proof:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check:audit-export
+npm.cmd run smoke:audit-export
+npm.cmd run smoke:repositories
+npm.cmd run smoke:identity-migrations
+npm.cmd run smoke:workspace-access
+npm.cmd test
+npm.cmd run smoke:klt-contract
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run test:contracts
+node_modules\.bin\tsc.cmd --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:admin-operations-browser
+# Production graph: currently 1 low, 0 high, 0 critical.
+npm.cmd audit --omit=dev
+
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run test:auth -- test/auth/audit-export-api.test.ts test/auth/portal-export-dialog.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+bun x tsc --noEmit
+npm.cmd run lint
+npm.cmd run build:firebase
+# Run against the isolated local backend/Web pair and record cleanup.
+npm.cmd run smoke:portal-browser
+# Current lockfile gate: No vulnerabilities found.
+bun audit
+```
+
+`smoke:audit-export` runs the 12 focused contract/artifact tests for server query normalization, recursive secret redaction and real JSON/CSV/XLSX/PDF generation. The repository, identity and workspace gates cover canonical audit paging/aliases, export scope, tenant and role negatives, job visibility, idempotent replay, SHA-256/renderer metadata, audited download and temporary-grant cleanup. The identity gate also audits the bundled JSON tenant and dangling-owner remediation rather than leaving that dataset blocked from reconciliation.
+
+The Admin gate currently passes TypeScript, ESLint, `151/151` contracts, build and `72/72` browser checks at 390/768/1440 in light/dark/system. The browser smoke verifies real audit filters/metadata and downloads a platform CSV Blob, then checks SHA-256, `Content-Disposition`, UTF-8 BOM and cleanup. It must continue to report zero serious/critical axe, console/request, overflow/theme and sub-44 px failures. The Cloudflare Vite plugin is build-only in `devDependencies`; `npm audit --omit=dev` currently reports one low Windows development-server esbuild advisory and no high/critical finding. Keep both the production-only result and the separate development-tool audit in release review.
+
+The Portal gates currently pass focused `8/8`, full Vitest `29` files/`105` tests, contracts `63/63`, TypeScript, ESLint, diff check and Firebase build. The isolated browser proof uses real server paging/filtering and export: 147 audit rows, 11 matches for `q=scan`, 11 downloaded CSV rows with SHA prefix `4e031d2e6faa`, then 149 ledger rows containing `export.create` and `export.download`; it also checks real Reports totals, desktop/mobile, light/dark/reduced-motion, cards, 44 px targets and deterministic cleanup. The complete route smoke now returns `ok: true`. Vite `7.3.6` plus patched compatible transitive overrides leave `bun audit` with no findings, and all Portal gates pass again after that lockfile change.
+
+OpenAPI must parse with `info.version: 0.4.0`. A green local gate is not proof that migration 043 ran on live PostgreSQL, that an authenticated preview/live client downloaded every format, or that any backend/Admin/Portal deployment occurred.

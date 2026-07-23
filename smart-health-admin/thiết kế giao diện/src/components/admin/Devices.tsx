@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Activity,
   Battery,
   BatteryLow,
   BatteryMedium,
@@ -10,13 +11,11 @@ import {
   MonitorSpeaker,
   Plus,
   Power,
-  PowerOff,
   RefreshCw,
   Router,
   Search,
   ShieldAlert,
   Stethoscope,
-  Trash2,
   Wifi,
   WifiOff,
   X,
@@ -24,20 +23,42 @@ import {
 import { toast } from "sonner";
 import { AddDeviceDialog } from "./dialogs/AddDeviceDialog";
 import { ActivateDeviceDialog } from "./dialogs/ActivateDeviceDialog";
+import { RotateDeviceSecretDialog } from "./dialogs/RotateDeviceSecretDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
 import {
   smartHealthApi,
   type SmartHealthDevice,
+  type SmartHealthDeviceCommand,
   type SmartHealthDeviceEvent,
   type SmartHealthStorageFile,
 } from "@/lib/smart-health-api";
+import {
+  COMMAND_STATUS_PRESENTATION,
+  DEVICE_OTA_STATUS_PRESENTATION,
+  createDeviceOperationIdempotencyKey,
+  getDeviceOtaState,
+  isDeviceCommandState,
+  isDeviceCommandTerminal,
+  isDeviceOnline,
+  isDeviceOtaSuccessful,
+  isDeviceOtaTerminal,
+  pollDeviceCommandToTerminal,
+  pollDeviceOtaToTerminal,
+  summarizeDeviceEvent,
+  validateOtaDraft,
+  type DeviceOtaExpectation,
+  type DeviceOtaState,
+  type OtaDraft,
+  type OtaDraftField,
+} from "@/lib/device-operations";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import { parseStorageFilesResponse } from "@/lib/storage-operations";
 import { CapabilityGate } from "./AdminAccessContext";
 import { useAdminAccess } from "./useAdminAccess";
 import { DEVICE_MANAGE_CAPABILITIES } from "./action-permissions";
 
-type DangerKind = "revoke" | "unpair" | "delete" | "restart";
+type DangerKind = "revoke" | "restart";
 
 type DangerAction = {
   kind: DangerKind;
@@ -45,16 +66,40 @@ type DangerAction = {
   title: string;
   description: React.ReactNode;
   confirmLabel: string;
+  idempotencyKey?: string;
 };
 
-function isDeviceOnline(device: SmartHealthDevice) {
-  if (typeof device.online === "boolean") return device.online;
-  if (device.connected) return true;
-  if (device.lastSeenAt) {
-    const lastSeen = Date.parse(device.lastSeenAt);
-    return Number.isFinite(lastSeen) && Date.now() - lastSeen < 90_000;
+type CommandOperationState = {
+  deviceId: string;
+  command: SmartHealthDeviceCommand;
+  polling: boolean;
+  timedOut: boolean;
+  error: string;
+};
+
+type OtaOperationState = DeviceOtaExpectation & {
+  deviceId: string;
+  state: DeviceOtaState;
+  polling: boolean;
+  timedOut: boolean;
+  error: string;
+};
+
+const EMPTY_OTA_FORM: OtaDraft = {
+  firmwareVersion: "",
+  url: "",
+  checksum: "",
+  firmwareFileId: "",
+  hardwareTarget: "MSM261S4030H0",
+  partitionTarget: "app",
+  minimumProtocolVersion: "1",
+};
+
+function getCommandOperationPresentation(command: SmartHealthDeviceCommand) {
+  if (command.type === "ota.update" && command.state === "applied") {
+    return DEVICE_OTA_STATUS_PRESENTATION.rebooting;
   }
-  return device.status === "connected";
+  return COMMAND_STATUS_PRESENTATION[command.state];
 }
 
 function formatDateTime(value?: string | null) {
@@ -84,12 +129,82 @@ function formatBattery(value?: number) {
   return Number.isFinite(battery) ? `${Math.round(battery)}%` : "Chưa báo cáo";
 }
 
-function deviceSuffix(device: SmartHealthDevice) {
-  return (
-    String(device.id || "xxxxxx")
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .slice(-6) || "xxxxxx"
+function formatTelemetryUptime(value?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "Chưa báo cáo";
+  }
+  const uptimeMs = value;
+
+  const totalSeconds = Math.floor(uptimeMs / 1_000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [
+    days > 0 ? `${days} ngày` : "",
+    hours > 0 ? `${hours} giờ` : "",
+    minutes > 0 ? `${minutes} phút` : "",
+    days === 0 && hours === 0 && minutes === 0 ? `${seconds} giây` : "",
+  ].filter(Boolean);
+  return parts.join(" ") || "0 giây";
+}
+
+function formatTelemetryBytes(value?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "Chưa báo cáo";
+  }
+  const bytes = value;
+  if (bytes < 1_024) return `${Math.round(bytes)} B`;
+  if (bytes < 1_024 * 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
+  return `${(bytes / (1_024 * 1_024)).toFixed(1)} MB`;
+}
+
+function formatTelemetryCount(value?: number) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value.toLocaleString("vi-VN")
+    : "Chưa báo cáo";
+}
+
+function formatTelemetryCommand(telemetry?: SmartHealthDevice["telemetry"]) {
+  if (!telemetry) return "Chưa báo cáo";
+  const parts = [telemetry.lastCommandState, telemetry.lastCommandCode].filter(
+    (value): value is string => Boolean(value?.trim()),
   );
+  return parts.join(" · ") || "Chưa báo cáo";
+}
+
+function hasReportedTelemetry(
+  telemetry?: SmartHealthDevice["telemetry"],
+): telemetry is NonNullable<SmartHealthDevice["telemetry"]> {
+  return Boolean(
+    telemetry &&
+    Object.values(telemetry).some(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        (typeof value !== "string" || value.trim().length > 0),
+    ),
+  );
+}
+
+function formatDeviceType(value?: string) {
+  switch (value) {
+    case "stethoscope":
+      return "Ống nghe thông minh";
+    case "respiratory":
+      return "Thiết bị hô hấp";
+    case "other":
+      return "Thiết bị khác";
+    default:
+      return value || "Chưa cập nhật";
+  }
+}
+
+function formatInventoryDate(value?: string) {
+  if (!value) return "Chưa cập nhật";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium" }).format(date);
 }
 
 function eventTone(eventType: string): "success" | "warning" | "error" | "primary" | "muted" {
@@ -100,30 +215,36 @@ function eventTone(eventType: string): "success" | "warning" | "error" | "primar
 }
 
 export function Devices() {
-  const { hasAnyCapability } = useAdminAccess();
+  const { hasAnyCapability, isPlatformAdmin } = useAdminAccess();
   const canManageDevices = hasAnyCapability(DEVICE_MANAGE_CAPABILITIES);
   const [devices, setDevices] = useState<SmartHealthDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<SmartHealthDevice | null>(null);
   const [events, setEvents] = useState<SmartHealthDeviceEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [activateDialogOpen, setActivateDialogOpen] = useState(false);
+  const [rotateSecretDevice, setRotateSecretDevice] = useState<SmartHealthDevice | null>(null);
   const [dangerAction, setDangerAction] = useState<DangerAction | null>(null);
   const [dangerLoading, setDangerLoading] = useState(false);
   const [dangerError, setDangerError] = useState("");
   const [actionLoading, setActionLoading] = useState("");
-  const [otaForm, setOtaForm] = useState({
-    firmwareVersion: "",
-    url: "",
-    checksum: "",
-    firmwareFileId: "",
-  });
+  const [commandOperation, setCommandOperation] = useState<CommandOperationState | null>(null);
+  const [otaOperation, setOtaOperation] = useState<OtaOperationState | null>(null);
+  const [otaForm, setOtaForm] = useState<OtaDraft>(EMPTY_OTA_FORM);
+  const [otaFieldErrors, setOtaFieldErrors] = useState<Partial<Record<OtaDraftField, string>>>({});
+  const [otaSubmitError, setOtaSubmitError] = useState("");
+  const [otaIdempotencyKey, setOtaIdempotencyKey] = useState("");
   const [firmwareFiles, setFirmwareFiles] = useState<SmartHealthStorageFile[]>([]);
   const [firmwareLoading, setFirmwareLoading] = useState(false);
   const [firmwareError, setFirmwareError] = useState("");
+  const commandPollController = useRef<AbortController | null>(null);
+  const otaPollController = useRef<AbortController | null>(null);
+  const eventRequestId = useRef(0);
 
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
@@ -143,11 +264,23 @@ export function Devices() {
   }, []);
 
   const loadEvents = useCallback(async (deviceId: string) => {
+    const requestId = ++eventRequestId.current;
+    setEventsLoading(true);
+    setEventsError("");
     try {
       const result = await smartHealthApi.listDeviceEvents(deviceId);
-      setEvents(result.events || []);
-    } catch {
-      setEvents([]);
+      if (eventRequestId.current === requestId) {
+        setEvents(result.events || []);
+      }
+    } catch (error) {
+      if (eventRequestId.current === requestId) {
+        setEvents([]);
+        setEventsError(toVietnameseErrorMessage(error, "Không thể tải lịch sử thiết bị."));
+      }
+    } finally {
+      if (eventRequestId.current === requestId) {
+        setEventsLoading(false);
+      }
     }
   }, []);
 
@@ -155,8 +288,9 @@ export function Devices() {
     setFirmwareLoading(true);
     try {
       const result = await smartHealthApi.listStorageFiles();
+      const { files } = parseStorageFilesResponse(result);
       setFirmwareFiles(
-        (result.files || [])
+        files
           .filter((file) => file.bucket === "device-firmware" && file.type?.toLowerCase() === "bin")
           .sort((a, b) =>
             String(b.createdAt || b.uploadedAt).localeCompare(String(a.createdAt || a.uploadedAt)),
@@ -173,22 +307,20 @@ export function Devices() {
 
   useEffect(() => {
     void loadDevices();
-    void loadFirmwareFiles();
-  }, [loadDevices, loadFirmwareFiles]);
+  }, [loadDevices]);
 
   useEffect(() => {
-    if (!selectedDevice) {
-      setEvents([]);
-      return;
+    if (isPlatformAdmin) {
+      void loadFirmwareFiles();
     }
-    setOtaForm({
-      firmwareVersion: selectedDevice.firmwareVersion || selectedDevice.ota?.firmwareVersion || "",
-      url: selectedDevice.ota?.url || "",
-      checksum: selectedDevice.ota?.checksum || "",
-      firmwareFileId: selectedDevice.ota?.firmwareFileId || "",
-    });
-    void loadEvents(selectedDevice.id);
-  }, [loadEvents, selectedDevice]);
+  }, [isPlatformAdmin, loadFirmwareFiles]);
+
+  useEffect(() => {
+    return () => {
+      commandPollController.current?.abort();
+      otaPollController.current?.abort();
+    };
+  }, []);
 
   const visibleDevices = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -204,6 +336,11 @@ export function Devices() {
         [
           device.id,
           device.name,
+          device.type,
+          device.manufacturer,
+          device.model,
+          device.serialNumber,
+          device.purchaseDate,
           device.organizationId,
           device.pairedUserId,
           device.firmwareVersion,
@@ -220,9 +357,293 @@ export function Devices() {
   const onlineCount = devices.filter(isDeviceOnline).length;
   const offlineCount = Math.max(0, devices.length - onlineCount);
 
-  const updateDevice = (device: SmartHealthDevice) => {
+  const updateDevice = useCallback((device: SmartHealthDevice) => {
     setDevices((current) => current.map((item) => (item.id === device.id ? device : item)));
     setSelectedDevice((current) => (current?.id === device.id ? device : current));
+  }, []);
+
+  const updateDeviceCommand = useCallback((deviceId: string, command: SmartHealthDeviceCommand) => {
+    setDevices((current) =>
+      current.map((device) =>
+        device.id === deviceId ? { ...device, lastCommand: command } : device,
+      ),
+    );
+    setSelectedDevice((current) =>
+      current?.id === deviceId ? { ...current, lastCommand: command } : current,
+    );
+  }, []);
+
+  const trackOta = useCallback(
+    async (
+      deviceId: string,
+      initialDevice: SmartHealthDevice,
+      expectation: DeviceOtaExpectation,
+    ) => {
+      otaPollController.current?.abort();
+      const controller = new AbortController();
+      otaPollController.current = controller;
+      const initialState = getDeviceOtaState(initialDevice);
+      setOtaOperation({
+        deviceId,
+        ...expectation,
+        state: initialState,
+        polling: !isDeviceOtaTerminal(initialState),
+        timedOut: false,
+        error: "",
+      });
+
+      try {
+        const result = await pollDeviceOtaToTerminal({
+          initialDevice,
+          expectation,
+          signal: controller.signal,
+          load: async (signal) => {
+            const response = await smartHealthApi.getDevice(deviceId, signal);
+            return response.device;
+          },
+          onUpdate: (device, state) => {
+            updateDevice(device);
+            setOtaOperation({
+              deviceId,
+              ...expectation,
+              state,
+              polling: !isDeviceOtaTerminal(state),
+              timedOut: false,
+              error: "",
+            });
+          },
+        });
+        if (controller.signal.aborted) return;
+
+        updateDevice(result.device);
+        const error = result.replaced
+          ? "Thiết bị đang báo một OTA khác với lệnh đang theo dõi. Tải lại danh sách trước khi thao tác tiếp."
+          : result.confirmationMismatch
+            ? "Backend báo confirmed nhưng command hoặc phiên bản firmware không khớp mục tiêu. Kết quả này không được coi là thành công."
+            : result.timedOut
+              ? "Chưa nhận được reconnect WSS và telemetry đúng phiên bản trong thời gian chờ. Có thể thử tải lại trạng thái mà không phát hành OTA mới."
+              : "";
+        const finalState = result.replaced || result.confirmationMismatch ? "failed" : result.state;
+        setOtaOperation({
+          deviceId,
+          ...expectation,
+          state: finalState,
+          polling: false,
+          timedOut: result.timedOut,
+          error,
+        });
+
+        if (!error && result.state === "confirmed") {
+          const presentation = DEVICE_OTA_STATUS_PRESENTATION.confirmed;
+          toast.success(presentation.label, { description: presentation.description });
+        } else if (!error && ["rolled_back", "failed"].includes(result.state)) {
+          const presentation = DEVICE_OTA_STATUS_PRESENTATION[result.state];
+          toast.error(presentation.label, { description: presentation.description });
+        }
+        void loadEvents(deviceId);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setOtaOperation((current) =>
+          current?.deviceId === deviceId && current.commandId === expectation.commandId
+            ? {
+                ...current,
+                polling: false,
+                error: toVietnameseErrorMessage(
+                  error,
+                  "Không thể cập nhật trạng thái OTA. Hãy thử tải lại trạng thái mà không phát hành lệnh mới.",
+                ),
+              }
+            : current,
+        );
+      }
+    },
+    [loadEvents, updateDevice],
+  );
+
+  const trackCommand = useCallback(
+    async (deviceId: string, initialCommand: SmartHealthDeviceCommand) => {
+      commandPollController.current?.abort();
+      const controller = new AbortController();
+      commandPollController.current = controller;
+      setCommandOperation({
+        deviceId,
+        command: initialCommand,
+        polling: !isDeviceCommandTerminal(initialCommand.state),
+        timedOut: false,
+        error: "",
+      });
+      updateDeviceCommand(deviceId, initialCommand);
+
+      try {
+        const result = await pollDeviceCommandToTerminal({
+          initialCommand,
+          signal: controller.signal,
+          load: async (signal) => {
+            const response = await smartHealthApi.getDeviceCommand(
+              deviceId,
+              initialCommand.id,
+              signal,
+            );
+            return response.command;
+          },
+          onUpdate: (command) => {
+            updateDeviceCommand(deviceId, command);
+            setCommandOperation({
+              deviceId,
+              command,
+              polling: !isDeviceCommandTerminal(command.state),
+              timedOut: false,
+              error: "",
+            });
+          },
+        });
+        if (controller.signal.aborted) return;
+
+        updateDeviceCommand(deviceId, result.command);
+        setCommandOperation({
+          deviceId,
+          command: result.command,
+          polling: false,
+          timedOut: result.timedOut,
+          error: result.timedOut
+            ? "Chưa nhận được trạng thái cuối từ thiết bị. Có thể thử tải lại mà không gửi lệnh mới."
+            : "",
+        });
+        if (!result.timedOut) {
+          const presentation = COMMAND_STATUS_PRESENTATION[result.command.state];
+          if (result.command.type === "ota.update" && result.command.state === "applied") {
+            const otaPresentation = DEVICE_OTA_STATUS_PRESENTATION.rebooting;
+            toast.info(otaPresentation.label, { description: otaPresentation.description });
+          } else if (result.command.state === "applied") {
+            toast.success(presentation.label, { description: presentation.description });
+          } else {
+            toast.error(presentation.label, { description: presentation.description });
+          }
+        }
+        void loadEvents(deviceId);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setCommandOperation((current) =>
+          current?.deviceId === deviceId
+            ? {
+                ...current,
+                polling: false,
+                error: toVietnameseErrorMessage(
+                  error,
+                  "Không thể cập nhật trạng thái lệnh. Hãy thử tải lại trạng thái.",
+                ),
+              }
+            : current,
+        );
+      }
+    },
+    [loadEvents, updateDeviceCommand],
+  );
+
+  const openDevice = useCallback(
+    (device: SmartHealthDevice) => {
+      commandPollController.current?.abort();
+      otaPollController.current?.abort();
+      setSelectedDevice(device);
+      setEvents([]);
+      setEventsError("");
+      setOtaForm({
+        ...EMPTY_OTA_FORM,
+        firmwareVersion: device.firmwareVersion || device.ota?.firmwareVersion || "",
+        checksum: device.ota?.checksum || "",
+        firmwareFileId: device.ota?.firmwareFileId || "",
+        hardwareTarget: device.ota?.hardwareTarget || EMPTY_OTA_FORM.hardwareTarget,
+        partitionTarget: device.ota?.partitionTarget || EMPTY_OTA_FORM.partitionTarget,
+        minimumProtocolVersion: String(
+          device.ota?.minimumProtocolVersion || EMPTY_OTA_FORM.minimumProtocolVersion,
+        ),
+      });
+      setOtaFieldErrors({});
+      setOtaSubmitError("");
+      setOtaIdempotencyKey("");
+      void loadEvents(device.id);
+
+      const lastCommand = device.lastCommand;
+      if (lastCommand && isDeviceCommandState(lastCommand.state)) {
+        if (isDeviceCommandTerminal(lastCommand.state)) {
+          setCommandOperation({
+            deviceId: device.id,
+            command: lastCommand,
+            polling: false,
+            timedOut: false,
+            error: "",
+          });
+        } else {
+          void trackCommand(device.id, lastCommand);
+        }
+      } else {
+        setCommandOperation(null);
+      }
+
+      const otaCommandId = device.ota?.commandId;
+      const otaFirmwareVersion = device.ota?.firmwareVersion;
+      if (otaCommandId && otaFirmwareVersion) {
+        const expectation = {
+          commandId: otaCommandId,
+          firmwareVersion: otaFirmwareVersion,
+        };
+        const otaState = getDeviceOtaState(device);
+        const confirmationMismatch =
+          otaState === "confirmed" && !isDeviceOtaSuccessful(device, expectation);
+        setOtaOperation({
+          deviceId: device.id,
+          ...expectation,
+          state: confirmationMismatch ? "failed" : otaState,
+          polling: false,
+          timedOut: false,
+          error: confirmationMismatch
+            ? "Backend báo confirmed nhưng command hoặc phiên bản firmware không khớp mục tiêu."
+            : "",
+        });
+        if (!isDeviceOtaTerminal(otaState)) {
+          void trackOta(device.id, device, expectation);
+        }
+      } else {
+        setOtaOperation(null);
+      }
+    },
+    [loadEvents, trackCommand, trackOta],
+  );
+
+  const closeDevice = () => {
+    commandPollController.current?.abort();
+    otaPollController.current?.abort();
+    setSelectedDevice(null);
+    setCommandOperation(null);
+    setOtaOperation(null);
+    setEvents([]);
+    setEventsError("");
+  };
+
+  const updateOtaField = (field: OtaDraftField, value: string) => {
+    setOtaForm((current) => ({ ...current, [field]: value }));
+    setOtaFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setOtaSubmitError("");
+    setOtaIdempotencyKey("");
+  };
+
+  const retryCommandStatus = () => {
+    if (commandOperation) {
+      void trackCommand(commandOperation.deviceId, commandOperation.command);
+    }
+  };
+
+  const retryOtaStatus = () => {
+    if (!otaOperation) return;
+    const device =
+      selectedDevice?.id === otaOperation.deviceId
+        ? selectedDevice
+        : devices.find((item) => item.id === otaOperation.deviceId);
+    if (!device) return;
+    void trackOta(device.id, device, {
+      commandId: otaOperation.commandId,
+      firmwareVersion: otaOperation.firmwareVersion,
+    });
   };
 
   const runDangerAction = async () => {
@@ -238,40 +659,33 @@ export function Devices() {
         const { device } = await smartHealthApi.revokeDevice(dangerAction.device.id);
         updateDevice(device);
         toast.success("Đã thu hồi thiết bị.");
-      } else if (dangerAction.kind === "unpair") {
-        const { device } = await smartHealthApi.unpairDevice(dangerAction.device.id);
-        updateDevice(device);
-        toast.success("Đã hủy ghép đôi thiết bị.");
-      } else if (dangerAction.kind === "restart") {
-        const { device } = await smartHealthApi.sendDeviceCommand(dangerAction.device.id, {
-          type: "restart",
-        });
-        updateDevice(device);
-        toast.success("Đã gửi lệnh khởi động lại.");
       } else {
-        await smartHealthApi.deleteDevice(dangerAction.device.id);
-        setDevices((current) => current.filter((item) => item.id !== dangerAction.device.id));
-        setSelectedDevice(null);
-        toast.success("Đã xóa thiết bị.");
+        if (!isDeviceOnline(dangerAction.device)) {
+          setDangerError(
+            "Thiết bị đang offline. Backend không xếp hàng giả; hãy chờ thiết bị xác thực trực tuyến rồi thử lại.",
+          );
+          return;
+        }
+        const operationKey =
+          dangerAction.idempotencyKey ||
+          createDeviceOperationIdempotencyKey("restart", dangerAction.device.id);
+        const result = await smartHealthApi.sendDeviceCommand(
+          dangerAction.device.id,
+          { type: "restart" },
+          operationKey,
+        );
+        updateDevice({ ...result.device, lastCommand: result.command });
+        if (!isDeviceCommandTerminal(result.command.state)) {
+          const presentation = COMMAND_STATUS_PRESENTATION[result.command.state];
+          toast.info(presentation.label, { description: presentation.description });
+        }
+        void trackCommand(dangerAction.device.id, result.command);
       }
       setDangerAction(null);
     } catch (error) {
       setDangerError(toVietnameseErrorMessage(error, "Không thể thực hiện thao tác thiết bị."));
     } finally {
       setDangerLoading(false);
-    }
-  };
-
-  const rotateSecret = async (device: SmartHealthDevice) => {
-    setActionLoading(`rotate-${device.id}`);
-    try {
-      const result = await smartHealthApi.rotateDeviceSecret(device.id);
-      updateDevice(result.device);
-      toast.success("Đã xoay khóa thiết bị. Thiết bị cần dùng secret mới ở lần kết nối tiếp theo.");
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể xoay khóa thiết bị."));
-    } finally {
-      setActionLoading("");
     }
   };
 
@@ -284,30 +698,63 @@ export function Devices() {
       firmwareVersion: file?.firmwareVersion || current.firmwareVersion,
       checksum: file?.checksum || file?.sha256 || current.checksum,
     }));
+    setOtaFieldErrors({});
+    setOtaSubmitError("");
+    setOtaIdempotencyKey("");
   };
 
   const pushOta = async (device: SmartHealthDevice) => {
-    if (!otaForm.firmwareFileId && !otaForm.url.trim()) {
-      toast.error("Cloud OTA cần chọn firmware từ storage hoặc nhập URL firmware HTTPS/HTTP.");
+    if (!isPlatformAdmin) {
+      setOtaSubmitError("Chỉ Platform Admin mới có quyền phát hành OTA.");
       return;
     }
+    if (!isDeviceOnline(device)) {
+      setOtaSubmitError("Thiết bị đang offline. OTA chỉ được tạo khi có kết nối WSS đã xác thực.");
+      return;
+    }
+
+    const validation = validateOtaDraft(otaForm);
+    setOtaFieldErrors(validation.fieldErrors);
+    if (!validation.valid) {
+      setOtaSubmitError("Kiểm tra lại các trường manifest OTA được đánh dấu.");
+      return;
+    }
+
+    const operationKey = otaIdempotencyKey || createDeviceOperationIdempotencyKey("ota", device.id);
+    const targetFirmwareVersion = otaForm.firmwareVersion.trim();
+    setOtaIdempotencyKey(operationKey);
+    setOtaSubmitError("");
     setActionLoading(`ota-${device.id}`);
     try {
-      const result = await smartHealthApi.pushDeviceOta(device.id, {
-        firmwareVersion: otaForm.firmwareVersion.trim(),
-        url: otaForm.url.trim(),
-        checksum: otaForm.checksum.trim(),
-        firmwareFileId: otaForm.firmwareFileId,
-      });
-      updateDevice(result.device);
-      toast.success(
-        result.delivery?.delivered
-          ? "Đã gửi lệnh OTA qua cloud."
-          : "Đã lưu lệnh OTA. Thiết bị sẽ nhận khi kênh cloud hoạt động.",
+      const result = await smartHealthApi.pushDeviceOta(
+        device.id,
+        {
+          firmwareVersion: targetFirmwareVersion,
+          url: otaForm.firmwareFileId ? undefined : otaForm.url.trim(),
+          checksum: otaForm.checksum.trim().toLowerCase(),
+          firmwareFileId: otaForm.firmwareFileId || undefined,
+          hardwareTarget: "MSM261S4030H0",
+          partitionTarget: "app",
+          minimumProtocolVersion: Number(otaForm.minimumProtocolVersion),
+        },
+        operationKey,
       );
+      setOtaIdempotencyKey("");
+      updateDevice({ ...result.device, lastCommand: result.command });
+      if (!isDeviceCommandTerminal(result.command.state)) {
+        const presentation = COMMAND_STATUS_PRESENTATION[result.command.state];
+        toast.info(presentation.label, { description: presentation.description });
+      }
+      void trackCommand(device.id, result.command);
+      void trackOta(device.id, result.device, {
+        commandId: result.command.id,
+        firmwareVersion: targetFirmwareVersion,
+      });
       void loadEvents(device.id);
     } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể gửi lệnh OTA."));
+      const message = toVietnameseErrorMessage(error, "Không thể tạo lệnh OTA.");
+      setOtaSubmitError(message);
+      toast.error("Không thể tạo lệnh OTA", { description: message });
     } finally {
       setActionLoading("");
     }
@@ -340,8 +787,18 @@ export function Devices() {
       />
 
       {backendError ? (
-        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          {backendError}
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-lg border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-foreground sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>{backendError}</span>
+          <button
+            type="button"
+            onClick={() => void loadDevices()}
+            className="min-h-11 shrink-0 rounded-md border border-border bg-card px-3 py-2 font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Thử tải lại thiết bị
+          </button>
         </div>
       ) : null}
 
@@ -362,8 +819,10 @@ export function Devices() {
           <div className="text-xs font-medium uppercase text-muted-foreground">OTA đang chờ</div>
           <div className="mt-2 text-2xl font-bold text-warning">
             {
-              devices.filter((device) =>
-                ["pending", "queued", "sent"].includes(String(device.otaStatus)),
+              devices.filter(
+                (device) =>
+                  Boolean(device.otaStatus || device.ota) &&
+                  !isDeviceOtaTerminal(getDeviceOtaState(device)),
               ).length
             }
           </div>
@@ -411,6 +870,10 @@ export function Devices() {
             <tbody className="divide-y divide-border">
               {visibleDevices.map((device) => {
                 const online = isDeviceOnline(device);
+                const otaPresentation =
+                  device.otaStatus || device.ota
+                    ? DEVICE_OTA_STATUS_PRESENTATION[getDeviceOtaState(device)]
+                    : null;
                 return (
                   <motion.tr
                     key={device.id}
@@ -453,8 +916,10 @@ export function Devices() {
                       <div className="text-muted-foreground">
                         {device.firmwareVersion || device.ota?.firmwareVersion || "Chưa báo cáo"}
                       </div>
-                      {device.otaStatus ? (
-                        <div className="mt-1 text-xs text-warning">OTA: {device.otaStatus}</div>
+                      {otaPresentation ? (
+                        <div className="mt-1 text-xs text-warning">
+                          OTA: {otaPresentation.label}
+                        </div>
                       ) : null}
                     </td>
                     <td className="px-5 py-4">
@@ -470,13 +935,13 @@ export function Devices() {
                       </div>
                     </td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">
-                      {formatRelative(device.lastSeenAt || device.updatedAt)}
+                      {formatRelative(device.lastSeenAt)}
                     </td>
                     <td className="px-5 py-4 text-right">
                       <button
-                        onClick={() => setSelectedDevice(device)}
-                        className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                        title="Mở chi tiết thiết bị"
+                        onClick={() => openDevice(device)}
+                        className="min-h-11 min-w-11 rounded-md p-2 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={`Mở chi tiết thiết bị ${device.name || device.id}`}
                       >
                         <Info className="h-4 w-4" />
                       </button>
@@ -512,15 +977,18 @@ export function Devices() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[1px]"
-              onClick={() => setSelectedDevice(null)}
+              onClick={closeDevice}
             />
             <motion.aside
               key="device-drawer"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 320, damping: 34 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               className="fixed right-0 top-0 z-50 h-full w-full max-w-[560px] border-l border-border bg-card shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Chi tiết thiết bị ${selectedDevice.name || selectedDevice.id}`}
             >
               <div className="flex h-full flex-col">
                 <div className="flex items-center justify-between border-b border-border p-5">
@@ -534,9 +1002,9 @@ export function Devices() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setSelectedDevice(null)}
-                    className="rounded-full p-2 text-muted-foreground hover:bg-muted"
-                    title="Đóng"
+                    onClick={closeDevice}
+                    className="min-h-11 min-w-11 rounded-md p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="Đóng chi tiết thiết bị"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -595,14 +1063,246 @@ export function Devices() {
                       <div>
                         <div className="text-xs text-muted-foreground">Lệnh cuối</div>
                         <div className="font-medium">
-                          {selectedDevice.lastCommand?.type || "Chưa có lệnh"}
-                          {selectedDevice.lastCommand?.status
-                            ? ` / ${selectedDevice.lastCommand.status}`
-                            : ""}
+                          {selectedDevice.lastCommand &&
+                          isDeviceCommandState(selectedDevice.lastCommand.state)
+                            ? `${selectedDevice.lastCommand.type} · ${COMMAND_STATUS_PRESENTATION[selectedDevice.lastCommand.state].label}`
+                            : "Chưa có lệnh"}
                         </div>
                       </div>
                     </div>
                   </div>
+
+                  <section
+                    aria-labelledby="device-telemetry-heading"
+                    className="rounded-xl border border-border bg-muted/20 p-5"
+                  >
+                    <div className="mb-4 flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
+                      <h3
+                        id="device-telemetry-heading"
+                        className="text-sm font-semibold text-foreground"
+                      >
+                        Dữ liệu sức khỏe thiết bị
+                      </h3>
+                    </div>
+                    {hasReportedTelemetry(selectedDevice.telemetry) ? (
+                      <dl className="grid grid-cols-1 gap-x-5 gap-y-4 text-sm sm:grid-cols-2">
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Âm thanh (I2S)</dt>
+                          <dd className="mt-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {selectedDevice.telemetry.i2sStatus || "Chưa báo cáo"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Thời gian hoạt động</dt>
+                          <dd className="mt-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {formatTelemetryUptime(selectedDevice.telemetry.uptimeMs)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Bộ nhớ trống</dt>
+                          <dd className="mt-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {formatTelemetryBytes(selectedDevice.telemetry.freeHeapBytes)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Gói âm thanh bị mất</dt>
+                          <dd className="mt-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {formatTelemetryCount(selectedDevice.telemetry.audioPacketsDropped)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">
+                            Trạng thái lệnh gần nhất
+                          </dt>
+                          <dd className="mt-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {formatTelemetryCommand(selectedDevice.telemetry)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Trạng thái cập nhật</dt>
+                          <dd className="mt-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {selectedDevice.telemetry.otaStatus
+                              ? DEVICE_OTA_STATUS_PRESENTATION[
+                                  getDeviceOtaState({
+                                    otaStatus: selectedDevice.telemetry.otaStatus,
+                                  })
+                                ].label
+                              : "Chưa báo cáo"}
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : (
+                      <p className="text-sm leading-6 text-muted-foreground" role="note">
+                        Thiết bị chưa gửi dữ liệu sức khỏe. Không suy diễn trạng thái này từ kết nối
+                        cloud.
+                      </p>
+                    )}
+                  </section>
+
+                  <section
+                    aria-labelledby="device-inventory-heading"
+                    className="rounded-xl border border-border bg-card p-5"
+                  >
+                    <h3
+                      id="device-inventory-heading"
+                      className="text-sm font-semibold text-foreground"
+                    >
+                      Thông tin quản lý thiết bị
+                    </h3>
+                    <dl className="mt-4 grid grid-cols-1 gap-x-5 gap-y-4 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Loại thiết bị</dt>
+                        <dd className="mt-1 font-medium text-foreground">
+                          {formatDeviceType(selectedDevice.type)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Nhà sản xuất</dt>
+                        <dd className="mt-1 break-words font-medium text-foreground">
+                          {selectedDevice.manufacturer || "Chưa cập nhật"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Model</dt>
+                        <dd className="mt-1 break-words font-medium text-foreground">
+                          {selectedDevice.model || "Chưa cập nhật"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Số serial</dt>
+                        <dd className="mt-1 break-words font-mono text-foreground">
+                          {selectedDevice.serialNumber || "Chưa cập nhật"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Ngày mua</dt>
+                        <dd className="mt-1 font-medium text-foreground">
+                          {formatInventoryDate(selectedDevice.purchaseDate)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Workspace ID</dt>
+                        <dd className="mt-1 break-words font-mono text-foreground">
+                          {selectedDevice.organizationId || "Chưa gán"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+
+                  {commandOperation?.deviceId === selectedDevice.id ? (
+                    <div className="rounded-xl border border-border bg-card p-4" aria-live="polite">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">
+                            Trạng thái lệnh {commandOperation.command.type}
+                          </div>
+                          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                            {getCommandOperationPresentation(commandOperation.command).description}
+                          </p>
+                        </div>
+                        <StatusBadge
+                          label={getCommandOperationPresentation(commandOperation.command).label}
+                          tone={getCommandOperationPresentation(commandOperation.command).tone}
+                          pulse={commandOperation.polling}
+                        />
+                      </div>
+                      {commandOperation.polling ? (
+                        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Đang chờ ACK hoặc kết quả cuối từ đúng thiết bị...
+                        </div>
+                      ) : null}
+                      {commandOperation.command.code &&
+                      /^[A-Z0-9_]{1,80}$/.test(commandOperation.command.code) ? (
+                        <div className="mt-3 font-mono text-xs text-muted-foreground">
+                          Mã trạng thái: {commandOperation.command.code}
+                        </div>
+                      ) : null}
+                      {commandOperation.error ? (
+                        <div
+                          role="alert"
+                          className="mt-3 rounded-lg border border-warning/25 bg-warning/10 p-3 text-sm text-foreground"
+                        >
+                          <p className="leading-5">{commandOperation.error}</p>
+                          <button
+                            type="button"
+                            onClick={retryCommandStatus}
+                            className="mt-3 min-h-11 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            Thử tải lại trạng thái
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {otaOperation?.deviceId === selectedDevice.id ? (
+                    <div className="rounded-xl border border-border bg-card p-4" aria-live="polite">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">
+                            OTA firmware {otaOperation.firmwareVersion}
+                          </div>
+                          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                            {DEVICE_OTA_STATUS_PRESENTATION[otaOperation.state].description}
+                          </p>
+                        </div>
+                        <StatusBadge
+                          label={DEVICE_OTA_STATUS_PRESENTATION[otaOperation.state].label}
+                          tone={DEVICE_OTA_STATUS_PRESENTATION[otaOperation.state].tone}
+                          pulse={otaOperation.polling}
+                        />
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                        {(
+                          [
+                            "pending",
+                            "delivered",
+                            "downloading",
+                            "verifying",
+                            "rebooting",
+                            "confirmed",
+                          ] as const
+                        ).map((state) => (
+                          <div
+                            key={state}
+                            className={`rounded-md border px-2 py-1.5 ${
+                              otaOperation.state === state
+                                ? "border-primary/40 bg-primary/10 font-medium text-foreground"
+                                : "border-border bg-muted/20 text-muted-foreground"
+                            }`}
+                          >
+                            {DEVICE_OTA_STATUS_PRESENTATION[state].label}
+                          </div>
+                        ))}
+                      </div>
+                      {otaOperation.polling ? (
+                        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Đang đối chiếu OTA ID, reconnect WSS và firmware telemetry...
+                        </div>
+                      ) : null}
+                      {otaOperation.error ? (
+                        <div
+                          role="alert"
+                          className="mt-3 rounded-lg border border-warning/25 bg-warning/10 p-3 text-sm text-foreground"
+                        >
+                          <p className="leading-5">{otaOperation.error}</p>
+                          <button
+                            type="button"
+                            onClick={retryOtaStatus}
+                            className="mt-3 min-h-11 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            Thử tải lại trạng thái OTA
+                          </button>
+                        </div>
+                      ) : null}
+                      <p className="mt-3 font-mono text-xs text-muted-foreground">
+                        Command: {otaOperation.commandId}
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div className="rounded-xl border border-border bg-card p-4">
                     <div className="mb-3 flex items-center gap-2 font-semibold">
@@ -610,128 +1310,345 @@ export function Devices() {
                       Khôi phục WiFi khi thiết bị mất mạng
                     </div>
                     <p className="text-sm leading-6 text-muted-foreground">
-                      Khi ESP không vào được WiFi, thiết bị tự phát AP{" "}
-                      <span className="font-mono text-foreground">
-                        SmartHealth-{deviceSuffix(selectedDevice)}
-                      </span>
-                      . Người dùng kết nối AP đó, mở{" "}
-                      <span className="font-mono text-foreground">http://192.168.4.1</span> và chỉ
-                      nhập SSID/password WiFi mới. Trang local không cho đổi OTA, backend host,
-                      secret hay quyền quản trị.
+                      SSID/PoP chỉ xuất hiện trong artifact QR được tạo khi provision; Admin không
+                      suy đoán hoặc hiển thị lại thông tin này từ mã thiết bị. Setup AP chỉ được mở
+                      khi thiết bị còn ở factory state hoặc sau thao tác vật lý trực tiếp, và sẽ tự
+                      hết hạn. Sau khi quét artifact, người dùng kết nối AP theo hướng dẫn rồi mở{" "}
+                      <span className="font-mono text-foreground">http://192.168.4.1</span> để nhập
+                      SSID/password WiFi mới. Trang local không cho đổi ownership, secret, OTA
+                      policy hoặc quyền quản trị.
                     </p>
                   </div>
 
                   <CapabilityGate capabilities={DEVICE_MANAGE_CAPABILITIES}>
                     <div className="rounded-xl border border-border bg-card p-4">
-                      <div className="mb-3 flex items-center gap-2 font-semibold">
-                        <FileCode2 className="h-4 w-4 text-primary" />
-                        Cloud OTA firmware
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 font-semibold">
+                          <FileCode2 className="h-4 w-4 text-primary" />
+                          Cloud OTA firmware
+                        </div>
+                        <StatusBadge label="Chỉ Platform Admin" tone="warning" />
                       </div>
-                      <div className="space-y-3">
-                        <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-                          <select
-                            value={otaForm.firmwareFileId}
-                            onChange={(event) => applyFirmwareFile(event.target.value)}
-                            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-                          >
-                            <option value="">
-                              {firmwareLoading
-                                ? "Đang tải firmware từ storage..."
-                                : "Chọn firmware đã upload trong bucket device-firmware"}
-                            </option>
-                            {firmwareFiles.map((file) => (
-                              <option key={file.id} value={file.id}>
-                                {file.name}
-                                {file.firmwareVersion ? ` · v${file.firmwareVersion}` : ""}
-                                {file.size ? ` · ${file.size}` : ""}
-                              </option>
-                            ))}
-                          </select>
+
+                      {isPlatformAdmin ? (
+                        <div className="space-y-4">
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            Backend chỉ xác nhận “đã áp dụng” sau khi thiết bị khởi động lại, mở một
+                            phiên WSS đã xác thực và báo đúng phiên bản firmware đích.
+                          </p>
+
+                          <div>
+                            <label
+                              htmlFor="ota-firmware-file"
+                              className="mb-1.5 block text-xs font-medium text-foreground"
+                            >
+                              Firmware đã kiểm soát trong storage
+                            </label>
+                            <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                              <select
+                                id="ota-firmware-file"
+                                name="firmwareFileId"
+                                value={otaForm.firmwareFileId}
+                                onChange={(event) => applyFirmwareFile(event.target.value)}
+                                className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                              >
+                                <option value="">
+                                  {firmwareLoading
+                                    ? "Đang tải firmware từ storage..."
+                                    : "Chọn file .bin hoặc dùng URL HTTPS bên dưới"}
+                                </option>
+                                {firmwareFiles.map((file) => (
+                                  <option key={file.id} value={file.id}>
+                                    {file.name}
+                                    {file.firmwareVersion ? ` · v${file.firmwareVersion}` : ""}
+                                    {file.size ? ` · ${file.size}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => void loadFirmwareFiles()}
+                                disabled={firmwareLoading}
+                                aria-label="Thử tải lại danh sách firmware"
+                                className="min-h-11 min-w-11 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                              >
+                                <RefreshCw
+                                  className={`h-4 w-4 ${firmwareLoading ? "animate-spin" : ""}`}
+                                />
+                              </button>
+                            </div>
+                          </div>
+
+                          {firmwareError ? (
+                            <div
+                              role="alert"
+                              className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-foreground"
+                            >
+                              <div>{firmwareError}</div>
+                              <button
+                                type="button"
+                                onClick={() => void loadFirmwareFiles()}
+                                className="mt-2 min-h-11 rounded-md border border-border bg-card px-3 py-2 font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                Thử tải lại firmware
+                              </button>
+                            </div>
+                          ) : null}
+
+                          <div>
+                            <label
+                              htmlFor="ota-firmware-version"
+                              className="mb-1.5 block text-xs font-medium text-foreground"
+                            >
+                              Phiên bản firmware <span className="text-destructive">*</span>
+                            </label>
+                            <input
+                              id="ota-firmware-version"
+                              name="firmwareVersion"
+                              value={otaForm.firmwareVersion}
+                              onChange={(event) =>
+                                updateOtaField("firmwareVersion", event.target.value)
+                              }
+                              placeholder="1.2.3"
+                              aria-invalid={Boolean(otaFieldErrors.firmwareVersion)}
+                              aria-describedby={
+                                otaFieldErrors.firmwareVersion
+                                  ? "ota-firmware-version-error"
+                                  : undefined
+                              }
+                              className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                            />
+                            {otaFieldErrors.firmwareVersion ? (
+                              <p
+                                id="ota-firmware-version-error"
+                                className="mt-1 text-xs text-destructive"
+                              >
+                                {otaFieldErrors.firmwareVersion}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div>
+                            <label
+                              htmlFor="ota-firmware-url"
+                              className="mb-1.5 block text-xs font-medium text-foreground"
+                            >
+                              URL firmware HTTPS
+                              {!otaForm.firmwareFileId ? (
+                                <span className="text-destructive"> *</span>
+                              ) : null}
+                            </label>
+                            <input
+                              id="ota-firmware-url"
+                              name="url"
+                              type="url"
+                              disabled={Boolean(otaForm.firmwareFileId)}
+                              value={otaForm.url}
+                              onChange={(event) => updateOtaField("url", event.target.value)}
+                              placeholder="https://releases.shcare.vn/firmware-1.2.3.bin"
+                              aria-invalid={Boolean(otaFieldErrors.url)}
+                              aria-describedby={
+                                otaFieldErrors.url ? "ota-firmware-url-error" : undefined
+                              }
+                              className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+                            />
+                            {otaFieldErrors.url ? (
+                              <p
+                                id="ota-firmware-url-error"
+                                className="mt-1 text-xs text-destructive"
+                              >
+                                {otaFieldErrors.url}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div>
+                            <label
+                              htmlFor="ota-checksum"
+                              className="mb-1.5 block text-xs font-medium text-foreground"
+                            >
+                              SHA-256 <span className="text-destructive">*</span>
+                            </label>
+                            <input
+                              id="ota-checksum"
+                              name="checksum"
+                              value={otaForm.checksum}
+                              onChange={(event) => updateOtaField("checksum", event.target.value)}
+                              placeholder="64 ký tự thập lục phân"
+                              autoComplete="off"
+                              spellCheck={false}
+                              aria-invalid={Boolean(otaFieldErrors.checksum)}
+                              aria-describedby={
+                                otaFieldErrors.checksum ? "ota-checksum-error" : undefined
+                              }
+                              className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                            />
+                            {otaFieldErrors.checksum ? (
+                              <p id="ota-checksum-error" className="mt-1 text-xs text-destructive">
+                                {otaFieldErrors.checksum}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <label
+                                htmlFor="ota-hardware-target"
+                                className="mb-1.5 block text-xs font-medium text-foreground"
+                              >
+                                Hardware target
+                              </label>
+                              <input
+                                id="ota-hardware-target"
+                                name="hardwareTarget"
+                                readOnly
+                                value={otaForm.hardwareTarget}
+                                className="min-h-11 w-full rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor="ota-partition-target"
+                                className="mb-1.5 block text-xs font-medium text-foreground"
+                              >
+                                Partition target
+                              </label>
+                              <input
+                                id="ota-partition-target"
+                                name="partitionTarget"
+                                readOnly
+                                value={otaForm.partitionTarget}
+                                className="min-h-11 w-full rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label
+                              htmlFor="ota-minimum-protocol"
+                              className="mb-1.5 block text-xs font-medium text-foreground"
+                            >
+                              Minimum protocol version <span className="text-destructive">*</span>
+                            </label>
+                            <input
+                              id="ota-minimum-protocol"
+                              name="minimumProtocolVersion"
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={otaForm.minimumProtocolVersion}
+                              onChange={(event) =>
+                                updateOtaField("minimumProtocolVersion", event.target.value)
+                              }
+                              aria-invalid={Boolean(otaFieldErrors.minimumProtocolVersion)}
+                              aria-describedby={
+                                otaFieldErrors.minimumProtocolVersion
+                                  ? "ota-minimum-protocol-error"
+                                  : undefined
+                              }
+                              className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                            />
+                            {otaFieldErrors.minimumProtocolVersion ? (
+                              <p
+                                id="ota-minimum-protocol-error"
+                                className="mt-1 text-xs text-destructive"
+                              >
+                                {otaFieldErrors.minimumProtocolVersion}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {otaSubmitError ? (
+                            <div
+                              role="alert"
+                              className="rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                            >
+                              {otaSubmitError}
+                            </div>
+                          ) : null}
+
                           <button
                             type="button"
-                            onClick={() => void loadFirmwareFiles()}
-                            disabled={firmwareLoading}
-                            className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
+                            onClick={() => void pushOta(selectedDevice)}
+                            disabled={
+                              actionLoading === `ota-${selectedDevice.id}` ||
+                              (otaOperation?.deviceId === selectedDevice.id &&
+                                !isDeviceOtaTerminal(otaOperation.state)) ||
+                              !isDeviceOnline(selectedDevice)
+                            }
+                            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <RefreshCw
-                              className={`h-4 w-4 ${firmwareLoading ? "animate-spin" : ""}`}
-                            />
+                            <FileCode2 className="h-4 w-4" />
+                            {actionLoading === `ota-${selectedDevice.id}`
+                              ? "Backend đang xác minh manifest..."
+                              : otaOperation?.deviceId === selectedDevice.id &&
+                                  !isDeviceOtaTerminal(otaOperation.state)
+                                ? otaOperation.polling
+                                  ? "Đang theo dõi OTA hiện tại"
+                                  : "Tải lại trạng thái OTA hiện tại trước"
+                                : isDeviceOnline(selectedDevice)
+                                  ? "Tạo lệnh OTA an toàn"
+                                  : "Thiết bị offline — chưa thể OTA"}
                           </button>
                         </div>
-                        {firmwareError ? (
-                          <div className="rounded-md border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-[#B45309]">
-                            {firmwareError}
-                          </div>
-                        ) : null}
-                        {otaForm.firmwareFileId ? (
-                          <div className="rounded-md border border-success/20 bg-success/10 px-3 py-2 text-xs text-success">
-                            Backend sẽ tạo URL OTA có token riêng cho ESP tải firmware, không cần
-                            đăng nhập admin trên thiết bị.
-                          </div>
-                        ) : (
-                          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                            Chưa có file trong storage thì có thể nhập URL thủ công ở dưới. URL phải
-                            truy cập được từ ESP qua Internet.
-                          </div>
-                        )}
-                        <input
-                          value={otaForm.firmwareVersion}
-                          onChange={(event) =>
-                            setOtaForm((current) => ({
-                              ...current,
-                              firmwareVersion: event.target.value,
-                            }))
-                          }
-                          placeholder="Phiên bản firmware, ví dụ 1.0.2"
-                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-                        />
-                        <input
-                          value={otaForm.url}
-                          onChange={(event) =>
-                            setOtaForm((current) => ({ ...current, url: event.target.value }))
-                          }
-                          placeholder="HTTPS/HTTP firmware .bin URL từ storage hoặc release server"
-                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-                        />
-                        <input
-                          value={otaForm.checksum}
-                          onChange={(event) =>
-                            setOtaForm((current) => ({ ...current, checksum: event.target.value }))
-                          }
-                          placeholder="SHA-256 checksum, nếu có"
-                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-                        />
-                        <button
-                          onClick={() => void pushOta(selectedDevice)}
-                          disabled={actionLoading === `ota-${selectedDevice.id}`}
-                          className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <FileCode2 className="h-4 w-4" />
-                          {actionLoading === `ota-${selectedDevice.id}`
-                            ? "Đang gửi OTA..."
-                            : "Gửi OTA qua cloud"}
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">
+                          Chỉ Platform Admin được tạo và phát hành manifest OTA. Tài khoản quản trị
+                          workspace vẫn có thể xem trạng thái firmware nhưng không thể điều khiển
+                          fleet.
+                        </div>
+                      )}
                     </div>
                   </CapabilityGate>
 
                   <div className="space-y-3">
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                      Lịch sử thiết bị
-                    </h3>
-                    <Timeline
-                      items={(events.length ? events : []).slice(0, 8).map((event) => ({
-                        title: event.eventType,
-                        time: formatRelative(event.createdAt),
-                        description: event.payload
-                          ? JSON.stringify(event.payload).slice(0, 160)
-                          : "Không có payload.",
-                        tone: eventTone(event.eventType),
-                      }))}
-                    />
-                    {events.length === 0 ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-foreground">Lịch sử thiết bị</h3>
+                      <button
+                        type="button"
+                        onClick={() => void loadEvents(selectedDevice.id)}
+                        disabled={eventsLoading}
+                        className="min-h-11 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                      >
+                        {eventsLoading ? "Đang tải..." : "Thử tải lại"}
+                      </button>
+                    </div>
+                    {eventsLoading ? (
+                      <div className="space-y-3" role="status" aria-live="polite">
+                        <div className="h-14 animate-pulse rounded-lg bg-muted" />
+                        <div className="h-14 animate-pulse rounded-lg bg-muted" />
+                        <span className="sr-only">Đang tải lịch sử thiết bị</span>
+                      </div>
+                    ) : null}
+                    {!eventsLoading && eventsError ? (
+                      <div
+                        role="alert"
+                        className="rounded-lg border border-warning/25 bg-warning/10 p-4 text-sm text-foreground"
+                      >
+                        <p className="leading-5">{eventsError}</p>
+                        <button
+                          type="button"
+                          onClick={() => void loadEvents(selectedDevice.id)}
+                          className="mt-3 min-h-11 rounded-md border border-border bg-card px-3 py-2 font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          Thử tải lại lịch sử
+                        </button>
+                      </div>
+                    ) : null}
+                    {!eventsLoading && !eventsError && events.length > 0 ? (
+                      <Timeline
+                        items={events.slice(0, 8).map((event) => ({
+                          title: event.eventType,
+                          time: formatRelative(event.createdAt),
+                          description: summarizeDeviceEvent(event),
+                          tone: eventTone(event.eventType),
+                        }))}
+                      />
+                    ) : null}
+                    {!eventsLoading && !eventsError && events.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                        Chưa có sự kiện cloud nào cho thiết bị này.
+                        Chưa có sự kiện cloud nào. Khi thiết bị xác thực, nhận lệnh hoặc báo trạng
+                        thái, lịch sử an toàn sẽ xuất hiện ở đây.
                       </div>
                     ) : null}
                   </div>
@@ -741,8 +1658,7 @@ export function Devices() {
                   <div className="border-t border-border bg-muted/20 p-5">
                     <div className="grid grid-cols-2 gap-2">
                       <button
-                        onClick={() => void rotateSecret(selectedDevice)}
-                        disabled={actionLoading === `rotate-${selectedDevice.id}`}
+                        onClick={() => setRotateSecretDevice(selectedDevice)}
                         className="flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
@@ -755,11 +1671,16 @@ export function Devices() {
                             device: selectedDevice,
                             title: "Khởi động lại thiết bị",
                             confirmLabel: "Gửi lệnh restart",
+                            idempotencyKey: createDeviceOperationIdempotencyKey(
+                              "restart",
+                              selectedDevice.id,
+                            ),
                             description:
-                              "Backend sẽ gửi lệnh restart qua kênh cloud. Nếu thiết bị đang offline, lệnh chỉ được ghi nhận và cần gửi lại khi thiết bị online.",
+                              "Backend chỉ chấp nhận khi thiết bị đang online qua kênh đã xác thực. Thông báo giao lệnh không có nghĩa thiết bị đã khởi động lại; cần chờ trạng thái Đã áp dụng.",
                           })
                         }
-                        className="flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                        disabled={!isDeviceOnline(selectedDevice) || commandOperation?.polling}
+                        className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Power className="h-3.5 w-3.5" />
                         Restart
@@ -780,38 +1701,6 @@ export function Devices() {
                         <ShieldAlert className="h-3.5 w-3.5" />
                         Thu hồi
                       </button>
-                      <button
-                        onClick={() =>
-                          setDangerAction({
-                            kind: "unpair",
-                            device: selectedDevice,
-                            title: "Hủy ghép đôi thiết bị",
-                            confirmLabel: "Hủy ghép đôi",
-                            description:
-                              "Liên kết giữa thiết bị và người dùng/workspace hiện tại sẽ bị gỡ. Hành động này được ghi audit log.",
-                          })
-                        }
-                        className="flex items-center justify-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
-                      >
-                        <PowerOff className="h-3.5 w-3.5" />
-                        Hủy ghép đôi
-                      </button>
-                      <button
-                        onClick={() =>
-                          setDangerAction({
-                            kind: "delete",
-                            device: selectedDevice,
-                            title: "Xóa thiết bị",
-                            confirmLabel: "Xóa thiết bị",
-                            description:
-                              "Thiết bị sẽ bị xóa khỏi danh sách quản trị. Chỉ thực hiện khi chắc chắn không còn dùng trong vận hành hoặc báo cáo.",
-                          })
-                        }
-                        className="col-span-2 flex items-center justify-center gap-2 rounded-md bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Xóa thiết bị
-                      </button>
                     </div>
                   </div>
                 </CapabilityGate>
@@ -830,6 +1719,17 @@ export function Devices() {
         open={canManageDevices && activateDialogOpen}
         onOpenChange={setActivateDialogOpen}
         onActivated={loadDevices}
+      />
+      <RotateDeviceSecretDialog
+        device={rotateSecretDevice}
+        open={canManageDevices && Boolean(rotateSecretDevice)}
+        onOpenChange={(open) => {
+          if (!open) setRotateSecretDevice(null);
+        }}
+        onRotated={(device) => {
+          updateDevice(device);
+          void loadEvents(device.id);
+        }}
       />
 
       <ConfirmActionDialog

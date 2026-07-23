@@ -9,7 +9,7 @@ const faqGroups = [
     items: [
       {
         q: "Làm sao để đăng ký tài khoản bác sĩ?",
-        a: "Truy cập /register/doctor, điền thông tin cá nhân, chuyên môn và tải tài liệu xác minh. Hồ sơ sẽ được xét duyệt trong 1-3 ngày làm việc.",
+        a: "Truy cập /register/doctor, điền thông tin cá nhân, chuyên môn và tải tài liệu xác minh. Trạng thái xử lý được hiển thị theo dữ liệu backend.",
       },
       {
         q: "Bác sĩ có thể xem lượt đo của bệnh nhân ở phòng khám khác không?",
@@ -26,11 +26,11 @@ const faqGroups = [
     items: [
       {
         q: "Phòng khám mới đăng ký như thế nào?",
-        a: "Truy cập /register/clinic, điền thông tin cơ sở, quy mô và tải giấy phép hoạt động. Đội ngũ Smart Health sẽ liên hệ để hỗ trợ triển khai.",
+        a: "Truy cập /register/clinic, điền thông tin cơ sở, quy mô và tải tài liệu được yêu cầu. Đội ngũ Shcare sẽ liên hệ theo quy trình triển khai đã thống nhất.",
       },
       {
         q: "Có thể mời bác sĩ từ ngoài phòng khám vào workspace không?",
-        a: "Có, nhưng bác sĩ phải có tài khoản Smart Health đã được xác minh. Vào Bác sĩ/nhân sự > Mời nhân sự để gửi lời mời.",
+        a: "Có, nhưng bác sĩ phải có tài khoản Shcare đã được xác minh. Vào Bác sĩ/nhân sự > Mời nhân sự để gửi lời mời.",
       },
       {
         q: "Làm sao để xuất báo cáo tháng?",
@@ -43,7 +43,7 @@ const faqGroups = [
     items: [
       {
         q: "Bệnh nhân dùng gì để đo sức khỏe?",
-        a: "Bệnh nhân cần tải Android app Smart Health và được cấp thiết bị ống nghe thông minh từ bác sĩ/phòng khám.",
+        a: "Bệnh nhân cần bản Android Shcare do chương trình triển khai cung cấp và thiết bị đã được provision từ bác sĩ/phòng khám.",
       },
       {
         q: "Tôi có thể thu hồi quyền theo dõi của bác sĩ không?",
@@ -60,11 +60,11 @@ const faqGroups = [
     items: [
       {
         q: "Thiết bị offline thì phải làm gì?",
-        a: "Kiểm tra kết nối WiFi/Bluetooth của bệnh nhân. Nếu vẫn offline, yêu cầu bệnh nhân khởi động lại thiết bị hoặc liên hệ hỗ trợ.",
+        a: "Kiểm tra Wi-Fi, nguồn điện và trạng thái provision. Nếu vẫn offline, làm theo hướng dẫn recovery trong app hoặc liên hệ hỗ trợ.",
       },
       {
-        q: "Pin thiết bị dùng được bao lâu?",
-        a: "Khoảng 8-12 giờ sử dụng tích cực. Cảnh báo pin yếu sẽ hiện khi còn dưới 20%.",
+        q: "Làm sao biết thiết bị đã sẵn sàng?",
+        a: "Ghép nối chỉ hoàn tất sau khi firmware đăng nhập WSS và backend xác nhận thiết bị online. Nếu thiết bị vẫn offline, ứng dụng sẽ hiển thị hướng dẫn kết nối lại.",
       },
       {
         q: "Làm sao để gán thiết bị cho bệnh nhân?",
@@ -97,9 +97,9 @@ const groupColors: Record<string, string> = {
 
 export default function FAQPage() {
   useSEO({
-    title: "Tài nguyên & Câu hỏi thường gặp | Smart Health Care",
+    title: "Tài nguyên & Câu hỏi thường gặp | Shcare",
     description:
-      "Câu hỏi thường gặp về Smart Health Care: đăng ký tài khoản bác sĩ và phòng khám, sử dụng ống nghe thông minh, consent dữ liệu và bảo mật.",
+      "Câu hỏi thường gặp về Shcare: đăng ký tài khoản bác sĩ và phòng khám, sử dụng ống nghe thông minh, consent dữ liệu và bảo mật.",
     path: "/tai-nguyen",
     jsonLd: {
       "@context": "https://schema.org",
@@ -154,7 +154,7 @@ export default function FAQPage() {
           </div>
           <h1 className="brand-gradient-text mb-4">Tài nguyên & Câu hỏi thường gặp</h1>
           <p className="text-[#8aa5ba] text-lg mb-8">
-            Tìm câu trả lời nhanh cho các thắc mắc về Smart Health.
+            Tìm câu trả lời nhanh cho các thắc mắc về Shcare.
           </p>
           <div className="flex items-center gap-2 max-w-md mx-auto px-4 h-12 rounded-xl border border-white/10 bg-white/8">
             <Search size={16} className="text-[#8aa5ba]" />
@@ -227,7 +227,7 @@ export default function FAQPage() {
         <div className="max-w-2xl mx-auto px-6 text-center">
           <h2 className="brand-gradient-text mb-3">Không tìm thấy câu trả lời?</h2>
           <p className="text-[#8aa5ba] mb-8">
-            Liên hệ đội ngũ hỗ trợ Smart Health — chúng tôi sẵn sàng giải đáp.
+            Liên hệ đội ngũ hỗ trợ Shcare để được giải đáp theo phạm vi triển khai.
           </p>
           <div className="flex justify-center gap-3">
             <Link to="/lien-he" className="premium-button">

@@ -182,7 +182,7 @@ fun DataStorageScreen(
                     DataCategoryRow(
                         icon = Icons.Default.CheckCircle,
                         iconColor = Color(0xFFF97316),
-                        name = "Báo cáo AI",
+                        name = "Kết quả chất lượng tín hiệu",
                         count = "${summary.scanCount} báo cáo",
                         size = "Từ lượt đo",
                         showDivider = false

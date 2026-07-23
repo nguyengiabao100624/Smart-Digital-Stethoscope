@@ -5,6 +5,7 @@
 @import "./web-styles/theme.css";
 @import "./web-styles/clinical-system.css";
 @import "./web-styles/signal-horizon.css";
+@import "./web-styles/clinical-polish.css";
 
 .portal-input {
   width: 100%;

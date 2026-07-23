@@ -71,7 +71,7 @@ const faqs = [
   ],
   [
     "Có cần thẻ thanh toán để bắt đầu?",
-    "Không. Với giai đoạn kiểm thử, đội ngũ Smart Health có thể mở workspace sau khi hồ sơ được duyệt.",
+    "Không. Trong giai đoạn kiểm thử, đội ngũ Shcare có thể mở workspace sau khi hồ sơ được duyệt.",
   ],
   [
     "Dữ liệu y tế được bảo vệ ra sao?",
@@ -81,9 +81,9 @@ const faqs = [
 
 export default function PricingPage() {
   useSEO({
-    title: "Bảng giá Smart Health Care | Các gói cho bác sĩ và cơ sở y tế",
+    title: "Bảng giá Shcare | Các gói cho bác sĩ và cơ sở y tế",
     description:
-      "So sánh các gói Smart Health Care theo tháng và năm dành cho bác sĩ cá nhân, phòng khám và cơ sở y tế quy mô lớn.",
+      "So sánh phạm vi các gói Shcare dành cho bác sĩ cá nhân, phòng khám và cơ sở y tế; thanh toán trực tuyến chưa nằm trong đợt triển khai này.",
     path: "/bang-gia",
   });
 

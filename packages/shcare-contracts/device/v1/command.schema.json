@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/command.schema.json",
+  "title": "Shcare device command envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "id", "type", "issuedAt", "expiresAt", "payload", "correlationId"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "type": {
+      "enum": [
+        "restart",
+        "wifi.status",
+        "device.lock",
+        "device.revoke",
+        "wifi.update",
+        "ota.update",
+        "audio.session.start",
+        "audio.session.stop",
+        "device.rotate_secret"
+      ]
+    },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "device.rotate_secret" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rotationId",
+              "expiresAt",
+              "wrapAlgorithm",
+              "wrapKeyDerivation",
+              "wrapIv",
+              "wrapCiphertext",
+              "wrapTag"
+            ],
+            "properties": {
+              "rotationId": { "type": "string", "minLength": 8, "maxLength": 128 },
+              "expiresAt": { "type": "string", "format": "date-time" },
+              "wrapAlgorithm": { "const": "A256GCM" },
+              "wrapKeyDerivation": { "const": "HMAC-SHA256/device-session-v1" },
+              "wrapIv": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 16,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "wrapCiphertext": {
+                "type": "string",
+                "minLength": 43,
+                "maxLength": 192,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "wrapTag": {
+                "type": "string",
+                "minLength": 22,
+                "maxLength": 22,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

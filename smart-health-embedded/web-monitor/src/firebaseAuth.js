@@ -1,5 +1,5 @@
 let firebaseApp = null;
-let firebaseAdmin = null;
+let firebaseServices = null;
 
 function isFirebaseAuthEnabled(env = process.env) {
   return (
@@ -31,11 +31,19 @@ function getFirebaseAdmin(env = process.env) {
     return null;
   }
 
-  if (firebaseApp && firebaseAdmin) {
-    return firebaseAdmin;
+  if (firebaseApp && firebaseServices) {
+    return firebaseServices;
   }
 
-  firebaseAdmin = require("firebase-admin");
+  const {
+    applicationDefault,
+    cert,
+    getApp,
+    getApps,
+    initializeApp,
+  } = require("firebase-admin/app");
+  const { getAuth } = require("firebase-admin/auth");
+  const { getMessaging } = require("firebase-admin/messaging");
 
   const serviceAccount = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT_JSON);
   const options = {};
@@ -43,13 +51,18 @@ function getFirebaseAdmin(env = process.env) {
     options.projectId = env.FIREBASE_PROJECT_ID;
   }
   if (serviceAccount) {
-    options.credential = firebaseAdmin.credential.cert(serviceAccount);
+    options.credential = cert(serviceAccount);
   } else {
-    options.credential = firebaseAdmin.credential.applicationDefault();
+    options.credential = applicationDefault();
   }
 
-  firebaseApp = firebaseAdmin.apps.length ? firebaseAdmin.app() : firebaseAdmin.initializeApp(options);
-  return firebaseAdmin;
+  firebaseApp = getApps().length ? getApp() : initializeApp(options);
+  firebaseServices = Object.freeze({
+    app: firebaseApp,
+    auth: () => getAuth(firebaseApp),
+    messaging: () => getMessaging(firebaseApp),
+  });
+  return firebaseServices;
 }
 
 async function verifyFirebaseIdToken(idToken, env = process.env) {
@@ -60,8 +73,32 @@ async function verifyFirebaseIdToken(idToken, env = process.env) {
   return admin.auth().verifyIdToken(idToken, true);
 }
 
+function normalizeFirebaseAuthTime(decodedToken = {}) {
+  const value = Number(decodedToken.auth_time);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return "";
+  }
+  return String(value);
+}
+
+function isFirebaseProviderMutationConfirmed(targetUser = {}, result = {}) {
+  if (result.providerSucceeded === false) {
+    return false;
+  }
+  if (!String(targetUser.firebaseUid || "")) {
+    return true;
+  }
+  return (
+    result.updated === true ||
+    result.firebaseDeleted === true ||
+    result.firebaseAlreadyMissing === true
+  );
+}
+
 module.exports = {
   getFirebaseAdmin,
   isFirebaseAuthEnabled,
+  isFirebaseProviderMutationConfirmed,
+  normalizeFirebaseAuthTime,
   verifyFirebaseIdToken,
 };

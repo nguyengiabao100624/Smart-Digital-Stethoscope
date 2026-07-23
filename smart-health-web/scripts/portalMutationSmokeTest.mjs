@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
@@ -40,6 +41,7 @@ const watchPatterns = [
   "/api/portal/notifications",
   "/api/portal/settings",
   "/api/portal/reports",
+  "/api/v1/exports",
   "/api/portal/support",
   "/api/share-targets",
 ];
@@ -153,10 +155,69 @@ function waitForApiResponse(page, pathFragment, method) {
   );
 }
 
+function mutationIdempotencyKey(response, label) {
+  const key = response.request().headers()["idempotency-key"] || "";
+  if (!key.trim()) {
+    throw new Error(`${label}: request did not include Idempotency-Key`);
+  }
+  return key;
+}
+
+function assertPatientReceipt(payload, expected, label, replayed) {
+  const patient = payload?.patient;
+  if (!patient?.id) {
+    throw new Error(`${label}: response did not include patient.id`);
+  }
+  if (payload?.replayed !== replayed) {
+    throw new Error(
+      `${label}: expected replayed=${replayed}, got ${JSON.stringify(payload?.replayed)}`,
+    );
+  }
+  if (expected.id && patient.id !== expected.id) {
+    throw new Error(
+      `${label}: backend returned a different canonical patient id`,
+    );
+  }
+  for (const field of [
+    "patientCode",
+    "name",
+    "dateOfBirth",
+    "gender",
+    "phone",
+    "email",
+    "address",
+    "bloodType",
+    "notes",
+  ]) {
+    if ((patient[field] || "") !== (expected[field] || "")) {
+      throw new Error(
+        `${label}: ${field} mismatch; expected ${JSON.stringify(expected[field] || "")}, got ${JSON.stringify(patient[field] || "")}`,
+      );
+    }
+  }
+  if (
+    JSON.stringify(patient.allergies || []) !==
+    JSON.stringify(expected.allergies || [])
+  ) {
+    throw new Error(
+      `${label}: allergies did not match the submitted structured value`,
+    );
+  }
+  if (
+    JSON.stringify(patient.emergencyContact || {}) !==
+    JSON.stringify(expected.emergencyContact || {})
+  ) {
+    throw new Error(
+      `${label}: emergencyContact did not match the submitted structured value`,
+    );
+  }
+  return patient;
+}
+
 async function apiFetch(page, route, options = {}) {
   const method = options.method || "GET";
   const result = await page.evaluate(
-    async ({ apiBaseUrl, routePath, methodName, body }) => {
+    async ({ apiBaseUrl, routePath, methodName, body, idempotencyKey }) => {
       const url = new URL(routePath.replace(/^\/+/, ""), `${apiBaseUrl}/`);
       const token = localStorage.getItem("smart_health_token") || "";
       const headers = {
@@ -164,6 +225,7 @@ async function apiFetch(page, route, options = {}) {
         "X-Smart-Health-Client": "web-smoke",
       };
       if (token) headers.Authorization = `Bearer ${token}`;
+      if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
       const init = { method: methodName, headers };
       if (body !== undefined) {
         headers["Content-Type"] = "application/json";
@@ -191,6 +253,7 @@ async function apiFetch(page, route, options = {}) {
       routePath: route,
       methodName: method,
       body: options.body,
+      idempotencyKey: options.idempotencyKey,
     },
   );
 
@@ -283,6 +346,24 @@ async function login(page, account, label = "login") {
 
 async function createPatientViaUi(page, state) {
   const patientName = `Smoke Portal Patient ${runId}`;
+  const patientCode = `PORTAL-${runId}`;
+  const expected = {
+    patientCode,
+    name: patientName,
+    dateOfBirth: "1984-06-15",
+    gender: "female",
+    phone: "0900000000",
+    email: `${runId}@smarthealth.test`,
+    address: "12 Nguyen Trai, District 1",
+    bloodType: "O+",
+    allergies: ["penicillin", "latex"],
+    emergencyContact: {
+      name: "Portal Emergency Contact",
+      phone: "0911111111",
+      relationship: "family",
+    },
+    notes: `Structured portal smoke ${runId}`,
+  };
   await page.goto(
     `${siteUrl}/portal/patients?smoke=${encodeURIComponent(runId)}`,
     {
@@ -292,10 +373,25 @@ async function createPatientViaUi(page, state) {
   await waitSettled(page);
   await page.waitForSelector("#portal-add-patient", { timeout: 20_000 });
   await page.locator("#portal-add-patient").click();
-  await page.locator("#portal-patient-name").fill(patientName);
-  await page.locator("#portal-patient-phone").fill("0900000000");
-  await page.locator("#portal-patient-email").fill(`${runId}@smarthealth.test`);
-  await page.locator("#portal-patient-age").fill("42");
+  await page.locator("#patient-name").fill(expected.name);
+  await page.locator("#patient-code").fill(expected.patientCode);
+  await page.locator("#patient-dob").fill(expected.dateOfBirth);
+  await page.locator("#patient-gender").selectOption(expected.gender);
+  await page.locator("#patient-blood-type").selectOption(expected.bloodType);
+  await page.locator("#patient-phone").fill(expected.phone);
+  await page.locator("#patient-email").fill(expected.email);
+  await page.locator("#patient-address").fill(expected.address);
+  await page.locator("#patient-allergies").fill(expected.allergies.join(", "));
+  await page
+    .locator("#patient-emergency-name")
+    .fill(expected.emergencyContact.name);
+  await page
+    .locator("#patient-emergency-phone")
+    .fill(expected.emergencyContact.phone);
+  await page
+    .locator("#patient-emergency-relationship")
+    .fill(expected.emergencyContact.relationship);
+  await page.locator("#patient-notes").fill(expected.notes);
 
   const createResponse = waitForApiResponse(
     page,
@@ -303,15 +399,43 @@ async function createPatientViaUi(page, state) {
     "POST",
   );
   await page.locator("#portal-save-patient").click();
-  const payload = await readResponsePayload(
-    await createResponse,
-    "create patient",
-  );
-  const patient = payload?.patient;
-  if (!patient?.id) {
-    throw new Error("create patient: response did not include patient.id");
+  const response = await createResponse;
+  const payload = await readResponsePayload(response, "create patient");
+  if (response.status() !== 201) {
+    throw new Error(
+      `create patient: expected HTTP 201, got ${response.status()}`,
+    );
   }
+  const patient = assertPatientReceipt(
+    payload,
+    expected,
+    "create patient",
+    false,
+  );
+  if (patient.id === patientCode) {
+    throw new Error(
+      "create patient: canonical id was incorrectly replaced by patientCode",
+    );
+  }
+  const idempotencyKey = mutationIdempotencyKey(response, "create patient");
+  const replay = await apiFetch(page, "/portal/patients", {
+    method: "POST",
+    body: expected,
+    idempotencyKey,
+  });
+  if (replay.status !== 201) {
+    throw new Error(
+      `create patient replay: expected HTTP 201, got ${replay.status}`,
+    );
+  }
+  assertPatientReceipt(
+    replay.payload,
+    { ...expected, id: patient.id },
+    "create patient replay",
+    true,
+  );
   state.patientId = patient.id;
+  state.patientCreateIdempotencyKey = idempotencyKey;
 
   await page.locator("#portal-patient-search").fill(patientName);
   await waitSettled(page);
@@ -319,11 +443,18 @@ async function createPatientViaUi(page, state) {
     .getByText(patientName, { exact: false })
     .first()
     .waitFor({ timeout: 15_000 });
-  return { patient, patientName };
+  return { patient, patientName, expected, idempotencyKey };
 }
 
-async function updatePatientNotesViaUi(page, patientId) {
-  const note = `Mutation smoke note ${runId}`;
+async function updatePatientViaUi(page, patientId, created, state) {
+  const expected = {
+    ...created.expected,
+    id: patientId,
+    phone: "0922222222",
+    address: "88 Le Loi, District 3",
+    allergies: ["penicillin", "latex", "shellfish"],
+    notes: `Updated structured portal smoke ${runId}`,
+  };
   await page.goto(
     `${siteUrl}/portal/patients/${encodeURIComponent(patientId)}?smoke=${runId}`,
     {
@@ -331,28 +462,53 @@ async function updatePatientNotesViaUi(page, patientId) {
     },
   );
   await waitSettled(page);
-  await page.waitForSelector("#patient-clinical-notes", { timeout: 20_000 });
-  await page.locator("#patient-clinical-notes").fill(note);
+  await page.waitForSelector("#patient-phone", { timeout: 20_000 });
+  await page.locator("#patient-phone").fill(expected.phone);
+  await page.locator("#patient-address").fill(expected.address);
+  await page.locator("#patient-allergies").fill(expected.allergies.join(", "));
+  await page.locator("#patient-notes").fill(expected.notes);
   const updateResponse = waitForApiResponse(
     page,
     `/api/portal/patients/${encodeURIComponent(patientId)}`,
     "PATCH",
   );
-  await page.locator("#patient-save-notes").click();
-  const payload = await readResponsePayload(
-    await updateResponse,
-    "update patient notes",
-  );
-  if (payload?.patient?.notes !== note) {
-    const verified = await apiFetch(
-      page,
-      `/portal/patients/${encodeURIComponent(patientId)}`,
+  await page.locator("#patient-save-profile").click();
+  const response = await updateResponse;
+  const payload = await readResponsePayload(response, "update patient");
+  if (response.status() !== 200) {
+    throw new Error(
+      `update patient: expected HTTP 200, got ${response.status()}`,
     );
-    if (verified.payload?.patient?.notes !== note) {
-      throw new Error("update patient notes: backend did not persist the note");
-    }
   }
-  return { note };
+  assertPatientReceipt(payload, expected, "update patient", false);
+  const idempotencyKey = mutationIdempotencyKey(response, "update patient");
+  if (idempotencyKey === created.idempotencyKey) {
+    throw new Error(
+      "update patient: create and update reused one idempotency key",
+    );
+  }
+  const updateBody = { ...expected };
+  delete updateBody.id;
+  const replay = await apiFetch(
+    page,
+    `/portal/patients/${encodeURIComponent(patientId)}`,
+    {
+      method: "PATCH",
+      body: updateBody,
+      idempotencyKey,
+    },
+  );
+  if (replay.status !== 200) {
+    throw new Error(
+      `update patient replay: expected HTTP 200, got ${replay.status}`,
+    );
+  }
+  assertPatientReceipt(replay.payload, expected, "update patient replay", true);
+  await page
+    .getByText(expected.phone, { exact: true })
+    .waitFor({ timeout: 15_000 });
+  state.patientUpdateIdempotencyKey = idempotencyKey;
+  return { expected, idempotencyKey };
 }
 
 async function exerciseAppointmentMutation(page, patientId, state) {
@@ -373,7 +529,9 @@ async function exerciseAppointmentMutation(page, patientId, state) {
   });
   const appointment = createdResult.payload?.appointment;
   if (!appointment?.id) {
-    throw new Error("create appointment: backend did not return appointment.id");
+    throw new Error(
+      "create appointment: backend did not return appointment.id",
+    );
   }
   state.appointmentId = appointment.id;
 
@@ -484,6 +642,7 @@ async function exerciseDeviceClaim(page, state) {
     body: {
       deviceId,
       name: `Claim smoke ${runId}`,
+      deviceSecret: randomBytes(48).toString("base64url"),
     },
   });
   const claimCode = provision.payload?.claim?.claimCode;
@@ -501,11 +660,20 @@ async function exerciseDeviceClaim(page, state) {
   await page.locator("#claim-device-code").fill(claimCode);
   await page.locator("#claim-device-name").fill(`Claim smoke ${runId}`);
 
-  const claimResponse = waitForApiResponse(page, "/api/portal/devices/pair", "POST");
+  const claimResponse = waitForApiResponse(
+    page,
+    "/api/portal/devices/pair",
+    "POST",
+  );
   await page.locator("#claim-device-submit").click();
-  const payload = await readResponsePayload(await claimResponse, "claim device");
+  const payload = await readResponsePayload(
+    await claimResponse,
+    "claim device",
+  );
   if (payload?.device?.id !== deviceId) {
-    throw new Error(`claim device: expected ${deviceId}, received ${payload?.device?.id || "empty"}`);
+    throw new Error(
+      `claim device: expected ${deviceId}, received ${payload?.device?.id || "empty"}`,
+    );
   }
   return {
     deviceId,
@@ -601,7 +769,13 @@ async function exerciseConsentSharing(page, patientId, state) {
   await waitSettled(page);
   await page.waitForSelector("#share-patient-id", { timeout: 20_000 });
   await page.locator("#share-patient-id").selectOption(patientId);
-  await page.locator("#share-target-type").selectOption(targetType);
+  await page
+    .locator(
+      targetType === "doctor"
+        ? "#share-target-doctor"
+        : "#share-target-workspace",
+    )
+    .click();
   await page.locator("#share-target-id").selectOption(target.id);
   await page.locator("#share-scope").selectOption("patient_profile");
 
@@ -617,7 +791,9 @@ async function exerciseConsentSharing(page, patientId, state) {
   );
   const share = createPayload?.share;
   if (!share?.id || share.patientId !== patientId) {
-    throw new Error("create patient share: backend did not return the new share");
+    throw new Error(
+      "create patient share: backend did not return the new share",
+    );
   }
 
   state.patientShare = {
@@ -801,11 +977,69 @@ async function exerciseReportExport(page) {
     waitUntil: "domcontentloaded",
   });
   await waitSettled(page);
-  await page.waitForSelector("#portal-export-csv", { timeout: 20_000 });
-  const [download] = await Promise.all([
-    page.waitForEvent("download", { timeout: 20_000 }),
-    page.locator("#portal-export-csv").click(),
-  ]);
+  await page.waitForSelector("#portal-report-export", { timeout: 20_000 });
+  await page.locator("#portal-report-export").click();
+  await page.waitForSelector("#clinical_bundle-export-format", {
+    timeout: 10_000,
+  });
+  await page.locator("#clinical_bundle-export-format").click();
+  await page.getByRole("option", { name: /^CSV/ }).click();
+
+  const createResponsePromise = waitForApiResponse(
+    page,
+    "/api/v1/exports",
+    "POST",
+  );
+  const artifactResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().includes("/api/v1/exports/download/"),
+    { timeout: 30_000 },
+  );
+  const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
+  await page.locator("#portal-clinical_bundle-export-submit").click();
+
+  const createResponse = await createResponsePromise;
+  const createPayload = await readResponsePayload(
+    createResponse,
+    "create report export",
+  );
+  const exportJob = createPayload?.export;
+  if (
+    createResponse.status() !== 201 ||
+    !exportJob?.id ||
+    exportJob.format !== "csv" ||
+    exportJob.dataset !== "clinical_bundle" ||
+    exportJob.status !== "ready"
+  ) {
+    throw new Error(
+      `report export: invalid create receipt ${JSON.stringify(createPayload)}`,
+    );
+  }
+  const idempotencyKey = mutationIdempotencyKey(
+    createResponse,
+    "create report export",
+  );
+  const artifactResponse = await artifactResponsePromise;
+  if (
+    artifactResponse.status() !== 200 ||
+    !artifactResponse
+      .url()
+      .endsWith(`/api/v1/exports/download/${encodeURIComponent(exportJob.id)}`)
+  ) {
+    throw new Error(
+      `report export: invalid artifact response ${artifactResponse.status()} ${artifactResponse.url()}`,
+    );
+  }
+  const artifactHeaders = await artifactResponse.allHeaders();
+  if (
+    !artifactHeaders["content-disposition"]?.includes(".csv") ||
+    !artifactHeaders["x-shcare-artifact-sha256"] ||
+    !artifactHeaders["x-shcare-renderer-version"]
+  ) {
+    throw new Error("report export: artifact identity headers are incomplete");
+  }
+  const download = await downloadPromise;
   const suggestedFilename = download.suggestedFilename();
   if (!suggestedFilename.endsWith(".csv")) {
     throw new Error(
@@ -813,7 +1047,13 @@ async function exerciseReportExport(page) {
     );
   }
   await download.delete().catch(() => undefined);
-  return { suggestedFilename };
+  return {
+    exportId: exportJob.id,
+    suggestedFilename,
+    idempotencyKeyPresent: Boolean(idempotencyKey),
+    artifactSha256: artifactHeaders["x-shcare-artifact-sha256"],
+    rendererVersion: artifactHeaders["x-shcare-renderer-version"],
+  };
 }
 
 async function exerciseSupportTicket(page, state) {
@@ -848,7 +1088,7 @@ async function exerciseSupportTicket(page, state) {
   return { ticketId, status: payload.ticket.status || "open" };
 }
 
-async function deletePatientViaUi(page, patientId) {
+async function deletePatientViaUi(page, patientId, state) {
   await page.goto(
     `${siteUrl}/portal/patients/${encodeURIComponent(patientId)}?smoke=${runId}`,
     {
@@ -857,18 +1097,52 @@ async function deletePatientViaUi(page, patientId) {
   );
   await waitSettled(page);
   await page.waitForSelector("#patient-delete", { timeout: 20_000 });
-  const dialogPromise = page
-    .waitForEvent("dialog", { timeout: 10_000 })
-    .then((dialog) => dialog.accept());
+  await page.locator("#patient-delete").click();
+  const confirmation = page.getByRole("alertdialog");
+  await confirmation.waitFor({ state: "visible", timeout: 10_000 });
   const deleteResponse = waitForApiResponse(
     page,
     `/api/portal/patients/${encodeURIComponent(patientId)}`,
     "DELETE",
   );
-  await page.locator("#patient-delete").click();
-  await dialogPromise;
-  await readResponsePayload(await deleteResponse, "delete patient");
+  await confirmation.getByRole("button", { name: "Xóa hồ sơ" }).click();
+  const response = await deleteResponse;
+  const payload = await readResponsePayload(response, "delete patient");
+  if (
+    response.status() !== 200 ||
+    payload?.deleted !== true ||
+    payload?.patientId !== patientId ||
+    payload?.replayed !== false
+  ) {
+    throw new Error(
+      `delete patient: invalid canonical receipt ${JSON.stringify(payload)}`,
+    );
+  }
+  const idempotencyKey = mutationIdempotencyKey(response, "delete patient");
+  if (
+    idempotencyKey === state.patientCreateIdempotencyKey ||
+    idempotencyKey === state.patientUpdateIdempotencyKey
+  ) {
+    throw new Error(
+      "delete patient: mutation reused an earlier idempotency key",
+    );
+  }
   await page.waitForURL("**/portal/patients", { timeout: 20_000 });
+  const replay = await apiFetch(
+    page,
+    `/portal/patients/${encodeURIComponent(patientId)}`,
+    { method: "DELETE", idempotencyKey },
+  );
+  if (
+    replay.status !== 200 ||
+    replay.payload?.deleted !== true ||
+    replay.payload?.patientId !== patientId ||
+    replay.payload?.replayed !== true
+  ) {
+    throw new Error(
+      `delete patient replay: invalid canonical receipt ${JSON.stringify(replay.payload)}`,
+    );
+  }
   const verify = await apiFetch(
     page,
     `/portal/patients/${encodeURIComponent(patientId)}`,
@@ -881,7 +1155,7 @@ async function deletePatientViaUi(page, patientId) {
       `delete patient: expected 404 after delete, received ${verify.status}`,
     );
   }
-  return { deleted: true };
+  return { deleted: true, idempotencyKey, replayed: replay.payload.replayed };
 }
 
 async function exerciseNegativeApiState(page) {
@@ -935,9 +1209,7 @@ async function restoreIfNeeded(page, state, cleanupResults) {
       method: "PATCH",
       body: state.settings.originalProfile,
     })
-      .then(() =>
-        cleanupResults.push({ target: "account profile", ok: true }),
-      )
+      .then(() => cleanupResults.push({ target: "account profile", ok: true }))
       .catch((error) =>
         cleanupResults.push({
           target: "account profile",
@@ -1189,7 +1461,10 @@ async function main() {
     channel: "chrome",
     headless: true,
     args: disableWebSecurity
-      ? ["--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"]
+      ? [
+          "--disable-web-security",
+          "--disable-features=IsolateOrigins,site-per-process",
+        ]
       : [],
   });
   const context = await browser.newContext({
@@ -1229,7 +1504,12 @@ async function main() {
     await login(page, account, "initial");
 
     const created = await createPatientViaUi(page, state);
-    const patientUpdate = await updatePatientNotesViaUi(page, state.patientId);
+    const patientUpdate = await updatePatientViaUi(
+      page,
+      state.patientId,
+      created,
+      state,
+    );
     const appointment = await exerciseAppointmentMutation(
       page,
       state.patientId,
@@ -1245,7 +1525,11 @@ async function main() {
     );
 
     const notification = await createReadDeleteNotification(page, state);
-    const consentShare = await exerciseConsentSharing(page, state.patientId, state);
+    const consentShare = await exerciseConsentSharing(
+      page,
+      state.patientId,
+      state,
+    );
 
     const settings = await exerciseSettings(page, state);
 
@@ -1333,7 +1617,11 @@ async function main() {
       state.supportNotificationId = "";
     }
     const deletedPatientId = state.patientId;
-    const patientDelete = await deletePatientViaUi(page, deletedPatientId);
+    const patientDelete = await deletePatientViaUi(
+      page,
+      deletedPatientId,
+      state,
+    );
     expectedFailureFragments.push(deletedPatientId);
     state.patientId = "";
     const negativeApi = await exerciseNegativeApiState(page);
@@ -1410,9 +1698,13 @@ async function main() {
           apiBase,
           patient: {
             id: created.patient.id,
+            patientCode: created.patient.patientCode,
             name: created.patientName,
-            updatedNote: patientUpdate.note,
+            updatedPhone: patientUpdate.expected.phone,
+            createReplayVerified: true,
+            updateReplayVerified: true,
             deleted: patientDelete.deleted,
+            deleteReplayVerified: patientDelete.replayed,
           },
           appointment,
           deviceClaim,

@@ -802,8 +802,8 @@ export function AccountSettings() {
               ["doctorRequests", "Bác sĩ mới đăng ký", "Thông báo khi có bác sĩ cần duyệt"],
               [
                 "abnormalResults",
-                "Cảnh báo AI bất thường",
-                "Thông báo khi AI phát hiện kết quả bất thường",
+                "Cảnh báo kết quả cần xem xét",
+                "Thông báo khi backend ghi nhận cảnh báo cần người có chuyên môn xem xét",
               ],
               [
                 "deviceOffline",

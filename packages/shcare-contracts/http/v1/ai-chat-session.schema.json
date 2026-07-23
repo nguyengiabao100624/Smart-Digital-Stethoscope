@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/ai-chat-session.schema.json",
+  "title": "Shcare AI chat session response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messages", "availability"],
+  "properties": {
+    "messages": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/message" }
+    },
+    "availability": { "$ref": "#/$defs/availability" },
+    "message": { "$ref": "#/$defs/message" },
+    "idempotent": { "type": "boolean" }
+  },
+  "$defs": {
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "status", "provider", "model", "reason"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "status": { "enum": ["available", "unavailable"] },
+        "provider": { "type": "string", "maxLength": 80 },
+        "model": { "type": "string", "maxLength": 160 },
+        "reason": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "content", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "enum": ["user", "assistant"] },
+        "content": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "userId": { "type": "string", "maxLength": 120 },
+        "organizationId": { "type": "string", "maxLength": 120 },
+        "provider": { "type": "string", "maxLength": 80 },
+        "model": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

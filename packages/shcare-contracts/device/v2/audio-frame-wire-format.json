@@ -1,0 +1,43 @@
+{
+  "protocolVersion": 2,
+  "magicAscii": "SHC2",
+  "byteOrder": "big-endian",
+  "fixedHeaderBytes": 30,
+  "maximumFrameBytes": 2358,
+  "payloadEncoding": "pcm_s16le",
+  "sampleRate": 16000,
+  "maximumSampleCount": 1024,
+  "fields": [
+    { "name": "magic", "offset": 0, "bytes": 4, "type": "ascii" },
+    { "name": "protocolVersion", "offset": 4, "bytes": 1, "type": "uint8" },
+    { "name": "flags", "offset": 5, "bytes": 1, "type": "bitmask" },
+    { "name": "headerLength", "offset": 6, "bytes": 2, "type": "uint16" },
+    { "name": "payloadLength", "offset": 8, "bytes": 4, "type": "uint32" },
+    { "name": "sequence", "offset": 12, "bytes": 4, "type": "uint32" },
+    { "name": "timestampMs", "offset": 16, "bytes": 8, "type": "uint64" },
+    { "name": "sampleCount", "offset": 24, "bytes": 2, "type": "uint16" },
+    { "name": "sessionIdLength", "offset": 26, "bytes": 2, "type": "uint16" },
+    { "name": "scanIdLength", "offset": 28, "bytes": 2, "type": "uint16" },
+    { "name": "sessionId", "offset": 30, "bytes": "sessionIdLength", "type": "utf8" },
+    {
+      "name": "scanId",
+      "offset": "30 + sessionIdLength",
+      "bytes": "scanIdLength",
+      "type": "utf8"
+    },
+    { "name": "payload", "offset": "headerLength", "bytes": "payloadLength", "type": "bytes" }
+  ],
+  "flagBits": {
+    "start": 0,
+    "end": 1,
+    "discontinuity": 2,
+    "retransmit": 3
+  },
+  "sequencePolicy": {
+    "firstSequence": 0,
+    "firstFrameRequiresStart": true,
+    "strictlyIncreasing": true,
+    "gapRequiresDiscontinuity": true,
+    "replayRejected": true
+  }
+}

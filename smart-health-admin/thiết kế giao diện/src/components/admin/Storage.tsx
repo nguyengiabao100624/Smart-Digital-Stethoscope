@@ -1,5 +1,5 @@
 ﻿import React, { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   AreaChart,
   Area,
@@ -13,7 +13,6 @@ import {
   Cell,
   BarChart,
   Bar,
-  Legend,
 } from "recharts";
 import {
   HardDrive,
@@ -23,7 +22,6 @@ import {
   UploadCloud,
   Download,
   Search,
-  Filter,
   Image as ImageIcon,
   AudioLines,
   FileText,
@@ -31,20 +29,16 @@ import {
   File as FileIcon,
   MoreVertical,
   Lock,
-  Globe2,
   Shield,
   Trash2,
   Share2,
   Eye,
-  ChevronRight,
   AlertTriangle,
-  ArrowUpRight,
   Archive,
   Bot,
   BrainCircuit,
   FileAudio,
   FileCheck,
-  TrendingUp,
   Activity as ActivityIcon,
   AudioWaveform,
   Stethoscope,
@@ -60,15 +54,24 @@ import { PaginationFooter } from "./PaginationFooter";
 import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
 import {
   smartHealthApi,
-  type SmartHealthChartPoint,
   type SmartHealthChartSlice,
   type SmartHealthClinicUsage,
   type SmartHealthStorageActivity,
   type SmartHealthStorageBucket,
-  type SmartHealthTopBucket,
 } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { buildSmartHealthFilename } from "@/lib/filename-utils";
+import {
+  assertStorageDeleteOutcome,
+  createStorageOperationIdempotencyKey,
+  parseStorageBucketOutcome,
+  parseStorageFilesResponse,
+  parseStorageFileOutcome,
+  parseStorageShareOutcome,
+  parseStorageStatsResponse,
+  type StorageOperation,
+  type StorageStatsData,
+} from "@/lib/storage-operations";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { CapabilityGate } from "./AdminAccessContext";
@@ -77,35 +80,11 @@ import { REPORT_EXPORT_CAPABILITIES, STORAGE_MANAGE_CAPABILITIES } from "./actio
 
 type IconComponent = React.ComponentType<{ className?: string }>;
 
-type StorageStatsData = {
-  totalUsed: number;
-  totalQuota: number;
-  totalFiles: number;
-  buckets: SmartHealthStorageBucket[];
-  growthData: SmartHealthChartPoint[];
-  typeData: SmartHealthChartSlice[];
-  topBuckets: SmartHealthTopBucket[];
-  recentActivity: SmartHealthStorageActivity[];
-  topClinicUsage: SmartHealthClinicUsage[];
-};
-
 type StorageConfirmAction = {
   title: string;
   description: React.ReactNode;
   confirmLabel: string;
   run: () => Promise<void>;
-};
-
-const DEFAULT_STORAGE_STATS: StorageStatsData = {
-  totalUsed: 0,
-  totalQuota: 0,
-  totalFiles: 0,
-  buckets: [],
-  growthData: [],
-  typeData: [],
-  topBuckets: [],
-  recentActivity: [],
-  topClinicUsage: [],
 };
 
 const TYPE_ICON: Record<string, IconComponent> = {
@@ -253,76 +232,99 @@ function formatGB(gb: number) {
   return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
 }
 
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, value));
+}
+
 export function Storage() {
-  const { hasAnyCapability } = useAdminAccess();
+  const shouldReduceMotion = useReducedMotion();
+  const { hasAnyCapability, hasCapability, isPlatformAdmin } = useAdminAccess();
   const canManageStorage = hasAnyCapability(STORAGE_MANAGE_CAPABILITIES);
+  const canManageBucketLifecycle = isPlatformAdmin && hasCapability("platform.storage.manage");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadBucket, setUploadBucket] = useState<string | undefined>();
   const [bucketOpen, setBucketOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<StorageFile | null>(null);
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [filesError, setFilesError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<StorageConfirmAction | null>(null);
   const [confirmError, setConfirmError] = useState("");
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const storageOperationKeysRef = React.useRef(new Map<string, string>());
+  const loadRequestIdRef = React.useRef(0);
 
   const [statsData, setStatsData] = useState<StorageStatsData | null>(null);
-  const [filesData, setFilesData] = useState<StorageFile[]>([]);
+  const [filesData, setFilesData] = useState<StorageFile[] | null>(null);
+
+  const getStorageOperationKey = (operation: StorageOperation, target: string) => {
+    const mapKey = `${operation}:${target}`;
+    const existingKey = storageOperationKeysRef.current.get(mapKey);
+    if (existingKey) return existingKey;
+    const nextKey = createStorageOperationIdempotencyKey(operation, target);
+    storageOperationKeysRef.current.set(mapKey, nextKey);
+    return nextKey;
+  };
+
+  const clearStorageOperationKey = (operation: StorageOperation, target: string) => {
+    storageOperationKeysRef.current.delete(`${operation}:${target}`);
+  };
 
   const loadStorage = React.useCallback(async (showLoading = true) => {
+    const requestId = ++loadRequestIdRef.current;
     if (showLoading) {
       setIsLoading(true);
     }
-    try {
-      const [statsRes, filesRes] = await Promise.all([
-        smartHealthApi.getStorageStats(),
-        smartHealthApi.listStorageFiles(),
-      ]);
-      setStatsData(statsRes);
-      setFilesData(filesRes.files);
-      setSelectedIds([]);
-      setError(null);
-    } catch (err) {
-      setError(toVietnameseErrorMessage(err, "Không thể tải dữ liệu lưu trữ."));
-    } finally {
-      if (showLoading) {
-        setIsLoading(false);
+    const [statsResult, filesResult] = await Promise.allSettled([
+      smartHealthApi.getStorageStats(),
+      smartHealthApi.listStorageFiles(),
+    ]);
+    if (requestId !== loadRequestIdRef.current) return;
+
+    if (statsResult.status === "fulfilled") {
+      try {
+        setStatsData(parseStorageStatsResponse(statsResult.value));
+        setStatsError(null);
+      } catch (error) {
+        setStatsError(toVietnameseErrorMessage(error, "Dữ liệu thống kê lưu trữ không hợp lệ."));
       }
+    } else {
+      setStatsError(
+        toVietnameseErrorMessage(statsResult.reason, "Không thể tải thống kê lưu trữ."),
+      );
+    }
+
+    if (filesResult.status === "fulfilled") {
+      try {
+        setFilesData(parseStorageFilesResponse(filesResult.value).files);
+        setFilesError(null);
+      } catch (error) {
+        setFilesError(toVietnameseErrorMessage(error, "Danh sách tệp lưu trữ không hợp lệ."));
+      }
+    } else {
+      setFilesError(
+        toVietnameseErrorMessage(filesResult.reason, "Không thể tải danh sách tệp lưu trữ."),
+      );
+    }
+
+    if (showLoading) {
+      setIsLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-
-    Promise.all([smartHealthApi.getStorageStats(), smartHealthApi.listStorageFiles()])
-      .then(([statsRes, filesRes]) => {
-        if (!cancelled) {
-          setStatsData(statsRes);
-          setFilesData(filesRes.files);
-          setError(null);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(toVietnameseErrorMessage(err, "Không thể tải dữ liệu lưu trữ."));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      });
+    void loadStorage();
 
     return () => {
-      cancelled = true;
+      loadRequestIdRef.current += 1;
     };
-  }, []);
+  }, [loadStorage]);
 
   const downloadStorageFile = async (file: StorageFile) => {
     try {
@@ -350,12 +352,13 @@ export function Storage() {
 
   const createBucket = async (
     payload: Parameters<typeof smartHealthApi.createStorageBucket>[0],
+    idempotencyKey: string,
   ) => {
-    if (!canManageStorage) {
-      toast.error("Tai khoan khong co quyen quan ly luu tru.");
-      return;
+    if (!canManageBucketLifecycle) {
+      throw new Error("Chỉ Platform Admin có thể tạo bucket lưu trữ.");
     }
-    await smartHealthApi.createStorageBucket(payload);
+    const response = await smartHealthApi.createStorageBucket(payload, idempotencyKey);
+    parseStorageBucketOutcome(response, payload.name);
     toast.success("Đã tạo bucket");
     await loadStorage(false);
   };
@@ -364,10 +367,13 @@ export function Storage() {
     payload: Parameters<typeof smartHealthApi.uploadStorageFile>[0],
   ) => {
     if (!canManageStorage) {
-      toast.error("Tai khoan khong co quyen quan ly luu tru.");
-      return;
+      throw new Error("Tài khoản không có quyền tải tệp lên storage.");
     }
-    await smartHealthApi.uploadStorageFile(payload);
+    const response = await smartHealthApi.uploadStorageFile(payload);
+    parseStorageFileOutcome(response, {
+      name: payload.file.name,
+      bucket: payload.bucket,
+    });
     await loadStorage(false);
   };
 
@@ -390,10 +396,12 @@ export function Storage() {
 
   const deleteStorageFile = async (file: StorageFile) => {
     if (!canManageStorage) {
-      toast.error("Tai khoan khong co quyen quan ly luu tru.");
-      return;
+      throw new Error("Tài khoản không có quyền xóa tệp storage.");
     }
-    await smartHealthApi.deleteStorageFile(file.id);
+    const idempotencyKey = getStorageOperationKey("file-delete", file.id);
+    const response = await smartHealthApi.deleteStorageFile(file.id, idempotencyKey);
+    assertStorageDeleteOutcome(response, "fileId", file.id);
+    clearStorageOperationKey("file-delete", file.id);
     toast.success(`Đã xóa ${file.name}`);
     setSelectedFile(null);
     await loadStorage(false);
@@ -401,25 +409,34 @@ export function Storage() {
 
   const shareStorageFile = async (file: StorageFile) => {
     if (!canManageStorage) {
-      toast.error("Tai khoan khong co quyen quan ly luu tru.");
-      return "";
+      throw new Error("Tài khoản không có quyền tạo liên kết chia sẻ.");
     }
-    const { shareUrl, url } = await smartHealthApi.shareStorageFile(file.id);
-    const link = shareUrl || url;
-    await navigator.clipboard.writeText(link);
-    toast.success("Đã sao chép liên kết chia sẻ");
-    return link;
+    const idempotencyKey = getStorageOperationKey("file-share", file.id);
+    const response = await smartHealthApi.shareStorageFile(file.id, idempotencyKey);
+    const { shareUrl } = parseStorageShareOutcome(response);
+    clearStorageOperationKey("file-share", file.id);
+    return shareUrl;
+  };
+
+  const copyStorageShareLink = async (file: StorageFile) => {
+    try {
+      const link = await shareStorageFile(file);
+      await navigator.clipboard.writeText(link);
+      toast.success("Đã sao chép liên kết chia sẻ");
+    } catch (err) {
+      toast.error(toVietnameseErrorMessage(err, "Không thể tạo liên kết chia sẻ."));
+    }
   };
 
   const deleteBucket = (bucket: SmartHealthStorageBucket) => {
-    if (!canManageStorage) {
-      toast.error("Tai khoan khong co quyen quan ly luu tru.");
+    if (!canManageBucketLifecycle) {
       return;
     }
     if (bucket.system) {
       toast.error("Bucket hệ thống không thể xóa");
       return;
     }
+    const idempotencyKey = createStorageOperationIdempotencyKey("bucket-delete", bucket.id);
     setConfirmError("");
     setConfirmAction({
       title: "Xóa bucket lưu trữ",
@@ -431,92 +448,74 @@ export function Storage() {
       ),
       confirmLabel: "Xóa bucket",
       run: async () => {
-        await smartHealthApi.deleteStorageBucket(bucket.id);
+        const response = await smartHealthApi.deleteStorageBucket(bucket.id, idempotencyKey);
+        assertStorageDeleteOutcome(response, "bucketId", bucket.id);
         toast.success(`Đã xóa bucket ${bucket.id}`);
         await loadStorage(false);
       },
     });
   };
 
-  const requestDeleteSelectedFiles = () => {
-    const selectedFiles = filesData.filter((file) => selectedIds.includes(file.id));
-    if (selectedFiles.length === 0) return;
-    setConfirmError("");
-    setConfirmAction({
-      title: "Xóa các tệp đã chọn",
-      description: (
-        <span>
-          Bạn có chắc chắn muốn xóa {selectedFiles.length} tệp đã chọn? Hành động này không thể hoàn
-          tác.
-        </span>
-      ),
-      confirmLabel: "Xóa tệp đã chọn",
-      run: async () => {
-        await Promise.all(selectedFiles.map((file) => smartHealthApi.deleteStorageFile(file.id)));
-        toast.success(`Đã xóa ${selectedFiles.length} tệp`);
-        setSelectedIds([]);
-        await loadStorage(false);
-      },
-    });
-  };
-
-  const {
-    totalUsed = 0,
-    totalQuota = 0,
-    totalFiles = 0,
-    buckets = [],
-    growthData = [],
-    typeData = [],
-    topBuckets = [],
-    recentActivity = [],
-    topClinicUsage = [],
-  } = statsData || DEFAULT_STORAGE_STATS;
+  const totalUsed = statsData?.totalUsed ?? 0;
+  const totalFiles = statsData?.totalFiles ?? 0;
+  const buckets = statsData?.buckets ?? [];
+  const growthData = statsData?.growthData ?? [];
+  const typeData = statsData?.typeData ?? [];
+  const topBuckets = statsData?.topBuckets ?? [];
+  const recentActivity = statsData?.recentActivity ?? [];
+  const topClinicUsage = statsData?.topClinicUsage ?? [];
+  const confirmedFiles = useMemo(() => filesData ?? [], [filesData]);
+  const canUploadStorage = canManageStorage && Boolean(statsData) && buckets.length > 0;
 
   const filteredFiles = useMemo(() => {
-    return filesData.filter((f) => {
+    return confirmedFiles.filter((f) => {
       if (bucketFilter !== "all" && f.bucket !== bucketFilter) return false;
       if (typeFilter !== "all" && f.type !== typeFilter) return false;
       if (search && !f.name.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [bucketFilter, filesData, search, typeFilter]);
+  }, [bucketFilter, confirmedFiles, search, typeFilter]);
 
   React.useEffect(() => {
     setPage(1);
-  }, [bucketFilter, search, typeFilter, filesData.length]);
+  }, [bucketFilter, search, typeFilter, confirmedFiles.length]);
 
   const pagedFiles = useMemo(
     () => paginateItems(filteredFiles, page, ADMIN_TABLE_PAGE_SIZE),
     [filteredFiles, page],
   );
 
-  const toggleSelect = (id: string) =>
-    setSelectedIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-
-  const toggleSelectAll = () =>
-    setSelectedIds((p) =>
-      pagedFiles.every((file) => p.includes(file.id))
-        ? p.filter((id) => !pagedFiles.some((file) => file.id === id))
-        : Array.from(new Set([...p, ...pagedFiles.map((file) => file.id)])),
-    );
-
   if (isLoading) {
     return (
-      <div className="flex h-[400px] items-center justify-center rounded-xl border border-border bg-card">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex h-[400px] items-center justify-center rounded-xl border border-border bg-card"
+      >
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary motion-reduce:animate-none" />
           <p className="text-sm text-muted-foreground">Đang tải dữ liệu lưu trữ...</p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (!statsData && filesData === null && (statsError || filesError)) {
     return (
       <div className="flex h-[400px] items-center justify-center rounded-xl border border-border bg-card">
-        <div className="flex flex-col items-center gap-3 max-w-md text-center">
+        <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-center">
           <AlertTriangle className="h-8 w-8 text-destructive" />
-          <p className="text-sm text-destructive">{error}</p>
+          <h1 className="text-lg font-semibold text-foreground">Không thể tải dữ liệu lưu trữ</h1>
+          <p className="text-sm text-destructive">
+            {[statsError, filesError].filter(Boolean).join(" ")}
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadStorage()}
+            className="min-h-11 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Thử lại
+          </button>
         </div>
       </div>
     );
@@ -525,13 +524,14 @@ export function Storage() {
   return (
     <div className="space-y-6">
       <UploadFileDialog
-        open={canManageStorage && uploadOpen}
+        open={canUploadStorage && uploadOpen}
         onOpenChange={setUploadOpen}
+        defaultBucket={uploadBucket}
         buckets={buckets}
         onUpload={uploadStorageFile}
       />
       <CreateBucketDialog
-        open={canManageStorage && bucketOpen}
+        open={canManageBucketLifecycle && bucketOpen}
         onOpenChange={setBucketOpen}
         onCreate={createBucket}
       />
@@ -543,8 +543,8 @@ export function Storage() {
         file={selectedFile}
         onClose={() => setSelectedFile(null)}
         onDownload={downloadStorageFile}
-        onShare={shareStorageFile}
-        onDelete={deleteStorageFile}
+        onShare={canManageStorage ? shareStorageFile : undefined}
+        onDelete={canManageStorage ? deleteStorageFile : undefined}
       />
       <ConfirmActionDialog
         open={Boolean(confirmAction)}
@@ -564,35 +564,47 @@ export function Storage() {
       />
       {/* Header */}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl md:text-2xl font-bold text-foreground">Quản lý Lưu trữ</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Theo dõi bucket, tệp y khoa, băng thông và quota của toàn hệ thống Smart Health
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Theo dõi bucket, dung lượng thực tế và tệp y khoa của toàn hệ thống Shcare.
           </p>
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+            <Shield className="h-3.5 w-3.5" /> Chỉ Platform Admin quản lý vòng đời bucket
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CapabilityGate capabilities={STORAGE_MANAGE_CAPABILITIES}>
+          {canManageBucketLifecycle ? (
             <button
               onClick={() => setBucketOpen(true)}
-              className="flex items-center gap-2 bg-card border border-border text-foreground px-3 py-2 rounded-md text-sm font-medium hover:bg-muted transition-colors"
+              className="flex min-h-11 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <FolderPlus className="w-4 h-4" /> Tạo bucket
             </button>
-          </CapabilityGate>
+          ) : null}
           <CapabilityGate capabilities={REPORT_EXPORT_CAPABILITIES}>
             <button
               onClick={() => setExportOpen(true)}
-              className="flex items-center gap-2 bg-card border border-border text-foreground px-3 py-2 rounded-md text-sm font-medium hover:bg-muted transition-colors"
+              className="flex min-h-11 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Download className="w-4 h-4" /> Xuất báo cáo
             </button>
           </CapabilityGate>
           <CapabilityGate capabilities={STORAGE_MANAGE_CAPABILITIES}>
             <motion.button
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setUploadOpen(true)}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+              whileHover={shouldReduceMotion ? undefined : { y: -1 }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+              onClick={() => {
+                setUploadBucket(undefined);
+                setUploadOpen(true);
+              }}
+              disabled={!canUploadStorage}
+              title={
+                canUploadStorage
+                  ? "Tải tệp lên storage"
+                  : "Cần tải thành công catalog bucket trước khi tải tệp"
+              }
+              className="flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UploadCloud className="w-4 h-4" /> Tải lên tệp
             </motion.button>
@@ -600,622 +612,686 @@ export function Storage() {
         </div>
       </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <KPI
-          title="Dung lượng đã dùng"
-          value={formatGB(totalUsed)}
-          sub={`/ ${formatGB(totalQuota)}`}
-          icon={HardDrive}
-          progress={(totalUsed / totalQuota) * 100}
+      {statsError ? (
+        <StorageLoadNotice
+          title={statsData ? "Thống kê chưa được làm mới" : "Không thể tải thống kê lưu trữ"}
+          message={statsError}
+          stale={Boolean(statsData)}
+          onRetry={() => void loadStorage(false)}
         />
-        <KPI
-          title="Tổng tệp"
-          value={totalFiles.toLocaleString("vi-VN")}
-          icon={Files}
-          trend="+1.2k hôm nay"
-        />
-        <KPI title="Số bucket" value={String(buckets.length)} icon={Database} trend="+1 tuần này" />
-        <KPI title="Tải lên (24h)" value="1,284" icon={UploadCloud} trend="+18%" />
-        <KPI title="Băng thông tháng" value="3.8 TB" icon={TrendingUp} trend="+0.4 TB" />
-        <KPI title="Tệp công khai" value="4,280" icon={Globe2} trend="2.3%" />
-      </div>
+      ) : null}
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+      {filesError ? (
+        <StorageLoadNotice
+          title={filesData ? "Danh sách tệp chưa được làm mới" : "Không thể tải danh sách tệp"}
+          message={filesError}
+          stale={Boolean(filesData)}
+          onRetry={() => void loadStorage(false)}
+        />
+      ) : null}
+
+      {!canManageStorage ? (
+        <div role="status" className="rounded-lg border border-warning/30 bg-warning/5 p-4">
+          <div className="flex items-start gap-3">
+            <Lock className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" />
             <div>
-              <h2 className="text-base font-semibold">Tăng trưởng dung lượng (30 ngày)</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Tổng dung lượng đã sử dụng tích lũy theo ngày
+              <p className="text-sm font-medium text-foreground">Chế độ chỉ xem</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Tài khoản hiện tại có thể xem dữ liệu nhưng không thể tải lên, chia sẻ hoặc xóa tệp.
               </p>
             </div>
-            <span className="text-xs font-medium text-success inline-flex items-center gap-1">
-              <ArrowUpRight className="w-3 h-3" /> +12.4%
-            </span>
-          </div>
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={growthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="grad-storage" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0B5C9A" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#0B5C9A" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                <XAxis
-                  dataKey="day"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fill: "#64748B" }}
-                />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#64748B" }} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0" }}
-                  formatter={(value: number | string) => [`${value} GB`, "Dung lượng"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="gb"
-                  stroke="#0B5C9A"
-                  strokeWidth={2}
-                  fill="url(#grad-storage)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
           </div>
         </div>
+      ) : null}
 
-        <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-          <h2 className="text-base font-semibold mb-1">Phân bổ theo loại</h2>
-          <p className="text-xs text-muted-foreground mb-3">Tổng {formatGB(totalUsed)}</p>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={typeData}
-                  innerRadius={50}
-                  outerRadius={75}
-                  paddingAngle={2}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {typeData.map((e: SmartHealthChartSlice) => (
-                    <Cell key={e.name} fill={e.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number | string) => `${value} GB`} />
-              </PieChart>
-            </ResponsiveContainer>
+      {statsData ? (
+        <>
+          {/* KPI */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KPI title="Dung lượng đã ghi nhận" value={formatGB(totalUsed)} icon={HardDrive} />
+            <KPI title="Tổng tệp" value={totalFiles.toLocaleString("vi-VN")} icon={Files} />
+            <KPI title="Bucket từ backend" value={String(buckets.length)} icon={Database} />
           </div>
-          <div className="space-y-1.5 mt-2">
-            {typeData.map((t: SmartHealthChartSlice) => (
-              <div key={t.name} className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: t.color }} />
-                <span className="text-muted-foreground flex-1">{t.name}</span>
-                <span className="font-medium">{t.value} GB</span>
+
+          {/* Charts row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-semibold">Dung lượng tệp tải lên (30 ngày)</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Tổng kích thước tệp được backend ghi nhận theo ngày
+                  </p>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Buckets grid */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold">Các bucket</h2>
-          <CapabilityGate capabilities={STORAGE_MANAGE_CAPABILITIES}>
-            <button
-              onClick={() => setBucketOpen(true)}
-              className="text-xs text-primary hover:underline font-medium inline-flex items-center gap-1"
-            >
-              <FolderPlus className="w-3.5 h-3.5" /> Bucket mới
-            </button>
-          </CapabilityGate>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {buckets.map((b: SmartHealthStorageBucket, i: number) => {
-            const pct = (b.used / b.quota) * 100;
-            const isWarn = pct >= 80;
-            const bucketStyle = getBucketStyleForBucket(b);
-            const BucketIcon = bucketStyle.icon;
-            return (
-              <motion.div
-                key={b.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04 }}
-                className="relative overflow-hidden bg-card border border-border rounded-xl p-4 shadow-sm hover:border-primary/40 hover:shadow-md transition-all group"
-                style={{
-                  background: `linear-gradient(180deg, ${bucketStyle.soft} 0%, rgba(255,255,255,0) 46%), #FFFFFF`,
-                }}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm ring-1 ring-white/50"
-                    style={{ background: bucketStyle.gradient }}
-                  >
-                    <BucketIcon className="w-5 h-5" />
-                  </div>
-                  <DropdownMenu.Root>
-                    <DropdownMenu.Trigger asChild>
-                      <button className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md">
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content
-                        align="end"
-                        className="min-w-[160px] bg-popover border border-border rounded-md shadow-lg p-1 z-50"
+              {growthData.length > 0 ? (
+                <div
+                  className="h-[280px]"
+                  role="img"
+                  aria-label={`Biểu đồ dung lượng tệp tải lên trong 30 ngày gồm ${growthData.length} mốc dữ liệu`}
+                >
+                  <div className="h-full w-full" aria-hidden="true">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        accessibilityLayer={false}
+                        data={growthData}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                       >
-                        {canManageStorage && (
-                          <DropdownMenu.Item
-                            onClick={() => setUploadOpen(true)}
-                            className="text-sm px-2 py-1.5 rounded hover:bg-accent cursor-pointer flex items-center gap-2 outline-none"
-                          >
-                            <UploadCloud className="w-4 h-4" /> Tải lên
-                          </DropdownMenu.Item>
-                        )}
-                        <DropdownMenu.Item className="text-sm px-2 py-1.5 rounded hover:bg-accent cursor-pointer flex items-center gap-2 outline-none">
-                          <Eye className="w-4 h-4" /> Xem chi tiết
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          onClick={() => void loadStorage(false)}
-                          className="text-sm px-2 py-1.5 rounded hover:bg-accent cursor-pointer flex items-center gap-2 outline-none"
+                        <defs>
+                          <linearGradient id="grad-storage" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.3} />
+                            <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="var(--border)"
+                        />
+                        <XAxis
+                          dataKey="day"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: 8,
+                            border: "1px solid var(--border)",
+                            backgroundColor: "var(--card)",
+                            color: "var(--foreground)",
+                          }}
+                          itemStyle={{ color: "var(--foreground)" }}
+                          labelStyle={{ color: "var(--muted-foreground)" }}
+                          formatter={(value: number | string) => [`${value} GB`, "Dung lượng"]}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="gb"
+                          name="Dung lượng"
+                          stroke="var(--chart-1)"
+                          strokeWidth={2}
+                          fill="url(#grad-storage)"
+                          isAnimationActive={!shouldReduceMotion}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : (
+                <EmptyDataState message="Chưa có tệp tải lên để hiển thị biểu đồ 30 ngày." />
+              )}
+            </div>
+
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+              <h2 className="text-base font-semibold mb-1">Phân bổ theo loại</h2>
+              <p className="text-xs text-muted-foreground mb-3">Tổng {formatGB(totalUsed)}</p>
+              {typeData.length > 0 ? (
+                <>
+                  <div className="h-[180px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart accessibilityLayer={false}>
+                        <Pie
+                          data={typeData}
+                          innerRadius={50}
+                          outerRadius={75}
+                          paddingAngle={2}
+                          dataKey="value"
+                          stroke="none"
+                          rootTabIndex={-1}
+                          isAnimationActive={!shouldReduceMotion}
                         >
-                          <ActivityIcon className="w-4 h-4" /> Đồng bộ
-                        </DropdownMenu.Item>
-                        {canManageStorage && (
-                          <>
-                            <DropdownMenu.Separator className="h-px bg-border my-1" />
-                            <DropdownMenu.Item
-                              onClick={() => void deleteBucket(b)}
-                              disabled={Boolean(b.system)}
-                              className="text-sm px-2 py-1.5 rounded hover:bg-destructive hover:text-destructive-foreground text-destructive cursor-pointer flex items-center gap-2 outline-none"
+                          {typeData.map((entry: SmartHealthChartSlice) => (
+                            <Cell
+                              key={entry.name}
+                              fill={entry.color}
+                              aria-label={`${entry.name}: ${entry.value} GB`}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number | string) => `${value} GB`}
+                          contentStyle={{
+                            borderRadius: 8,
+                            border: "1px solid var(--border)",
+                            backgroundColor: "var(--card)",
+                            color: "var(--foreground)",
+                          }}
+                          itemStyle={{ color: "var(--foreground)" }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    {typeData.map((type: SmartHealthChartSlice) => (
+                      <div key={type.name} className="flex items-center gap-2 text-xs">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ background: type.color }}
+                        />
+                        <span className="flex-1 text-muted-foreground">{type.name}</span>
+                        <span className="font-medium">{type.value} GB</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <EmptyDataState message="Backend chưa trả về phân bổ theo loại tệp." compact />
+              )}
+            </div>
+          </div>
+
+          {/* Buckets grid */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold">Các bucket</h2>
+              {canManageBucketLifecycle ? (
+                <button
+                  onClick={() => setBucketOpen(true)}
+                  className="inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" /> Bucket mới
+                </button>
+              ) : null}
+            </div>
+            {buckets.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                {buckets.map((b: SmartHealthStorageBucket, i: number) => {
+                  const bucketStyle = getBucketStyleForBucket(b);
+                  const BucketIcon = bucketStyle.icon;
+                  return (
+                    <motion.div
+                      key={b.id}
+                      initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={
+                        shouldReduceMotion ? { duration: 0 } : { delay: Math.min(i, 3) * 0.04 }
+                      }
+                      className="group relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div
+                          className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm ring-1 ring-white/50"
+                          style={{ background: bucketStyle.gradient }}
+                        >
+                          <BucketIcon className="w-5 h-5" />
+                        </div>
+                        <DropdownMenu.Root>
+                          <DropdownMenu.Trigger asChild>
+                            <button
+                              type="button"
+                              aria-label={`Mở thao tác bucket ${b.name || b.id}`}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
-                              <Trash2 className="w-4 h-4" /> Xoá bucket
-                            </DropdownMenu.Item>
-                          </>
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                              align="end"
+                              className="min-w-[160px] bg-popover border border-border rounded-md shadow-lg p-1 z-50"
+                            >
+                              {canManageStorage ? (
+                                <DropdownMenu.Item
+                                  onClick={() => {
+                                    setUploadBucket(b.id);
+                                    setUploadOpen(true);
+                                  }}
+                                  className="text-sm px-2 py-1.5 rounded hover:bg-accent cursor-pointer flex items-center gap-2 outline-none"
+                                >
+                                  <UploadCloud className="w-4 h-4" /> Tải lên
+                                </DropdownMenu.Item>
+                              ) : null}
+                              <DropdownMenu.Item
+                                onClick={() => setBucketFilter(b.id)}
+                                className="text-sm px-2 py-1.5 rounded hover:bg-accent cursor-pointer flex items-center gap-2 outline-none"
+                              >
+                                <Search className="w-4 h-4" /> Lọc tệp bucket này
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item
+                                onClick={() => void loadStorage(false)}
+                                className="text-sm px-2 py-1.5 rounded hover:bg-accent cursor-pointer flex items-center gap-2 outline-none"
+                              >
+                                <ActivityIcon className="w-4 h-4" /> Đồng bộ
+                              </DropdownMenu.Item>
+                              {canManageBucketLifecycle ? (
+                                <>
+                                  <DropdownMenu.Separator className="h-px bg-border my-1" />
+                                  <DropdownMenu.Item
+                                    onClick={() => void deleteBucket(b)}
+                                    disabled={Boolean(b.system)}
+                                    className="text-sm px-2 py-1.5 rounded hover:bg-destructive hover:text-destructive-foreground text-destructive cursor-pointer flex items-center gap-2 outline-none"
+                                  >
+                                    <Trash2 className="w-4 h-4" /> Xoá bucket
+                                  </DropdownMenu.Item>
+                                </>
+                              ) : null}
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
+                      </div>
+                      <div className="text-sm font-semibold text-foreground truncate">
+                        {bucketStyle.label}
+                      </div>
+                      <div className="mt-0.5 font-mono text-xs text-muted-foreground truncate">
+                        {b.id}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-2 line-clamp-2 min-h-[32px]">
+                        {b.description || b.desc}
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground">{formatGB(b.used)}</span>
+                        <span>{b.files.toLocaleString("vi-VN")} tệp</span>
+                      </div>
+                      <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground">
+                        {b.system ? (
+                          <Shield className="h-3 w-3" />
+                        ) : (
+                          <Database className="h-3 w-3" />
                         )}
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Root>
-                </div>
-                <div className="text-sm font-semibold text-foreground truncate">
-                  {bucketStyle.label}
-                </div>
-                <div className="mt-0.5 font-mono text-xs text-muted-foreground truncate">
-                  {b.id}
-                </div>
-                <div className="text-xs text-muted-foreground mt-2 line-clamp-2 min-h-[32px]">
-                  {b.description || b.desc}
-                </div>
-
-                <div className="mt-3 mb-1 flex items-baseline justify-between text-xs">
-                  <span className="font-semibold text-foreground">{formatGB(b.used)}</span>
-                  <span className="text-muted-foreground">
-                    {Math.round(pct)}% / {formatGB(b.quota)}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all"
-                    style={{
-                      width: `${pct}%`,
-                      background: isWarn ? "#F59E0B" : bucketStyle.accent,
-                    }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-muted-foreground mt-3">
-                  <span>{b.files.toLocaleString("vi-VN")} tệp</span>
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                      b.visibility === "public"
-                        ? "bg-amber-500/10 text-amber-600"
-                        : "bg-emerald-500/10 text-emerald-600"
-                    }`}
-                  >
-                    {b.visibility === "public" ? (
-                      <Globe2 className="w-3 h-3" />
-                    ) : (
-                      <Lock className="w-3 h-3" />
-                    )}
-                    {b.visibility === "public" ? "Public" : "Private"}
-                  </span>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
+                        {b.system ? "Bucket hệ thống" : "Bucket tùy chỉnh"}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyDataState message="Backend chưa trả về bucket lưu trữ nào." />
+            )}
+          </div>
+        </>
+      ) : null}
 
       {/* Files + side */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Files table */}
-        <div className="xl:col-span-2 bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-border bg-muted/20 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tìm tệp..."
-                className="w-full pl-9 pr-3 py-1.5 bg-card border border-border rounded-md text-sm outline-none focus:border-ring"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <select
-                value={bucketFilter}
-                onChange={(e) => setBucketFilter(e.target.value)}
-                className="px-3 py-1.5 bg-card border border-border rounded-md text-sm outline-none"
-              >
-                <option value="all">Mọi bucket</option>
-                {buckets.map((b: SmartHealthStorageBucket) => (
-                  <option key={b.id} value={b.id}>
-                    {b.id}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="px-3 py-1.5 bg-card border border-border rounded-md text-sm outline-none"
-              >
-                <option value="all">Mọi loại</option>
-                <option value="dcm">DICOM</option>
-                <option value="wav">Audio</option>
-                <option value="pdf">PDF</option>
-                <option value="mp4">Video</option>
-                <option value="jpg">Hình ảnh</option>
-              </select>
-              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-card border border-border rounded-md text-sm hover:bg-muted">
-                <Filter className="w-4 h-4" /> Lọc nâng cao
-              </button>
-            </div>
+        {filesData === null ? (
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm xl:col-span-3">
+            <UnavailableStorageSection
+              title="Danh sách tệp chưa khả dụng"
+              message="Phần thống kê vẫn được giữ nguyên nếu đã tải thành công. Hãy thử tải lại riêng dữ liệu storage."
+              onRetry={() => void loadStorage(false)}
+            />
           </div>
-
-          {selectedIds.length > 0 && (
-            <div className="px-4 py-2 bg-primary/10 border-b border-primary/20 flex items-center justify-between text-sm">
-              <span className="font-medium text-primary">Đã chọn {selectedIds.length} tệp</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    filesData
-                      .filter((file) => selectedIds.includes(file.id))
-                      .forEach((file) => void downloadStorageFile(file));
-                  }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-card border border-border rounded text-xs hover:bg-muted"
+        ) : (
+          <div
+            className={`${statsData ? "xl:col-span-2" : "xl:col-span-3"} overflow-hidden rounded-xl border border-border bg-card shadow-sm`}
+          >
+            <div className="p-4 border-b border-border bg-muted/20 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Tìm tệp..."
+                  aria-label="Tìm tệp lưu trữ"
+                  className="min-h-11 w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={bucketFilter}
+                  onChange={(e) => setBucketFilter(e.target.value)}
+                  aria-label="Lọc theo bucket"
+                  className="min-h-11 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Download className="w-3.5 h-3.5" /> Tai da chon
-                </button>
-                <CapabilityGate capabilities={STORAGE_MANAGE_CAPABILITIES}>
-                  <button
-                    onClick={requestDeleteSelectedFiles}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-destructive text-destructive-foreground rounded text-xs hover:bg-destructive/90"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" /> Xoá
-                  </button>
-                </CapabilityGate>
+                  <option value="all">Mọi bucket</option>
+                  {buckets.map((b: SmartHealthStorageBucket) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  aria-label="Lọc theo loại tệp"
+                  className="min-h-11 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="all">Mọi loại</option>
+                  <option value="dcm">DICOM</option>
+                  <option value="wav">Audio</option>
+                  <option value="pdf">PDF</option>
+                  <option value="mp4">Video</option>
+                  <option value="jpg">Hình ảnh</option>
+                </select>
               </div>
             </div>
-          )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-muted/40 text-muted-foreground text-xs">
-                <tr>
-                  <th className="px-4 py-2.5 w-10">
-                    <input
-                      type="checkbox"
-                      checked={
-                        pagedFiles.length > 0 &&
-                        pagedFiles.every((file) => selectedIds.includes(file.id))
-                      }
-                      onChange={toggleSelectAll}
-                      className="rounded border-border"
-                    />
-                  </th>
-                  <th className="px-4 py-2.5 font-medium">Tên tệp</th>
-                  <th className="px-4 py-2.5 font-medium hidden md:table-cell">Bucket</th>
-                  <th className="px-4 py-2.5 font-medium">Kích thước</th>
-                  <th className="px-4 py-2.5 font-medium hidden lg:table-cell">Người tải</th>
-                  <th className="px-4 py-2.5 font-medium hidden md:table-cell">Ngày tải</th>
-                  <th className="px-4 py-2.5 font-medium">Quyền</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Hành động</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {pagedFiles.map((f) => {
-                  const Icon = TYPE_ICON[f.type] || FileIcon;
-                  return (
-                    <tr key={f.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(f.id)}
-                          onChange={() => toggleSelect(f.id)}
-                          className="rounded border-border"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => setSelectedFile(f)}
-                          className="flex items-center gap-2 text-left hover:text-primary transition-colors"
-                        >
-                          <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                            <Icon className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-medium truncate max-w-[200px]">{f.name}</div>
-                            <div className="text-xs text-muted-foreground uppercase">{f.type}</div>
-                          </div>
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span className="font-mono text-xs px-2 py-0.5 bg-muted rounded">
-                          {f.bucket}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{f.size}</td>
-                      <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
-                        {f.uploader}
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell text-muted-foreground text-xs">
-                        {f.uploadedAt}
-                      </td>
-                      <td className="px-4 py-3">
-                        {f.visibility === "public" ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-600">
-                            <Globe2 className="w-3 h-3" /> Public
-                          </span>
-                        ) : f.visibility === "encrypted" ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-500/10 text-violet-600">
-                            <Shield className="w-3 h-3" /> Mã hoá
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-600">
-                            <Lock className="w-3 h-3" /> Private
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex gap-1">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-muted/40 text-muted-foreground text-xs">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Tên tệp</th>
+                    <th className="px-4 py-2.5 font-medium hidden md:table-cell">Bucket</th>
+                    <th className="px-4 py-2.5 font-medium">Kích thước</th>
+                    <th className="px-4 py-2.5 font-medium hidden lg:table-cell">Người tải</th>
+                    <th className="px-4 py-2.5 font-medium hidden md:table-cell">Ngày tải</th>
+                    <th className="px-4 py-2.5 font-medium">Quyền</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pagedFiles.map((f) => {
+                    const Icon = TYPE_ICON[f.type] || FileIcon;
+                    return (
+                      <tr key={f.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3">
                           <button
+                            type="button"
                             onClick={() => setSelectedFile(f)}
-                            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-                            title="Xem"
+                            className="flex min-h-11 items-center gap-2 text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
-                            <Eye className="w-4 h-4" />
+                            <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium truncate max-w-[200px]">{f.name}</div>
+                              <div className="text-xs text-muted-foreground uppercase">
+                                {f.type}
+                              </div>
+                            </div>
                           </button>
-                          <button
-                            onClick={() => downloadStorageFile(f)}
-                            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-                            title="Tải xuống"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <CapabilityGate capabilities={STORAGE_MANAGE_CAPABILITIES}>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <span className="font-mono text-xs px-2 py-0.5 bg-muted rounded">
+                            {f.bucket}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{f.size}</td>
+                        <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
+                          {f.uploader}
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell text-muted-foreground text-xs">
+                          {f.uploadedAt}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                            <Lock className="h-3 w-3" /> Theo quyền truy cập
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex gap-1">
                             <button
-                              onClick={() => void shareStorageFile(f)}
-                              className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-                              title="Chia sẻ"
+                              type="button"
+                              onClick={() => setSelectedFile(f)}
+                              aria-label={`Xem chi tiết ${f.name}`}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              title="Xem"
                             >
-                              <Share2 className="w-4 h-4" />
+                              <Eye className="w-4 h-4" />
                             </button>
-                          </CapabilityGate>
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => downloadStorageFile(f)}
+                              aria-label={`Tải xuống ${f.name}`}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              title="Tải xuống"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                            <CapabilityGate capabilities={STORAGE_MANAGE_CAPABILITIES}>
+                              <button
+                                type="button"
+                                onClick={() => void copyStorageShareLink(f)}
+                                aria-label={`Chia sẻ ${f.name}`}
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                title="Chia sẻ"
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                            </CapabilityGate>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredFiles.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-10 text-center text-muted-foreground text-sm"
+                      >
+                        Không tìm thấy tệp phù hợp
                       </td>
                     </tr>
-                  );
-                })}
-                {filteredFiles.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-10 text-center text-muted-foreground text-sm"
-                    >
-                      Không tìm thấy tệp phù hợp
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          <PaginationFooter
-            page={page}
-            totalItems={filteredFiles.length}
-            sourceTotalItems={filesData.length}
-            itemLabel="tệp"
-            onPageChange={setPage}
-          />
-        </div>
+            <PaginationFooter
+              page={page}
+              totalItems={filteredFiles.length}
+              sourceTotalItems={confirmedFiles.length}
+              itemLabel="tệp"
+              onPageChange={setPage}
+            />
+          </div>
+        )}
 
         {/* Side column */}
-        <div className="space-y-6">
-          {/* Alerts */}
-          <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-warning" /> Cảnh báo dung lượng
-              </h2>
+        {statsData ? (
+          <div className="space-y-6">
+            {/* Top bucket bar */}
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+              <h2 className="text-base font-semibold mb-3">Top bucket theo dung lượng</h2>
+              {topBuckets.length > 0 ? (
+                <div
+                  className="h-[200px]"
+                  role="img"
+                  aria-label={`Biểu đồ ${topBuckets.length} bucket có dung lượng cao nhất`}
+                >
+                  <div className="h-full w-full" aria-hidden="true">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        accessibilityLayer={false}
+                        data={topBuckets}
+                        layout="vertical"
+                        margin={{ left: 10, right: 20 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          horizontal={false}
+                          stroke="var(--border)"
+                        />
+                        <XAxis
+                          type="number"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                          width={110}
+                        />
+                        <Tooltip
+                          formatter={(value: number | string) => `${value} GB`}
+                          contentStyle={{
+                            borderRadius: 8,
+                            border: "1px solid var(--border)",
+                            backgroundColor: "var(--card)",
+                            color: "var(--foreground)",
+                          }}
+                          itemStyle={{ color: "var(--foreground)" }}
+                        />
+                        <Bar
+                          dataKey="gb"
+                          name="Dung lượng"
+                          fill="var(--chart-1)"
+                          radius={[0, 4, 4, 0]}
+                          isAnimationActive={!shouldReduceMotion}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : (
+                <EmptyDataState message="Chưa có dung lượng bucket để so sánh." compact />
+              )}
             </div>
-            <div className="space-y-2.5">
-              {buckets
-                .filter((b: SmartHealthStorageBucket) => b.used / b.quota >= 0.7)
-                .map((b: SmartHealthStorageBucket) => {
-                  const pct = (b.used / b.quota) * 100;
-                  const danger = pct >= 90;
-                  return (
+
+            {/* Recent */}
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+              <h2 className="text-base font-semibold mb-3">Tệp mới tải gần đây</h2>
+              {recentActivity.length > 0 ? (
+                <div className="space-y-3">
+                  {recentActivity.map((activity: SmartHealthStorageActivity, index: number) => (
                     <div
-                      key={b.id}
-                      className={`rounded-lg p-3 border ${
-                        danger
-                          ? "bg-destructive/5 border-destructive/30"
-                          : "bg-warning/5 border-warning/30"
-                      }`}
+                      key={`${activity.target}-${activity.when}-${index}`}
+                      className="flex gap-3 text-sm"
                     >
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-mono font-medium">{b.id}</span>
-                        <span
-                          className={`text-xs font-semibold ${danger ? "text-destructive" : "text-warning"}`}
-                        >
-                          {pct.toFixed(0)}%
+                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <UploadCloud className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm">
+                          <span className="font-medium">{activity.who}</span>{" "}
+                          <span className="text-muted-foreground">đã tải lên</span>{" "}
+                          <span className="font-mono text-xs">{activity.target}</span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{activity.when}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyDataState message="Chưa có tệp tải lên gần đây." compact />
+              )}
+            </div>
+
+            {/* Top clinic */}
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+              <h2 className="text-base font-semibold mb-1">Phân bổ theo workspace</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Tỷ trọng dung lượng đã ghi nhận, không phải hạn mức quota.
+              </p>
+              {topClinicUsage.length > 0 ? (
+                <div className="space-y-3">
+                  {topClinicUsage.map((clinic: SmartHealthClinicUsage) => (
+                    <div key={clinic.name}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate">{clinic.name}</span>
+                        <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
+                          {formatGB(clinic.gb)} · {clampPercent(clinic.percent)}%
                         </span>
                       </div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-2">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                         <div
-                          className={`h-full ${danger ? "bg-destructive" : "bg-warning"}`}
-                          style={{ width: `${pct}%` }}
+                          className="h-full bg-primary"
+                          style={{ width: `${clampPercent(clinic.percent)}%` }}
                         />
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {formatGB(b.used)} / {formatGB(b.quota)} —{" "}
-                        {danger ? "Cần mở rộng quota gấp" : "Đang gần đầy"}
-                      </div>
                     </div>
-                  );
-                })}
-            </div>
-          </div>
-
-          {/* Top bucket bar */}
-          <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Top bucket theo dung lượng</h2>
-            <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topBuckets} layout="vertical" margin={{ left: 10, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                  <XAxis
-                    type="number"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: "#64748B" }}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: "#64748B" }}
-                    width={110}
-                  />
-                  <Tooltip
-                    formatter={(value: number | string) => `${value} GB`}
-                    contentStyle={{ borderRadius: 8 }}
-                  />
-                  <Bar dataKey="gb" fill="#0B5C9A" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Recent */}
-          <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Hoạt động gần đây</h2>
-            <div className="space-y-3">
-              {recentActivity.map((a: SmartHealthStorageActivity, i: number) => (
-                <div key={i} className="flex gap-3 text-sm">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      a.action === "upload"
-                        ? "bg-primary/10 text-primary"
-                        : a.action === "delete"
-                          ? "bg-destructive/10 text-destructive"
-                          : a.action === "share"
-                            ? "bg-amber-500/10 text-amber-600"
-                            : "bg-success/10 text-success"
-                    }`}
-                  >
-                    {a.action === "upload" ? (
-                      <UploadCloud className="w-3.5 h-3.5" />
-                    ) : a.action === "delete" ? (
-                      <Trash2 className="w-3.5 h-3.5" />
-                    ) : a.action === "share" ? (
-                      <Share2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <Shield className="w-3.5 h-3.5" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm">
-                      <span className="font-medium">{a.who}</span>{" "}
-                      <span className="text-muted-foreground">{a.what}</span>{" "}
-                      <span className="font-mono text-xs">{a.target}</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{a.when}</div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <EmptyDataState message="Chưa có dữ liệu phân bổ theo workspace." compact />
+              )}
             </div>
           </div>
-
-          {/* Top clinic */}
-          <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Quota theo phòng khám</h2>
-            <div className="space-y-3">
-              {topClinicUsage.map((c: SmartHealthClinicUsage) => (
-                <div key={c.name}>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="truncate">{c.name}</span>
-                    <span className="text-xs text-muted-foreground font-medium">{c.gb} GB</span>
-                  </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${c.percent * 3.5}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function KPI({
-  title,
-  value,
-  sub,
-  icon: Icon,
-  trend,
-  progress,
-}: {
-  title: string;
-  value: string;
-  sub?: string;
-  icon: IconComponent;
-  trend?: string;
-  progress?: number;
-}) {
+function KPI({ title, value, icon: Icon }: { title: string; value: string; icon: IconComponent }) {
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:border-primary/40 hover:shadow-md transition-all">
-      <div className="flex items-start justify-between mb-3">
+      <div className="mb-3 flex items-start justify-between">
         <div className="p-2 rounded-lg bg-primary/10 text-primary">
           <Icon className="w-5 h-5" />
         </div>
-        {trend && (
-          <span className="text-xs font-medium text-success inline-flex items-center gap-0.5">
-            <ArrowUpRight className="w-3 h-3" /> {trend}
-          </span>
-        )}
       </div>
-      <div className="flex items-baseline gap-1">
-        <div className="text-2xl font-bold text-foreground">{value}</div>
-        {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
-      </div>
+      <div className="text-2xl font-bold text-foreground">{value}</div>
       <div className="text-sm text-muted-foreground mt-0.5">{title}</div>
-      {typeof progress === "number" && (
-        <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-          <div
-            className={`h-full ${progress > 85 ? "bg-warning" : "bg-primary"}`}
-            style={{ width: `${Math.min(100, progress)}%` }}
-          />
+    </div>
+  );
+}
+
+function EmptyDataState({ message, compact = false }: { message: string; compact?: boolean }) {
+  return (
+    <div
+      role="status"
+      className={`flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 text-center ${compact ? "min-h-24 py-4" : "min-h-48 py-8"}`}
+    >
+      <Database className="mb-2 h-5 w-5 text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+function StorageLoadNotice({
+  title,
+  message,
+  stale,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  stale: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role={stale ? "status" : "alert"}
+      className="flex flex-col gap-3 rounded-lg border border-warning/35 bg-warning/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" />
+        <div>
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            {stale
+              ? "Dữ liệu đang hiển thị là bản đã được backend xác nhận gần nhất. "
+              : "Không hiển thị số liệu thay thế cho phần chưa tải được. "}
+            {message}
+          </p>
         </div>
-      )}
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex min-h-11 flex-shrink-0 items-center justify-center rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Thử tải lại
+      </button>
+    </div>
+  );
+}
+
+function UnavailableStorageSection({
+  title,
+  message,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex min-h-48 flex-col items-center justify-center px-4 py-8 text-center">
+      <AlertTriangle className="mb-3 h-7 w-7 text-warning" />
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Thử tải lại
+      </button>
     </div>
   );
 }

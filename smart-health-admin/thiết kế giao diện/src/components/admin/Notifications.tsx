@@ -1,25 +1,13 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Bell,
-  Settings,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
-  Clock,
-  Trash2,
-  Send,
-  Mail,
-  Smartphone,
-  Users,
-} from "lucide-react";
+import { Bell, Settings, CheckCircle2, AlertTriangle, Info, Clock, Trash2 } from "lucide-react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
 import {
   NotificationDetailDialog,
   type NotificationItem,
 } from "./dialogs/NotificationDetailDialog";
-import { PageHeader, StatusBadge } from "./design-system";
+import { PageHeader } from "./design-system";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { smartHealthApi, type SmartHealthNotification } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
@@ -32,6 +20,8 @@ import {
 import { CapabilityGate } from "./AdminAccessContext";
 import { useAdminAccess } from "./useAdminAccess";
 import { NOTIFICATION_MANAGE_CAPABILITIES } from "./action-permissions";
+import { useNavigate } from "./router-shim";
+import { NotificationComposer } from "./NotificationComposer";
 
 function formatNotificationTime(value?: string | null) {
   if (!value) {
@@ -69,23 +59,40 @@ function mapBackendNotification(notification: SmartHealthNotification): Notifica
     time: formatNotificationTime(notification.createdAt || notification.updatedAt),
     type: notification.type || "info",
     isRead: Boolean(notification.read),
+    channel: notification.channel,
+    campaignId: notification.campaignId,
+    audienceType: notification.audienceType,
+    audienceRole: notification.audienceRole,
+    requestedChannels: notification.requestedChannels,
+    inAppStatus: notification.inAppStatus,
+    emailStatus: notification.emailStatus,
+    organizationId: notification.organizationId,
+    userId: notification.userId,
+    deliveryStatus: notification.deliveryStatus,
+    pushStatus: notification.pushStatus,
+    sentAt: notification.sentAt,
+    failedAt: notification.failedAt,
+    pushSentAt: notification.pushSentAt,
+    pushFailedAt: notification.pushFailedAt,
+    readAt: notification.readAt,
+    retryCount: notification.retryCount,
+    metadata: notification.metadata,
   };
 }
 
 export function Notifications() {
-  const { hasAnyCapability } = useAdminAccess();
+  const navigate = useNavigate();
+  const { currentUser, hasAnyCapability } = useAdminAccess();
   const canManageNotifications = hasAnyCapability(NOTIFICATION_MANAGE_CAPABILITIES);
-  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [items, setItems] = React.useState<NotificationItem[]>([]);
   const [detail, setDetail] = useState<NotificationItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
-  const [eventType, setEventType] = useState("info");
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [deleteAllError, setDeleteAllError] = useState("");
+  const [readingIds, setReadingIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -163,7 +170,7 @@ export function Notifications() {
       case "warning":
         return "border-warning/30 bg-warning/10 text-[#B45309]";
       case "success":
-        return "border-success/30 bg-success/10 text-success";
+        return "border-success/30 bg-success/10 text-[#12613D] dark:text-success";
       case "error":
         return "border-destructive/30 bg-destructive/10 text-destructive";
       case "info":
@@ -172,24 +179,47 @@ export function Notifications() {
     }
   };
 
-  const openDetail = (n: NotificationItem) => {
-    setDetail(n);
-    setDetailOpen(true);
-    if (!n.isRead) {
-      setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, isRead: true } : i)));
-      smartHealthApi
-        .markNotificationRead(String(n.id))
-        .then(() => dispatchNotificationSync())
-        .catch(() => undefined);
+  const markRead = async (id: NotificationItem["id"]) => {
+    const normalizedId = String(id);
+    const target = items.find((item) => String(item.id) === normalizedId);
+    if (!target || target.isRead || readingIds.has(normalizedId)) return;
+
+    setReadingIds((current) => new Set(current).add(normalizedId));
+    setItems((current) =>
+      current.map((item) => (String(item.id) === normalizedId ? { ...item, isRead: true } : item)),
+    );
+    try {
+      const { notification } = await smartHealthApi.markNotificationRead(normalizedId);
+      setItems((current) =>
+        current.map((item) =>
+          String(item.id) === normalizedId
+            ? { ...item, isRead: true, readAt: notification.readAt || item.readAt }
+            : item,
+        ),
+      );
+      dispatchNotificationSync();
+    } catch (error) {
+      setItems((current) =>
+        current.map((item) =>
+          String(item.id) === normalizedId ? { ...item, isRead: false } : item,
+        ),
+      );
+      toast.error(toVietnameseErrorMessage(error, "Không thể đánh dấu thông báo là đã đọc."));
+    } finally {
+      setReadingIds((current) => {
+        const next = new Set(current);
+        next.delete(normalizedId);
+        return next;
+      });
     }
   };
 
-  const markRead = (id: NotificationItem["id"]) => {
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, isRead: true } : i)));
-    smartHealthApi
-      .markNotificationRead(String(id))
-      .then(() => dispatchNotificationSync())
-      .catch(() => undefined);
+  const openDetail = (notification: NotificationItem) => {
+    setDetail(notification);
+    setDetailOpen(true);
+    if (!notification.isRead) {
+      void markRead(notification.id);
+    }
   };
 
   const markAllRead = () => {
@@ -209,6 +239,14 @@ export function Notifications() {
   };
 
   const removeOne = (id: NotificationItem["id"]) => {
+    const notification = items.find((item) => item.id === id);
+    const ownsDirectNotification = Boolean(
+      notification?.userId && notification.userId === currentUser?.id,
+    );
+    if (!canManageNotifications && !ownsDirectNotification) {
+      toast.error("Tài khoản không có quyền xóa thông báo dùng chung.");
+      return;
+    }
     const snapshot = items;
     setItems((prev) => prev.filter((i) => i.id !== id));
     smartHealthApi
@@ -258,34 +296,6 @@ export function Notifications() {
     setDeleteAllConfirmOpen(true);
   };
 
-  const createNotification = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!canManageNotifications) {
-      toast.error("Tài khoản không có quyền quản lý thông báo.");
-      return;
-    }
-    if (!title.trim() || !message.trim()) {
-      toast.error("Vui lòng nhập tiêu đề và nội dung thông báo");
-      return;
-    }
-    try {
-      const { notification } = await smartHealthApi.createNotification({
-        title,
-        message,
-        type: eventType,
-        channel: "in_app",
-      });
-      setItems((prev) => [mapBackendNotification(notification), ...prev]);
-      setTitle("");
-      setMessage("");
-      setEventType("info");
-      dispatchNotificationSync();
-      toast.success("Đã tạo thông báo và lưu vào backend.");
-    } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể tạo thông báo."));
-    }
-  };
-
   const renderList = (list: NotificationItem[]) => (
     <div className="divide-y divide-border">
       <AnimatePresence initial={false}>
@@ -331,9 +341,7 @@ export function Notifications() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, x: 24, height: 0, marginTop: 0, paddingTop: 0, paddingBottom: 0 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
-              whileHover={{ x: 2 }}
-              onClick={() => openDetail(note)}
-              className={`group p-4 flex gap-4 hover:bg-muted/30 transition-colors cursor-pointer relative ${
+              className={`group p-4 flex gap-4 hover:bg-muted/30 transition-colors relative ${
                 !note.isRead ? "bg-primary/5" : ""
               }`}
             >
@@ -374,13 +382,13 @@ export function Notifications() {
                 >
                   {note.message}
                 </p>
-                <div className="mt-3 flex gap-3">
+                <div className="mt-2 flex flex-wrap gap-1">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       openDetail(note);
                     }}
-                    className="text-xs font-medium text-primary hover:underline"
+                    className="inline-flex min-h-11 items-center rounded-md px-2 text-xs font-medium text-primary hover:bg-primary/10 hover:underline"
                   >
                     Xem chi tiết
                   </button>
@@ -388,9 +396,10 @@ export function Notifications() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        markRead(note.id);
+                        void markRead(note.id);
                       }}
-                      className="text-xs font-medium text-muted-foreground hover:underline"
+                      disabled={readingIds.has(String(note.id))}
+                      className="inline-flex min-h-11 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:underline"
                     >
                       Đánh dấu đã đọc
                     </button>
@@ -401,19 +410,21 @@ export function Notifications() {
                 {!note.isRead && (
                   <div className="w-2 h-2 bg-primary rounded-full mt-2" title="Chưa đọc" />
                 )}
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.92 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeOne(note.id);
-                  }}
-                  title="Xóa thông báo"
-                  aria-label="Xóa thông báo"
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </motion.button>
+                {(canManageNotifications || note.userId === currentUser?.id) && (
+                  <motion.button
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeOne(note.id);
+                    }}
+                    title="Xóa thông báo"
+                    aria-label="Xóa thông báo"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </motion.button>
+                )}
               </div>
             </motion.div>
           ))
@@ -425,12 +436,16 @@ export function Notifications() {
   return (
     <div className="space-y-6 h-full flex flex-col max-w-4xl mx-auto w-full">
       <PageHeader
-        eyebrow="FCM và in-app"
+        eyebrow="Dữ liệu notification từ backend"
         title="Trung tâm thông báo"
-        description="Quản lý thông báo đã gửi, hàng chờ gửi, trạng thái đọc và các kênh in-app, FCM, email."
+        description="Theo dõi thông báo và trạng thái đọc thật; trạng thái provider chỉ xuất hiện khi backend trả về."
         action={
           <CapabilityGate capabilities={NOTIFICATION_MANAGE_CAPABILITIES}>
-            <button className="flex items-center gap-2 bg-card border border-border text-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-muted transition-colors">
+            <button
+              type="button"
+              onClick={() => navigate("/settings?section=notifications")}
+              className="flex min-h-11 items-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
               <Settings className="w-4 h-4" />
               Cài đặt thông báo
             </button>
@@ -446,92 +461,26 @@ export function Notifications() {
       )}
 
       <CapabilityGate capabilities={NOTIFICATION_MANAGE_CAPABILITIES}>
-        <motion.form
-          onSubmit={createNotification}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-border bg-card p-5 shadow-sm"
-        >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">Tạo thông báo</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Gửi đến người nhận, phòng khám hoặc toàn hệ thống.
-              </p>
-            </div>
-            <StatusBadge label="Chờ gửi" tone="warning" />
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="space-y-1.5">
-              <span className="text-sm font-medium">Tiêu đề</span>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-                placeholder="Ví dụ: Thiết bị mất kết nối"
-              />
-            </label>
-            <label className="space-y-1.5">
-              <span className="text-sm font-medium">Người nhận</span>
-              <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring">
-                <option>Phòng khám Đa khoa Tâm Anh</option>
-                <option>Tất cả admin phòng khám</option>
-                <option>Một bác sĩ cụ thể</option>
-              </select>
-            </label>
-            <label className="space-y-1.5">
-              <span className="text-sm font-medium">Loại sự kiện</span>
-              <select
-                value={eventType}
-                onChange={(event) => setEventType(event.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-              >
-                <option value="info">{getNotificationTypeLabel("info")}</option>
-                <option value="warning">{getNotificationTypeLabel("warning")}</option>
-                <option value="success">{getNotificationTypeLabel("success")}</option>
-                <option value="error">{getNotificationTypeLabel("error")}</option>
-              </select>
-            </label>
-            <label className="space-y-1.5 md:col-span-3">
-              <span className="text-sm font-medium">Nội dung</span>
-              <textarea
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                className="min-h-[88px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-                placeholder="Nhập nội dung thông báo bằng tiếng Việt..."
-              />
-            </label>
-          </div>
-          <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
-                <Bell className="h-3.5 w-3.5" /> in-app
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2.5 py-1 text-secondary">
-                <Smartphone className="h-3.5 w-3.5" /> FCM
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
-                <Mail className="h-3.5 w-3.5" /> email
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
-                <Users className="h-3.5 w-3.5" /> nhóm người nhận
-              </span>
-            </div>
-            <button className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
-              <Send className="h-4 w-4" />
-              Tạo thông báo
-            </button>
-          </div>
-        </motion.form>
+        <NotificationComposer
+          onCreated={(notifications) => {
+            const mapped = notifications.map(mapBackendNotification);
+            const createdIds = new Set(mapped.map((notification) => String(notification.id)));
+            setItems((current) => [
+              ...mapped,
+              ...current.filter((notification) => !createdIds.has(String(notification.id))),
+            ]);
+            dispatchNotificationSync();
+          }}
+        />
       </CapabilityGate>
 
       <div className="flex-1 bg-card border border-border rounded-xl shadow-sm overflow-hidden flex flex-col">
         <Tabs.Root defaultValue="all" className="flex-1 flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-border bg-muted/20">
-            <Tabs.List className="flex space-x-2">
+          <div className="flex flex-col gap-3 border-b border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs.List className="flex flex-wrap gap-2">
               <Tabs.Trigger
                 value="all"
-                className="px-3 py-1.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground hover:text-foreground transition-all"
+                className="min-h-11 rounded-md px-3 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
               >
                 Tất cả{" "}
                 <span className="ml-1.5 bg-primary/10 text-primary py-0.5 px-2 rounded-full text-xs">
@@ -540,7 +489,7 @@ export function Notifications() {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="unread"
-                className="px-3 py-1.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground hover:text-foreground transition-all"
+                className="min-h-11 rounded-md px-3 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
               >
                 Chưa đọc{" "}
                 <span className="ml-1.5 bg-destructive/10 text-destructive py-0.5 px-2 rounded-full text-xs">
@@ -548,20 +497,19 @@ export function Notifications() {
                 </span>
               </Tabs.Trigger>
             </Tabs.List>
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
               <button
                 onClick={markAllRead}
-                className="text-primary hover:underline font-medium disabled:opacity-50 disabled:no-underline"
+                className="inline-flex min-h-11 items-center rounded-md px-2 font-medium text-primary hover:bg-primary/10 hover:underline disabled:opacity-50 disabled:no-underline"
                 disabled={unreadCount === 0}
               >
                 Đánh dấu tất cả là đã đọc
               </button>
               <CapabilityGate capabilities={NOTIFICATION_MANAGE_CAPABILITIES}>
-                <div className="w-px h-4 bg-border" />
                 <button
                   onClick={requestRemoveAll}
                   disabled={items.length === 0}
-                  className="text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  className="flex min-h-11 items-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                 >
                   <Trash2 className="w-4 h-4" /> Xóa tất cả
                 </button>

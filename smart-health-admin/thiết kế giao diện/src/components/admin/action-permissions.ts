@@ -13,6 +13,13 @@ export const PATIENT_MANAGE_CAPABILITIES = [
   "personal.profiles.manage",
 ] as const;
 
+export const SCAN_VIEW_CAPABILITIES = ["platform.scans.view", "workspace.scans.view"] as const;
+
+export const SCAN_MANAGE_CAPABILITIES = [
+  "platform.scans.manage",
+  "workspace.scans.manage",
+] as const;
+
 export const DEVICE_MANAGE_CAPABILITIES = [
   "platform.devices.manage",
   "workspace.devices.manage",
@@ -27,11 +34,17 @@ export const STORAGE_MANAGE_CAPABILITIES = [
 ] as const;
 
 export const REPORT_EXPORT_CAPABILITIES = [
-  "platform.reports.view",
-  "workspace.reports.view",
-  "platform.storage.manage",
-  "workspace.storage.manage",
-  "billing.view",
+  "platform.exports.manage",
+  "workspace.exports.manage",
+  "workspace.assigned_data.export",
+  "personal.data.export",
+] as const;
+
+export const AUDIT_VIEW_CAPABILITIES = ["platform.audit.view", "workspace.audit.view"] as const;
+
+export const AUDIT_EXPORT_CAPABILITIES = [
+  "platform.audit.export",
+  "workspace.audit.export",
 ] as const;
 
 export const NOTIFICATION_MANAGE_CAPABILITIES = [

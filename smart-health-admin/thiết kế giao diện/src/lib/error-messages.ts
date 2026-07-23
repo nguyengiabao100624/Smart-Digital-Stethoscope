@@ -51,6 +51,31 @@ const FIREBASE_AUTH_MESSAGES: Record<string, string> = {
   "auth/invalid-action-code": "Link đặt lại mật khẩu không hợp lệ hoặc đã được sử dụng.",
 };
 
+const API_CODE_MESSAGES: Record<string, string> = {
+  staff_invitation_email_invalid: "Email nhận lời mời không đúng định dạng.",
+  staff_invitation_role_invalid: "Vai trò nhân sự được chọn không được hỗ trợ.",
+  staff_invitation_workspace_required: "Hãy chọn workspace trước khi tạo lời mời.",
+  staff_invitation_workspace_not_found: "Không tìm thấy workspace của lời mời.",
+  staff_invitation_workspace_inactive: "Chỉ workspace đang hoạt động mới có thể mời nhân sự.",
+  staff_invitation_pending: "Email này đã có một lời mời đang chờ trong workspace.",
+  staff_invitation_not_found: "Không tìm thấy lời mời trong workspace được phép truy cập.",
+  staff_invitation_not_pending: "Lời mời không còn ở trạng thái có thể thao tác.",
+  staff_invitation_expired: "Lời mời đã hết hạn. Hãy yêu cầu quản trị viên gửi lại.",
+  staff_invitation_email_mismatch:
+    "Email của tài khoản đang đăng nhập không khớp với người nhận lời mời.",
+  staff_invitation_identity_mismatch: "Danh tính đang đăng nhập không khớp với người nhận lời mời.",
+  staff_invitation_platform_identity_forbidden:
+    "Tài khoản quản trị nền tảng không thể chấp nhận lời mời nhân sự workspace.",
+  staff_membership_exists: "Tài khoản đã là thành viên của workspace này.",
+  idempotency_key_required: "Thiếu khóa chống gửi lặp cho thao tác. Hãy thử lại từ giao diện.",
+  storage_share_provider_unavailable:
+    "Nhà cung cấp liên kết chia sẻ có thời hạn chưa khả dụng. Tệp chưa được chia sẻ.",
+  storage_object_unavailable:
+    "Đối tượng lưu trữ của tệp chưa khả dụng nên chưa thể tạo liên kết chia sẻ.",
+  storage_metadata_repository_unavailable:
+    "Kho metadata lưu trữ chưa khả dụng. Vui lòng thử lại sau.",
+};
+
 const PARTIAL_ERROR_MESSAGES: Array<[string, string]> = [
   [
     "demo password auth is disabled in production mode",
@@ -127,6 +152,10 @@ export function toVietnameseErrorMessage(
   const rawMessage = getRawMessage(error).trim();
   const directCode = getErrorCode(error).toLowerCase();
   const firebaseCode = directCode || extractFirebaseAuthCode(rawMessage);
+
+  if (directCode && API_CODE_MESSAGES[directCode]) {
+    return API_CODE_MESSAGES[directCode];
+  }
 
   if (firebaseCode && FIREBASE_AUTH_MESSAGES[firebaseCode]) {
     return FIREBASE_AUTH_MESSAGES[firebaseCode];

@@ -2,6 +2,8 @@ package com.example.smart_health_android.data
 
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDate
+import java.time.Period
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
@@ -28,14 +30,35 @@ data class Patient(
     val patientCode: String,
     val name: String,
     val age: Int? = null,
+    val dateOfBirth: String = "",
     val gender: String = "",
     val phone: String = "",
     val notes: String = "",
+    val bloodType: String = "unknown",
+    val allergies: List<String> = emptyList(),
+    val emergencyContact: EmergencyContact = EmergencyContact(),
     val profileType: String = "",
     val relationship: String = "",
+    val ownerUserId: String = "",
     val scanCount: Int = 0,
     val lastScanAt: String? = null,
     val lastAiLabel: String? = null
+) {
+    fun resolvedAge(today: LocalDate = LocalDate.now()): Int? {
+        val birthDate = runCatching { LocalDate.parse(dateOfBirth) }.getOrNull()
+        return birthDate?.takeIf { !it.isAfter(today) }?.let { Period.between(it, today).years } ?: age
+    }
+}
+
+data class EmergencyContact(
+    val name: String = "",
+    val phone: String = "",
+    val relationship: String = "",
+)
+
+data class ActiveProfileResult(
+    val user: AuthUser,
+    val activePatient: Patient,
 )
 
 data class PatientSnapshot(
@@ -98,16 +121,55 @@ data class StartScanRequest(
 data class PatientShare(
     val id: String,
     val patientId: String,
+    val authorityType: String = "",
+    val status: String = "",
+    val recipient: ShareRecipient = ShareRecipient(),
+    val grantedByActor: ShareAuditActor? = null,
+    val revokedByActor: ShareAuditActor? = null,
     val doctorUserId: String = "",
     val doctorId: String = "",
     val organizationId: String = "",
     val scope: String = "",
     val scanIds: List<String> = emptyList(),
     val expiresAt: String? = null,
-    val active: Boolean = true,
+    val active: Boolean = false,
+    val grantedByUserId: String = "",
     val revokedAt: String? = null,
+    val revokedByUserId: String = "",
     val createdAt: String? = null,
     val updatedAt: String? = null
+) {
+    val isActive: Boolean
+        get() = status == "active"
+
+    val hasCanonicalAccessContract: Boolean
+        get() = authorityType in CANONICAL_ACCESS_AUTHORITIES &&
+            status in CANONICAL_ACCESS_STATUSES &&
+            recipient.type in CANONICAL_RECIPIENT_TYPES &&
+            recipient.id.isNotBlank()
+
+    private companion object {
+        val CANONICAL_ACCESS_AUTHORITIES = setOf(
+            "patient_consent",
+            "clinician_access_grant",
+            "administrative_assignment",
+        )
+        val CANONICAL_ACCESS_STATUSES = setOf("active", "revoked", "expired")
+        val CANONICAL_RECIPIENT_TYPES = setOf("doctor", "workspace")
+    }
+}
+
+data class ShareRecipient(
+    val type: String = "",
+    val id: String = "",
+    val name: String = "",
+    val workspaceId: String = "",
+)
+
+data class ShareAuditActor(
+    val id: String = "",
+    val name: String = "",
+    val role: String = "",
 )
 
 data class ShareTargets(
@@ -205,12 +267,14 @@ data class AuthUser(
     val roleInfoRequestMessage: String = "",
     val registrationReason: String = "",
     val currentWorkspaceId: String = "",
+    val activePatientId: String = "",
     val currentMembership: WorkspaceMembership? = null,
     val currentWorkspace: WorkspaceSummary? = null,
     val memberships: List<WorkspaceMembership> = emptyList(),
     val workspaceType: String = "",
     val accountType: String = "",
     val clinicSuggestion: String = "",
+    val capabilities: List<String> = emptyList(),
     val notificationPreferences: JSONObject = JSONObject(),
     val twoFactorEnabled: Boolean = false,
     val twoFactorMethod: String = "",
@@ -254,6 +318,58 @@ data class AuthResult(
     val user: AuthUser
 )
 
+data class TwoFactorAvailability(
+    val available: Boolean,
+    val status: String,
+    val methods: List<String> = emptyList(),
+    val reason: String = "",
+)
+
+data class TwoFactorState(
+    val enabled: Boolean,
+    val method: String = "",
+    val enrollmentPending: Boolean = false,
+)
+
+data class TwoFactorStatusResult(
+    val availability: TwoFactorAvailability,
+    val twoFactor: TwoFactorState,
+)
+
+data class TwoFactorEnrollment(
+    val id: String,
+    val method: String,
+    val manualKey: String,
+    val otpauthUri: String,
+    val expiresAt: String,
+)
+
+data class TwoFactorEnrollmentResult(
+    val twoFactor: TwoFactorState,
+    val enrollment: TwoFactorEnrollment,
+)
+
+data class TwoFactorVerifiedResult(
+    val twoFactor: TwoFactorState,
+    val recoveryCodes: List<String>,
+    val twoFactorToken: String,
+    val tokenExpiresAt: String,
+)
+
+data class TwoFactorChallenge(
+    val challengeId: String,
+    val method: String,
+    val expiresAt: String,
+)
+
+data class TwoFactorChallengeResult(
+    val twoFactorToken: String,
+    val expiresAt: String,
+    val token: String = "",
+    val user: AuthUser? = null,
+)
+
+@Deprecated("Use the enrollment and verification contract")
 data class TwoFactorUpdateResult(
     val user: AuthUser,
     val enabled: Boolean,
@@ -290,10 +406,20 @@ data class SpecialtyOption(
 
 data class AppNotification(
     val id: String,
+    val userId: String = "",
+    val organizationId: String = "",
     val type: String = "info",
     val title: String = "",
     val message: String = "",
+    val campaignId: String = "",
+    val audienceType: String = "legacy",
+    val audienceRole: String = "",
+    val requestedChannels: List<String> = emptyList(),
+    val inAppStatus: String = "ready",
+    val emailStatus: String = "skipped",
+    val pushStatus: String = "skipped",
     val read: Boolean = false,
+    val readAt: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null
 )
@@ -306,6 +432,23 @@ data class AccessLog(
     val ip: String = "",
     val severity: String = "info",
     val createdAt: String? = null
+)
+
+data class SmartDeviceTelemetry(
+    val uptimeMs: Long? = null,
+    val resetReason: String = "",
+    val freeHeapBytes: Long? = null,
+    val i2sStatus: String = "",
+    val audioPacketsSent: Long? = null,
+    val audioPacketsDropped: Long? = null,
+    val audioSendFailures: Long? = null,
+    val lastCommandId: String = "",
+    val lastCommandState: String = "",
+    val lastCommandCode: String = "",
+    val lastCommandUptimeMs: Long? = null,
+    val otaStatus: String = "",
+    val audioStatus: String = "",
+    val connectionMethod: String = "",
 )
 
 data class SmartDevice(
@@ -327,8 +470,32 @@ data class SmartDevice(
     val audioStatus: String = "",
     val backendHost: String = "",
     val backendPort: Int? = null,
+    val telemetry: SmartDeviceTelemetry = SmartDeviceTelemetry(),
     val lastSeenAt: String? = null,
     val updatedAt: String? = null
+)
+
+enum class DevicePairingOutcome {
+    Accepted,
+    Success,
+}
+
+enum class DevicePairingPresence {
+    AwaitingOnline,
+    Online,
+}
+
+data class DevicePairingState(
+    val outcome: DevicePairingOutcome,
+    val presence: DevicePairingPresence,
+    val onlineConfirmed: Boolean,
+    val authenticatedTransport: String? = null,
+)
+
+data class DevicePairingResponse(
+    val device: SmartDevice,
+    val pairing: DevicePairingState,
+    val idempotent: Boolean = false,
 )
 
 data class AiChatMessage(
@@ -336,6 +503,57 @@ data class AiChatMessage(
     val role: String,
     val content: String,
     val createdAt: String? = null
+)
+
+data class AiChatAvailability(
+    val available: Boolean,
+    val provider: String = "",
+    val reason: String = "",
+)
+
+data class AiChatSession(
+    val messages: List<AiChatMessage>,
+    val availability: AiChatAvailability,
+)
+
+data class SignalAnalysisSettings(
+    val analysisKind: String = "",
+    val version: String = "",
+    val analyzerVersion: String = "",
+    val status: String = "",
+    val updateSupported: Boolean = false,
+    val clinicalDecisionSupport: Boolean = false,
+    val accuracyMetricsAvailable: Boolean = false,
+    val lastUpdateStatus: String = "",
+)
+
+data class SignalAnalysisRuntime(
+    val scanAnalysis: SignalAnalysisScanRuntime = SignalAnalysisScanRuntime(),
+    val chatProvider: SignalAnalysisChatRuntime = SignalAnalysisChatRuntime(),
+    val modelUpdate: SignalAnalysisUpdateRuntime = SignalAnalysisUpdateRuntime(),
+)
+
+data class SignalAnalysisScanRuntime(
+    val available: Boolean = false,
+    val analysisKind: String = "",
+    val analyzerVersion: String = "",
+    val clinicalDecisionSupport: Boolean = false,
+)
+
+data class SignalAnalysisChatRuntime(
+    val available: Boolean = false,
+    val status: String = "",
+    val reason: String = "",
+)
+
+data class SignalAnalysisUpdateRuntime(
+    val available: Boolean = false,
+    val reason: String = "",
+)
+
+data class SignalAnalysisStatus(
+    val settings: SignalAnalysisSettings,
+    val runtime: SignalAnalysisRuntime,
 )
 
 data class ExportJob(
@@ -443,6 +661,10 @@ internal fun JSONObject.stringOrNull(name: String): String? {
 
 internal fun JSONObject.intOrNull(name: String): Int? {
     return if (isNull(name)) null else optInt(name)
+}
+
+internal fun JSONObject.longOrNull(name: String): Long? {
+    return if (isNull(name)) null else optLong(name)
 }
 
 internal fun JSONObject.doubleOrNull(name: String): Double? {

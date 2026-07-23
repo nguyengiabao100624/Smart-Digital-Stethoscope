@@ -5,8 +5,8 @@ import { useSEO } from "@/lib/useSEO";
 const principles = [
   {
     icon: Lock,
-    title: "Dữ liệu mã hóa toàn trình",
-    desc: "Tất cả dữ liệu y tế được mã hóa khi truyền và lưu trữ. Chỉ người có quyền mới truy cập được.",
+    title: "Bảo vệ dữ liệu theo từng lớp",
+    desc: "Kết nối sản phẩm dùng HTTPS/WSS; quyền đọc và ghi được backend kiểm tra theo workspace và capability.",
   },
   {
     icon: Eye,
@@ -21,7 +21,7 @@ const principles = [
   {
     icon: FileText,
     title: "Lịch sử audit trong workspace",
-    desc: "Mọi hành động quan trọng đều được ghi lại với timestamp.",
+    desc: "Các mutation thuộc phạm vi audit được ghi kèm actor, workspace và thời điểm xử lý.",
   },
   {
     icon: RotateCcw,
@@ -30,8 +30,8 @@ const principles = [
   },
   {
     icon: CheckCircle,
-    title: "Workspace cô lập",
-    desc: "Dữ liệu giữa các workspace không chia sẻ chéo.",
+    title: "Workspace được kiểm tra độc lập",
+    desc: "Mọi truy vấn và mutation nhạy cảm phải qua kiểm tra tenant; kiểm thử chéo workspace là tiêu chí phát hành.",
   },
 ];
 
@@ -71,11 +71,11 @@ export default function SecurityPage() {
   const isConsent = pathname.includes("consent");
   useSEO({
     title: isConsent
-      ? "Quy trình Consent dữ liệu | Smart Health Care"
-      : "Bảo mật dữ liệu sức khỏe | Smart Health Care",
+      ? "Quy trình Consent dữ liệu | Shcare"
+      : "Bảo mật dữ liệu sức khỏe | Shcare",
     description: isConsent
-      ? "Cách Smart Health Care quản lý consent dữ liệu y tế: gửi lời mời, chấp nhận, thu hồi và kiểm soát quyền truy cập cho bệnh nhân."
-      : "Cam kết bảo mật của Smart Health Care: mã hóa toàn trình, consent minh bạch, role-based access và audit log cho dữ liệu y tế.",
+      ? "Cách Shcare quản lý consent dữ liệu: yêu cầu, chấp nhận, hết hạn, thu hồi và kiểm tra quyền truy cập."
+      : "Mô hình bảo mật Shcare gồm kết nối HTTPS/WSS, consent, kiểm tra capability, tenant isolation và audit cho các mutation được hỗ trợ.",
     path: isConsent ? "/bao-mat-consent" : "/bao-mat",
   });
   return (
@@ -99,8 +99,8 @@ export default function SecurityPage() {
           </div>
           <h1 className="brand-gradient-text mb-4">Bảo mật & Quyền riêng tư</h1>
           <p className="text-[#8aa5ba] text-lg leading-relaxed">
-            Smart Health được xây dựng với bảo mật là ưu tiên hàng đầu. Dữ liệu y tế của bạn được
-            bảo vệ và chỉ chia sẻ khi bạn đồng ý.
+            Shcare áp dụng kiểm tra workspace, vai trò và consent tại backend. Phạm vi bảo vệ thực tế
+            còn phụ thuộc cấu hình triển khai và không được dùng thay cho đánh giá tuân thủ pháp lý.
           </p>
         </div>
       </section>
@@ -229,7 +229,7 @@ export default function SecurityPage() {
         <div className="max-w-2xl mx-auto px-6 text-center">
           <h2 className="brand-gradient-text mb-3">Câu hỏi về bảo mật?</h2>
           <p className="text-[#8aa5ba] mb-8">
-            Chúng tôi sẵn sàng giải đáp mọi thắc mắc về cách Smart Health bảo vệ dữ liệu của bạn.
+            Chúng tôi sẵn sàng giải đáp phạm vi bảo vệ dữ liệu và cấu hình triển khai của Shcare.
           </p>
           <Link to="/lien-he" className="premium-button inline-block">
             Liên hệ đội ngũ bảo mật

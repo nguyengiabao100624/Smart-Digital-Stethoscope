@@ -1,0 +1,40 @@
+{
+  "messages": [
+    {
+      "id": "msg_server_user_001",
+      "role": "user",
+      "content": "Tín hiệu của lượt đo bị nhiễu.",
+      "userId": "usr_fixture_001",
+      "organizationId": "workspace_fixture_001",
+      "createdAt": "2026-07-14T00:00:00.000Z"
+    },
+    {
+      "id": "msg_server_assistant_001",
+      "role": "assistant",
+      "content": "Hãy kiểm tra vị trí cảm biến và thực hiện lại lượt đo.",
+      "userId": "usr_fixture_001",
+      "organizationId": "workspace_fixture_001",
+      "provider": "clinical_provider",
+      "model": "provider_model_v1",
+      "createdAt": "2026-07-14T00:00:01.000Z"
+    }
+  ],
+  "availability": {
+    "available": true,
+    "status": "available",
+    "provider": "clinical_provider",
+    "model": "provider_model_v1",
+    "reason": ""
+  },
+  "message": {
+    "id": "msg_server_assistant_001",
+    "role": "assistant",
+    "content": "Hãy kiểm tra vị trí cảm biến và thực hiện lại lượt đo.",
+    "userId": "usr_fixture_001",
+    "organizationId": "workspace_fixture_001",
+    "provider": "clinical_provider",
+    "model": "provider_model_v1",
+    "createdAt": "2026-07-14T00:00:01.000Z"
+  },
+  "idempotent": false
+}

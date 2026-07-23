@@ -16,7 +16,7 @@ const capabilities = [
   {
     icon: Cpu,
     title: "Quản lý thiết bị",
-    desc: "Kho thiết bị workspace, gán/thu hồi thiết bị, theo dõi pin và trạng thái realtime.",
+    desc: "Kho thiết bị workspace, gán/thu hồi thiết bị và theo dõi trạng thái do backend xác nhận.",
   },
   {
     icon: BarChart2,
@@ -37,7 +37,7 @@ const capabilities = [
 
 export default function ClinicSolutionPage() {
   useSEO({
-    title: "Giải pháp cho phòng khám | Smart Health Care",
+    title: "Giải pháp cho phòng khám | Shcare",
     description:
       "Quản lý workspace phòng khám: bác sĩ, nhân sự, bệnh nhân, thiết bị ống nghe và báo cáo vận hành theo dõi sức khỏe từ xa.",
     path: "/giai-phap/phong-kham",
@@ -57,7 +57,7 @@ export default function ClinicSolutionPage() {
             <Building2 size={14} /> Giải pháp cho phòng khám & cơ sở y tế
           </div>
           <h1 className="brand-gradient-text mb-4">
-            Vận hành phòng khám hiệu quả hơn với Smart Health
+            Vận hành phòng khám rõ ràng hơn với Shcare
           </h1>
           <p className="text-[#8aa5ba] text-lg leading-relaxed max-w-2xl mx-auto mb-8">
             Một workspace để quản lý toàn bộ nhân sự, bệnh nhân, thiết bị và báo cáo cho phòng khám

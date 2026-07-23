@@ -1,11 +1,16 @@
 import { toVietnameseErrorMessage } from "./error-messages";
 import { WEB_SURFACE, IS_PORTAL_SURFACE } from "./surface";
+import { createDeviceSecretPayload } from "./device-secret";
+import type { ShcareDeviceSetupQrPayload } from "./device-provisioning";
 
 type QueryValue = string | number | boolean | null | undefined;
 
 export type SmartHealthApiError = Error & {
   status?: number;
   payload?: unknown;
+  code?: string;
+  requestId?: string;
+  fieldErrors?: Record<string, string>;
 };
 
 export type SmartHealthMembership = {
@@ -86,6 +91,69 @@ export type SmartHealthAuthUser = {
   rejectReason?: string;
   createdAt?: string;
   updatedAt?: string;
+  patientsCount?: number | null;
+  measurementsCount?: number | null;
+};
+
+export type SmartHealthStaffRole =
+  | "workspace_admin"
+  | "doctor"
+  | "nurse"
+  | "technician"
+  | "billing"
+  | "viewer";
+
+export type SmartHealthStaffInvitationDelivery = {
+  email: "ready" | "unavailable" | "sent" | "failed";
+  provider?: string;
+  messageId?: string;
+  lastAttemptAt?: string;
+  errorCode?: string;
+};
+
+export type SmartHealthStaffInvitation = {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: SmartHealthStaffRole;
+  name?: string;
+  phone?: string;
+  specialty?: string;
+  license?: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expiresAt?: string;
+  acceptedAt?: string;
+  acceptedByUserId?: string;
+  revokedAt?: string;
+  revokedByUserId?: string;
+  revokeReason?: string;
+  createdByUserId?: string;
+  lastSentAt?: string;
+  sendCount?: number;
+  delivery?: SmartHealthStaffInvitationDelivery;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SmartHealthStaffInvitationMutation = {
+  invitation: SmartHealthStaffInvitation;
+  delivery?: SmartHealthStaffInvitationDelivery;
+  oneTimeAcceptanceToken?: string;
+  oneTimeAcceptanceUrl?: string;
+  idempotent?: boolean;
+};
+
+export type SmartHealthFirebaseReconciliation = {
+  mode: "report_only";
+  destructiveAction: false;
+  deletedCount: 0;
+  providerAccountCount: number;
+  backendLinkedAccountCount: number;
+  missingProviderAccountCount: number;
+  missingBackendAccountCount: number;
+  missingProviderAccounts: string[];
+  missingBackendAccounts: string[];
+  resultsTruncated: boolean;
 };
 
 export type SmartHealthAdminAccountRole =
@@ -117,6 +185,14 @@ export type SmartHealthPatient = {
   patientCode?: string;
   name?: string;
   age?: number | null;
+  dateOfBirth?: string;
+  bloodType?: string;
+  allergies?: string[];
+  emergencyContact?: {
+    name?: string;
+    phone?: string;
+    relationship?: string;
+  };
   gender?: string;
   phone?: string;
   email?: string;
@@ -124,6 +200,8 @@ export type SmartHealthPatient = {
   notes?: string;
   organizationId?: string;
   ownerUserId?: string;
+  profileType?: string;
+  relationship?: string;
   primaryDoctorId?: string;
   doctorName?: string;
   scanCount?: number;
@@ -138,6 +216,7 @@ export type SmartHealthScan = {
   patientId?: string;
   patient?: SmartHealthPatient;
   status?: string;
+  processingStatus?: string;
   mode?: string;
   bodySite?: string;
   deviceId?: string;
@@ -159,10 +238,56 @@ export type SmartHealthScan = {
   updatedAt?: string;
 };
 
+export type SmartHealthDeviceTelemetry = {
+  uptimeMs?: number;
+  resetReason?: string;
+  freeHeapBytes?: number;
+  i2sStatus?: string;
+  audioPacketsSent?: number;
+  audioPacketsDropped?: number;
+  audioSendFailures?: number;
+  lastCommandId?: string;
+  lastCommandState?: string;
+  lastCommandCode?: string;
+  lastCommandUptimeMs?: number;
+  otaStatus?: string;
+  audioStatus?: string;
+  connectionMethod?: string;
+};
+
+export type SmartHealthDeviceCredentialRotationState =
+  | "initiated"
+  | "pending_device_ack"
+  | "confirming"
+  | "confirmed"
+  | "expired"
+  | "rolled_back"
+  | "failed";
+
+export type SmartHealthDeviceCredentialRotation = {
+  id: string;
+  state: SmartHealthDeviceCredentialRotationState;
+  commandId?: string;
+  requestedAt?: string;
+  expiresAt?: string;
+  acknowledgedAt?: string;
+  confirmingAt?: string;
+  confirmedAt?: string;
+  expiredAt?: string;
+  rolledBackAt?: string;
+  failedAt?: string;
+  failureCode?: string;
+  confirmed?: boolean;
+};
+
 export type SmartHealthDevice = {
   id: string;
   name?: string;
   type?: string;
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  purchaseDate?: string;
   status?: string;
   signal?: number;
   wifiRssi?: number;
@@ -173,34 +298,133 @@ export type SmartHealthDevice = {
   online?: boolean;
   connectionMethod?: string;
   pairedUserId?: string | null;
+  ownerUserId?: string | null;
+  assignedPatientId?: string | null;
+  revokedByUserId?: string | null;
+  ownershipState?: "provisioned" | "claimed" | "assigned" | "unassigned" | "revoked";
   organizationId?: string;
   firmwareVersion?: string;
   otaStatus?: string;
   audioStatus?: string;
   backendHost?: string;
   backendPort?: number;
+  telemetry?: SmartHealthDeviceTelemetry;
+  credentialRotation?: SmartHealthDeviceCredentialRotation;
   ota?: {
     id?: string;
+    commandId?: string;
+    correlationId?: string;
     firmwareVersion?: string;
     url?: string;
     checksum?: string;
     firmwareFileId?: string;
     firmwareFileName?: string;
+    hardwareTarget?: string;
+    partitionTarget?: string;
+    minimumProtocolVersion?: number;
     expiresAt?: string;
     status?: string;
     createdAt?: string;
+    updatedAt?: string;
   };
-  lastCommand?: {
-    id?: string;
-    type?: string;
-    status?: string;
-    createdAt?: string;
-    deliveredVia?: Record<string, unknown>;
-  };
+  lastCommand?: SmartHealthDeviceCommand;
   lastSeenAt?: string;
   updatedAt?: string;
   revokedAt?: string;
   secretRotatedAt?: string;
+};
+
+export type SmartHealthDeviceProvisionResponse = {
+  device: SmartHealthDevice;
+  claim: {
+    deviceId: string;
+    claimCode: string;
+    expiresAt: string;
+    qrPayload: ShcareDeviceSetupQrPayload;
+  };
+  idempotent?: boolean;
+};
+
+export type SmartHealthDeviceCommandState =
+  | "accepted"
+  | "queued"
+  | "delivered"
+  | "acknowledged"
+  | "applying"
+  | "applied"
+  | "failed"
+  | "expired";
+
+export type SmartHealthDeviceCommandDelivery = {
+  websocket?: boolean;
+  mqtt?: boolean;
+  delivered?: boolean;
+};
+
+export type SmartHealthDeviceCommand = {
+  protocolVersion?: number;
+  id: string;
+  deviceId: string;
+  organizationId?: string;
+  type: string;
+  correlationId?: string;
+  state: SmartHealthDeviceCommandState;
+  status?: SmartHealthDeviceCommandState;
+  code?: string;
+  detail?: string;
+  requestedByUserId?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  acceptedAt?: string;
+  queuedAt?: string;
+  deliveredAt?: string;
+  acknowledgedAt?: string;
+  applyingAt?: string;
+  appliedAt?: string;
+  failedAt?: string;
+  expiredAt?: string;
+  delivery?: SmartHealthDeviceCommandDelivery;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SmartHealthDevicePairing = {
+  outcome: "accepted" | "success";
+  presence: "awaiting_online" | "online";
+  onlineConfirmed: boolean;
+  authenticatedTransport?: "wss" | null;
+};
+
+export type SmartHealthDevicePairingResponse = {
+  device: SmartHealthDevice;
+  pairing: SmartHealthDevicePairing;
+  idempotent?: boolean;
+};
+
+export type SmartHealthDeviceCommandResponse = {
+  device: SmartHealthDevice;
+  command: SmartHealthDeviceCommand;
+  delivery?: SmartHealthDeviceCommandDelivery;
+  responseStatus?: number;
+  idempotent?: boolean;
+};
+
+export type SmartHealthDeviceCredentialRotationResponse = {
+  device: SmartHealthDevice;
+  rotation: SmartHealthDeviceCredentialRotation;
+  command?: SmartHealthDeviceCommand | null;
+  confirmed: boolean;
+  idempotent?: boolean;
+};
+
+export type SmartHealthDeviceOtaRequest = {
+  firmwareVersion: string;
+  url?: string;
+  checksum: string;
+  firmwareFileId?: string;
+  hardwareTarget: "MSM261S4030H0";
+  partitionTarget: "app";
+  minimumProtocolVersion: number;
 };
 
 export type SmartHealthDeviceEvent = {
@@ -213,12 +437,135 @@ export type SmartHealthDeviceEvent = {
 
 export type SmartHealthNotification = {
   id: string;
+  userId?: string;
+  organizationId?: string;
   type?: string;
   title?: string;
   message?: string;
+  channel?: string;
+  campaignId?: string;
+  audienceType?: SmartHealthNotificationAudienceType | "legacy";
+  audienceRole?: string;
+  requestedChannels?: SmartHealthNotificationChannel[];
+  inAppStatus?: SmartHealthNotificationDeliveryStatus;
+  emailStatus?: SmartHealthNotificationDeliveryStatus;
+  emailErrorMessage?: string;
+  deliveryStatus?: string;
+  sentAt?: string;
+  failedAt?: string;
+  retryCount?: number;
+  pushStatus?: string;
+  pushSentAt?: string;
+  pushFailedAt?: string;
+  metadata?: Record<string, unknown>;
   read?: boolean;
+  readAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type SmartHealthNotificationChannel = "in_app" | "email" | "push";
+export type SmartHealthNotificationAudienceType = "workspace" | "role" | "users";
+export type SmartHealthNotificationDeliveryStatus =
+  | "ready"
+  | "disabled"
+  | "unavailable"
+  | "skipped"
+  | "no_recipient"
+  | "no_devices"
+  | "sent"
+  | "partial"
+  | "failed";
+
+export type SmartHealthNotificationAudience = {
+  type: SmartHealthNotificationAudienceType;
+  workspaceId: string;
+  role?: string;
+  userIds?: string[];
+};
+
+export type SmartHealthNotificationChannelAvailability = {
+  available: boolean;
+  status: SmartHealthNotificationDeliveryStatus;
+  provider: string;
+  reasonCode?: string;
+};
+
+export type SmartHealthNotificationOptions = {
+  audiences: {
+    workspaces: Array<{ id: string; name: string; workspaceType: string }>;
+    roles: string[];
+    users: Array<{ id: string; workspaceId: string; name: string; email?: string; role: string }>;
+  };
+  channels: Record<SmartHealthNotificationChannel, SmartHealthNotificationChannelAvailability>;
+};
+
+export type SmartHealthNotificationCampaign = {
+  id: string;
+  operationId: string;
+  organizationId: string;
+  audience: SmartHealthNotificationAudience;
+  requestedChannels: SmartHealthNotificationChannel[];
+  recipientCount: number;
+  notificationIds: string[];
+  channelSummary: Record<string, Record<string, number>>;
+  status: "ready" | "partial" | "unavailable";
+  createdAt: string;
+};
+
+export type SmartHealthNotificationCampaignResponse = {
+  campaign: SmartHealthNotificationCampaign;
+  notifications: SmartHealthNotification[];
+  notification?: SmartHealthNotification | null;
+  idempotent: boolean;
+  channelAvailability: SmartHealthNotificationOptions["channels"];
+};
+
+export type SmartHealthExportFormat = "json" | "csv" | "xlsx" | "pdf";
+
+export type SmartHealthExportDataset = "clinical_bundle" | "audit_logs";
+
+export type SmartHealthAuditLogSort =
+  | "createdAt:desc"
+  | "createdAt:asc"
+  | "action:asc"
+  | "action:desc";
+
+export type SmartHealthAuditLogFilters = {
+  q?: string;
+  action?: string;
+  resourceType?: string;
+  actorUserId?: string;
+  startDate?: string;
+  endDate?: string;
+  sort?: SmartHealthAuditLogSort;
+};
+
+export type SmartHealthExportJob = {
+  id: string;
+  organizationId?: string;
+  createdByUserId?: string;
+  format: SmartHealthExportFormat;
+  dataset?: SmartHealthExportDataset;
+  scopeKind?: "platform" | "workspace" | "assigned" | "personal" | string;
+  filters?: SmartHealthAuditLogFilters | Record<string, unknown>;
+  rendererVersion?: string;
+  artifactSha256?: string;
+  status: "pending" | "ready" | "failed" | string;
+  includeAudio?: boolean;
+  includeReports?: boolean;
+  includeHistory?: boolean;
+  startDate?: string;
+  endDate?: string;
+  recordCount?: number;
+  downloadUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SmartHealthExportSnapshot = Record<string, unknown> & {
+  exportId?: string;
+  generatedAt?: string;
 };
 
 export type SmartHealthAuthSession = {
@@ -260,6 +607,7 @@ export type SmartHealthChartPoint = {
 };
 
 export type SmartHealthChartSlice = {
+  key?: string;
   name: string;
   value: number;
   color: string;
@@ -267,12 +615,34 @@ export type SmartHealthChartSlice = {
 
 export type SmartHealthOverviewStats = {
   clinics: number;
+  workspaces?: number;
   patientsCount?: number;
   pendingDoctors: number;
   devicesOnline: number;
   scansCount: number;
   aiJobsFailed: number;
+  storageBytes?: number;
   storageUsed: string;
+};
+
+export type SmartHealthOverviewRangeKey = "today" | "7d" | "30d";
+
+export type SmartHealthOverviewRange = {
+  key: SmartHealthOverviewRangeKey;
+  label: string;
+  startAt: string;
+  endAt: string;
+  timezoneOffsetMinutes: number;
+  bucket: "4h" | "day";
+};
+
+export type SmartHealthOverviewResponse = {
+  generatedAt: string;
+  range: SmartHealthOverviewRange;
+  stats: SmartHealthOverviewStats;
+  measureData: SmartHealthChartPoint[];
+  deviceData: SmartHealthChartSlice[];
+  aiJobData: SmartHealthChartSlice[];
 };
 
 export type SmartHealthStorageBucket = {
@@ -284,18 +654,12 @@ export type SmartHealthStorageBucket = {
   colorKey?: string;
   category?: string;
   used: number;
-  quota: number;
-  quotaGb?: number;
   files: number;
   createdAt: string;
-  visibility: "public" | "private" | "encrypted" | string;
   allowedExtensions?: string[];
   allowedMimeTypes?: string[];
   maxFileSizeMb?: number;
-  retentionDays?: number;
-  encryptionRequired?: boolean;
   system?: boolean;
-  color?: string;
 };
 
 export type SmartHealthStorageFile = {
@@ -306,10 +670,9 @@ export type SmartHealthStorageFile = {
   size: string;
   uploader: string;
   uploadedAt: string;
-  visibility: "public" | "private" | "encrypted";
+  visibility: "private";
   previewUrl?: string;
   downloadUrl?: string;
-  shareUrl?: string;
   createdAt?: string;
   byteSize?: number;
   checksum?: string;
@@ -338,15 +701,51 @@ export type SmartHealthClinicUsage = {
   percent: number;
 };
 
-export type SmartHealthAccessLog = {
-  id?: string;
-  action?: string;
-  severity?: "success" | "warning" | "error" | string;
-  ip?: string;
-  userAgent?: string;
-  userId?: string;
-  createdAt?: string;
-  metadata?: Record<string, unknown>;
+export type SmartHealthAuditLogOutcome =
+  | "success"
+  | "failure"
+  | "warning"
+  | "denied"
+  | "recorded"
+  | string;
+
+export type SmartHealthAuditLog = {
+  id: string;
+  actorUserId: string;
+  actorName: string;
+  actorRole: string;
+  organizationId: string;
+  organizationName: string;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  outcome: SmartHealthAuditLogOutcome;
+  ip: string;
+  userAgent: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+};
+
+export type SmartHealthAccessLog = SmartHealthAuditLog;
+
+export type SmartHealthAuditLogPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  pageCount: number;
+  hasNextPage: boolean;
+  sort: SmartHealthAuditLogSort;
+};
+
+export type SmartHealthAuditLogQuery = SmartHealthAuditLogFilters & {
+  organizationId?: string;
+  page?: number;
+  limit?: number;
+};
+
+export type SmartHealthAuditLogResponse = {
+  logs: SmartHealthAuditLog[];
+  pagination: SmartHealthAuditLogPagination;
 };
 
 export type SmartHealthClinic = {
@@ -385,8 +784,57 @@ export type SmartHealthClinic = {
   doctorCount?: number;
   patientCount?: number;
   deviceCount?: number;
+  version?: number;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type SmartHealthClinicListPagination = {
+  totalCount: number;
+  page: number;
+  limit: number;
+  pageCount: number;
+};
+
+export type SmartHealthClinicListResponse = {
+  clinics: SmartHealthClinic[];
+  workspaces?: SmartHealthClinic[];
+  pagination?: SmartHealthClinicListPagination;
+};
+
+export type SmartHealthWorkspaceTransitionReceipt = {
+  from: string;
+  to: string;
+};
+
+export type SmartHealthWorkspaceMutationResponse = {
+  workspace: SmartHealthClinic;
+  clinic?: SmartHealthClinic;
+  transition?: SmartHealthWorkspaceTransitionReceipt;
+  operationId: string;
+  idempotent: boolean;
+};
+
+export type SmartHealthWorkspaceArchiveResponse = {
+  deleted: true;
+  workspaceId: string;
+  clinicId?: string;
+  operationId: string;
+  idempotent: boolean;
+};
+
+export type SmartHealthWorkspaceOwnerApprovalResponse = {
+  workspace: SmartHealthClinic;
+  clinic?: SmartHealthClinic;
+  ownerApproval: {
+    userId: string;
+    role: "workspace_owner";
+    requestedRole: "workspace_owner";
+    roleRequestStatus: "approved";
+    identityOperationId: string;
+  };
+  operationId: string;
+  idempotent: boolean;
 };
 
 export type SmartHealthSpecialty = {
@@ -416,6 +864,7 @@ export type SmartHealthServicePackage = {
 
 type RequestOptions = RequestInit & {
   query?: Record<string, QueryValue>;
+  onResponse?: (response: Response) => void;
 };
 
 const DEFAULT_HTTP_BASE_URL = "http://localhost:3000";
@@ -512,19 +961,75 @@ function buildUrl(path: string, query?: Record<string, QueryValue>) {
   return url.toString();
 }
 
-function getErrorMessage(payload: unknown, fallback: string) {
-  if (payload && typeof payload === "object" && "error" in payload) {
-    const error = (payload as { error?: unknown }).error;
-    if (typeof error === "string" && error.trim()) {
-      return toVietnameseErrorMessage(error, fallback);
-    }
-  }
+function getErrorMetadata(payload: unknown) {
+  const root =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  const nested =
+    root.error && typeof root.error === "object" && !Array.isArray(root.error)
+      ? (root.error as Record<string, unknown>)
+      : {};
+  const details =
+    nested.details && typeof nested.details === "object" && !Array.isArray(nested.details)
+      ? (nested.details as Record<string, unknown>)
+      : root.details && typeof root.details === "object" && !Array.isArray(root.details)
+        ? (root.details as Record<string, unknown>)
+        : {};
+  const fieldErrorsCandidate = details.fieldErrors ?? root.fieldErrors;
+  const fieldErrors =
+    fieldErrorsCandidate &&
+    typeof fieldErrorsCandidate === "object" &&
+    !Array.isArray(fieldErrorsCandidate)
+      ? Object.fromEntries(
+          Object.entries(fieldErrorsCandidate as Record<string, unknown>).flatMap(
+            ([field, value]) => (typeof value === "string" ? [[field, value]] : []),
+          ),
+        )
+      : undefined;
+  const stringError = typeof root.error === "string" ? root.error : "";
+  return {
+    code:
+      typeof nested.code === "string"
+        ? nested.code
+        : typeof root.code === "string"
+          ? root.code
+          : "",
+    message:
+      typeof nested.message === "string"
+        ? nested.message
+        : typeof root.message === "string"
+          ? root.message
+          : stringError,
+    requestId:
+      typeof nested.requestId === "string"
+        ? nested.requestId
+        : typeof root.requestId === "string"
+          ? root.requestId
+          : "",
+    fieldErrors,
+  };
+}
 
+function getErrorMessage(payload: unknown, fallback: string) {
+  const metadata = getErrorMetadata(payload);
+  if (metadata.message || metadata.code) {
+    return toVietnameseErrorMessage({ message: metadata.message, code: metadata.code }, fallback);
+  }
   return toVietnameseErrorMessage(payload, fallback);
 }
 
+function assignApiErrorMetadata(error: SmartHealthApiError, payload: unknown) {
+  const metadata = getErrorMetadata(payload);
+  if (metadata.code) error.code = metadata.code;
+  if (metadata.requestId) error.requestId = metadata.requestId;
+  if (metadata.fieldErrors && Object.keys(metadata.fieldErrors).length > 0) {
+    error.fieldErrors = metadata.fieldErrors;
+  }
+}
+
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { query, headers, body, ...init } = options;
+  const { query, headers, body, onResponse, ...init } = options;
   const requestHeaders = new Headers(headers);
   const token = getStoredToken();
 
@@ -551,7 +1056,9 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
       headers: requestHeaders,
       body,
     });
+    onResponse?.(response);
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new Error(
       toVietnameseErrorMessage(
         error,
@@ -579,6 +1086,7 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     ) as SmartHealthApiError;
     error.status = response.status;
     error.payload = payload;
+    assignApiErrorMetadata(error, payload);
     throw error;
   }
 
@@ -586,12 +1094,20 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 }
 
 async function requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
-  const { query, headers, body, ...init } = options;
+  const { query, headers, body, onResponse, ...init } = options;
   const requestHeaders = new Headers(headers);
   const token = getStoredToken();
 
   if (token && !requestHeaders.has("Authorization")) {
     requestHeaders.set("Authorization", `Bearer ${token}`);
+  }
+
+  if (!requestHeaders.has("X-Smart-Health-Surface")) {
+    requestHeaders.set("X-Smart-Health-Surface", WEB_SURFACE);
+  }
+
+  if (!requestHeaders.has("X-Smart-Health-Client")) {
+    requestHeaders.set("X-Smart-Health-Client", "web");
   }
 
   let response: Response;
@@ -601,7 +1117,9 @@ async function requestBlob(path: string, options: RequestOptions = {}): Promise<
       headers: requestHeaders,
       body,
     });
+    onResponse?.(response);
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new Error(
       toVietnameseErrorMessage(
         error,
@@ -623,12 +1141,13 @@ async function requestBlob(path: string, options: RequestOptions = {}): Promise<
         payload = text;
       }
     }
-    throw new Error(
-      getErrorMessage(
-        payload,
-        `Không thể tải file audio từ backend Smart Health (${response.status}).`,
-      ),
-    );
+    const error = new Error(
+      getErrorMessage(payload, `Không thể tải tệp từ backend Smart Health (${response.status}).`),
+    ) as SmartHealthApiError;
+    error.status = response.status;
+    error.payload = payload;
+    assignApiErrorMetadata(error, payload);
+    throw error;
   }
 
   return response.blob();
@@ -771,10 +1290,13 @@ export const smartHealthApi = {
     return requestBlob(audioUrl);
   },
 
-  async reprocessScanAi(scanId: string) {
+  async reprocessScanAi(scanId: string, idempotencyKey: string) {
     return requestJson<{ scan: SmartHealthScan }>(
       `/scans/${encodeURIComponent(scanId)}/reprocess`,
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
     );
   },
 
@@ -784,20 +1306,17 @@ export const smartHealthApi = {
     );
   },
 
+  async getDevice(id: string, signal?: AbortSignal) {
+    return requestJson<{ device: SmartHealthDevice }>(`/devices/${encodeURIComponent(id)}`, {
+      signal,
+    });
+  },
+
   async patchDevice(id: string, payload: Partial<SmartHealthDevice>) {
     return requestJson<{ device: SmartHealthDevice }>(`/devices/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
-  },
-
-  async deleteDevice(id: string) {
-    return requestJson<{ deleted: boolean; deviceId: string }>(
-      `/devices/${encodeURIComponent(id)}`,
-      {
-        method: "DELETE",
-      },
-    );
   },
 
   async connectDevice(id: string) {
@@ -829,30 +1348,25 @@ export const smartHealthApi = {
     });
   },
 
-  async unpairDevice(id: string) {
-    return requestJson<{ device: SmartHealthDevice }>(`/devices/${encodeURIComponent(id)}/unpair`, {
-      method: "POST",
-    });
-  },
-
-  async rotateDeviceSecret(id: string) {
-    return requestJson<{ device: SmartHealthDevice; rotated?: boolean }>(
+  async rotateDeviceSecret(id: string, idempotencyKey: string) {
+    return requestJson<SmartHealthDeviceCredentialRotationResponse>(
       `/devices/${encodeURIComponent(id)}/rotate-secret`,
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({}),
+      },
     );
   },
 
-  async pushDeviceOta(
-    id: string,
-    payload: { firmwareVersion?: string; url?: string; checksum?: string; firmwareFileId?: string },
-  ) {
-    return requestJson<{
-      device: SmartHealthDevice;
-      ota?: unknown;
-      command?: unknown;
-      delivery?: { delivered?: boolean };
-    }>(`/devices/${encodeURIComponent(id)}/ota`, {
+  async pushDeviceOta(id: string, payload: SmartHealthDeviceOtaRequest, idempotencyKey: string) {
+    return requestJson<
+      SmartHealthDeviceCommandResponse & {
+        ota?: unknown;
+      }
+    >(`/devices/${encodeURIComponent(id)}/ota`, {
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     });
   },
@@ -860,15 +1374,29 @@ export const smartHealthApi = {
   async sendDeviceCommand(
     id: string,
     payload: { type: string; payload?: Record<string, unknown> },
+    idempotencyKey: string,
   ) {
-    return requestJson<{
-      device: SmartHealthDevice;
-      command: { id: string; type: string; payload?: Record<string, unknown>; createdAt?: string };
-      delivery?: Record<string, unknown>;
-    }>(`/devices/${encodeURIComponent(id)}/commands`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return requestJson<SmartHealthDeviceCommandResponse>(
+      `/devices/${encodeURIComponent(id)}/commands`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async listDeviceCommands(id: string) {
+    return requestJson<{ commands: SmartHealthDeviceCommand[] }>(
+      `/devices/${encodeURIComponent(id)}/commands`,
+    );
+  },
+
+  async getDeviceCommand(id: string, commandId: string, signal?: AbortSignal) {
+    return requestJson<{ command: SmartHealthDeviceCommand }>(
+      `/devices/${encodeURIComponent(id)}/commands/${encodeURIComponent(commandId)}`,
+      { signal },
+    );
   },
 
   async listDeviceEvents(id: string) {
@@ -881,14 +1409,48 @@ export const smartHealthApi = {
     return requestJson<{ notifications: SmartHealthNotification[] }>("/notifications");
   },
 
-  async createNotification(payload: {
-    title: string;
-    message: string;
-    type?: string;
-    channel?: string;
-  }) {
-    return requestJson<{ notification: SmartHealthNotification }>("/notifications", {
+  async getNotificationOptions() {
+    return requestJson<SmartHealthNotificationOptions>("/notifications/options");
+  },
+
+  async createExport(
+    payload: {
+      format: SmartHealthExportFormat;
+      dataset?: SmartHealthExportDataset;
+      filters?: SmartHealthAuditLogFilters;
+      startDate?: string;
+      endDate?: string;
+      includeAudio?: boolean;
+      includeReports?: boolean;
+      includeHistory?: boolean;
+      organizationId?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<{ export: SmartHealthExportJob }>("/exports", {
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async downloadExport(exportId: string, onResponse?: (response: Response) => void) {
+    return requestBlob(`/exports/download/${encodeURIComponent(exportId)}`, { onResponse });
+  },
+
+  async createNotification(
+    payload: {
+      title: string;
+      message: string;
+      type?: string;
+      audience: SmartHealthNotificationAudience;
+      channels: SmartHealthNotificationChannel[];
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<SmartHealthNotificationCampaignResponse>("/notifications", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     });
   },
@@ -918,8 +1480,18 @@ export const smartHealthApi = {
     });
   },
 
-  async listAccessLogs() {
-    return requestJson<{ logs: SmartHealthAccessLog[] }>("/access-logs");
+  async listAuditLogs(params: SmartHealthAuditLogQuery = {}, signal?: AbortSignal) {
+    return requestJson<SmartHealthAuditLogResponse>("/audit-logs", {
+      query: params,
+      signal,
+    });
+  },
+
+  async listAccessLogs(params: SmartHealthAuditLogQuery = {}, signal?: AbortSignal) {
+    return requestJson<SmartHealthAuditLogResponse>("/access-logs", {
+      query: params,
+      signal,
+    });
   },
 
   async listDoctorRoleRequests(status?: string) {
@@ -934,24 +1506,55 @@ export const smartHealthApi = {
     );
   },
 
-  async createDoctor(payload: {
-    fullName?: string;
-    name?: string;
-    specialty?: string;
-    department?: string;
-    clinic?: string;
-    clinicName?: string;
-    phone?: string;
-    email?: string;
-    licenseNumber?: string;
-    license?: string;
-    organizationId?: string;
-  }) {
-    return requestJson<{ doctor: SmartHealthAuthUser }>(
-      IS_PORTAL_SURFACE ? "/portal/staff" : "/admin/doctors",
+  async listStaffInvitations(
+    params: {
+      organizationId?: string;
+      role?: SmartHealthStaffRole;
+      status?: SmartHealthStaffInvitation["status"];
+    } = {},
+  ) {
+    return requestJson<{ invitations: SmartHealthStaffInvitation[] }>("/admin/staff-invitations", {
+      query: params,
+    });
+  },
+
+  async createStaffInvitation(
+    payload: {
+      email: string;
+      role: SmartHealthStaffRole;
+      organizationId: string;
+      name?: string;
+      phone?: string;
+      specialty?: string;
+      license?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<SmartHealthStaffInvitationMutation>("/admin/staff-invitations", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async resendStaffInvitation(invitationId: string, idempotencyKey: string) {
+    return requestJson<SmartHealthStaffInvitationMutation>(
+      `/admin/staff-invitations/${encodeURIComponent(invitationId)}/resend`,
       {
         method: "POST",
-        body: JSON.stringify(payload),
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({}),
+      },
+    );
+  },
+
+  async revokeStaffInvitation(invitationId: string, reason: string, idempotencyKey: string) {
+    return requestJson<SmartHealthStaffInvitationMutation>(
+      `/admin/staff-invitations/${encodeURIComponent(invitationId)}/revoke`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ reason }),
       },
     );
   },
@@ -1031,19 +1634,21 @@ export const smartHealthApi = {
     });
   },
 
-  async deleteDoctor(userId: string) {
+  async deleteDoctor(userId: string, idempotencyKey: string) {
     return requestJson<{
       deleted: boolean;
+      userId?: string;
       firebaseDeleted?: boolean;
       firebaseAlreadyMissing?: boolean;
       firebaseUid?: string;
       warning?: string;
     }>(`/admin/doctors/${encodeURIComponent(userId)}`, {
       method: "DELETE",
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
 
-  async lockDoctor(userId: string) {
+  async lockDoctor(userId: string, idempotencyKey: string) {
     return requestJson<{
       request: SmartHealthAuthUser;
       firebaseDisabled?: boolean;
@@ -1054,6 +1659,7 @@ export const smartHealthApi = {
       warning?: string;
     }>(`/admin/doctors/${encodeURIComponent(userId)}/lock`, {
       method: "PATCH",
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
 
@@ -1090,17 +1696,22 @@ export const smartHealthApi = {
     );
   },
 
-  async getOverviewStats() {
-    return requestJson<{
-      stats: SmartHealthOverviewStats;
-      measureData: SmartHealthChartPoint[];
-      deviceData: SmartHealthChartSlice[];
-      aiJobData: SmartHealthChartSlice[];
-    }>(IS_PORTAL_SURFACE ? "/portal/overview" : "/admin/overview-stats");
+  async getOverviewStats({
+    range = "today",
+    timezoneOffsetMinutes = 0,
+  }: {
+    range?: SmartHealthOverviewRangeKey;
+    timezoneOffsetMinutes?: number;
+  } = {}) {
+    return requestJson<unknown>(IS_PORTAL_SURFACE ? "/portal/overview" : "/admin/overview-stats", {
+      query: { range, timezoneOffsetMinutes },
+    });
   },
 
   async syncFirebase() {
-    return requestJson<{ deletedCount: number }>("/admin/sync-firebase", { method: "POST" });
+    return requestJson<SmartHealthFirebaseReconciliation>("/admin/sync-firebase", {
+      method: "POST",
+    });
   },
 
   async getSettings() {
@@ -1188,7 +1799,7 @@ export const smartHealthApi = {
     );
   },
 
-  async unlockDoctor(userId: string) {
+  async unlockDoctor(userId: string, idempotencyKey: string) {
     return requestJson<{
       request: SmartHealthAuthUser;
       firebaseDisabled?: boolean;
@@ -1197,11 +1808,60 @@ export const smartHealthApi = {
       warning?: string;
     }>(`/admin/doctors/${encodeURIComponent(userId)}/unlock`, {
       method: "PATCH",
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
 
-  async listClinics() {
-    return requestJson<{ clinics: SmartHealthClinic[] }>("/admin/clinics");
+  async listClinics(
+    params: {
+      q?: string;
+      status?: string;
+      workspaceType?: string;
+      page?: number;
+      limit?: number;
+      sort?: string;
+      signal?: AbortSignal;
+    } = {},
+  ) {
+    let pagination: SmartHealthClinicListPagination | undefined;
+    const payload = await requestJson<{
+      clinics?: SmartHealthClinic[];
+      workspaces?: SmartHealthClinic[];
+    }>("/admin/clinics", {
+      query: {
+        q: params.q,
+        status: params.status,
+        workspaceType: params.workspaceType,
+        page: params.page,
+        limit: params.limit,
+        sort: params.sort,
+      },
+      signal: params.signal,
+      onResponse: (response) => {
+        const headerValues = [
+          response.headers.get("X-Total-Count"),
+          response.headers.get("X-Page"),
+          response.headers.get("X-Page-Limit"),
+          response.headers.get("X-Page-Count"),
+        ];
+        if (headerValues.some((value) => value === null || !value.trim())) return;
+        const [totalCount, page, limit, pageCount] = headerValues.map(Number);
+        if (
+          [totalCount, page, limit, pageCount].every(Number.isInteger) &&
+          totalCount >= 0 &&
+          page >= 1 &&
+          limit >= 1 &&
+          pageCount >= 0
+        ) {
+          pagination = { totalCount, page, limit, pageCount };
+        }
+      },
+    });
+    return {
+      ...payload,
+      clinics: payload.clinics ?? payload.workspaces ?? [],
+      pagination,
+    } satisfies SmartHealthClinicListResponse;
   },
 
   async listCatalogClinics() {
@@ -1212,20 +1872,27 @@ export const smartHealthApi = {
     return requestJson<{ specialties: SmartHealthSpecialty[] }>("/catalog/specialties");
   },
 
-  async createClinic(payload: {
-    name: string;
-    type?: string;
-    workspaceType?: string;
-    address?: string;
-    phone?: string;
-    email?: string;
-    website?: string;
-    packageId?: string;
-    subscriptionStatus?: string;
-    billingCycle?: string;
-  }) {
-    return requestJson<{ clinic: SmartHealthClinic }>("/admin/clinics", {
+  async createClinic(
+    payload: {
+      name: string;
+      type: string;
+      workspaceType: string;
+      address?: string;
+      phone?: string;
+      email?: string;
+      website?: string;
+      legalName?: string;
+      representative?: string;
+      ownerUserId?: string;
+      packageId?: string;
+      subscriptionStatus?: string;
+      billingCycle?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<SmartHealthWorkspaceMutationResponse>("/admin/clinics", {
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     });
   },
@@ -1252,65 +1919,149 @@ export const smartHealthApi = {
       message?: string;
       requestInfoMessage?: string;
       requiredFields?: string[];
+      expectedVersion: number;
     },
+    idempotencyKey: string,
   ) {
-    return requestJson<{ clinic: SmartHealthClinic }>(
+    return requestJson<SmartHealthWorkspaceMutationResponse>(
       `/admin/clinics/${encodeURIComponent(clinicId)}`,
       {
         method: "PATCH",
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+          "If-Match": String(payload.expectedVersion),
+        },
         body: JSON.stringify(payload),
       },
     );
   },
 
-  async deleteClinic(clinicId: string) {
-    return requestJson<{ deleted: boolean; clinicId: string }>(
-      `/admin/clinics/${encodeURIComponent(clinicId)}`,
-      { method: "DELETE" },
-    );
-  },
-
-  async createPatient(payload: {
-    name: string;
-    age?: number | null;
-    gender?: string;
-    phone?: string;
-    email?: string;
-    address?: string;
-    notes?: string;
-    patientCode?: string;
-    organizationId?: string;
-  }) {
-    return requestJson<{ patient: SmartHealthPatient }>(
-      IS_PORTAL_SURFACE ? "/portal/patients" : "/patients",
+  async approveWorkspaceOwner(clinicId: string, expectedVersion: number, idempotencyKey: string) {
+    return requestJson<SmartHealthWorkspaceOwnerApprovalResponse>(
+      `/admin/clinics/${encodeURIComponent(clinicId)}/owner-approval`,
       {
         method: "POST",
-        body: JSON.stringify(payload),
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+          "If-Match": String(expectedVersion),
+        },
+        body: JSON.stringify({ expectedVersion }),
       },
     );
   },
 
-  async createDeviceProvision(payload: {
-    deviceId?: string;
-    name?: string;
-    organizationId?: string;
-  }) {
-    return requestJson<{
-      device: SmartHealthDevice;
-      claim: { deviceId: string; claimCode: string; expiresAt: string; qrPayload: unknown };
-    }>("/devices/provision-qr", {
+  async deleteClinic(clinicId: string, expectedVersion: number, idempotencyKey: string) {
+    return requestJson<SmartHealthWorkspaceArchiveResponse>(
+      `/admin/clinics/${encodeURIComponent(clinicId)}`,
+      {
+        method: "DELETE",
+        query: { version: expectedVersion },
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+          "If-Match": String(expectedVersion),
+        },
+      },
+    );
+  },
+
+  async createPatient(
+    payload: {
+      name: string;
+      age?: number | null;
+      dateOfBirth?: string;
+      bloodType?: string;
+      allergies?: string[];
+      emergencyContact?: {
+        name: string;
+        phone: string;
+        relationship: string;
+      };
+      gender?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      notes?: string;
+      patientCode?: string;
+      organizationId?: string;
+    },
+    idempotencyKey?: string,
+  ) {
+    return requestJson<unknown>(IS_PORTAL_SURFACE ? "/portal/patients" : "/patients", {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(payload),
     });
   },
 
-  async activateDeviceByClaim(payload: {
-    deviceId: string;
-    claimCode?: string;
-    connectionMethod?: string;
-  }) {
-    return requestJson<{ device: SmartHealthDevice }>("/devices/pair", {
+  async getPatient(patientId: string) {
+    return requestJson<unknown>(
+      `${IS_PORTAL_SURFACE ? "/portal/patients" : "/patients"}/${encodeURIComponent(patientId)}`,
+    );
+  },
+
+  async updatePatient(
+    patientId: string,
+    payload: Partial<Omit<SmartHealthPatient, "id">>,
+    idempotencyKey?: string,
+  ) {
+    return requestJson<unknown>(
+      `${IS_PORTAL_SURFACE ? "/portal/patients" : "/patients"}/${encodeURIComponent(patientId)}`,
+      {
+        method: "PATCH",
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async deletePatient(patientId: string, idempotencyKey?: string) {
+    return requestJson<unknown>(
+      `${IS_PORTAL_SURFACE ? "/portal/patients" : "/patients"}/${encodeURIComponent(patientId)}`,
+      {
+        method: "DELETE",
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      },
+    );
+  },
+
+  async createDeviceProvision(
+    payload: {
+      deviceId?: string;
+      name?: string;
+      type?: string;
+      manufacturer?: string;
+      model?: string;
+      serialNumber?: string;
+      purchaseDate?: string;
+      organizationId?: string;
+      deviceSecret: string;
+    },
+    idempotencyKey: string,
+  ) {
+    if (!idempotencyKey.trim()) {
+      throw new Error("Idempotency-Key is required for device provisioning");
+    }
+    return requestJson<SmartHealthDeviceProvisionResponse>("/devices/provision-qr", {
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({
+        ...payload,
+        ...createDeviceSecretPayload(payload.deviceSecret),
+      }),
+    });
+  },
+
+  async activateDeviceByClaim(
+    payload: {
+      deviceId: string;
+      claimCode?: string;
+      connectionMethod?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<SmartHealthDevicePairingResponse>("/devices/pair", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     });
   },
@@ -1319,26 +2070,34 @@ export const smartHealthApi = {
     return requestJson<{ packages: SmartHealthServicePackage[] }>("/admin/packages");
   },
 
-  async createPackage(payload: {
-    packageName?: string;
-    name?: string;
-    packageType?: string;
-    type?: string;
-    segment?: string;
-    price?: string | number;
-    duration?: string;
-    maxDevices?: string | number;
-    maxDoctors?: string | number;
-    maxPatients?: string | number;
-    storageGb?: string | number;
-    aiMonthly?: string | number;
-    retentionDays?: string | number;
-    features?: Record<string, unknown>;
-  }) {
-    return requestJson<{ package: SmartHealthServicePackage }>("/admin/packages", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  async createPackage(
+    payload: {
+      packageName?: string;
+      name?: string;
+      packageType?: string;
+      type?: string;
+      segment?: string;
+      price?: string | number;
+      duration?: string;
+      maxDevices?: string | number;
+      maxDoctors?: string | number;
+      maxPatients?: string | number;
+      storageGb?: string | number;
+      aiMonthly?: string | number;
+      retentionDays?: string | number;
+      features?: Record<string, unknown>;
+      status?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<{ package: SmartHealthServicePackage; idempotent?: boolean }>(
+      "/admin/packages",
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   async updatePackage(
@@ -1360,118 +2119,115 @@ export const smartHealthApi = {
       features?: Record<string, unknown>;
       status?: string;
     },
+    idempotencyKey: string,
   ) {
-    return requestJson<{ package: SmartHealthServicePackage }>(
+    return requestJson<{ package: SmartHealthServicePackage; idempotent?: boolean }>(
       `/admin/packages/${encodeURIComponent(packageId)}`,
       {
         method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify(payload),
       },
     );
   },
 
-  async deletePackage(packageId: string) {
-    return requestJson<{ deleted: boolean; packageId: string }>(
-      `/admin/packages/${encodeURIComponent(packageId)}`,
-      { method: "DELETE" },
-    );
-  },
-
-  async assignPackageToClinic(
-    clinicId: string,
-    payload: { packageId: string; subscriptionStatus?: string; billingCycle?: string },
-  ) {
-    return requestJson<{ clinic: SmartHealthClinic }>(
-      `/admin/workspaces/${encodeURIComponent(clinicId)}/package`,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    );
+  async archivePackage(packageId: string, idempotencyKey: string) {
+    return requestJson<{
+      package: SmartHealthServicePackage;
+      archived: true;
+      packageId: string;
+      idempotent?: boolean;
+    }>(`/admin/packages/${encodeURIComponent(packageId)}`, {
+      method: "DELETE",
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
   },
 
   async getStorageStats() {
-    return requestJson<{
-      totalUsed: number;
-      totalQuota: number;
-      totalFiles: number;
-      buckets: SmartHealthStorageBucket[];
-      growthData: SmartHealthChartPoint[];
-      typeData: SmartHealthChartSlice[];
-      topBuckets: SmartHealthTopBucket[];
-      recentActivity: SmartHealthStorageActivity[];
-      topClinicUsage: SmartHealthClinicUsage[];
-    }>(IS_PORTAL_SURFACE ? "/portal/storage/stats" : "/admin/storage-stats");
+    return requestJson<unknown>(
+      IS_PORTAL_SURFACE ? "/portal/storage/stats" : "/admin/storage-stats",
+    );
   },
 
   async listStorageFiles() {
-    return requestJson<{ files: SmartHealthStorageFile[] }>(
+    return requestJson<unknown>(
       IS_PORTAL_SURFACE ? "/portal/storage/files" : "/admin/storage-files",
     );
   },
 
-  async createStorageBucket(payload: {
-    id?: string;
-    name: string;
-    description?: string;
-    iconKey?: string;
-    colorKey?: string;
-    category?: string;
-    quotaGb?: number;
-    visibility?: string;
-    allowedExtensions?: string[];
-    allowedMimeTypes?: string[];
-    maxFileSizeMb?: number;
-    retentionDays?: number;
-    encryptionRequired?: boolean;
-  }) {
-    return requestJson<{ bucket: SmartHealthStorageBucket }>("/admin/storage-buckets", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  async createStorageBucket(
+    payload: {
+      id?: string;
+      name: string;
+      description?: string;
+      iconKey?: string;
+      colorKey?: string;
+      category?: string;
+      allowedExtensions?: string[];
+      allowedMimeTypes?: string[];
+      maxFileSizeMb?: number;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<{ bucket: SmartHealthStorageBucket; idempotent?: boolean }>(
+      "/admin/storage-buckets",
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
-  async deleteStorageBucket(bucketId: string) {
-    return requestJson<{ deleted: boolean; bucketId: string }>(
+  async deleteStorageBucket(bucketId: string, idempotencyKey: string) {
+    return requestJson<{ deleted: boolean; bucketId: string; idempotent?: boolean }>(
       `/admin/storage-buckets/${encodeURIComponent(bucketId)}`,
-      { method: "DELETE" },
+      { method: "DELETE", headers: { "Idempotency-Key": idempotencyKey } },
     );
   },
 
   async uploadStorageFile(payload: {
     bucket: string;
     file: File;
-    visibility?: string;
     tags?: string[];
+    idempotencyKey: string;
   }) {
-    return requestJson<{ file: SmartHealthStorageFile }>("/admin/storage-files", {
-      method: "POST",
-      query: {
-        bucket: payload.bucket,
-        filename: payload.file.name,
-        visibility: payload.visibility || "private",
-        tags: payload.tags?.join(",") || "",
+    return requestJson<{ file: SmartHealthStorageFile; idempotent?: boolean }>(
+      "/admin/storage-files",
+      {
+        method: "POST",
+        query: {
+          bucket: payload.bucket,
+          filename: payload.file.name,
+          tags: payload.tags?.join(",") || "",
+        },
+        headers: {
+          "Idempotency-Key": payload.idempotencyKey,
+          "Content-Type": payload.file.type || "application/octet-stream",
+          "X-File-Name": payload.file.name,
+        },
+        body: payload.file,
       },
-      headers: {
-        "Content-Type": payload.file.type || "application/octet-stream",
-        "X-File-Name": payload.file.name,
-      },
-      body: payload.file,
-    });
+    );
   },
 
-  async deleteStorageFile(fileId: string) {
-    return requestJson<{ deleted: boolean; fileId: string }>(
+  async deleteStorageFile(fileId: string, idempotencyKey: string) {
+    return requestJson<{ deleted: boolean; fileId: string; idempotent?: boolean }>(
       `/admin/storage-files/${encodeURIComponent(fileId)}`,
-      { method: "DELETE" },
+      { method: "DELETE", headers: { "Idempotency-Key": idempotencyKey } },
     );
   },
 
-  async shareStorageFile(fileId: string) {
-    return requestJson<{ url: string; shareUrl: string; expiresInSeconds?: number }>(
-      `/admin/storage-files/${encodeURIComponent(fileId)}/share`,
-      { method: "POST" },
-    );
+  async shareStorageFile(fileId: string, idempotencyKey: string) {
+    return requestJson<{
+      url: string;
+      shareUrl: string;
+      expiresInSeconds?: number;
+      idempotent?: boolean;
+    }>(`/admin/storage-files/${encodeURIComponent(fileId)}/share`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
   },
 
   async downloadStorageFile(fileId: string, downloadUrl?: string) {

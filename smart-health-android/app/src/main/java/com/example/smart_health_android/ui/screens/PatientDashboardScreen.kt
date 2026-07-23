@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.MonitorHeart
@@ -27,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +47,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.example.smart_health_android.R
+import com.example.smart_health_android.appointments.AppointmentRoute
 import com.example.smart_health_android.data.Scan
 import com.example.smart_health_android.data.SmartDevice
 import com.example.smart_health_android.data.SmartHealthRepository
@@ -90,6 +95,7 @@ fun PatientDashboardScreen(
     onNavigateToMonitoring: () -> Unit,
     onNavigateToRecords: () -> Unit,
     onNavigateToAssistant: () -> Unit,
+    onNavigateToAppointments: () -> Unit,
     onNavigateToRecordDetail: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -98,6 +104,7 @@ fun PatientDashboardScreen(
     var recentScans by remember { mutableStateOf<List<PatientRecentScan>>(emptyList()) }
     var currentDevice by remember { mutableStateOf<SmartDevice?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var canViewAppointments by remember { mutableStateOf(false) }
     suspend fun refreshPatientDashboard() {
         runCatching {
             val user = SmartHealthRepository.api.getMe()
@@ -106,6 +113,7 @@ fun PatientDashboardScreen(
                 .orEmpty()
                 .ifBlank { user.clinicName }
                 .ifBlank { user.organizationId }
+            canViewAppointments = AppointmentRoute.List.canOpen(user.capabilities.toSet())
             recentScans = SmartHealthRepository.api.listPatientScans(limit = 5).map { it.toPatientRecentScan() }
             val devices = SmartHealthRepository.api.listDevices()
             currentDevice = devices.firstOrNull { it.online || it.connected } ?: devices.firstOrNull()
@@ -189,12 +197,26 @@ fun PatientDashboardScreen(
                 )
                 PatientQuickActionTile(
                     icon = Icons.Default.ChatBubbleOutline,
-                    label = "Chat AI",
+                    label = stringResource(R.string.ai_assistant_short_label),
                     background = Brush.linearGradient(listOf(PrimaryTeal, Color(0xFF00C9B7))),
                     contentColor = Color.White,
                     onClick = onNavigateToAssistant,
                     modifier = Modifier.weight(1f)
                 )
+            }
+
+            if (canViewAppointments) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onNavigateToAppointments,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp),
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.appointment_title_patient))
+                }
             }
 
             Spacer(modifier = Modifier.height(26.dp))
@@ -544,7 +566,7 @@ fun PatientHistoryCard(
                     .border(1.dp, Color(0xFFEFF3F8), RoundedCornerShape(12.dp))
                     .padding(12.dp)
             ) {
-                Text("Kết luận AI:", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.ai_assistant_result_label), color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(diagnosis, color = TextPrimary, fontSize = 14.sp, lineHeight = 19.sp)
             }

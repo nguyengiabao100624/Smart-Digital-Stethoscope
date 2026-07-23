@@ -1,21 +1,21 @@
-# Smart Health Care
+# Shcare
 
-> Nền tảng HealthTech AI giúp bác sĩ và phòng khám theo dõi sức khỏe tim phổi bệnh nhân từ xa với thiết bị ống nghe thông minh, AI phân tích tín hiệu và cổng quản lý bảo mật.
+> Shcare — nền tảng Smart Health Care theo dõi tim phổi từ xa, kết nối thiết bị thu tín hiệu, ứng dụng Android và workspace dành cho bác sĩ/phòng khám.
 
-Smart Health Care (Shcare) cung cấp ống nghe điện tử thông minh, ứng dụng Android cho bệnh nhân, và web portal cho bác sĩ/phòng khám để theo dõi liên tục, cảnh báo bất thường và quản lý hồ sơ sức khỏe.
+Shcare hỗ trợ các lượt đo có hướng dẫn, kiểm tra chất lượng tín hiệu, hồ sơ đo, cảnh báo theo quy tắc và quy trình review của người có chuyên môn. Hệ thống không tự đưa ra chẩn đoán lâm sàng.
 
 ## Pages
 - [Trang chủ](/): Tổng quan nền tảng theo dõi sức khỏe từ xa
 - [Sản phẩm](/san-pham): Hệ sinh thái thiết bị và phần mềm
 - [Ống nghe thông minh](/san-pham/ong-nghe-thong-minh): Thiết bị ống nghe điện tử kết nối ứng dụng
-- [Theo dõi từ xa](/san-pham/theo-doi-tu-xa): Dịch vụ giám sát liên tục cho bệnh nhân
+- [Theo dõi từ xa](/san-pham/theo-doi-tu-xa): Quản lý lượt đo và trạng thái thiết bị từ xa
 - [Giải pháp cho bác sĩ](/giai-phap/bac-si-ca-nhan): Bác sĩ cá nhân theo dõi bệnh nhân từ xa
 - [Giải pháp cho phòng khám](/giai-phap/phong-kham): Quản lý đội ngũ, bệnh nhân, thiết bị tại phòng khám
 - [Giải pháp cho bệnh nhân](/giai-phap/benh-nhan-tai-nha): Bệnh nhân theo dõi sức khỏe tại nhà
 - [Bảng giá](/bang-gia): Các gói dịch vụ và chi phí
 - [Liên hệ](/lien-he): Liên hệ tư vấn triển khai
 - [Câu hỏi thường gặp](/tai-nguyen): FAQ về sản phẩm và dịch vụ
-- [Bảo mật](/bao-mat): Cam kết bảo mật dữ liệu sức khỏe
+- [Bảo mật](/bao-mat): Mô hình phân quyền, consent và audit dữ liệu sức khỏe
 
 ## Optional
 - [Chính sách bảo mật](/chinh-sach-bao-mat)

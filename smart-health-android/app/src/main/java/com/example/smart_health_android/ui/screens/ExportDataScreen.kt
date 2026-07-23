@@ -85,7 +85,7 @@ fun ExportDataScreen(onNavigateBack: () -> Unit) {
                 )
                 ExportCheckboxRow(
                     icon = Icons.Default.Description,
-                    label = "Báo cáo phân tích AI",
+                    label = "Kết quả phân tích tín hiệu",
                     checked = includeReports,
                     onCheckedChange = { includeReports = it }
                 )

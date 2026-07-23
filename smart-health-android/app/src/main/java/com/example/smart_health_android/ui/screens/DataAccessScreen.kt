@@ -1,349 +1,679 @@
 package com.example.smart_health_android.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.consent.ApiConsentRepository
+import com.example.smart_health_android.consent.ConsentGrantEditorState
+import com.example.smart_health_android.consent.ConsentLoadState
+import com.example.smart_health_android.consent.ConsentRecipientKind
+import com.example.smart_health_android.consent.ConsentRepository
+import com.example.smart_health_android.consent.ConsentScope
+import com.example.smart_health_android.consent.ConsentUiAction
+import com.example.smart_health_android.consent.ConsentUiEffect
+import com.example.smart_health_android.consent.ConsentUiState
+import com.example.smart_health_android.consent.ConsentViewModel
 import com.example.smart_health_android.data.Patient
 import com.example.smart_health_android.data.PatientShare
-import com.example.smart_health_android.data.ShareTargets
-import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.Scan
 import com.example.smart_health_android.data.formatIso
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.Border
-import com.example.smart_health_android.ui.theme.ErrorRed
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.PrimaryTeal
-import com.example.smart_health_android.ui.theme.TextPrimary
-import com.example.smart_health_android.ui.theme.TextSecondary
-import kotlinx.coroutines.launch
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
+import java.time.Instant
+import java.time.ZoneOffset
 
+private val ExpandedConsentWidth = 840.dp
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DataAccessScreen(onNavigateBack: () -> Unit) {
-    var patients by remember { mutableStateOf<List<Patient>>(emptyList()) }
-    var selectedPatientId by remember { mutableStateOf("") }
-    var shares by remember { mutableStateOf<List<PatientShare>>(emptyList()) }
-    var targets by remember { mutableStateOf(ShareTargets()) }
-    var loading by remember { mutableStateOf(true) }
-    var loadingShares by remember { mutableStateOf(false) }
-    var revokingShareId by remember { mutableStateOf<String?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    suspend fun loadShares(patientId: String) {
-        if (patientId.isBlank()) {
-            shares = emptyList()
-            return
-        }
-        loadingShares = true
-        runCatching {
-            SmartHealthRepository.api.listPatientShares(patientId)
-        }.onSuccess {
-            shares = it
-            message = null
-        }.onFailure {
-            message = it.toVietnameseMessage("Không tải được lịch sử consent")
-        }
-        loadingShares = false
-    }
-
-    suspend fun loadAll() {
-        loading = true
-        runCatching {
-            val loadedPatients = SmartHealthRepository.api.listPatients()
-            val loadedTargets = SmartHealthRepository.api.listShareTargets()
-            val nextPatientId = selectedPatientId
-                .takeIf { current -> loadedPatients.any { it.id == current } }
-                ?: loadedPatients.firstOrNull()?.id.orEmpty()
-            Triple(loadedPatients, loadedTargets, nextPatientId)
-        }.onSuccess { (loadedPatients, loadedTargets, nextPatientId) ->
-            patients = loadedPatients
-            targets = loadedTargets
-            selectedPatientId = nextPatientId
-            loadShares(nextPatientId)
-        }.onFailure {
-            patients = emptyList()
-            shares = emptyList()
-            message = it.toVietnameseMessage("Không tải được quyền truy cập dữ liệu")
-        }
-        loading = false
-    }
-
-    fun revokeShare(share: PatientShare) {
-        if (selectedPatientId.isBlank() || revokingShareId != null) return
-        scope.launch {
-            revokingShareId = share.id
-            runCatching {
-                SmartHealthRepository.api.revokePatientShare(selectedPatientId, share.id)
-                loadShares(selectedPatientId)
-            }.onSuccess {
-                message = "Đã thu hồi consent"
-            }.onFailure {
-                message = it.toVietnameseMessage("Không thu hồi được consent")
-            }
-            revokingShareId = null
-        }
-    }
+fun DataAccessScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: ConsentViewModel = viewModel(factory = ConsentViewModelFactory()),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
-        loadAll()
+        viewModel.onAction(ConsentUiAction.Load)
+    }
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is ConsentUiEffect.BackendMutationConfirmed -> {
+                    snackbarHostState.showSnackbar(context.getString(effect.messageRes))
+                }
+            }
+        }
     }
 
-    val selectedPatient = patients.firstOrNull { it.id == selectedPatientId }
-    val activeShares = shares.count { it.active }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF9FAFB))
-    ) {
-        SimpleWhiteHeader(title = "Quyền truy cập dữ liệu", onNavigateBack = onNavigateBack)
-
-        Column(
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.consent_title),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.defaultMinSize(48.dp, 48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.consent_back),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.onAction(ConsentUiAction.Refresh) },
+                        enabled = state.loadState != ConsentLoadState.Loading &&
+                            !state.isRefreshing &&
+                            !state.isMutating,
+                        modifier = Modifier.defaultMinSize(48.dp, 48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.consent_refresh),
+                        )
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (state.canCreateGrant && state.editor == null) {
+                ExtendedFloatingActionButton(
+                    onClick = { viewModel.onAction(ConsentUiAction.StartCreateGrant) },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text(stringResource(R.string.consent_create_grant)) },
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("consent_create_grant"),
+                )
+            }
+        },
+    ) { innerPadding ->
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(innerPadding),
         ) {
-            DataAccessSummaryCard(
-                profileCount = patients.size,
-                activeShareCount = activeShares,
-                selectedPatientName = selectedPatient?.name.orEmpty(),
-                loading = loading,
-                onRefresh = {
-                    scope.launch { loadAll() }
-                }
+            ConsentScreenState(
+                state = state,
+                onAction = viewModel::onAction,
             )
-
-            message?.let { value ->
-                Text(
-                    text = value,
-                    color = if (value.startsWith("Đã")) PrimaryTeal else ErrorRed,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 2.dp)
+            if (state.isRefreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
                 )
             }
+        }
+    }
 
-            if (loading) {
-                LoadingCard("Đang tải quyền truy cập")
-            } else if (patients.isEmpty()) {
-                EmptyAccessCard(
-                    title = "Chưa có hồ sơ bệnh nhân",
-                    body = "Tạo hồ sơ cá nhân hoặc người thân trước khi cấp quyền chia sẻ.",
-                    onRetry = { scope.launch { loadAll() } }
-                )
+    state.editor?.let { editor ->
+        ConsentGrantSheet(
+            state = state,
+            editor = editor,
+            onAction = viewModel::onAction,
+        )
+    }
+
+    if (state.confirmEditorDismiss) {
+        AlertDialog(
+            onDismissRequest = { viewModel.onAction(ConsentUiAction.KeepEditing) },
+            title = { Text(stringResource(R.string.consent_discard_title)) },
+            text = { Text(stringResource(R.string.consent_discard_message)) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.onAction(ConsentUiAction.DiscardEditor) }) {
+                    Text(stringResource(R.string.consent_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onAction(ConsentUiAction.KeepEditing) }) {
+                    Text(stringResource(R.string.consent_keep_editing))
+                }
+            },
+        )
+    }
+
+    state.pendingRevocation?.let { pending ->
+        val share = state.shares.firstOrNull { it.id == pending.shareId }
+        AlertDialog(
+            onDismissRequest = {
+                if (!state.isMutating) viewModel.onAction(ConsentUiAction.DismissRevoke)
+            },
+            icon = { Icon(Icons.Default.WarningAmber, contentDescription = null) },
+            title = { Text(stringResource(R.string.consent_revoke_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+                    Text(
+                        stringResource(
+                            R.string.consent_revoke_message,
+                            share?.recipientLabel()
+                                ?: stringResource(R.string.consent_recipient_unknown),
+                        )
+                    )
+                    MutationError(state)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.onAction(ConsentUiAction.ConfirmRevoke) },
+                    enabled = !state.isMutating,
+                ) {
+                    Text(
+                        if (state.isMutating) {
+                            stringResource(R.string.consent_waiting_backend)
+                        } else {
+                            stringResource(R.string.consent_revoke_confirm)
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.onAction(ConsentUiAction.DismissRevoke) },
+                    enabled = !state.isMutating,
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ConsentScreenState(
+    state: ConsentUiState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    when (state.loadState) {
+        ConsentLoadState.Loading -> ShcareLoadingState(
+            message = stringResource(R.string.consent_loading),
+            modifier = Modifier.fillMaxSize(),
+        )
+        ConsentLoadState.Empty -> ShcareEmptyState(
+            title = stringResource(R.string.consent_no_profiles_title),
+            message = stringResource(R.string.consent_no_profiles_message),
+            actionLabel = stringResource(R.string.consent_refresh),
+            onAction = { onAction(ConsentUiAction.Load) },
+            modifier = Modifier.fillMaxSize(),
+        )
+        ConsentLoadState.Offline -> ShcareOfflineState(
+            onRetry = { onAction(ConsentUiAction.Refresh) },
+            title = stringResource(R.string.consent_offline_title),
+            message = stringResource(R.string.consent_offline_message),
+            modifier = Modifier.fillMaxSize(),
+        )
+        ConsentLoadState.Permission -> ShcarePermissionState(
+            onRequestPermission = { onAction(ConsentUiAction.Refresh) },
+            title = stringResource(R.string.consent_permission_title),
+            message = stringResource(R.string.consent_permission_message),
+            actionLabel = stringResource(R.string.shcare_action_retry),
+            modifier = Modifier.fillMaxSize(),
+        )
+        ConsentLoadState.Error -> ShcareErrorState(
+            onRetry = { onAction(ConsentUiAction.Refresh) },
+            title = stringResource(R.string.consent_error_title),
+            message = state.errorMessage.ifBlank {
+                stringResource(R.string.consent_error_message)
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+        ConsentLoadState.Content -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            if (maxWidth >= ExpandedConsentWidth) {
+                ExpandedConsentContent(state, onAction)
             } else {
-                PatientSelector(
-                    patients = patients,
-                    selectedPatientId = selectedPatientId,
-                    onSelect = { patient ->
-                        selectedPatientId = patient.id
-                        scope.launch { loadShares(patient.id) }
-                    }
-                )
-
-                ConsentHistorySection(
-                    shares = shares,
-                    targets = targets,
-                    loading = loadingShares,
-                    revokingShareId = revokingShareId,
-                    onRevoke = ::revokeShare,
-                    onRefresh = { scope.launch { loadShares(selectedPatientId) } }
-                )
+                CompactConsentContent(state, onAction)
             }
         }
     }
 }
 
 @Composable
-private fun DataAccessSummaryCard(
-    profileCount: Int,
-    activeShareCount: Int,
-    selectedPatientName: String,
-    loading: Boolean,
-    onRefresh: () -> Unit
+private fun CompactConsentContent(
+    state: ConsentUiState,
+    onAction: (ConsentUiAction) -> Unit,
 ) {
+    val spacing = ShcareTheme.spacing
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("consent_compact_content"),
+        contentPadding = PaddingValues(
+            start = spacing.large,
+            top = spacing.large,
+            end = spacing.large,
+            bottom = 104.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+    ) {
+        item { ConsentSummary(state) }
+        consentIssueItems(state, onAction)
+        item {
+            SectionHeading(
+                title = stringResource(R.string.consent_profiles_heading),
+                supporting = state.selectedPatient?.name.orEmpty(),
+            )
+        }
+        item {
+            PatientRow(
+                patients = state.patients,
+                selectedPatientId = state.selectedPatientId,
+                onSelect = { onAction(ConsentUiAction.SelectPatient(it)) },
+            )
+        }
+        item { GrantSectionHeader(state, onAction) }
+        grantItems(state, onAction)
+    }
+}
+
+@Composable
+private fun ExpandedConsentContent(
+    state: ConsentUiState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxSize()
+            .padding(horizontal = spacing.extraLarge, vertical = spacing.large)
+            .testTag("consent_expanded_content"),
+        horizontalArrangement = Arrangement.spacedBy(spacing.large),
     ) {
-        Icon(Icons.Default.Shield, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(28.dp))
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text("Consent & chia sẻ hồ sơ", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "${profileCount} hồ sơ • ${activeShareCount} quyền đang cấp",
-                color = TextSecondary,
-                fontSize = 12.sp
-            )
-            if (selectedPatientName.isNotBlank()) {
-                Text(selectedPatientName, color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        LazyColumn(
+            modifier = Modifier
+                .width(300.dp)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+            contentPadding = PaddingValues(bottom = spacing.extraLarge),
+        ) {
+            item { ConsentSummary(state) }
+            item {
+                SectionHeading(
+                    title = stringResource(R.string.consent_profiles_heading),
+                    supporting = stringResource(R.string.consent_profiles_supporting),
+                )
+            }
+            items(state.patients, key = { it.id }) { patient ->
+                PatientOption(
+                    patient = patient,
+                    selected = patient.id == state.selectedPatientId,
+                    onClick = { onAction(ConsentUiAction.SelectPatient(patient.id)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
-        IconButton(onClick = onRefresh, enabled = !loading) {
-            if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryBlue)
-            } else {
-                Icon(Icons.Default.Refresh, contentDescription = "Tải lại", tint = PrimaryBlue)
-            }
+        VerticalDivider()
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(bottom = 104.dp),
+            verticalArrangement = Arrangement.spacedBy(spacing.large),
+        ) {
+            consentIssueItems(state, onAction)
+            item { GrantSectionHeader(state, onAction) }
+            grantItems(state, onAction)
         }
     }
 }
 
-@Composable
-private fun PatientSelector(
-    patients: List<Patient>,
-    selectedPatientId: String,
-    onSelect: (Patient) -> Unit
+private fun androidx.compose.foundation.lazy.LazyListScope.consentIssueItems(
+    state: ConsentUiState,
+    onAction: (ConsentUiAction) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Hồ sơ", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    if (state.isStale) {
+        item {
+            ConsentIssueCard(
+                title = stringResource(R.string.consent_stale_title),
+                message = state.errorMessage.ifBlank {
+                    stringResource(R.string.consent_stale_message)
+                },
+                onRetry = { onAction(ConsentUiAction.Refresh) },
+            )
+        }
+    }
+    if (!state.recipientCatalogAvailable) {
+        item {
+            ConsentIssueCard(
+                title = stringResource(R.string.consent_targets_unavailable_title),
+                message = state.recipientCatalogError.ifBlank {
+                    stringResource(R.string.consent_targets_unavailable_message)
+                },
+                onRetry = { onAction(ConsentUiAction.RetryRecipients) },
+            )
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.grantItems(
+    state: ConsentUiState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    if (state.isLoadingPatientData) {
+        item {
+            ShcareLoadingState(message = stringResource(R.string.consent_loading_grants))
+        }
+        return
+    }
+    if (state.visibleShares.isEmpty()) {
+        item {
+            ShcareEmptyState(
+                title = if (state.shares.isEmpty()) {
+                    stringResource(R.string.consent_no_grants_title)
+                } else {
+                    stringResource(R.string.consent_no_active_grants_title)
+                },
+                message = if (state.shares.isEmpty()) {
+                    stringResource(R.string.consent_no_grants_message)
+                } else {
+                    stringResource(R.string.consent_no_active_grants_message)
+                },
+                actionLabel = stringResource(R.string.consent_refresh),
+                onAction = { onAction(ConsentUiAction.Refresh) },
+            )
+        }
+        return
+    }
+    items(state.visibleShares, key = { it.id }) { share ->
+        ConsentGrantCard(
+            share = share,
+            onRevoke = { onAction(ConsentUiAction.RequestRevoke(share.id)) },
+        )
+    }
+}
+
+@Composable
+private fun ConsentSummary(state: ConsentUiState) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(ShcareTheme.spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            patients.forEach { patient ->
-                val selected = patient.id == selectedPatientId
-                Surface(
-                    modifier = Modifier
-                        .width(220.dp)
-                        .clickable { onSelect(patient) },
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (selected) Color(0xFFEFF6FF) else Color.White,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (selected) PrimaryBlue else Border
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (patient.profileType == "dependent") Icons.Default.Groups else Icons.Default.Person,
-                            contentDescription = null,
-                            tint = if (selected) PrimaryBlue else TextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(patient.name.ifBlank { patient.id }, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(patient.profileLabel(), color = TextSecondary, fontSize = 12.sp)
-                        }
-                    }
-                }
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.primary,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(ShcareTheme.spacing.medium),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.consent_summary_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.consent_summary_counts,
+                        state.patients.size,
+                        state.activeShareCount,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ConsentHistorySection(
-    shares: List<PatientShare>,
-    targets: ShareTargets,
-    loading: Boolean,
-    revokingShareId: String?,
-    onRevoke: (PatientShare) -> Unit,
-    onRefresh: () -> Unit
+private fun SectionHeading(
+    title: String,
+    supporting: String,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = modifier.semantics { heading() },
+        verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+    ) {
+        Text(text = title, style = MaterialTheme.typography.titleLarge)
+        if (supporting.isNotBlank()) {
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PatientRow(
+    patients: List<Patient>,
+    selectedPatientId: String,
+    onSelect: (String) -> Unit,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        modifier = Modifier.semantics {
+            collectionInfo = CollectionInfo(rowCount = 1, columnCount = patients.size)
+        },
+    ) {
+        items(patients, key = { it.id }) { patient ->
+            PatientOption(
+                patient = patient,
+                selected = patient.id == selectedPatientId,
+                onClick = { onSelect(patient.id) },
+                modifier = Modifier.width(240.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PatientOption(
+    patient: Patient,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedDescription = if (selected) {
+        stringResource(R.string.consent_profile_selected)
+    } else {
+        stringResource(R.string.consent_profile_not_selected)
+    }
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 64.dp)
+            .semantics { stateDescription = selectedDescription }
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant,
+        ),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.padding(ShcareTheme.spacing.medium),
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.History, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(22.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Lịch sử consent", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            }
-            IconButton(onClick = onRefresh, enabled = !loading) {
-                if (loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryBlue)
+            Icon(
+                imageVector = if (patient.profileType == "dependent") {
+                    Icons.Default.Groups
                 } else {
-                    Icon(Icons.Default.Refresh, contentDescription = "Tải lại consent", tint = PrimaryBlue)
-                }
+                    Icons.Default.Person
+                },
+                contentDescription = null,
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = patient.name.ifBlank { patient.patientCode.ifBlank { patient.id } },
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = patient.profileLabel(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
             }
         }
+    }
+}
 
-        if (loading) {
-            LoadingCard("Đang tải consent")
-        } else if (shares.isEmpty()) {
-            EmptyAccessCard(
-                title = "Chưa có quyền chia sẻ",
-                body = "Các consent đã cấp hoặc thu hồi sẽ xuất hiện tại đây.",
-                onRetry = onRefresh
+@Composable
+private fun GrantSectionHeader(
+    state: ConsentUiState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionHeading(
+            title = stringResource(R.string.consent_access_heading),
+            supporting = stringResource(
+                R.string.consent_access_supporting,
+                state.selectedPatient?.name.orEmpty(),
+            ),
+            modifier = Modifier.weight(1f),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.consent_active_only),
+                style = MaterialTheme.typography.labelMedium,
             )
-        } else {
-            shares.sortedWith(compareByDescending<PatientShare> { it.active }.thenByDescending { it.createdAt.orEmpty() })
-                .forEach { share ->
-                    ConsentGrantCard(
-                        share = share,
-                        targetLabel = share.targetLabel(targets),
-                        targetIcon = share.targetIcon(),
-                        revoking = revokingShareId == share.id,
-                        onRevoke = { onRevoke(share) }
-                    )
-                }
+            Switch(
+                checked = state.showOnlyActive,
+                onCheckedChange = {
+                    onAction(ConsentUiAction.ShowOnlyActiveChanged(it))
+                },
+                modifier = Modifier.testTag("consent_active_filter"),
+            )
         }
     }
 }
@@ -351,147 +681,645 @@ private fun ConsentHistorySection(
 @Composable
 private fun ConsentGrantCard(
     share: PatientShare,
-    targetLabel: String,
-    targetIcon: ImageVector,
-    revoking: Boolean,
-    onRevoke: () -> Unit
+    onRevoke: () -> Unit,
 ) {
-    Column(
+    val spacing = ShcareTheme.spacing
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFF8FAFC), RoundedCornerShape(14.dp))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .testTag("consent_grant_${share.id}"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(targetIcon, contentDescription = null, tint = if (share.active) PrimaryBlue else TextSecondary, modifier = Modifier.size(22.dp))
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(targetLabel, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(share.scopeLabel(), color = TextSecondary, fontSize = 12.sp)
-            }
-            StatusPill(active = share.active)
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetadataPill("Lượt đo", if (share.scanIds.isEmpty()) "Tất cả" else share.scanIds.size.toString())
-            MetadataPill("Hết hạn", share.expiresAt?.let { formatIso(it, "dd/MM/yyyy") } ?: "Không")
-        }
-
-        if (share.active) {
-            OutlinedButton(
-                onClick = onRevoke,
-                enabled = !revoking,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed)
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+                verticalAlignment = Alignment.Top,
             ) {
-                if (revoking) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = ErrorRed)
-                    Spacer(modifier = Modifier.width(8.dp))
-                } else {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Icon(
+                        imageVector = if (share.recipient.type == "workspace") {
+                            Icons.Default.Business
+                        } else {
+                            Icons.Default.Person
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.padding(spacing.medium),
+                    )
                 }
-                Text("Thu hồi consent")
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = share.recipientLabel(),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = share.authorityLabel(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ConsentStatusBadge(share)
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            AccessMetadataRow(
+                label = stringResource(R.string.consent_scope_label),
+                value = share.scopeLabel(),
+            )
+            AccessMetadataRow(
+                label = stringResource(R.string.consent_expiry_label),
+                value = share.expiresAt?.let { formatIso(it, "dd/MM/yyyy") }
+                    ?: stringResource(R.string.consent_no_expiry),
+            )
+            AccessMetadataRow(
+                label = stringResource(R.string.consent_granted_by_label),
+                value = share.grantedByLabel(),
+            )
+            share.createdAt?.let {
+                AccessMetadataRow(
+                    label = stringResource(R.string.consent_created_at_label),
+                    value = formatIso(it, "dd/MM/yyyy HH:mm"),
+                )
+            }
+            share.revokedAt?.let {
+                AccessMetadataRow(
+                    label = stringResource(R.string.consent_revoked_at_label),
+                    value = buildString {
+                        append(formatIso(it, "dd/MM/yyyy HH:mm"))
+                        share.revokedByActor?.name?.takeIf(String::isNotBlank)?.let { actorName ->
+                            append(" · ")
+                            append(actorName)
+                        }
+                    },
+                )
+            }
+
+            if (share.isActive) {
+                OutlinedButton(
+                    onClick = onRevoke,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                ) {
+                    Icon(Icons.Default.Security, contentDescription = null)
+                    Spacer(modifier = Modifier.width(spacing.small))
+                    Text(stringResource(R.string.consent_revoke_action))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StatusPill(active: Boolean) {
-    val bg = if (active) Color(0xFFE7F8F3) else Color(0xFFF3F4F6)
-    val fg = if (active) PrimaryTeal else TextSecondary
-    Text(
-        text = if (active) "Đang cấp" else "Đã thu hồi",
-        color = fg,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier
-            .background(bg, RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-    )
-}
-
-@Composable
-private fun MetadataPill(label: String, value: String) {
-    Text(
-        text = "$label: $value",
-        color = TextSecondary,
-        fontSize = 11.sp,
-        modifier = Modifier
-            .background(Color.White, RoundedCornerShape(999.dp))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-    )
-}
-
-@Composable
-private fun LoadingCard(text: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(14.dp))
-            .border(1.dp, Border, RoundedCornerShape(14.dp))
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun ConsentStatusBadge(share: PatientShare) {
+    val semanticColors = ShcareTheme.colors
+    val (container, content) = when (share.status) {
+        "active" -> semanticColors.successContainer to semanticColors.onSuccessContainer
+        "expired" -> semanticColors.warningContainer to semanticColors.onWarningContainer
+        "revoked" -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> if (share.isActive) {
+            semanticColors.successContainer to semanticColors.onSuccessContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    }
+    val label = when (share.status) {
+        "active" -> stringResource(R.string.consent_status_active)
+        "revoked" -> stringResource(R.string.consent_status_revoked)
+        "expired" -> stringResource(R.string.consent_status_expired)
+        else -> stringResource(R.string.consent_status_unknown)
+    }
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = container,
+        contentColor = content,
+        modifier = Modifier.semantics { stateDescription = label },
     ) {
-        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryBlue)
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(text, color = TextSecondary, fontSize = 13.sp)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(
+                horizontal = ShcareTheme.spacing.medium,
+                vertical = ShcareTheme.spacing.small,
+            ),
+        )
     }
 }
 
 @Composable
-private fun EmptyAccessCard(title: String, body: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(14.dp))
-            .border(1.dp, Border, RoundedCornerShape(14.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+private fun AccessMetadataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
     ) {
-        Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        Text(body, color = TextSecondary, fontSize = 12.sp, lineHeight = 18.sp)
-        Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)) {
-            Text("Tải lại")
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(112.dp),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun ConsentIssueCard(
+    title: String,
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = ShcareTheme.colors.warningContainer,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = ShcareTheme.colors.onWarningContainer,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = ShcareTheme.colors.onWarningContainer,
+            )
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text(stringResource(R.string.shcare_action_retry))
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConsentGrantSheet(
+    state: ConsentUiState,
+    editor: ConsentGrantEditorState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+    ModalBottomSheet(
+        onDismissRequest = { onAction(ConsentUiAction.DismissEditor) },
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 720.dp)
+                .navigationBarsPadding()
+                .imePadding()
+                .testTag("consent_grant_sheet"),
+            contentPadding = PaddingValues(
+                start = ShcareTheme.spacing.large,
+                end = ShcareTheme.spacing.large,
+                bottom = ShcareTheme.spacing.extraLarge,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+        ) {
+            item {
+                SectionHeading(
+                    title = stringResource(R.string.consent_create_title),
+                    supporting = stringResource(
+                        R.string.consent_create_supporting,
+                        state.selectedPatient?.name.orEmpty(),
+                    ),
+                )
+            }
+            item {
+                RecipientKindSelector(state, editor, onAction)
+            }
+            item {
+                RecipientSelector(state, editor, onAction)
+            }
+            item {
+                ScopeSelector(state, editor, onAction)
+            }
+            item {
+                ExpirySelector(
+                    editor = editor,
+                    onOpenDatePicker = { showDatePicker = true },
+                    onClear = { onAction(ConsentUiAction.ExpiryChanged("")) },
+                )
+            }
+            item { MutationError(state) }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+                ) {
+                    OutlinedButton(
+                        onClick = { onAction(ConsentUiAction.DismissEditor) },
+                        enabled = !state.isMutating,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                    Button(
+                        onClick = { onAction(ConsentUiAction.SubmitGrant) },
+                        enabled = !state.isMutating,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("consent_submit_grant"),
+                    ) {
+                        Text(
+                            if (state.isMutating) {
+                                stringResource(R.string.consent_waiting_backend)
+                            } else {
+                                stringResource(R.string.consent_submit_grant)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = editor.expiresAt.toDatePickerMillis(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            onAction(ConsentUiAction.ExpiryChanged(millis.toEndOfDayIso()))
+                        }
+                        showDatePicker = false
+                    },
+                    enabled = datePickerState.selectedDateMillis != null,
+                ) {
+                    Text(stringResource(R.string.action_complete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+
+@Composable
+private fun RecipientKindSelector(
+    state: ConsentUiState,
+    editor: ConsentGrantEditorState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+        FieldLabel(stringResource(R.string.consent_recipient_type))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+            if (state.targets.doctors.isNotEmpty()) {
+                item {
+                    FilterChip(
+                        selected = editor.recipientKind == ConsentRecipientKind.Doctor,
+                        onClick = {
+                            onAction(ConsentUiAction.RecipientKindChanged(ConsentRecipientKind.Doctor))
+                        },
+                        label = { Text(stringResource(R.string.consent_recipient_doctor)) },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    )
+                }
+            }
+            if (state.targets.workspaces.isNotEmpty()) {
+                item {
+                    FilterChip(
+                        selected = editor.recipientKind == ConsentRecipientKind.Workspace,
+                        onClick = {
+                            onAction(ConsentUiAction.RecipientKindChanged(ConsentRecipientKind.Workspace))
+                        },
+                        label = { Text(stringResource(R.string.consent_recipient_workspace)) },
+                        leadingIcon = { Icon(Icons.Default.Business, contentDescription = null) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecipientSelector(
+    state: ConsentUiState,
+    editor: ConsentGrantEditorState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    val entries = when (editor.recipientKind) {
+        ConsentRecipientKind.Doctor -> state.targets.doctors.map {
+            Triple(it.id, it.name.ifBlank { it.id }, it.specialty.ifBlank { it.clinicName })
+        }
+        ConsentRecipientKind.Workspace -> state.targets.workspaces.map {
+            Triple(it.id, it.name.ifBlank { it.id }, it.address)
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+        FieldLabel(stringResource(R.string.consent_recipient_label))
+        entries.forEach { (id, title, supporting) ->
+            val selected = editor.recipientId == id
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 56.dp)
+                    .clickable { onAction(ConsentUiAction.RecipientChanged(id)) },
+                shape = MaterialTheme.shapes.medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(ShcareTheme.spacing.medium),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = selected,
+                        onClick = null,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = title, style = MaterialTheme.typography.titleSmall)
+                        if (supporting.isNotBlank()) {
+                            Text(
+                                text = supporting,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        editor.fieldErrors["recipient"]?.let {
+            FieldError(stringResource(it))
+        }
+    }
+}
+
+@Composable
+private fun ScopeSelector(
+    state: ConsentUiState,
+    editor: ConsentGrantEditorState,
+    onAction: (ConsentUiAction) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+        FieldLabel(stringResource(R.string.consent_scope_label))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+            item {
+                FilterChip(
+                    selected = editor.scope == ConsentScope.PatientProfile,
+                    onClick = { onAction(ConsentUiAction.ScopeChanged(ConsentScope.PatientProfile)) },
+                    label = { Text(stringResource(R.string.consent_scope_profile)) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
+            }
+            item {
+                FilterChip(
+                    selected = editor.scope == ConsentScope.SelectedScans,
+                    onClick = { onAction(ConsentUiAction.ScopeChanged(ConsentScope.SelectedScans)) },
+                    label = { Text(stringResource(R.string.consent_scope_scans)) },
+                    enabled = state.scanCatalogAvailable && state.scans.isNotEmpty(),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
+            }
+        }
+        if (!state.scanCatalogAvailable) {
+            Text(
+                text = state.scanCatalogError.ifBlank {
+                    stringResource(R.string.consent_scans_unavailable)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (editor.scope == ConsentScope.SelectedScans) {
+            if (state.scans.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.consent_no_scans),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+                    items(state.scans, key = { it.id }) { scan ->
+                        FilterChip(
+                            selected = scan.id in editor.selectedScanIds,
+                            onClick = {
+                                onAction(ConsentUiAction.ScanSelectionChanged(scan.id))
+                            },
+                            label = { Text(scan.accessibilityLabel()) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                    }
+                }
+            }
+            editor.fieldErrors["scanIds"]?.let {
+                FieldError(stringResource(it))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpirySelector(
+    editor: ConsentGrantEditorState,
+    onOpenDatePicker: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+        FieldLabel(stringResource(R.string.consent_expiry_optional))
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            FilledTonalButton(
+                onClick = onOpenDatePicker,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = null)
+                Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                Text(
+                    editor.expiresAt.takeIf(String::isNotBlank)?.let {
+                        formatIso(it, "dd/MM/yyyy")
+                    } ?: stringResource(R.string.consent_choose_expiry)
+                )
+            }
+            if (editor.expiresAt.isNotBlank()) {
+                TextButton(
+                    onClick = onClear,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.consent_clear_expiry))
+                }
+            }
+        }
+        editor.fieldErrors["expiresAt"]?.let {
+            FieldError(stringResource(it))
+        }
+    }
+}
+
+@Composable
+private fun FieldLabel(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.semantics { heading() },
+    )
+}
+
+@Composable
+private fun FieldError(message: String) {
+    Text(
+        text = message,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
+}
+
+@Composable
+private fun MutationError(state: ConsentUiState) {
+    if (state.mutationErrorMessage.isBlank()) return
+    Column(
+        modifier = Modifier.semantics {
+            stateDescription = state.mutationErrorMessage
+        },
+        verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+    ) {
+        Text(
+            text = state.mutationErrorMessage,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+        if (state.mutationRequestId.isNotBlank()) {
+            Text(
+                text = stringResource(
+                    R.string.consent_request_id,
+                    state.mutationRequestId,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private class ConsentViewModelFactory(
+    private val repository: ConsentRepository = ApiConsentRepository(),
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(ConsentViewModel::class.java)) {
+            return ConsentViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+    }
+}
+
+@Composable
 private fun Patient.profileLabel(): String {
     return when {
         relationship.isNotBlank() -> relationship
-        profileType == "self" -> "Hồ sơ cá nhân"
-        profileType == "dependent" -> "Người thân"
-        profileType.isNotBlank() -> profileType
-        else -> patientCode.ifBlank { id }
+        profileType == "self" -> stringResource(R.string.consent_profile_self)
+        profileType == "dependent" -> stringResource(R.string.consent_profile_dependent)
+        patientCode.isNotBlank() -> patientCode
+        else -> id
     }
 }
 
+@Composable
+private fun PatientShare.authorityLabel(): String {
+    return when (authorityType) {
+        "patient_consent" -> stringResource(R.string.consent_authority_patient)
+        "clinician_access_grant" -> stringResource(R.string.consent_authority_clinician)
+        "administrative_assignment" -> stringResource(R.string.consent_authority_administrative)
+        else -> stringResource(R.string.consent_authority_unspecified)
+    }
+}
+
+@Composable
 private fun PatientShare.scopeLabel(): String {
     return when (scope) {
-        "selected_scans" -> "Chỉ ${scanIds.size} lượt đo đã chọn"
-        "patient_profile" -> "Toàn bộ hồ sơ bệnh nhân"
-        else -> scope.ifBlank { "Toàn bộ hồ sơ bệnh nhân" }
+        "selected_scans" -> stringResource(R.string.consent_scope_selected_count, scanIds.size)
+        "patient_profile" -> stringResource(R.string.consent_scope_profile)
+        else -> scope.ifBlank { stringResource(R.string.consent_scope_unspecified) }
     }
 }
 
-private fun PatientShare.targetIcon(): ImageVector {
-    return if (organizationId.isNotBlank()) Icons.Default.Business else Icons.Default.Person
+@Composable
+private fun PatientShare.recipientLabel(): String {
+    if (recipient.name.isNotBlank()) return recipient.name
+    return recipient.id.ifBlank { stringResource(R.string.consent_recipient_unknown) }
 }
 
-private fun PatientShare.targetLabel(targets: ShareTargets): String {
-    val doctorKey = doctorUserId.ifBlank { doctorId }
-    if (doctorKey.isNotBlank()) {
-        val doctor = targets.doctors.firstOrNull { it.id == doctorKey }
-        return doctor?.name?.ifBlank { doctor.id } ?: doctorKey
+@Composable
+private fun PatientShare.grantedByLabel(): String {
+    return grantedByActor?.let { actor ->
+        actor.name.ifBlank { actor.id }.takeIf(String::isNotBlank)
+    } ?: grantedByUserId.takeIf(String::isNotBlank)
+        ?: stringResource(R.string.consent_actor_unavailable)
+}
+
+@Composable
+private fun Scan.accessibilityLabel(): String {
+    val type = when (mode) {
+        "heart" -> stringResource(R.string.consent_scan_heart)
+        "lung" -> stringResource(R.string.consent_scan_lung)
+        else -> mode.ifBlank { stringResource(R.string.consent_scan_unknown) }
     }
-    if (organizationId.isNotBlank()) {
-        val workspace = targets.workspaces.firstOrNull { it.id == organizationId }
-        return workspace?.name?.ifBlank { workspace.id } ?: organizationId
-    }
-    return "Đối tượng chia sẻ"
+    return stringResource(
+        R.string.consent_scan_label,
+        type,
+        formattedDate(),
+        formattedTime(),
+    )
+}
+
+private fun String.toDatePickerMillis(): Long? {
+    if (isBlank()) return null
+    return runCatching {
+        Instant.parse(this).atZone(ZoneOffset.UTC).toLocalDate()
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
+    }.getOrNull()
+}
+
+private fun Long.toEndOfDayIso(): String {
+    return Instant.ofEpochMilli(this)
+        .atZone(ZoneOffset.UTC)
+        .toLocalDate()
+        .atTime(23, 59, 59, 999_000_000)
+        .toInstant(ZoneOffset.UTC)
+        .toString()
 }

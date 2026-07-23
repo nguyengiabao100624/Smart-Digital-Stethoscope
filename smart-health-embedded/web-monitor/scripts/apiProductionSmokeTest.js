@@ -1,11 +1,21 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const rootDir = path.join(__dirname, "..");
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function listFilesRecursively(rootPath) {
+  if (!fs.existsSync(rootPath)) return [];
+  return fs.readdirSync(rootPath, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(rootPath, entry.name);
+    return entry.isDirectory() ? listFilesRecursively(entryPath) : [entryPath];
+  });
 }
 
 async function waitForHealth(port) {
@@ -21,6 +31,7 @@ async function waitForHealth(port) {
 
 async function main() {
   const port = "3426";
+  const testDataDir = `.test-data/api-production-${process.pid}-${Date.now()}`;
   const child = spawn(process.execPath, ["server.js"], {
     cwd: rootDir,
     env: {
@@ -28,7 +39,7 @@ async function main() {
       PORT: port,
       AUDIO_UDP_PORT: "3427",
       DATA_BACKEND: "json",
-      DATA_DIR: ".test-data/api-production",
+      DATA_DIR: testDataDir,
       AUTH_MODE: "demo",
       FIREBASE_AUTH_ENABLED: "false",
       OBJECT_STORAGE_PROVIDER: "local",
@@ -42,7 +53,7 @@ async function main() {
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login: "bacsytuan@benhvien.com", password: "12345678", role: "doctor" }),
+      body: JSON.stringify({ login: "patient@example.com", password: "12345678", role: "patient" }),
     });
     assert.equal(loginResponse.status, 200);
     const login = await loginResponse.json();
@@ -57,18 +68,95 @@ async function main() {
     const created = await createResponse.json();
 
     const chunk = Buffer.alloc(1600);
+    const chunkHash = crypto.createHash("sha256").update(chunk).digest("hex");
+    const chunkHeaders = {
+      ...auth,
+      "Idempotency-Key": "api-smoke-chunk-0",
+      "X-Chunk-Sequence": "0",
+      "X-Chunk-SHA256": chunkHash,
+    };
+    const oversizedChunk = Buffer.alloc(1024 * 1024 + 1);
+    const oversizedResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/audio-chunks`, {
+      method: "POST",
+      headers: {
+        ...auth,
+        "Idempotency-Key": "api-smoke-chunk-oversized",
+        "X-Chunk-Sequence": "0",
+        "X-Chunk-SHA256": crypto.createHash("sha256").update(oversizedChunk).digest("hex"),
+      },
+      body: oversizedChunk,
+    });
+    assert.equal(oversizedResponse.status, 413);
+    const oversizedError = await oversizedResponse.json();
+    assert.equal(oversizedError.error.code, "REQUEST_BODY_TOO_LARGE");
+
     const chunkResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/audio-chunks`, {
       method: "POST",
-      headers: auth,
+      headers: chunkHeaders,
       body: chunk,
     });
     assert.equal(chunkResponse.status, 200);
+    const acceptedChunk = await chunkResponse.json();
+    assert.equal(acceptedChunk.replayed, false);
+
+    const duplicateChunkResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/audio-chunks`, {
+      method: "POST",
+      headers: chunkHeaders,
+      body: chunk,
+    });
+    assert.equal(duplicateChunkResponse.status, 200);
+    const duplicateChunk = await duplicateChunkResponse.json();
+    assert.equal(duplicateChunk.replayed, true);
+    assert.equal(duplicateChunk.uploadedBytes, acceptedChunk.uploadedBytes);
+
+    const mismatchedChunk = Buffer.from("different-payload");
+    const mismatchResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/audio-chunks`, {
+      method: "POST",
+      headers: {
+        ...chunkHeaders,
+        "X-Chunk-SHA256": crypto.createHash("sha256").update(mismatchedChunk).digest("hex"),
+      },
+      body: mismatchedChunk,
+    });
+    assert.equal(mismatchResponse.status, 409);
+
+    const gapResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/audio-chunks`, {
+      method: "POST",
+      headers: {
+        ...auth,
+        "Idempotency-Key": "api-smoke-chunk-2",
+        "X-Chunk-Sequence": "2",
+        "X-Chunk-SHA256": chunkHash,
+      },
+      body: chunk,
+    });
+    assert.equal(gapResponse.status, 409);
+
+    const chunkStorageRoot = path.join(rootDir, testDataDir, "tmp", "scan-audio-chunks");
+    assert.equal(
+      listFilesRecursively(chunkStorageRoot).length,
+      1,
+      "rejected chunk writes must not leave uncommitted PCM files",
+    );
 
     const completeResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/complete`, {
       method: "POST",
-      headers: auth,
+      headers: { ...auth, "Idempotency-Key": "api-smoke-complete" },
     });
     assert.equal(completeResponse.status, 200);
+    const completed = await completeResponse.json();
+
+    const replayCompleteResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/complete`, {
+      method: "POST",
+      headers: { ...auth, "Idempotency-Key": "api-smoke-complete" },
+    });
+    assert.equal(replayCompleteResponse.status, 200);
+    assert.deepEqual(await replayCompleteResponse.json(), completed);
+    assert.equal(
+      listFilesRecursively(chunkStorageRoot).length,
+      0,
+      "completed uploads must purge transient PCM chunk files",
+    );
 
     const urlResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/audio-url`, {
       headers: auth,
@@ -77,6 +165,7 @@ async function main() {
     console.log("api production smoke test passed");
   } finally {
     child.kill();
+    fs.rmSync(path.join(rootDir, testDataDir), { recursive: true, force: true });
   }
 }
 

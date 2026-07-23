@@ -2,7 +2,8 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { processAudioJob } = require("../src/audioProcessingWorker");
+const { normalizeAiSettings } = require("../src/aiRuntime");
+const { markAudioJobFailed, processAudioJob } = require("../src/audioProcessingWorker");
 const { createDataStore, resolveBackendFromEnv } = require("../src/dataStore");
 const { createRepositories } = require("../src/repositories");
 const { createStorageAdapter } = require("../src/storageAdapter");
@@ -24,7 +25,7 @@ function createId(prefix) {
 function createEmptyWorkerDb() {
   return {
     version: 1,
-    settings: { ai: { version: "signal-quality-demo" } },
+    settings: { ai: normalizeAiSettings() },
     organizations: [],
     users: [],
     memberships: [],
@@ -45,7 +46,7 @@ function normalizeWorkerDb(loaded) {
   const base = createEmptyWorkerDb();
   const db = loaded && typeof loaded === "object" ? { ...base, ...loaded } : base;
   db.settings = { ...base.settings, ...(db.settings || {}) };
-  db.settings.ai = { ...base.settings.ai, ...(db.settings.ai || {}) };
+  db.settings.ai = normalizeAiSettings(db.settings.ai);
   for (const key of [
     "organizations",
     "users",
@@ -144,6 +145,15 @@ async function main() {
 
   worker.on("failed", (job, err) => {
     console.error(JSON.stringify({ event: "audio_processing_failed", jobId: job && job.id, error: err.message }));
+    const allowedAttempts = Number(job?.opts?.attempts || 1);
+    if (!job || Number(job.attemptsMade || 0) < allowedAttempts) return;
+    void markAudioJobFailed(job.data || {}, err, context).catch((persistenceError) => {
+      console.error(JSON.stringify({
+        event: "audio_processing_failure_state_persist_failed",
+        jobId: job.id,
+        error: persistenceError.message,
+      }));
+    });
   });
   const shutdown = async () => {
     await worker.close();

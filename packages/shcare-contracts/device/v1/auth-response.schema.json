@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/auth-response.schema.json",
+  "title": "Shcare device authentication response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "protocolVersion", "deviceId", "challengeId", "proof", "telemetry"],
+  "properties": {
+    "type": { "const": "auth.response" },
+    "protocolVersion": { "const": 1 },
+    "deviceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "challengeId": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "proof": { "type": "string", "minLength": 43, "maxLength": 64 },
+    "telemetry": {
+      "type": "object",
+      "not": { "required": ["secret"] }
+    }
+  }
+}

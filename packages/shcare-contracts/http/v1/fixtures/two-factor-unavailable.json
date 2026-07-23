@@ -1,0 +1,4 @@
+{
+  "availability": { "available": false, "status": "unavailable", "methods": [], "reason": "secure_storage_not_configured" },
+  "twoFactor": { "enabled": false, "method": "", "enrollmentPending": false }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/command-status.schema.json",
+  "title": "Shcare device command status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "type", "commandId", "correlationId", "state", "code"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "type": { "const": "command.status" },
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "state": { "enum": ["acknowledged", "applying", "applied", "failed", "expired"] },
+    "code": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "detail": { "type": "string", "maxLength": 240 }
+  }
+}

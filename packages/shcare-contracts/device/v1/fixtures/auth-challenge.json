@@ -1,0 +1,7 @@
+{
+  "type": "auth.challenge",
+  "protocolVersion": 1,
+  "challengeId": "challenge-fixture-001",
+  "nonce": "dGVzdC1ub25jZS0wMDEtMDEyMzQ1Njc4OWFiY2RlZg",
+  "expiresAt": "2026-07-14T00:00:10.000Z"
+}

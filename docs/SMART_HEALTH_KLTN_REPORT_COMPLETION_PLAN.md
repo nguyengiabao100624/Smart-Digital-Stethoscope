@@ -1,6 +1,6 @@
 # Smart Health - KLTN Report Completion Plan
 
-Last updated: 2026-06-05
+Last updated: 2026-07-10
 
 Source reviewed:
 
@@ -10,6 +10,11 @@ Source reviewed:
 - `D:\Study\KLTN\docs\SMART_HEALTH_PRODUCTION_BACKLOG.md`
 - `D:\Study\KLTN\docs\SMART_HEALTH_REMOTE_FIRST_PRODUCT_DIRECTION.md`
 - `D:\Study\KLTN\smart-health-embedded\MSM261S4030H0\platformio.ini`
+- `D:\Study\KLTN\docs\khoaluan\README.md`
+- `D:\Study\KLTN\docs\khoaluan\01-system-contract.md`
+- `D:\Study\KLTN\docs\khoaluan\02-audio-packet-and-realtime-contract.md`
+- `D:\Study\KLTN\docs\khoaluan\03-demo-and-evidence-checklist.md`
+- `D:\Study\KLTN\docs\khoaluan\04-test-matrix-and-gap-log.md`
 
 Latest evidence folder:
 
@@ -34,6 +39,8 @@ Report-ready Word copy:
 - 15 IEEE-style references covering digital health, smart/electronic stethoscopes, PhysioNet heart sounds, MSM261S4030H0, ESP32-S3, I2S, WebSocket, REST, MQTT, NIST identity, and TinyML.
 
 Main issue: many sections are still outline-level. The report can defend the project direction, but it still needs implementation evidence, actual results, and tighter alignment with the current Smart Health codebase before more feature development.
+
+2026-07-10 update: the missing unified KLTN contract pack now exists under `docs/khoaluan`. It defines the common system/data/status contract, audio packet/WebSocket contract, demo evidence checklist, and test/gap matrix. Backend `npm.cmd run smoke:klt-contract` checks that the contract docs exist and that the firmware/backend/Android source still matches the documented core audio contract.
 
 ## Report Gate Before More Development
 
@@ -195,9 +202,10 @@ Keep the conclusion grounded:
 2. Done on 2026-06-05: run and capture verification evidence for firmware, backend, Android, and web admin in `report-evidence\2026-06-05`.
 3. Done as first pass on 2026-06-05: generated `PL2 (3)-IEEE references.report-ready-20260605.docx` with a new Chapter 4 technical verification section and Appendix D evidence mapping.
 4. Done as final evidence pass on 2026-06-05: generated `PL2 (3)-IEEE references.final-evidence-20260605.docx` with updated Chapter 4 results, post-KLTN roadmap, Appendix D evidence tables, representative web/Android screenshots, and audio waveform.
-5. Refresh references/citations after adding any new claims.
-6. Before claiming full hardware demo, capture real ESP32-S3 serial monitor/upload and a fresh end-to-end audio session. This remains blocked until the board is detected as a serial port.
-7. Only after the report evidence is complete, continue development with the production firmware/backend slice:
+5. Done on 2026-07-10: added `docs/khoaluan` KLTN contract pack and backend `smoke:klt-contract` so the firmware/backend/Android audio contract is no longer scattered across source files and old evidence notes.
+6. Refresh references/citations after adding any new claims.
+7. Before claiming full hardware demo, capture real ESP32-S3 serial monitor/upload and a fresh end-to-end audio session. This remains blocked until the board is detected as a serial port.
+8. Only after the report evidence is complete, continue development with the production firmware/backend slice:
    - provisioning and secure local configuration,
    - MQTT control plane,
    - authenticated WSS/HTTPS scan transport,

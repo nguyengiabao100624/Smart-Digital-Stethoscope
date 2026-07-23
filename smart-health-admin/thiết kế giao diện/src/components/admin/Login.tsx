@@ -9,6 +9,7 @@ import {
   signInWithFirebaseEmail,
 } from "@/lib/firebase-client";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
+import { ThemeToggle } from "./ThemeToggle";
 import {
   getSurfaceAccessTargetUrl,
   getWrongSurfaceMessage,
@@ -66,8 +67,9 @@ export function Login() {
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
-        className="w-full max-w-md bg-card border border-border rounded-xl shadow-sm p-8"
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-sm p-8"
       >
+        <ThemeToggle className="absolute right-4 top-4" />
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="float-soft w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
             <Stethoscope className="w-8 h-8 text-primary" />
@@ -103,7 +105,7 @@ export function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@smarthealth.vn"
-                className="w-full pl-10 pr-4 py-2 border border-border rounded-md focus:border-ring focus:ring-1 focus:ring-ring outline-none"
+                className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
               />
             </div>
@@ -123,7 +125,7 @@ export function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-10 pr-4 py-2 border border-border rounded-md focus:border-ring focus:ring-1 focus:ring-ring outline-none"
+                className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
               />
             </div>
@@ -134,7 +136,7 @@ export function Login() {
             disabled={isLoading}
             whileHover={{ y: -1 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2.5 rounded-md transition-colors flex items-center justify-center disabled:opacity-70"
+            className="flex min-h-11 w-full items-center justify-center rounded-md bg-primary py-2.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-70"
           >
             {isLoading ? "Đang đăng nhập..." : "Đăng nhập"}
           </motion.button>

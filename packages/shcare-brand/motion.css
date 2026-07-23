@@ -1,0 +1,53 @@
+:root {
+  --shcare-duration-instant: 0ms;
+  --shcare-duration-fast: 150ms;
+  --shcare-duration-standard: 200ms;
+  --shcare-duration-slow: 240ms;
+  --shcare-duration-public: 400ms;
+  --shcare-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --shcare-ease-exit: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes shcare-state-enter {
+  from {
+    opacity: 0.92;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shcare-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.shcare-motion-enter {
+  animation: shcare-state-enter var(--shcare-duration-standard)
+    var(--shcare-ease-exit) both;
+}
+
+.shcare-motion-live {
+  animation: shcare-status-pulse 1.8s var(--shcare-ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --shcare-duration-fast: 0ms;
+    --shcare-duration-standard: 0ms;
+    --shcare-duration-slow: 0ms;
+    --shcare-duration-public: 0ms;
+  }
+
+  .shcare-motion-enter,
+  .shcare-motion-live {
+    animation: none;
+  }
+}

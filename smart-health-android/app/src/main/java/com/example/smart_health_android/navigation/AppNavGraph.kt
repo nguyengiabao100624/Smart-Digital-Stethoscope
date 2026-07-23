@@ -2,25 +2,70 @@ package com.example.smart_health_android.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.smart_health_android.BuildConfig
 import com.example.smart_health_android.data.FirebaseAuthService
 import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.SmartHealthPushRegistrar
+import com.example.smart_health_android.notifications.NotificationNavigationPolicy
+import com.example.smart_health_android.notifications.SmartHealthNotificationDestination
+import com.example.smart_health_android.appointments.AppointmentRoute
 import com.example.smart_health_android.ui.motion.smartHealthEnterTransition
 import com.example.smart_health_android.ui.motion.smartHealthExitTransition
 import com.example.smart_health_android.ui.motion.smartHealthPopEnterTransition
 import com.example.smart_health_android.ui.motion.smartHealthPopExitTransition
 import com.example.smart_health_android.ui.screens.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavGraph(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = "splash"
+    startDestination: String = "splash",
+    notificationDestination: SmartHealthNotificationDestination? = null,
+    onNotificationDestinationConsumed: () -> Unit = {},
 ) {
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val coroutineScope = rememberCoroutineScope()
+    val performLogout: (String) -> Unit = { popUpRoute ->
+        coroutineScope.launch {
+            runCatching { SmartHealthPushRegistrar.unregisterCurrentToken() }
+            runCatching { SmartHealthRepository.api.logout() }
+            FirebaseAuthService.signOut()
+            SmartHealthRepository.api.setAuthToken(null)
+            navController.navigate("login") {
+                popUpTo(popUpRoute) { inclusive = true }
+            }
+        }
+    }
+    LaunchedEffect(notificationDestination, currentBackStackEntry?.destination?.route) {
+        val destination = notificationDestination ?: return@LaunchedEffect
+        val currentRoute = currentBackStackEntry?.destination?.route
+        if (currentRoute == destination.route) {
+            onNotificationDestinationConsumed()
+            return@LaunchedEffect
+        }
+        if (
+            NotificationNavigationPolicy.canNavigate(
+                currentRoute = currentRoute,
+                hasAuthenticatedSession = SmartHealthRepository.api.currentAuthToken() != null,
+            )
+        ) {
+            navController.navigate(destination.route) {
+                launchSingleTop = true
+            }
+            onNotificationDestinationConsumed()
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -77,7 +122,6 @@ fun AppNavGraph(
                 },
                 onNavigateToSignUp = { navController.navigate("sign-up") },
                 onNavigateToForgotPassword = { navController.navigate("forgot-password") },
-                onNavigateToPhoneLogin = { navController.navigate("phone-login") }
             )
         }
 
@@ -119,11 +163,7 @@ fun AppNavGraph(
                     }
                 },
                 onLogout = {
-                    FirebaseAuthService.signOut()
-                    SmartHealthRepository.api.setAuthToken(null)
-                    navController.navigate("login") {
-                        popUpTo("doctor-approval-pending") { inclusive = true }
-                    }
+                    performLogout("doctor-approval-pending")
                 }
             )
         }
@@ -134,15 +174,17 @@ fun AppNavGraph(
             )
         }
 
-        composable("phone-login") {
-            PhoneLoginScreen(
-                onNavigateToLogin = { navController.popBackStack() },
-                onLoginSuccess = {
-                    navController.navigate("dashboard") {
-                        popUpTo("login") { inclusive = true }
+        if (BuildConfig.SMART_HEALTH_PHONE_AUTH_ENABLED) {
+            composable("phone-login") {
+                PhoneLoginScreen(
+                    onNavigateToLogin = { navController.popBackStack() },
+                    onLoginSuccess = {
+                        navController.navigate("dashboard") {
+                            popUpTo("login") { inclusive = true }
+                        }
                     }
-                }
-            )
+                )
+            }
         }
         
         composable("dashboard") {
@@ -153,7 +195,8 @@ fun AppNavGraph(
                 onNavigateToAssistant = { navController.navigate("ai-assistant") },
                 onNavigateToNewScan = { navController.navigate("new-scan") },
                 onNavigateToNotifications = { navController.navigate("notifications") },
-                onNavigateToBluetooth = { navController.navigate("bluetooth?returnRoute=dashboard") },
+                onNavigateToBluetooth = { navController.navigate("device-pairing?returnRoute=dashboard") },
+                onNavigateToAppointments = { navController.navigate(AppointmentRoute.List.route) },
                 onNavigateToRecordDetail = { recordId ->
                     navController.navigate("record-detail/${Uri.encode(recordId)}")
                 }
@@ -164,10 +207,11 @@ fun AppNavGraph(
             PatientDashboardScreen(
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToNotifications = { navController.navigate("notifications") },
-                onNavigateToBluetooth = { navController.navigate("bluetooth?returnRoute=patient-dashboard") },
+                onNavigateToBluetooth = { navController.navigate("device-pairing?returnRoute=patient-dashboard") },
                 onNavigateToMonitoring = { navController.navigate("monitoring") },
                 onNavigateToRecords = { navController.navigate("records") },
                 onNavigateToAssistant = { navController.navigate("ai-assistant") },
+                onNavigateToAppointments = { navController.navigate(AppointmentRoute.List.route) },
                 onNavigateToRecordDetail = { recordId ->
                     navController.navigate("record-detail/${Uri.encode(recordId)}")
                 }
@@ -177,6 +221,24 @@ fun AppNavGraph(
         composable("notifications") {
             NotificationsScreen(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = AppointmentRoute.NAVIGATION_PATTERN,
+            arguments = listOf(
+                navArgument("appointmentId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+        ) { backStackEntry ->
+            AppointmentScreen(
+                initialAppointmentId = backStackEntry.arguments
+                    ?.getString("appointmentId")
+                    ?.let(Uri::decode),
+                onNavigateBack = { navController.popBackStack() },
             )
         }
 
@@ -201,10 +263,34 @@ fun AppNavGraph(
         ) { backStackEntry ->
             LiveMonitoringScreen(
                 initialScanId = backStackEntry.arguments?.getString("scanId"),
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onCreateScan = { navController.navigate("new-scan") },
             )
         }
 
+        composable(
+            route = "device-pairing?returnRoute={returnRoute}",
+            arguments = listOf(
+                navArgument("returnRoute") {
+                    type = NavType.StringType
+                    defaultValue = "dashboard"
+                }
+            )
+        ) { backStackEntry ->
+            val returnRoute = backStackEntry.arguments?.getString("returnRoute") ?: "dashboard"
+            DevicePairingScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onConnectionSuccess = { deviceName ->
+                    navController.navigate(
+                        "connection-success/${Uri.encode(deviceName)}?returnRoute=${Uri.encode(returnRoute)}"
+                    ) {
+                        popUpTo("device-pairing?returnRoute={returnRoute}") { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Compatibility alias for notification/deep-link payloads issued before the QR claim flow.
         composable(
             route = "bluetooth?returnRoute={returnRoute}",
             arguments = listOf(
@@ -215,7 +301,7 @@ fun AppNavGraph(
             )
         ) { backStackEntry ->
             val returnRoute = backStackEntry.arguments?.getString("returnRoute") ?: "dashboard"
-            BluetoothPairingScreen(
+            DevicePairingScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onConnectionSuccess = { deviceName ->
                     navController.navigate(
@@ -287,11 +373,7 @@ fun AppNavGraph(
                 onNavigateToDataStorage = { navController.navigate("data-storage") },
                 onNavigateToNotificationSettings = { navController.navigate("notification-settings") },
                 onLogout = {
-                    FirebaseAuthService.signOut()
-                    SmartHealthRepository.api.setAuthToken(null)
-                    navController.navigate("login") {
-                        popUpTo("dashboard") { inclusive = true }
-                    }
+                    performLogout("dashboard")
                 }
             )
         }
@@ -356,7 +438,7 @@ fun AppNavGraph(
         composable("stethoscope-settings") {
             StethoscopeSettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToBluetoothPairing = { navController.navigate("bluetooth?returnRoute=dashboard") },
+                onNavigateToBluetoothPairing = { navController.navigate("device-pairing?returnRoute=dashboard") },
                 onNavigateToBluetoothSettings = { navController.navigate("bluetooth-settings") }
             )
         }
@@ -402,7 +484,7 @@ fun AppNavGraph(
         composable("bluetooth-settings") {
             DeviceManagementScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onAddDevice = { navController.navigate("bluetooth?returnRoute=dashboard") }
+                onAddDevice = { navController.navigate("device-pairing?returnRoute=dashboard") }
             )
         }
 

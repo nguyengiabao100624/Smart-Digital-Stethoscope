@@ -1,25 +1,23 @@
 package com.example.smart_health_android.ui.screens
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,100 +28,76 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.ui.theme.Background
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.SuccessGreen
-import com.example.smart_health_android.ui.theme.TextPrimary
-import com.example.smart_health_android.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
+import com.example.smart_health_android.R
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
 @Composable
 fun ConnectionSuccessScreen(
     deviceName: String,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
-    var finished by remember { mutableStateOf(false) }
-    val iconScale by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "connection-success-scale"
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.88f,
+        animationSpec = tween(ShcareTheme.motion.emphasizedMillis),
+        label = "device-online-confirmation",
     )
+    val resolvedDeviceName = deviceName.ifBlank { stringResource(R.string.device_pairing_title) }
 
-    fun finishOnce() {
-        if (!finished) {
-            finished = true
-            onFinish()
-        }
-    }
+    LaunchedEffect(Unit) { visible = true }
 
-    LaunchedEffect(Unit) {
-        visible = true
-        delay(2500)
-        finishOnce()
-    }
-
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
-            .padding(24.dp)
+            .padding(ShcareTheme.spacing.extraLarge)
+            .testTag("device_pairing.success"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Column(
+        Spacer(Modifier.weight(1f))
+        Surface(
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .size(88.dp)
+                .scale(scale),
+            shape = CircleShape,
+            color = ShcareTheme.colors.successContainer,
+            contentColor = ShcareTheme.colors.onSuccessContainer,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .scale(iconScale)
-                    .shadow(18.dp, CircleShape, spotColor = SuccessGreen.copy(alpha = 0.4f))
-                    .background(SuccessGreen, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(52.dp))
-            }
-
-            Spacer(modifier = Modifier.height(26.dp))
-            Text(
-                "Kết nối thành công!",
-                color = TextPrimary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Thiết bị ${deviceName.ifBlank { "Stetho-AI-Pro" }} đã sẵn sàng để sử dụng.",
-                color = TextSecondary,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                textAlign = TextAlign.Center
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.padding(ShcareTheme.spacing.extraLarge),
             )
         }
-
+        Spacer(Modifier.height(ShcareTheme.spacing.extraLarge))
+        Text(
+            text = stringResource(R.string.device_pairing_success_title),
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(ShcareTheme.spacing.small))
+        Text(
+            text = stringResource(R.string.device_pairing_success_message, resolvedDeviceName),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.weight(1f))
         Button(
-            onClick = { finishOnce() },
+            onClick = onFinish,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(54.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = Color.White)
+                .defaultMinSize(minHeight = 48.dp)
+                .testTag("device_pairing.success_continue"),
         ) {
-            Text("Đến Bảng điều khiển", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.device_pairing_success_continue))
         }
     }
 }

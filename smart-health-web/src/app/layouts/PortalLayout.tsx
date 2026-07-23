@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -9,6 +9,7 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  CreditCard,
   FileText,
   Fingerprint,
   HelpCircle,
@@ -25,41 +26,36 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../docs/Logo.png";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
 import { smartHealthApi } from "../../lib/smart-health-api";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, type AuthUser } from "../context/AuthContext";
+import {
+  canAccessRoute,
+  getNavigationContracts,
+  matchRouteContract,
+  routePath,
+  type RouteNavigationPlacement,
+} from "../contracts/route-contract";
 
-const doctorNav = [
-  { to: "/portal/dashboard", icon: Home, label: "Tổng quan" },
-  { to: "/portal/patients", icon: Users, label: "Bệnh nhân" },
-  { to: "/portal/appointments", icon: CalendarDays, label: "Lịch hẹn" },
-  { to: "/portal/live", icon: Activity, label: "Theo dõi trực tiếp" },
-  { to: "/portal/records", icon: FileText, label: "Lượt đo & hồ sơ" },
-  { to: "/portal/devices", icon: Stethoscope, label: "Thiết bị" },
-  { to: "/portal/consent", icon: Mail, label: "Lời mời & consent" },
-  { to: "/portal/alerts", icon: AlertTriangle, label: "Cảnh báo" },
-  { to: "/portal/notifications", icon: Bell, label: "Thông báo", badge: true },
-];
-
-const clinicNav = [
-  { to: "/portal/dashboard", icon: Home, label: "Tổng quan" },
-  { to: "/portal/patients", icon: Users, label: "Bệnh nhân" },
-  { to: "/portal/appointments", icon: CalendarDays, label: "Lịch hẹn" },
-  { to: "/portal/live", icon: Activity, label: "Theo dõi trực tiếp" },
-  { to: "/portal/records", icon: FileText, label: "Lượt đo & hồ sơ" },
-  { to: "/portal/devices", icon: Stethoscope, label: "Thiết bị" },
-  { to: "/portal/consent", icon: Mail, label: "Lời mời & consent" },
-  { to: "/portal/staff", icon: Building2, label: "Bác sĩ / nhân sự" },
-  { to: "/portal/reports", icon: BarChart2, label: "Báo cáo" },
-  { to: "/portal/alerts", icon: AlertTriangle, label: "Cảnh báo" },
-  { to: "/portal/notifications", icon: Bell, label: "Thông báo", badge: true },
-];
-
-const footerNav = [
-  { to: "/portal/onboarding", icon: Zap, label: "Bắt đầu nhanh" },
-  { to: "/portal/settings", icon: Settings, label: "Cài đặt" },
-  { to: "/portal/help", icon: HelpCircle, label: "Hỗ trợ" },
-];
+const routeIcons = {
+  activity: Activity,
+  alert: AlertTriangle,
+  audit: Shield,
+  billing: CreditCard,
+  calendar: CalendarDays,
+  consent: Mail,
+  device: Stethoscope,
+  help: HelpCircle,
+  home: Home,
+  notification: Bell,
+  onboarding: Zap,
+  patients: Users,
+  records: FileText,
+  reports: BarChart2,
+  settings: Settings,
+  staff: Building2,
+  workspace: Building2,
+} as const;
 
 function isActive(pathname: string, target: string) {
   return (
@@ -68,17 +64,43 @@ function isActive(pathname: string, target: string) {
   );
 }
 
-function pageTitle(
-  pathname: string,
-  items: Array<{ to: string; label: string }>,
-) {
-  const match = items.find((item) => isActive(pathname, item.to));
-  if (match) return match.label;
-  if (pathname.includes("/workspace")) return "Workspace";
-  if (pathname.includes("/billing")) return "Gói dịch vụ";
-  if (pathname.includes("/audit")) return "Nhật ký audit";
-  return "Workspace";
+function pageTitle(pathname: string) {
+  return matchRouteContract(pathname)?.title ?? "Workspace";
 }
+
+function navigationForCapabilities(
+  capabilities: readonly string[],
+  placement: Exclude<RouteNavigationPlacement, "public">,
+) {
+  return getNavigationContracts(capabilities, placement).map((contract) => {
+    const nav = contract.nav;
+    if (!nav)
+      throw new Error(`Route ${contract.id} is missing navigation metadata`);
+    const Icon = routeIcons[nav.icon as keyof typeof routeIcons] ?? Shield;
+    return {
+      to: contract.path,
+      icon: Icon,
+      label: nav.label,
+      badge: nav.badge,
+    };
+  });
+}
+
+function portalRoleLabel(user: AuthUser | null, isClinic: boolean) {
+  if (user?.role === "billing") return "Billing";
+  if (user?.role === "technician") return "Kỹ thuật viên";
+  if (user?.role === "viewer") return "Người xem";
+  return isClinic ? "Quản lý cơ sở" : "Bác sĩ";
+}
+
+function canAccessPortalRoute(user: AuthUser, pathname: string) {
+  return canAccessRoute(user.capabilities, pathname);
+}
+
+const popoverBackdropStyle = {
+  backdropFilter: "blur(18px) saturate(140%)",
+  WebkitBackdropFilter: "blur(18px) saturate(140%)",
+} satisfies CSSProperties;
 
 export default function PortalLayout() {
   const location = useLocation();
@@ -90,11 +112,26 @@ export default function PortalLayout() {
   const notifRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLElement | null>(null);
+  const canViewNotifications = Boolean(
+    user &&
+      canAccessRoute(
+        user.capabilities,
+        routePath("portal.notifications"),
+      ),
+  );
+  const canManageAccount = Boolean(
+    user &&
+      canAccessRoute(user.capabilities, routePath("portal.settings")),
+  );
+  const canSwitchWorkspace = Boolean(
+    user &&
+      canAccessRoute(user.capabilities, routePath("portal.workspace")),
+  );
 
   const notificationsQuery = useQuery({
     queryKey: ["portal", "notifications", user?.currentWorkspace.id],
     queryFn: smartHealthApi.listNotifications,
-    enabled: Boolean(user),
+    enabled: Boolean(user && canViewNotifications),
     refetchInterval: 30_000,
   });
   const backendStatusQuery = useQuery({
@@ -144,18 +181,29 @@ export default function PortalLayout() {
     return <Navigate to="/portal/permission-denied" replace />;
   }
 
+  if (
+    location.pathname !== "/portal/permission-denied" &&
+    !canAccessPortalRoute(user, location.pathname)
+  ) {
+    return <Navigate to="/portal/permission-denied" replace />;
+  }
+
   const isClinic =
     ["workspace_admin", "workspace_owner"].includes(user.role) ||
     user.capabilities.includes("workspace.staff.manage");
-  const navigation = isClinic ? clinicNav : doctorNav;
+  const navigation = navigationForCapabilities(user.capabilities, "primary");
+  const footerNavigation = navigationForCapabilities(
+    user.capabilities,
+    "footer",
+  );
   const notifications = notificationsQuery.data?.notifications || [];
   const unread = notifications.filter(
     (notification) => !notification.read,
   ).length;
   const recentNotifications = notifications.slice(0, 4);
   const workspaceName = user.currentWorkspace.name;
-  const roleLabel = isClinic ? "Quản lý cơ sở" : "Bác sĩ";
-  const title = pageTitle(location.pathname, [...navigation, ...footerNav]);
+  const roleLabel = portalRoleLabel(user, isClinic);
+  const title = pageTitle(location.pathname);
   const backendStatus = backendStatusQuery.data;
   const backendOnline = Boolean(backendStatusQuery.isSuccess && backendStatus);
   const backendStatusLabel = backendOnline
@@ -194,10 +242,10 @@ export default function PortalLayout() {
             <Link
               to="/"
               className="flex min-w-0 items-center gap-3"
-              aria-label="Về Smart Health Care"
+              aria-label="Về Shcare — Smart Health Care"
             >
               <img src={logoUrl} alt="" />
-              <span className="truncate">Smart Health Care</span>
+              <span className="truncate">Shcare</span>
             </Link>
             <button
               type="button"
@@ -209,16 +257,34 @@ export default function PortalLayout() {
             </button>
           </div>
 
-          <Link to="/portal/workspace" className="clinical-workspace-link">
-            <span className="clinical-workspace-avatar" aria-hidden="true">
-              {workspaceName.charAt(0).toUpperCase()}
-            </span>
-            <span className="clinical-workspace-copy">
-              <strong>{workspaceName}</strong>
-              <span>{roleLabel}</span>
-            </span>
-            <ChevronDown size={15} aria-hidden="true" />
-          </Link>
+          {canSwitchWorkspace ? (
+            <Link
+              to={routePath("portal.workspace")}
+              className="clinical-workspace-link"
+            >
+              <span className="clinical-workspace-avatar" aria-hidden="true">
+                {workspaceName.charAt(0).toUpperCase()}
+              </span>
+              <span className="clinical-workspace-copy">
+                <strong>{workspaceName}</strong>
+                <span>{roleLabel}</span>
+              </span>
+              <ChevronDown size={15} aria-hidden="true" />
+            </Link>
+          ) : (
+            <div
+              className="clinical-workspace-link cursor-default"
+              aria-label={`${workspaceName}, ${roleLabel}`}
+            >
+              <span className="clinical-workspace-avatar" aria-hidden="true">
+                {workspaceName.charAt(0).toUpperCase()}
+              </span>
+              <span className="clinical-workspace-copy">
+                <strong>{workspaceName}</strong>
+                <span>{roleLabel}</span>
+              </span>
+            </div>
+          )}
 
           <nav className="clinical-side-nav">
             {navigation.map(({ to, icon: Icon, label, badge }) => {
@@ -243,7 +309,7 @@ export default function PortalLayout() {
           </nav>
 
           <nav className="clinical-side-footer">
-            {footerNav.map(({ to, icon: Icon, label }) => {
+            {footerNavigation.map(({ to, icon: Icon, label }) => {
               const active = isActive(location.pathname, to);
               return (
                 <Link
@@ -288,6 +354,8 @@ export default function PortalLayout() {
                       ? "is-error"
                       : "is-checking"
                 }`}
+                role="status"
+                aria-live="polite"
                 title={backendStatusTitle}
                 aria-label={backendStatusTitle}
               >
@@ -295,7 +363,8 @@ export default function PortalLayout() {
                 <span>{backendStatusLabel}</span>
               </div>
 
-              <div ref={notifRef} className="relative">
+              {canViewNotifications ? (
+                <div ref={notifRef} className="relative">
                 <button
                   id="portal-notifications-trigger"
                   type="button"
@@ -321,6 +390,7 @@ export default function PortalLayout() {
                   {notifOpen && (
                     <motion.div
                       className="clinical-popover"
+                      style={popoverBackdropStyle}
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
@@ -339,7 +409,7 @@ export default function PortalLayout() {
                           <Link
                             className="clinical-popover-notice"
                             key={notification.id}
-                            to="/portal/notifications"
+                            to={routePath("portal.notifications")}
                           >
                             <p>{notification.title || "Thông báo workspace"}</p>
                             {notification.createdAt && (
@@ -358,14 +428,15 @@ export default function PortalLayout() {
                       )}
                       <Link
                         className="clinical-popover-footer"
-                        to="/portal/notifications"
+                        to={routePath("portal.notifications")}
                       >
                         Xem tất cả thông báo
                       </Link>
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
+                </div>
+              ) : null}
 
               <div ref={userRef} className="relative">
                 <button
@@ -391,6 +462,7 @@ export default function PortalLayout() {
                   {userMenuOpen && (
                     <motion.div
                       className="clinical-popover"
+                      style={popoverBackdropStyle}
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
@@ -403,18 +475,25 @@ export default function PortalLayout() {
                         </span>
                       </header>
                       <div className="clinical-popover-menu">
-                        <Link
-                          className="clinical-popover-link"
-                          to="/portal/settings"
-                        >
-                          <Fingerprint size={16} /> Hồ sơ & bảo mật
-                        </Link>
-                        <Link
-                          className="clinical-popover-link"
-                          to="/portal/audit"
-                        >
-                          <Shield size={16} /> Nhật ký audit
-                        </Link>
+                        {canManageAccount ? (
+                          <Link
+                            className="clinical-popover-link"
+                            to={routePath("portal.settings")}
+                          >
+                            <Fingerprint size={16} /> Hồ sơ & bảo mật
+                          </Link>
+                        ) : null}
+                        {canAccessRoute(
+                          user.capabilities,
+                          routePath("portal.audit"),
+                        ) ? (
+                          <Link
+                            className="clinical-popover-link"
+                            to={routePath("portal.audit")}
+                          >
+                            <Shield size={16} /> Nhật ký audit
+                          </Link>
+                        ) : null}
                         <button
                           id="portal-logout"
                           type="button"

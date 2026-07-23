@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Notifications
@@ -40,6 +41,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -66,6 +68,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.example.smart_health_android.R
+import com.example.smart_health_android.appointments.AppointmentRoute
 import androidx.compose.ui.draw.drawBehind
 import com.example.smart_health_android.data.BackendStatus
 import com.example.smart_health_android.data.Scan
@@ -95,6 +100,7 @@ fun DashboardScreen(
     onNavigateToNewScan: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToBluetooth: () -> Unit,
+    onNavigateToAppointments: () -> Unit,
     onNavigateToRecordDetail: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -105,6 +111,7 @@ fun DashboardScreen(
     var displayName by remember { mutableStateOf("Bác sĩ") }
     var workspaceName by remember { mutableStateOf("") }
     var workspaceMeta by remember { mutableStateOf("") }
+    var canViewAppointments by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     suspend fun refreshDashboard() {
@@ -129,6 +136,7 @@ fun DashboardScreen(
                 workspaceTypeLabel(currentUser.workspaceType),
                 roleLabel(currentUser.role)
             ).filter { it.isNotBlank() }.joinToString(" • ")
+            canViewAppointments = AppointmentRoute.List.canOpen(currentUser.capabilities.toSet())
         }
         while (true) {
             refreshDashboard()
@@ -226,7 +234,7 @@ fun DashboardScreen(
                     QuickActionTile(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.ChatBubbleOutline,
-                        label = "Chat AI",
+                        label = stringResource(R.string.ai_assistant_short_label),
                         background = PrimaryTeal,
                         contentColor = Color.White,
                         onClick = onNavigateToAssistant
@@ -240,6 +248,20 @@ fun DashboardScreen(
                         dashed = true,
                         onClick = onNavigateToNewScan
                     )
+                }
+
+                if (canViewAppointments) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onNavigateToAppointments,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                    ) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.appointment_title_doctor))
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -686,7 +708,7 @@ private fun RecentScanCard(
             ) {
                 Column {
                     Text(
-                        text = "Kết luận AI:",
+                        text = stringResource(R.string.ai_assistant_result_label),
                         color = TextSecondary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
@@ -740,6 +762,7 @@ fun DashboardScreenPreview() {
             onNavigateToNewScan = {},
             onNavigateToNotifications = {},
             onNavigateToBluetooth = {},
+            onNavigateToAppointments = {},
             onNavigateToRecordDetail = {}
         )
     }

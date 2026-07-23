@@ -1,26 +1,21 @@
-import React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  X,
   AlertTriangle,
+  Building2,
   CheckCircle2,
-  Info,
   Clock,
   ExternalLink,
-  Download,
-  Stethoscope,
-  Building2,
-  Activity,
-  UserCheck,
-  Wifi,
   FileText,
+  Info,
+  UserCheck,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { toast } from "sonner";
-import { exportPDF, buildFilename } from "@/lib/export-utils";
+import { findAdminRouteContract } from "@/contracts/admin-route-contract";
 import { getNotificationTone, getNotificationTypeLabel } from "@/lib/notification-events";
+import { WEB_SURFACE } from "@/lib/surface";
 
 export interface NotificationItem {
   id: number | string;
@@ -29,6 +24,24 @@ export interface NotificationItem {
   time: string;
   type: "warning" | "success" | "info" | string;
   isRead: boolean;
+  channel?: string;
+  campaignId?: string;
+  audienceType?: string;
+  audienceRole?: string;
+  requestedChannels?: string[];
+  inAppStatus?: string;
+  emailStatus?: string;
+  organizationId?: string;
+  userId?: string;
+  deliveryStatus?: string;
+  pushStatus?: string;
+  sentAt?: string;
+  failedAt?: string;
+  pushSentAt?: string;
+  pushFailedAt?: string;
+  readAt?: string;
+  retryCount?: number;
+  metadata?: Record<string, unknown>;
 }
 
 interface Props {
@@ -37,89 +50,324 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
-const META: Record<
-  number,
-  {
-    label: string;
-    items: { icon: LucideIcon; label: string; value: string }[];
-    action?: { label: string; icon: LucideIcon; to?: string; download?: boolean };
-  }
-> = {
-  1: {
-    label: "Chi tiết cảnh báo AI",
-    items: [
-      { icon: Stethoscope, label: "Thiết bị", value: "Stetho-X1 · SN A3F2-991" },
-      { icon: Building2, label: "Phòng khám", value: "PK Đa khoa Tâm Anh" },
-      { icon: Activity, label: "Độ tin cậy AI", value: "94%" },
-      { icon: Activity, label: "Chỉ số phát hiện", value: "Nhịp tim 142 bpm (bất thường)" },
-    ],
-    action: { label: "Xem lượt đo AI", icon: ExternalLink, to: "/ai-measurements" },
-  },
-  2: {
-    label: "Yêu cầu chờ duyệt",
-    items: [
-      { icon: UserCheck, label: "Bác sĩ", value: "BS. Nguyễn Văn Tùng" },
-      { icon: Stethoscope, label: "Chuyên khoa", value: "Tim mạch" },
-      { icon: Building2, label: "Phòng khám", value: "PK Tim mạch Hà Nội" },
-    ],
-    action: { label: "Đi tới duyệt bác sĩ", icon: ExternalLink, to: "/doctor-approval" },
-  },
-  3: {
-    label: "Thông tin cập nhật",
-    items: [
-      { icon: Activity, label: "Phiên bản", value: "Respiratory AI v1.8.0" },
-      {
-        icon: FileText,
-        label: "Thay đổi chính",
-        value: "Cải thiện độ chính xác 12%, giảm false-positive",
-      },
-      { icon: CheckCircle2, label: "Trạng thái triển khai", value: "100% thiết bị (89/89)" },
-    ],
-  },
-  4: {
-    label: "Báo cáo doanh thu",
-    items: [
-      { icon: FileText, label: "Kỳ báo cáo", value: "Tháng 04/2026" },
-      { icon: Activity, label: "Tổng lượt đo", value: "12,845 lượt" },
-      { icon: Building2, label: "Phòng khám đối tác", value: "23 phòng khám" },
-    ],
-    action: { label: "Tải báo cáo PDF", icon: Download, download: true },
-  },
-  5: {
-    label: "Chi tiết thiết bị",
-    items: [
-      { icon: Stethoscope, label: "Thiết bị", value: "Stetho-Pro · SN B7K1-432" },
-      { icon: Building2, label: "Phòng khám", value: "PK Hô hấp Việt" },
-      { icon: Wifi, label: "Lần online cuối", value: "29/04/2026 18:42" },
-      { icon: Clock, label: "Thời gian offline", value: "Hơn 24 giờ" },
-    ],
-    action: { label: "Xem chi tiết thiết bị", icon: ExternalLink, to: "/devices" },
-  },
+type DetailRow = {
+  key: string;
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  fromMetadata?: boolean;
 };
+
+const METADATA_LABELS: Record<string, string> = {
+  actionPath: "Trang liên quan",
+  actionLabel: "Tên thao tác",
+  workspaceId: "Mã workspace",
+  organizationId: "Mã workspace",
+  userId: "Mã người dùng",
+  patientId: "Mã bệnh nhân",
+  deviceId: "Mã thiết bị",
+  scanId: "Mã lượt đo",
+  doctorUserId: "Mã bác sĩ",
+  doctorName: "Bác sĩ",
+  doctorEmail: "Email bác sĩ",
+  clinicName: "Cơ sở y tế",
+  specialty: "Chuyên khoa",
+  license: "Số CCHN",
+  status: "Trạng thái",
+  reason: "Lý do",
+  provider: "Provider",
+  roleRequestStatus: "Trạng thái yêu cầu",
+  requiredFields: "Trường cần bổ sung",
+  requestMessage: "Nội dung yêu cầu",
+};
+
+const DELIVERY_STATUS_LABELS: Record<string, string> = {
+  ready: "Sẵn sàng",
+  disabled: "Đã tắt",
+  unavailable: "Provider chưa sẵn sàng",
+  skipped: "Đã bỏ qua",
+  no_recipient: "Không có địa chỉ nhận",
+  no_devices: "Không có thiết bị nhận",
+  sent: "Provider đã nhận",
+  partial: "Gửi một phần",
+  failed: "Gửi thất bại",
+};
+
+const CHANNEL_LABELS: Record<string, string> = {
+  in_app: "Trong ứng dụng",
+  email: "Email",
+  push: "Push notification",
+};
+
+const TOP_LEVEL_METADATA_KEYS = new Set([
+  "id",
+  "type",
+  "title",
+  "message",
+  "channel",
+  "read",
+  "readAt",
+  "createdAt",
+  "updatedAt",
+  "userId",
+  "organizationId",
+]);
+
+function isSafeMetadataKey(key: string) {
+  return (
+    Boolean(key.trim()) &&
+    !TOP_LEVEL_METADATA_KEYS.has(key) &&
+    !/password|token|secret|api.?key|credential|private/i.test(key)
+  );
+}
+
+function metadataLabel(key: string) {
+  if (METADATA_LABELS[key]) return METADATA_LABELS[key];
+  const readable = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return readable ? readable.charAt(0).toUpperCase() + readable.slice(1) : "Thông tin";
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function metadataValue(key: string, value: unknown) {
+  if (typeof value === "string") {
+    const normalized = value.trim().slice(0, 500);
+    if (!normalized) return null;
+    return /At$|Date$|Time$/i.test(key) ? formatDateTime(normalized) : normalized;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return typeof value === "boolean"
+      ? value
+        ? "Có"
+        : "Không"
+      : new Intl.NumberFormat("vi-VN").format(value);
+  }
+  return null;
+}
+
+function metadataIcon(key: string): LucideIcon {
+  if (/workspace|organization|clinic/i.test(key)) return Building2;
+  if (/user|doctor|patient/i.test(key)) return UserCheck;
+  if (/At$|Date$|Time$/i.test(key)) return Clock;
+  if (key === "actionPath") return ExternalLink;
+  return Info;
+}
+
+function deliveryStatusLabel(value: string) {
+  return DELIVERY_STATUS_LABELS[value] || value;
+}
+
+function channelLabel(value: string) {
+  return CHANNEL_LABELS[value] || value;
+}
+
+function buildNotificationMetadataRows(notification: NotificationItem): DetailRow[] {
+  return Object.entries(notification.metadata || {}).flatMap(([key, value]) => {
+    if (!isSafeMetadataKey(key)) return [];
+    const formattedValue = metadataValue(key, value);
+    if (!formattedValue) return [];
+    return [
+      {
+        key: `metadata-${key}`,
+        label: metadataLabel(key),
+        value: formattedValue,
+        icon: metadataIcon(key),
+        fromMetadata: true,
+      },
+    ];
+  });
+}
+
+function buildNotificationDetailRows(notification: NotificationItem): DetailRow[] {
+  const rows: DetailRow[] = [
+    {
+      key: "type",
+      label: "Loại sự kiện",
+      value: getNotificationTypeLabel(notification.type),
+      icon: Info,
+    },
+    {
+      key: "id",
+      label: "Mã thông báo",
+      value: String(notification.id),
+      icon: FileText,
+    },
+    {
+      key: "time",
+      label: "Thời gian",
+      value: notification.time,
+      icon: Clock,
+    },
+    {
+      key: "read",
+      label: "Trạng thái đọc",
+      value: notification.isRead ? "Đã đọc" : "Chưa đọc",
+      icon: CheckCircle2,
+    },
+  ];
+
+  if (notification.channel) {
+    rows.push({
+      key: "channel",
+      label: "Kênh",
+      value: channelLabel(notification.channel),
+      icon: Info,
+    });
+  }
+  if (notification.campaignId) {
+    rows.push({
+      key: "campaign-id",
+      label: "Mã chiến dịch",
+      value: notification.campaignId,
+      icon: FileText,
+    });
+  }
+  if (notification.requestedChannels?.length) {
+    rows.push({
+      key: "requested-channels",
+      label: "Kênh được yêu cầu",
+      value: notification.requestedChannels.map(channelLabel).join(", "),
+      icon: Info,
+    });
+  }
+  if (notification.inAppStatus) {
+    rows.push({
+      key: "in-app-status",
+      label: "Trạng thái in-app",
+      value: deliveryStatusLabel(notification.inAppStatus),
+      icon: CheckCircle2,
+    });
+  }
+  if (notification.emailStatus) {
+    rows.push({
+      key: "email-status",
+      label: "Trạng thái email",
+      value: deliveryStatusLabel(notification.emailStatus),
+      icon: CheckCircle2,
+    });
+  }
+  if (notification.deliveryStatus) {
+    rows.push({
+      key: "delivery-status",
+      label: "Trạng thái gửi",
+      value: deliveryStatusLabel(notification.deliveryStatus),
+      icon: CheckCircle2,
+    });
+  }
+  if (notification.pushStatus) {
+    rows.push({
+      key: "push-status",
+      label: "Trạng thái push",
+      value: deliveryStatusLabel(notification.pushStatus),
+      icon: CheckCircle2,
+    });
+  }
+  if (notification.organizationId) {
+    rows.push({
+      key: "organization-id",
+      label: "Mã workspace",
+      value: notification.organizationId,
+      icon: Building2,
+    });
+  }
+  if (notification.userId) {
+    rows.push({
+      key: "user-id",
+      label: "Mã người liên quan",
+      value: notification.userId,
+      icon: UserCheck,
+    });
+  }
+  if (notification.sentAt) {
+    rows.push({
+      key: "sent-at",
+      label: "Đã gửi lúc",
+      value: formatDateTime(notification.sentAt),
+      icon: Clock,
+    });
+  }
+  if (notification.failedAt) {
+    rows.push({
+      key: "failed-at",
+      label: "Thất bại lúc",
+      value: formatDateTime(notification.failedAt),
+      icon: AlertTriangle,
+    });
+  }
+  if (notification.pushSentAt) {
+    rows.push({
+      key: "push-sent-at",
+      label: "Push đã gửi lúc",
+      value: formatDateTime(notification.pushSentAt),
+      icon: Clock,
+    });
+  }
+  if (notification.pushFailedAt) {
+    rows.push({
+      key: "push-failed-at",
+      label: "Push thất bại lúc",
+      value: formatDateTime(notification.pushFailedAt),
+      icon: AlertTriangle,
+    });
+  }
+  if (notification.readAt) {
+    rows.push({
+      key: "read-at",
+      label: "Đã đọc lúc",
+      value: formatDateTime(notification.readAt),
+      icon: Clock,
+    });
+  }
+  if (typeof notification.retryCount === "number") {
+    rows.push({
+      key: "retry-count",
+      label: "Số lần thử lại",
+      value: new Intl.NumberFormat("vi-VN").format(notification.retryCount),
+      icon: Info,
+    });
+  }
+
+  return [...rows, ...buildNotificationMetadataRows(notification)];
+}
+
+function safeNotificationActionPath(value: unknown) {
+  if (typeof value !== "string") return "";
+  const actionPath = value.trim();
+  if (!actionPath.startsWith("/") || actionPath.startsWith("//") || actionPath.includes("\\")) {
+    return "";
+  }
+  return actionPath.split(/[?#]/, 1)[0];
+}
 
 export function NotificationDetailDialog({ notification, open, onOpenChange }: Props) {
   const navigate = useNavigate();
+  const prefersReducedMotion = useReducedMotion();
   if (!notification) return null;
 
-  const normalizedTitle = notification.title.toLowerCase();
-  const isDoctorApprovalNotice =
-    normalizedTitle.includes("bác sĩ") || normalizedTitle.includes("duyệt");
-  const meta = (typeof notification.id === "number" ? META[notification.id] : undefined) ?? {
-    label: "Thông tin chi tiết",
-    items: [
-      { icon: Info, label: "Loại sự kiện", value: getNotificationTypeLabel(notification.type) },
-      { icon: FileText, label: "Mã thông báo", value: String(notification.id) },
-      { icon: Clock, label: "Thời gian", value: notification.time },
-      {
-        icon: CheckCircle2,
-        label: "Trạng thái đọc",
-        value: notification.isRead ? "Đã đọc" : "Chưa đọc",
-      },
-    ],
-    action: isDoctorApprovalNotice
-      ? { label: "Đi tới duyệt bác sĩ", icon: ExternalLink, to: "/doctor-approval" }
-      : undefined,
-  };
+  const detailRows = buildNotificationDetailRows(notification);
+  const hasMetadata = detailRows.some((row) => row.fromMetadata);
+  const actionPath = safeNotificationActionPath(notification.metadata?.actionPath);
+  const actionContract = actionPath ? findAdminRouteContract(WEB_SURFACE, actionPath) : undefined;
+  const supportedActionPath = actionContract ? actionPath : "";
+  const rawActionLabel = metadataValue("actionLabel", notification.metadata?.actionLabel);
+  const actionLabel =
+    rawActionLabel || (actionContract ? `Mở ${actionContract.title}` : "Mở trang liên quan");
+  const actionUnavailableReason = actionPath
+    ? "Trang liên quan không thuộc bề mặt quản trị hiện tại."
+    : "Backend không cung cấp thao tác cho thông báo này.";
 
   const tone = getNotificationTone(notification.type);
   const Icon =
@@ -148,139 +396,124 @@ export function NotificationDetailDialog({ notification, open, onOpenChange }: P
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 data-[state=open]:animate-in data-[state=open]:fade-in" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/50 data-[state=open]:animate-in data-[state=open]:fade-in motion-reduce:animate-none" />
         <Dialog.Content asChild>
           <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl shadow-xl w-full max-w-lg z-50 max-h-[90vh] overflow-y-auto"
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: "easeOut" }}
+            className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl"
           >
-            <div className="flex items-start justify-between p-6 border-b border-border">
-              <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-lg flex items-center justify-center ${iconBg}`}>
-                  <Icon className={`w-5 h-5 ${iconColor}`} />
-                </div>
-                <div>
-                  <Dialog.Title className="font-semibold text-foreground leading-snug">
+            <header className="flex items-start justify-between gap-4 border-b border-border p-5 sm:p-6">
+              <div className="flex min-w-0 items-start gap-3">
+                <span
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${iconBg}`}
+                >
+                  <Icon className={`h-5 w-5 ${iconColor}`} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <Dialog.Title className="text-base font-semibold leading-snug text-foreground">
                     {notification.title}
                   </Dialog.Title>
-                  <Dialog.Description className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1">
-                    <Clock className="w-3.5 h-3.5" />
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                     {notification.time}
-                  </Dialog.Description>
+                  </p>
                 </div>
               </div>
-              <Dialog.Close className="text-muted-foreground hover:text-foreground transition-colors">
-                <X className="w-5 h-5" />
+              <Dialog.Close
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                aria-label="Đóng chi tiết thông báo"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
               </Dialog.Close>
-            </div>
+            </header>
 
-            <div className="p-6 space-y-5">
-              <p className="text-sm text-foreground/85 leading-relaxed">{notification.message}</p>
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+              <Dialog.Description className="text-sm leading-6 text-foreground/85">
+                {notification.message}
+              </Dialog.Description>
 
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                  {meta.label}
-                </h4>
-                <div className="space-y-2">
-                  {meta.items.map((item, i) => {
-                    const ItemIcon = item.icon;
+              <section aria-labelledby="notification-backend-data-heading">
+                <h2
+                  id="notification-backend-data-heading"
+                  className="mb-3 text-sm font-semibold text-foreground"
+                >
+                  Dữ liệu backend
+                </h2>
+                <dl className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                  {detailRows.map((row) => {
+                    const RowIcon = row.icon;
                     return (
-                      <motion.div
-                        key={i}
-                        initial={{ opacity: 0, x: -6 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.05 + i * 0.04, duration: 0.2 }}
-                        className="flex items-start gap-3 p-3 rounded-md bg-muted/40 border border-border/60"
+                      <div
+                        key={row.key}
+                        className="grid gap-1 px-4 py-3 sm:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)] sm:gap-4"
                       >
-                        <ItemIcon className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-muted-foreground">{item.label}</p>
-                          <p className="text-sm font-medium text-foreground mt-0.5 break-words">
-                            {item.value}
-                          </p>
-                        </div>
-                      </motion.div>
+                        <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <RowIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          {row.label}
+                        </dt>
+                        <dd className="break-words text-sm font-medium text-foreground sm:text-right">
+                          {row.value}
+                        </dd>
+                      </div>
                     );
                   })}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    className="flex-1 px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted transition-colors"
+                </dl>
+                {!hasMetadata && (
+                  <p
+                    className="mt-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground"
+                    role="status"
                   >
-                    Đóng
-                  </button>
-                </Dialog.Close>
-                {meta.action && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const a = meta.action!;
-                      if (a.download) {
-                        try {
-                          await exportPDF(
-                            buildFilename("BaoCao-DoanhThu", "042026", "pdf"),
-                            {
-                              title: "Báo cáo doanh thu",
-                              period: "Tháng 04/2026",
-                              author: "Quản trị viên Smart Health",
-                              meta: {
-                                "Kỳ báo cáo": "Tháng 04/2026",
-                                "Tổng lượt đo": "12.845",
-                                "Phòng khám đối tác": "23",
-                              },
-                              kpis: [
-                                {
-                                  label: "Doanh thu",
-                                  value: "₫1.24 tỷ",
-                                  hint: "+18% so với kỳ trước",
-                                },
-                                { label: "Lượt đo", value: "12.845" },
-                                { label: "Phòng khám", value: "23" },
-                                { label: "Bệnh nhân", value: "4.218" },
-                              ],
-                            },
-                            [
-                              {
-                                name: "Chi tiết thông báo",
-                                headers: ["Trường", "Giá trị"],
-                                rows: [
-                                  ["Tiêu đề", notification.title],
-                                  ["Nội dung", notification.message],
-                                  ["Loại sự kiện", getNotificationTypeLabel(notification.type)],
-                                  ["Thời gian", notification.time],
-                                  ["Trạng thái đọc", notification.isRead ? "Đã đọc" : "Chưa đọc"],
-                                ],
-                                align: ["left", "left"],
-                              },
-                            ],
-                          );
-                          toast.success("Đã tải báo cáo PDF");
-                        } catch (error) {
-                          toast.error("Không thể tải báo cáo PDF", {
-                            description:
-                              error instanceof Error ? error.message : "Vui lòng thử lại.",
-                          });
-                          return;
-                        }
-                      } else if (a.to) {
-                        navigate({ to: a.to });
-                      }
-                      onOpenChange(false);
-                    }}
-                    className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <meta.action.icon className="w-4 h-4" />
-                    {meta.action.label}
-                  </button>
+                    Backend chưa cung cấp metadata bổ sung cho thông báo này.
+                  </p>
                 )}
-              </div>
+              </section>
+
+              {!supportedActionPath && (
+                <p
+                  id="notification-action-unavailable"
+                  className="text-xs leading-5 text-muted-foreground"
+                  role="status"
+                >
+                  {actionUnavailableReason}
+                </p>
+              )}
             </div>
+
+            <footer className="grid gap-3 border-t border-border bg-muted/20 p-5 sm:grid-cols-2 sm:p-6">
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                >
+                  Đóng
+                </button>
+              </Dialog.Close>
+              {supportedActionPath ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate({ to: supportedActionPath as never });
+                    onOpenChange(false);
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  {actionLabel}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={true}
+                  aria-describedby="notification-action-unavailable"
+                  className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-border bg-muted px-4 text-sm font-medium text-muted-foreground opacity-70"
+                >
+                  <Info className="h-4 w-4" aria-hidden="true" />
+                  Không có thao tác khả dụng
+                </button>
+              )}
+            </footer>
           </motion.div>
         </Dialog.Content>
       </Dialog.Portal>

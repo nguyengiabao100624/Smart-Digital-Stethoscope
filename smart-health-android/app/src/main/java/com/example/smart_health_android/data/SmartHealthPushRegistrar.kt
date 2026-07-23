@@ -31,6 +31,18 @@ object SmartHealthPushRegistrar {
         return true
     }
 
+    suspend fun unregisterCurrentToken(): Boolean {
+        if (SmartHealthRepository.api.currentAuthToken().isNullOrBlank()) {
+            return false
+        }
+        val token = FirebaseMessaging.getInstance().token.await()
+            .takeIf { it.isNotBlank() }
+            ?: return false
+        val unregistered = SmartHealthRepository.api.unregisterNotificationDevice(token)
+        Log.d(TAG, "FCM token unregistered from the current Smart Health account: $unregistered")
+        return unregistered
+    }
+
     private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
         addOnSuccessListener { result -> continuation.resume(result) }
         addOnFailureListener { error -> continuation.resumeWithException(error) }

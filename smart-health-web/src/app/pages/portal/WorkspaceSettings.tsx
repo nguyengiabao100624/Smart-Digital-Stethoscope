@@ -12,17 +12,17 @@ import {
   Bell,
   Building2,
   Camera,
-  CheckCircle2,
+  CircleAlert,
   Eye,
   EyeOff,
   KeyRound,
   Laptop,
   Lock,
   LogOut,
-  Phone,
   Save,
   Settings,
   ShieldCheck,
+  RefreshCw,
   Smartphone,
   Trash2,
   UploadCloud,
@@ -30,9 +30,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PortalError, PortalLoading } from "../../components/PortalState";
+import { TwoFactorPanel } from "../../components/security/TwoFactorPanel";
 import { useAuth } from "../../context/AuthContext";
 import {
   smartHealthApi,
+  type ApiError,
   type ApiUser,
   type AuthSession,
 } from "../../../lib/smart-health-api";
@@ -76,7 +78,7 @@ const preferenceFields = [
   {
     key: "abnormalResults",
     label: "Kết quả bất thường",
-    description: "Cảnh báo AI hoặc bác sĩ đánh dấu cần xem xét ngay.",
+    description: "Cảnh báo từ nguồn dữ liệu hoặc bác sĩ đánh dấu cần xem xét ngay.",
   },
   {
     key: "deviceOffline",
@@ -95,8 +97,8 @@ const preferenceFields = [
   },
   {
     key: "aiUpdates",
-    label: "Cập nhật AI",
-    description: "Thông tin mô hình AI, dữ liệu đo và khuyến nghị phân tích.",
+    label: "Xử lý tín hiệu",
+    description: "Trạng thái xử lý, chất lượng dữ liệu đo và yêu cầu đo lại.",
   },
   {
     key: "newLogin",
@@ -131,6 +133,41 @@ const emptyWorkspace: WorkspaceForm = {
   email: "",
   website: "",
 };
+
+class SettingsActionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SettingsActionError";
+  }
+}
+
+function requireConfirmedUser(
+  result: { user?: ApiUser },
+  expectedUserId: string | undefined,
+  action: string,
+) {
+  if (!expectedUserId || result.user?.id !== expectedUserId) {
+    throw new SettingsActionError(
+      `Backend chưa xác nhận ${action}. Dữ liệu hiển thị vẫn giữ nguyên; vui lòng thử lại.`,
+    );
+  }
+  return result.user;
+}
+
+function requireConfirmedTextFields(
+  source: Record<string, unknown>,
+  expected: Record<string, string>,
+  action: string,
+) {
+  const confirmed = Object.entries(expected).every(
+    ([key, value]) => String(source[key] ?? "").trim() === value,
+  );
+  if (!confirmed) {
+    throw new SettingsActionError(
+      `Backend chưa xác nhận ${action}. Dữ liệu hiển thị vẫn giữ nguyên; vui lòng thử lại.`,
+    );
+  }
+}
 
 function profileFromUser(user?: ApiUser | null): ProfileForm {
   if (!user) return emptyProfile;
@@ -175,7 +212,64 @@ function workspaceFromUser(user?: ApiUser | null): WorkspaceForm {
 }
 
 function errorText(error: unknown, fallback = "Không thể thực hiện yêu cầu.") {
-  return error instanceof Error ? error.message : fallback;
+  if (error instanceof SettingsActionError) return error.message;
+  const apiError = error && typeof error === "object" ? (error as ApiError) : null;
+  const status = apiError?.status;
+  if (status === 401) {
+    return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại trước khi thử tiếp.";
+  }
+  if (status === 403) {
+    return "Bạn không có quyền xem hoặc cập nhật workspace này. Dữ liệu tài khoản khác vẫn có thể sử dụng.";
+  }
+  if (status === 409) {
+    return "Dữ liệu vừa được thay đổi ở nơi khác. Hãy tải lại dữ liệu rồi thử lại.";
+  }
+  if (status === 429) {
+    return "Bạn đã thực hiện quá nhiều yêu cầu. Vui lòng chờ một lúc rồi thử lại.";
+  }
+  if (typeof status === "number" && status >= 500) {
+    return `${fallback} Backend Smart Health đang tạm gián đoạn; dữ liệu chưa được thay đổi. Vui lòng thử lại.`;
+  }
+  if (
+    (typeof navigator !== "undefined" && navigator.onLine === false) ||
+    (error instanceof Error && /kết nối backend|failed to fetch|network/i.test(error.message))
+  ) {
+    return `${fallback} Thiết bị đang offline hoặc không thể kết nối backend; dữ liệu chưa được thay đổi. Hãy kiểm tra mạng và thử lại.`;
+  }
+  if (status === 400 || status === 422) {
+    return `${fallback} Dữ liệu gửi lên chưa hợp lệ hoặc chưa đầy đủ. Hãy kiểm tra các trường rồi thử lại.`;
+  }
+  return fallback;
+}
+
+function SettingsInlineError({
+  error,
+  fallback,
+  retry,
+}: {
+  error: unknown;
+  fallback: string;
+  retry?: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] p-4 text-sm text-[var(--status-danger-fg)]"
+    >
+      <CircleAlert size={17} aria-hidden="true" />
+      <span className="min-w-0 flex-1">{errorText(error, fallback)}</span>
+      {retry && (
+        <button
+          type="button"
+          onClick={retry}
+          className="flex min-h-9 items-center justify-center gap-2 rounded-xl border border-[var(--status-danger-border)] px-3 font-semibold text-current hover:bg-[var(--status-danger-bg)]"
+        >
+          <RefreshCw size={14} aria-hidden="true" />
+          Thử lại
+        </button>
+      )}
+    </div>
+  );
 }
 
 function formatDateTime(value?: string | null) {
@@ -278,11 +372,19 @@ function Field({
   );
 }
 
+function createIdempotencyKey(scope: string) {
+  const randomId = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${scope}-${randomId}`;
+}
+
 export default function WorkspaceSettings() {
   const { user, refreshUser } = useAuth();
   const client = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const avatarObjectUrlRef = useRef("");
+  const sessionRevokeKeysRef = useRef(new Map<string, string>());
+  const revokeAllSessionKeysRef = useRef(new Map<string, string>());
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [profile, setProfile] = useState<ProfileForm>(emptyProfile);
   const [workspaceForm, setWorkspaceForm] =
@@ -298,7 +400,8 @@ export default function WorkspaceSettings() {
   const [showPassword, setShowPassword] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState("");
   const [confirmAvatarDelete, setConfirmAvatarDelete] = useState(false);
-  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [confirmSessionId, setConfirmSessionId] = useState("");
+  const [confirmRevokeAll, setConfirmRevokeAll] = useState(false);
 
   const canManageWorkspace = Boolean(
     user?.capabilities.includes("workspace.settings.manage") ||
@@ -416,8 +519,8 @@ export default function WorkspaceSettings() {
   };
 
   const saveProfile = useMutation({
-    mutationFn: () =>
-      smartHealthApi.updateMe({
+    mutationFn: async () => {
+      const payload = {
         name: profile.name.trim(),
         title: profile.title.trim(),
         phone: profile.phone.trim(),
@@ -426,7 +529,20 @@ export default function WorkspaceSettings() {
         department: profile.department.trim(),
         specialty: profile.specialty.trim(),
         address: profile.address.trim(),
-      }),
+      };
+      const result = await smartHealthApi.updateMe(payload);
+      const confirmedUser = requireConfirmedUser(
+        result,
+        currentUser?.id || user?.id,
+        "lưu hồ sơ",
+      );
+      requireConfirmedTextFields(
+        confirmedUser as unknown as Record<string, unknown>,
+        payload,
+        "lưu hồ sơ",
+      );
+      return result;
+    },
     onSuccess: async (result) => {
       setProfile(profileFromUser(result.user));
       toast.success("Đã lưu hồ sơ cá nhân");
@@ -436,9 +552,24 @@ export default function WorkspaceSettings() {
   });
 
   const uploadAvatar = useMutation({
-    mutationFn: (file: File) => smartHealthApi.uploadMyAvatar(file),
-    onMutate: (file) => {
-      setObjectAvatarPreview(file);
+    mutationFn: async (file: File) => {
+      const result = await smartHealthApi.uploadMyAvatar(file);
+      requireConfirmedUser(
+        result,
+        currentUser?.id || user?.id,
+        "cập nhật ảnh đại diện",
+      );
+      if (!result.file?.id) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận file ảnh đại diện. Ảnh hiện tại vẫn được giữ nguyên; vui lòng thử lại.",
+        );
+      }
+      if (result.user.avatarFileId !== result.file.id) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận ảnh đại diện mới cho tài khoản. Ảnh hiện tại vẫn được giữ nguyên; vui lòng thử lại.",
+        );
+      }
+      return result;
     },
     onSuccess: async (result) => {
       setProfile(profileFromUser(result.user));
@@ -450,7 +581,20 @@ export default function WorkspaceSettings() {
   });
 
   const deleteAvatar = useMutation({
-    mutationFn: smartHealthApi.deleteMyAvatar,
+    mutationFn: async () => {
+      const result = await smartHealthApi.deleteMyAvatar();
+      requireConfirmedUser(
+        result,
+        currentUser?.id || user?.id,
+        "xoá ảnh đại diện",
+      );
+      if (result.deleted !== true) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận xoá ảnh đại diện. Ảnh hiện tại vẫn được giữ nguyên; vui lòng thử lại.",
+        );
+      }
+      return result;
+    },
     onSuccess: async (result) => {
       setObjectAvatarPreview(null);
       setProfile(profileFromUser(result.user));
@@ -479,21 +623,60 @@ export default function WorkspaceSettings() {
       const currentPassword = password.currentPassword.trim();
       const newPassword = password.newPassword.trim();
       const confirmPassword = password.confirmPassword.trim();
-      if (!currentPassword) throw new Error("Vui lòng nhập mật khẩu hiện tại.");
+      if (!currentPassword)
+        throw new SettingsActionError("Vui lòng nhập mật khẩu hiện tại.");
       if (newPassword.length < 8)
-        throw new Error("Mật khẩu mới phải có ít nhất 8 ký tự.");
+        throw new SettingsActionError("Mật khẩu mới phải có ít nhất 8 ký tự.");
       if (newPassword !== confirmPassword)
-        throw new Error("Mật khẩu xác nhận chưa khớp.");
+        throw new SettingsActionError("Mật khẩu xác nhận chưa khớp.");
 
+      let firebaseClientUpdated = false;
       if (hasFirebaseWebConfig()) {
-        const idToken = await changeFirebasePassword(
-          currentPassword,
-          newPassword,
-        );
-        await smartHealthApi.authenticateFirebase(idToken);
-        return smartHealthApi.changePassword({ firebaseClientUpdated: true });
+        try {
+          const idToken = await changeFirebasePassword(
+            currentPassword,
+            newPassword,
+          );
+          firebaseClientUpdated = true;
+          await smartHealthApi.authenticateFirebase(idToken);
+          const result = await smartHealthApi.changePassword({
+            firebaseClientUpdated: true,
+          });
+          requireConfirmedUser(
+            result,
+            currentUser?.id || user?.id,
+            "đổi mật khẩu",
+          );
+          if (result.ok !== true) {
+            throw new SettingsActionError(
+              "Mật khẩu Firebase đã được cập nhật nhưng backend chưa xác nhận đồng bộ. Hãy đăng nhập lại bằng mật khẩu mới rồi thử tiếp.",
+            );
+          }
+          return result;
+        } catch (error) {
+          if (firebaseClientUpdated && !(error instanceof SettingsActionError)) {
+            throw new SettingsActionError(
+              "Mật khẩu Firebase có thể đã được cập nhật nhưng Smart Health chưa xác nhận đồng bộ. Hãy đăng nhập lại bằng mật khẩu mới.",
+            );
+          }
+          throw error;
+        }
       }
-      return smartHealthApi.changePassword({ currentPassword, newPassword });
+      const result = await smartHealthApi.changePassword({
+        currentPassword,
+        newPassword,
+      });
+      requireConfirmedUser(
+        result,
+        currentUser?.id || user?.id,
+        "đổi mật khẩu",
+      );
+      if (result.ok !== true) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận đổi mật khẩu. Mật khẩu cũ vẫn có hiệu lực; vui lòng thử lại.",
+        );
+      }
+      return result;
     },
     onSuccess: async () => {
       setPassword({
@@ -507,25 +690,26 @@ export default function WorkspaceSettings() {
     onError: (error) => toast.error(errorText(error)),
   });
 
-  const updateTwoFactor = useMutation({
-    mutationFn: (payload: { action: "enable" | "disable"; method?: "app" | "sms" }) =>
-      smartHealthApi.updateTwoFactor(payload),
-    onSuccess: async (result) => {
-      setProfile(profileFromUser(result.user));
-      setRecoveryCodes(result.recoveryCodes || []);
-      toast.success(
-        result.user.twoFactorEnabled
-          ? "Đã bật xác thực hai lớp"
-          : "Đã tắt xác thực hai lớp",
-      );
-      await refreshAccountState();
-    },
-    onError: (error) => toast.error(errorText(error)),
-  });
-
   const revokeSession = useMutation({
-    mutationFn: (sessionId: string) => smartHealthApi.revokeSession(sessionId),
+    mutationFn: async (sessionId: string) => {
+      const key = sessionRevokeKeysRef.current.get(sessionId)
+        || createIdempotencyKey(`session-revoke-${sessionId}`);
+      sessionRevokeKeysRef.current.set(sessionId, key);
+      const result = await smartHealthApi.revokeSession(sessionId, key);
+      if (
+        result.revoked !== true
+        || result.session?.id !== sessionId
+        || !result.session.revokedAt
+      ) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận thu hồi phiên đăng nhập. Phiên có thể vẫn hoạt động; vui lòng thử lại.",
+        );
+      }
+      sessionRevokeKeysRef.current.delete(sessionId);
+      return result;
+    },
     onSuccess: async () => {
+      setConfirmSessionId("");
       toast.success("Đã thu hồi phiên đăng nhập");
       await client.invalidateQueries({ queryKey: ["portal", "auth-sessions"] });
     },
@@ -534,21 +718,65 @@ export default function WorkspaceSettings() {
 
   const revokeOtherSessions = useMutation({
     mutationFn: async () => {
-      for (const session of otherSessions) {
-        await smartHealthApi.revokeSession(session.id);
+      const targets = [...otherSessions];
+      const results = await Promise.allSettled(
+        targets.map(async (session) => {
+          const key = revokeAllSessionKeysRef.current.get(session.id)
+            || createIdempotencyKey(`session-revoke-${session.id}`);
+          revokeAllSessionKeysRef.current.set(session.id, key);
+          const result = await smartHealthApi.revokeSession(session.id, key);
+          if (
+            result.revoked !== true
+            || result.session?.id !== session.id
+            || !result.session.revokedAt
+          ) {
+            throw new Error("unconfirmed");
+          }
+          return result;
+        }),
+      );
+      const confirmed = results.filter(
+        (result) => result.status === "fulfilled",
+      ).length;
+      if (confirmed !== targets.length) {
+        throw new SettingsActionError(
+          `Backend chỉ xác nhận thu hồi ${confirmed}/${targets.length} phiên. Danh sách sẽ được tải lại; hãy kiểm tra và thử lại.`,
+        );
       }
-      return true;
+      return confirmed;
     },
     onSuccess: async () => {
+      revokeAllSessionKeysRef.current.clear();
+      setConfirmRevokeAll(false);
       toast.success("Đã thu hồi các phiên khác");
-      await client.invalidateQueries({ queryKey: ["portal", "auth-sessions"] });
     },
     onError: (error) => toast.error(errorText(error)),
+    onSettled: async () => {
+      await client.invalidateQueries({ queryKey: ["portal", "auth-sessions"] });
+    },
   });
 
   const savePreferences = useMutation({
-    mutationFn: () =>
-      smartHealthApi.updateMe({ notificationPreferences: preferences }),
+    mutationFn: async () => {
+      const result = await smartHealthApi.updateMe({
+        notificationPreferences: preferences,
+      });
+      const confirmedUser = requireConfirmedUser(
+        result,
+        currentUser?.id || user?.id,
+        "lưu cài đặt thông báo",
+      );
+      const confirmedPreferences = confirmedUser.notificationPreferences;
+      const isConfirmed = preferenceFields.every(
+        (field) => confirmedPreferences?.[field.key] === preferences[field.key],
+      );
+      if (!isConfirmed) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận lưu cài đặt thông báo. Lựa chọn hiện tại chưa được coi là đã lưu; vui lòng thử lại.",
+        );
+      }
+      return result;
+    },
     onSuccess: async (result) => {
       setPreferences(preferencesFromUser(result.user));
       toast.success("Đã lưu cài đặt thông báo");
@@ -558,8 +786,35 @@ export default function WorkspaceSettings() {
   });
 
   const saveWorkspace = useMutation({
-    mutationFn: () => smartHealthApi.updateWorkspace(workspaceForm),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      const payload = {
+        name: workspaceForm.name.trim(),
+        address: workspaceForm.address.trim(),
+        phone: workspaceForm.phone.trim(),
+        email: workspaceForm.email.trim(),
+        website: workspaceForm.website.trim(),
+      };
+      const result = await smartHealthApi.updateWorkspace(payload);
+      if (result.workspace?.id !== user?.currentWorkspace.id) {
+        throw new SettingsActionError(
+          "Backend chưa xác nhận cập nhật đúng workspace hiện tại. Dữ liệu hiển thị vẫn giữ nguyên; vui lòng tải lại và thử lại.",
+        );
+      }
+      requireConfirmedTextFields(
+        result.workspace as unknown as Record<string, unknown>,
+        payload,
+        "cập nhật workspace hiện tại",
+      );
+      return result;
+    },
+    onSuccess: async (result) => {
+      setWorkspaceForm({
+        name: result.workspace.name || "",
+        address: result.workspace.address || "",
+        phone: result.workspace.phone || "",
+        email: result.workspace.email || "",
+        website: result.workspace.website || "",
+      });
       toast.success("Đã cập nhật workspace");
       await refreshAccountState();
     },
@@ -584,9 +839,16 @@ export default function WorkspaceSettings() {
   const avatarSrc = avatarPreview || profile.avatarUrl || user?.avatar || "";
   const passwordInputType = showPassword ? "text" : "password";
 
-  if (accountQuery.isLoading || settingsQuery.isLoading) return <PortalLoading />;
-  if (accountQuery.error) return <PortalError error={accountQuery.error} />;
-  if (settingsQuery.error) return <PortalError error={settingsQuery.error} />;
+  if (accountQuery.isLoading) return <PortalLoading />;
+  if (accountQuery.error)
+    return (
+      <PortalError
+        error={new Error(
+          errorText(accountQuery.error, "Không thể tải hồ sơ tài khoản."),
+        )}
+        retry={() => void accountQuery.refetch()}
+      />
+    );
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -681,7 +943,7 @@ export default function WorkspaceSettings() {
                   className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#4AA4E0]/30 px-3 text-sm font-semibold text-white transition hover:bg-[#4AA4E0]/10 disabled:opacity-60"
                 >
                   <UploadCloud size={15} />
-                  Tải ảnh lên
+                  {uploadAvatar.isPending ? "Đang tải ảnh..." : "Tải ảnh lên"}
                 </button>
                 <button
                   id="account-download-avatar"
@@ -708,9 +970,44 @@ export default function WorkspaceSettings() {
                   className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#EF4444]/30 px-3 text-sm font-semibold text-[#FCA5A5] transition hover:bg-[#EF4444]/10 disabled:opacity-40"
                 >
                   <Trash2 size={15} />
-                  {confirmAvatarDelete ? "Bấm lần nữa để xoá" : "Xoá ảnh"}
+                  {deleteAvatar.isPending
+                    ? "Đang xoá ảnh..."
+                    : confirmAvatarDelete
+                      ? "Bấm lần nữa để xoá"
+                      : "Xoá ảnh"}
                 </button>
               </div>
+              {uploadAvatar.error && (
+                <div className="mt-3">
+                  <SettingsInlineError
+                    error={uploadAvatar.error}
+                    fallback="Không thể cập nhật ảnh đại diện."
+                    retry={
+                      uploadAvatar.variables
+                        ? () => uploadAvatar.mutate(uploadAvatar.variables)
+                        : undefined
+                    }
+                  />
+                </div>
+              )}
+              {deleteAvatar.error && (
+                <div className="mt-3">
+                  <SettingsInlineError
+                    error={deleteAvatar.error}
+                    fallback="Không thể xoá ảnh đại diện."
+                    retry={() => deleteAvatar.mutate()}
+                  />
+                </div>
+              )}
+              {downloadAvatar.error && (
+                <div className="mt-3">
+                  <SettingsInlineError
+                    error={downloadAvatar.error}
+                    fallback="Không thể tải ảnh đại diện xuống."
+                    retry={() => downloadAvatar.mutate()}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid flex-1 gap-4 md:grid-cols-2">
@@ -795,8 +1092,17 @@ export default function WorkspaceSettings() {
                 className="premium-button flex items-center justify-center gap-2 md:max-w-xs"
               >
                 <Save size={15} />
-                Lưu hồ sơ
+                {saveProfile.isPending ? "Đang lưu hồ sơ..." : "Lưu hồ sơ"}
               </button>
+              {saveProfile.error && (
+                <div className="md:col-span-2">
+                  <SettingsInlineError
+                    error={saveProfile.error}
+                    fallback="Không thể lưu hồ sơ."
+                    retry={() => saveProfile.mutate()}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -864,89 +1170,28 @@ export default function WorkspaceSettings() {
               className="premium-button mt-5 flex items-center justify-center gap-2"
             >
               <KeyRound size={15} />
-              Đổi mật khẩu
+              {changePassword.isPending ? "Đang đổi mật khẩu..." : "Đổi mật khẩu"}
             </button>
-          </div>
-
-          <div className="glass-panel rounded-2xl p-5 md:p-6">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
-              <ShieldCheck size={18} />
-              Xác thực hai lớp
-            </h2>
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                {profile.twoFactorEnabled ? (
-                  <CheckCircle2 size={16} className="text-[#00FFD1]" />
-                ) : (
-                  <ShieldCheck size={16} className="text-[#94b8d0]" />
-                )}
-                {profile.twoFactorEnabled ? "Đang bật" : "Chưa bật"}
-              </div>
-              <p className="mt-2 text-sm text-[#94b8d0]">
-                {profile.twoFactorEnabled
-                  ? `Phương thức: ${profile.twoFactorMethod || "app"}`
-                  : "Bật thêm lớp xác nhận cho tài khoản bác sĩ/doanh nghiệp."}
-              </p>
-            </div>
-            <div className="mt-4 grid gap-2">
-              <button
-                id="account-2fa-app"
-                type="button"
-                onClick={() =>
-                  updateTwoFactor.mutate({ action: "enable", method: "app" })
-                }
-                disabled={updateTwoFactor.isPending}
-                className="flex min-h-10 items-center justify-center rounded-xl border border-[#00FFD1]/30 text-sm font-semibold text-white hover:bg-[#00FFD1]/10 disabled:opacity-60"
-              >
-                Bật qua ứng dụng xác thực
-              </button>
-              <button
-                id="account-2fa-sms"
-                type="button"
-                onClick={() =>
-                  updateTwoFactor.mutate({ action: "enable", method: "sms" })
-                }
-                disabled={updateTwoFactor.isPending || !profile.phone}
-                className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#4AA4E0]/30 text-sm font-semibold text-white hover:bg-[#4AA4E0]/10 disabled:opacity-40"
-              >
-                <Phone size={15} />
-                Bật qua SMS
-              </button>
-              <button
-                id="account-2fa-disable"
-                type="button"
-                onClick={() =>
-                  updateTwoFactor.mutate({ action: "disable" })
-                }
-                disabled={updateTwoFactor.isPending || !profile.twoFactorEnabled}
-                className="flex min-h-10 items-center justify-center rounded-xl border border-[#EF4444]/30 text-sm font-semibold text-[#FCA5A5] hover:bg-[#EF4444]/10 disabled:opacity-40"
-              >
-                Tắt xác thực hai lớp
-              </button>
-            </div>
-            {recoveryCodes.length > 0 && (
-              <div className="mt-4 rounded-xl border border-[#00FFD1]/25 bg-[#00FFD1]/10 p-4">
-                <div className="text-sm font-semibold text-white">
-                  Mã khôi phục
-                </div>
-                <div className="mt-2 grid gap-1 font-mono text-xs text-[#BFFAF0]">
-                  {recoveryCodes.map((code) => (
-                    <span key={code}>{code}</span>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(recoveryCodes.join("\n"));
-                    toast.success("Đã copy mã khôi phục");
-                  }}
-                  className="mt-3 text-sm font-semibold text-white underline decoration-[#00FFD1]/50 underline-offset-4"
-                >
-                  Copy mã
-                </button>
+            {changePassword.error && (
+              <div className="mt-4">
+                <SettingsInlineError
+                  error={changePassword.error}
+                  fallback="Không thể đổi mật khẩu."
+                  retry={() => changePassword.mutate()}
+                />
               </div>
             )}
           </div>
+
+          <TwoFactorPanel
+            onStatusChange={(enabled, method) =>
+              setProfile((current) => ({
+                ...current,
+                twoFactorEnabled: enabled,
+                twoFactorMethod: method,
+              }))
+            }
+          />
 
           <div className="glass-panel rounded-2xl p-5 md:p-6 lg:col-span-2">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -962,24 +1207,81 @@ export default function WorkspaceSettings() {
               <button
                 id="account-revoke-other-sessions"
                 type="button"
-                onClick={() => revokeOtherSessions.mutate()}
+                onClick={() => {
+                  revokeOtherSessions.reset();
+                  setConfirmRevokeAll(true);
+                }}
                 disabled={
                   revokeOtherSessions.isPending ||
                   sessionsQuery.isLoading ||
+                  Boolean(sessionsQuery.error) ||
                   otherSessions.length === 0
                 }
                 className="flex min-h-10 items-center justify-center rounded-xl border border-[#EF4444]/30 px-4 text-sm font-semibold text-[#FCA5A5] hover:bg-[#EF4444]/10 disabled:opacity-40"
               >
-                Thu hồi phiên khác
+                {revokeOtherSessions.isPending
+                  ? "Đang thu hồi..."
+                  : "Thu hồi phiên khác"}
               </button>
             </div>
-            <div className="mt-5 divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10">
-              {activeSessions.length === 0 && (
-                <div className="p-5 text-sm text-[#94b8d0]">
-                  Chưa có dữ liệu phiên đăng nhập.
-                </div>
-              )}
-              {activeSessions.map((session) => (
+            {confirmRevokeAll && (
+              <div
+                role="alert"
+                className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] p-4 text-sm text-[var(--status-danger-fg)]"
+              >
+                <span className="min-w-0 flex-1">
+                  Thu hồi {otherSessions.length} phiên khác? Các thiết bị đó sẽ
+                  phải đăng nhập lại.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => revokeOtherSessions.mutate()}
+                  disabled={revokeOtherSessions.isPending}
+                  className="min-h-9 rounded-xl bg-destructive px-3 font-semibold text-destructive-foreground disabled:opacity-60"
+                >
+                  Xác nhận thu hồi tất cả
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRevokeAll(false)}
+                  disabled={revokeOtherSessions.isPending}
+                  className="min-h-9 rounded-xl border border-white/15 px-3 font-semibold text-white disabled:opacity-60"
+                >
+                  Huỷ
+                </button>
+              </div>
+            )}
+            {revokeOtherSessions.error && (
+              <div className="mt-5">
+                <SettingsInlineError
+                  error={revokeOtherSessions.error}
+                  fallback="Không thể thu hồi toàn bộ phiên khác."
+                  retry={() => revokeOtherSessions.mutate()}
+                />
+              </div>
+            )}
+            {sessionsQuery.isLoading && (
+              <div className="mt-5">
+                <PortalLoading label="Đang tải phiên đăng nhập..." />
+              </div>
+            )}
+            {sessionsQuery.error && (
+              <div className="mt-5">
+                <SettingsInlineError
+                  error={sessionsQuery.error}
+                  fallback="Không thể tải phiên đăng nhập."
+                  retry={() => void sessionsQuery.refetch()}
+                />
+              </div>
+            )}
+            {!sessionsQuery.isLoading && !sessionsQuery.error && (
+              <div className="mt-5 divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10">
+                {activeSessions.length === 0 && (
+                  <div className="p-5 text-sm text-[#94b8d0]">
+                    Chưa có dữ liệu phiên đăng nhập.
+                  </div>
+                )}
+                {activeSessions.map((session) => (
                 <div
                   key={session.id}
                   className="flex flex-col gap-3 bg-white/[0.02] p-4 md:flex-row md:items-center md:justify-between"
@@ -1004,17 +1306,58 @@ export default function WorkspaceSettings() {
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => revokeSession.mutate(session.id)}
-                    disabled={session.current || revokeSession.isPending}
-                    className="min-h-9 rounded-xl border border-white/10 px-3 text-sm font-semibold text-[#94b8d0] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Thu hồi
-                  </button>
+                  <div className="space-y-2">
+                    {confirmSessionId === session.id ? (
+                      <div
+                        role="alert"
+                        className="flex flex-wrap items-center justify-end gap-2 text-sm"
+                      >
+                        <span className="text-[var(--status-danger-fg)]">
+                          Thiết bị này sẽ phải đăng nhập lại.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => revokeSession.mutate(session.id)}
+                          disabled={revokeSession.isPending}
+                          className="min-h-9 rounded-xl bg-destructive px-3 font-semibold text-destructive-foreground disabled:opacity-60"
+                        >
+                          Xác nhận thu hồi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmSessionId("")}
+                          disabled={revokeSession.isPending}
+                          className="min-h-9 rounded-xl border border-white/10 px-3 font-semibold text-white disabled:opacity-60"
+                        >
+                          Huỷ
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          revokeSession.reset();
+                          setConfirmSessionId(session.id);
+                        }}
+                        disabled={session.current || revokeSession.isPending}
+                        className="min-h-9 rounded-xl border border-white/10 px-3 text-sm font-semibold text-[#94b8d0] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Thu hồi
+                      </button>
+                    )}
+                    {revokeSession.error &&
+                      revokeSession.variables === session.id && (
+                        <SettingsInlineError
+                          error={revokeSession.error}
+                          fallback="Không thể thu hồi phiên đăng nhập."
+                          retry={() => revokeSession.mutate(session.id)}
+                        />
+                      )}
+                  </div>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -1068,8 +1411,19 @@ export default function WorkspaceSettings() {
             className="premium-button mt-5 flex items-center justify-center gap-2"
           >
             <Save size={15} />
-            Lưu thông báo
+            {savePreferences.isPending
+              ? "Đang lưu thông báo..."
+              : "Lưu thông báo"}
           </button>
+          {savePreferences.error && (
+            <div className="mt-4">
+              <SettingsInlineError
+                error={savePreferences.error}
+                fallback="Không thể lưu cài đặt thông báo."
+                retry={() => savePreferences.mutate()}
+              />
+            </div>
+          )}
         </section>
       )}
 
@@ -1086,7 +1440,19 @@ export default function WorkspaceSettings() {
                 : "Thông tin tổ chức đang ở chế độ chỉ đọc với tài khoản này."}
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          {settingsQuery.isLoading && (
+            <PortalLoading label="Đang tải thông tin workspace..." />
+          )}
+          {settingsQuery.error && (
+            <SettingsInlineError
+              error={settingsQuery.error}
+              fallback="Không thể tải thông tin workspace."
+              retry={() => void settingsQuery.refetch()}
+            />
+          )}
+          {!settingsQuery.isLoading && !settingsQuery.error && (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
             <Field
               id="workspace-name"
               label="Tên workspace"
@@ -1139,18 +1505,31 @@ export default function WorkspaceSettings() {
                 className="portal-input mt-2 min-h-24 resize-y py-3 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
-          </div>
-          {canManageWorkspace && (
-            <button
-              id="workspace-save"
-              type="button"
-              onClick={() => saveWorkspace.mutate()}
-              disabled={saveWorkspace.isPending}
-              className="premium-button mt-5 flex items-center justify-center gap-2"
-            >
-              <Save size={15} />
-              Lưu workspace
-            </button>
+              </div>
+              {canManageWorkspace && (
+                <button
+                  id="workspace-save"
+                  type="button"
+                  onClick={() => saveWorkspace.mutate()}
+                  disabled={saveWorkspace.isPending}
+                  className="premium-button mt-5 flex items-center justify-center gap-2"
+                >
+                  <Save size={15} />
+                  {saveWorkspace.isPending
+                    ? "Đang lưu workspace..."
+                    : "Lưu workspace"}
+                </button>
+              )}
+              {saveWorkspace.error && (
+                <div className="mt-4">
+                  <SettingsInlineError
+                    error={saveWorkspace.error}
+                    fallback="Không thể lưu workspace."
+                    retry={() => saveWorkspace.mutate()}
+                  />
+                </div>
+              )}
+            </>
           )}
         </section>
       )}

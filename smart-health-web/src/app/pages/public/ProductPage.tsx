@@ -23,13 +23,13 @@ const products = [
   },
   {
     icon: Activity,
-    title: "Live monitoring",
-    desc: "Theo dõi phiên đo đang online, pin/kết nối thiết bị và trạng thái tín hiệu theo thời gian thực.",
+    title: "Theo dõi trực tiếp",
+    desc: "Theo dõi nguồn phiên đo, trạng thái kết nối và chất lượng luồng tín hiệu khi thiết bị online.",
   },
   {
     icon: FileText,
     title: "Hồ sơ lượt đo",
-    desc: "Lưu waveform, metadata, kết quả hỗ trợ phân tích, ghi chú lâm sàng và lịch sử truy cập.",
+    desc: "Lưu dạng sóng, metadata, trạng thái chất lượng tín hiệu, ghi chú lâm sàng và lịch sử truy cập được hỗ trợ.",
   },
   {
     icon: Bell,
@@ -55,15 +55,15 @@ export default function ProductPage() {
   const isRecords = pathname.includes("ho-so-luot-do");
   const meta = isRecords
     ? {
-        title: "Hồ sơ lượt đo | Smart Health Care",
+        title: "Hồ sơ lượt đo | Shcare",
         description:
-          "Hồ sơ lượt đo Smart Health Care lưu waveform, kết quả hỗ trợ phân tích, ghi chú lâm sàng và lịch sử truy cập.",
+          "Hồ sơ lượt đo Shcare lưu waveform, trạng thái chất lượng tín hiệu, ghi chú lâm sàng và lịch sử truy cập được hỗ trợ.",
         path: "/san-pham/ho-so-luot-do",
       }
     : {
-        title: "Sản phẩm Smart Health Care | Workspace theo dõi tim phổi",
+        title: "Sản phẩm Shcare | Workspace theo dõi tim phổi",
         description:
-          "Hệ sinh thái Smart Health Care gồm ống nghe thông minh, ứng dụng di động, live monitoring, hồ sơ lượt đo, cảnh báo và consent.",
+          "Hệ sinh thái Shcare gồm ống nghe thông minh, ứng dụng di động, theo dõi trực tiếp, hồ sơ lượt đo, cảnh báo và consent.",
         path: "/san-pham",
       };
 
@@ -75,7 +75,7 @@ export default function ProductPage() {
       "@type": "Product",
       name: meta.title.split(" |")[0],
       description: meta.description,
-      brand: { "@type": "Brand", name: "Smart Health Care" },
+      brand: { "@type": "Brand", name: "Shcare" },
     },
   });
 

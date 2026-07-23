@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../docs/Logo.png";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
 import { PublicMotionContext } from "@/app/context/PublicMotionContext";
 
 const navLinks = [
@@ -73,13 +73,22 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function resolveInitialMotionPreference() {
+  if (typeof window === "undefined") return false;
+
+  const storedMotion = window.localStorage.getItem("shc-public-motion");
+  if (storedMotion) return storedMotion === "enabled";
+
+  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 export default function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null);
   const [openDesktopGroup, setOpenDesktopGroup] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [homeHeroActive, setHomeHeroActive] = useState(false);
-  const [motionEnabled, setMotionEnabled] = useState(true);
+  const [motionEnabled, setMotionEnabled] = useState(resolveInitialMotionPreference);
   const closeDesktopTimer = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const publicMainRef = useRef<HTMLElement | null>(null);
@@ -107,13 +116,12 @@ export default function PublicLayout() {
   };
 
   useEffect(() => {
-    const storedMotion = window.localStorage.getItem("shc-public-motion");
-    const prefersReducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    setMotionEnabled(
-      storedMotion ? storedMotion === "enabled" : !prefersReducedMotion,
-    );
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (window.localStorage.getItem("shc-public-motion")) return;
+
+    const syncWithSystem = () => setMotionEnabled(!media.matches);
+    media.addEventListener("change", syncWithSystem);
+    return () => media.removeEventListener("change", syncWithSystem);
   }, []);
 
   useEffect(() => {
@@ -301,11 +309,11 @@ export default function PublicLayout() {
           }}
         >
           <div className="shc-container shc-header-inner">
-            <Link to="/" className="shc-brand" aria-label="Smart Health Care">
+            <Link to="/" className="shc-brand" aria-label="Shcare — Smart Health Care">
               <span className="shc-brand-mark">
                 <img src={logoUrl} alt="" />
               </span>
-              <span>Smart Health Care</span>
+              <span>Shcare</span>
             </Link>
 
             <nav className="shc-desktop-nav" aria-label="Điều hướng chính">
@@ -495,7 +503,7 @@ export default function PublicLayout() {
                   <span className="shc-brand-mark">
                     <img src={logoUrl} alt="" />
                   </span>
-                  <span>Smart Health Care</span>
+                  <span>Shcare</span>
                 </Link>
                 <p>
                   Cổng vận hành theo dõi tim phổi từ xa cho bác sĩ và cơ sở y
@@ -554,7 +562,7 @@ export default function PublicLayout() {
             </div>
 
             <div className="shc-footer-bottom">
-              <span>© 2026 Smart Health Care Platform.</span>
+              <span>© 2026 Shcare — Smart Health Care.</span>
               <div>
                 <Link to="/phap-ly">Điều khoản</Link>
                 <Link to="/bao-mat">Chính sách bảo mật</Link>

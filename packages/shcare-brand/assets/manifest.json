@@ -1,0 +1,47 @@
+{
+  "brand": "Shcare",
+  "version": "1.1.0",
+  "endorsement": "Shcare — Smart Health Care",
+  "assets": [
+    {
+      "path": "shcare-symbol.svg",
+      "usage": "Primary two-color symbol on neutral surfaces",
+      "viewBox": "0 0 64 64"
+    },
+    {
+      "path": "shcare-symbol-mono.svg",
+      "usage": "Single-color symbol for documents and constrained media",
+      "viewBox": "0 0 64 64"
+    },
+    {
+      "path": "shcare-horizontal.svg",
+      "usage": "Default horizontal lockup on light neutral surfaces",
+      "viewBox": "0 0 300 64"
+    },
+    {
+      "path": "shcare-horizontal-light.svg",
+      "usage": "Horizontal lockup optimized for light surfaces",
+      "viewBox": "0 0 300 64"
+    },
+    {
+      "path": "shcare-horizontal-dark.svg",
+      "usage": "Horizontal lockup optimized for dark surfaces",
+      "viewBox": "0 0 300 64"
+    },
+    {
+      "path": "shcare-horizontal-mono.svg",
+      "usage": "Single-color horizontal lockup",
+      "viewBox": "0 0 300 64"
+    },
+    {
+      "path": "shcare-favicon.svg",
+      "usage": "Scalable favicon source",
+      "viewBox": "0 0 64 64"
+    },
+    {
+      "path": "shcare-og.svg",
+      "usage": "Editable 1200 by 630 social preview source",
+      "viewBox": "0 0 1200 630"
+    }
+  ]
+}

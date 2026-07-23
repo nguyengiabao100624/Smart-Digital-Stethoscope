@@ -1,0 +1,10 @@
+{
+  "code": "TWO_FACTOR_REQUIRED",
+  "message": "Cần xác thực bằng ứng dụng OTP để tiếp tục.",
+  "requestId": "req_fixture_tfa_01",
+  "details": {
+    "challengeId": "tfa_challenge_fixture_01",
+    "method": "app",
+    "expiresAt": "2026-07-14T14:10:00.000Z"
+  }
+}

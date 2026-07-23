@@ -1,113 +1,163 @@
 import { useState } from "react";
-import { CheckCircle, Loader2, Mail } from "lucide-react";
+import { CheckCircle2, MailCheck, RotateCw } from "lucide-react";
 import { Link } from "react-router";
+
+import {
+  AuthAlert,
+  AuthPageIntro,
+  AuthPrimaryButton,
+  AuthSecondaryButton,
+} from "../../components/auth/AuthPrimitives";
+import { getSafeAuthErrorMessage } from "../../auth/auth-form";
 import { refreshFirebaseVerification } from "../../../lib/firebase-client";
 import { smartHealthApi } from "../../../lib/smart-health-api";
 import { useSEO } from "@/lib/useSEO";
 
+type Feedback = {
+  tone: "error" | "warning" | "success" | "info";
+  message: string;
+};
+
 export default function EmailVerificationPage() {
   useSEO({
-    title: "Xác minh email | Smart Health Care",
-    description:
-      "Kiểm tra trạng thái xác minh email cho tài khoản Smart Health Care Workspace.",
-    path: "/xac-thuc-email",
+    title: "Xác minh email | Shcare",
+    description: "Kiểm tra trạng thái xác minh email cho tài khoản Shcare Workspace.",
+    path: "/xac-nhan-email",
   });
 
-  const [loading, setLoading] = useState(false);
+  const [busyAction, setBusyAction] = useState<"check" | "resend" | null>(null);
   const [verified, setVerified] = useState(false);
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  const completeVerification = async (idToken: string) => {
+    await smartHealthApi.authenticateFirebase(idToken);
+    setVerified(true);
+    setFeedback({
+      tone: "success",
+      message: "Firebase và backend Shcare đã xác nhận email của bạn.",
+    });
+  };
+
   const check = async () => {
-    setLoading(true);
-    setMessage("");
+    setBusyAction("check");
+    setFeedback(null);
     try {
       const result = await refreshFirebaseVerification();
       if (!result.verified) {
-        setMessage(
-          "Email chưa được xác minh. Hãy mở liên kết trong hộp thư rồi thử lại.",
-        );
+        setFeedback({
+          tone: "warning",
+          message: "Email chưa được xác minh. Mở liên kết trong hộp thư rồi kiểm tra lại.",
+        });
         return;
       }
-      await smartHealthApi.authenticateFirebase(result.idToken);
-      setVerified(true);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Không thể kiểm tra xác minh.",
-      );
+      await completeVerification(result.idToken);
+    } catch (cause) {
+      setFeedback({
+        tone: "error",
+        message: getSafeAuthErrorMessage(cause, "Không thể kiểm tra trạng thái. Vui lòng thử lại."),
+      });
     } finally {
-      setLoading(false);
+      setBusyAction(null);
     }
   };
+
   const resend = async () => {
-    setLoading(true);
-    setMessage("");
+    setBusyAction("resend");
+    setFeedback(null);
     try {
       const firebaseState = await refreshFirebaseVerification();
       await smartHealthApi.authenticateFirebase(firebaseState.idToken);
       if (firebaseState.verified) {
         setVerified(true);
-        setMessage("Email đã được xác minh. Bạn có thể tiếp tục.");
+        setFeedback({
+          tone: "success",
+          message: "Email đã được xác minh. Bạn có thể tiếp tục.",
+        });
         return;
       }
+
       const delivery = await smartHealthApi.sendEmailVerification();
       if (delivery.status === "verified") {
         setVerified(true);
-        setMessage("Email đã được xác minh. Bạn có thể tiếp tục.");
+        setFeedback({
+          tone: "success",
+          message: "Email đã được xác minh. Bạn có thể tiếp tục.",
+        });
         return;
       }
-      setMessage(
-        `Đã gửi lại email xác minh đến ${delivery.email}${delivery.provider ? ` qua ${delivery.provider}` : ""}.`,
-      );
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Không thể gửi lại email.",
-      );
+      setFeedback({
+        tone: "info",
+        message: `Backend đã gửi email xác minh đến ${delivery.email}${delivery.provider ? ` qua ${delivery.provider}` : ""}.`,
+      });
+    } catch (cause) {
+      setFeedback({
+        tone: "error",
+        message: getSafeAuthErrorMessage(cause, "Không thể gửi lại email. Vui lòng thử lại."),
+      });
     } finally {
-      setLoading(false);
+      setBusyAction(null);
     }
   };
+
   return (
-    <div className="text-center">
-      <div className="w-16 h-16 rounded-full bg-[#00FFD1]/10 border border-[#00FFD1]/30 grid place-items-center mx-auto mb-5">
-        {verified ? (
-          <CheckCircle className="text-[#00FFD1]" />
-        ) : (
-          <Mail className="text-[#4AA4E0]" />
-        )}
+    <div className="shc-auth-page shc-auth-result">
+      <AuthPageIntro
+        icon={verified ? CheckCircle2 : MailCheck}
+        title={verified ? "Email đã được xác minh" : "Xác minh email"}
+        description={
+          verified
+            ? "Phiên đăng nhập đã được làm mới với backend Shcare."
+            : "Mở liên kết trong email, sau đó quay lại để Shcare kiểm tra trạng thái từ Firebase."
+        }
+      />
+
+      <div className="shc-auth-checklist" aria-label="Các bước xác minh">
+        <div data-complete="true">
+          <span>1</span>
+          <p>
+            <strong>Mở email xác minh</strong>
+            <small>Chỉ dùng liên kết Firebase được gửi cho tài khoản của bạn.</small>
+          </p>
+        </div>
+        <div data-complete={verified ? "true" : undefined}>
+          <span>2</span>
+          <p>
+            <strong>Đồng bộ với Shcare</strong>
+            <small>Quyền workspace chỉ được cập nhật sau khi backend xác nhận.</small>
+          </p>
+        </div>
       </div>
-      <h1 className="text-2xl font-black text-white">
-        {verified ? "Email đã xác minh" : "Xác minh email"}
-      </h1>
-      <p className="text-sm text-white/70 mt-3">
-        {verified
-          ? "Phiên đăng nhập đã được làm mới. Bạn có thể xem trạng thái hồ sơ."
-          : "Mở email xác minh, sau đó quay lại kiểm tra trạng thái."}
-      </p>
-      {message && (
-        <p className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-[#F59E0B]">
-          {message}
-        </p>
-      )}
+
+      {feedback ? <AuthAlert tone={feedback.tone}>{feedback.message}</AuthAlert> : null}
+
       {verified ? (
-        <Link to="/cho-duyet" className="premium-button block mt-6">
-          Xem trạng thái hồ sơ
-        </Link>
+        <div className="shc-auth-result-actions">
+          <Link to="/cho-duyet" className="shc-auth-link-button">
+            Xem trạng thái hồ sơ
+          </Link>
+          <Link to="/login" className="shc-auth-back-link">
+            Về đăng nhập
+          </Link>
+        </div>
       ) : (
-        <div className="grid gap-3 mt-6">
-          <button
-            onClick={check}
-            disabled={loading}
-            className="premium-button h-12 flex justify-center items-center gap-2"
+        <div className="shc-auth-action-stack">
+          <AuthPrimaryButton
+            type="button"
+            onClick={() => void check()}
+            loading={busyAction === "check"}
+            disabled={busyAction !== null}
+            loadingLabel="Đang kiểm tra..."
           >
-            {loading && <Loader2 size={16} className="animate-spin" />}Tôi đã
-            xác minh
-          </button>
-          <button
-            onClick={resend}
-            disabled={loading}
-            className="h-12 rounded-xl border border-white/10 text-sm text-white"
+            Kiểm tra trạng thái
+          </AuthPrimaryButton>
+          <AuthSecondaryButton
+            type="button"
+            onClick={() => void resend()}
+            disabled={busyAction !== null}
           >
-            Gửi lại email
-          </button>
+            <RotateCw size={16} aria-hidden="true" />
+            {busyAction === "resend" ? "Đang gửi lại..." : "Gửi lại email"}
+          </AuthSecondaryButton>
         </div>
       )}
     </div>

@@ -1,14 +1,13 @@
 import { Link, useLocation } from "react-router";
-import { Cpu, Battery, Wifi, AlertTriangle, CheckCircle, Stethoscope } from "lucide-react";
+import { Cpu, Wifi, AlertTriangle, CheckCircle, Stethoscope } from "lucide-react";
 import { useSEO } from "@/lib/useSEO";
 
 const specs = [
-  { label: "Kết nối", value: "Bluetooth 5.0 + WiFi 802.11n" },
-  { label: "Pin", value: "Lên đến 12 giờ liên tục" },
-  { label: "Bộ nhớ", value: "Lưu trữ cục bộ 2GB khi offline" },
-  { label: "Âm thanh", value: "24-bit / 44.1 kHz high-fidelity" },
-  { label: "Tương thích", value: "Android 8.0+" },
-  { label: "Bảo hành", value: "12 tháng chính hãng" },
+  { label: "Kết nối sản phẩm", value: "Wi-Fi + WSS đã xác thực" },
+  { label: "Ghép thiết bị", value: "QR hoặc mã claim dùng một lần" },
+  { label: "Âm thanh", value: "PCM16 little-endian, mono, 16 kHz" },
+  { label: "Gói tương thích", value: "128 mẫu mỗi gói" },
+  { label: "Trạng thái hiện diện", value: "Ngoại tuyến · Đang kết nối · Trực tuyến · Suy giảm" },
 ];
 
 export default function DevicePage() {
@@ -16,15 +15,15 @@ export default function DevicePage() {
   const isRemote = pathname.includes("theo-doi-tu-xa");
   const meta = isRemote
     ? {
-        title: "Dịch vụ theo dõi sức khỏe từ xa | Smart Health Care",
+        title: "Theo dõi sức khỏe từ xa | Shcare",
         description:
-          "Dịch vụ theo dõi tim phổi từ xa của Smart Health Care kết hợp ống nghe thông minh, AI phân tích và cảnh báo bất thường realtime.",
+          "Dịch vụ theo dõi tim phổi từ xa của Shcare kết hợp ống nghe thông minh, kiểm tra chất lượng tín hiệu và theo dõi trạng thái theo thời gian thực.",
         path: "/san-pham/theo-doi-tu-xa",
       }
     : {
-        title: "Ống nghe thông minh Smart Health | Thiết bị IoT y tế",
+        title: "Ống nghe thông minh Shcare | Thu tín hiệu tim phổi",
         description:
-          "Ống nghe điện tử thông minh Smart Health: Bluetooth 5.0, WiFi, pin 12 giờ, âm thanh 24-bit, lưu offline 2GB, bảo hành 12 tháng.",
+          "Ống nghe thông minh Shcare thu tín hiệu PCM16 mono 16 kHz, ghép bằng QR và kết nối Wi-Fi tới phiên WSS đã xác thực.",
         path: "/san-pham/ong-nghe-thong-minh",
       };
   useSEO({
@@ -35,8 +34,8 @@ export default function DevicePage() {
       "@type": "Product",
       name: meta.title.split(" |")[0],
       description: meta.description,
-      brand: { "@type": "Brand", name: "Smart Health Care" },
-      category: isRemote ? "Remote Health Monitoring Service" : "Smart Medical Stethoscope",
+      brand: { "@type": "Brand", name: "Shcare" },
+      category: isRemote ? "Remote Health Monitoring Service" : "Connected Stethoscope",
     },
   });
   return (
@@ -53,12 +52,12 @@ export default function DevicePage() {
         <div className="max-w-5xl mx-auto px-6 grid md:grid-cols-2 gap-12 items-center relative">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm mb-5 bg-[#0B5C9A]/15 border border-[#0B5C9A]/30 text-[#4AA4E0]">
-              <Cpu size={14} /> Thiết bị IoT y tế
+              <Cpu size={14} /> Thiết bị thu tín hiệu tim phổi
             </div>
-            <h1 className="brand-gradient-text mb-4">Ống nghe thông minh Smart Health</h1>
+            <h1 className="brand-gradient-text mb-4">Ống nghe thông minh Shcare</h1>
             <p className="text-[#8aa5ba] text-lg leading-relaxed mb-8">
-              Thiết bị ghi âm và thu tín hiệu tim phổi, kết nối với Android app qua Bluetooth, cho
-              phép bệnh nhân đo tại nhà và gửi dữ liệu đến bác sĩ.
+              Thiết bị thu tín hiệu tim phổi theo phiên đo đã xác thực. Ứng dụng Android quét QR,
+              hướng dẫn cấu hình Wi-Fi và chỉ hoàn tất ghép nối sau khi backend xác nhận thiết bị online.
             </p>
             <Link to="/lien-he" className="premium-button inline-block">
               Liên hệ triển khai thiết bị
@@ -66,30 +65,30 @@ export default function DevicePage() {
           </div>
           <div className="glass-panel rounded-2xl p-5">
             <div className="text-xs font-semibold text-[#8aa5ba] uppercase tracking-wider mb-3">
-              Trạng thái thiết bị — Live
+              Ý nghĩa trạng thái thiết bị
             </div>
             <div className="space-y-3">
               {[
                 {
-                  icon: Battery,
-                  id: "SHS-2406-001",
-                  status: "78% pin",
+                  icon: CheckCircle,
+                  id: "Trực tuyến",
+                  status: "Backend đã xác nhận thiết bị hoạt động",
                   color: "#00FFD1",
                   bg: "rgba(0,255,209,0.08)",
                   border: "rgba(0,255,209,0.2)",
                 },
                 {
                   icon: Wifi,
-                  id: "SHS-2406-014",
-                  status: "Offline 12 phút",
+                  id: "Ngoại tuyến",
+                  status: "Chưa nhận tín hiệu trạng thái",
                   color: "#FF4B4B",
                   bg: "rgba(255,75,75,0.08)",
                   border: "rgba(255,75,75,0.2)",
                 },
                 {
                   icon: AlertTriangle,
-                  id: "SHS-2501-008",
-                  status: "Đang đo",
+                  id: "Suy giảm",
+                  status: "Cần kiểm tra chất lượng luồng âm thanh",
                   color: "#4AA4E0",
                   bg: "rgba(11,92,154,0.15)",
                   border: "rgba(11,92,154,0.3)",
@@ -120,7 +119,7 @@ export default function DevicePage() {
                 className="w-1.5 h-1.5 rounded-full bg-[#00FFD1] animate-pulse"
                 style={{ boxShadow: "0 0 6px rgba(0,255,209,0.8)" }}
               />
-              Đồng bộ mỗi 30 giây
+              Trạng thái chỉ đổi sau xác nhận từ backend hoặc thiết bị
             </div>
           </div>
         </div>
@@ -130,7 +129,7 @@ export default function DevicePage() {
         <div className="max-w-5xl mx-auto px-6">
           <h2 className="brand-gradient-text text-center mb-3">Cách hoạt động</h2>
           <p className="text-center text-[#8aa5ba] mb-10">
-            Từ bệnh nhân đến bác sĩ trong vài giây.
+            Từ phiên đo đã xác thực đến hồ sơ bác sĩ có thể xem lại.
           </p>
           <div className="grid md:grid-cols-4 gap-5">
             {[
@@ -144,19 +143,19 @@ export default function DevicePage() {
                 icon: Cpu,
                 step: "02",
                 label: "Ghi âm & xử lý",
-                desc: "Thiết bị ghi âm 30-60 giây. AI xử lý tín hiệu ngay trên thiết bị.",
+                desc: "Thiết bị ghi âm 30-60 giây và gửi dữ liệu theo phiên đo đã xác thực.",
               },
               {
                 icon: Wifi,
                 step: "03",
-                label: "Gửi qua cloud",
-                desc: "Waveform + kết quả AI gửi lên server qua WiFi hoặc dữ liệu di động.",
+                label: "Gửi lên hệ thống",
+                desc: "Dạng sóng và trạng thái chất lượng tín hiệu được gửi lên backend qua kết nối bảo mật.",
               },
               {
                 icon: CheckCircle,
                 step: "04",
                 label: "Bác sĩ nhận kết quả",
-                desc: "Bác sĩ nhận thông báo, xem waveform và ghi chú lâm sàng.",
+                desc: "Bác sĩ nhận thông báo, xem dạng sóng và ghi chú lâm sàng.",
               },
             ].map((s) => (
               <div key={s.step} className="premium-card p-5 text-center">
@@ -187,12 +186,12 @@ export default function DevicePage() {
                 desc: "Ghi lại âm thanh tim phổi rõ nét tại nhiều vị trí đo khác nhau.",
               },
               {
-                title: "Kết nối Bluetooth",
-                desc: "Kết nối không dây với Android app trong phạm vi 10 mét.",
+                title: "Ghép thiết bị bằng QR",
+                desc: "Claim thiết bị bằng QR hoặc mã dùng một lần, sau đó cấu hình Wi-Fi an toàn.",
               },
               {
-                title: "Theo dõi pin",
-                desc: "Hiển thị mức pin realtime. Cảnh báo khi pin dưới 20%.",
+                title: "Theo dõi sức khỏe kết nối",
+                desc: "Hiển thị presence, RSSI, phiên bản firmware/protocol và trạng thái audio khi thiết bị gửi telemetry.",
               },
               {
                 title: "Gán cho bệnh nhân",
@@ -200,7 +199,7 @@ export default function DevicePage() {
               },
               {
                 title: "Cảnh báo mất kết nối",
-                desc: "Bác sĩ/phòng khám nhận cảnh báo ngay khi thiết bị offline bất thường.",
+                desc: "Sự kiện mất kết nối được ghi nhận để hệ thống tạo cảnh báo theo quy tắc đã cấu hình.",
               },
               {
                 title: "Quản lý firmware",
@@ -242,7 +241,7 @@ export default function DevicePage() {
         <div className="max-w-2xl mx-auto px-6 text-center">
           <h2 className="brand-gradient-text mb-3">Triển khai thiết bị cho phòng khám của bạn</h2>
           <p className="text-[#8aa5ba] mb-8">
-            Liên hệ đội ngũ Smart Health để nhận tư vấn và chương trình hỗ trợ.
+            Liên hệ đội ngũ Shcare để xác nhận phạm vi thiết bị, quy trình và điều kiện triển khai.
           </p>
           <Link to="/lien-he" className="premium-button inline-block">
             Liên hệ triển khai

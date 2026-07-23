@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 1,
+  "id": "cmd-fixture-wifi-001",
+  "type": "wifi.update",
+  "issuedAt": "2026-07-14T00:00:00.000Z",
+  "expiresAt": "2026-07-14T00:01:00.000Z",
+  "payload": {
+    "ssid": "Shcare Fixture",
+    "password": "fixture-only-not-a-real-secret"
+  },
+  "correlationId": "corr-fixture-wifi-001"
+}

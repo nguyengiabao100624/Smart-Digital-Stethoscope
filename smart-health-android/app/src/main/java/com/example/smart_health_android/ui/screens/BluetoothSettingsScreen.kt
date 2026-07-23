@@ -1,452 +1,1151 @@
 package com.example.smart_health_android.ui.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.SmartDevice
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.ui.theme.Border
-import com.example.smart_health_android.ui.theme.ErrorRed
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.SuccessGreen
-import com.example.smart_health_android.ui.theme.TextPrimary
-import com.example.smart_health_android.ui.theme.TextSecondary
-import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.devices.DeviceFreshness
+import com.example.smart_health_android.devices.DeviceFreshnessStatus
+import com.example.smart_health_android.devices.DeviceHealthSnapshot
+import com.example.smart_health_android.devices.DeviceManagementFailure
+import com.example.smart_health_android.devices.DeviceManagementFailureKind
+import com.example.smart_health_android.devices.DeviceManagementOperation
+import com.example.smart_health_android.devices.DeviceManagementUiAction
+import com.example.smart_health_android.devices.DeviceManagementUiState
+import com.example.smart_health_android.devices.DeviceManagementViewModel
+import com.example.smart_health_android.devices.DevicePresenceStatus
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
+import java.text.NumberFormat
+import java.time.Instant
 
 @Composable
 fun BluetoothSettingsScreen(
     onNavigateBack: () -> Unit,
-    onAddDevice: () -> Unit
+    onAddDevice: () -> Unit,
+    viewModel: DeviceManagementViewModel = viewModel(),
 ) {
     DeviceManagementScreen(
         onNavigateBack = onNavigateBack,
-        onAddDevice = onAddDevice
+        onAddDevice = onAddDevice,
+        viewModel = viewModel,
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceManagementScreen(
     onNavigateBack: () -> Unit,
-    onAddDevice: () -> Unit
+    onAddDevice: () -> Unit,
+    viewModel: DeviceManagementViewModel = viewModel(),
 ) {
-    var devices by remember { mutableStateOf<List<SmartDevice>>(emptyList()) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    var disconnectingId by remember { mutableStateOf<String?>(null) }
-    var deletingId by remember { mutableStateOf<String?>(null) }
-    var pendingDisconnect by remember { mutableStateOf<SmartDevice?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var pendingDisconnectId by rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var pendingDeleteId by rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
 
-    suspend fun refreshDevices() {
-        runCatching {
-            devices = SmartHealthRepository.api.listDevices()
-            loadError = null
-        }.onFailure {
-            loadError = it.message ?: "Không tải được danh sách thiết bị"
-        }
+    LaunchedEffect(viewModel) {
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
     }
 
-    LaunchedEffect(Unit) {
-        refreshDevices()
-    }
-
-    fun disconnect(device: SmartDevice) {
-        if (disconnectingId != null) return
-        pendingDisconnect = null
-        disconnectingId = device.id
-        coroutineScope.launch {
-            runCatching {
-                val disconnected = SmartHealthRepository.api.disconnectDevice(device.id)
-                devices = devices.map { if (it.id == device.id) disconnected else it }
-                loadError = null
-            }.onFailure {
-                loadError = it.message ?: "Không thể ngắt kết nối thiết bị"
-            }
-            disconnectingId = null
-        }
-    }
-
-    fun deleteDevice(device: SmartDevice) {
-        if (deletingId != null) return
-        deletingId = device.id
-        coroutineScope.launch {
-            runCatching {
-                SmartHealthRepository.api.deleteDevice(device.id)
-                devices = devices.filterNot { it.id == device.id }
-                loadError = null
-            }.onFailure {
-                loadError = it.message ?: "Không thể xóa thiết bị"
-            }
-            deletingId = null
-        }
-    }
-
-    val connectedDevice = devices.firstOrNull { it.online || it.connected || it.status == "connected" }
-    val historyDevices = devices
-        .filter { it.id != connectedDevice?.id }
+    val pendingDisconnect = state.devices.firstOrNull { it.id == pendingDisconnectId }
+    val pendingDelete = state.devices.firstOrNull { it.id == pendingDeleteId }
 
     pendingDisconnect?.let { device ->
+        val name = DeviceHealthSnapshot.from(device).displayName()
         AlertDialog(
-            onDismissRequest = { pendingDisconnect = null },
-            title = { Text("Ngắt kết nối thiết bị?") },
-            text = { Text("Thiết bị ${device.name.ifBlank { "Stetho-AI-Pro" }} sẽ được đưa về Lịch Sử Ghép Nối.") },
+            onDismissRequest = { pendingDisconnectId = null },
+            title = { Text(stringResource(R.string.device_management_disconnect_title)) },
+            text = { Text(stringResource(R.string.device_management_disconnect_message, name)) },
             confirmButton = {
-                TextButton(onClick = { disconnect(device) }) {
-                    Text("Ngắt kết nối", color = ErrorRed, fontWeight = FontWeight.SemiBold)
+                TextButton(
+                    onClick = {
+                        pendingDisconnectId = null
+                        viewModel.onAction(DeviceManagementUiAction.Disconnect(device.id))
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(stringResource(R.string.device_management_disconnect))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDisconnect = null }) {
-                    Text("Hủy")
+                TextButton(
+                    onClick = { pendingDisconnectId = null },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(stringResource(R.string.device_management_cancel))
                 }
-            }
+            },
         )
     }
 
+    pendingDelete?.let { device ->
+        val name = DeviceHealthSnapshot.from(device).displayName()
+        AlertDialog(
+            onDismissRequest = { pendingDeleteId = null },
+            title = { Text(stringResource(R.string.device_management_delete_title)) },
+            text = { Text(stringResource(R.string.device_management_delete_message, name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeleteId = null
+                        viewModel.onAction(DeviceManagementUiAction.Delete(device.id))
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.device_management_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingDeleteId = null },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(stringResource(R.string.device_management_cancel))
+                }
+            },
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.device_management_title)) },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.device_management_back),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.onAction(DeviceManagementUiAction.Refresh) },
+                        enabled = !state.isLoading && !state.isRefreshing && !state.isMutating,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        if (state.isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.device_management_refresh),
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onAddDevice,
+                        enabled = !state.isMutating,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = stringResource(R.string.device_management_add),
+                        )
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding),
+        ) {
+            DeviceManagementBody(
+                state = state,
+                onNavigateBack = onNavigateBack,
+                onAddDevice = onAddDevice,
+                onRefresh = { viewModel.onAction(DeviceManagementUiAction.Refresh) },
+                onSelectDevice = { viewModel.onAction(DeviceManagementUiAction.SelectDevice(it)) },
+                onDisconnect = { pendingDisconnectId = it },
+                onDelete = { pendingDeleteId = it },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeviceManagementBody(
+    state: DeviceManagementUiState,
+    onNavigateBack: () -> Unit,
+    onAddDevice: () -> Unit,
+    onRefresh: () -> Unit,
+    onSelectDevice: (String) -> Unit,
+    onDisconnect: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    when {
+        state.isLoading && state.devices.isEmpty() -> ShcareLoadingState(
+            message = stringResource(R.string.device_management_loading),
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        state.failure != null && state.devices.isEmpty() -> DeviceManagementBlockingFailure(
+            failure = state.failure,
+            onNavigateBack = onNavigateBack,
+            onRetry = onRefresh,
+        )
+
+        state.hasLoaded && state.devices.isEmpty() -> ShcareEmptyState(
+            title = stringResource(R.string.device_management_empty_title),
+            message = stringResource(R.string.device_management_empty_message),
+            actionLabel = stringResource(R.string.device_management_add),
+            onAction = onAddDevice,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isExpanded = maxWidth >= 720.dp
+            if (isExpanded) {
+                ExpandedDeviceManagementContent(
+                    state = state,
+                    onRefresh = onRefresh,
+                    onSelectDevice = onSelectDevice,
+                    onDisconnect = onDisconnect,
+                    onDelete = onDelete,
+                )
+            } else {
+                CompactDeviceManagementContent(
+                    state = state,
+                    onRefresh = onRefresh,
+                    onSelectDevice = onSelectDevice,
+                    onDisconnect = onDisconnect,
+                    onDelete = onDelete,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceManagementBlockingFailure(
+    failure: DeviceManagementFailure,
+    onNavigateBack: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val message = failure.messageWithRequestId(
+        fallback = when (failure.kind) {
+            DeviceManagementFailureKind.Offline -> stringResource(R.string.device_management_offline_message)
+            DeviceManagementFailureKind.Permission -> stringResource(R.string.device_management_permission_message)
+            DeviceManagementFailureKind.Error -> stringResource(R.string.device_management_error_message)
+        },
+    )
+    when (failure.kind) {
+        DeviceManagementFailureKind.Offline -> ShcareOfflineState(
+            title = stringResource(R.string.device_management_offline_title),
+            message = message,
+            retryLabel = stringResource(R.string.device_management_retry),
+            onRetry = onRetry,
+            modifier = Modifier.fillMaxSize(),
+        )
+        DeviceManagementFailureKind.Permission -> ShcarePermissionState(
+            title = stringResource(R.string.device_management_permission_title),
+            message = message,
+            actionLabel = stringResource(R.string.device_management_back),
+            onRequestPermission = onNavigateBack,
+            modifier = Modifier.fillMaxSize(),
+        )
+        DeviceManagementFailureKind.Error -> ShcareErrorState(
+            title = stringResource(R.string.device_management_error_title),
+            message = message,
+            retryLabel = stringResource(R.string.device_management_retry),
+            onRetry = onRetry,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+private fun CompactDeviceManagementContent(
+    state: DeviceManagementUiState,
+    onRefresh: () -> Unit,
+    onSelectDevice: (String) -> Unit,
+    onDisconnect: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val selectedDevice = state.selectedDevice ?: return
+    val now = remember(state.devices, state.isRefreshing) { Instant.now() }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("device_management.compact"),
+        contentPadding = PaddingValues(
+            start = spacing.large,
+            top = spacing.large,
+            end = spacing.large,
+            bottom = spacing.doubleExtraLarge,
+        ),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+    ) {
+        state.failure?.let { failure ->
+            item { DeviceManagementInlineFailure(failure, onRefresh) }
+        }
+        item {
+            SectionHeading(stringResource(R.string.device_management_device_list))
+            Spacer(Modifier.height(spacing.medium))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+                contentPadding = PaddingValues(end = spacing.large),
+            ) {
+                items(state.devices, key = { it.id }) { device ->
+                    val snapshot = DeviceHealthSnapshot.from(device, now)
+                    DeviceSelectorCard(
+                        snapshot = snapshot,
+                        isSelected = device.id == state.selectedDeviceId,
+                        onClick = { onSelectDevice(device.id) },
+                        modifier = Modifier.widthIn(min = 220.dp, max = 280.dp),
+                    )
+                }
+            }
+        }
+        item {
+            DeviceHealthPanel(
+                snapshot = DeviceHealthSnapshot.from(selectedDevice, now),
+                isDisconnecting = state.disconnectingDeviceId == selectedDevice.id,
+                isDeleting = state.deletingDeviceId == selectedDevice.id,
+                mutationEnabled = !state.isMutating,
+                onDisconnect = { onDisconnect(selectedDevice.id) },
+                onDelete = { onDelete(selectedDevice.id) },
+            )
+        }
+        item { DeviceManagementInfo() }
+    }
+}
+
+@Composable
+private fun ExpandedDeviceManagementContent(
+    state: DeviceManagementUiState,
+    onRefresh: () -> Unit,
+    onSelectDevice: (String) -> Unit,
+    onDisconnect: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val selectedDevice = state.selectedDevice ?: return
+    val now = remember(state.devices, state.isRefreshing) { Instant.now() }
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF9FAFB))
+            .padding(spacing.large)
+            .testTag("device_management.expanded"),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
     ) {
-        SimpleWhiteHeader(title = "Quản Lý Thiết Bị", onNavigateBack = onNavigateBack)
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+        state.failure?.let { failure ->
+            DeviceManagementInlineFailure(failure, onRefresh)
+        }
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.large),
         ) {
-            connectedDevice?.let { device ->
-                SectionLabel("THIẾT BỊ ĐANG KẾT NỐI")
-                Spacer(modifier = Modifier.size(10.dp))
-                ConnectedDeviceCard(
-                    device = device,
-                    isDisconnecting = disconnectingId == device.id,
-                    onDisconnect = { pendingDisconnect = device }
-                )
-                Spacer(modifier = Modifier.size(24.dp))
-            }
-
-            loadError?.let {
-                Text(it, color = ErrorRed, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 8.dp))
-                Spacer(modifier = Modifier.size(12.dp))
-            }
-
-            Row(
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .weight(0.38f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                contentPadding = PaddingValues(bottom = spacing.doubleExtraLarge),
             ) {
-                SectionLabel("LỊCH SỬ GHÉP NỐI")
-                Row(
-                    modifier = Modifier
-                        .background(PrimaryBlue.copy(alpha = 0.1f), CircleShape)
-                        .clickable(onClick = onAddDevice)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("+ Thêm thiết bị", color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                item { SectionHeading(stringResource(R.string.device_management_device_list)) }
+                items(state.devices, key = { it.id }) { device ->
+                    DeviceSelectorCard(
+                        snapshot = DeviceHealthSnapshot.from(device, now),
+                        isSelected = device.id == state.selectedDeviceId,
+                        onClick = { onSelectDevice(device.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
+                item { DeviceManagementInfo() }
             }
-
-            Spacer(modifier = Modifier.size(10.dp))
-            if (historyDevices.isEmpty()) {
-                EmptyHistoryCard()
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
-                ) {
-                    historyDevices.forEachIndexed { index, device ->
-                        SavedDeviceRow(
-                            device = device,
-                            method = "Đã lưu (ghép nối qua ${device.displayConnectionMethod(index)})",
-                            isDeleting = deletingId == device.id,
-                            onDelete = { deleteDevice(device) },
-                            showDivider = index < historyDevices.lastIndex
-                        )
-                    }
+            LazyColumn(
+                modifier = Modifier
+                    .weight(0.62f)
+                    .fillMaxHeight(),
+                contentPadding = PaddingValues(bottom = spacing.doubleExtraLarge),
+            ) {
+                item {
+                    DeviceHealthPanel(
+                        snapshot = DeviceHealthSnapshot.from(selectedDevice, now),
+                        isDisconnecting = state.disconnectingDeviceId == selectedDevice.id,
+                        isDeleting = state.deletingDeviceId == selectedDevice.id,
+                        mutationEnabled = !state.isMutating,
+                        onDisconnect = { onDisconnect(selectedDevice.id) },
+                        onDelete = { onDelete(selectedDevice.id) },
+                    )
                 }
-            }
-
-            Spacer(modifier = Modifier.size(24.dp))
-            Row(modifier = Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.Top) {
-                Icon(Icons.Default.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.size(8.dp))
-                Text(
-                    "Quản lý các thiết bị ống nghe đã từng kết nối. Để thêm thiết bị mới bằng QR hoặc mã thiết bị, vui lòng nhấn \"Thêm thiết bị\".",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp
-                )
             }
         }
     }
 }
 
 @Composable
-private fun ConnectedDeviceCard(
-    device: SmartDevice,
-    isDisconnecting: Boolean,
-    onDisconnect: () -> Unit
+private fun DeviceSelectorCard(
+    snapshot: DeviceHealthSnapshot,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "device-status-pulse")
-    val dotScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.55f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+    val presenceLabel = snapshot.presence.label()
+    val freshnessLabel = snapshot.freshness.label()
+    Card(
+        modifier = modifier
+            .defaultMinSize(minHeight = 88.dp)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                selected = isSelected
+                role = Role.Button
+                stateDescription = "$presenceLabel. $freshnessLabel"
+            }
+            .testTag("device_management.device.${snapshot.deviceId}"),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+            },
         ),
-        label = "connected-dot"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, SuccessGreen.copy(alpha = 0.24f), RoundedCornerShape(16.dp))
     ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize(),
-            contentAlignment = Alignment.CenterStart
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
         ) {
-            Box(
-                modifier = Modifier
-                    .width(6.dp)
-                    .fillMaxHeight()
-                    .background(SuccessGreen)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MedicalServices,
+                    contentDescription = null,
+                    tint = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.size(24.dp),
+                )
+                Text(
+                    text = snapshot.displayName(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            DevicePresenceChip(snapshot.presence)
+            Text(
+                text = freshnessLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
+    }
+}
 
+@Composable
+internal fun DeviceHealthPanel(
+    snapshot: DeviceHealthSnapshot,
+    isDisconnecting: Boolean,
+    isDeleting: Boolean,
+    mutationEnabled: Boolean,
+    onDisconnect: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = ShcareTheme.spacing
+    val presenceLabel = snapshot.presence.label()
+    val freshnessLabel = snapshot.freshness.label()
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = "$presenceLabel. $freshnessLabel"
+            }
+            .testTag("device_health.panel"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column(
-            modifier = Modifier
-            .padding(start = 18.dp, top = 16.dp, end = 16.dp, bottom = 14.dp)
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.large),
         ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(SuccessGreen.copy(alpha = 0.1f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.MedicalServices, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(26.dp))
-                }
-                Spacer(modifier = Modifier.size(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        device.name.ifBlank { "Stetho-AI-Pro" },
-                        color = TextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .scale(dotScale)
-                                .background(SuccessGreen, CircleShape)
-                        )
-                        Spacer(modifier = Modifier.size(7.dp))
-                        Text(device.cloudStatusLabel(), color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+                Text(
+                    text = snapshot.displayName(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = snapshot.deviceId.ifBlank {
+                        stringResource(R.string.device_health_value_missing)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Row(
-                modifier = Modifier
-                    .background(ErrorRed.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
-                    .clickable(enabled = !isDisconnecting, onClick = onDisconnect)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.size(6.dp))
-                Text(if (isDisconnecting) "Đang ngắt" else "Ngắt kết nối", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
 
-        Spacer(modifier = Modifier.size(14.dp))
-        HorizontalDivider(color = Color(0xFFF1F5F9))
-        Spacer(modifier = Modifier.size(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.BatteryFull, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.size(6.dp))
-                Text("Pin: ${device.battery.coerceIn(0, 100)}%", color = TextSecondary, fontSize = 12.sp)
+            PresenceSummary(snapshot)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            HealthSection(
+                title = stringResource(R.string.device_health_identity_heading),
+                metrics = listOf(
+                    HealthMetric(
+                        key = "device_id",
+                        icon = Icons.Default.MedicalServices,
+                        label = stringResource(R.string.device_health_device_id),
+                        value = snapshot.deviceId.ifBlank {
+                            stringResource(R.string.device_health_value_missing)
+                        },
+                    ),
+                    HealthMetric(
+                        key = "connection_method",
+                        icon = Icons.Default.Wifi,
+                        label = stringResource(R.string.device_health_connection_method),
+                        value = snapshot.connectionMethod
+                            ?: stringResource(R.string.device_health_value_missing),
+                    ),
+                    HealthMetric(
+                        key = "firmware",
+                        icon = Icons.Default.Memory,
+                        label = stringResource(R.string.device_health_firmware),
+                        value = snapshot.firmwareVersion
+                            ?: stringResource(R.string.device_health_value_missing),
+                    ),
+                ),
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.extraSmall)) {
+                SectionHeading(stringResource(R.string.device_health_telemetry_heading))
+                Text(
+                    text = stringResource(R.string.device_health_telemetry_support),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(device.signalLabel(), color = TextSecondary, fontSize = 12.sp)
+            HealthSection(
+                metrics = snapshot.telemetryMetrics(),
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            ) {
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    enabled = mutationEnabled,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LinkOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(spacing.small))
+                    Text(
+                        if (isDisconnecting) {
+                            stringResource(R.string.device_management_disconnecting)
+                        } else {
+                            stringResource(R.string.device_management_disconnect)
+                        },
+                    )
+                }
+                TextButton(
+                    onClick = onDelete,
+                    enabled = mutationEnabled,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(spacing.small))
+                    Text(
+                        text = if (isDeleting) {
+                            stringResource(R.string.device_management_deleting)
+                        } else {
+                            stringResource(R.string.device_management_delete)
+                        },
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
-        Spacer(modifier = Modifier.size(8.dp))
+    }
+}
+
+@Composable
+private fun PresenceSummary(snapshot: DeviceHealthSnapshot) {
+    val spacing = ShcareTheme.spacing
+    val presenceLabel = snapshot.presence.label()
+    val freshnessLabel = snapshot.freshness.label()
+    val support = when (snapshot.presence) {
+        DevicePresenceStatus.Online -> stringResource(R.string.device_health_online_support)
+        DevicePresenceStatus.Degraded -> stringResource(R.string.device_health_degraded_support)
+        DevicePresenceStatus.Stale -> stringResource(R.string.device_health_stale_support)
+        DevicePresenceStatus.Offline -> stringResource(R.string.device_health_offline_support)
+    }
+    Surface(
+        color = snapshot.presence.containerColor(),
+        contentColor = snapshot.presence.contentColor(),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = "$presenceLabel. $freshnessLabel"
+            }
+            .testTag("device_health.presence"),
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.small),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Icon(
+                    imageVector = if (snapshot.presence == DevicePresenceStatus.Offline) {
+                        Icons.Default.CloudOff
+                    } else {
+                        Icons.Default.Wifi
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    text = stringResource(R.string.device_health_presence_heading),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            DevicePresenceChip(snapshot.presence)
+            Text(text = freshnessLabel, style = MaterialTheme.typography.bodyMedium)
+            snapshot.lastSeenAt?.let { rawValue ->
+                Text(
+                    text = stringResource(R.string.device_health_last_seen_raw, rawValue),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(text = support, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun DevicePresenceChip(status: DevicePresenceStatus) {
+    Surface(
+        color = status.containerColor(),
+        contentColor = status.contentColor(),
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = Modifier
+            .defaultMinSize(minHeight = 32.dp)
+            .testTag("device_health.presence_chip"),
+    ) {
         Text(
-            "Firmware ${device.firmwareLabel()} • ${device.displayConnectionMethod()}",
-            color = TextSecondary,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            text = status.label(),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = ShcareTheme.spacing.medium, vertical = ShcareTheme.spacing.small),
         )
     }
-    }
 }
 
 @Composable
-private fun SavedDeviceRow(
-    device: SmartDevice,
-    method: String,
-    isDeleting: Boolean,
-    onDelete: () -> Unit,
-    showDivider: Boolean
+private fun HealthSection(
+    metrics: List<HealthMetric>,
+    title: String? = null,
 ) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(Color(0xFFF3F4F6), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.MedicalServices, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(22.dp))
-                }
-                Spacer(modifier = Modifier.size(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(device.name, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(method, color = TextSecondary, fontSize = 12.sp)
+    val spacing = ShcareTheme.spacing
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+        if (title != null) SectionHeading(title)
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val twoColumns = maxWidth >= 600.dp
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+                metrics.chunked(if (twoColumns) 2 else 1).forEach { rowMetrics ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                    ) {
+                        rowMetrics.forEach { metric ->
+                            HealthMetricItem(
+                                metric = metric,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (twoColumns && rowMetrics.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
-            Text(
-                if (isDeleting) "Đang xóa" else "Xóa",
-                color = ErrorRed,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .background(ErrorRed.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                    .clickable(enabled = !isDeleting, onClick = onDelete)
-                    .padding(horizontal = 9.dp, vertical = 5.dp)
-            )
         }
-        if (showDivider) HorizontalDivider(color = Color(0xFFF3F4F6))
     }
 }
 
 @Composable
-private fun EmptyHistoryCard() {
-    Column(
+private fun HealthMetricItem(
+    metric: HealthMetric,
+    modifier: Modifier = Modifier,
+) {
+    val containerColor = when (metric.tone) {
+        HealthMetricTone.Normal -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+        HealthMetricTone.Warning -> ShcareTheme.colors.warningContainer
+        HealthMetricTone.Error -> MaterialTheme.colorScheme.errorContainer
+    }
+    val contentColor = when (metric.tone) {
+        HealthMetricTone.Normal -> MaterialTheme.colorScheme.onSurface
+        HealthMetricTone.Warning -> ShcareTheme.colors.onWarningContainer
+        HealthMetricTone.Error -> MaterialTheme.colorScheme.onErrorContainer
+    }
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        shape = MaterialTheme.shapes.medium,
+        modifier = modifier
+            .defaultMinSize(minHeight = 76.dp)
+            .semantics(mergeDescendants = true) {
+                stateDescription = listOfNotNull(metric.label, metric.value, metric.supporting)
+                    .joinToString(". ")
+            }
+            .testTag("device_health.metric.${metric.key}"),
+    ) {
+        Row(
+            modifier = Modifier.padding(ShcareTheme.spacing.medium),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        ) {
+            Icon(
+                imageVector = metric.icon,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+            ) {
+                Text(text = metric.label, style = MaterialTheme.typography.labelLarge)
+                Text(text = metric.value, style = MaterialTheme.typography.bodyMedium)
+                metric.supporting?.let {
+                    Text(text = it, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceHealthSnapshot.telemetryMetrics(): List<HealthMetric> {
+    val missing = stringResource(R.string.device_health_value_missing)
+    val lastCommandParts = listOf(
+        if (lastCommandState != null) {
+            stringResource(R.string.device_health_command_state, lastCommandState)
+        } else null,
+        if (lastCommandCode != null) {
+            stringResource(R.string.device_health_command_code, lastCommandCode)
+        } else null,
+        if (lastCommandId != null) {
+            stringResource(R.string.device_health_command_id, lastCommandId)
+        } else null,
+    ).filterNotNull()
+    val lastCommandSupporting = if (lastCommandUptimeMs != null) {
+        stringResource(
+            R.string.device_health_last_command_device_time,
+            formatUptime(lastCommandUptimeMs),
+        )
+    } else null
+
+    return listOf(
+        HealthMetric(
+            key = "i2s",
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.device_health_i2s),
+            value = i2sStatus ?: missing,
+            tone = if (i2sStatus.isFailureStatus()) HealthMetricTone.Error else HealthMetricTone.Normal,
+        ),
+        HealthMetric(
+            key = "audio_status",
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.device_health_audio_status),
+            value = audioStatus ?: missing,
+            tone = if (audioStatus.isFailureStatus()) HealthMetricTone.Error else HealthMetricTone.Normal,
+        ),
+        HealthMetric(
+            key = "uptime",
+            icon = Icons.Default.Schedule,
+            label = stringResource(R.string.device_health_uptime),
+            value = formatUptime(uptimeMs),
+        ),
+        HealthMetric(
+            key = "free_heap",
+            icon = Icons.Default.Memory,
+            label = stringResource(R.string.device_health_free_heap),
+            value = formatBytes(freeHeapBytes),
+        ),
+        HealthMetric(
+            key = "packets_sent",
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.device_health_packets_sent),
+            value = audioPacketsSent.formatCounterOrMissing(),
+        ),
+        HealthMetric(
+            key = "packets_dropped",
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.device_health_packets_dropped),
+            value = audioPacketsDropped.formatCounterOrMissing(),
+            tone = if ((audioPacketsDropped ?: 0L) > 0L) {
+                HealthMetricTone.Warning
+            } else {
+                HealthMetricTone.Normal
+            },
+        ),
+        HealthMetric(
+            key = "send_failures",
+            icon = Icons.Default.GraphicEq,
+            label = stringResource(R.string.device_health_send_failures),
+            value = audioSendFailures.formatCounterOrMissing(),
+            tone = if ((audioSendFailures ?: 0L) > 0L) {
+                HealthMetricTone.Error
+            } else {
+                HealthMetricTone.Normal
+            },
+        ),
+        HealthMetric(
+            key = "last_command",
+            icon = Icons.Default.Terminal,
+            label = stringResource(R.string.device_health_last_command),
+            value = lastCommandParts.takeIf { it.isNotEmpty() }?.joinToString(" • ") ?: missing,
+            supporting = lastCommandSupporting,
+            tone = if (lastCommandState.isFailureStatus()) HealthMetricTone.Error else HealthMetricTone.Normal,
+        ),
+        HealthMetric(
+            key = "ota",
+            icon = Icons.Default.SystemUpdateAlt,
+            label = stringResource(R.string.device_health_ota),
+            value = otaStatus ?: missing,
+            tone = if (otaStatus.isFailureStatus()) HealthMetricTone.Error else HealthMetricTone.Normal,
+        ),
+    )
+}
+
+@Composable
+private fun DeviceManagementInlineFailure(
+    failure: DeviceManagementFailure,
+    onRefresh: () -> Unit,
+) {
+    val isMutationFailure = failure.operation == DeviceManagementOperation.Disconnect ||
+        failure.operation == DeviceManagementOperation.Delete
+    val title = stringResource(
+        if (isMutationFailure) {
+            R.string.device_management_mutation_unconfirmed_title
+        } else {
+            R.string.device_management_stale_title
+        },
+    )
+    val message = failure.messageWithRequestId(
+        fallback = stringResource(
+            if (isMutationFailure) {
+                R.string.device_management_mutation_unconfirmed_message
+            } else {
+                R.string.device_management_stale_message
+            },
+        ),
+    )
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = when (failure.kind) {
+                DeviceManagementFailureKind.Offline -> ShcareTheme.colors.offlineContainer
+                DeviceManagementFailureKind.Permission -> ShcareTheme.colors.infoContainer
+                DeviceManagementFailureKind.Error -> MaterialTheme.colorScheme.errorContainer
+            },
+        ),
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
-            .padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .semantics(mergeDescendants = true) {
+                stateDescription = "$title. $message"
+            },
     ) {
-        Icon(Icons.Default.MedicalServices, contentDescription = null, tint = TextSecondary.copy(alpha = 0.6f), modifier = Modifier.size(28.dp))
-        Spacer(modifier = Modifier.size(8.dp))
-        Text("Chưa có thiết bị đã ghép nối", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.size(4.dp))
-        Text("Nhấn + Thêm thiết bị để bắt đầu ghép nối.", color = TextSecondary, fontSize = 12.sp)
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            FilledTonalButton(
+                onClick = onRefresh,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(ShcareTheme.spacing.small))
+                Text(stringResource(R.string.device_management_retry))
+            }
+        }
     }
-}
-
-private fun SmartDevice.displayConnectionMethod(fallbackIndex: Int = 0): String {
-    val method = connectionMethod.trim()
-    if (method.isNotBlank()) return method
-    if (online || backendHost.isNotBlank()) return "Hệ thống Smart Health"
-    return if (fallbackIndex % 2 == 0) "Ghép nối thủ công" else "QR"
-}
-
-private fun SmartDevice.cloudStatusLabel(): String {
-    return when {
-        online -> "Online qua hệ thống Smart Health"
-        connected -> "Đang kết nối cục bộ"
-        else -> "Chưa online"
-    }
-}
-
-private fun SmartDevice.signalLabel(): String {
-    wifiRssi?.let { return "WiFi RSSI $it dBm" }
-    return "RSSI $signal dBm"
-}
-
-private fun SmartDevice.firmwareLabel(): String {
-    return firmwareVersion.ifBlank { "chưa báo cáo" }
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+private fun DeviceManagementInfo() {
+    val info = stringResource(R.string.device_management_info)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = info
+            },
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = info,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
     Text(
-        text,
-        color = TextSecondary,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(horizontal = 2.dp)
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.semantics { heading() },
     )
+}
+
+@Composable
+private fun DeviceHealthSnapshot.displayName(): String {
+    return deviceName ?: deviceId.takeIf(String::isNotBlank)
+        ?: stringResource(R.string.device_management_unknown_device)
+}
+
+@Composable
+private fun DevicePresenceStatus.label(): String = stringResource(
+    when (this) {
+        DevicePresenceStatus.Online -> R.string.device_presence_online
+        DevicePresenceStatus.Degraded -> R.string.device_presence_degraded
+        DevicePresenceStatus.Stale -> R.string.device_presence_stale
+        DevicePresenceStatus.Offline -> R.string.device_presence_offline
+    },
+)
+
+@Composable
+private fun DevicePresenceStatus.containerColor() = when (this) {
+    DevicePresenceStatus.Online -> ShcareTheme.colors.successContainer
+    DevicePresenceStatus.Degraded, DevicePresenceStatus.Stale -> ShcareTheme.colors.warningContainer
+    DevicePresenceStatus.Offline -> ShcareTheme.colors.offlineContainer
+}
+
+@Composable
+private fun DevicePresenceStatus.contentColor() = when (this) {
+    DevicePresenceStatus.Online -> ShcareTheme.colors.onSuccessContainer
+    DevicePresenceStatus.Degraded, DevicePresenceStatus.Stale -> ShcareTheme.colors.onWarningContainer
+    DevicePresenceStatus.Offline -> ShcareTheme.colors.onOfflineContainer
+}
+
+@Composable
+private fun DeviceFreshness.label(): String {
+    val age = ageSeconds
+    return when (status) {
+        DeviceFreshnessStatus.Missing -> stringResource(R.string.device_health_last_seen_missing)
+        DeviceFreshnessStatus.Invalid -> stringResource(R.string.device_health_last_seen_invalid)
+        DeviceFreshnessStatus.Future -> stringResource(R.string.device_health_last_seen_future)
+        DeviceFreshnessStatus.Fresh, DeviceFreshnessStatus.Stale -> when {
+            age == null || age < 60L -> stringResource(R.string.device_health_last_seen_now)
+            age < 3_600L -> {
+                val minutes = (age / 60L).toSafeResourceCount()
+                pluralStringResource(R.plurals.device_health_last_seen_minutes, minutes, minutes)
+            }
+            age < 86_400L -> {
+                val hours = (age / 3_600L).toSafeResourceCount()
+                pluralStringResource(R.plurals.device_health_last_seen_hours, hours, hours)
+            }
+            else -> {
+                val days = (age / 86_400L).toSafeResourceCount()
+                pluralStringResource(R.plurals.device_health_last_seen_days, days, days)
+            }
+        }
+    }
+}
+
+@Composable
+private fun formatUptime(value: Long?): String {
+    if (value == null) return stringResource(R.string.device_health_value_missing)
+    val totalMinutes = value.coerceAtLeast(0L) / 60_000L
+    if (totalMinutes == 0L) return stringResource(R.string.device_health_less_than_minute)
+    val days = totalMinutes / (24L * 60L)
+    val hours = (totalMinutes % (24L * 60L)) / 60L
+    val minutes = totalMinutes % 60L
+    return when {
+        days > 0L -> stringResource(R.string.device_health_duration_days, days, hours)
+        hours > 0L -> stringResource(R.string.device_health_duration_hours, hours, minutes)
+        else -> stringResource(R.string.device_health_duration_minutes, minutes)
+    }
+}
+
+@Composable
+private fun formatBytes(value: Long?): String {
+    if (value == null) return stringResource(R.string.device_health_value_missing)
+    val safeValue = value.coerceAtLeast(0L)
+    return when {
+        safeValue >= 1_048_576L -> stringResource(
+            R.string.device_health_mebibytes,
+            safeValue.toDouble() / 1_048_576.0,
+        )
+        safeValue >= 1_024L -> stringResource(
+            R.string.device_health_kibibytes,
+            safeValue.toDouble() / 1_024.0,
+        )
+        else -> stringResource(R.string.device_health_bytes, safeValue)
+    }
+}
+
+@Composable
+private fun Long?.formatCounterOrMissing(): String {
+    return this?.let { NumberFormat.getIntegerInstance().format(it.coerceAtLeast(0L)) }
+        ?: stringResource(R.string.device_health_value_missing)
+}
+
+@Composable
+private fun DeviceManagementFailure.messageWithRequestId(fallback: String): String {
+    val resolved = fallback
+    if (requestId.isBlank()) return resolved
+    return "$resolved\n${stringResource(R.string.device_management_request_id, requestId)}"
+}
+
+private fun String?.isFailureStatus(): Boolean {
+    val normalized = this?.trim()?.lowercase().orEmpty()
+    if (normalized.isBlank()) return false
+    return listOf("degraded", "error", "failed", "fault", "rolled_back", "unavailable")
+        .any { token -> normalized == token || normalized.contains(token) }
+}
+
+private fun Long.toSafeResourceCount(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+private data class HealthMetric(
+    val key: String,
+    val icon: ImageVector,
+    val label: String,
+    val value: String,
+    val supporting: String? = null,
+    val tone: HealthMetricTone = HealthMetricTone.Normal,
+)
+
+private enum class HealthMetricTone {
+    Normal,
+    Warning,
+    Error,
 }

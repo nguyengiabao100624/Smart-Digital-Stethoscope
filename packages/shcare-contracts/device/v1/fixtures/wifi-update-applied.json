@@ -1,0 +1,9 @@
+{
+  "protocolVersion": 1,
+  "type": "command.status",
+  "commandId": "cmd-fixture-wifi-001",
+  "correlationId": "corr-fixture-wifi-001",
+  "state": "applied",
+  "code": "OK",
+  "detail": "wifi saved; restarting"
+}

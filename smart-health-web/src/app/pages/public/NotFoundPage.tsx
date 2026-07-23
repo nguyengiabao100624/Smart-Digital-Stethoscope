@@ -14,7 +14,7 @@ export default function NotFoundPage({ maintenance }: NotFoundPageProps) {
           <div className="text-5xl mb-6">🔧</div>
           <h1 className="brand-gradient-text mb-3">Hệ thống đang bảo trì</h1>
           <p className="text-[#8aa5ba] leading-relaxed mb-8">
-            Smart Health đang thực hiện nâng cấp hệ thống để phục vụ bạn tốt hơn. Chúng tôi sẽ sớm
+            Shcare đang thực hiện nâng cấp hệ thống để phục vụ bạn tốt hơn. Chúng tôi sẽ sớm
             trở lại.
           </p>
           <a

@@ -1,3 +1,7 @@
+const { getAiProviderAvailability } = require("./aiProvider");
+const { getOtaSignerAvailability } = require("./otaManifestSigning");
+const { getTwoFactorAvailability } = require("./twoFactorAuth");
+
 function readString(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -104,6 +108,22 @@ function buildProductionReadiness(env = process.env) {
   const databaseDisplay = maskUrl(databaseUrl);
   const s3Endpoint = inspectUrl(env.S3_ENDPOINT);
   const mqttUrl = inspectUrl(env.MQTT_URL);
+  const aiProviderAvailability = getAiProviderAvailability({ ...env, NODE_ENV: "production" });
+  const aiProviderEndpoint = inspectUrl(env.AI_PROVIDER_ENDPOINT);
+  const aiProviderName = aiProviderAvailability.provider;
+  const aiProviderModel = readString(env.AI_PROVIDER_MODEL);
+  const aiProviderHasCredential = Boolean(readString(env.AI_PROVIDER_API_KEY));
+  const aiProviderReady = Boolean(
+    aiProviderAvailability.available &&
+      aiProviderEndpoint.valid &&
+      aiProviderEndpoint.isHttps &&
+      !aiProviderEndpoint.isLocal,
+  );
+  const aiProviderPartiallyConfigured = Boolean(
+    aiProviderEndpoint.present || aiProviderHasCredential || aiProviderModel,
+  );
+  const twoFactorAvailability = getTwoFactorAvailability(env);
+  const otaSignerAvailability = getOtaSignerAvailability(env);
   const emailProvider = readString(env.EMAIL_PROVIDER || env.OUTBOUND_EMAIL_PROVIDER).toLowerCase();
   const brevoReady = ["BREVO_API_KEY", "BREVO_FROM_EMAIL"].every((key) => readString(env[key]));
   const smtpReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"].every((key) =>
@@ -214,6 +234,36 @@ function buildProductionReadiness(env = process.env) {
     detail: readString(env.REDIS_URL) ? `REDIS_URL=${maskUrl(env.REDIS_URL)}` : "Chưa có REDIS_URL; worker/queue chạy fallback.",
     env: ["REDIS_URL"],
     setup: "Tạo Redis managed instance nếu cần AI/audio queue nhiều instance.",
+  });
+
+  createItem(items, {
+    id: "ai.provider",
+    group: "ai",
+    label: "AI chat provider thật",
+    status: aiProviderReady ? "pass" : "warn",
+    required: false,
+    detail: aiProviderReady
+      ? `${aiProviderName} đã cấu hình qua HTTPS với model ${aiProviderModel}.`
+      : aiProviderPartiallyConfigured
+        ? "Cấu hình AI provider chưa đủ hoặc endpoint chưa đạt HTTPS production; AI chat sẽ fail closed."
+        : "Chưa cấu hình AI provider; AI chat báo unavailable và không tạo phản hồi cục bộ.",
+    env: ["AI_PROVIDER_NAME", "AI_PROVIDER_ENDPOINT", "AI_PROVIDER_API_KEY", "AI_PROVIDER_MODEL", "AI_PROVIDER_TIMEOUT_MS"],
+    setup: "Đặt endpoint HTTPS OpenAI-compatible, credential trong secret manager, model và timeout hữu hạn.",
+  });
+
+  createItem(items, {
+    id: "security.two_factor_encryption",
+    group: "security",
+    label: "Mã hóa bí mật TOTP",
+    status: twoFactorAvailability.available ? "pass" : "warn",
+    required: false,
+    detail: twoFactorAvailability.available
+      ? "TOTP dùng khóa mã hóa 32 byte hợp lệ; khóa và recovery code không xuất hiện trong báo cáo."
+      : twoFactorAvailability.reason === "invalid_encryption_key"
+        ? "TWO_FACTOR_ENCRYPTION_KEY không hợp lệ; 2FA fail closed."
+        : "Chưa có TWO_FACTOR_ENCRYPTION_KEY; 2FA báo unavailable và không cho enrollment/challenge giả.",
+    env: ["TWO_FACTOR_ENCRYPTION_KEY", "TWO_FACTOR_CHALLENGE_TTL_MS", "TWO_FACTOR_DISABLE_LOCK_MS"],
+    setup: "Đặt TWO_FACTOR_ENCRYPTION_KEY là đúng 32 byte dạng hex hoặc base64 trong secret manager.",
   });
 
   createItem(items, {
@@ -335,12 +385,16 @@ function buildProductionReadiness(env = process.env) {
   createItem(items, {
     id: "firmware.signing",
     group: "device",
-    label: "Signed firmware/rollback",
-    status: "warn",
-    required: false,
-    detail: "Hiện firmware đã verify SHA-256; chữ ký firmware và rollback policy vẫn cần hardening.",
-    env: ["SMART_HEALTH_FIRMWARE_SIGNING_PUBLIC_KEY"],
-    setup: "Trước khi phát hành thiết bị thật, thêm ký firmware và chính sách rollback an toàn.",
+    label: "Backend OTA signing key",
+    status: statusFromBoolean(otaSignerAvailability.available, true),
+    required: true,
+    detail: otaSignerAvailability.available
+      ? `OTA manifest signer sẵn sàng (${otaSignerAvailability.keyType}).`
+      : otaSignerAvailability.code === "OTA_SIGNER_INVALID"
+        ? "OTA_SIGNING_PRIVATE_KEY_PEM không phải private key hợp lệ; OTA production bị khóa."
+        : "Chưa có OTA_SIGNING_PRIVATE_KEY_PEM; OTA production bị khóa.",
+    env: ["OTA_SIGNING_PRIVATE_KEY_PEM"],
+    setup: "Cấu hình private key OTA ở secret manager của backend; không ghi key vào repository hoặc client.",
   });
 
   createItem(items, {

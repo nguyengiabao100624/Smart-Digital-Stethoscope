@@ -9,9 +9,9 @@ type FormState = "idle" | "sending" | "success" | "error";
 
 export default function ContactPage() {
   useSEO({
-    title: "Liên hệ tư vấn triển khai | Smart Health Care",
+    title: "Liên hệ tư vấn triển khai | Shcare",
     description:
-      "Liên hệ đội ngũ Smart Health Care để được tư vấn triển khai nền tảng theo dõi sức khỏe từ xa cho bác sĩ và phòng khám.",
+      "Liên hệ đội ngũ Shcare để xác định phạm vi triển khai nền tảng theo dõi sức khỏe từ xa cho bác sĩ và phòng khám.",
     path: "/lien-he",
   });
 
@@ -65,8 +65,8 @@ export default function ContactPage() {
           <CheckCircle2 size={44} />
           <h1>Yêu cầu đã được gửi</h1>
           <p>
-            Đội ngũ Smart Health Care sẽ phản hồi qua email hoặc số điện thoại bạn cung cấp trong
-            giờ làm việc.
+            Yêu cầu đã được backend tiếp nhận. Đội ngũ Shcare sẽ phản hồi qua email hoặc số điện
+            thoại bạn cung cấp theo quy trình hỗ trợ hiện hành.
           </p>
           <div>
             <button type="button" className="shc-button shc-button-secondary" onClick={() => setState("idle")}>
@@ -88,7 +88,7 @@ export default function ContactPage() {
           <p>Liên hệ</p>
           <h1>Nói rõ quy mô, chúng tôi tư vấn cách triển khai phù hợp.</h1>
           <span>
-            Gửi thông tin cơ sở, vai trò và nhu cầu theo dõi từ xa. Đội ngũ Smart Health Care sẽ
+            Gửi thông tin cơ sở, vai trò và nhu cầu theo dõi từ xa. Đội ngũ Shcare sẽ
             phản hồi bằng lộ trình triển khai thực tế, không dùng lời hứa mơ hồ.
           </span>
         </div>

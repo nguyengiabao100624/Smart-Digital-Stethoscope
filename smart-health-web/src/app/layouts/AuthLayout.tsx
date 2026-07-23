@@ -1,115 +1,106 @@
-import { Link, Outlet, useLocation } from "react-router";
-import { ArrowLeft, ClipboardCheck, Lock, ShieldCheck } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
-import logoUrl from "../../../../docs/Logo.png";
+import { ArrowLeft, CheckCircle2, LockKeyhole, ShieldCheck } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Link, Outlet, useLocation } from "react-router";
+
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
 
 const authFacts = [
-  ["Workspace", "Bác sĩ và cơ sở y tế dùng chung một cổng vận hành."],
-  ["Phân quyền", "Quyền truy cập được kiểm tra trước khi vào portal."],
-  ["Rà soát", "Các thao tác nhạy cảm có lịch sử để cơ sở đối chiếu."],
+  ["Một tài khoản", "Đăng nhập, xác minh email và theo dõi hồ sơ trong cùng một luồng."],
+  ["Quyền theo workspace", "Tính năng hiển thị theo vai trò và quyền do hệ thống cấp."],
+  ["Trạng thái rõ ràng", "Các bước chờ duyệt, cần bổ sung hoặc bị từ chối đều có hướng xử lý."],
 ];
 
 export function AuthLayout() {
   const location = useLocation();
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [location.pathname]);
 
   return (
-    <div className="app-shell auth-shell shc-auth-layout">
-      <aside className="shc-auth-aside" aria-label="Thông tin cổng đăng nhập">
-        <div className="shc-auth-aside-top">
-          <Link to="/" className="shc-auth-back">
-            <ArrowLeft size={16} />
+    <div className="app-shell shc-auth-layout shc-auth-canonical">
+      <div className="shc-auth-skip-host">
+        <a className="shc-auth-skip-link" href="#shcare-auth-main">Đi đến biểu mẫu</a>
+      </div>
+
+      <aside className="shc-auth-brand-panel" aria-label="Giới thiệu cổng tài khoản Shcare">
+        <div className="shc-auth-brand-top">
+          <Link to="/" className="shc-auth-back-link">
+            <ArrowLeft size={16} aria-hidden="true" />
             Về trang chủ
           </Link>
-          <Link to="/" className="shc-brand">
-            <span className="shc-brand-mark">
+          <Link to="/" className="shc-auth-brand-link">
+            <span className="shc-auth-brand-mark" aria-hidden="true">
               <img src={logoUrl} alt="" />
             </span>
-            <span>Smart Health Care</span>
+            <span>
+              <strong>Shcare</strong>
+              <small>Smart Health Care</small>
+            </span>
           </Link>
         </div>
 
-        <div className="shc-auth-story">
-          <span className="shc-auth-chip">
-            <ShieldCheck size={14} /> Phiên truy cập bảo mật
+        <div className="shc-auth-brand-copy">
+          <span className="shc-auth-context-label">
+            <ShieldCheck size={15} aria-hidden="true" />
+            Cổng tài khoản và workspace
           </span>
-          <h2>Cổng workspace cho bác sĩ và cơ sở y tế.</h2>
+          <h2>Đăng nhập an tâm. Làm việc đúng quyền.</h2>
           <p>
-            Đăng nhập để xem bệnh nhân, lượt đo, live monitoring, cảnh báo, thiết bị và audit log
-            theo đúng quyền được cấp trong workspace.
+            Shcare kiểm tra danh tính, trạng thái hồ sơ và quyền workspace trước khi mở các
+            chức năng phù hợp với tài khoản.
           </p>
 
-          <div className="shc-auth-preview-card">
-            <div className="shc-auth-preview-head">
-              <div>
-                <ShieldCheck size={18} />
-                <span>Kiểm tra trước khi vào portal</span>
-              </div>
-              <strong>Theo quyền được cấp</strong>
-            </div>
-            <ul className="shc-auth-access-list">
-              <li>
-                <ClipboardCheck size={14} /> Bệnh nhân và lượt đo theo workspace
-              </li>
-              <li>
-                <ClipboardCheck size={14} /> Thiết bị, cảnh báo và lịch sử thao tác
-              </li>
-              <li>
-                <ClipboardCheck size={14} /> Quyền hiển thị theo vai trò tài khoản
-              </li>
-            </ul>
-          </div>
+          <ul className="shc-auth-brand-checks">
+            <li><CheckCircle2 size={17} aria-hidden="true" />Biểu mẫu có hướng dẫn và lỗi theo từng trường.</li>
+            <li><CheckCircle2 size={17} aria-hidden="true" />Không báo hoàn tất trước khi dịch vụ phản hồi.</li>
+            <li><CheckCircle2 size={17} aria-hidden="true" />Có đường phục hồi khi hồ sơ cần bổ sung.</li>
+          </ul>
         </div>
 
-        <div className="shc-auth-facts">
+        <div className="shc-auth-fact-grid" aria-label="Đặc điểm của cổng tài khoản">
           {authFacts.map(([title, description]) => (
-            <div key={title}>
+            <article key={title}>
               <strong>{title}</strong>
               <p>{description}</p>
-            </div>
+            </article>
           ))}
         </div>
 
-        <div className="shc-auth-footnote">
-          <span>© 2026 Smart Health Care Platform</span>
-          <span>
-            <Lock size={12} /> Kiểm soát truy cập
-          </span>
-        </div>
+        <footer className="shc-auth-brand-footer">
+          <span>© 2026 Shcare</span>
+          <span><LockKeyhole size={13} aria-hidden="true" />Truy cập theo tài khoản</span>
+        </footer>
       </aside>
 
-      <section className="shc-auth-form-region">
-        <div className="shc-auth-mobile-top">
-          <Link to="/" className="shc-brand">
-            <span className="shc-brand-mark">
-              <img src={logoUrl} alt="" />
-            </span>
-            <span>Smart Health Care</span>
+      <main id="shcare-auth-main" className="shc-auth-workspace" tabIndex={-1}>
+        <header className="shc-auth-mobile-header">
+          <Link to="/" className="shc-auth-brand-link">
+            <span className="shc-auth-brand-mark" aria-hidden="true"><img src={logoUrl} alt="" /></span>
+            <span><strong>Shcare</strong><small>Smart Health Care</small></span>
           </Link>
-          <Link to="/" aria-label="Về trang chủ">
-            <ArrowLeft size={20} />
+          <Link className="shc-auth-mobile-home" to="/" aria-label="Về trang chủ">
+            <ArrowLeft size={20} aria-hidden="true" />
           </Link>
-        </div>
+        </header>
 
-        <div className="shc-auth-form-scroll">
-          <AnimatePresence mode="wait">
+        <div className="shc-auth-scroll-region">
+          <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
-              initial={{ opacity: 0, y: 10 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="shc-auth-card"
+              exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -6 }}
+              transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
+              className="shc-auth-canonical-card"
             >
               <Outlet />
             </motion.div>
           </AnimatePresence>
         </div>
-      </section>
+      </main>
     </div>
   );
 }

@@ -73,6 +73,8 @@ import com.example.smart_health_android.ui.theme.Surface
 import com.example.smart_health_android.ui.theme.TextPrimary
 import com.example.smart_health_android.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SignUpScreen(
@@ -402,20 +404,22 @@ fun SignUpScreen(
                             password = cleanPassword,
                             displayName = cleanName
                         )
-                        PendingRegistrationStore.save(
-                            context,
-                            PendingRegistration(
-                                accountType = accountType,
-                                name = cleanName,
-                                email = cleanEmail,
-                                phone = cleanPhone,
-                                license = license.trim(),
-                                hospital = if (accountType == "solo_doctor") soloClinicDisplayName.trim() else clinicDisplayName,
-                                department = selectedSpecialty?.name.orEmpty(),
-                                organizationId = if (accountType == "solo_doctor") "" else selectedClinic?.id.orEmpty(),
-                                reason = registrationReason.trim()
+                        withContext(Dispatchers.IO) {
+                            PendingRegistrationStore.save(
+                                context,
+                                PendingRegistration(
+                                    accountType = accountType,
+                                    name = cleanName,
+                                    email = cleanEmail,
+                                    phone = cleanPhone,
+                                    license = license.trim(),
+                                    hospital = if (accountType == "solo_doctor") soloClinicDisplayName.trim() else clinicDisplayName,
+                                    department = selectedSpecialty?.name.orEmpty(),
+                                    organizationId = if (accountType == "solo_doctor") "" else selectedClinic?.id.orEmpty(),
+                                    reason = registrationReason.trim()
+                                )
                             )
-                        )
+                        }
                         onNavigateToVerifyEmail(accountType)
                     } catch (error: Exception) {
                         errorMessage = error.toVietnameseMessage("Không thể tạo tài khoản. Vui lòng kiểm tra thông tin và thử lại.")

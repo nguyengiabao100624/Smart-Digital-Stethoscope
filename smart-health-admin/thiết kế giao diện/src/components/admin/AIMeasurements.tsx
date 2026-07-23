@@ -1,65 +1,120 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
   BrainCircuit,
-  Calendar,
   CheckCircle2,
   Download,
+  Eye,
   FileAudio,
-  Play,
   RefreshCw,
   Search,
+  ShieldAlert,
   Stethoscope,
+  WifiOff,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ExportDataDialog } from "./dialogs/ExportDataDialog";
-import { PageHeader, StatusBadge, Timeline, WaveformPreview } from "./design-system";
-import { itemMotion, listMotion } from "./motion-presets";
-import { smartHealthApi, smartHealthAudioUrl, type SmartHealthScan } from "@/lib/smart-health-api";
+import { StatusBadge } from "./design-system";
+import { REPORT_EXPORT_CAPABILITIES, SCAN_MANAGE_CAPABILITIES } from "./action-permissions";
+import { useAdminAccess } from "./useAdminAccess";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  smartHealthApi,
+  smartHealthAudioUrl,
+  type SmartHealthApiError,
+  type SmartHealthScan,
+} from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { buildSmartHealthFilename } from "@/lib/filename-utils";
+import {
+  SMART_HEALTH_SCAN_LIFECYCLE_STATUSES,
+  createScanReprocessIdempotencyKey,
+  formatSmartHealthAiConfidence,
+  normalizeSmartHealthAiConfidence,
+  normalizeSmartHealthScanLifecycleStatus,
+  type SmartHealthScanLifecycleStatus,
+} from "@/lib/scan-lifecycle";
 
-type ScanStatus = "recording" | "uploading" | "processing" | "completed" | "failed";
+type ScanFilter = "all" | SmartHealthScanLifecycleStatus;
 
 type ScanSession = {
   id: string;
-  patient: string;
-  doctor: string;
-  device: string;
-  region: "Tim" | "Phổi";
-  duration: string;
-  audioFile: string;
-  status: ScanStatus;
-  model: string;
+  patientId: string | null;
+  patientName: string | null;
+  deviceId: string | null;
+  bodySite: string | null;
+  mode: string | null;
+  duration: string | null;
+  status: SmartHealthScanLifecycleStatus;
+  rawStatus: string | null;
   confidence: number | null;
-  createdAt: string;
-  result: string;
-  clipCount: number;
-  signalLevel: string;
-  noiseLevel: string;
-  audioUrl?: string;
+  aiLabel: string | null;
+  aiSummary: string | null;
+  doctorNotes: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string | null;
+  createdAtRaw: string | null;
+  updatedAt: string | null;
+  peak: number | null;
+  rms: number | null;
+  levelPercent: number | null;
+  audioUrl: string | null;
 };
 
-const STATUS_TABS: Array<{ value: ScanStatus; label: string }> = [
-  { value: "recording", label: "Đang ghi" },
-  { value: "uploading", label: "Đang tải lên" },
-  { value: "processing", label: "Đang xử lý" },
-  { value: "completed", label: "Hoàn tất" },
-  { value: "failed", label: "Thất bại" },
+type FailureKind = "offline" | "forbidden" | "error";
+type FailureState = {
+  kind: FailureKind;
+  message: string;
+};
+type RetryableAction = "reprocess" | "download";
+
+const STATUS_PRESENTATION: Record<
+  SmartHealthScanLifecycleStatus,
+  { label: string; tone: "success" | "warning" | "error" | "info" | "muted" }
+> = {
+  created: { label: "Đã tạo", tone: "muted" },
+  uploading: { label: "Đang tải lên", tone: "info" },
+  queued: { label: "Đang chờ xử lý", tone: "warning" },
+  processing: { label: "Đang xử lý", tone: "info" },
+  completed: { label: "Hoàn tất", tone: "success" },
+  failed: { label: "Thất bại", tone: "error" },
+  needs_review: { label: "Cần xem lại", tone: "warning" },
+  unknown: { label: "Không xác định", tone: "muted" },
+};
+
+const STATUS_TABS: Array<{ value: ScanFilter; label: string }> = [
+  { value: "all", label: "Tất cả" },
+  ...SMART_HEALTH_SCAN_LIFECYCLE_STATUSES.map((status) => ({
+    value: status,
+    label: STATUS_PRESENTATION[status].label,
+  })),
+  { value: "unknown", label: STATUS_PRESENTATION.unknown.label },
 ];
 
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "Chưa có thời gian";
-  }
+function nonEmptyText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatDateTime(value?: string | null): string | null {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
 
   return new Intl.DateTimeFormat("vi-VN", {
     day: "2-digit",
@@ -70,507 +125,866 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
-function formatDuration(seconds?: number) {
-  if (!Number.isFinite(Number(seconds))) {
-    return "00:00";
-  }
-
-  const total = Math.max(0, Math.round(Number(seconds)));
+function formatDuration(seconds?: number): string | null {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return null;
+  const total = Math.max(0, Math.round(seconds));
   const minutes = Math.floor(total / 60);
   const rest = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-function normalizeScanStatus(status?: string): ScanStatus {
-  if (status === "recording" || status === "uploading" || status === "processing") {
-    return status;
-  }
-  if (status === "failed" || status === "error") {
-    return "failed";
-  }
-  return "completed";
-}
-
-function normalizeConfidence(value?: number | null) {
-  if (!Number.isFinite(Number(value))) {
-    return null;
-  }
-
-  const confidence = Number(value);
-  return Math.round(confidence <= 1 ? confidence * 100 : confidence);
+function formatMeasurement(value: number | null, suffix = "") {
+  return value === null ? "Chưa có dữ liệu" : `${value}${suffix}`;
 }
 
 function mapBackendScan(scan: SmartHealthScan): ScanSession {
-  const modeText = `${scan.mode || ""} ${scan.bodySite || ""}`.toLowerCase();
-  const isLung =
-    modeText.includes("lung") || modeText.includes("phổi") || modeText.includes("resp");
-  const audioUrl = smartHealthAudioUrl(scan.audioUrl || `/api/scans/${scan.id}/audio`);
-  const audioFile = scan.audioUrl ? audioUrl.split("/").pop() || "audio.wav" : "audio.wav";
+  const rawStatus = nonEmptyText(scan.processingStatus) || nonEmptyText(scan.status);
+  const backendAudioUrl = nonEmptyText(scan.audioUrl);
+  const createdAtRaw = nonEmptyText(scan.startedAt) || nonEmptyText(scan.createdAt);
 
   return {
     id: scan.id,
-    patient: scan.patient?.name || scan.patientId || "Bệnh nhân chưa xác định",
-    doctor: "Backend Smart Health",
-    device: scan.deviceId || "Chưa gán thiết bị",
-    region: isLung ? "Phổi" : "Tim",
+    patientId: nonEmptyText(scan.patientId),
+    patientName: nonEmptyText(scan.patient?.name),
+    deviceId: nonEmptyText(scan.deviceId),
+    bodySite: nonEmptyText(scan.bodySite),
+    mode: nonEmptyText(scan.mode),
     duration: formatDuration(scan.durationSeconds),
-    audioFile,
-    status: normalizeScanStatus(scan.status),
-    model: "Signal Quality Demo",
-    confidence: normalizeConfidence(scan.aiConfidence),
-    createdAt: formatDateTime(scan.startedAt || scan.createdAt),
-    result: scan.aiSummary || scan.aiLabel || "Backend chưa có kết quả AI chi tiết.",
-    clipCount: 0,
-    signalLevel: Number.isFinite(Number(scan.rms)) ? `RMS ${Math.round(Number(scan.rms))}` : "--",
-    noiseLevel: Number.isFinite(Number(scan.peak)) ? `Peak ${Math.round(Number(scan.peak))}` : "--",
-    audioUrl,
+    status: normalizeSmartHealthScanLifecycleStatus(rawStatus),
+    rawStatus,
+    confidence: normalizeSmartHealthAiConfidence(scan.aiConfidence),
+    aiLabel: nonEmptyText(scan.aiLabel),
+    aiSummary: nonEmptyText(scan.aiSummary),
+    doctorNotes: nonEmptyText(scan.doctorNotes),
+    startedAt: formatDateTime(scan.startedAt),
+    endedAt: formatDateTime(scan.endedAt),
+    createdAt: formatDateTime(createdAtRaw),
+    createdAtRaw,
+    updatedAt: formatDateTime(scan.updatedAt),
+    peak: finiteNumber(scan.peak),
+    rms: finiteNumber(scan.rms),
+    levelPercent: finiteNumber(scan.levelPercent),
+    audioUrl: backendAudioUrl ? smartHealthAudioUrl(backendAudioUrl) : null,
   };
 }
 
-function renderStatus(status: ScanStatus) {
-  if (status === "completed") return <StatusBadge label="Hoàn tất" tone="success" />;
-  if (status === "failed") return <StatusBadge label="Thất bại" tone="error" />;
-  if (status === "processing") return <StatusBadge label="Đang xử lý" tone="info" pulse />;
-  if (status === "uploading") return <StatusBadge label="Đang tải lên" tone="warning" pulse />;
-  return <StatusBadge label="Đang ghi" tone="success" pulse />;
+function renderStatus(status: SmartHealthScanLifecycleStatus, rawStatus?: string | null) {
+  const presentation = STATUS_PRESENTATION[status];
+  const label =
+    status === "unknown" && rawStatus ? `${presentation.label}: ${rawStatus}` : presentation.label;
+  return <StatusBadge label={label} tone={presentation.tone} />;
+}
+
+function browserIsOffline() {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+function apiStatus(error: unknown) {
+  return (error as SmartHealthApiError | null)?.status;
+}
+
+function describeFailure(error: unknown, fallback: string): FailureState {
+  if (browserIsOffline()) {
+    return {
+      kind: "offline",
+      message: "Thiết bị đang ngoại tuyến. Hãy kiểm tra kết nối mạng rồi thử lại.",
+    };
+  }
+  if (apiStatus(error) === 403) {
+    return {
+      kind: "forbidden",
+      message: "Tài khoản hiện tại không có quyền thực hiện thao tác này.",
+    };
+  }
+  return { kind: "error", message: toVietnameseErrorMessage(error, fallback) };
 }
 
 export function AIMeasurements() {
-  const [activeTab, setActiveTab] = useState<ScanStatus>("processing");
+  const { accessCheckComplete, hasAnyCapability } = useAdminAccess();
+  const canManageScans = accessCheckComplete && hasAnyCapability(SCAN_MANAGE_CAPABILITIES);
+  const canExportData = accessCheckComplete && hasAnyCapability(REPORT_EXPORT_CAPABILITIES);
+  const [activeTab, setActiveTab] = useState<ScanFilter>("all");
   const [selectedScan, setSelectedScan] = useState<ScanSession | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [scans, setScans] = useState<ScanSession[]>([]);
-  const [backendError, setBackendError] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<FailureState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [actionFailure, setActionFailure] = useState<FailureState | null>(null);
+  const [retryableAction, setRetryableAction] = useState<RetryableAction | null>(null);
+  const reprocessInFlightRef = useRef(false);
+  const reprocessIdempotencyKeysRef = useRef(new Map<string, string>());
 
   useEffect(() => {
+    if (!accessCheckComplete) return;
+
     let cancelled = false;
     setIsLoading(true);
+    setLoadFailure(null);
+
+    if (browserIsOffline()) {
+      setLoadFailure({
+        kind: "offline",
+        message: "Bạn đang ngoại tuyến. Dữ liệu lượt đo chưa thể được tải từ backend.",
+      });
+      setIsLoading(false);
+      return;
+    }
 
     smartHealthApi
       .listScans({ limit: 200 })
       .then(({ scans: backendScans }) => {
-        if (cancelled) {
-          return;
-        }
-        setScans(backendScans.map(mapBackendScan));
-        setBackendError(null);
+        if (cancelled) return;
+        const nextScans = backendScans.map(mapBackendScan);
+        setScans(nextScans);
+        setSelectedScan((current) =>
+          current ? nextScans.find((scan) => scan.id === current.id) || null : null,
+        );
+        setLoadFailure(null);
       })
-      .catch((err) => {
-        if (!cancelled) {
+      .catch((error) => {
+        if (cancelled) return;
+        const failure = describeFailure(error, "Không thể tải dữ liệu lượt đo từ backend.");
+        if (failure.kind === "forbidden") {
           setScans([]);
-          setBackendError(toVietnameseErrorMessage(err, "Không thể tải dữ liệu lượt đo."));
+          setSelectedScan(null);
         }
+        setLoadFailure(failure);
       })
       .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        if (!cancelled) setIsLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
+  }, [accessCheckComplete, reloadVersion]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const reloadWhenOnline = () => setReloadVersion((value) => value + 1);
+    window.addEventListener("online", reloadWhenOnline);
+    return () => window.removeEventListener("online", reloadWhenOnline);
   }, []);
 
+  useEffect(() => {
+    setActionFailure(null);
+    setRetryableAction(null);
+  }, [selectedScan?.id]);
+
   const filteredScans = useMemo(() => {
-    const keyword = searchTerm.trim().toLowerCase();
-    if (!keyword) {
-      return scans;
-    }
+    const keyword = searchTerm.trim().toLocaleLowerCase("vi-VN");
+    if (!keyword) return scans;
 
     return scans.filter((scan) =>
       [
         scan.id,
-        scan.patient,
-        scan.doctor,
-        scan.device,
-        scan.region,
-        scan.audioFile,
-        scan.result,
-        scan.status,
+        scan.patientId,
+        scan.patientName,
+        scan.deviceId,
+        scan.bodySite,
+        scan.mode,
+        scan.rawStatus,
+        scan.aiLabel,
+        scan.aiSummary,
       ]
+        .filter(Boolean)
         .join(" ")
-        .toLowerCase()
+        .toLocaleLowerCase("vi-VN")
         .includes(keyword),
     );
   }, [scans, searchTerm]);
 
-  const counts = useMemo(
-    () =>
-      STATUS_TABS.reduce(
-        (acc, tab) => ({
-          ...acc,
-          [tab.value]: filteredScans.filter((scan) => scan.status === tab.value).length,
-        }),
-        {} as Record<ScanStatus, number>,
-      ),
-    [filteredScans],
-  );
+  const counts = useMemo(() => {
+    const initial = Object.fromEntries(
+      [...SMART_HEALTH_SCAN_LIFECYCLE_STATUSES, "unknown"].map((status) => [status, 0]),
+    ) as Record<SmartHealthScanLifecycleStatus, number>;
+    for (const scan of filteredScans) initial[scan.status] += 1;
+    return initial;
+  }, [filteredScans]);
 
-  const rows = filteredScans.filter((scan) => scan.status === activeTab);
+  const rows =
+    activeTab === "all" ? filteredScans : filteredScans.filter((scan) => scan.status === activeTab);
+  const pendingCount = counts.created + counts.uploading + counts.queued + counts.processing;
+  const attentionCount = counts.failed + counts.needs_review + counts.unknown;
+  const metricsUnavailable = scans.length === 0 && (isLoading || loadFailure !== null);
+  const actionPending = isReprocessing || isDownloading;
+  const canReprocessSelected =
+    selectedScan !== null &&
+    ["completed", "failed", "needs_review"].includes(selectedScan.status) &&
+    Boolean(selectedScan.audioUrl);
+
+  const reloadScans = () => setReloadVersion((value) => value + 1);
 
   const rerunAI = async () => {
-    if (!selectedScan) {
+    if (!selectedScan || !canManageScans || reprocessInFlightRef.current) return;
+    if (!selectedScan.audioUrl || !canReprocessSelected) {
+      setActionFailure({
+        kind: "error",
+        message: "Backend chưa xác nhận audio ở trạng thái có thể xử lý lại.",
+      });
+      setRetryableAction(null);
+      return;
+    }
+    if (browserIsOffline()) {
+      setActionFailure(describeFailure(null, "Không thể kết nối backend."));
+      setRetryableAction("reprocess");
       return;
     }
 
+    const idempotencyKey =
+      reprocessIdempotencyKeysRef.current.get(selectedScan.id) ||
+      createScanReprocessIdempotencyKey(selectedScan.id);
+    reprocessIdempotencyKeysRef.current.set(selectedScan.id, idempotencyKey);
+    reprocessInFlightRef.current = true;
     setIsReprocessing(true);
+    setActionFailure(null);
+    setRetryableAction(null);
+
     try {
-      const { scan } = await smartHealthApi.reprocessScanAi(selectedScan.id);
+      const { scan } = await smartHealthApi.reprocessScanAi(selectedScan.id, idempotencyKey);
+      if (!scan || scan.id !== selectedScan.id) {
+        throw new Error("Backend trả về lượt đo không khớp với yêu cầu xử lý lại.");
+      }
+
       const updatedScan = mapBackendScan(scan);
       setScans((current) =>
         current.map((item) => (item.id === updatedScan.id ? updatedScan : item)),
       );
       setSelectedScan(updatedScan);
-      setActiveTab(updatedScan.status);
-      toast.success("Đã xử lý lại AI từ backend.");
+      setActiveTab("all");
+      reprocessIdempotencyKeysRef.current.delete(selectedScan.id);
+
+      if (updatedScan.status === "completed") {
+        toast.success("Backend đã hoàn tất phân tích lại chất lượng tín hiệu.");
+      } else if (updatedScan.status === "failed") {
+        toast.error("Backend xác nhận lượt xử lý lại đã thất bại.");
+      } else {
+        toast.info(
+          `Backend đã nhận yêu cầu. Trạng thái hiện tại: ${STATUS_PRESENTATION[updatedScan.status].label}.`,
+        );
+      }
     } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể chạy lại AI cho lượt đo này."));
+      const failure = describeFailure(
+        error,
+        "Không thể phân tích lại chất lượng tín hiệu cho lượt đo này.",
+      );
+      setActionFailure(failure);
+      setRetryableAction(failure.kind === "forbidden" ? null : "reprocess");
+      toast.error(failure.message);
     } finally {
+      reprocessInFlightRef.current = false;
       setIsReprocessing(false);
     }
   };
 
   const downloadAudio = async () => {
-    if (selectedScan?.audioUrl) {
-      try {
-        const blob = await smartHealthApi.downloadScanAudio(selectedScan.audioUrl);
-        const objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = buildSmartHealthFilename({
-          kind: "scan-audio",
-          ext: "wav",
-          scanId: selectedScan.id,
-          patientName: selectedScan.patient,
-          bodySite: selectedScan.region,
-          createdAt: selectedScan.createdAt,
-        });
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(objectUrl);
-        toast.success("Đã tải audio từ backend.");
-      } catch (error) {
-        toast.error(
-          toVietnameseErrorMessage(error, "Không thể tải audio. Vui lòng đăng nhập lại."),
-        );
-      }
+    if (!selectedScan || !canManageScans || !selectedScan.audioUrl || isDownloading) return;
+    if (browserIsOffline()) {
+      setActionFailure(describeFailure(null, "Không thể kết nối backend."));
+      setRetryableAction("download");
       return;
     }
 
-    toast.error("Lượt đo này chưa có audio để tải xuống");
+    setIsDownloading(true);
+    setActionFailure(null);
+    setRetryableAction(null);
+    try {
+      const blob = await smartHealthApi.downloadScanAudio(selectedScan.audioUrl);
+      if (blob.size === 0) throw new Error("Backend trả về file audio rỗng.");
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = buildSmartHealthFilename({
+        kind: "scan-audio",
+        ext: blob.type.includes("wav") ? "wav" : "bin",
+        scanId: selectedScan.id,
+        patientName: selectedScan.patientName || undefined,
+        bodySite: selectedScan.bodySite || undefined,
+        createdAt: selectedScan.createdAtRaw || undefined,
+      });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast.success("Đã tải file audio do backend cung cấp.");
+    } catch (error) {
+      const failure = describeFailure(error, "Không thể tải file audio từ backend.");
+      setActionFailure(failure);
+      setRetryableAction(failure.kind === "forbidden" ? null : "download");
+      toast.error(failure.message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const retryFailedAction = () => {
+    if (retryableAction === "reprocess") void rerunAI();
+    if (retryableAction === "download") void downloadAudio();
   };
 
   return (
     <div className="relative flex h-full flex-col space-y-6">
-      <ExportDataDialog open={exportOpen} onOpenChange={setExportOpen} />
-      <PageHeader
-        eyebrow="AI processing"
-        title="Lượt đo & AI Processing"
-        description="Theo dõi scan session, audio file, chất lượng tín hiệu, trạng thái xử lý và kết quả AI."
-        action={
-          <motion.button
-            onClick={() => setExportOpen(true)}
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.97 }}
-            className="group flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-muted"
-          >
-            <Download className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
-            Xuất dữ liệu
-          </motion.button>
-        }
-      />
+      {canExportData && <ExportDataDialog open={exportOpen} onOpenChange={setExportOpen} />}
 
-      {backendError && (
-        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
-          Chưa tải được dữ liệu lượt đo từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị
-          sai: {backendError}
+      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+            Theo dõi xử lý
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl">
+            Lượt đo và chất lượng tín hiệu
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Trạng thái, chỉ số và kết quả phân tích chất lượng tín hiệu chỉ phản ánh dữ liệu backend
+            đã xác nhận.
+          </p>
         </div>
+        {canExportData && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setExportOpen(true)}
+            className="min-h-11 motion-reduce:transition-none"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Xuất dữ liệu
+          </Button>
+        )}
+      </header>
+
+      {loadFailure && (
+        <LoadFailurePanel
+          failure={loadFailure}
+          onRetry={reloadScans}
+          hasStaleData={scans.length > 0}
+        />
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MetricCard
           icon={Activity}
-          label="Lượt đo đã tải"
-          value={String(scans.length)}
+          label="Lượt đo"
+          value={metricsUnavailable ? "—" : String(scans.length)}
           tone="primary"
         />
         <MetricCard
           icon={CheckCircle2}
-          label="AI hoàn tất"
-          value={String(counts.completed)}
+          label="Hoàn tất"
+          value={metricsUnavailable ? "—" : String(counts.completed)}
           tone="success"
         />
         <MetricCard
           icon={BrainCircuit}
-          label="Đang xử lý"
-          value={String(counts.processing)}
+          label="Đang trong luồng xử lý"
+          value={metricsUnavailable ? "—" : String(pendingCount)}
           tone="warning"
         />
         <MetricCard
           icon={AlertTriangle}
-          label="Job thất bại"
-          value={String(counts.failed)}
+          label="Cần chú ý"
+          value={metricsUnavailable ? "—" : String(attentionCount)}
           tone="error"
         />
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as ScanFilter)}
+        className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+      >
         <div className="flex flex-col gap-4 border-b border-border bg-muted/20 p-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => setActiveTab(tab.value)}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-all ${
-                  activeTab === tab.value
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-card hover:text-foreground"
-                }`}
-              >
-                {tab.label}
-                <span className="ml-2 rounded-full bg-background/80 px-2 py-0.5 text-xs text-foreground">
-                  {counts[tab.value]}
-                </span>
-              </button>
-            ))}
+          <div className="overflow-x-auto pb-1 scrollbar-subtle">
+            <TabsList
+              aria-label="Lọc lượt đo theo trạng thái"
+              className="h-auto min-h-11 w-max justify-start gap-1 bg-muted/70"
+            >
+              {STATUS_TABS.map((tab) => {
+                const count = tab.value === "all" ? filteredScans.length : counts[tab.value];
+                return (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className="min-h-11 motion-reduce:transition-none"
+                  >
+                    {tab.label}
+                    <span className="ml-2 rounded-full bg-background/80 px-2 py-0.5 text-xs text-foreground">
+                      {count}
+                    </span>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <label htmlFor="scan-search" className="sr-only">
+                Tìm lượt đo
+              </label>
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
               <input
-                type="text"
-                placeholder="Tìm Scan ID, bệnh nhân, thiết bị..."
+                id="scan-search"
+                type="search"
+                placeholder="Tìm ID, bệnh nhân, thiết bị..."
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                className="w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                className="min-h-11 w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               />
             </div>
-            <button
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => setSearchTerm("")}
               disabled={!searchTerm.trim()}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 motion-reduce:transition-none"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
               Xóa tìm
-            </button>
+            </Button>
           </div>
         </div>
 
-        <motion.div
-          variants={listMotion}
-          initial="hidden"
-          animate="show"
-          className="overflow-x-auto scrollbar-subtle"
+        <TabsContent
+          value={activeTab}
+          forceMount
+          className="m-0 flex-1 overflow-x-auto scrollbar-subtle"
         >
-          <table className="data-table w-full whitespace-nowrap text-left text-sm">
+          <table
+            className="data-table w-full whitespace-nowrap text-left text-sm"
+            aria-busy={isLoading}
+          >
+            <caption className="sr-only">
+              Danh sách lượt đo được tải từ backend theo trạng thái đã chọn
+            </caption>
             <thead>
               <tr>
-                <th className="px-5 py-3">Scan ID</th>
-                <th className="px-5 py-3">Bệnh nhân</th>
-                <th className="px-5 py-3">Bác sĩ</th>
-                <th className="px-5 py-3">Thiết bị</th>
-                <th className="px-5 py-3">Vùng nghe</th>
-                <th className="px-5 py-3">Thời lượng</th>
-                <th className="px-5 py-3">Audio file</th>
-                <th className="px-5 py-3">Processing status</th>
-                <th className="px-5 py-3">Model version</th>
-                <th className="px-5 py-3">Confidence</th>
-                <th className="px-5 py-3">Thời gian tạo</th>
-                <th className="sticky right-0 bg-muted px-5 py-3 text-right">Hành động</th>
+                <th scope="col" className="px-5 py-3">
+                  Scan ID
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Bệnh nhân
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Thiết bị
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Chế độ
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Vị trí đo
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Thời lượng
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Audio
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Trạng thái
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Tin cậy phân tích
+                </th>
+                <th scope="col" className="px-5 py-3">
+                  Thời gian tạo
+                </th>
+                <th scope="col" className="sticky right-0 bg-muted px-5 py-3 text-right">
+                  Hành động
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((scan) => (
-                <motion.tr key={scan.id} variants={itemMotion}>
+                <tr key={scan.id}>
                   <td className="px-5 py-4 font-mono text-xs font-semibold text-primary">
                     {scan.id}
                   </td>
-                  <td className="px-5 py-4 font-medium text-foreground">{scan.patient}</td>
-                  <td className="px-5 py-4 text-muted-foreground">{scan.doctor}</td>
-                  <td className="px-5 py-4 font-mono text-xs">{scan.device}</td>
                   <td className="px-5 py-4">
-                    <span className="inline-flex items-center gap-2 rounded-md bg-muted px-2 py-1 text-xs">
-                      <Stethoscope className="h-3.5 w-3.5 text-muted-foreground" />
-                      {scan.region}
+                    <div className="font-medium text-foreground">
+                      {scan.patientName || "Chưa có tên"}
+                    </div>
+                    {scan.patientId && (
+                      <div className="mt-1 font-mono text-xs text-muted-foreground">
+                        {scan.patientId}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-5 py-4 font-mono text-xs text-muted-foreground">
+                    {scan.deviceId || "Chưa có dữ liệu"}
+                  </td>
+                  <td className="px-5 py-4 text-muted-foreground">
+                    {scan.mode || "Chưa có dữ liệu"}
+                  </td>
+                  <td className="px-5 py-4">
+                    {scan.bodySite ? (
+                      <span className="inline-flex items-center gap-2 rounded-md bg-muted px-2 py-1 text-xs">
+                        <Stethoscope
+                          className="h-3.5 w-3.5 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                        {scan.bodySite}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Chưa có dữ liệu</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-4 text-muted-foreground">
+                    {scan.duration || "Chưa có dữ liệu"}
+                  </td>
+                  <td className="px-5 py-4">
+                    <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                      <FileAudio className="h-4 w-4" aria-hidden="true" />
+                      {scan.audioUrl ? "Backend đã xác nhận" : "Chưa có"}
                     </span>
                   </td>
-                  <td className="px-5 py-4 text-muted-foreground">{scan.duration}</td>
-                  <td className="px-5 py-4">
-                    <span className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground">
-                      <FileAudio className="h-4 w-4 text-primary" />
-                      {scan.audioFile}
-                    </span>
+                  <td className="px-5 py-4">{renderStatus(scan.status, scan.rawStatus)}</td>
+                  <td className="px-5 py-4 text-muted-foreground">
+                    {formatSmartHealthAiConfidence(scan.confidence)}
                   </td>
-                  <td className="px-5 py-4">{renderStatus(scan.status)}</td>
-                  <td className="px-5 py-4 text-muted-foreground">{scan.model}</td>
-                  <td className="px-5 py-4">
-                    {scan.confidence ? `${scan.confidence}%` : "Đang chờ"}
+                  <td className="px-5 py-4 text-muted-foreground">
+                    {scan.createdAt || "Chưa có dữ liệu"}
                   </td>
-                  <td className="px-5 py-4 text-muted-foreground">{scan.createdAt}</td>
                   <td className="sticky right-0 bg-card px-5 py-4 text-right shadow-[-12px_0_16px_-18px_rgba(15,23,42,0.45)]">
                     <button
+                      type="button"
                       onClick={() => setSelectedScan(scan)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-                      aria-label="Xem chi tiết lượt đo"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                      aria-label={`Xem chi tiết lượt đo ${scan.id}`}
                     >
-                      <Play className="h-4 w-4" />
+                      <Eye className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </td>
-                </motion.tr>
+                </tr>
               ))}
-              {isLoading && (
+              {isLoading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-5 py-10 text-center text-sm text-muted-foreground">
-                    Đang tải dữ liệu...
+                  <td
+                    colSpan={11}
+                    className="px-5 py-10 text-center text-sm text-muted-foreground"
+                    role="status"
+                  >
+                    Đang tải dữ liệu lượt đo từ backend...
                   </td>
                 </tr>
               )}
-              {!isLoading && rows.length === 0 && (
+              {!isLoading && rows.length === 0 && !loadFailure && (
                 <tr>
-                  <td colSpan={12} className="px-5 py-10 text-center text-sm text-muted-foreground">
-                    Không có lượt đo phù hợp trong tab này.
+                  <td colSpan={11} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                    Không có lượt đo phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </motion.div>
-      </div>
+        </TabsContent>
+      </Tabs>
 
-      <AnimatePresence>
+      <Dialog
+        open={selectedScan !== null}
+        onOpenChange={(open) => {
+          if (!open && !actionPending) setSelectedScan(null);
+        }}
+      >
         {selectedScan && (
-          <>
-            <motion.div
-              key="scan-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedScan(null)}
-              className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[1px]"
-            />
-            <motion.aside
-              key="scan-drawer"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 320, damping: 34 }}
-              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[520px] flex-col border-l border-border bg-card shadow-2xl"
-            >
-              <div className="border-b border-border p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="font-mono text-xs font-semibold text-primary">
-                      {selectedScan.id}
-                    </div>
-                    <h2 className="mt-1 text-lg font-semibold text-foreground">
-                      {selectedScan.patient} / {selectedScan.region}
-                    </h2>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {renderStatus(selectedScan.status)}
-                      <StatusBadge label={selectedScan.model} tone="info" />
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedScan(null)}
-                    className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label="Đóng chi tiết lượt đo"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
+          <DialogContent
+            onEscapeKeyDown={(event) => {
+              if (actionPending) event.preventDefault();
+            }}
+            onPointerDownOutside={(event) => {
+              if (actionPending) event.preventDefault();
+            }}
+            className="left-auto right-0 top-0 flex h-dvh w-full max-w-[560px] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-border bg-card p-0 shadow-2xl motion-reduce:animate-none motion-reduce:transition-none sm:rounded-none [&>button]:hidden"
+          >
+            <DialogHeader className="border-b border-border p-5 pr-16 text-left">
+              <div className="font-mono text-xs font-semibold text-primary">{selectedScan.id}</div>
+              <DialogTitle className="mt-1 leading-snug">
+                {selectedScan.patientName || "Chi tiết lượt đo"}
+                {selectedScan.bodySite ? ` / ${selectedScan.bodySite}` : ""}
+              </DialogTitle>
+              <DialogDescription>
+                Chi tiết chỉ gồm các trường backend đã trả về cho lượt đo này.
+              </DialogDescription>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {renderStatus(selectedScan.status, selectedScan.rawStatus)}
               </div>
+              <DialogClose asChild>
+                <button
+                  type="button"
+                  disabled={actionPending}
+                  className="absolute right-3 top-3 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                  aria-label="Đóng chi tiết lượt đo"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </DialogClose>
+            </DialogHeader>
 
-              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-                <WaveformPreview />
-
-                <section className="grid grid-cols-2 gap-3">
-                  <InfoTile label="Audio file" value={selectedScan.audioFile} />
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+              <section aria-labelledby="scan-source-heading">
+                <h3 id="scan-source-heading" className="mb-3 text-sm font-semibold text-foreground">
+                  Nguồn lượt đo
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <InfoTile label="Patient ID" value={selectedScan.patientId} />
+                  <InfoTile label="Thiết bị" value={selectedScan.deviceId} />
+                  <InfoTile label="Chế độ" value={selectedScan.mode} />
+                  <InfoTile label="Vị trí đo" value={selectedScan.bodySite} />
                   <InfoTile label="Thời lượng" value={selectedScan.duration} />
-                  <InfoTile label="Thiết bị" value={selectedScan.device} />
-                  <InfoTile label="Bác sĩ" value={selectedScan.doctor} />
-                </section>
-
-                <section className="rounded-xl border border-border bg-muted/30 p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">Quality check</h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    <InfoTile label="Clip count" value={String(selectedScan.clipCount)} compact />
-                    <InfoTile label="Signal level" value={selectedScan.signalLevel} compact />
-                    <InfoTile label="Noise level" value={selectedScan.noiseLevel} compact />
-                  </div>
-                </section>
-
-                <section className="rounded-xl border border-border bg-card p-4">
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <BrainCircuit className="h-4 w-4 text-primary" />
-                    Kết quả AI
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">{selectedScan.result}</p>
-                  <div className="mt-3 text-sm">
-                    Confidence:{" "}
-                    <span className="font-semibold text-foreground">
-                      {selectedScan.confidence ? `${selectedScan.confidence}%` : "Chưa có kết quả"}
-                    </span>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-4 text-sm font-semibold text-foreground">Job retry history</h3>
-                  <Timeline
-                    items={[
-                      {
-                        title: "Tạo scan session",
-                        time: selectedScan.createdAt,
-                        description: "Metadata được ghi vào Firestore.",
-                        tone: "primary",
-                      },
-                      {
-                        title: "Tải audio lên storage",
-                        time: "Sau ghi âm",
-                        description: selectedScan.audioFile,
-                        tone: selectedScan.status === "recording" ? "warning" : "success",
-                      },
-                      {
-                        title:
-                          selectedScan.status === "failed"
-                            ? "AI job thất bại"
-                            : "AI job được xử lý",
-                        time: "Hàng đợi AI",
-                        description: selectedScan.result,
-                        tone: selectedScan.status === "failed" ? "error" : "success",
-                      },
-                    ]}
+                  <InfoTile
+                    label="Trạng thái backend"
+                    value={selectedScan.rawStatus || selectedScan.status}
                   />
-                </section>
-              </div>
+                </div>
+              </section>
 
-              <div className="grid grid-cols-2 gap-3 border-t border-border bg-muted/30 p-5">
-                <button
-                  onClick={rerunAI}
-                  disabled={isReprocessing}
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              <section
+                className="rounded-xl border border-border bg-muted/25 p-4"
+                aria-labelledby="scan-audio-heading"
+              >
+                <h3
+                  id="scan-audio-heading"
+                  className="flex items-center gap-2 text-sm font-semibold text-foreground"
                 >
-                  <RefreshCw className={`h-4 w-4 ${isReprocessing ? "animate-spin" : ""}`} />
-                  {isReprocessing ? "Đang chạy AI" : "Chạy lại AI"}
-                </button>
-                <button
-                  onClick={downloadAudio}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                  <FileAudio className="h-4 w-4 text-primary" aria-hidden="true" />
+                  Dữ liệu âm thanh
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {selectedScan.audioUrl
+                    ? "Backend đã cung cấp đường dẫn audio được bảo vệ cho lượt đo này."
+                    : "Backend chưa xác nhận audio khả dụng; giao diện không tự tạo đường dẫn hoặc waveform thay thế."}
+                </p>
+              </section>
+
+              <section aria-labelledby="scan-quality-heading">
+                <h3
+                  id="scan-quality-heading"
+                  className="mb-3 text-sm font-semibold text-foreground"
                 >
-                  <Download className="h-4 w-4" />
-                  Tải audio
-                </button>
+                  Chỉ số tín hiệu backend
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <InfoTile label="RMS" value={formatMeasurement(selectedScan.rms)} compact />
+                  <InfoTile label="Peak" value={formatMeasurement(selectedScan.peak)} compact />
+                  <InfoTile
+                    label="Mức tín hiệu"
+                    value={formatMeasurement(selectedScan.levelPercent, "%")}
+                    compact
+                  />
+                </div>
+              </section>
+
+              <section
+                className="rounded-xl border border-border bg-card p-4"
+                aria-labelledby="scan-ai-heading"
+              >
+                <h3
+                  id="scan-ai-heading"
+                  className="flex items-center gap-2 text-sm font-semibold text-foreground"
+                >
+                  <BrainCircuit className="h-4 w-4 text-primary" aria-hidden="true" />
+                  Kết quả phân tích chất lượng tín hiệu
+                </h3>
+                {selectedScan.aiSummary ||
+                selectedScan.aiLabel ||
+                selectedScan.confidence !== null ? (
+                  <div className="mt-3 space-y-3 text-sm">
+                    {selectedScan.aiSummary && (
+                      <p className="leading-6 text-muted-foreground">{selectedScan.aiSummary}</p>
+                    )}
+                    {selectedScan.aiLabel && (
+                      <InfoTile
+                        label="Nhãn chất lượng từ backend"
+                        value={selectedScan.aiLabel}
+                        compact
+                      />
+                    )}
+                    <div>
+                      Độ tin cậy phân tích:{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatSmartHealthAiConfidence(selectedScan.confidence)}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    Backend chưa cung cấp kết quả phân tích chất lượng tín hiệu cho lượt đo này.
+                  </p>
+                )}
+                <p className="mt-3 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
+                  Bộ quy tắc này chỉ đánh giá chất lượng tín hiệu, không phải chẩn đoán và không
+                  thay thế kết luận của người có chuyên môn.
+                </p>
+              </section>
+
+              {selectedScan.doctorNotes && (
+                <section aria-labelledby="scan-note-heading">
+                  <h3 id="scan-note-heading" className="mb-2 text-sm font-semibold text-foreground">
+                    Ghi chú chuyên môn
+                  </h3>
+                  <p className="rounded-lg border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                    {selectedScan.doctorNotes}
+                  </p>
+                </section>
+              )}
+
+              <section aria-labelledby="scan-time-heading">
+                <h3 id="scan-time-heading" className="mb-3 text-sm font-semibold text-foreground">
+                  Mốc thời gian backend
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <InfoTile label="Bắt đầu" value={selectedScan.startedAt} />
+                  <InfoTile label="Kết thúc" value={selectedScan.endedAt} />
+                  <InfoTile label="Tạo" value={selectedScan.createdAt} />
+                  <InfoTile label="Cập nhật" value={selectedScan.updatedAt} />
+                </div>
+              </section>
+
+              {actionFailure && (
+                <ActionFailurePanel
+                  failure={actionFailure}
+                  canRetry={retryableAction !== null}
+                  onRetry={retryFailedAction}
+                />
+              )}
+            </div>
+
+            {canManageScans && (
+              <div className="border-t border-border bg-muted/25 p-5">
+                {selectedScan.audioUrl ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void rerunAI()}
+                      disabled={!canReprocessSelected || actionPending}
+                      className="min-h-11 motion-reduce:transition-none"
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${isReprocessing ? "animate-spin motion-reduce:animate-none" : ""}`}
+                        aria-hidden="true"
+                      />
+                      {isReprocessing ? "Đang gửi yêu cầu" : "Phân tích lại tín hiệu"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => void downloadAudio()}
+                      disabled={actionPending}
+                      className="min-h-11 motion-reduce:transition-none"
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                      {isDownloading ? "Đang tải audio" : "Tải audio"}
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Không có thao tác audio vì backend chưa xác nhận file khả dụng.
+                  </p>
+                )}
               </div>
-            </motion.aside>
-          </>
+            )}
+          </DialogContent>
         )}
-      </AnimatePresence>
+      </Dialog>
     </div>
+  );
+}
+
+function LoadFailurePanel({
+  failure,
+  onRetry,
+  hasStaleData,
+}: {
+  failure: FailureState;
+  onRetry: () => void;
+  hasStaleData: boolean;
+}) {
+  const Icon =
+    failure.kind === "offline"
+      ? WifiOff
+      : failure.kind === "forbidden"
+        ? ShieldAlert
+        : AlertTriangle;
+  const title =
+    failure.kind === "offline"
+      ? "Ngoại tuyến"
+      : failure.kind === "forbidden"
+        ? "Không có quyền truy cập dữ liệu lượt đo"
+        : "Không thể tải dữ liệu lượt đo";
+
+  return (
+    <section
+      role="alert"
+      className="flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning/10 p-4 sm:flex-row sm:items-start sm:justify-between"
+    >
+      <div className="flex min-w-0 gap-3">
+        <Icon className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{failure.message}</p>
+          {hasStaleData && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Dữ liệu đang hiển thị là lần tải gần nhất và có thể đã cũ.
+            </p>
+          )}
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onRetry}
+        className="min-h-11 shrink-0 motion-reduce:transition-none"
+      >
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        Thử lại
+      </Button>
+    </section>
+  );
+}
+
+function ActionFailurePanel({
+  failure,
+  canRetry,
+  onRetry,
+}: {
+  failure: FailureState;
+  canRetry: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <section role="alert" className="rounded-xl border border-destructive/20 bg-destructive/10 p-4">
+      <div className="flex gap-3">
+        {failure.kind === "offline" ? (
+          <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden="true" />
+        ) : (
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden="true" />
+        )}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-foreground">
+            {failure.kind === "forbidden" ? "Không có quyền thực hiện" : "Thao tác chưa hoàn tất"}
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{failure.message}</p>
+          {canRetry && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onRetry}
+              className="mt-3 min-h-11 motion-reduce:transition-none"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Thử lại
+            </Button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -595,20 +1009,17 @@ function MetricCard({
           : "bg-primary/10 text-primary";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 shadow-sm"
-    >
-      <div className={`flex h-12 w-12 items-center justify-center rounded-full ${toneClass}`}>
-        <Icon className="h-6 w-6" />
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${toneClass}`}
+      >
+        <Icon className="h-5 w-5" aria-hidden="true" />
       </div>
-      <div>
+      <div className="min-w-0">
         <div className="text-xl font-bold text-foreground md:text-2xl">{value}</div>
-        <div className="text-sm text-muted-foreground">{label}</div>
+        <div className="text-sm leading-5 text-muted-foreground">{label}</div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -618,13 +1029,15 @@ function InfoTile({
   compact = false,
 }: {
   label: string;
-  value: string;
+  value: string | null;
   compact?: boolean;
 }) {
   return (
     <div className={`rounded-lg border border-border bg-card ${compact ? "p-3" : "p-4"}`}>
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-semibold text-foreground">{value}</div>
+      <div className="mt-1 break-words text-sm font-semibold text-foreground">
+        {value || "Chưa có dữ liệu"}
+      </div>
     </div>
   );
 }

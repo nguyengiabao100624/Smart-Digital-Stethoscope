@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" role="img" aria-labelledby="shcare-horizontal-title">
+  <title id="shcare-horizontal-title">Shcare — Smart Health Care</title>
+  <g transform="translate(2 2) scale(.94)">
+    <path d="M10 19C18 8 43 8 52 17C58 23 54 30 46 32L35 35" fill="none" stroke="#2457D6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M29 29L24 38L20 32L17 34C10 37 8 43 13 49C22 58 45 56 53 44" fill="none" stroke="#087F75" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="78" y="36" fill="#0B1F33" font-family="Manrope, sans-serif" font-size="31" font-weight="700" letter-spacing="-1.2">Shcare</text>
+  <text x="80" y="52" fill="#52677A" font-family="Source Sans 3, sans-serif" font-size="8.5" font-weight="600" letter-spacing="1.1">SMART HEALTH CARE</text>
+</svg>

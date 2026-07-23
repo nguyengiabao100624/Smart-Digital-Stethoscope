@@ -45,7 +45,7 @@ export function PaginationFooter({
         <button
           onClick={() => onPageChange(safePage - 1)}
           disabled={safePage <= 1}
-          className="px-3 py-1 border border-border rounded bg-card hover:bg-muted disabled:opacity-50 disabled:hover:bg-card"
+          className="min-h-11 px-3 py-2 border border-border rounded bg-card hover:bg-muted disabled:opacity-50 disabled:hover:bg-card"
         >
           Trước
         </button>
@@ -55,13 +55,15 @@ export function PaginationFooter({
 
           return (
             <React.Fragment key={pageNumber}>
-              {showEllipsis && <span className="px-2 py-1">...</span>}
+              {showEllipsis && (
+                <span className="inline-flex min-h-11 items-center px-2 py-2">...</span>
+              )}
               <button
                 onClick={() => onPageChange(pageNumber)}
                 className={
                   pageNumber === safePage
-                    ? "px-3 py-1 border border-border rounded bg-primary text-primary-foreground"
-                    : "px-3 py-1 border border-border rounded bg-card hover:bg-muted"
+                    ? "min-h-11 min-w-11 px-3 py-2 border border-border rounded bg-primary text-primary-foreground"
+                    : "min-h-11 min-w-11 px-3 py-2 border border-border rounded bg-card hover:bg-muted"
                 }
               >
                 {pageNumber}
@@ -72,7 +74,7 @@ export function PaginationFooter({
         <button
           onClick={() => onPageChange(safePage + 1)}
           disabled={safePage >= totalPages}
-          className="px-3 py-1 border border-border rounded bg-card hover:bg-muted disabled:opacity-50 disabled:hover:bg-card"
+          className="min-h-11 px-3 py-2 border border-border rounded bg-card hover:bg-muted disabled:opacity-50 disabled:hover:bg-card"
         >
           Sau
         </button>

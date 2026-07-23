@@ -507,8 +507,11 @@
         }
 
         const token = getMonitorToken();
-        const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/listen${token ? `?token=${encodeURIComponent(token)}` : ""}`;
-        socket = new WebSocket(wsUrl);
+        const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/listen`;
+        const protocols = token
+          ? ["shcare.realtime.v1", `shcare.bearer.${token}`]
+          : ["shcare.realtime.v1"];
+        socket = new WebSocket(wsUrl, protocols);
         socket.binaryType = "arraybuffer";
         const activeSocket = socket;
 

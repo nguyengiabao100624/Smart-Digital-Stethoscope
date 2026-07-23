@@ -9,28 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AdminRouteImport } from './routes/_admin'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminIndexRouteImport } from './routes/_admin.index'
-import { Route as AdminStorageRouteImport } from './routes/_admin.storage'
-import { Route as AdminSettingsRouteImport } from './routes/_admin.settings'
-import { Route as AdminPatientsRouteImport } from './routes/_admin.patients'
-import { Route as AdminPackagesRouteImport } from './routes/_admin.packages'
-import { Route as AdminNotificationsRouteImport } from './routes/_admin.notifications'
-import { Route as AdminDoctorsRouteImport } from './routes/_admin.doctors'
-import { Route as AdminDoctorApprovalRouteImport } from './routes/_admin.doctor-approval'
-import { Route as AdminDevicesRouteImport } from './routes/_admin.devices'
-import { Route as AdminClinicsRouteImport } from './routes/_admin.clinics'
-import { Route as AdminAuditLogRouteImport } from './routes/_admin.audit-log'
-import { Route as AdminAiMeasurementsRouteImport } from './routes/_admin.ai-measurements'
-import { Route as AdminAdminActionsRouteImport } from './routes/_admin.admin-actions'
-import { Route as AdminAdminAccountsRouteImport } from './routes/_admin.admin-accounts'
 import { Route as AdminAccountRouteImport } from './routes/_admin.account'
+import { Route as AdminAdminAccountsRouteImport } from './routes/_admin.admin-accounts'
+import { Route as AdminAdminActionsRouteImport } from './routes/_admin.admin-actions'
+import { Route as AdminAiMeasurementsRouteImport } from './routes/_admin.ai-measurements'
+import { Route as AdminAuditLogRouteImport } from './routes/_admin.audit-log'
+import { Route as AdminClinicsRouteImport } from './routes/_admin.clinics'
+import { Route as AdminDevicesRouteImport } from './routes/_admin.devices'
+import { Route as AdminDoctorApprovalRouteImport } from './routes/_admin.doctor-approval'
+import { Route as AdminDoctorsRouteImport } from './routes/_admin.doctors'
+import { Route as AdminNotificationsRouteImport } from './routes/_admin.notifications'
+import { Route as AdminPackagesRouteImport } from './routes/_admin.packages'
+import { Route as AdminPatientsRouteImport } from './routes/_admin.patients'
+import { Route as AdminSettingsRouteImport } from './routes/_admin.settings'
+import { Route as AdminStorageRouteImport } from './routes/_admin.storage'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const AdminRoute = AdminRouteImport.update({
+  id: '/_admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -38,8 +37,9 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/_admin',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -47,64 +47,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminStorageRoute = AdminStorageRouteImport.update({
-  id: '/storage',
-  path: '/storage',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminSettingsRoute = AdminSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPatientsRoute = AdminPatientsRouteImport.update({
-  id: '/patients',
-  path: '/patients',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPackagesRoute = AdminPackagesRouteImport.update({
-  id: '/packages',
-  path: '/packages',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminDoctorsRoute = AdminDoctorsRouteImport.update({
-  id: '/doctors',
-  path: '/doctors',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminDoctorApprovalRoute = AdminDoctorApprovalRouteImport.update({
-  id: '/doctor-approval',
-  path: '/doctor-approval',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminDevicesRoute = AdminDevicesRouteImport.update({
-  id: '/devices',
-  path: '/devices',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminClinicsRoute = AdminClinicsRouteImport.update({
-  id: '/clinics',
-  path: '/clinics',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminAuditLogRoute = AdminAuditLogRouteImport.update({
-  id: '/audit-log',
-  path: '/audit-log',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminAiMeasurementsRoute = AdminAiMeasurementsRouteImport.update({
-  id: '/ai-measurements',
-  path: '/ai-measurements',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminAdminActionsRoute = AdminAdminActionsRouteImport.update({
-  id: '/admin-actions',
-  path: '/admin-actions',
+const AdminAccountRoute = AdminAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminAdminAccountsRoute = AdminAdminAccountsRouteImport.update({
@@ -112,9 +57,64 @@ const AdminAdminAccountsRoute = AdminAdminAccountsRouteImport.update({
   path: '/admin-accounts',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminAccountRoute = AdminAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
+const AdminAdminActionsRoute = AdminAdminActionsRouteImport.update({
+  id: '/admin-actions',
+  path: '/admin-actions',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAiMeasurementsRoute = AdminAiMeasurementsRouteImport.update({
+  id: '/ai-measurements',
+  path: '/ai-measurements',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAuditLogRoute = AdminAuditLogRouteImport.update({
+  id: '/audit-log',
+  path: '/audit-log',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminClinicsRoute = AdminClinicsRouteImport.update({
+  id: '/clinics',
+  path: '/clinics',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDevicesRoute = AdminDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDoctorApprovalRoute = AdminDoctorApprovalRouteImport.update({
+  id: '/doctor-approval',
+  path: '/doctor-approval',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDoctorsRoute = AdminDoctorsRouteImport.update({
+  id: '/doctors',
+  path: '/doctors',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPackagesRoute = AdminPackagesRouteImport.update({
+  id: '/packages',
+  path: '/packages',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPatientsRoute = AdminPatientsRouteImport.update({
+  id: '/patients',
+  path: '/patients',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminStorageRoute = AdminStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
   getParentRoute: () => AdminRoute,
 } as any)
 
@@ -246,11 +246,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/_admin': {
+      id: '/_admin'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -260,11 +260,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_admin': {
-      id: '/_admin'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AdminRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_admin/': {
@@ -274,88 +274,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/_admin/storage': {
-      id: '/_admin/storage'
-      path: '/storage'
-      fullPath: '/storage'
-      preLoaderRoute: typeof AdminStorageRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/settings': {
-      id: '/_admin/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AdminSettingsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/patients': {
-      id: '/_admin/patients'
-      path: '/patients'
-      fullPath: '/patients'
-      preLoaderRoute: typeof AdminPatientsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/packages': {
-      id: '/_admin/packages'
-      path: '/packages'
-      fullPath: '/packages'
-      preLoaderRoute: typeof AdminPackagesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/notifications': {
-      id: '/_admin/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof AdminNotificationsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/doctors': {
-      id: '/_admin/doctors'
-      path: '/doctors'
-      fullPath: '/doctors'
-      preLoaderRoute: typeof AdminDoctorsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/doctor-approval': {
-      id: '/_admin/doctor-approval'
-      path: '/doctor-approval'
-      fullPath: '/doctor-approval'
-      preLoaderRoute: typeof AdminDoctorApprovalRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/devices': {
-      id: '/_admin/devices'
-      path: '/devices'
-      fullPath: '/devices'
-      preLoaderRoute: typeof AdminDevicesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/clinics': {
-      id: '/_admin/clinics'
-      path: '/clinics'
-      fullPath: '/clinics'
-      preLoaderRoute: typeof AdminClinicsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/audit-log': {
-      id: '/_admin/audit-log'
-      path: '/audit-log'
-      fullPath: '/audit-log'
-      preLoaderRoute: typeof AdminAuditLogRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/ai-measurements': {
-      id: '/_admin/ai-measurements'
-      path: '/ai-measurements'
-      fullPath: '/ai-measurements'
-      preLoaderRoute: typeof AdminAiMeasurementsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_admin/admin-actions': {
-      id: '/_admin/admin-actions'
-      path: '/admin-actions'
-      fullPath: '/admin-actions'
-      preLoaderRoute: typeof AdminAdminActionsRouteImport
+    '/_admin/account': {
+      id: '/_admin/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AdminAccountRouteImport
       parentRoute: typeof AdminRoute
     }
     '/_admin/admin-accounts': {
@@ -365,11 +288,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAdminAccountsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/_admin/account': {
-      id: '/_admin/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AdminAccountRouteImport
+    '/_admin/admin-actions': {
+      id: '/_admin/admin-actions'
+      path: '/admin-actions'
+      fullPath: '/admin-actions'
+      preLoaderRoute: typeof AdminAdminActionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/ai-measurements': {
+      id: '/_admin/ai-measurements'
+      path: '/ai-measurements'
+      fullPath: '/ai-measurements'
+      preLoaderRoute: typeof AdminAiMeasurementsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/audit-log': {
+      id: '/_admin/audit-log'
+      path: '/audit-log'
+      fullPath: '/audit-log'
+      preLoaderRoute: typeof AdminAuditLogRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/clinics': {
+      id: '/_admin/clinics'
+      path: '/clinics'
+      fullPath: '/clinics'
+      preLoaderRoute: typeof AdminClinicsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/devices': {
+      id: '/_admin/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof AdminDevicesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/doctor-approval': {
+      id: '/_admin/doctor-approval'
+      path: '/doctor-approval'
+      fullPath: '/doctor-approval'
+      preLoaderRoute: typeof AdminDoctorApprovalRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/doctors': {
+      id: '/_admin/doctors'
+      path: '/doctors'
+      fullPath: '/doctors'
+      preLoaderRoute: typeof AdminDoctorsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/notifications': {
+      id: '/_admin/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AdminNotificationsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/packages': {
+      id: '/_admin/packages'
+      path: '/packages'
+      fullPath: '/packages'
+      preLoaderRoute: typeof AdminPackagesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/patients': {
+      id: '/_admin/patients'
+      path: '/patients'
+      fullPath: '/patients'
+      preLoaderRoute: typeof AdminPatientsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/settings': {
+      id: '/_admin/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/storage': {
+      id: '/_admin/storage'
+      path: '/storage'
+      fullPath: '/storage'
+      preLoaderRoute: typeof AdminStorageRouteImport
       parentRoute: typeof AdminRoute
     }
   }

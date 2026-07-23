@@ -1,0 +1,87 @@
+export const shcareTokens = {
+  name: "Shcare brand foundation",
+  version: "1.1.0",
+  color: {
+    brand: {
+      ink: "#0B1F33",
+      primary: "#2457D6",
+      primaryHover: "#1D48B8",
+      primaryPressed: "#183A93",
+      accent: "#087F75",
+      accentStrong: "#066B63",
+    },
+    semantic: {
+      info: "#2563A6",
+      success: "#18794E",
+      successText: "#18794E",
+      warning: "#A15C00",
+      warningText: "#8A4F00",
+      danger: "#B4233A",
+      dangerText: "#B4233A",
+    },
+    light: {
+      background: "#F4F8FB",
+      surface: "#FFFFFF",
+      surfaceMuted: "#EAF1F5",
+      border: "#D8E3EA",
+      text: "#102A43",
+      textMuted: "#52677A",
+      focus: "#2457D6",
+    },
+    dark: {
+      background: "#071722",
+      surface: "#0D2533",
+      surfaceMuted: "#123140",
+      border: "#284653",
+      text: "#F3F8FB",
+      textMuted: "#A8BBC8",
+      focus: "#7BA7FF",
+    },
+  },
+  typography: {
+    family: {
+      brand: "Manrope, ui-sans-serif, system-ui, sans-serif",
+      product: "Source Sans 3, ui-sans-serif, system-ui, sans-serif",
+      numeric: "Source Sans 3, ui-sans-serif, system-ui, sans-serif",
+    },
+    weight: {
+      regular: 400,
+      medium: 500,
+      semibold: 600,
+      bold: 700,
+    },
+  },
+  radius: {
+    control: "8px",
+    panel: "12px",
+    dialog: "16px",
+    pill: "999px",
+  },
+  space: {
+    1: "4px",
+    2: "8px",
+    3: "12px",
+    4: "16px",
+    5: "20px",
+    6: "24px",
+    8: "32px",
+    10: "40px",
+    12: "48px",
+  },
+  motion: {
+    duration: {
+      instant: "0ms",
+      fast: "150ms",
+      standard: "200ms",
+      slow: "240ms",
+      public: "400ms",
+    },
+    easing: {
+      standard: "cubic-bezier(0.2, 0, 0, 1)",
+      exit: "cubic-bezier(0.22, 1, 0.36, 1)",
+    },
+  },
+} as const;
+
+export type ShcareTokens = typeof shcareTokens;
+export type ShcareTheme = "light" | "dark" | "system";

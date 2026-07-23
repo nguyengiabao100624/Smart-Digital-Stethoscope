@@ -2,8 +2,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { getAdminSmokeContracts } from "../src/contracts/admin-route-contract.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -179,7 +181,7 @@ async function login(page, account) {
 async function apiFetch(page, route, options = {}) {
   const method = options.method || "GET";
   const result = await page.evaluate(
-    async ({ apiBaseUrl, routePath, methodName, body, bodyBase64, contentType }) => {
+    async ({ apiBaseUrl, routePath, methodName, body, bodyBase64, contentType, extraHeaders }) => {
       const url = new URL(routePath.replace(/^\/+/, ""), `${apiBaseUrl}/`);
       const token =
         localStorage.getItem("smart_health_admin_token") ||
@@ -188,6 +190,7 @@ async function apiFetch(page, route, options = {}) {
       const headers = {
         "X-Smart-Health-Surface": "admin",
         "X-Smart-Health-Client": "web-admin-smoke",
+        ...(extraHeaders || {}),
       };
       if (token) headers.Authorization = `Bearer ${token}`;
       const init = { method: methodName, headers };
@@ -222,6 +225,7 @@ async function apiFetch(page, route, options = {}) {
       body: options.body,
       bodyBase64: options.bodyBase64,
       contentType: options.contentType,
+      extraHeaders: options.headers,
     },
   );
 
@@ -517,6 +521,7 @@ async function exerciseAdminMutations(page, state) {
   const packageId = `pkg_${runKey}`;
   const packageResult = await apiFetch(page, "/admin/packages", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:package:create` },
     body: {
       id: packageId,
       name: `Admin Smoke Package ${runId}`,
@@ -540,6 +545,7 @@ async function exerciseAdminMutations(page, state) {
     `/admin/packages/${encodeURIComponent(state.packageId)}`,
     {
       method: "PATCH",
+      headers: { "Idempotency-Key": `${runId}:package:update` },
       body: {
         name: `Admin Smoke Package ${runId} updated`,
         price: 2000,
@@ -585,6 +591,7 @@ async function exerciseAdminMutations(page, state) {
       deviceId,
       name: `Admin smoke device ${runId}`,
       organizationId: state.clinicId,
+      deviceSecret: randomBytes(48).toString("base64url"),
     },
   });
   state.deviceId = deviceResult.payload?.device?.id || deviceId;
@@ -658,17 +665,24 @@ async function exerciseAdminMutations(page, state) {
 
   const notificationResult = await apiFetch(page, "/notifications", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:notification-campaign:create` },
     body: {
       title: `Admin smoke notification ${runId}`,
       message: "Controlled Web Admin mutation smoke notification.",
       type: "info",
-      channel: "in_app",
-      userId: user.id,
-      organizationId: state.clinicId,
+      audience: {
+        type: "users",
+        workspaceId: state.clinicId,
+        userIds: [state.adminUserId],
+      },
+      channels: ["in_app"],
     },
   });
   state.notificationId = notificationResult.payload?.notification?.id;
   if (!state.notificationId) throw new Error("notification create response did not include id");
+  if (notificationResult.payload?.campaign?.recipientCount !== 1) {
+    throw new Error("notification campaign response did not confirm one recipient");
+  }
 
   const notificationRead = await apiFetch(
     page,
@@ -679,6 +693,7 @@ async function exerciseAdminMutations(page, state) {
   const bucketId = `bucket_${runKey}`.slice(0, 63);
   const bucketResult = await apiFetch(page, "/admin/storage-buckets", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:storage-bucket:create` },
     body: {
       id: bucketId,
       name: `Admin smoke bucket ${runId}`,
@@ -818,6 +833,7 @@ async function cleanup(page, state, cleanupResults) {
   if (state.storageBucketId) {
     await apiFetch(page, `/admin/storage-buckets/${encodeURIComponent(state.storageBucketId)}`, {
       method: "DELETE",
+      headers: { "Idempotency-Key": `${runId}:storage-bucket:delete` },
       allowFailure: true,
     })
       .then((result) => {
@@ -834,19 +850,22 @@ async function cleanup(page, state, cleanupResults) {
   }
 
   if (state.deviceId) {
-    await apiFetch(page, `/devices/${encodeURIComponent(state.deviceId)}`, {
-      method: "DELETE",
+    await apiFetch(page, `/devices/${encodeURIComponent(state.deviceId)}/revoke`, {
+      method: "POST",
       allowFailure: true,
     })
       .then((result) => {
         cleanupResults.push({
-          target: "device",
+          target: "device revoke",
           ok: result.ok || result.status === 404,
           status: result.status,
+          retainedForAudit: result.ok,
         });
         state.deviceId = "";
       })
-      .catch((error) => cleanupResults.push({ target: "device", ok: false, error: error.message }));
+      .catch((error) =>
+        cleanupResults.push({ target: "device revoke", ok: false, error: error.message }),
+      );
   }
 
   if (state.patientId) {
@@ -901,24 +920,6 @@ async function cleanup(page, state, cleanupResults) {
       );
   }
 
-  if (state.packageId) {
-    await apiFetch(page, `/admin/packages/${encodeURIComponent(state.packageId)}`, {
-      method: "DELETE",
-      allowFailure: true,
-    })
-      .then((result) => {
-        cleanupResults.push({
-          target: "package",
-          ok: result.ok || result.status === 404,
-          status: result.status,
-        });
-        state.packageId = "";
-      })
-      .catch((error) =>
-        cleanupResults.push({ target: "package", ok: false, error: error.message }),
-      );
-  }
-
   if (state.clinicId) {
     await apiFetch(page, `/admin/clinics/${encodeURIComponent(state.clinicId)}`, {
       method: "DELETE",
@@ -934,6 +935,26 @@ async function cleanup(page, state, cleanupResults) {
       })
       .catch((error) =>
         cleanupResults.push({ target: "workspace", ok: false, error: error.message }),
+      );
+  }
+
+  if (state.packageId) {
+    await apiFetch(page, `/admin/packages/${encodeURIComponent(state.packageId)}`, {
+      method: "DELETE",
+      headers: { "Idempotency-Key": `${runId}:package:archive` },
+      allowFailure: true,
+    })
+      .then((result) => {
+        cleanupResults.push({
+          target: "package archive",
+          ok: result.ok || result.status === 404,
+          status: result.status,
+          retainedForAudit: result.ok,
+        });
+        state.packageId = "";
+      })
+      .catch((error) =>
+        cleanupResults.push({ target: "package archive", ok: false, error: error.message }),
       );
   }
 }
@@ -979,22 +1000,9 @@ async function main() {
     const mutations = await exerciseAdminMutations(page, state);
 
     const routeChecks = [];
-    for (const [href, label] of [
-      ["/", "overview"],
-      ["/account", "account settings"],
-      ["/devices", "devices"],
-      ["/patients", "patients"],
-      ["/doctors", "doctors"],
-      ["/doctor-approval", "doctor approval"],
-      ["/ai-measurements", "ai measurements"],
-      ["/clinics", "clinics"],
-      ["/packages", "packages"],
-      ["/notifications", "notifications"],
-      ["/storage", "storage"],
-      ["/settings", "settings"],
-      ["/admin-accounts", "admin accounts"],
-      ["/audit-log", "audit log"],
-    ]) {
+    for (const contract of getAdminSmokeContracts("admin")) {
+      const href = contract.path;
+      const label = contract.smokeId;
       const routeCheck = await visitRoute(page, href, label);
       try {
         if (href === "/account") {

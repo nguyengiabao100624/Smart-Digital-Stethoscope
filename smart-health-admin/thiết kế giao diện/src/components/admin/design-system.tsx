@@ -1,5 +1,5 @@
 import React from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { pageMotion } from "./motion-presets";
@@ -15,9 +15,12 @@ export function PageHeader({
   description: string;
   action?: React.ReactNode;
 }) {
+  const shouldReduceMotion = useReducedMotion();
   return (
     <motion.div
-      {...pageMotion}
+      initial={shouldReduceMotion ? false : pageMotion.initial}
+      animate={pageMotion.animate}
+      transition={shouldReduceMotion ? { duration: 0 } : pageMotion.transition}
       className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
     >
       <div className="min-w-0">
@@ -43,12 +46,13 @@ export function AnimatedCard({
   className?: string;
   delay?: number;
 }) {
+  const shouldReduceMotion = useReducedMotion();
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.26, delay, ease: "easeOut" }}
-      whileHover={{ y: -2 }}
+      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.26, delay, ease: "easeOut" }}
+      whileHover={shouldReduceMotion ? undefined : { y: -2 }}
       className={cn("rounded-xl border border-border bg-card shadow-sm", className)}
     >
       {children}
@@ -57,8 +61,8 @@ export function AnimatedCard({
 }
 
 const badgeTone = {
-  online: "border-success/20 bg-success/10 text-success",
-  success: "border-success/20 bg-success/10 text-success",
+  online: "border-success/25 bg-success/10 text-[#12613D] dark:text-success",
+  success: "border-success/25 bg-success/10 text-[#12613D] dark:text-success",
   warning: "border-warning/25 bg-warning/10 text-[#B45309]",
   error: "border-destructive/20 bg-destructive/10 text-destructive",
   info: "border-primary/20 bg-primary/10 text-primary",
@@ -88,7 +92,7 @@ export function PulseDot({
       {tone !== "muted" && (
         <span
           className={cn(
-            "absolute inline-flex h-full w-full animate-ping rounded-full opacity-40",
+            "absolute inline-flex h-full w-full animate-ping rounded-full opacity-40 motion-reduce:animate-none",
             color,
           )}
         />
@@ -183,6 +187,7 @@ export function Timeline({
 }
 
 export function WaveformPreview({ compact = false }: { compact?: boolean }) {
+  const shouldReduceMotion = useReducedMotion();
   const bars = [
     34, 52, 28, 64, 44, 78, 36, 58, 82, 46, 68, 32, 74, 54, 88, 42, 60, 30, 72, 50, 84, 38, 56, 66,
   ];
@@ -202,15 +207,19 @@ export function WaveformPreview({ compact = false }: { compact?: boolean }) {
         {bars.map((height, index) => (
           <motion.span
             key={index}
-            initial={{ height: 8, opacity: 0.35 }}
+            initial={shouldReduceMotion ? false : { height: 8, opacity: 0.35 }}
             animate={{ height: `${height}%`, opacity: 1 }}
-            transition={{
-              duration: 0.7,
-              repeat: Infinity,
-              repeatType: "mirror",
-              delay: index * 0.035,
-              ease: "easeInOut",
-            }}
+            transition={
+              shouldReduceMotion
+                ? { duration: 0 }
+                : {
+                    duration: 0.7,
+                    repeat: Infinity,
+                    repeatType: "mirror",
+                    delay: index * 0.035,
+                    ease: "easeInOut",
+                  }
+            }
             className="w-full rounded-full bg-gradient-to-t from-[#00A896] to-[#0EA5E9]"
           />
         ))}

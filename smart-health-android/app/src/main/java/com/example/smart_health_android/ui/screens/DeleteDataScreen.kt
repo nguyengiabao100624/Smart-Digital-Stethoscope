@@ -35,7 +35,7 @@ fun DeleteDataScreen(onNavigateBack: () -> Unit) {
     val dataItems = listOf(
         "Hồ sơ bệnh án và lịch sử khám",
         "Tất cả bản ghi âm thanh (PCG/Phổi)",
-        "Báo cáo phân tích từ AI",
+        "Kết quả phân tích chất lượng tín hiệu",
         "Thiết lập thiết bị & thông tin cá nhân"
     )
 

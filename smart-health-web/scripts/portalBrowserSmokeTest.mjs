@@ -4,15 +4,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import {
+  canAccessRoute,
+  routeContracts,
+  routePath,
+} from "../src/app/contracts/route-contract.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(repoRoot, "..");
 
-const siteUrl = (process.env.SMART_HEALTH_WEB_URL || "https://shcare.web.app").replace(
-  /\/+$/,
-  "",
-);
+const siteUrl = (
+  process.env.SMART_HEALTH_WEB_URL || "https://shcare.web.app"
+).replace(/\/+$/, "");
 const credentialsPath =
   process.env.SMOKE_CREDENTIALS_FILE ||
   path.join(
@@ -39,8 +43,10 @@ const watchPatterns = [
   "/api/portal/monitoring",
   "/api/portal/staff",
   "/api/portal/settings",
+  "/api/portal/billing",
   "/api/portal/reports",
   "/api/portal/audit-log",
+  "/api/v1/exports",
   "/api/share-targets",
 ];
 
@@ -51,9 +57,13 @@ function readSmokeAccount() {
     );
   }
   const credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
-  const account = (credentials.accounts || []).find((item) => item.key === accountKey);
+  const account = (credentials.accounts || []).find(
+    (item) => item.key === accountKey,
+  );
   if (!account?.email || !account?.password) {
-    throw new Error(`Smoke credentials file is missing the ${accountKey} account.`);
+    throw new Error(
+      `Smoke credentials file is missing the ${accountKey} account.`,
+    );
   }
   return account;
 }
@@ -62,7 +72,10 @@ function sanitizeUrl(value) {
   try {
     const url = new URL(value);
     for (const key of [...url.searchParams.keys()]) {
-      if (key.toLowerCase().includes("token") || key.toLowerCase().includes("key")) {
+      if (
+        key.toLowerCase().includes("token") ||
+        key.toLowerCase().includes("key")
+      ) {
         url.searchParams.set(key, "[redacted]");
       }
     }
@@ -75,7 +88,9 @@ function sanitizeUrl(value) {
 function redactedHeaders(headers) {
   const next = {};
   for (const [key, value] of Object.entries(headers || {})) {
-    next[key] = sensitiveHeaderNames.has(key.toLowerCase()) ? "[redacted]" : value;
+    next[key] = sensitiveHeaderNames.has(key.toLowerCase())
+      ? "[redacted]"
+      : value;
   }
   return next;
 }
@@ -83,6 +98,12 @@ function redactedHeaders(headers) {
 async function waitSettled(page) {
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(700);
+}
+
+async function selectRadixOption(page, triggerSelector, optionName) {
+  const trigger = page.locator(triggerSelector);
+  await trigger.click();
+  await page.getByRole("option", { name: optionName, exact: true }).click();
 }
 
 async function assertNoPortalError(page, label) {
@@ -101,15 +122,27 @@ async function assertNoPortalError(page, label) {
 }
 
 async function verifyPopoverLayer(page, triggerSelector, label) {
-  await page.waitForSelector(".clinical-popover", { state: "hidden", timeout: 2_000 }).catch(() => undefined);
+  await page
+    .waitForSelector(".clinical-popover", { state: "hidden", timeout: 2_000 })
+    .catch(() => undefined);
   await page.locator(triggerSelector).click();
-  await page.waitForSelector(".clinical-popover", { state: "visible", timeout: 10_000 });
+  await page.waitForSelector(".clinical-popover", {
+    state: "visible",
+    timeout: 10_000,
+  });
   const result = await page.evaluate(() => {
-    const popovers = [...document.querySelectorAll(".clinical-popover")].filter((item) => {
-      const rect = item.getBoundingClientRect();
-      const style = getComputedStyle(item);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.opacity !== "0";
-    });
+    const popovers = [...document.querySelectorAll(".clinical-popover")].filter(
+      (item) => {
+        const rect = item.getBoundingClientRect();
+        const style = getComputedStyle(item);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.visibility !== "hidden" &&
+          style.opacity !== "0"
+        );
+      },
+    );
     const popover = popovers.at(-1);
     const filterPanel = [...document.querySelectorAll(".glass-panel")].find(
       (item) => item.getBoundingClientRect().top > 50,
@@ -124,16 +157,25 @@ async function verifyPopoverLayer(page, triggerSelector, label) {
         y: Math.min(rect.bottom - 24, rect.top + rect.height / 2),
       },
       { x: rect.right - 24, y: rect.bottom - 24 },
-    ].filter((point) => point.x >= 0 && point.y >= 0 && point.x < innerWidth && point.y < innerHeight);
+    ].filter(
+      (point) =>
+        point.x >= 0 &&
+        point.y >= 0 &&
+        point.x < innerWidth &&
+        point.y < innerHeight,
+    );
     const hits = points.map((point) => {
       const hit = document.elementFromPoint(point.x, point.y);
       return {
         point,
         inside: Boolean(hit && popover.contains(hit)),
         tag: hit?.tagName || "",
-        className: hit instanceof Element ? String(hit.getAttribute("class") || "") : "",
+        className:
+          hit instanceof Element ? String(hit.getAttribute("class") || "") : "",
       };
     });
+    const backdropFilter = popoverStyle.backdropFilter || "";
+    const webkitBackdropFilter = popoverStyle.webkitBackdropFilter || "";
     return {
       ok: hits.length > 0 && hits.every((hit) => hit.inside),
       rect: {
@@ -145,13 +187,14 @@ async function verifyPopoverLayer(page, triggerSelector, label) {
         height: rect.height,
       },
       zIndex: popoverStyle.zIndex,
-      backdropFilter:
-        popoverStyle.backdropFilter ||
-        popoverStyle.webkitBackdropFilter ||
-        "",
+      backdropFilter,
+      webkitBackdropFilter,
       background: popoverStyle.background,
-      topbarZIndex: getComputedStyle(document.querySelector(".clinical-topbar")).zIndex,
-      contentZIndex: getComputedStyle(document.querySelector(".clinical-content")).zIndex,
+      topbarZIndex: getComputedStyle(document.querySelector(".clinical-topbar"))
+        .zIndex,
+      contentZIndex: getComputedStyle(
+        document.querySelector(".clinical-content"),
+      ).zIndex,
       filterTop: filterPanel ? filterPanel.getBoundingClientRect().top : null,
       hits,
     };
@@ -159,11 +202,21 @@ async function verifyPopoverLayer(page, triggerSelector, label) {
   if (!result.ok) {
     throw new Error(`${label}: popover is occluded ${JSON.stringify(result)}`);
   }
-  if (!/blur\(/i.test(result.backdropFilter || "")) {
-    throw new Error(`${label}: popover is missing backdrop blur ${JSON.stringify(result)}`);
+  if (
+    !/blur\(/i.test(result.backdropFilter || "") &&
+    !/blur\(/i.test(result.webkitBackdropFilter || "")
+  ) {
+    throw new Error(
+      `${label}: popover is missing backdrop blur ${JSON.stringify(result)}`,
+    );
   }
-  await page.locator(triggerSelector).click().catch(() => undefined);
-  await page.waitForSelector(".clinical-popover", { state: "hidden", timeout: 2_000 }).catch(() => undefined);
+  await page
+    .locator(triggerSelector)
+    .click()
+    .catch(() => undefined);
+  await page
+    .waitForSelector(".clinical-popover", { state: "hidden", timeout: 2_000 })
+    .catch(() => undefined);
   return result;
 }
 
@@ -191,9 +244,18 @@ async function verifyWorkspaceSwitcherSurface(page) {
     return cards.map((card) => ({
       id: card.getAttribute("data-workspace-card") || "",
       active: card.getAttribute("data-workspace-active") === "true",
-      patientCount: card.querySelector("[data-workspace-patient-count]")?.getAttribute("data-workspace-patient-count") || "",
-      deviceOnline: card.querySelector("[data-workspace-device-online]")?.getAttribute("data-workspace-device-online") || "",
-      alertCount: card.querySelector("[data-workspace-alert-count]")?.getAttribute("data-workspace-alert-count") || "0",
+      patientCount:
+        card
+          .querySelector("[data-workspace-patient-count]")
+          ?.getAttribute("data-workspace-patient-count") || "",
+      deviceOnline:
+        card
+          .querySelector("[data-workspace-device-online]")
+          ?.getAttribute("data-workspace-device-online") || "",
+      alertCount:
+        card
+          .querySelector("[data-workspace-alert-count]")
+          ?.getAttribute("data-workspace-alert-count") || "0",
     }));
   });
   if (!result.length) {
@@ -202,7 +264,9 @@ async function verifyWorkspaceSwitcherSurface(page) {
   for (const card of result) {
     for (const field of ["patientCount", "deviceOnline", "alertCount"]) {
       if (!/^\d+$/.test(String(card[field]))) {
-        throw new Error(`workspace switcher: ${field} is not numeric for ${card.id}`);
+        throw new Error(
+          `workspace switcher: ${field} is not numeric for ${card.id}`,
+        );
       }
     }
   }
@@ -226,7 +290,11 @@ async function verifySettingsSurface(page) {
   await page.waitForSelector("#account-current-password", { timeout: 20_000 });
   await page.waitForSelector("#account-new-password", { timeout: 20_000 });
   await page.waitForSelector("#account-change-password", { timeout: 20_000 });
-  await page.waitForSelector("#account-2fa-app", { timeout: 20_000 });
+  await page.waitForSelector("#account-2fa-title", { timeout: 20_000 });
+  await page.waitForSelector(
+    '#account-2fa-app, #account-2fa-disable, [data-testid="account-2fa-unavailable"]',
+    { timeout: 20_000 },
+  );
   await page.waitForSelector("#account-revoke-other-sessions", {
     timeout: 20_000,
   });
@@ -253,12 +321,23 @@ async function verifySettingsSurface(page) {
 async function verifyConsentSurface(page) {
   const checks = [];
   await page.waitForSelector("#share-patient-id", { timeout: 20_000 });
-  await page.waitForSelector("#share-target-type", { timeout: 20_000 });
+  await page.waitForSelector("#share-target-doctor", { timeout: 20_000 });
+  await page.waitForSelector("#share-target-workspace", { timeout: 20_000 });
   await page.waitForSelector("#share-target-id", { timeout: 20_000 });
   await page.waitForSelector("#share-scope", { timeout: 20_000 });
   await page.waitForSelector("#share-expires-at", { timeout: 20_000 });
   await page.waitForSelector("#share-create-submit", { timeout: 20_000 });
   checks.push("share form");
+
+  await page.locator("#share-target-workspace").click();
+  await page.waitForSelector('#share-target-workspace[data-state="checked"]', {
+    timeout: 10_000,
+  });
+  await page.locator("#share-target-doctor").click();
+  await page.waitForSelector('#share-target-doctor[data-state="checked"]', {
+    timeout: 10_000,
+  });
+  checks.push("distinct clinician and workspace access modes");
 
   await page.locator("#share-scope").selectOption("selected_scans");
   await page.waitForSelector("[data-share-scan-scope]", { timeout: 20_000 });
@@ -282,11 +361,134 @@ async function verifyAppointmentsSurface(page) {
   await page.waitForSelector("#appointment-type", { timeout: 20_000 });
   await page.waitForSelector("#appointment-starts-at", { timeout: 20_000 });
   await page.waitForSelector("#appointment-ends-at", { timeout: 20_000 });
-  await page.waitForSelector("#appointment-save", { timeout: 20_000 });
-  await page.locator("#portal-add-appointment").click();
+  await page.waitForSelector('button[form="appointment-form"]', {
+    timeout: 20_000,
+  });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Đóng", exact: true })
+    .click();
   return {
     label: "appointments scheduling controls",
     path: new URL(page.url()).pathname,
+  };
+}
+
+async function verifyPatientsSurface(page) {
+  await page.waitForSelector("#portal-patient-search", { timeout: 20_000 });
+  await page.waitForSelector("#portal-add-patient", { timeout: 20_000 });
+  await page.locator("#portal-add-patient").click();
+  for (const selector of [
+    "#patient-name",
+    "#patient-code",
+    "#patient-dob",
+    "#patient-gender",
+    "#patient-phone",
+    "#patient-email",
+    "#patient-address",
+    "#patient-blood-type",
+    "#patient-allergies",
+    "#patient-emergency-name",
+    "#patient-emergency-phone",
+    "#patient-emergency-relationship",
+    "#patient-notes",
+    "#portal-save-patient",
+  ]) {
+    await page.waitForSelector(selector, { timeout: 20_000 });
+  }
+  await page.getByRole("dialog").getByRole("button", { name: "Hủy" }).click();
+  await page
+    .locator("#patient-name")
+    .waitFor({ state: "hidden", timeout: 10_000 });
+  return {
+    label: "patients canonical structured editor",
+    path: new URL(page.url()).pathname,
+  };
+}
+
+async function verifyBillingSurface(page) {
+  await page.waitForSelector("#portal-billing-page", { timeout: 20_000 });
+  await page.waitForSelector("#portal-billing-plan", { timeout: 20_000 });
+  await page.waitForSelector("#portal-billing-usage", { timeout: 20_000 });
+  await page.waitForSelector("#portal-billing-contact", { timeout: 20_000 });
+  const rows = await page.locator("[data-billing-usage-row]").count();
+  if (rows < 3) {
+    throw new Error(`billing: expected usage rows, got ${rows}`);
+  }
+  const body = await page.locator("#portal-billing-page").innerText();
+  for (const expected of [
+    "Gói dịch vụ",
+    "Hạn mức sử dụng",
+    "Liên hệ billing",
+  ]) {
+    if (!body.includes(expected)) {
+      throw new Error(`billing: missing visible section ${expected}`);
+    }
+  }
+  return {
+    label: "billing plan and usage controls",
+    path: new URL(page.url()).pathname,
+    usageRows: rows,
+  };
+}
+
+async function verifyReportsSurface(page) {
+  await page.waitForSelector('[data-testid="portal-reports-page"]', {
+    timeout: 20_000,
+  });
+  const exportButton = page.locator("#portal-report-export");
+  if ((await exportButton.count()) > 0) {
+    await exportButton.click();
+    await page.waitForSelector("#clinical_bundle-export-format", {
+      timeout: 10_000,
+    });
+    await page.getByRole("button", { name: "Hủy" }).click();
+  }
+  return {
+    label: "reports backend export controls",
+    path: new URL(page.url()).pathname,
+    exportAllowed: (await exportButton.count()) > 0,
+  };
+}
+
+async function verifyAuditSurface(page) {
+  await page.waitForSelector('[data-testid="portal-audit-page"]', {
+    timeout: 20_000,
+  });
+  await page.locator("#portal-audit-search").fill("scan");
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().includes("/api/portal/audit-log?") &&
+      new URL(response.url()).searchParams.get("q") === "scan",
+    { timeout: 20_000 },
+  );
+  await page.locator("#portal-audit-apply-filters").click();
+  const response = await responsePromise;
+  if (response.status() >= 400) {
+    throw new Error(`audit filter: backend returned HTTP ${response.status()}`);
+  }
+  await waitSettled(page);
+
+  const detailButton = page
+    .locator('button[aria-label^="Xem chi tiết"]')
+    .first();
+  let detailChecked = false;
+  if ((await detailButton.count()) > 0) {
+    await detailButton.click();
+    await page.getByRole("dialog").getByText("Metadata đã làm sạch").waitFor({
+      timeout: 10_000,
+    });
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Đóng" })
+      .click();
+    detailChecked = true;
+  }
+  return {
+    label: "audit server filter and detail controls",
+    path: new URL(page.url()).pathname,
+    detailChecked,
   };
 }
 
@@ -299,15 +501,23 @@ async function main() {
     channel: "chrome",
     headless: true,
     args: disableWebSecurity
-      ? ["--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"]
+      ? [
+          "--disable-web-security",
+          "--disable-features=IsolateOrigins,site-per-process",
+        ]
       : [],
   });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 820 },
+  });
   const page = await context.newPage();
 
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) {
-      consoleMessages.push({ type: message.type(), text: message.text().slice(0, 300) });
+      consoleMessages.push({
+        type: message.type(),
+        text: message.text().slice(0, 300),
+      });
     }
   });
   page.on("requestfailed", (request) => {
@@ -322,7 +532,10 @@ async function main() {
   page.on("response", (response) => {
     const url = response.url();
     if (watchPatterns.some((pattern) => url.includes(pattern))) {
-      checkedResponses.push({ url: sanitizeUrl(url), status: response.status() });
+      checkedResponses.push({
+        url: sanitizeUrl(url),
+        status: response.status(),
+      });
     }
   });
 
@@ -332,10 +545,35 @@ async function main() {
   await page.waitForURL("**/login", { timeout: 20_000 });
   await page.locator("#login-email").fill(account.email);
   await page.locator("#login-password").fill(account.password);
-  await Promise.all([
+  const authResponsePromise = page.waitForResponse(
+    (response) => {
+      const pathname = new URL(response.url()).pathname;
+      return (
+        response.request().method() === "POST" &&
+        ["/api/auth/login", "/api/auth/firebase"].some((suffix) =>
+          pathname.endsWith(suffix),
+        )
+      );
+    },
+    { timeout: 45_000 },
+  );
+  const [authResponse] = await Promise.all([
+    authResponsePromise,
     page.waitForURL("**/portal**", { timeout: 45_000 }),
     page.locator('form button[type="submit"]').click(),
   ]);
+  if (authResponse.status() >= 400) {
+    throw new Error(`portal login: backend returned HTTP ${authResponse.status()}`);
+  }
+  const authPayload = await authResponse.json().catch(() => null);
+  const capabilities = Array.isArray(authPayload?.user?.capabilities)
+    ? authPayload.user.capabilities.filter(
+        (capability) => typeof capability === "string",
+      )
+    : [];
+  if (!capabilities.length) {
+    throw new Error("portal login: backend did not return capability metadata");
+  }
 
   await page.goto(`${siteUrl}/portal/records?smoke=${Date.now()}`, {
     waitUntil: "domcontentloaded",
@@ -357,60 +595,137 @@ async function main() {
   );
 
   await page.locator("#portal-record-search").fill("smoke-no-match");
-  await page.locator("#portal-record-status").selectOption("completed");
+  await selectRadixOption(page, "#portal-record-status", "Hoàn tất");
   await waitSettled(page);
   await page.locator("#portal-record-search").fill("");
-  await page.locator("#portal-record-status").selectOption("");
+  await selectRadixOption(page, "#portal-record-status", "Tất cả trạng thái");
 
   const routeChecks = [];
-  for (const [href, label] of [
-    ["/portal/dashboard", "dashboard"],
-    ["/portal/patients", "patients"],
-    ["/portal/appointments", "appointments"],
-    ["/portal/live", "live monitoring"],
-    ["/portal/devices", "devices"],
-    ["/portal/consent", "consent"],
-    ["/portal/records", "records nav"],
-    ["/portal/staff", "staff"],
-    ["/portal/reports", "reports"],
-    ["/portal/alerts", "alerts"],
-    ["/portal/settings", "settings"],
-    ["/portal/notifications", "notifications"],
-    ["/portal/onboarding", "onboarding"],
-    ["/portal/help", "help"],
-  ]) {
+  const navigationRoutes = routeContracts.filter(
+    (contract) =>
+      contract.surface === "portal" &&
+      ["primary", "footer"].includes(contract.nav?.placement || ""),
+  );
+  const clickableRoutes = navigationRoutes.filter((contract) =>
+    canAccessRoute(capabilities, contract.path),
+  );
+  const deniedNavigationRoutes = navigationRoutes.filter(
+    (contract) => !canAccessRoute(capabilities, contract.path),
+  );
+  for (const contract of deniedNavigationRoutes) {
+    const count = await page.locator(`a[href="${contract.path}"]`).count();
+    if (count !== 0) {
+      throw new Error(
+        `${contract.smokeId}: unauthorized navigation link is visible`,
+      );
+    }
+    routeChecks.push({
+      label: contract.smokeId,
+      path: contract.path,
+      access: "navigation-hidden",
+    });
+  }
+  for (const contract of clickableRoutes) {
+    const href = contract.path;
+    const label = contract.smokeId;
     const routeCheck = await clickRoute(page, href, label);
     routeChecks.push(routeCheck);
-    if (href === "/portal/consent") {
+    if (contract.id === "portal.consent") {
       routeChecks.push(await verifyConsentSurface(page));
     }
-    if (href === "/portal/appointments") {
+    if (contract.id === "portal.appointments") {
       routeChecks.push(await verifyAppointmentsSurface(page));
     }
-    if (href === "/portal/settings") {
+    if (contract.id === "portal.patients") {
+      routeChecks.push(await verifyPatientsSurface(page));
+    }
+    if (contract.id === "portal.settings") {
       routeChecks.push(await verifySettingsSurface(page));
+    }
+    if (contract.id === "portal.billing") {
+      routeChecks.push(await verifyBillingSurface(page));
+    }
+    if (contract.id === "portal.reports") {
+      routeChecks.push(await verifyReportsSurface(page));
     }
   }
 
-  for (const [href, label] of [
-    ["/portal/workspace", "workspace switcher"],
-    ["/portal/billing", "billing"],
-    ["/portal/records/review", "review queue"],
-    ["/portal/devices/claim", "claim device"],
-    ["/portal/devices/assign", "assign device"],
-  ]) {
+  const directContracts = [
+    "portal.workspace",
+    "portal.records.review",
+    "portal.devices.claim",
+    "portal.devices.assign",
+  ].map((routeId) => {
+    const contract = routeContracts.find(
+      (candidate) => candidate.id === routeId,
+    );
+    if (!contract) throw new Error(`Missing route contract ${routeId}`);
+    return contract;
+  });
+  for (const contract of directContracts.filter((candidate) =>
+    canAccessRoute(capabilities, candidate.path),
+  )) {
+    const href = contract.path;
+    const label = contract.smokeId;
     routeChecks.push(await visitRoute(page, href, label));
-    if (href === "/portal/workspace") {
+    if (contract.id === "portal.workspace") {
       routeChecks.push(await verifyWorkspaceSwitcherSurface(page));
     }
   }
 
-  await page.locator("#portal-user-menu-trigger").click();
-  await page.locator('.clinical-popover a[href="/portal/audit"]').click();
-  await page.waitForURL("**/portal/audit", { timeout: 15_000 });
+  const deniedDirectContract = [
+    ...deniedNavigationRoutes,
+    ...directContracts.filter(
+      (contract) => !canAccessRoute(capabilities, contract.path),
+    ),
+  ][0];
+  if (deniedDirectContract) {
+    await page.goto(
+      `${siteUrl}${deniedDirectContract.path}?smoke=${Date.now()}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await page.waitForURL("**/portal/permission-denied", {
+      timeout: 20_000,
+    });
+    await page.waitForSelector('[data-testid="portal-permission-denied"]', {
+      timeout: 20_000,
+    });
+    routeChecks.push({
+      label: `${deniedDirectContract.smokeId}-direct-denial`,
+      path: new URL(page.url()).pathname,
+      access: "permission-denied",
+    });
+  }
+
+  const auditPath = routePath("portal.audit");
+  await page.goto(`${siteUrl}/portal/dashboard?smoke=${Date.now()}`, {
+    waitUntil: "domcontentloaded",
+  });
   await waitSettled(page);
-  await assertNoPortalError(page, "audit");
-  routeChecks.push({ label: "audit via avatar menu", path: new URL(page.url()).pathname });
+  await page.locator("#portal-user-menu-trigger").click();
+  const auditLink = page.locator(
+    `.clinical-popover a[href="${auditPath}"]`,
+  );
+  if (canAccessRoute(capabilities, auditPath)) {
+    await auditLink.click();
+    await page.waitForURL("**/portal/audit", { timeout: 15_000 });
+    await waitSettled(page);
+    await assertNoPortalError(page, "audit");
+    routeChecks.push(await verifyAuditSurface(page));
+    routeChecks.push({
+      label: "audit via avatar menu",
+      path: new URL(page.url()).pathname,
+    });
+  } else {
+    if ((await auditLink.count()) !== 0) {
+      throw new Error("audit: unauthorized avatar-menu link is visible");
+    }
+    routeChecks.push({
+      label: "audit via avatar menu",
+      path: auditPath,
+      access: "navigation-hidden",
+    });
+  }
 
   const badResponses = checkedResponses.filter((item) => item.status >= 400);
   const actionableRequestFailures = requestFailures.filter((item) => {
@@ -422,9 +737,21 @@ async function main() {
   const severeConsole = consoleMessages.filter(
     (item) => item.type === "error" && !item.text.includes("favicon"),
   );
-  if (badResponses.length || actionableRequestFailures.length || severeConsole.length) {
+  if (
+    badResponses.length ||
+    actionableRequestFailures.length ||
+    severeConsole.length
+  ) {
     throw new Error(
-      JSON.stringify({ badResponses, requestFailures: actionableRequestFailures, severeConsole }, null, 2),
+      JSON.stringify(
+        {
+          badResponses,
+          requestFailures: actionableRequestFailures,
+          severeConsole,
+        },
+        null,
+        2,
+      ),
     );
   }
 

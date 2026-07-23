@@ -1,0 +1,9 @@
+{
+  "url": "https://firmware.shcare.example/devices/msm261/1.2.3.bin",
+  "firmwareVersion": "1.2.3",
+  "checksum": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "signature": "AQIDBA==",
+  "hardwareTarget": "MSM261S4030H0",
+  "partitionTarget": "app",
+  "minimumProtocolVersion": 1
+}

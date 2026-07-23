@@ -1,7 +1,12 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { MotionConfig } from "framer-motion";
+import { ThemeProvider } from "@/components/admin/ThemeProvider";
+import { useAdminTheme } from "@/components/admin/theme-context";
 import { Toaster } from "@/components/ui/sonner";
 import { IS_PORTAL_SURFACE, WEB_SURFACE_DESCRIPTION, WEB_SURFACE_TITLE } from "@/lib/surface";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
+import brandCss from "../../../../packages/shcare-brand/tokens.css?url";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -46,6 +51,10 @@ export const Route = createRootRoute({
     links: [
       {
         rel: "stylesheet",
+        href: brandCss,
+      },
+      {
+        rel: "stylesheet",
         href: appCss,
       },
     ],
@@ -57,8 +66,9 @@ export const Route = createRootRoute({
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
+    <html lang="vi" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
@@ -69,11 +79,18 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ThemedToaster() {
+  const { resolvedTheme } = useAdminTheme();
+  return <Toaster position="top-right" theme={resolvedTheme} />;
+}
+
 function RootComponent() {
   return (
-    <>
-      <Outlet />
-      <Toaster position="top-right" richColors />
-    </>
+    <MotionConfig reducedMotion="user">
+      <ThemeProvider>
+        <Outlet />
+        <ThemedToaster />
+      </ThemeProvider>
+    </MotionConfig>
   );
 }

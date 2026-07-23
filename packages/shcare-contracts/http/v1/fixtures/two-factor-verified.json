@@ -1,0 +1,15 @@
+{
+  "twoFactor": { "enabled": true, "method": "app", "enrollmentPending": false },
+  "recoveryCodes": [
+    "A8F2-K6Q9-P3TX",
+    "B4M7-R2VK-X9CW",
+    "C9P3-W8HN-K5YD",
+    "D6T4-Q7ZM-R2JF",
+    "E3V8-N5CX-H7PK",
+    "F7K2-Y9JW-M4QR",
+    "G5R9-P3TD-V8NX",
+    "H2W6-X4KF-Q9MC"
+  ],
+  "twoFactorToken": "tfa_session_fixture_token_0123456789abcdef",
+  "tokenExpiresAt": "2026-07-14T22:00:00.000Z"
+}

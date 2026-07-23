@@ -34,6 +34,7 @@ import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 import kotlin.math.roundToInt
 
 data class MedicalRecord(
@@ -87,6 +88,7 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
     var selectedShareDoctor by remember { mutableStateOf<ShareTargetDoctor?>(null) }
     var selectedShareWorkspace by remember { mutableStateOf<ShareTargetWorkspace?>(null) }
     var isLoadingShareTargets by remember { mutableStateOf(false) }
+    val shareIntentKeys = remember { mutableStateMapOf<String, String>() }
     val coroutineScope = rememberCoroutineScope()
 
     suspend fun refreshRecords() {
@@ -152,6 +154,15 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             loadError = "Chọn bác sĩ hoặc cơ sở nhận chia sẻ trước khi bấm chia sẻ"
             return
         }
+        val intentFingerprint = listOf(
+            record.sourcePatientId,
+            record.id,
+            targetDoctor?.id.orEmpty(),
+            targetWorkspace?.id.orEmpty(),
+        ).joinToString(":")
+        val idempotencyKey = shareIntentKeys.getOrPut(intentFingerprint) {
+            UUID.randomUUID().toString()
+        }
         coroutineScope.launch {
             sharingRecordId = record.id
             runCatching {
@@ -159,9 +170,12 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
                     patientId = record.sourcePatientId,
                     targetDoctorUserId = targetDoctor?.id.orEmpty(),
                     targetWorkspaceId = targetWorkspace?.id.orEmpty(),
-                    scanId = record.id
+                    scope = "selected_scans",
+                    scanIds = listOf(record.id),
+                    idempotencyKey = idempotencyKey,
                 )
             }.onSuccess {
+                shareIntentKeys.remove(intentFingerprint)
                 val targetName = targetDoctor?.displayName() ?: targetWorkspace?.displayName() ?: "nơi nhận đã chọn"
                 loadError = "Đã chia sẻ lượt đo với $targetName"
             }.onFailure {
@@ -605,7 +619,7 @@ fun RecordCard(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("AI:", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text("Độ tin cậy:", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("${record.aiConfidence}%", color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }

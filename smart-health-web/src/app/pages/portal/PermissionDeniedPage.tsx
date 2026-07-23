@@ -1,57 +1,65 @@
 import { Link, useNavigate } from "react-router";
-import { ShieldOff } from "lucide-react";
+import { ArrowLeft, Building2, LayoutDashboard, ShieldOff } from "lucide-react";
+
+import { Button } from "../../components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
 
 export default function PermissionDeniedPage() {
   const navigate = useNavigate();
+
   return (
-    <div className="min-h-96 flex items-center justify-center p-6">
-      <div className="max-w-md mx-auto text-center">
-        <div
-          className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6"
-          style={{
-            background: "rgba(255,75,75,0.12)",
-            border: "1px solid rgba(255,75,75,0.25)",
-            boxShadow: "0 0 30px rgba(255,75,75,0.15)",
-          }}
-        >
-          <ShieldOff
-            size={36}
-            className="text-[#FF4B4B] drop-shadow-[0_0_8px_rgba(255,75,75,0.6)]"
-          />
-        </div>
-        <h1 className="brand-gradient-text mb-3">Không có quyền truy cập</h1>
-        <p className="text-[#8aa5ba] leading-relaxed mb-2">
-          Bạn không có quyền xem workspace hoặc tính năng này.
-        </p>
-        <p className="text-[#8aa5ba] text-sm leading-relaxed mb-8">
-          Nếu bạn cho rằng đây là lỗi, hãy liên hệ quản lý workspace hoặc đổi sang workspace phù
-          hợp.
-        </p>
-        <div className="flex justify-center gap-3 flex-wrap">
-          <button
-            onClick={() => navigate(-1)}
-            className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/8 text-sm font-medium text-[#eefbff] hover:border-[#00FFD1]/30 transition-all"
-          >
-            Quay lại
-          </button>
-          <Link
-            to="/portal/dashboard"
-            className="px-5 py-2.5 rounded-xl text-[#0d1a30] text-sm font-semibold hover:scale-[1.02] transition-all"
-            style={{
-              background: "linear-gradient(135deg,#0B5C9A,#00FFD1)",
-              boxShadow: "0 0 15px rgba(0,255,209,0.35)",
-            }}
-          >
-            Về dashboard
-          </Link>
-          <Link
-            to="/portal/workspace"
-            className="px-5 py-2.5 rounded-xl border border-[#0B5C9A]/30 bg-[#0B5C9A]/10 text-sm font-medium text-[#4AA4E0] hover:bg-[#0B5C9A]/20 transition-all"
-          >
-            Đổi workspace
-          </Link>
-        </div>
-      </div>
+    <div
+      data-testid="portal-permission-denied"
+      className="mx-auto flex min-h-[28rem] max-w-3xl items-center justify-center p-4 sm:p-6"
+    >
+      <Card role="alert" className="w-full border-destructive/30 shadow-sm">
+        <CardHeader className="items-center text-center">
+          <span className="mb-2 grid size-14 place-items-center rounded-full bg-destructive/10 text-destructive">
+            <ShieldOff aria-hidden="true" size={28} />
+          </span>
+          <CardTitle>Không có quyền truy cập</CardTitle>
+          <CardDescription className="max-w-xl text-balance">
+            Tài khoản hiện tại không có capability cần thiết để mở tính năng
+            này trong workspace đang chọn.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-center text-sm text-muted-foreground">
+            Nếu quyền vừa được thay đổi, hãy chọn lại workspace hoặc đăng nhập
+            lại. Bạn cũng có thể liên hệ quản trị viên workspace để kiểm tra
+            membership.
+          </p>
+          <div className="flex flex-col-reverse justify-center gap-3 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              onClick={() => navigate(-1)}
+            >
+              <ArrowLeft aria-hidden="true" />
+              Quay lại
+            </Button>
+            <Button asChild variant="outline" className="min-h-11">
+              <Link to="/portal/workspace">
+                <Building2 aria-hidden="true" />
+                Đổi workspace
+              </Link>
+            </Button>
+            <Button asChild className="min-h-11">
+              <Link to="/portal/dashboard">
+                <LayoutDashboard aria-hidden="true" />
+                Về tổng quan
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

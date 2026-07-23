@@ -17,6 +17,9 @@ class JsonDataStore {
     this.createEmptyDb = options.createEmptyDb;
     this.normalizeDb = options.normalizeDb;
     this.ensureDataDirs = options.ensureDataDirs;
+    this.fileSystem = options.fileSystem || fs;
+    this.saveQueue = Promise.resolve();
+    this.saveSequence = 0;
   }
 
   async init() {
@@ -44,13 +47,51 @@ class JsonDataStore {
   }
 
   async save(db) {
-    this.ensureDataDirs();
-    const tmpFile = `${this.dbFile}.tmp`;
-    fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2));
-    fs.renameSync(tmpFile, this.dbFile);
+    const payload = JSON.stringify(db, null, 2);
+    const operation = this.saveQueue
+      .catch(() => {})
+      .then(async () => {
+        this.ensureDataDirs();
+        this.saveSequence += 1;
+        const tmpFile =
+          `${this.dbFile}.${process.pid}.${Date.now()}.${this.saveSequence}.tmp`;
+        await this.fileSystem.promises.writeFile(tmpFile, payload, "utf8");
+        try {
+          await this.replaceFile(tmpFile);
+        } finally {
+          await this.fileSystem.promises.unlink(tmpFile).catch(() => {});
+        }
+      });
+    this.saveQueue = operation;
+    return operation;
   }
 
-  async close() {}
+  async replaceFile(tmpFile) {
+    const retryableCodes = new Set(["EACCES", "EBUSY", "EEXIST", "EPERM"]);
+    let lastError = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        await this.fileSystem.promises.rename(tmpFile, this.dbFile);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!retryableCodes.has(error?.code)) throw error;
+      }
+      try {
+        await this.fileSystem.promises.copyFile(tmpFile, this.dbFile);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!retryableCodes.has(error?.code)) throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));
+    }
+    throw lastError || new Error("Unable to replace JSON data store");
+  }
+
+  async close() {
+    await this.saveQueue.catch(() => {});
+  }
 }
 
 class PostgresDataStore {
@@ -121,6 +162,7 @@ function resolveBackendFromEnv(env = process.env) {
 }
 
 module.exports = {
+  JsonDataStore,
   createDataStore,
   resolveBackendFromEnv,
 };

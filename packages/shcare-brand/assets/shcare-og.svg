@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="shcare-og-title shcare-og-description">
+  <title id="shcare-og-title">Shcare — Smart Health Care</title>
+  <desc id="shcare-og-description">Nền tảng Smart Health Care theo dõi tim phổi từ xa.</desc>
+  <rect width="1200" height="630" fill="#F4F8FB"/>
+  <rect x="0" y="0" width="18" height="630" fill="#2457D6"/>
+  <g transform="translate(92 142) scale(3.2)">
+    <path d="M10 19C18 8 43 8 52 17C58 23 54 30 46 32L35 35" fill="none" stroke="#2457D6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M29 29L24 38L20 32L17 34C10 37 8 43 13 49C22 58 45 56 53 44" fill="none" stroke="#087F75" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <line x1="360" y1="126" x2="360" y2="504" stroke="#D8E3EA" stroke-width="2"/>
+  <text x="424" y="252" fill="#0B1F33" font-family="Manrope, sans-serif" font-size="92" font-weight="700" letter-spacing="-3">Shcare</text>
+  <text x="430" y="306" fill="#2457D6" font-family="Source Sans 3, sans-serif" font-size="25" font-weight="600" letter-spacing="2">SMART HEALTH CARE</text>
+  <text x="430" y="376" fill="#102A43" font-family="Source Sans 3, sans-serif" font-size="28" font-weight="600">Theo dõi tim phổi từ xa</text>
+  <text x="430" y="420" fill="#52677A" font-family="Source Sans 3, sans-serif" font-size="22" font-weight="400">Thiết bị kết nối · Hồ sơ lâm sàng · Hỗ trợ phân tích</text>
+  <path d="M430 474h72l12-24 19 49 19-73 22 57 16-30 16 21h118" fill="none" stroke="#087F75" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Smart Health Backend API
-  version: 0.2.0
-  description: Demo contract with role-separated doctor and patient routes. Production should keep this under /api/v1.
+  version: 0.4.0
+  description: Versioned Shcare HTTP contract for public, workspace and platform surfaces under /api/v1.
 servers:
   - url: /api/v1
 security:
@@ -50,6 +50,31 @@ paths:
       responses:
         "200":
           description: Updated user and role request status
+  /auth/workspace-request:
+    post:
+      summary: Submit or resubmit a pending workspace registration
+      description: Creates or updates the current patient's owned workspace request. Exact retries return the persisted receipt; reusing the key with different input returns 409.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceRequestInput"
+      responses:
+        "201":
+          description: Canonical workspace request receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRequestReceipt"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
   /auth/sessions:
     get:
       summary: List active/revoked auth sessions for the current user
@@ -85,6 +110,109 @@ paths:
       responses:
         "201":
           description: Created patient
+  /patients/import/validate:
+    post:
+      summary: Validate and preview one patient CSV import batch
+      description: >
+        Accepts a UTF-8 CSV file up to 5 MiB and 5,000 data rows. Validation
+        persists a tenant-scoped batch for 24 hours but does not create any
+        patient. Exact retries with the same Idempotency-Key return the same
+        batch; reusing the key for different file content returns 409.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - in: header
+          name: X-File-Name
+          required: false
+          schema:
+            type: string
+            maxLength: 240
+        - in: query
+          name: workspaceId
+          required: false
+          description: Platform-admin override; workspace users remain scoped to their current membership.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Persisted validation preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientImportValidationResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+  /patients/import/{batchId}:
+    get:
+      summary: Read a tenant-scoped patient import validation batch
+      parameters:
+        - in: path
+          name: batchId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current batch state and row preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batch]
+                properties:
+                  batch:
+                    $ref: "#/components/schemas/PatientImportBatch"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+  /patients/import/{batchId}/commit:
+    post:
+      summary: Atomically commit a validated patient import batch
+      description: >
+        Creates every patient and the audit receipt in one transaction. A
+        duplicate found after validation fails the whole batch. The response
+        is successful only after all rows are committed.
+      parameters:
+        - in: path
+          name: batchId
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Atomic commit receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientImportCommitResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "410":
+          $ref: "#/components/responses/ErrorResponse"
   /doctor/scans:
     get:
       summary: List scans available to the doctor
@@ -166,27 +294,175 @@ paths:
   /scans/{scanId}/audio-chunks:
     post:
       summary: Upload one PCM audio chunk for a scan
+      description: >
+        Appends one contiguous audio chunk. Reusing the same Idempotency-Key with
+        the same scan, sequence, digest and payload returns the original result.
+        This remains true after completion closes the upload ledger. Reusing it
+        with different input, overwriting a committed sequence, or skipping a
+        sequence returns 409. Each chunk is capped at 1 MiB; one scan is capped
+        at 32 MiB and 32,768 chunks. Limit violations return 413 before a file
+        or ledger row is committed.
       parameters:
         - in: path
           name: scanId
           required: true
           schema:
             type: string
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Stable key for this exact chunk mutation.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+        - in: header
+          name: X-Chunk-Sequence
+          required: true
+          description: Zero-based contiguous sequence number. The first chunk is 0.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            maximum: 32767
+        - in: header
+          name: X-Chunk-SHA256
+          required: true
+          description: SHA-256 digest of the exact request body, encoded as 64 hexadecimal characters.
+          schema:
+            type: string
+            pattern: "^[0-9A-Fa-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              maxLength: 1048576
       responses:
         "200":
-          description: Chunk accepted
+          description: Chunk accepted or exact idempotent replay.
+          headers:
+            Idempotency-Replayed:
+              description: Present with value `true` when the original response is replayed.
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanAudioChunkUploadResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
   /scans/{scanId}/complete:
     post:
       summary: Complete chunk upload and process audio
+      description: >
+        Atomically closes a contiguous upload ledger and starts or completes
+        processing. An exact retry with the same Idempotency-Key returns the
+        persisted response and does not enqueue duplicate work. A processing
+        completion has a 15-minute lease measured from updatedAt; an exact
+        retry after expiry may reclaim it atomically with a new internal lease
+        token, while retries before expiry report in progress.
       parameters:
         - in: path
           name: scanId
           required: true
           schema:
             type: string
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Stable key for this exact completion mutation.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
       responses:
         "200":
-          description: Completed scan
+          description: Persisted scan state, either newly completed/queued or replayed.
+          headers:
+            Idempotency-Replayed:
+              description: Present with value `true` when the persisted completion response is replayed.
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanAudioCompletionResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /scans/{scanId}/reprocess:
+    post:
+      summary: Reprocess one persisted scan artifact
+      description: >
+        Creates a new processing generation for a new Idempotency-Key. An exact
+        retry with the same actor, workspace, scan and key replays the persisted
+        generation. Processing intent, generation, artifact fingerprint and run
+        identity are durable so a restart cannot silently collapse distinct jobs.
+      parameters:
+        - in: path
+          name: scanId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Stable key for this exact reprocess mutation.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+      responses:
+        "200":
+          description: Newly accepted/completed generation or exact replay.
+          headers:
+            Idempotency-Replayed:
+              description: Present with value `true` for an exact replay.
+              schema:
+                type: string
+                enum: ["true"]
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
   /scans/{scanId}/audio-url:
     get:
       summary: Return authorized signed URL or local object URL
@@ -234,6 +510,221 @@ paths:
       responses:
         "200":
           description: Paired device without secret fields
+  /admin/overview-stats:
+    get:
+      summary: Read a tenant-scoped platform or workspace overview
+      description: Snapshot metrics stay current while scan and signal-processing metrics are restricted to the requested real timestamp range. The chart bucket total always equals stats.scansCount.
+      parameters:
+        - $ref: "#/components/parameters/OverviewRange"
+        - $ref: "#/components/parameters/TimezoneOffsetMinutes"
+      responses:
+        "200":
+          description: Truthful overview snapshot and range-scoped time series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverviewResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /portal/overview:
+    get:
+      summary: Read the current workspace overview
+      description: Workspace alias of the overview contract with tenant filtering applied by backend membership.
+      parameters:
+        - $ref: "#/components/parameters/OverviewRange"
+        - $ref: "#/components/parameters/TimezoneOffsetMinutes"
+      responses:
+        "200":
+          description: Current workspace overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverviewResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/clinics:
+    get:
+      summary: List canonical workspaces
+      description: Platform administrators can list all workspaces. Other authorized actors are tenant-scoped. `/admin/workspaces` remains a compatibility alias.
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 160
+        - in: query
+          name: status
+          schema:
+            $ref: "#/components/schemas/WorkspaceStatus"
+        - in: query
+          name: workspaceType
+          schema:
+            $ref: "#/components/schemas/WorkspaceType"
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [name:asc, name:desc, status:asc, status:desc, createdAt:asc, createdAt:desc, updatedAt:asc, updatedAt:desc, version:asc, version:desc]
+      responses:
+        "200":
+          description: Workspace page. Pagination is returned in X-Total-Count, X-Page, X-Page-Limit and X-Page-Count headers.
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+            X-Page:
+              schema:
+                type: integer
+            X-Page-Limit:
+              schema:
+                type: integer
+            X-Page-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspaces, clinics]
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workspace"
+                  clinics:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workspace"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Create a pending workspace
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceCreateInput"
+      responses:
+        "201":
+          description: Canonical create receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceMutationReceipt"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/clinics/{workspaceId}:
+    parameters:
+      - in: path
+        name: workspaceId
+        required: true
+        schema:
+          type: string
+    patch:
+      summary: Update workspace fields or perform one lifecycle transition
+      description: Field updates, owner transfers, and status transitions must be sent as separate operations. Every versioned update requires Idempotency-Key and expectedVersion/If-Match.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - in: header
+          name: If-Match
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/WorkspacePatchInput"
+                - $ref: "#/components/schemas/WorkspaceTransitionInput"
+                - $ref: "#/components/schemas/WorkspaceOwnerTransferInput"
+      responses:
+        "200":
+          description: Canonical update or transition receipt
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/WorkspaceMutationReceipt"
+                  - $ref: "#/components/schemas/WorkspaceOwnerTransferReceipt"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      summary: Archive an inactive workspace
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - in: header
+          name: If-Match
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Canonical archive receipt and persisted tombstone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArchiveReceipt"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/clinics/{workspaceId}/owner-approval:
+    post:
+      summary: Confirm the pending workspace owner identity
+      description: Provider-backed owner identity and active workspace_owner membership are confirmed before the separate pending-to-active transition. The workspace version does not change in this preparation step.
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - in: header
+          name: If-Match
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties:
+                expectedVersion:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Canonical owner approval receipt; workspace remains pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceOwnerApprovalReceipt"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
   /admin/doctor-requests:
     get:
       summary: List doctor approval requests
@@ -290,12 +781,212 @@ paths:
           description: Doctor request moved to needs_info
         "400":
           $ref: "#/components/responses/ErrorResponse"
+  /admin/staff-invitations:
+    get:
+      summary: List tenant-scoped staff invitations
+      description: Workspace staff managers are always restricted to their current workspace. Platform user managers may filter by workspace or omit the filter to list all workspaces.
+      parameters:
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [workspace_admin, doctor, nurse, technician, billing, viewer]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, accepted, revoked, expired]
+      responses:
+        "200":
+          description: Staff invitation ledger without acceptance secrets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitations]
+                properties:
+                  invitations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StaffInvitation"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Create a staff invitation
+      description: The raw acceptance token and URL are returned exactly once. An exact idempotent replay returns HTTP 200 and omits both secret fields.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffInvitationCreateInput"
+      responses:
+        "201":
+          description: Invitation created; delivery truth and one-time acceptance material are included
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffInvitationMutationResponse"
+        "200":
+          description: Exact idempotent replay without acceptance material
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffInvitationMutationResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/staff-invitations/{invitationId}/resend:
+    post:
+      summary: Rotate and resend a pending or expired staff invitation
+      description: Rotates the stored token hash. The new raw token and URL are returned only on the first successful mutation, never on an idempotent replay.
+      parameters:
+        - in: path
+          name: invitationId
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Resent invitation or exact replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffInvitationMutationResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/staff-invitations/{invitationId}/revoke:
+    post:
+      summary: Revoke a pending or expired staff invitation
+      parameters:
+        - in: path
+          name: invitationId
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Revoked invitation or exact replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffInvitationMutationResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /staff-invitations/accept:
+    post:
+      summary: Accept a staff invitation as the authenticated matching email
+      description: Creates the workspace membership, updates the backend account role, consumes the invitation and audits the mutation in one repository transaction.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  minLength: 32
+                  writeOnly: true
+                organizationId:
+                  type: string
+      responses:
+        "200":
+          description: Accepted invitation or exact idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffInvitationAcceptanceResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "410":
+          $ref: "#/components/responses/ErrorResponse"
   /notifications:
     get:
       summary: List notifications for current backend state
       responses:
         "200":
           description: Notification list
+    post:
+      summary: Create one tenant-scoped notification campaign
+      description: Resolves workspace, role or explicit-user audience to per-user notification rows. Exact retries replay the same campaign and never enqueue provider delivery twice.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationCampaignInput"
+      responses:
+        "201":
+          description: Canonical campaign receipt with separate in-app, email and push states
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationCampaignResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /notifications/options:
+    get:
+      summary: List notification audiences and runtime channel availability
+      description: Returns only active workspaces/users in the caller's authority scope. Missing email or FCM providers are reported as unavailable rather than successful.
+      responses:
+        "200":
+          description: Audience catalog and channel availability
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationOptionsResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
   /notifications/read-all:
     post:
       summary: Mark all notifications as read
@@ -310,10 +1001,18 @@ paths:
           description: Unread count
   /notifications/register-device:
     post:
-      summary: Register an FCM token for the current user
+      summary: Atomically bind an FCM token to the current user
       responses:
         "200":
           description: Notification device registration
+  /notifications/unregister-device:
+    post:
+      summary: Disable the current user's matching FCM token before logout
+      responses:
+        "200":
+          description: Whether the current user still owned and unregistered the token
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
   /notifications/{notificationId}/read:
     post:
       summary: Mark one notification as read
@@ -342,6 +1041,914 @@ paths:
           description: Deleted notification marker
         "404":
           $ref: "#/components/responses/ErrorResponse"
+  /patients/{patientId}/shares:
+    get:
+      summary: List consent and data-access grants for one patient
+      description: >
+        Returns backend-classified patient consent, direct clinician grants, and
+        administrative workspace assignments, including recipient, lifecycle,
+        and audit metadata. Revoked and expired records remain visible.
+      parameters:
+        - in: path
+          name: patientId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant-scoped patient access ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shares]
+                properties:
+                  shares:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PatientShare"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Grant patient data access
+      description: >
+        The backend derives authorityType from the authenticated actor and
+        recipient. Clients cannot self-declare patient consent.
+      parameters:
+        - in: path
+          name: patientId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientShareMutation"
+      responses:
+        "201":
+          description: Access grant created, or the original result replayed
+          headers:
+            Idempotency-Replayed:
+              description: Present and true when the original mutation result was replayed
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [share, replayed]
+                properties:
+                  share:
+                    $ref: "#/components/schemas/PatientShare"
+                  replayed:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /patients/{patientId}/shares/{shareId}:
+    delete:
+      summary: Revoke one patient consent or data-access grant
+      description: >
+        Revocation is immutable lifecycle history; the grant remains in the
+        ledger with backend-provided revoke actor and timestamp.
+      parameters:
+        - in: path
+          name: patientId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: shareId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        "200":
+          description: Access grant revoked, or the original result replayed
+          headers:
+            Idempotency-Replayed:
+              description: Present and true when the original mutation result was replayed
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked, share, replayed]
+                properties:
+                  revoked:
+                    type: boolean
+                    enum: [true]
+                  share:
+                    $ref: "#/components/schemas/PatientShare"
+                  replayed:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /audit-logs:
+    get:
+      summary: List the canonical append-only audit ledger
+      description: >
+        Platform administrators may query an explicit workspace. Workspace
+        owners and administrators are restricted to their current operational
+        workspace. Free-text search covers canonical identity/action/resource
+        columns only and never searches raw metadata.
+      parameters:
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+        - in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 160
+        - in: query
+          name: action
+          schema:
+            type: string
+            maxLength: 120
+        - in: query
+          name: resourceType
+          schema:
+            type: string
+            maxLength: 120
+        - in: query
+          name: actorUserId
+          schema:
+            type: string
+            maxLength: 120
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [createdAt:desc, createdAt:asc, action:asc, action:desc]
+            default: createdAt:desc
+      responses:
+        "200":
+          description: Server-filtered and tenant-scoped audit page
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+            X-Page:
+              schema:
+                type: integer
+            X-Page-Limit:
+              schema:
+                type: integer
+            X-Page-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [logs, pagination]
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditLog"
+                  pagination:
+                    $ref: "#/components/schemas/PageMetadata"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /access-logs:
+    get:
+      deprecated: true
+      summary: Compatibility alias for the canonical audit ledger
+      description: >
+        Compatibility-window alias for GET /audit-logs. It returns the same
+        tenant-scoped AuditLog records, filters and pagination contract.
+      parameters:
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: resourceType
+          schema:
+            type: string
+        - in: query
+          name: actorUserId
+          schema:
+            type: string
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [createdAt:desc, createdAt:asc, action:asc, action:desc]
+      responses:
+        "200":
+          description: Same response as GET /audit-logs
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+            X-Page:
+              schema:
+                type: integer
+            X-Page-Limit:
+              schema:
+                type: integer
+            X-Page-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [logs, pagination]
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditLog"
+                  pagination:
+                    $ref: "#/components/schemas/PageMetadata"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /exports:
+    get:
+      summary: List immutable export jobs visible to the current actor
+      description: >
+        Workspace export managers see jobs in their current workspace. Doctors,
+        patients and other limited export actors see only jobs they created.
+        Platform administrators may select a workspace or query platform-wide.
+      parameters:
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [json, csv, xlsx, pdf]
+        - in: query
+          name: dataset
+          schema:
+            type: string
+            enum: [clinical_bundle, audit_logs]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, ready, failed]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [createdAt:desc, createdAt:asc]
+            default: createdAt:desc
+      responses:
+        "200":
+          description: Tenant-scoped export jobs without embedded snapshot data
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+            X-Page:
+              schema:
+                type: integer
+            X-Page-Limit:
+              schema:
+                type: integer
+            X-Page-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exports, pagination]
+                properties:
+                  exports:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ExportJob"
+                  pagination:
+                    $ref: "#/components/schemas/PageMetadata"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Create an immutable tenant-scoped export artifact
+      description: >
+        The backend freezes the authorized dataset at creation time, renders
+        JSON, CSV, XLSX or PDF, stores renderer and SHA-256 metadata, and audits
+        the mutation atomically. Workspace managers may export the workspace;
+        doctors are restricted to patients with active grants; patients are
+        restricted to owned/dependent profiles. Audit export requires a
+        dedicated platform.audit.export or workspace.audit.export capability
+        and must be narrowed to at most 50,000 matching ledger rows.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [json, csv, xlsx, pdf]
+                  default: json
+                dataset:
+                  type: string
+                  enum: [clinical_bundle, audit_logs]
+                  default: clinical_bundle
+                organizationId:
+                  type: string
+                  description: >
+                    Platform administrators may target a workspace. They may
+                    omit this field only for a platform-global audit_logs
+                    export. Other actors are restricted to the current
+                    operational workspace.
+                filters:
+                  type: object
+                  description: >
+                    Server-applied filters. Audit exports accept q, action,
+                    resourceType, actorUserId, startDate, endDate and sort.
+                  properties:
+                    q:
+                      type: string
+                      maxLength: 160
+                    action:
+                      type: string
+                      maxLength: 120
+                    resourceType:
+                      type: string
+                      maxLength: 120
+                    actorUserId:
+                      type: string
+                      maxLength: 120
+                    startDate:
+                      type: string
+                      format: date
+                    endDate:
+                      type: string
+                      format: date
+                    sort:
+                      type: string
+                      enum: [createdAt:desc, createdAt:asc, action:asc, action:desc]
+                startDate:
+                  type: string
+                  format: date
+                  deprecated: true
+                  description: Compatibility alias for filters.startDate.
+                endDate:
+                  type: string
+                  format: date
+                  deprecated: true
+                  description: Compatibility alias for filters.endDate.
+                includeAudio:
+                  type: boolean
+                  default: true
+                includeReports:
+                  type: boolean
+                  default: true
+                includeHistory:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: Export snapshot created, or the original result replayed for the same idempotency key
+          headers:
+            Idempotency-Replayed:
+              description: Present and true when the original mutation result was replayed
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [export, replayed]
+                properties:
+                  export:
+                    $ref: "#/components/schemas/ExportJob"
+                  replayed:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+  /exports/download/{exportId}:
+    get:
+      summary: Download the immutable artifact bound to an export job
+      description: >
+        The actor must still have export capability and job visibility. The
+        backend regenerates the artifact with the recorded renderer version,
+        verifies its SHA-256 when present, and audits each successful download.
+      parameters:
+        - in: path
+          name: exportId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Creation-time JSON, CSV, XLSX or PDF artifact; the download is audited
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, no-store
+            Content-Disposition:
+              schema:
+                type: string
+            X-Shcare-Artifact-SHA256:
+              schema:
+                type: string
+                pattern: "^[0-9a-f]{64}$"
+            X-Shcare-Renderer-Version:
+              schema:
+                type: string
+                enum: [shcare.export-artifact.v1]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportSnapshot"
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/packages:
+    get:
+      summary: List the canonical Platform Admin package ledger, including archived packages
+      responses:
+        "200":
+          description: Canonical service package ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [packages]
+                properties:
+                  packages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ServicePackage"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Create one service package as Platform Admin
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ServicePackageMutationInput"
+                - anyOf:
+                    - required: [name]
+                    - required: [packageName]
+      responses:
+        "201":
+          description: Created package or exact replay of the original outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePackageMutationResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/packages/{packageId}:
+    parameters:
+      - in: path
+        name: packageId
+        required: true
+        schema:
+          type: string
+    patch:
+      summary: Update or explicitly reactivate/archive a service package
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServicePackageMutationInput"
+      responses:
+        "200":
+          description: Updated package or exact replay of the original outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePackageMutationResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      summary: Archive an unassigned package without deleting its ledger row
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Canonical archived package outcome
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ServicePackageMutationResponse"
+                  - type: object
+                    required: [archived, packageId]
+                    properties:
+                      archived:
+                        type: boolean
+                        enum: [true]
+                      packageId:
+                        type: string
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/storage-stats:
+    get:
+      summary: Read tenant-scoped storage facts without synthetic quota or policy claims
+      responses:
+        "200":
+          description: Actual file, bucket, growth, type and workspace usage facts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageStats"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/storage-buckets:
+    post:
+      summary: Create one private custom bucket as Platform Admin
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorageBucketCreateInput"
+      responses:
+        "201":
+          description: Canonical created bucket or exact replay of the original outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageBucketMutationResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/storage-buckets/{bucketId}:
+    parameters:
+      - in: path
+        name: bucketId
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete an empty custom bucket as Platform Admin
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Canonical deletion confirmation or exact replay
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted, bucketId]
+                properties:
+                  deleted:
+                    type: boolean
+                    enum: [true]
+                  bucketId:
+                    type: string
+                  idempotent:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/storage-files:
+    get:
+      summary: List active tenant-scoped storage files
+      responses:
+        "200":
+          description: Canonical active file metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StorageFile"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Upload one private file and atomically persist metadata, audit and idempotency outcome
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - in: query
+          name: bucket
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: filename
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: tags
+          schema:
+            type: string
+            description: Comma-separated tags
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Canonical uploaded file or exact replay; failed persistence cleans the object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageFileMutationResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/storage-files/{fileId}:
+    parameters:
+      - in: path
+        name: fileId
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Soft-delete one manually uploaded file and delete its provider object once
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Canonical deletion confirmation or exact replay
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted, fileId]
+                properties:
+                  deleted:
+                    type: boolean
+                    enum: [true]
+                  fileId:
+                    type: string
+                  idempotent:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /admin/storage-files/{fileId}/share:
+    parameters:
+      - in: path
+        name: fileId
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create an audited 15-minute HTTPS signed URL when the S3 provider is available
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Signed URL or exact replay of the same provider outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageShareResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          description: S3 signed-link provider or canonical metadata repository is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /admin/storage-files/{fileId}/download:
+    parameters:
+      - in: path
+        name: fileId
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Download an authorized tenant-scoped storage object
+      responses:
+        "200":
+          description: File bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "302":
+          description: Redirect to an HTTPS provider URL
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
 components:
   responses:
     ErrorResponse:
@@ -350,7 +1957,1572 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 160
+    OverviewRange:
+      in: query
+      name: range
+      required: false
+      description: Calendar range interpreted in timezoneOffsetMinutes.
+      schema:
+        type: string
+        enum: [today, 7d, 30d]
+        default: today
+    TimezoneOffsetMinutes:
+      in: query
+      name: timezoneOffsetMinutes
+      required: false
+      description: Integer minutes east of UTC, for example 420 for Asia/Ho_Chi_Minh.
+      schema:
+        type: integer
+        minimum: -720
+        maximum: 840
+        default: 0
   schemas:
+    OverviewRange:
+      type: object
+      required: [key, label, startAt, endAt, timezoneOffsetMinutes, bucket]
+      properties:
+        key:
+          type: string
+          enum: [today, 7d, 30d]
+        label:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        timezoneOffsetMinutes:
+          type: integer
+          minimum: -720
+          maximum: 840
+        bucket:
+          type: string
+          enum: [4h, day]
+    OverviewStats:
+      type: object
+      required: [clinics, workspaces, patientsCount, pendingDoctors, devicesOnline, scansCount, aiJobsFailed, storageBytes, storageUsed]
+      properties:
+        clinics:
+          type: integer
+          minimum: 0
+        workspaces:
+          type: integer
+          minimum: 0
+        patientsCount:
+          type: integer
+          minimum: 0
+        pendingDoctors:
+          type: integer
+          minimum: 0
+        devicesOnline:
+          type: integer
+          minimum: 0
+        scansCount:
+          type: integer
+          minimum: 0
+          description: Number of scans inside the requested range.
+        aiJobsFailed:
+          type: integer
+          minimum: 0
+          description: Failed signal-processing scans inside the requested range.
+        storageBytes:
+          type: integer
+          minimum: 0
+        storageUsed:
+          type: string
+          description: Backward-compatible formatted storage value; clients should format storageBytes.
+    OverviewChartPoint:
+      type: object
+      required: [time, count]
+      properties:
+        time:
+          type: string
+        day:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        count:
+          type: integer
+          minimum: 0
+    OverviewChartSlice:
+      type: object
+      required: [key, name, value, color]
+      properties:
+        key:
+          type: string
+          enum: [online, offline, processing, completed, failed, pending]
+        name:
+          type: string
+        value:
+          type: integer
+          minimum: 0
+        color:
+          type: string
+          description: Backward-compatible presentation hint; clients own semantic theme colors.
+    OverviewResponse:
+      type: object
+      required: [generatedAt, range, stats, measureData, deviceData, aiJobData]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        range:
+          $ref: "#/components/schemas/OverviewRange"
+        stats:
+          $ref: "#/components/schemas/OverviewStats"
+        measureData:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/OverviewChartPoint"
+        deviceData:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/OverviewChartSlice"
+        aiJobData:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/OverviewChartSlice"
+    NotificationChannel:
+      type: string
+      enum: [in_app, email, push]
+    NotificationAudienceType:
+      type: string
+      enum: [workspace, role, users]
+    NotificationDeliveryStatus:
+      type: string
+      enum: [ready, disabled, unavailable, skipped, no_recipient, no_devices, sent, partial, failed]
+    NotificationAudienceInput:
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId]
+      properties:
+        type:
+          $ref: "#/components/schemas/NotificationAudienceType"
+        workspaceId:
+          type: string
+        role:
+          type: string
+          enum: [workspace_owner, workspace_admin, doctor, nurse, technician, billing, viewer, patient]
+        userIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+    NotificationCampaignInput:
+      type: object
+      additionalProperties: false
+      required: [title, message, audience, channels]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        type:
+          type: string
+          enum: [info, warning, success, error]
+        audience:
+          $ref: "#/components/schemas/NotificationAudienceInput"
+        channels:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+    Notification:
+      type: object
+      required: [id, organizationId, userId, campaignId, requestedChannels, inAppStatus, emailStatus, pushStatus]
+      properties:
+        id:
+          type: string
+        organizationId:
+          type: string
+        userId:
+          type: string
+        campaignId:
+          type: string
+        audienceType:
+          $ref: "#/components/schemas/NotificationAudienceType"
+        audienceRole:
+          type: string
+        requestedChannels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        inAppStatus:
+          $ref: "#/components/schemas/NotificationDeliveryStatus"
+        emailStatus:
+          $ref: "#/components/schemas/NotificationDeliveryStatus"
+        pushStatus:
+          $ref: "#/components/schemas/NotificationDeliveryStatus"
+        title:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    NotificationCampaign:
+      type: object
+      required: [id, operationId, organizationId, audience, requestedChannels, recipientCount, notificationIds, channelSummary, status, createdAt]
+      properties:
+        id:
+          type: string
+        operationId:
+          type: string
+        organizationId:
+          type: string
+        audience:
+          $ref: "#/components/schemas/NotificationAudienceInput"
+        requestedChannels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        recipientCount:
+          type: integer
+          minimum: 1
+          maximum: 200
+        notificationIds:
+          type: array
+          items:
+            type: string
+        channelSummary:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+        status:
+          type: string
+          enum: [ready, partial, unavailable]
+        createdAt:
+          type: string
+          format: date-time
+    NotificationCampaignResponse:
+      type: object
+      required: [campaign, notifications, idempotent, channelAvailability]
+      properties:
+        campaign:
+          $ref: "#/components/schemas/NotificationCampaign"
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        notification:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Notification"
+        idempotent:
+          type: boolean
+        channelAvailability:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/NotificationChannelAvailability"
+    NotificationChannelAvailability:
+      type: object
+      required: [available, status, provider]
+      properties:
+        available:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/NotificationDeliveryStatus"
+        provider:
+          type: string
+        reasonCode:
+          type: string
+    NotificationOptionsResponse:
+      type: object
+      required: [audiences, channels]
+      properties:
+        audiences:
+          type: object
+          required: [workspaces, roles, users]
+          properties:
+            workspaces:
+              type: array
+              items:
+                type: object
+                required: [id, name, workspaceType]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  workspaceType: { type: string }
+            roles:
+              type: array
+              items: { type: string }
+            users:
+              type: array
+              items:
+                type: object
+                required: [id, workspaceId, name, role]
+                properties:
+                  id: { type: string }
+                  workspaceId: { type: string }
+                  name: { type: string }
+                  email: { type: string }
+                  role: { type: string }
+        channels:
+          type: object
+          required: [in_app, email, push]
+          properties:
+            in_app:
+              $ref: "#/components/schemas/NotificationChannelAvailability"
+            email:
+              $ref: "#/components/schemas/NotificationChannelAvailability"
+            push:
+              $ref: "#/components/schemas/NotificationChannelAvailability"
+    WorkspaceStatus:
+      type: string
+      enum: [pending, active, needs_info, rejected, inactive]
+    WorkspaceType:
+      type: string
+      enum: [hospital, clinic, solo_practice, personal]
+    Workspace:
+      type: object
+      required: [id, name, type, workspaceType, status, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        workspaceType:
+          $ref: "#/components/schemas/WorkspaceType"
+        status:
+          $ref: "#/components/schemas/WorkspaceStatus"
+        version:
+          type: integer
+          minimum: 1
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        website:
+          type: string
+        legalName:
+          type: string
+        representative:
+          type: string
+        ownerUserId:
+          type: string
+        packageId:
+          type: string
+        subscriptionStatus:
+          type: string
+        billingCycle:
+          type: string
+        requestMetadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkspaceCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, type, workspaceType]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        workspaceType:
+          $ref: "#/components/schemas/WorkspaceType"
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        website:
+          type: string
+        legalName:
+          type: string
+        representative:
+          type: string
+        ownerUserId:
+          type: string
+    WorkspaceRequestInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        workspaceType:
+          $ref: "#/components/schemas/WorkspaceType"
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        website:
+          type: string
+        legalName:
+          type: string
+        representative:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    WorkspaceRequestReceipt:
+      type: object
+      required: [workspace, user, operationId, idempotent, notificationDelivery]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        user:
+          type: object
+          additionalProperties: true
+        operationId:
+          type: string
+        idempotent:
+          type: boolean
+        notificationDelivery:
+          type: string
+          enum: [ready, failed, skipped]
+    WorkspacePatchInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        type:
+          type: string
+        workspaceType:
+          $ref: "#/components/schemas/WorkspaceType"
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        website:
+          type: string
+        legalName:
+          type: string
+        representative:
+          type: string
+        packageId:
+          type: string
+        subscriptionStatus:
+          type: string
+        billingCycle:
+          type: string
+    WorkspaceTransitionInput:
+      type: object
+      additionalProperties: false
+      required: [status, expectedVersion]
+      properties:
+        status:
+          $ref: "#/components/schemas/WorkspaceStatus"
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+        message:
+          type: string
+        requiredFields:
+          type: array
+          items:
+            type: string
+    WorkspaceOwnerTransferInput:
+      type: object
+      additionalProperties: false
+      required: [ownerUserId, expectedVersion]
+      properties:
+        ownerUserId:
+          type: string
+        expectedVersion:
+          type: integer
+          minimum: 1
+    WorkspaceMutationReceipt:
+      type: object
+      required: [workspace, operationId, idempotent]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        clinic:
+          $ref: "#/components/schemas/Workspace"
+        transition:
+          type: object
+          required: [from, to]
+          properties:
+            from:
+              $ref: "#/components/schemas/WorkspaceStatus"
+            to:
+              $ref: "#/components/schemas/WorkspaceStatus"
+        operationId:
+          type: string
+        idempotent:
+          type: boolean
+    WorkspaceOwnerApprovalReceipt:
+      type: object
+      required: [workspace, ownerApproval, operationId, idempotent]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        ownerApproval:
+          type: object
+          required: [userId, role, requestedRole, roleRequestStatus, identityOperationId]
+          properties:
+            userId:
+              type: string
+            role:
+              type: string
+              enum: [workspace_owner]
+            requestedRole:
+              type: string
+              enum: [workspace_owner]
+            roleRequestStatus:
+              type: string
+              enum: [approved]
+            identityOperationId:
+              type: string
+        operationId:
+          type: string
+        idempotent:
+          type: boolean
+    WorkspaceOwnerTransferReceipt:
+      type: object
+      required: [workspace, clinic, ownerTransfer, operationId, replayed]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        clinic:
+          $ref: "#/components/schemas/Workspace"
+        ownerTransfer:
+          type: object
+          required: [previousOwnerUserId, newOwnerUserId, membership]
+          properties:
+            previousOwnerUserId:
+              type: string
+            newOwnerUserId:
+              type: string
+            membership:
+              type: object
+              nullable: true
+              additionalProperties: true
+        operationId:
+          type: string
+        replayed:
+          type: boolean
+    WorkspaceArchiveReceipt:
+      type: object
+      required: [deleted, workspaceId, operationId, idempotent]
+      properties:
+        deleted:
+          type: boolean
+          enum: [true]
+        workspaceId:
+          type: string
+        operationId:
+          type: string
+        idempotent:
+          type: boolean
+    StaffInvitationDelivery:
+      type: object
+      required: [email, provider, messageId, lastAttemptAt, errorCode]
+      properties:
+        email:
+          type: string
+          enum: [ready, unavailable, sent, failed]
+        provider:
+          type: string
+        messageId:
+          type: string
+        lastAttemptAt:
+          type: string
+          description: Empty until a provider delivery attempt is recorded.
+        errorCode:
+          type: string
+    StaffInvitation:
+      type: object
+      description: Public invitation ledger record. Raw tokens and token hashes are never exposed here.
+      required: [id, organizationId, email, role, status, expiresAt, delivery, sendCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        organizationId:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [workspace_admin, doctor, nurse, technician, billing, viewer]
+        name:
+          type: string
+        phone:
+          type: string
+        specialty:
+          type: string
+        license:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, revoked, expired]
+        expiresAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+        acceptedByUserId:
+          type: string
+        revokedAt:
+          type: string
+        revokedByUserId:
+          type: string
+        revokeReason:
+          type: string
+        createdByUserId:
+          type: string
+        lastSentAt:
+          type: string
+        sendCount:
+          type: integer
+          minimum: 0
+        delivery:
+          $ref: "#/components/schemas/StaffInvitationDelivery"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    StaffInvitationCreateInput:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        organizationId:
+          type: string
+          description: Required for platform administrators; workspace managers are bound to their current workspace.
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [workspace_admin, doctor, nurse, technician, billing, viewer]
+        name:
+          type: string
+          maxLength: 160
+        phone:
+          type: string
+          maxLength: 80
+        specialty:
+          type: string
+          maxLength: 160
+        license:
+          type: string
+          maxLength: 160
+    StaffInvitationMutationResponse:
+      type: object
+      required: [invitation, idempotent]
+      properties:
+        invitation:
+          $ref: "#/components/schemas/StaffInvitation"
+        delivery:
+          $ref: "#/components/schemas/StaffInvitationDelivery"
+        oneTimeAcceptanceToken:
+          type: string
+          description: Present only on the first create or resend response.
+        oneTimeAcceptanceUrl:
+          type: string
+          format: uri
+          description: Present only on the first create or resend response.
+        idempotent:
+          type: boolean
+    StaffInvitationAcceptanceResponse:
+      type: object
+      required: [invitation, membership, user, idempotent]
+      properties:
+        invitation:
+          $ref: "#/components/schemas/StaffInvitation"
+        membership:
+          type: object
+          additionalProperties: true
+        user:
+          type: object
+          description: Canonical public backend user; secret and credential fields are excluded.
+          additionalProperties: true
+        idempotent:
+          type: boolean
+    StorageBucketCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: Quota, retention, public visibility and encryption claims are intentionally unsupported.
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,79}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        iconKey:
+          type: string
+        colorKey:
+          type: string
+        category:
+          type: string
+        allowedExtensions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        allowedMimeTypes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        maxFileSizeMb:
+          type: number
+          minimum: 1
+          maximum: 2048
+    StorageBucket:
+      type: object
+      required: [id, name, used, files, createdAt, maxFileSizeMb, system]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        desc:
+          type: string
+        iconKey:
+          type: string
+        colorKey:
+          type: string
+        category:
+          type: string
+        used:
+          type: number
+          minimum: 0
+          description: Actual stored size in GiB; this is not a quota percentage.
+        files:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+        allowedExtensions:
+          type: array
+          items:
+            type: string
+        allowedMimeTypes:
+          type: array
+          items:
+            type: string
+        maxFileSizeMb:
+          type: number
+          minimum: 1
+        system:
+          type: boolean
+    StorageBucketMutationResponse:
+      type: object
+      required: [bucket]
+      properties:
+        bucket:
+          $ref: "#/components/schemas/StorageBucket"
+        idempotent:
+          type: boolean
+    StorageFile:
+      type: object
+      required: [id, name, bucket, type, size, uploader, uploadedAt, visibility, byteSize]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        bucket:
+          type: string
+        type:
+          type: string
+        size:
+          type: string
+        uploader:
+          type: string
+        uploadedAt:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        visibility:
+          type: string
+          enum: [private]
+        byteSize:
+          type: integer
+          minimum: 0
+        checksum:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        tags:
+          type: array
+          items:
+            type: string
+        downloadUrl:
+          type: string
+        previewUrl:
+          type: string
+    StorageFileMutationResponse:
+      type: object
+      required: [file]
+      properties:
+        file:
+          $ref: "#/components/schemas/StorageFile"
+        idempotent:
+          type: boolean
+    StorageShareResponse:
+      type: object
+      required: [url, shareUrl, expiresInSeconds]
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: "^https://"
+        shareUrl:
+          type: string
+          format: uri
+          pattern: "^https://"
+        expiresInSeconds:
+          type: integer
+          enum: [900]
+        idempotent:
+          type: boolean
+    StorageStats:
+      type: object
+      required: [totalUsed, totalFiles, buckets, growthData, typeData, topBuckets, recentActivity, topClinicUsage]
+      properties:
+        totalUsed:
+          type: number
+          minimum: 0
+        totalFiles:
+          type: integer
+          minimum: 0
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageBucket"
+        growthData:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        typeData:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        topBuckets:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        recentActivity:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        topClinicUsage:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ServicePackage:
+      type: object
+      required:
+        [id, name, type, segment, price, currency, duration, maxDevices, maxDoctors, maxPatients, storageGb, aiMonthly, retentionDays, features, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        type:
+          type: string
+          enum: [trial, basic, professional, enterprise, custom, solo, personal]
+        segment:
+          type: string
+          enum: [organization, solo_practice, personal]
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        duration:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        maxDevices:
+          type: number
+          minimum: 0
+        maxDoctors:
+          type: number
+          minimum: 0
+        maxPatients:
+          type: number
+          minimum: 0
+        storageGb:
+          type: number
+          minimum: 0
+        aiMonthly:
+          type: number
+          minimum: 0
+        retentionDays:
+          type: number
+          minimum: 0
+        features:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [active, archived]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ServicePackageMutationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        packageName:
+          type: string
+        type:
+          type: string
+        packageType:
+          type: string
+        segment:
+          type: string
+          enum: [organization, solo_practice, personal]
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Za-z]{3}$"
+        duration:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        maxDevices:
+          type: number
+          minimum: 0
+        maxDoctors:
+          type: number
+          minimum: 0
+        maxPatients:
+          type: number
+          minimum: 0
+        storageGb:
+          type: number
+          minimum: 0
+        aiMonthly:
+          type: number
+          minimum: 0
+        retentionDays:
+          type: number
+          minimum: 0
+        features:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [active, archived]
+    ServicePackageMutationResponse:
+      type: object
+      required: [package]
+      properties:
+        package:
+          $ref: "#/components/schemas/ServicePackage"
+        idempotent:
+          type: boolean
+    PatientImportIssue:
+      type: object
+      required: [field, code, message, severity]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [error]
+    PatientImportPatientPreview:
+      type: object
+      required: [id, patientCode, name, dateOfBirth, gender, phone, email, address, bloodType, allergies, emergencyContact, notes, profileType]
+      properties:
+        id:
+          type: string
+        patientCode:
+          type: string
+        name:
+          type: string
+        dateOfBirth:
+          type: string
+        gender:
+          type: string
+          enum: ["", male, female, other, unknown]
+        phone:
+          type: string
+        email:
+          type: string
+        address:
+          type: string
+        bloodType:
+          type: string
+        allergies:
+          type: array
+          items:
+            type: string
+        emergencyContact:
+          type: object
+          additionalProperties:
+            type: string
+        notes:
+          type: string
+        profileType:
+          type: string
+          enum: [patient]
+    PatientImportRow:
+      type: object
+      required: [rowNumber, status, issues, patient]
+      properties:
+        rowNumber:
+          type: integer
+          minimum: 2
+        status:
+          type: string
+          enum: [valid, invalid]
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientImportIssue"
+        patient:
+          $ref: "#/components/schemas/PatientImportPatientPreview"
+    PatientImportBatch:
+      type: object
+      required: [id, organizationId, fileName, fileSizeBytes, status, rowCount, validCount, invalidCount, duplicateCount, importedCount, patientIds, rows, version, expiresAt, committedAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        organizationId:
+          type: string
+        fileName:
+          type: string
+        fileSizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+        status:
+          type: string
+          enum: [validated, invalid, committed, expired]
+        rowCount:
+          type: integer
+          minimum: 0
+          maximum: 5000
+        validCount:
+          type: integer
+          minimum: 0
+        invalidCount:
+          type: integer
+          minimum: 0
+        duplicateCount:
+          type: integer
+          minimum: 0
+        importedCount:
+          type: integer
+          minimum: 0
+        patientIds:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/PatientImportRow"
+        version:
+          type: integer
+          minimum: 1
+        expiresAt:
+          type: string
+          format: date-time
+        committedAt:
+          type: string
+          description: Empty until commit succeeds.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PatientImportValidationResponse:
+      type: object
+      required: [batch, replayed]
+      properties:
+        batch:
+          $ref: "#/components/schemas/PatientImportBatch"
+        replayed:
+          type: boolean
+    PatientImportCommitResponse:
+      type: object
+      required: [batch, importedCount, patientIds, replayed]
+      properties:
+        batch:
+          $ref: "#/components/schemas/PatientImportBatch"
+        importedCount:
+          type: integer
+          minimum: 0
+        patientIds:
+          type: array
+          items:
+            type: string
+        replayed:
+          type: boolean
+    PatientShareMutation:
+      type: object
+      description: >
+        Exactly one recipient must be provided: doctorUserId for a direct
+        clinician grant, or organizationId for an administrative workspace
+        assignment. Patient actors granting direct access are recorded as
+        patient consent by the backend.
+      oneOf:
+        - required: [doctorUserId]
+        - required: [organizationId]
+      properties:
+        doctorUserId:
+          type: string
+        organizationId:
+          type: string
+        accessLevel:
+          type: string
+          enum: [read]
+          default: read
+        purpose:
+          type: string
+          maxLength: 2000
+        scope:
+          type: string
+          enum: [patient_profile, selected_scans]
+          default: patient_profile
+        scanIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    PatientShare:
+      type: object
+      required:
+        [id, patientId, accessLevel, authorityType, purpose, scope, scanIds, status, active, recipient, audit, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        patientId:
+          type: string
+        doctorUserId:
+          type: string
+        organizationId:
+          type: string
+        accessLevel:
+          type: string
+          enum: [read]
+        authorityType:
+          type: string
+          enum: [patient_consent, clinician_access_grant, administrative_assignment]
+        purpose:
+          type: string
+        consentedAt:
+          type: string
+          description: Empty for non-consent grants.
+        scope:
+          type: string
+          enum: [patient_profile, selected_scans]
+        scanIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        expiresAt:
+          type: string
+        revokedAt:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked, expired]
+        active:
+          type: boolean
+        recipient:
+          $ref: "#/components/schemas/PatientShareRecipient"
+        grantedByActor:
+          allOf:
+            - $ref: "#/components/schemas/PatientShareActor"
+          nullable: true
+        revokedByActor:
+          allOf:
+            - $ref: "#/components/schemas/PatientShareActor"
+          nullable: true
+        audit:
+          $ref: "#/components/schemas/PatientShareAudit"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PatientShareRecipient:
+      type: object
+      required: [type, id, name, workspaceId]
+      properties:
+        type:
+          type: string
+          enum: [doctor, workspace]
+        id:
+          type: string
+        name:
+          type: string
+        workspaceId:
+          type: string
+    PatientShareActor:
+      type: object
+      required: [id, name, role]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+    PatientShareAudit:
+      type: object
+      required: [grantedAt, grantedByUserId, revokedAt, revokedByUserId]
+      properties:
+        grantedAt:
+          type: string
+        grantedByUserId:
+          type: string
+        revokedAt:
+          type: string
+        revokedByUserId:
+          type: string
+    PageMetadata:
+      type: object
+      required: [page, limit, total, pageCount, hasNextPage, sort]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        pageCount:
+          type: integer
+          minimum: 0
+        hasNextPage:
+          type: boolean
+        sort:
+          type: string
+    AuditLog:
+      type: object
+      required:
+        [id, actorUserId, actorName, actorRole, organizationId, organizationName, action, resourceType, resourceId, outcome, ip, userAgent, metadata, createdAt]
+      properties:
+        id:
+          type: string
+        actorUserId:
+          type: string
+        actorName:
+          type: string
+        actorRole:
+          type: string
+        organizationId:
+          type: string
+        organizationName:
+          type: string
+        action:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        outcome:
+          type: string
+          enum: [success, failure, warning, denied, recorded]
+        ip:
+          type: string
+        userAgent:
+          type: string
+        metadata:
+          type: object
+          description: Recursively redacted metadata safe for authorized display.
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+    ExportJob:
+      type: object
+      required:
+        [id, organizationId, format, dataset, scopeKind, filters, rendererVersion, status, recordCount, artifactByteSize, artifactSha256, createdAt]
+      properties:
+        id:
+          type: string
+        organizationId:
+          type: string
+          description: Empty only for a platform-global audit_logs export.
+        createdByUserId:
+          type: string
+        format:
+          type: string
+          enum: [json, csv, xlsx, pdf]
+        dataset:
+          type: string
+          enum: [clinical_bundle, audit_logs]
+        scopeKind:
+          type: string
+          enum: [platform, workspace, assigned_patients, personal]
+        filters:
+          type: object
+          additionalProperties: true
+        rendererVersion:
+          type: string
+          enum: [shcare.export-artifact.v1]
+        status:
+          type: string
+          enum: [pending, ready, failed]
+        includeAudio:
+          type: boolean
+        includeReports:
+          type: boolean
+        includeHistory:
+          type: boolean
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        recordCount:
+          type: integer
+          minimum: 0
+        artifactByteSize:
+          type: integer
+          minimum: 0
+        artifactSha256:
+          type: string
+          pattern: "^$|^[0-9a-f]{64}$"
+        downloadUrl:
+          type: string
+        downloadedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ExportSnapshot:
+      type: object
+      required: [schemaVersion, exportId, dataset, generatedAt, scope, filters, counts, data]
+      properties:
+        schemaVersion:
+          type: string
+          enum: [shcare.export.v1]
+        exportId:
+          type: string
+        dataset:
+          type: string
+          enum: [clinical_bundle, audit_logs]
+        generatedAt:
+          type: string
+          format: date-time
+        scope:
+          type: object
+          required: [organizationId, kind, actorUserId, patientIds]
+          properties:
+            organizationId:
+              type: string
+            workspaceId:
+              type: string
+            kind:
+              type: string
+              enum: [platform, workspace, assigned_patients, personal]
+            actorUserId:
+              type: string
+            patientIds:
+              type: array
+              items:
+                type: string
+        filters:
+          type: object
+          additionalProperties: true
+          properties:
+            startDate:
+              type: string
+            endDate:
+              type: string
+            includeAudio:
+              type: boolean
+            includeReports:
+              type: boolean
+            includeHistory:
+              type: boolean
+            q:
+              type: string
+            action:
+              type: string
+            resourceType:
+              type: string
+            actorUserId:
+              type: string
+            sort:
+              type: string
+        counts:
+          type: object
+          required: [total]
+          additionalProperties:
+            type: integer
+            minimum: 0
+        data:
+          type: object
+          properties:
+            patients:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            devices:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            scans:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            appointments:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            reports:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            audioFiles:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            auditLogs:
+              type: array
+              items:
+                $ref: "#/components/schemas/AuditLog"
+    ScanAudioChunkUploadResponse:
+      type: object
+      required: [scan, chunk, uploadedBytes, nextSequence, replayed]
+      properties:
+        scan:
+          type: object
+          additionalProperties: true
+        chunk:
+          type: object
+          required: [id, sequence, sha256, byteSize, createdAt]
+          properties:
+            id:
+              type: string
+            sequence:
+              type: integer
+              minimum: 0
+            sha256:
+              type: string
+              pattern: "^[0-9a-f]{64}$"
+            byteSize:
+              type: integer
+              minimum: 1
+            createdAt:
+              type: string
+              format: date-time
+        uploadedBytes:
+          type: integer
+          minimum: 1
+        nextSequence:
+          type: integer
+          minimum: 1
+        replayed:
+          type: boolean
+    ScanAudioCompletionResponse:
+      type: object
+      required: [scan]
+      properties:
+        scan:
+          type: object
+          additionalProperties: true
     ErrorEnvelope:
       type: object
       required: [error, message, code, statusCode, requestId]

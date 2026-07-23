@@ -1,0 +1,19 @@
+{
+  "protocolVersion": 1,
+  "id": "cmd-audio-session-fixture-001",
+  "type": "audio.session.start",
+  "issuedAt": "2026-07-14T00:00:00.000Z",
+  "expiresAt": "2026-07-14T00:00:30.000Z",
+  "payload": {
+    "protocolVersion": 2,
+    "workspaceId": "workspace-fixture-001",
+    "patientId": "patient-fixture-001",
+    "deviceId": "smarthealth-fixture-001",
+    "scanId": "scan-fixture-001",
+    "sessionId": "audio-session-fixture-001",
+    "sampleRate": 16000,
+    "sampleCount": 128,
+    "encoding": "pcm_s16le"
+  },
+  "correlationId": "scan-fixture-001"
+}

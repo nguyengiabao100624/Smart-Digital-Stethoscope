@@ -143,40 +143,45 @@ async function expectWebSocketRejected(url, protocols = []) {
 
 async function testDemoAuth() {
   const port = "3410";
-  await withServer(
-    {
-      PORT: port,
-      AUDIO_UDP_PORT: "3411",
-      DATA_BACKEND: "json",
-      DATA_DIR: ".test-data/smoke-demo",
-      AUTH_MODE: "demo",
-      FIREBASE_AUTH_ENABLED: "false",
-    },
-    async () => {
-      const preflight = await fetch(`http://127.0.0.1:${port}/api/v1/auth/2fa/challenge`, {
-        method: "OPTIONS",
-        headers: {
-          Origin: "https://portal.shcare.test",
-          "Access-Control-Request-Method": "POST",
-          "Access-Control-Request-Headers": "x-shcare-2fa-token,content-type",
-        },
-      });
-      assert.equal(preflight.status, 204);
-      assert.match(
-        preflight.headers.get("access-control-allow-headers") || "",
-        /(?:^|,\s*)X-Shcare-2FA-Token(?:,|$)/i,
-      );
-      const response = await postJson(`http://127.0.0.1:${port}/api/v1/auth/login`, {
-        login: "bacsytuan@benhvien.com",
-        password: "12345678",
-        role: "doctor",
-      });
-      assert.equal(response.status, 200);
-      const payload = await response.json();
-      assert.equal(payload.user.role, "doctor");
-      assert.ok(payload.token);
-    }
-  );
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shcare-smoke-demo-auth-"));
+  try {
+    await withServer(
+      {
+        PORT: port,
+        AUDIO_UDP_PORT: "3411",
+        DATA_BACKEND: "json",
+        DATA_DIR: dataDir,
+        AUTH_MODE: "demo",
+        FIREBASE_AUTH_ENABLED: "false",
+      },
+      async () => {
+        const preflight = await fetch(`http://127.0.0.1:${port}/api/v1/auth/2fa/challenge`, {
+          method: "OPTIONS",
+          headers: {
+            Origin: "https://portal.shcare.test",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-shcare-2fa-token,content-type",
+          },
+        });
+        assert.equal(preflight.status, 204);
+        assert.match(
+          preflight.headers.get("access-control-allow-headers") || "",
+          /(?:^|,\s*)X-Shcare-2FA-Token(?:,|$)/i,
+        );
+        const response = await postJson(`http://127.0.0.1:${port}/api/v1/auth/login`, {
+          login: "doctor@example.com",
+          password: "12345678",
+          role: "doctor",
+        });
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.equal(payload.user.role, "doctor");
+        assert.ok(payload.token);
+      },
+    );
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
 }
 
 async function testFreshDemoPortalSeedAccess() {

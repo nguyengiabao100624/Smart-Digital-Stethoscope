@@ -1,7 +1,10 @@
 /.gitattributes text eol=lf
+.gitignore text eol=lf
 
 *.c text eol=lf
+*.cjs text eol=lf
 *.cpp text eol=lf
+*.cts text eol=lf
 *.css text eol=lf
 *.h text eol=lf
 *.hpp text eol=lf
@@ -13,6 +16,8 @@
 *.kt text eol=lf
 *.kts text eol=lf
 *.md text eol=lf
+*.mjs text eol=lf
+*.mts text eol=lf
 *.properties text eol=lf
 *.scss text eol=lf
 *.sh text eol=lf

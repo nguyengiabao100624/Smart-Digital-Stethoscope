@@ -2296,3 +2296,23 @@ KLTN report artifacts generated from this evidence set:
 - Production remains blocked until candidate PostgreSQL migrations/rollback,
   provider preview/live proof, Android production signing and runtime, and
   physical firmware proof are available.
+
+## 2026-07-23 Phase 8C — Source Candidate Verified
+
+- Verified source revision:
+  `3beac9604f2a2381697e58a5278502b6f7c5ca0e`.
+- Scope/security audit: `512` changed files, `0` outside the allowlist,
+  `0` sensitive credential paths, `0` high-confidence credential findings and
+  a clean `git diff --check`.
+- Detached clean gates pass for backend/package contracts and Admin at the
+  verified source revision. Web source is unchanged from its green clean run;
+  Android application source is unchanged from its `176/176` plus
+  assemble/lint run; firmware source is unchanged from the three-profile
+  PlatformIO run.
+- Android debug APK is source/build proof only. ADB reported `0` targets.
+  Firmware OTA was compiled but not uploaded. PostgreSQL/provider previews,
+  production signing, emulator/device/TalkBack/FCM and physical
+  flash/I2S/WSS/OTA rollback remain `BLOCKED`.
+- The exact compatibility, artifact and promotion record is
+  `SMART_HEALTH_RELEASE_CANDIDATE_MANIFEST.md`. No preview/live promotion has
+  occurred.

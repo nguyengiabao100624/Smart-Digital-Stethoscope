@@ -1647,8 +1647,9 @@ Closed:
 
 Still open:
 
-- Create the intentional candidate commit/tag and verify it from a clean
-  release worktree.
+- Promote the verified source candidate through the release tag and
+  provider-backed preview train; source scope and detached clean-worktree gates
+  are complete at `3beac9604f2a2381697e58a5278502b6f7c5ca0e`.
 - Apply migrations through `043` to a safe candidate PostgreSQL database and
   prove locking, rollback, idempotency, tenant denial and cleanup.
 - Run provider-backed Admin and Web/Portal previews before any live promotion.

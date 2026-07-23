@@ -1116,7 +1116,14 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
   `1.0.0-rc.1`/code `2`; firmware is `1.0.0`.
 - Use `SMART_HEALTH_RELEASE_CANDIDATE_MANIFEST.md` as the compatibility,
   artifact-hash, exclusion, deploy and rollback source of truth.
-- Active work is intentional staging, candidate commit/tag and clean-worktree
-  verification. Do not stage CV/report-evidence/debug/local credential files.
+- The verified source candidate is
+  `3beac9604f2a2381697e58a5278502b6f7c5ca0e`: `512` baseline-diff files,
+  `0` outside scope, `0` secret paths/high-confidence credentials and clean
+  detached backend/Admin/Web-equivalent/Android-equivalent/firmware-equivalent
+  source-build gates. Root LF rules and Android Kotlin-session ignore close the
+  fresh Windows checkout drift found during verification.
+- Active work moves to the release evidence commit/tag and then Phase 8D
+  provider-backed previews. Do not stage CV/report-evidence/debug/local
+  credential files.
 - No preview/live, Android production signing/runtime or physical-board proof
   has occurred. Those gates remain `BLOCKED`.

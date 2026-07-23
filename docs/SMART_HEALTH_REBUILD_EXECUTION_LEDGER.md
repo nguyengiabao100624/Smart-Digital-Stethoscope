@@ -338,3 +338,23 @@ Any unavailable emulator, board, credential or provider is recorded as `BLOCKED`
 - This closes the former local Portal route-proof gap only. Candidate/live
   PostgreSQL, Firebase/Render/provider, Android production signing/runtime and
   physical ESP32-S3 flash/I2S/WSS/OTA rollback remain `BLOCKED`.
+
+### 2026-07-23 — Phase 8C clean source candidate closure
+
+- The intentional source candidate is
+  `3beac9604f2a2381697e58a5278502b6f7c5ca0e`. Its baseline diff contains
+  `512` files, `0` paths outside the release allowlist, `0` credential/secret
+  paths, `0` high-confidence credential findings and no diff-check failure.
+- Windows checkout reproducibility is explicit: root `.gitattributes` pins
+  source and module scripts to LF, backend smoke owns a temporary canonical
+  seed, and Android ignores local Kotlin compiler sessions. These fixes were
+  discovered by detached clean-worktree verification rather than hidden by the
+  long-lived development tree.
+- Exact-source backend/package gates pass; exact-source Admin passes
+  `151/151`, type, lint and client/SSR build. The unchanged Web tree passes
+  frozen install/audit, `105/105`, `63/63`, type/lint/build. Android passes
+  `176/176`, assemble and lint; all three firmware profiles build.
+- The release manifest owns the clean artifact hashes and compatibility
+  verdict. Provider/live database, Android runtime/signing and physical-board
+  proof remain separate `BLOCKED` rows; no preview or production deployment
+  was performed in Phase 8C.

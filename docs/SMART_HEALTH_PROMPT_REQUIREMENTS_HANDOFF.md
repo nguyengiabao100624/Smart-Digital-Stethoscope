@@ -302,8 +302,12 @@ When another slice is completed, append it here with commit/version/run ids and 
 - Fresh candidate builds pass for Admin, Android (`176/176`), brand/contracts
   and all three firmware profiles. Version/hash/compatibility facts are in
   `SMART_HEALTH_RELEASE_CANDIDATE_MANIFEST.md`.
-- Continue with an intentional candidate index and clean release worktree.
-  Exclude unrelated CV, office/report evidence, debug images, local config,
-  credentials and generated runtime/build directories.
+- The intentional candidate index and clean source worktree are complete at
+  `3beac9604f2a2381697e58a5278502b6f7c5ca0e`. The audited diff has `512`
+  files, no outside-scope path, no credential path/high-confidence credential
+  finding and no diff-check error. Continue with the evidence commit/tag, then
+  provider-backed previews; keep unrelated CV, office/report evidence, debug
+  images, local config, credentials and generated runtime/build directories
+  excluded.
 - Provider/live database, Android production signing/runtime and hardware proof
   remain `BLOCKED`; do not promote or report them complete without evidence.

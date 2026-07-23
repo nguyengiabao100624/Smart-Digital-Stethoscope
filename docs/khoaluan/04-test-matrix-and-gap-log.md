@@ -191,3 +191,23 @@ Before saying the KLTN demo evidence is complete, capture:
   emulator/device/board proof is inferred from these builds.
 - Candidate PostgreSQL migrations, provider preview/live journeys, Android
   runtime and ESP32-S3 hardware validation remain open evidence rows.
+
+## 2026-07-23 Phase 8C clean source candidate evidence
+
+- Source revision
+  `3beac9604f2a2381697e58a5278502b6f7c5ca0e` passed a detached release audit:
+  `512` baseline-diff files, `0` outside the canonical allowlist, `0`
+  credential paths/high-confidence credential findings and a clean
+  `git diff --check`.
+- Backend at the exact source revision passed clean install with `0`
+  vulnerabilities, syntax check, base smoke and KLT contract. Admin at the
+  exact source revision passed `151/151`, type, lint and client/SSR build.
+  Web code is byte-identical to its green frozen clean run (`105/105`,
+  `63/63`, audit/type/lint/build).
+- Android code is unchanged from its clean `176/176`, assemble and lint run;
+  the debug APK hash is recorded in the release manifest. Firmware code is
+  unchanged from the clean production/development/OTA-profile builds; the OTA
+  profile was not uploaded.
+- ADB had `0` targets and no ESP32-S3 was attached. Candidate PostgreSQL,
+  provider preview/live, Android production signing/runtime and physical
+  flash/I2S/WSS/OTA rollback remain explicit evidence gaps.

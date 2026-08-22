@@ -4,7 +4,7 @@ Release label: `Shcare 1.0.0-rc.2`
 
 Baseline revision: `fdeb1f8783827c6493534b9083858ccc113ee8da`
 
-Verified product-source revision: `71e2903d2e34474183a569e304fd32ceabc81f3f`
+Verified product-source revision: `7fd905ff91208bab0d855b1ae2d15bdb5a32c3ad`
 
 Prepared: `2026-08-22` (`Asia/Saigon`)
 
@@ -86,6 +86,15 @@ Demo accounts:
 - `bun audit`: `No vulnerabilities found` after compatible transitive pins and
   React Router `7.18.2`; all affected gates passed again.
 - Local demo readiness and doctor-login journey: PASS.
+- Public cross-engine critical checks: Firefox `16` and WebKit `16` on
+  representative desktop-light/phone-dark home journeys.
+- Portal cross-engine critical matrix: Firefox `463` and WebKit `463` checks,
+  each covering `21` routes in one phone-light or desktop-dark case. A missing
+  avatar-cleanup fixture was reproduced as a 404, fixed with the exact
+  owner/workspace-bound contract and rerun green.
+- Local production-preview performance PASS: load `113ms`, transfer `346,058`
+  bytes, JavaScript `200,809` bytes, LCP `400ms`, INP `56ms`, CLS
+  `0.0003938633`; all configured budgets passed.
 - Generated `dist` tree: `246` files, `5,660,568` bytes, tree SHA-256
   `B3C5B13F323BD63EB1BC84E07A4440B34F337DBAE1A9CFEA76BA4B5CC3379E89`.
 
@@ -144,7 +153,9 @@ physical flash/partition inspection can close that discrepancy.
 | Local source/unit/type/lint/build | `PASS` for Backend/Web/Admin/Android/Firmware |
 | Local demo launcher and authenticated Web/Admin journeys | `PASS` |
 | Admin responsive/theme/permission/a11y/mutation browser matrix | `PASS` (`72` route checks plus cleanup-safe mutations) |
-| Firefox/WebKit RC2 critical journeys and field Web Vitals | `OPEN`; not required to run the isolated local demo, required before live promotion |
+| Firefox/WebKit RC2 critical journeys | `PASS`: Public `16 + 16`; Portal `463 + 463` checks across 21 routes/engine |
+| Local production-preview performance budgets | `PASS`: LCP 400ms, INP 56ms, CLS 0.00039, JS 200,809 bytes |
+| Field Web Vitals on preview/live traffic | `OPEN`; requires deployed traffic and is not inferred from local lab proof |
 | Candidate PostgreSQL migration/locking/rollback | `BLOCKED`; PostgreSQL is not configured |
 | Firebase Admin/service account and public HTTPS backend | `BLOCKED`; credentials/URL are absent |
 | S3/object storage, PHI/HMAC keys, provider credentials, CORS and Redis | `BLOCKED`; production-readiness inputs are absent |

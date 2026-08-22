@@ -516,3 +516,4 @@ Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platf
 | Firmware | Version `1.0.1`; production and OTA PlatformIO builds and hashes recorded | Physical target/partition/flash/I2S/WSS/ACK/rollback `DEFERRED — chờ phần cứng` | Source/build PASS |
 
 - Local demo is ready. Phase 8 and the overall plan are not PASS until every required non-deferred release gate closes; no provider/runtime/hardware result is inferred from source/build evidence.
+- Cross-engine addendum: Public Firefox/WebKit `16 + 16`; Portal Firefox/WebKit `463 + 463` checks across 21 routes/engine. Local production-preview performance passed LCP `400ms`, INP `56ms`, CLS `0.00039`, JS `200,809` bytes and transfer `346,058` bytes. Field telemetry remains open until preview/live deployment.

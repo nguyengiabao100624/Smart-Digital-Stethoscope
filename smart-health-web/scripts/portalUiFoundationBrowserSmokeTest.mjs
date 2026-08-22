@@ -988,6 +988,25 @@ async function runCase(browser, origin, apiPort, testCase) {
     }
     if (
       request.method() === "GET" &&
+      apiPath === "/api/v1/me/avatar/cleanup"
+    ) {
+      requestedFeatures.add("settings-avatar-cleanup");
+      await jsonResponse(route, {
+        userId: "user-ui-foundation",
+        workspaceId: "workspace-ui-foundation",
+        status: "not_required",
+        operationId: "",
+        action: "none",
+        previousFileId: "",
+        attempts: 0,
+        lastErrorCode: "",
+        updatedAt: "",
+        manualSupportRequired: false,
+      });
+      return;
+    }
+    if (
+      request.method() === "GET" &&
       ["/api/auth/sessions", "/api/v1/auth/sessions"].includes(apiPath)
     ) {
       requestedFeatures.add("settings-sessions");

@@ -96,14 +96,25 @@ export default function PricingPage() {
           <p>Bảng giá</p>
           <h1>Gói triển khai rõ chi phí, không dùng số liệu phóng đại.</h1>
           <span>
-            Chọn quy mô phù hợp với cách bạn vận hành: bác sĩ cá nhân, phòng khám hoặc cơ sở lớn cần
-            tích hợp và SLA riêng.
+            Chọn quy mô phù hợp với cách bạn vận hành: bác sĩ cá nhân, phòng
+            khám hoặc cơ sở lớn cần tích hợp và SLA riêng.
           </span>
-          <div className="shc-billing-toggle" aria-label="Chọn chu kỳ thanh toán">
-            <button type="button" className={!yearly ? "is-active" : ""} onClick={() => setYearly(false)}>
+          <div
+            className="shc-billing-toggle"
+            aria-label="Chọn chu kỳ thanh toán"
+          >
+            <button
+              type="button"
+              className={!yearly ? "is-active" : ""}
+              onClick={() => setYearly(false)}
+            >
               Theo tháng
             </button>
-            <button type="button" className={yearly ? "is-active" : ""} onClick={() => setYearly(true)}>
+            <button
+              type="button"
+              className={yearly ? "is-active" : ""}
+              onClick={() => setYearly(true)}
+            >
               Theo năm
               <small>tiết kiệm 20%</small>
             </button>
@@ -114,18 +125,33 @@ export default function PricingPage() {
       <section className="shc-section">
         <div className="shc-container shc-plan-grid">
           {plans.map((plan) => (
-            <article key={plan.name} className={plan.highlight ? "shc-plan is-featured" : "shc-plan"}>
-              {plan.highlight && <span className="shc-plan-badge">Phù hợp phòng khám</span>}
+            <article
+              key={plan.name}
+              className={plan.highlight ? "shc-plan is-featured" : "shc-plan"}
+            >
+              {plan.highlight && (
+                <span className="shc-plan-badge">Phù hợp phòng khám</span>
+              )}
               <h2>{plan.name}</h2>
               <p>{plan.desc}</p>
               <div className="shc-price">
-                <strong>{yearly && plan.priceYear !== "Tùy chỉnh" ? plan.priceYear : plan.price}</strong>
+                <strong>
+                  {yearly && plan.priceYear !== "Tùy chỉnh"
+                    ? plan.priceYear
+                    : plan.price}
+                </strong>
                 {plan.unit && <span>{yearly ? "/tháng" : plan.unit}</span>}
               </div>
-              {plan.price !== "Tùy chỉnh" && <small>VNĐ · chưa bao gồm VAT</small>}
+              {plan.price !== "Tùy chỉnh" && (
+                <small>VNĐ · chưa bao gồm VAT</small>
+              )}
               <Link
                 to={plan.href}
-                className={plan.highlight ? "shc-button shc-button-primary" : "shc-button shc-button-secondary"}
+                className={
+                  plan.highlight
+                    ? "shc-button shc-button-primary"
+                    : "shc-button shc-button-secondary"
+                }
               >
                 {plan.cta} <ArrowRight size={17} />
               </Link>

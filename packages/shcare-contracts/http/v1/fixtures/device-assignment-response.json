@@ -1,0 +1,12 @@
+{
+  "device": {
+    "id": "Device_Aa-01",
+    "organizationId": "Workspace_Aa-01",
+    "assignedPatientId": "Patient_Aa-01",
+    "name": "Ống nghe Shcare A1",
+    "status": "available",
+    "online": false,
+    "updatedAt": "2026-07-29T10:30:00.000Z"
+  },
+  "replayed": false
+}

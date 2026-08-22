@@ -2616,6 +2616,35 @@ async function main() {
     /CREATE\s+INDEX[\s\S]*exports\s*\(organization_id,\s*format,\s*created_at\s+DESC\)/i,
   );
 
+  const notificationWorkspaceBindingMigration = fs.readFileSync(
+    path.join(__dirname, "..", "db", "migrations", "044_notification_device_workspace_binding.sql"),
+    "utf8",
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+workspace_id\s+text/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+auth_session_id\s+text/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+notification_protocol_version\s+integer\s+NOT\s+NULL\s+DEFAULT\s+1/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+app_version\s+text\s+NOT\s+NULL\s+DEFAULT\s+''/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /UPDATE\s+notification_devices[\s\S]*SET\s+workspace_id\s*=\s*users\.organization_id/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /notification_devices\s*\(user_id,\s*workspace_id,\s*enabled,\s*updated_at\s+DESC\)/i,
+  );
+
   const importedExportSnapshot = {
     schemaVersion: "shcare.export.v1",
     exportId: "export_import_csv",

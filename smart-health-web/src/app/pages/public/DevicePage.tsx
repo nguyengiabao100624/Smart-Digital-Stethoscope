@@ -1,5 +1,11 @@
 import { Link, useLocation } from "react-router";
-import { Cpu, Wifi, AlertTriangle, CheckCircle, Stethoscope } from "lucide-react";
+import {
+  Cpu,
+  Wifi,
+  AlertTriangle,
+  CheckCircle,
+  Stethoscope,
+} from "lucide-react";
 import { useSEO } from "@/lib/useSEO";
 
 const specs = [
@@ -7,7 +13,10 @@ const specs = [
   { label: "Ghép thiết bị", value: "QR hoặc mã claim dùng một lần" },
   { label: "Âm thanh", value: "PCM16 little-endian, mono, 16 kHz" },
   { label: "Gói tương thích", value: "128 mẫu mỗi gói" },
-  { label: "Trạng thái hiện diện", value: "Ngoại tuyến · Đang kết nối · Trực tuyến · Suy giảm" },
+  {
+    label: "Trạng thái hiện diện",
+    value: "Ngoại tuyến · Đang kết nối · Trực tuyến · Suy giảm",
+  },
 ];
 
 export default function DevicePage() {
@@ -35,36 +44,36 @@ export default function DevicePage() {
       name: meta.title.split(" |")[0],
       description: meta.description,
       brand: { "@type": "Brand", name: "Shcare" },
-      category: isRemote ? "Remote Health Monitoring Service" : "Connected Stethoscope",
+      category: isRemote
+        ? "Remote Health Monitoring Service"
+        : "Connected Stethoscope",
     },
   });
   return (
     <div>
       <section className="py-20 relative overflow-hidden">
-        <div className="absolute inset-0 medical-grid opacity-40" />
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              "radial-gradient(ellipse at 70% 50%, rgba(11,92,154,0.2) 0%, transparent 60%)",
-          }}
-        />
         <div className="max-w-5xl mx-auto px-6 grid md:grid-cols-2 gap-12 items-center relative">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm mb-5 bg-[#0B5C9A]/15 border border-[#0B5C9A]/30 text-[#4AA4E0]">
+            <div className="shc-public-eyebrow mb-5">
               <Cpu size={14} /> Thiết bị thu tín hiệu tim phổi
             </div>
-            <h1 className="brand-gradient-text mb-4">Ống nghe thông minh Shcare</h1>
-            <p className="text-[#8aa5ba] text-lg leading-relaxed mb-8">
-              Thiết bị thu tín hiệu tim phổi theo phiên đo đã xác thực. Ứng dụng Android quét QR,
-              hướng dẫn cấu hình Wi-Fi và chỉ hoàn tất ghép nối sau khi backend xác nhận thiết bị online.
+            <h1 className="shc-public-heading mb-4">
+              Ống nghe thông minh Shcare
+            </h1>
+            <p className="text-muted-foreground text-lg leading-relaxed mb-8">
+              Thiết bị thu tín hiệu tim phổi theo phiên đo đã xác thực. Ứng dụng
+              Android quét QR, hướng dẫn cấu hình Wi-Fi và chỉ hoàn tất ghép nối
+              sau khi backend xác nhận thiết bị online.
             </p>
-            <Link to="/lien-he" className="premium-button inline-block">
+            <Link
+              to="/lien-he"
+              className="shc-button shc-button-primary inline-flex"
+            >
               Liên hệ triển khai thiết bị
             </Link>
           </div>
-          <div className="glass-panel rounded-2xl p-5">
-            <div className="text-xs font-semibold text-[#8aa5ba] uppercase tracking-wider mb-3">
+          <div className="shc-public-card p-5">
+            <div className="text-xs font-semibold text-muted-foreground mb-3">
               Ý nghĩa trạng thái thiết bị
             </div>
             <div className="space-y-3">
@@ -73,52 +82,39 @@ export default function DevicePage() {
                   icon: CheckCircle,
                   id: "Trực tuyến",
                   status: "Backend đã xác nhận thiết bị hoạt động",
-                  color: "#00FFD1",
-                  bg: "rgba(0,255,209,0.08)",
-                  border: "rgba(0,255,209,0.2)",
+                  tone: "is-success",
                 },
                 {
                   icon: Wifi,
                   id: "Ngoại tuyến",
                   status: "Chưa nhận tín hiệu trạng thái",
-                  color: "#FF4B4B",
-                  bg: "rgba(255,75,75,0.08)",
-                  border: "rgba(255,75,75,0.2)",
+                  tone: "is-danger",
                 },
                 {
                   icon: AlertTriangle,
                   id: "Suy giảm",
                   status: "Cần kiểm tra chất lượng luồng âm thanh",
-                  color: "#4AA4E0",
-                  bg: "rgba(11,92,154,0.15)",
-                  border: "rgba(11,92,154,0.3)",
+                  tone: "is-warning",
                 },
               ].map((dev) => (
                 <div
                   key={dev.id}
-                  className="flex items-center justify-between p-3 rounded-xl border"
-                  style={{ background: dev.bg, borderColor: dev.border }}
+                  className={`shc-public-status-row ${dev.tone}`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-8 h-8 rounded-xl flex items-center justify-center"
-                      style={{ background: dev.bg, border: `1px solid ${dev.border}` }}
-                    >
-                      <dev.icon size={15} style={{ color: dev.color }} />
+                    <div className="shc-public-status-icon">
+                      <dev.icon size={15} />
                     </div>
-                    <span className="text-sm font-mono font-semibold text-[#eefbff]">{dev.id}</span>
+                    <span className="text-sm font-mono font-semibold text-foreground">
+                      {dev.id}
+                    </span>
                   </div>
-                  <span className="text-xs font-medium" style={{ color: dev.color }}>
-                    {dev.status}
-                  </span>
+                  <span className="shc-public-status-label">{dev.status}</span>
                 </div>
               ))}
             </div>
-            <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2 text-xs text-[#8aa5ba]">
-              <div
-                className="w-1.5 h-1.5 rounded-full bg-[#00FFD1] animate-pulse"
-                style={{ boxShadow: "0 0 6px rgba(0,255,209,0.8)" }}
-              />
+            <div className="mt-4 pt-4 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="shc-public-status-dot" aria-hidden="true" />
               Trạng thái chỉ đổi sau xác nhận từ backend hoặc thiết bị
             </div>
           </div>
@@ -127,8 +123,10 @@ export default function DevicePage() {
 
       <section className="py-16">
         <div className="max-w-5xl mx-auto px-6">
-          <h2 className="brand-gradient-text text-center mb-3">Cách hoạt động</h2>
-          <p className="text-center text-[#8aa5ba] mb-10">
+          <h2 className="shc-public-heading text-center mb-3">
+            Cách hoạt động
+          </h2>
+          <p className="text-center text-muted-foreground mb-10">
             Từ phiên đo đã xác thực đến hồ sơ bác sĩ có thể xem lại.
           </p>
           <div className="grid md:grid-cols-4 gap-5">
@@ -158,27 +156,25 @@ export default function DevicePage() {
                 desc: "Bác sĩ nhận thông báo, xem dạng sóng và ghi chú lâm sàng.",
               },
             ].map((s) => (
-              <div key={s.step} className="premium-card p-5 text-center">
-                <div
-                  className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center text-[#0d1a30] font-black text-sm"
-                  style={{
-                    background: "linear-gradient(135deg,#0B5C9A,#00FFD1)",
-                    boxShadow: "0 0 15px rgba(0,255,209,0.4)",
-                  }}
-                >
-                  {s.step}
-                </div>
-                <h3 className="text-sm font-semibold text-[#eefbff] mb-2">{s.label}</h3>
-                <p className="text-xs text-[#8aa5ba] leading-relaxed">{s.desc}</p>
+              <div key={s.step} className="shc-public-card p-5 text-center">
+                <div className="shc-public-step mx-auto mb-3">{s.step}</div>
+                <h3 className="text-sm font-semibold text-foreground mb-2">
+                  {s.label}
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {s.desc}
+                </p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="py-16" style={{ background: "rgba(255,255,255,0.02)" }}>
+      <section className="shc-public-section-muted py-16">
         <div className="max-w-5xl mx-auto px-6">
-          <h2 className="brand-gradient-text text-center mb-3">Tính năng thiết bị</h2>
+          <h2 className="shc-public-heading text-center mb-3">
+            Tính năng thiết bị
+          </h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 mt-8">
             {[
               {
@@ -206,14 +202,14 @@ export default function DevicePage() {
                 desc: "Cập nhật firmware từ xa qua portal để đảm bảo thiết bị luôn mới nhất.",
               },
             ].map((f) => (
-              <div key={f.title} className="premium-card p-5">
-                <CheckCircle
-                  size={18}
-                  className="text-[#00FFD1] mb-3"
-                  style={{ filter: "drop-shadow(0 0 5px rgba(0,255,209,0.6))" }}
-                />
-                <h3 className="text-sm font-semibold text-[#eefbff] mb-2">{f.title}</h3>
-                <p className="text-xs text-[#8aa5ba] leading-relaxed">{f.desc}</p>
+              <div key={f.title} className="shc-public-card p-5">
+                <CheckCircle size={18} className="text-primary mb-3" />
+                <h3 className="text-sm font-semibold text-foreground mb-2">
+                  {f.title}
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {f.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -222,15 +218,21 @@ export default function DevicePage() {
 
       <section className="py-16">
         <div className="max-w-3xl mx-auto px-6">
-          <h2 className="brand-gradient-text text-center mb-10">Thông số kỹ thuật</h2>
-          <div className="glass-panel rounded-2xl overflow-hidden">
+          <h2 className="shc-public-heading text-center mb-10">
+            Thông số kỹ thuật
+          </h2>
+          <div className="shc-public-card overflow-hidden">
             {specs.map((spec, idx) => (
               <div
                 key={spec.label}
-                className={`flex items-center justify-between px-6 py-4 ${idx < specs.length - 1 ? "border-b border-white/10" : ""}`}
+                className={`flex items-center justify-between px-6 py-4 ${idx < specs.length - 1 ? "border-b border-border" : ""}`}
               >
-                <span className="text-sm text-[#8aa5ba]">{spec.label}</span>
-                <span className="text-sm font-medium text-[#eefbff]">{spec.value}</span>
+                <span className="text-sm text-muted-foreground">
+                  {spec.label}
+                </span>
+                <span className="text-sm font-medium text-foreground">
+                  {spec.value}
+                </span>
               </div>
             ))}
           </div>
@@ -239,11 +241,17 @@ export default function DevicePage() {
 
       <section className="py-14">
         <div className="max-w-2xl mx-auto px-6 text-center">
-          <h2 className="brand-gradient-text mb-3">Triển khai thiết bị cho phòng khám của bạn</h2>
-          <p className="text-[#8aa5ba] mb-8">
-            Liên hệ đội ngũ Shcare để xác nhận phạm vi thiết bị, quy trình và điều kiện triển khai.
+          <h2 className="shc-public-heading mb-3">
+            Triển khai thiết bị cho phòng khám của bạn
+          </h2>
+          <p className="text-muted-foreground mb-8">
+            Liên hệ đội ngũ Shcare để xác nhận phạm vi thiết bị, quy trình và
+            điều kiện triển khai.
           </p>
-          <Link to="/lien-he" className="premium-button inline-block">
+          <Link
+            to="/lien-he"
+            className="shc-button shc-button-primary inline-flex"
+          >
             Liên hệ triển khai
           </Link>
         </div>

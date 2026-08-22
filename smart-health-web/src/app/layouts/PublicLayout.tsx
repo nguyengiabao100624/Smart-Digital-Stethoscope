@@ -12,7 +12,6 @@ import {
   Play,
   X,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
 import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
 import { PublicMotionContext } from "@/app/context/PublicMotionContext";
 
@@ -76,10 +75,14 @@ function isActive(pathname: string, href: string) {
 function resolveInitialMotionPreference() {
   if (typeof window === "undefined") return false;
 
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return false;
+  }
+
   const storedMotion = window.localStorage.getItem("shc-public-motion");
   if (storedMotion) return storedMotion === "enabled";
 
-  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return true;
 }
 
 export default function PublicLayout() {
@@ -87,13 +90,18 @@ export default function PublicLayout() {
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null);
   const [openDesktopGroup, setOpenDesktopGroup] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
-  const [homeHeroActive, setHomeHeroActive] = useState(false);
-  const [motionEnabled, setMotionEnabled] = useState(resolveInitialMotionPreference);
+  const [motionRequested, setMotionRequested] = useState(
+    resolveInitialMotionPreference,
+  );
+  const [systemReducedMotion, setSystemReducedMotion] = useState(() =>
+    typeof window === "undefined"
+      ? true
+      : window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   const closeDesktopTimer = useRef<number | null>(null);
-  const shellRef = useRef<HTMLDivElement | null>(null);
   const publicMainRef = useRef<HTMLElement | null>(null);
   const location = useLocation();
-  const isHome = location.pathname === "/";
+  const motionEnabled = motionRequested && !systemReducedMotion;
 
   const clearDesktopCloseTimer = () => {
     if (closeDesktopTimer.current !== null) {
@@ -117,39 +125,18 @@ export default function PublicLayout() {
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (window.localStorage.getItem("shc-public-motion")) return;
-
-    const syncWithSystem = () => setMotionEnabled(!media.matches);
+    const syncWithSystem = () => setSystemReducedMotion(media.matches);
+    syncWithSystem();
     media.addEventListener("change", syncWithSystem);
     return () => media.removeEventListener("change", syncWithSystem);
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollY = window.scrollY;
-      const hero =
-        publicMainRef.current?.querySelector<HTMLElement>(".shc-hero");
-      const heroHeight = hero?.offsetHeight || window.innerHeight;
-      const fadeStart = Math.max(0, heroHeight - window.innerHeight * 1.04);
-      const fadeDistance = Math.max(
-        260,
-        Math.min(560, window.innerHeight * 0.48),
-      );
-      const heroExitProgress = isHome
-        ? Math.min(1, Math.max(0, (scrollY - fadeStart) / fadeDistance))
-        : 1;
-
-      setScrolled(scrollY > 16);
-      shellRef.current?.style.setProperty(
-        "--shc-hero-exit-progress",
-        heroExitProgress.toFixed(3),
-      );
-      setHomeHeroActive(isHome && heroExitProgress < 0.96);
-    };
+    const handleScroll = () => setScrolled(window.scrollY > 16);
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHome]);
+  }, []);
 
   useEffect(
     () => () => {
@@ -165,11 +152,6 @@ export default function PublicLayout() {
     setOpenMobileGroup(null);
     setOpenDesktopGroup(null);
     setScrolled(false);
-    setHomeHeroActive(location.pathname === "/");
-    shellRef.current?.style.setProperty(
-      "--shc-hero-exit-progress",
-      location.pathname === "/" ? "0" : "1",
-    );
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     publicMainRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
     window.requestAnimationFrame(() => {
@@ -190,9 +172,12 @@ export default function PublicLayout() {
       main
         .querySelectorAll<HTMLElement>("[data-shc-reveal]")
         .forEach((element) => {
-          delete element.dataset.shcReveal;
           delete element.dataset.shcRevealState;
-          element.style.removeProperty("--shc-reveal-delay");
+          if (element.dataset.shcRevealAuto === "true") {
+            delete element.dataset.shcReveal;
+            delete element.dataset.shcRevealAuto;
+            element.style.removeProperty("--shc-reveal-delay");
+          }
         });
     };
 
@@ -217,6 +202,11 @@ export default function PublicLayout() {
       ].join(", ");
       const isHomeElement = (element: HTMLElement) =>
         Boolean(element.closest(homeSelector));
+      const authoredTargets = Array.from(
+        main.querySelectorAll<HTMLElement>(
+          '[data-shc-reveal]:not([data-shc-reveal-auto="true"])',
+        ),
+      );
       const containers = Array.from(
         main.querySelectorAll<HTMLElement>(
           ":scope > div > section > :not(.absolute):not([data-shc-reveal]), :scope > section > :not(.absolute):not([data-shc-reveal])",
@@ -229,29 +219,34 @@ export default function PublicLayout() {
           `:scope > div:not(.shc-home) section :is(${gridSelector}) > *, :scope > .shc-simple-page section :is(${gridSelector}) > *`,
         ),
       ).filter((element) => !element.closest("[data-shc-reveal]"));
-      const targets = [...containers, ...gridItems].filter(
+      const targets = [...authoredTargets, ...containers, ...gridItems].filter(
         (element, index, source) => source.indexOf(element) === index,
       );
       const directions = ["left", "right", "up"] as const;
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
             const element = entry.target as HTMLElement;
-            element.dataset.shcRevealState = entry.isIntersecting
-              ? "visible"
-              : "pending";
+            element.dataset.shcRevealState = "visible";
+            observer.unobserve(element);
           });
         },
         { rootMargin: "0px 0px -8% 0px", threshold: 0.08 },
       );
 
       targets.forEach((element, index) => {
-        element.dataset.shcReveal = directions[index % directions.length];
+        if (!element.dataset.shcReveal) {
+          element.dataset.shcReveal = directions[index % directions.length];
+          element.dataset.shcRevealAuto = "true";
+        }
         element.dataset.shcRevealState = "pending";
-        element.style.setProperty(
-          "--shc-reveal-delay",
-          `${Math.min((index % 5) * 70, 280)}ms`,
-        );
+        if (!element.style.getPropertyValue("--shc-reveal-delay")) {
+          element.style.setProperty(
+            "--shc-reveal-delay",
+            `${(index % 4) * 60}ms`,
+          );
+        }
         observer.observe(element);
       });
 
@@ -270,7 +265,8 @@ export default function PublicLayout() {
   }, [location.pathname, motionEnabled]);
 
   const toggleMotion = () => {
-    setMotionEnabled((current) => {
+    if (systemReducedMotion) return;
+    setMotionRequested((current) => {
       const next = !current;
       window.localStorage.setItem(
         "shc-public-motion",
@@ -283,9 +279,8 @@ export default function PublicLayout() {
   return (
     <PublicMotionContext.Provider value={motionEnabled}>
       <div
-        ref={shellRef}
         className="app-shell public-shell shc-public-layout"
-        data-shc-home-hero={homeHeroActive ? "active" : "rest"}
+        data-shcare-public-foundation="v1"
         data-shc-motion={motionEnabled ? "enabled" : "reduced"}
       >
         <div className="shc-announcement">
@@ -299,17 +294,13 @@ export default function PublicLayout() {
           </Link>
         </div>
 
-        <header
-          className={scrolled ? "shc-header is-scrolled" : "shc-header"}
-          style={{
-            backdropFilter: scrolled ? "blur(44px) saturate(195%)" : "none",
-            WebkitBackdropFilter: scrolled
-              ? "blur(44px) saturate(195%)"
-              : "none",
-          }}
-        >
+        <header className={scrolled ? "shc-header is-scrolled" : "shc-header"}>
           <div className="shc-container shc-header-inner">
-            <Link to="/" className="shc-brand" aria-label="Shcare — Smart Health Care">
+            <Link
+              to="/"
+              className="shc-brand"
+              aria-label="Shcare — Smart Health Care"
+            >
               <span className="shc-brand-mark">
                 <img src={logoUrl} alt="" />
               </span>
@@ -383,12 +374,21 @@ export default function PublicLayout() {
                 className="shc-motion-toggle"
                 onClick={toggleMotion}
                 aria-pressed={motionEnabled}
+                disabled={systemReducedMotion}
                 aria-label={
-                  motionEnabled
-                    ? "Tắt hiệu ứng chuyển động"
-                    : "Bật hiệu ứng chuyển động"
+                  systemReducedMotion
+                    ? "Hệ thống đang giảm chuyển động"
+                    : motionEnabled
+                      ? "Tắt hiệu ứng chuyển động"
+                      : "Bật hiệu ứng chuyển động"
                 }
-                title={motionEnabled ? "Tắt hiệu ứng" : "Bật hiệu ứng"}
+                title={
+                  systemReducedMotion
+                    ? "Đang tuân theo cài đặt giảm chuyển động của hệ thống"
+                    : motionEnabled
+                      ? "Tắt hiệu ứng"
+                      : "Bật hiệu ứng"
+                }
               >
                 {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
                 <span>Hiệu ứng</span>
@@ -415,83 +415,80 @@ export default function PublicLayout() {
             </button>
           </div>
 
-          <AnimatePresence>
-            {mobileOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="shc-mobile-menu"
-              >
-                {navLinks.map((item) =>
-                  item.children ? (
-                    <div key={item.label} className="shc-mobile-group">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenMobileGroup((current) =>
-                            current === item.label ? null : item.label,
-                          )
-                        }
-                      >
-                        {item.label}
-                        <ChevronDown
-                          size={16}
-                          className={
-                            openMobileGroup === item.label ? "rotate-180" : ""
-                          }
-                        />
-                      </button>
-                      <AnimatePresence initial={false}>
-                        {openMobileGroup === item.label && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                          >
-                            {item.children.map((child) => (
-                              <Link key={child.href} to={child.href}>
-                                {child.label}
-                              </Link>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ) : (
-                    <Link key={item.href} to={item.href}>
+          {mobileOpen && (
+            <nav
+              className="shc-mobile-menu"
+              data-shc-menu-state="open"
+              aria-label="Điều hướng di động"
+            >
+              {navLinks.map((item) =>
+                item.children ? (
+                  <div key={item.label} className="shc-mobile-group">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenMobileGroup((current) =>
+                          current === item.label ? null : item.label,
+                        )
+                      }
+                    >
                       {item.label}
-                    </Link>
-                  ),
-                )}
-                <div className="shc-mobile-actions">
-                  <button
-                    type="button"
-                    className="shc-motion-toggle shc-mobile-motion-toggle"
-                    onClick={toggleMotion}
-                    aria-pressed={motionEnabled}
-                  >
-                    {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
-                    <span>
-                      {motionEnabled ? "Tắt hiệu ứng" : "Bật hiệu ứng"}
-                    </span>
-                  </button>
-                  <Link to="/login" className="shc-button shc-button-secondary">
-                    Đăng nhập
+                      <ChevronDown
+                        size={16}
+                        className={
+                          openMobileGroup === item.label ? "rotate-180" : ""
+                        }
+                      />
+                    </button>
+                    {openMobileGroup === item.label && (
+                      <div className="shc-mobile-submenu">
+                        {item.children.map((child) => (
+                          <Link key={child.href} to={child.href}>
+                            {child.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Link key={item.href} to={item.href}>
+                    {item.label}
                   </Link>
-                  <Link
-                    to="/register"
-                    className="shc-button shc-button-primary"
-                  >
-                    Bắt đầu
-                  </Link>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                ),
+              )}
+              <div className="shc-mobile-actions">
+                <button
+                  type="button"
+                  className="shc-motion-toggle shc-mobile-motion-toggle"
+                  onClick={toggleMotion}
+                  aria-pressed={motionEnabled}
+                  disabled={systemReducedMotion}
+                >
+                  {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
+                  <span>
+                    {systemReducedMotion
+                      ? "Hệ thống đang giảm chuyển động"
+                      : motionEnabled
+                        ? "Tắt hiệu ứng"
+                        : "Bật hiệu ứng"}
+                  </span>
+                </button>
+                <Link to="/login" className="shc-button shc-button-secondary">
+                  Đăng nhập
+                </Link>
+                <Link to="/register" className="shc-button shc-button-primary">
+                  Bắt đầu
+                </Link>
+              </div>
+            </nav>
+          )}
         </header>
 
-        <main className="min-h-[60vh] flex-1" ref={publicMainRef}>
+        <main
+          id="shcare-public-main"
+          className="min-h-[60vh] flex-1"
+          ref={publicMainRef}
+        >
           <Outlet />
         </main>
 

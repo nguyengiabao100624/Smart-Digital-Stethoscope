@@ -1,5 +1,14 @@
 package com.example.smart_health_android.ui.screens
 
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.PersistableBundle
+import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,12 +25,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Launch
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
@@ -43,21 +52,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -70,12 +82,16 @@ import com.example.smart_health_android.security.AccountSecurityAction
 import com.example.smart_health_android.security.AccountSecurityLoadState
 import com.example.smart_health_android.security.AccountSecurityUiState
 import com.example.smart_health_android.security.AccountSecurityViewModel
+import com.example.smart_health_android.security.AccountSecurityViewModelFactory
+import com.example.smart_health_android.security.BiometricLocalUnlockUiAction
+import com.example.smart_health_android.security.BiometricLocalUnlockUiState
 import com.example.smart_health_android.security.TwoFactorSetupStep
 import com.example.smart_health_android.ui.components.ShcareErrorState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
 import com.example.smart_health_android.ui.theme.ShcareTheme
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,17 +100,44 @@ fun PrivacyScreen(
     onNavigateToChangePassword: () -> Unit,
     onNavigateToDataAccess: () -> Unit,
     onNavigateToAccessLog: () -> Unit,
-    viewModel: AccountSecurityViewModel = viewModel(),
+    biometricLocalUnlockState: BiometricLocalUnlockUiState,
+    onBiometricLocalUnlockAction: (BiometricLocalUnlockUiAction) -> Unit,
+    expectedUserId: String,
+    expectedAuthSessionEpoch: Long,
+    viewModel: AccountSecurityViewModel = viewModel(
+        factory = AccountSecurityViewModelFactory(
+            expectedUserId = expectedUserId,
+            expectedAuthSessionEpoch = expectedAuthSessionEpoch,
+        ),
+    ),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spacing = ShcareTheme.spacing
+    val recoveryDeliveryPending =
+        state.step == TwoFactorSetupStep.Recovery && state.recoveryCodes.isNotEmpty()
+    val sensitiveTwoFactorMaterialVisible =
+        state.step == TwoFactorSetupStep.Verify || recoveryDeliveryPending
+
+    SensitiveWindowProtection(enabled = sensitiveTwoFactorMaterialVisible)
+
+    BackHandler(enabled = recoveryDeliveryPending) {
+        viewModel.onAction(AccountSecurityAction.RecoveryExitAttempted)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.security_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = {
+                            if (recoveryDeliveryPending) {
+                                viewModel.onAction(AccountSecurityAction.RecoveryExitAttempted)
+                            } else {
+                                onNavigateBack()
+                            }
+                        },
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.security_back),
@@ -168,6 +211,12 @@ fun PrivacyScreen(
                     )
                 }
                 item {
+                    BiometricLocalUnlockCard(
+                        state = biometricLocalUnlockState,
+                        onAction = onBiometricLocalUnlockAction,
+                    )
+                }
+                item {
                     TwoFactorCard(
                         state = state,
                         available = state.loadState == AccountSecurityLoadState.Ready,
@@ -237,6 +286,43 @@ fun PrivacyScreen(
 }
 
 @Composable
+private fun SensitiveWindowProtection(enabled: Boolean) {
+    val window = LocalView.current.context.findActivity()?.window
+    DisposableEffect(window, enabled) {
+        val wasAlreadySecure = window
+            ?.attributes
+            ?.flags
+            ?.and(WindowManager.LayoutParams.FLAG_SECURE) != 0
+        val ownsSecureFlag = enabled && !wasAlreadySecure
+        if (ownsSecureFlag) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+        onDispose {
+            if (ownsSecureFlag) {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+// EXTRA_IS_SENSITIVE is an inlined metadata key. Writing it is safe on the
+// supported minSdk; Android 13+ consumes it while older versions ignore it.
+@SuppressLint("InlinedApi")
+private fun sensitiveClipEntry(label: String, text: String): ClipEntry {
+    val clipData = ClipData.newPlainText(label, text)
+    clipData.description.extras = PersistableBundle().apply {
+        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+    }
+    return ClipEntry(clipData)
+}
+
+@Composable
 private fun TwoFactorCard(
     state: AccountSecurityUiState,
     available: Boolean,
@@ -244,9 +330,13 @@ private fun TwoFactorCard(
 ) {
     val spacing = ShcareTheme.spacing
     val semanticColors = ShcareTheme.colors
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val uriHandler = LocalUriHandler.current
-    var copyAnnouncement by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+    val twoFactorClipboardLabel = stringResource(R.string.security_two_factor_clipboard_label)
+    val recoveryClipboardLabel = stringResource(R.string.security_recovery_clipboard_label)
+    var keyCopyAnnouncement by remember { mutableStateOf("") }
+    var recoveryCopyAnnouncement by remember { mutableStateOf("") }
 
     Card(
         modifier = Modifier
@@ -288,10 +378,14 @@ private fun TwoFactorCard(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = if (state.twoFactor.enabled) {
-                            stringResource(R.string.security_two_factor_enabled)
-                        } else {
-                            stringResource(R.string.security_two_factor_disabled)
+                        text = when {
+                            state.twoFactor.enabled -> {
+                                stringResource(R.string.security_two_factor_enabled)
+                            }
+                            state.twoFactor.enrollmentPending -> {
+                                stringResource(R.string.security_two_factor_pending)
+                            }
+                            else -> stringResource(R.string.security_two_factor_disabled)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -331,10 +425,16 @@ private fun TwoFactorCard(
             when (state.step) {
                 TwoFactorSetupStep.Status -> {
                     Text(
-                        text = if (state.twoFactor.enabled) {
-                            stringResource(R.string.security_two_factor_enabled_description)
-                        } else {
-                            stringResource(R.string.security_two_factor_disabled_description)
+                        text = when {
+                            state.twoFactor.enabled -> {
+                                stringResource(R.string.security_two_factor_enabled_description)
+                            }
+                            state.twoFactor.enrollmentPending -> {
+                                stringResource(R.string.security_two_factor_pending_description)
+                            }
+                            else -> {
+                                stringResource(R.string.security_two_factor_disabled_description)
+                            }
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -356,7 +456,13 @@ private fun TwoFactorCard(
                         ) {
                             Icon(Icons.Default.Security, contentDescription = null)
                             Text(
-                                text = stringResource(R.string.security_two_factor_start_action),
+                                text = stringResource(
+                                    if (state.twoFactor.enrollmentPending) {
+                                        R.string.security_two_factor_restart_action
+                                    } else {
+                                        R.string.security_two_factor_start_action
+                                    },
+                                ),
                                 modifier = Modifier.padding(start = spacing.small),
                             )
                         }
@@ -390,8 +496,15 @@ private fun TwoFactorCard(
                         ) {
                             TextButton(
                                 onClick = {
-                                    clipboard.setText(AnnotatedString(enrollment.manualKey))
-                                    copyAnnouncement = "copied"
+                                    coroutineScope.launch {
+                                        clipboard.setClipEntry(
+                                            sensitiveClipEntry(
+                                                label = twoFactorClipboardLabel,
+                                                text = enrollment.manualKey,
+                                            ),
+                                        )
+                                        keyCopyAnnouncement = "copied"
+                                    }
                                 },
                                 modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                             ) {
@@ -402,11 +515,11 @@ private fun TwoFactorCard(
                                 onClick = { uriHandler.openUri(enrollment.otpauthUri) },
                                 modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                             ) {
-                                Icon(Icons.Default.Launch, contentDescription = null)
+                                Icon(Icons.AutoMirrored.Filled.Launch, contentDescription = null)
                                 Text(stringResource(R.string.security_open_authenticator))
                             }
                         }
-                        if (copyAnnouncement.isNotBlank()) {
+                        if (keyCopyAnnouncement.isNotBlank()) {
                             Text(
                                 text = stringResource(R.string.security_copied),
                                 style = MaterialTheme.typography.bodySmall,
@@ -461,6 +574,32 @@ private fun TwoFactorCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (state.recoveryExitBlocked) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Assertive
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.security_recovery_exit_blocked),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(spacing.medium),
+                            )
+                        }
+                    }
+                    if (state.errorMessage.isNotBlank()) {
+                        Text(
+                            text = state.errorMessage,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Assertive
+                            },
+                        )
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
                         state.recoveryCodes.forEach { code ->
                             Surface(
@@ -481,13 +620,31 @@ private fun TwoFactorCard(
                     }
                     TextButton(
                         onClick = {
-                            clipboard.setText(AnnotatedString(state.recoveryCodes.joinToString("\n")))
-                            copyAnnouncement = "copied"
+                            coroutineScope.launch {
+                                clipboard.setClipEntry(
+                                    sensitiveClipEntry(
+                                        label = recoveryClipboardLabel,
+                                        text = state.recoveryCodes.joinToString("\n"),
+                                    ),
+                                )
+                                recoveryCopyAnnouncement = "copied"
+                            }
                         },
+                        enabled = !state.isMutating,
                         modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null)
                         Text(stringResource(R.string.security_copy_recovery))
+                    }
+                    if (recoveryCopyAnnouncement.isNotBlank()) {
+                        Text(
+                            text = stringResource(R.string.security_copied),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = semanticColors.success,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        )
                     }
                     Row(verticalAlignment = Alignment.Top) {
                         Checkbox(
@@ -495,6 +652,7 @@ private fun TwoFactorCard(
                             onCheckedChange = {
                                 onAction(AccountSecurityAction.RecoveryAcknowledged(it))
                             },
+                            enabled = !state.isMutating,
                         )
                         Text(
                             text = stringResource(R.string.security_recovery_acknowledge),
@@ -504,7 +662,7 @@ private fun TwoFactorCard(
                     }
                     Button(
                         onClick = { onAction(AccountSecurityAction.CompleteRecovery) },
-                        enabled = state.recoveryAcknowledged,
+                        enabled = state.recoveryAcknowledged && !state.isMutating,
                         modifier = Modifier
                             .fillMaxWidth()
                             .defaultMinSize(minHeight = 48.dp),
@@ -603,7 +761,7 @@ private fun SecurityNavigationCard(
         )
         HorizontalDivider()
         SecurityNavigationRow(
-            icon = Icons.Default.Logout,
+            icon = Icons.AutoMirrored.Filled.Logout,
             title = stringResource(R.string.security_access_log),
             onClick = onNavigateToAccessLog,
         )
@@ -632,7 +790,7 @@ private fun SecurityNavigationRow(
                 .weight(1f)
                 .padding(horizontal = ShcareTheme.spacing.medium),
         )
-        Icon(Icons.Default.ChevronRight, contentDescription = null)
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
     }
 }
 

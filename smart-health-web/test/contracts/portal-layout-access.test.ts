@@ -6,6 +6,10 @@ const portalLayout = readFileSync(
   new URL("../../src/app/layouts/PortalLayout.tsx", import.meta.url),
   "utf8",
 );
+const smartHealthApi = readFileSync(
+  new URL("../../src/lib/smart-health-api.ts", import.meta.url),
+  "utf8",
+);
 
 test("gates the avatar audit link with the canonical route capability contract", () => {
   const auditLink = 'to={routePath("portal.audit")}';
@@ -45,4 +49,17 @@ test("gates auxiliary portal queries and account navigation with route capabilit
   assert.doesNotMatch(portalLayout, /to="\/portal\/settings"/);
   assert.doesNotMatch(portalLayout, /to="\/portal\/workspace"/);
   assert.doesNotMatch(portalLayout, /to="\/portal\/notifications"/);
+});
+
+test("portal status UI consumes only the bounded tenant-safe status contract", () => {
+  const portalStatusContract = smartHealthApi.slice(
+    smartHealthApi.indexOf("export interface PortalStatusPayload"),
+    smartHealthApi.indexOf("export interface PortalBillingUsage"),
+  );
+
+  assert.doesNotMatch(portalStatusContract, /\bmode\s*:/);
+  assert.doesNotMatch(portalStatusContract, /\bauthMode\s*:/);
+  assert.doesNotMatch(portalStatusContract, /\bdataBackend\s*:/);
+  assert.doesNotMatch(portalLayout, /backendStatus\.mode/);
+  assert.match(portalLayout, /backendStatus\.scoped\.devicesOnline/);
 });

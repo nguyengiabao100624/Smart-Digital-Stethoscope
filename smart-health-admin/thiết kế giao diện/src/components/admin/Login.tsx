@@ -1,7 +1,8 @@
 ﻿import React, { useState } from "react";
 import { motion } from "framer-motion";
+import { useRef } from "react";
 import { useNavigate, Link } from "@/components/admin/router-shim";
-import { Stethoscope, ShieldCheck, Mail, Lock } from "lucide-react";
+import { ShieldCheck, Mail, Lock } from "lucide-react";
 import { smartHealthApi, type SmartHealthAuthUser } from "@/lib/smart-health-api";
 import {
   hasFirebaseWebConfig,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/firebase-client";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { ThemeToggle } from "./ThemeToggle";
+import { ShcareBrand } from "./ShcareBrand";
 import {
   getSurfaceAccessTargetUrl,
   getWrongSurfaceMessage,
@@ -29,6 +31,7 @@ function assertSurfaceAccess(user?: SmartHealthAuthUser) {
 
 export function Login() {
   const navigate = useNavigate();
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -57,6 +60,7 @@ export function Login() {
       } else {
         setError(toVietnameseErrorMessage(err, "Email hoặc mật khẩu không đúng."));
         setIsLoading(false);
+        window.requestAnimationFrame(() => passwordInputRef.current?.focus());
       }
     }
   };
@@ -71,21 +75,24 @@ export function Login() {
       >
         <ThemeToggle className="absolute right-4 top-4" />
         <div className="flex flex-col items-center mb-8 text-center">
-          <div className="float-soft w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-            <Stethoscope className="w-8 h-8 text-primary" />
-          </div>
+          <ShcareBrand compact centered className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">
-            {IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Smart Health Admin"}
+            {IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Shcare Platform Admin"}
           </h1>
           <p className="text-muted-foreground mt-2">
             {IS_PORTAL_SURFACE
               ? "Đăng nhập để vận hành bệnh nhân, thiết bị và lượt đo"
-              : "Đăng nhập để quản trị nền tảng Smart Health"}
+              : "Đăng nhập để quản trị nền tảng Shcare"}
           </p>
         </div>
 
         {error && (
-          <div className="mb-6 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm">
+          <div
+            id="admin-login-error"
+            role="alert"
+            aria-live="assertive"
+            className="mb-6 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+          >
             {error}
           </div>
         )}
@@ -103,7 +110,12 @@ export function Login() {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError("");
+                }}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "admin-login-error" : undefined}
                 placeholder="admin@smarthealth.vn"
                 className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
@@ -118,12 +130,18 @@ export function Login() {
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
+                ref={passwordInputRef}
                 id="admin-password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError("");
+                }}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "admin-login-error" : undefined}
                 placeholder="••••••••"
                 className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
@@ -150,11 +168,7 @@ export function Login() {
 
         <div className="mt-8 pt-6 border-t border-border flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <ShieldCheck className="w-4 h-4 text-success" />
-          <span>
-            {IS_PORTAL_SURFACE
-              ? "Xác thực tài khoản bằng Firebase"
-              : "Xác thực quản trị bằng Firebase"}
-          </span>
+          <span>Xác thực tài khoản an toàn</span>
         </div>
         <div className="mt-4 text-center text-xs text-muted-foreground">
           {IS_PORTAL_SURFACE ? "Platform Admin dùng " : "Bác sĩ/phòng khám dùng "}
@@ -162,7 +176,7 @@ export function Login() {
             href={getSurfaceAccessTargetUrl()}
             className="font-medium text-primary hover:underline"
           >
-            {IS_PORTAL_SURFACE ? "Smart Health Admin" : "Shcare Web Portal"}
+            {IS_PORTAL_SURFACE ? "Shcare Platform Admin" : "Shcare Web Portal"}
           </a>
         </div>
       </motion.div>

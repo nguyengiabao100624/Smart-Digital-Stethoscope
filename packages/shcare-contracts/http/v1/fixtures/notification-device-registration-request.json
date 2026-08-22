@@ -1,0 +1,7 @@
+{
+  "fcmToken": "fixture-fcm-token-owned-by-this-android-installation",
+  "platform": "android",
+  "enabled": true,
+  "notificationProtocolVersion": 2,
+  "appVersion": "2.0.0-rc2"
+}

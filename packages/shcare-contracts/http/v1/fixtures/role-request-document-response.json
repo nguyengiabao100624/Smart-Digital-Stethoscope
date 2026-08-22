@@ -1,0 +1,14 @@
+{
+  "document": {
+    "id": "doctor_doc_8c2f8f760b40ee35ac004e1a",
+    "userId": "user_role_request",
+    "organizationId": "org_alpha",
+    "name": "medical-license.pdf",
+    "contentType": "application/pdf",
+    "byteSize": 24576,
+    "sha256": "d89564b0cc236e570f50619120278e1e7fbd7780f9f3a08b7eeda4e9bfab6b7a",
+    "uploadedAt": "2026-08-01T08:30:00.000Z"
+  },
+  "operationId": "role_request_document_8c2f8f760b40ee35ac004e1a",
+  "replayed": false
+}

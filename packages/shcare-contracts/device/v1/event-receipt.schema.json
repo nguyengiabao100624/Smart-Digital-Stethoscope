@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/event-receipt.schema.json",
+  "title": "Shcare device operational event receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "deviceId",
+    "eventType",
+    "otaStatus",
+    "commandId",
+    "correlationId",
+    "otaId",
+    "code"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "type": { "enum": ["event.accepted", "event.rejected"] },
+    "deviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$" },
+    "eventType": { "type": "string", "pattern": "^ota\\.", "maxLength": 120 },
+    "otaStatus": {
+      "enum": [
+        "downloading",
+        "verifying",
+        "rebooting",
+        "rolling_back",
+        "confirmed",
+        "rolled_back",
+        "failed",
+        "expired"
+      ]
+    },
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "otaId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "code": { "type": "string", "minLength": 1, "maxLength": 80 }
+  }
+}

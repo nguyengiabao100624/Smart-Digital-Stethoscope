@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Shcare" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/shcare_launch_background</item>
+        <item name="android:colorAccent">@color/shcare_vital_teal</item>
+        <item name="android:navigationBarColor">@color/shcare_launch_background</item>
+        <item name="android:statusBarColor">@color/shcare_launch_background</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

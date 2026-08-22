@@ -1,0 +1,20 @@
+{
+  "workspaceId": "workspace-clinic-1",
+  "review": {
+    "id": "review-001",
+    "scanId": "scan-001",
+    "organizationId": "workspace-clinic-1",
+    "patientId": "patient-001",
+    "deviceId": "device-001",
+    "status": "reviewed",
+    "decision": "follow_up_required",
+    "note": "Hẹn bệnh nhân theo dõi lại.",
+    "reviewerUserId": "doctor-001",
+    "reviewedAt": "2026-07-29T08:10:00.000Z",
+    "version": 2,
+    "scanStatus": "needs_review",
+    "scanCreatedAt": "2026-07-29T08:00:00.000Z",
+    "createdAt": "2026-07-29T08:10:00.000Z",
+    "updatedAt": "2026-07-29T08:10:00.000Z"
+  }
+}

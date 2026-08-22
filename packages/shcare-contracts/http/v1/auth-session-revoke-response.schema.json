@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/auth-session-revoke-response.schema.json",
+  "title": "Shcare auth session revoke receipt",
+  "description": "Closed receipt for revoking one authentication session owned by the authenticated backend user.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["session", "revoked", "replayed"],
+  "properties": {
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "device",
+        "userAgent",
+        "ip",
+        "createdAt",
+        "lastSeenAt",
+        "revokedAt",
+        "current"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "device": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "ip": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastSeenAt": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" },
+        "current": { "const": false }
+      }
+    },
+    "revoked": { "const": true },
+    "replayed": { "type": "boolean" }
+  },
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/auth/sessions/{sessionId}/revoke",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-owner-binding": {
+    "source": "authenticated-backend-user",
+    "crossAccountOutcome": 404,
+    "idempotencyScope": "userId"
+  }
+}

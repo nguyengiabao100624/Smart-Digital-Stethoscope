@@ -48,13 +48,22 @@ test("does not expose the unsupported device unpair dead control", async () => {
   assert.match(devicesSource, /kind:\s*["']revoke["']/);
 });
 
-test("forwards stable idempotency keys for pair, command, and OTA mutations", async () => {
-  const apiSource = await readFile(apiPath, "utf8");
+test("forwards stable idempotency keys for pair, revoke, command, and OTA mutations", async () => {
+  const [apiSource, devicesSource] = await Promise.all([
+    readFile(apiPath, "utf8"),
+    readFile(devicesPath, "utf8"),
+  ]);
   const idempotencyHeaderCount = apiSource.match(/["']Idempotency-Key["']/g)?.length ?? 0;
 
-  assert.ok(idempotencyHeaderCount >= 3);
+  assert.ok(idempotencyHeaderCount >= 4);
   assert.match(apiSource, /SmartHealthDevicePairingResponse/);
   assert.match(apiSource, /SmartHealthDeviceCommandResponse/);
+  assert.match(
+    apiSource,
+    /revokeDevice[\s\S]*?idempotencyKey:\s*string[\s\S]*?["']Idempotency-Key["']:\s*idempotencyKey/,
+  );
+  assert.match(devicesSource, /createDeviceOperationIdempotencyKey\("revoke"/);
+  assert.match(devicesSource, /smartHealthApi\.revokeDevice\([\s\S]{0,180}operationKey/);
 });
 
 test("rotates device credentials without operator secrets or premature success", async () => {
@@ -167,6 +176,23 @@ test("submits and types every inventory field rendered by the add-device form", 
   assert.match(addDeviceSource, /purchaseDate:\s*formData\.purchaseDate/);
 });
 
+test("never accepts a raw factory device credential in the Admin provisioning flow", async () => {
+  const [addDeviceSource, apiSource, smokeSource] = await Promise.all([
+    readFile(addDevicePath, "utf8"),
+    readFile(apiPath, "utf8"),
+    readFile(adminMutationSmokePath, "utf8"),
+  ]);
+
+  assert.doesNotMatch(addDeviceSource, /deviceSecret|confirmDeviceSecret|Secret thiết bị/);
+  assert.doesNotMatch(apiSource, /createDeviceProvision[\s\S]{0,600}deviceSecret/);
+  assert.match(addDeviceSource, /Credential phải được nạp bằng quy trình factory bảo mật/);
+  assert.match(addDeviceSource, /Admin không nhập, xem hoặc gửi raw device secret/);
+  assert.match(addDeviceSource, /id="deviceId"[\s\S]{0,120}required/);
+  assert.doesNotMatch(smokeSource, /deviceSecret|randomBytes/);
+  assert.match(smokeSource, /SMOKE_FACTORY_DEVICE_ID/);
+  assert.match(smokeSource, /dedicated factory-enrolled inventory record/);
+});
+
 test("keeps the one-time claim code inside the dialog instead of a persistent toast", async () => {
   const addDeviceSource = await readFile(addDevicePath, "utf8");
 
@@ -220,8 +246,6 @@ test("associates add-device labels and names with their form controls", async ()
     "deviceName",
     "deviceType",
     "organizationId",
-    "deviceSecret",
-    "confirmDeviceSecret",
     "manufacturer",
     "model",
     "serialNumber",
@@ -277,7 +301,7 @@ test("separates device creation success from refresh failures", async () => {
     addDeviceSource,
     /try\s*\{\s*await onCreated\?\.\(\);[\s\S]*?toast\.error\("Đã tạo thiết bị nhưng chưa làm mới danh sách"/,
   );
-  assert.match(addDeviceSource, /Đã đăng ký thiết bị/);
+  assert.match(addDeviceSource, /Đã tạo QR claim/);
   assert.doesNotMatch(
     addDeviceSource,
     /catch\s*\(error\)\s*\{[\s\S]*?await onCreated\?\.\(\)[\s\S]*?Không thể đăng ký thiết bị/,

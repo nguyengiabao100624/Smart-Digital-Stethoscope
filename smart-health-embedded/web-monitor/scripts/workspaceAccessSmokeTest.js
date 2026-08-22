@@ -3,11 +3,27 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const {
+  isPasswordHash,
+  verifyPasswordSecret,
+} = require("../src/passwordHash");
+const {
+  createPasswordIdempotencyFingerprint,
+} = require("../src/passwordChangeSecurity");
+const { createFactoryEnrolledDeviceFixture } = require("./factoryDeviceFixture");
 
 const rootDir = path.join(__dirname, "..");
 const dataDir = path.join(rootDir, ".test-data", "workspace-access");
 const port = "3432";
 const seededClaimCode = "ALPHA12345678";
+const passwordIdempotencyTestKey =
+  "workspace-access-test-password-idempotency-key";
+const ancillaryRepairPasswordPayload = {
+  currentPassword: " RepairOld123 ",
+  newPassword: " RepairNew456 ",
+};
+const ancillaryRepairOperationId =
+  "identityop_password_ancillary_repair";
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -47,6 +63,9 @@ function writeSeedDb() {
     ["usr_suspended_grant_doctor", "doctor", "suspended-grant-doctor@alpha.test", "Suspended Grant Doctor", "org_alpha"],
     ["usr_patient", "patient", "patient@alpha.test", "Patient Owner", "org_personal_patient"],
     ["usr_guardian", "patient", "guardian@alpha.test", "Assigned Guardian", "org_personal_patient"],
+    ["usr_password_repair", "patient", "password-repair@alpha.test", "Password Repair", "org_personal_patient"],
+    ["usr_role_request", "patient", "role-request@alpha.test", "Role Request", "org_personal_patient"],
+    ["usr_solo_role_request", "patient", "solo-role-request@alpha.test", "Solo Role Request", "org_personal_patient"],
     ["usr_technician", "technician", "technician@alpha.test", "Technician", "org_alpha"],
     ["usr_billing", "billing", "billing@alpha.test", "Billing", "org_alpha"],
     ["usr_viewer", "viewer", "viewer@alpha.test", "Viewer", "org_alpha"],
@@ -68,6 +87,20 @@ function writeSeedDb() {
     updatedAt: createdAt,
   }));
   users.find((user) => user.id === "usr_pending_doctor").roleRequestStatus = "pending";
+  users.find((user) => user.id === "usr_password_repair").password =
+    ancillaryRepairPasswordPayload.newPassword;
+  users.find((user) => user.id === "usr_patient").notificationPreferences = {
+    enabled: true,
+    sound: true,
+    vibration: true,
+    doctorRequests: true,
+    abnormalResults: true,
+    deviceOffline: true,
+    appointments: true,
+    messages: true,
+    aiUpdates: false,
+    newLogin: true,
+  };
 
   const memberships = users
     .filter((user) => !["usr_orphan_doctor", "usr_invited_staff"].includes(user.id))
@@ -222,6 +255,19 @@ function writeSeedDb() {
         createdAt,
         updatedAt: createdAt,
       },
+      {
+        id: "pat_guardian_deleted",
+        patientCode: "FAMILY-GUARDIAN-DELETED",
+        name: "Deleted Guardian Dependent",
+        organizationId: "org_personal_patient",
+        ownerUserId: "usr_patient",
+        guardianUserId: "usr_guardian",
+        profileType: "dependent",
+        relationship: "child",
+        deletedAt: createdAt,
+        createdAt,
+        updatedAt: createdAt,
+      },
     ],
     appointments: [
       {
@@ -281,6 +327,7 @@ function writeSeedDb() {
         ownerUserId: "usr_workspace_admin",
         pairedUserId: "usr_doctor",
         connected: false,
+        secretHash: "workspace-smoke-device-verification-material",
         createdAt,
         updatedAt: createdAt,
       },
@@ -294,21 +341,19 @@ function writeSeedDb() {
         ownershipState: "claimed",
         ownerUserId: "usr_patient",
         pairedUserId: "usr_patient",
+        assignedPatientId: "pat_patient_child",
+        battery: 0,
         connected: false,
         createdAt,
         updatedAt: createdAt,
       },
-      {
-        id: "dev_claim_alpha",
-        name: "Alpha Claim Device",
-        type: "stethoscope",
-        status: "unclaimed",
+      createFactoryEnrolledDeviceFixture({
+        deviceId: "dev_claim_alpha",
         organizationId: "org_alpha",
-        ownershipState: "provisioned",
-        connected: false,
+        factoryCredential: "workspace-claim-device-secret-000001",
+        name: "Alpha Claim Device",
         createdAt,
-        updatedAt: createdAt,
-      },
+      }),
     ],
     scans: [
       { id: "scan_alpha", patientId: "pat_alpha", patientName: "Alpha Patient", organizationId: "org_alpha", status: "completed", wavFile: "scan_alpha.wav", createdAt, updatedAt: createdAt },
@@ -322,6 +367,54 @@ function writeSeedDb() {
         updatedAt: "2020-01-15T08:00:00.000Z",
       },
       { id: "scan_beta", patientId: "pat_beta", patientName: "Beta Patient", organizationId: "org_beta", status: "completed", createdAt, updatedAt: createdAt },
+      {
+        id: "scan_patient_self",
+        patientId: "pat_patient_self",
+        patientName: "Patient Owner",
+        organizationId: "org_personal_patient",
+        status: "completed",
+        aiLabel: "captured",
+        createdAt: "2026-07-27T08:00:00.000Z",
+        updatedAt: "2026-07-27T08:00:00.000Z",
+      },
+      {
+        id: "scan_patient_child",
+        patientId: "pat_patient_child",
+        patientName: "Patient Child",
+        organizationId: "org_personal_patient",
+        status: "completed",
+        aiLabel: "",
+        createdAt: "2026-07-28T08:00:00.000Z",
+        updatedAt: "2026-07-28T08:00:00.000Z",
+      },
+      {
+        id: "scan_patient_child_processing",
+        patientId: "pat_patient_child",
+        patientName: "Patient Child",
+        organizationId: "org_personal_patient",
+        status: "processing",
+        aiLabel: "processing",
+        createdAt: "2026-07-27T07:00:00.000Z",
+        updatedAt: "2026-07-27T07:00:00.000Z",
+      },
+      {
+        id: "scan_patient_child_legacy",
+        patientId: "pat_patient_child",
+        patientName: "Patient Child",
+        status: "completed",
+        createdAt: "2026-07-26T07:00:00.000Z",
+        updatedAt: "2026-07-26T07:00:00.000Z",
+      },
+      {
+        id: "scan_patient_child_cross_workspace",
+        patientId: "pat_patient_child",
+        patientName: "Patient Child collision",
+        organizationId: "org_beta",
+        status: "completed",
+        aiLabel: "abnormal",
+        createdAt: "2026-07-29T08:00:00.000Z",
+        updatedAt: "2026-07-29T08:00:00.000Z",
+      },
     ],
     scanReviews: [],
     clinicalAlerts: [
@@ -462,12 +555,142 @@ function writeSeedDb() {
         createdAt,
         updatedAt: createdAt,
       },
+      {
+        id: "notif_inbox_current",
+        type: "appointment_scheduled",
+        title: "Current workspace inbox item",
+        message: "This item belongs to the active account and workspace.",
+        organizationId: "org_alpha",
+        userId: "usr_workspace_admin",
+        read: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "notif_inbox_account_wide",
+        type: "new_login",
+        title: "Account-wide inbox item",
+        message: "This item follows the account into its active workspace.",
+        organizationId: "",
+        userId: "usr_workspace_admin",
+        read: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "notif_inbox_old_workspace",
+        type: "warning",
+        title: "Stale workspace inbox item",
+        message: "This item must not cross the active workspace epoch.",
+        organizationId: "org_beta",
+        userId: "usr_workspace_admin",
+        read: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "notif_implicit_global",
+        type: "warning",
+        title: "Sensitive platform operation",
+        message: "A notification without an owner must never become a public broadcast.",
+        read: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
+    identityOperations: [
+      {
+        id: ancillaryRepairOperationId,
+        targetUserId: "usr_password_repair",
+        actorUserId: "usr_password_repair",
+        organizationId: "org_personal_patient",
+        operation: "reset_password",
+        status: "completed",
+        idempotencyKey: "password-ancillary-repair",
+        requestFingerprint: createPasswordIdempotencyFingerprint(
+          {
+            operation: "reset_password",
+            targetUserId: "usr_password_repair",
+            payload: ancillaryRepairPasswordPayload,
+          },
+          {
+            PASSWORD_IDEMPOTENCY_HMAC_KEY: passwordIdempotencyTestKey,
+          },
+        ),
+        previousAccountStatus: "active",
+        targetAccountStatus: "password_reset_pending",
+        targetState: { provider: "demo" },
+        providerStatus: "skipped",
+        providerResult: { updated: true, skipped: true },
+        errorCode: "",
+        createdAt,
+        updatedAt: createdAt,
+        completedAt: createdAt,
+      },
     ],
     sessions: [],
     authSessions: [],
     accessLogs: [],
     auditLogs: [],
-    idempotencyKeys: [],
+    idempotencyKeys: [
+      {
+        id: "idem_legacy_account_profile_safe",
+        scope: "usr_patient",
+        operation: "account.profile.update",
+        key: "legacy-patient-account-profile-safe",
+        fingerprint: hashValue("{}"),
+        resourceType: "user",
+        resourceId: "usr_patient",
+        responseStatus: 200,
+        responseResource: { id: "usr_patient" },
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "idem_legacy_account_profile_stale",
+        scope: "usr_patient",
+        operation: "account.profile.update",
+        key: "legacy-patient-account-profile-stale",
+        fingerprint: hashValue(JSON.stringify({ phone: "0999000000" })),
+        resourceType: "user",
+        resourceId: "usr_patient",
+        responseStatus: 200,
+        responseResource: { id: "usr_patient" },
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "idem_account_profile_wrong_owner",
+        scope: "usr_patient",
+        operation: "account.profile.update",
+        key: "patient-account-profile-wrong-owner",
+        fingerprint: hashValue(JSON.stringify({ name: "Wrong owner replay probe" })),
+        resourceType: "user",
+        resourceId: "usr_doctor",
+        responseStatus: 200,
+        responseResource: {
+          userId: "usr_doctor",
+          intent: "profile_update",
+          changedFields: ["name"],
+          user: {
+            id: "usr_doctor",
+            name: "Wrong owner replay probe",
+            title: "",
+            phone: "",
+            license: "",
+            hospital: "",
+            department: "",
+            specialty: "",
+            address: "",
+            organizationId: "org_alpha",
+            updatedAt: createdAt,
+          },
+          replayed: false,
+        },
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
     storageBuckets: [],
     subscriptions: [],
     deviceClaims: [
@@ -587,11 +810,11 @@ function waitForRealtimeClose(socket) {
   });
 }
 
-async function login(email) {
+async function login(email, password = "12345678") {
   const { response, body } = await request("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login: email, password: "12345678" }),
+    body: JSON.stringify({ login: email, password }),
   });
   assert.equal(response.status, 200, `login failed for ${email}: ${JSON.stringify(body)}`);
   return {
@@ -617,6 +840,66 @@ async function expectStatus(label, session, pathname, status, options = {}) {
   return result.body;
 }
 
+function assertPatientMutationReceipt(
+  receipt,
+  { userId, workspaceId, patientId, intent, replayed },
+) {
+  const expectedKeys = intent === "delete"
+    ? ["deleted", "intent", "patientId", "replayed", "userId", "workspaceId"]
+    : ["intent", "patient", "patientId", "replayed", "userId", "workspaceId"];
+  assert.deepEqual(
+    Object.keys(receipt).sort(),
+    expectedKeys,
+    `${intent} must return the exact canonical patient mutation envelope`,
+  );
+  assert.equal(receipt.userId, userId);
+  assert.equal(receipt.workspaceId, workspaceId);
+  assert.equal(receipt.patientId, patientId);
+  assert.equal(receipt.intent, intent);
+  assert.equal(receipt.replayed, replayed);
+  if (intent === "delete") {
+    assert.equal(receipt.deleted, true);
+    assert.equal(Object.hasOwn(receipt, "patient"), false);
+    return;
+  }
+  assert.equal(Object.hasOwn(receipt, "deleted"), false);
+  assert.equal(receipt.patient?.id, patientId);
+  assert.equal(receipt.patient?.organizationId, workspaceId);
+}
+
+function assertAccountProfileMutationReceipt(
+  receipt,
+  { userId, changedFields, replayed },
+) {
+  assert.deepEqual(
+    Object.keys(receipt).sort(),
+    ["changedFields", "intent", "replayed", "user", "userId"],
+    "account profile update must return the exact canonical receipt envelope",
+  );
+  assert.equal(receipt.userId, userId);
+  assert.equal(receipt.intent, "profile_update");
+  assert.deepEqual(receipt.changedFields, [...changedFields].sort());
+  assert.equal(receipt.replayed, replayed);
+  assert.deepEqual(
+    Object.keys(receipt.user).sort(),
+    [
+      "address",
+      "department",
+      "hospital",
+      "id",
+      "license",
+      "name",
+      "organizationId",
+      "phone",
+      "specialty",
+      "title",
+      "updatedAt",
+    ],
+    "account profile receipt must expose only the bounded profile projection",
+  );
+  assert.equal(receipt.user.id, userId);
+}
+
 async function expectRawStatus(label, session, pathname, status, options = {}) {
   const headers = { ...(options.headers || {}), ...session.headers };
   const result = await requestRaw(pathname, { ...options, headers });
@@ -637,6 +920,12 @@ async function runScenario() {
   const betaDoctor = await login("doctor@beta.test");
   const suspendedGrantDoctor = await login("suspended-grant-doctor@alpha.test");
   const patient = await login("patient@alpha.test");
+  const passwordRepairUser = await login(
+    "password-repair@alpha.test",
+    ancillaryRepairPasswordPayload.newPassword,
+  );
+  const roleRequestUser = await login("role-request@alpha.test");
+  const soloRoleRequestUser = await login("solo-role-request@alpha.test");
   const guardian = await login("guardian@alpha.test");
   const technician = await login("technician@alpha.test");
   const billing = await login("billing@alpha.test");
@@ -653,6 +942,435 @@ async function runScenario() {
   assert.ok(workspaceAdmin.user.capabilities.includes("workspace.review.manage"));
   assert.ok(workspaceAdmin.user.capabilities.includes("workspace.alerts.manage"));
   assert.ok(doctor.user.capabilities.includes("workspace.review.manage"));
+  const deniedApprovedDoctorCrossTarget = await expectStatus(
+    "an approved doctor cannot use role request to grant a new workspace membership",
+    betaDoctor,
+    "/api/v1/auth/role-request",
+    409,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-approved-doctor-cross-target",
+      },
+      body: JSON.stringify({
+        requestedRole: "doctor",
+        expectedUserId: betaDoctor.user.id,
+        expectedWorkspaceId: betaDoctor.user.currentWorkspaceId,
+        accountType: "doctor",
+        workspaceType: "clinic",
+        organizationId: "org_alpha",
+        name: betaDoctor.user.name,
+        license: "BETA-LIC-001",
+        department: "Cardiology",
+      }),
+    },
+  );
+  assert.equal(
+    deniedApprovedDoctorCrossTarget.error.code,
+    "ROLE_REQUEST_APPROVED_TARGET_DENIED",
+  );
+  const approvedDoctorAfterDeniedCrossTarget = await expectStatus(
+    "a denied approved-doctor role request preserves existing workspace authority",
+    betaDoctor,
+    "/api/v1/me",
+    200,
+  );
+  assert.equal(approvedDoctorAfterDeniedCrossTarget.user.organizationId, "org_beta");
+  assert.equal(
+    approvedDoctorAfterDeniedCrossTarget.user.memberships.some(
+      (membership) => membership.organizationId === "org_alpha",
+    ),
+    false,
+  );
+  const deniedPatientClinicEnrollment = await expectStatus(
+    "a patient role request cannot self-enroll into an arbitrary clinic",
+    patient,
+    "/api/v1/auth/role-request",
+    403,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-patient-cross-clinic-enrollment",
+      },
+      body: JSON.stringify({
+        requestedRole: "patient",
+        accountType: "personal",
+        workspaceType: "clinic",
+        organizationId: "org_beta",
+      }),
+    },
+  );
+  assert.equal(
+    deniedPatientClinicEnrollment.error.code,
+    "ROLE_REQUEST_PATIENT_WORKSPACE_DENIED",
+  );
+  const patientAfterDeniedClinicEnrollment = await expectStatus(
+    "a denied patient role request preserves the personal workspace",
+    patient,
+    "/api/v1/me",
+    200,
+    { headers: portalHeaders },
+  );
+  assert.equal(
+    patientAfterDeniedClinicEnrollment.user.organizationId,
+    "org_personal_patient",
+  );
+  assert.equal(
+    patientAfterDeniedClinicEnrollment.user.memberships.some(
+      (membership) => membership.organizationId === "org_beta",
+    ),
+    false,
+  );
+  const roleRequestPayload = {
+    requestedRole: "doctor",
+    expectedUserId: roleRequestUser.user.id,
+    expectedWorkspaceId: roleRequestUser.user.organizationId,
+    accountType: "doctor",
+    workspaceType: "clinic",
+    organizationId: "org_alpha",
+    name: "Role Request Doctor",
+    phone: "0901234567",
+    license: "ROLE-LIC-001",
+    hospital: "Alpha Remote Clinic",
+    department: "Cardiology",
+    registrationReason: "Remote patient monitoring",
+  };
+  const forgedRoleRequestOwner = await expectStatus(
+    "role request rejects client-supplied account authority",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-request-forged-owner",
+      },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        userId: "usr_guardian",
+      }),
+    },
+  );
+  assert.equal(
+    forgedRoleRequestOwner.error.code,
+    "ROLE_REQUEST_AUTHORITY_FIELDS_FORBIDDEN",
+  );
+  const unknownRoleRequestField = await expectStatus(
+    "role request rejects fields outside the versioned request schema",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-request-unknown-field",
+      },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        provider: "firebase",
+      }),
+    },
+  );
+  assert.equal(
+    unknownRoleRequestField.error.code,
+    "ROLE_REQUEST_FIELDS_UNSUPPORTED",
+  );
+  const staleRoleRequestAccount = await expectStatus(
+    "role request rejects a stale screen owner before mutation",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    409,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-request-stale-account",
+      },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        expectedUserId: "usr_guardian",
+      }),
+    },
+  );
+  assert.equal(
+    staleRoleRequestAccount.error.code,
+    "ROLE_REQUEST_EXPECTED_USER_MISMATCH",
+  );
+  const staleRoleRequestWorkspace = await expectStatus(
+    "role request rejects a stale workspace before mutation",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    409,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-request-stale-workspace",
+      },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        expectedWorkspaceId: "org_beta",
+      }),
+    },
+  );
+  assert.equal(
+    staleRoleRequestWorkspace.error.code,
+    "ROLE_REQUEST_EXPECTED_WORKSPACE_MISMATCH",
+  );
+  const roleRequestAfterStaleDenials = await expectStatus(
+    "stale role request preconditions leave the account unchanged",
+    roleRequestUser,
+    "/api/v1/me",
+    200,
+    { headers: portalHeaders },
+  );
+  assert.notEqual(roleRequestAfterStaleDenials.user.roleRequestStatus, "pending");
+  assert.equal(
+    roleRequestAfterStaleDenials.user.organizationId,
+    roleRequestUser.user.organizationId,
+  );
+  const mismatchedRoleAliases = await expectStatus(
+    "role request rejects contradictory canonical and compatibility roles",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-request-role-mismatch",
+      },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        role: "patient",
+      }),
+    },
+  );
+  assert.equal(
+    mismatchedRoleAliases.error.code,
+    "ROLE_REQUEST_ROLE_MISMATCH",
+  );
+  const roleRequestWithoutKey = await expectStatus(
+    "role request requires an Idempotency-Key",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    400,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        idempotencyKey: "body-only-role-request-key",
+      }),
+    },
+  );
+  assert.equal(roleRequestWithoutKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const invalidExplicitWorkspace = await expectStatus(
+    "an explicit unavailable organizationId cannot fall back to the clinic name",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-request-invalid-explicit-workspace",
+      },
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        organizationId: "org_missing_explicit",
+        hospital: "Alpha Remote Clinic",
+      }),
+    },
+  );
+  assert.equal(
+    invalidExplicitWorkspace.error.code,
+    "ROLE_REQUEST_WORKSPACE_NOT_FOUND",
+  );
+  const roleRequestHeaders = {
+    "Content-Type": "application/json",
+    "Idempotency-Key": "workspace-role-request-owner",
+  };
+  const roleRequestReceipt = await expectStatus(
+    "account owner submits a canonical doctor role request",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    200,
+    {
+      method: "POST",
+      headers: roleRequestHeaders,
+      body: JSON.stringify(roleRequestPayload),
+    },
+  );
+  assert.deepEqual(Object.keys(roleRequestReceipt), [
+    "user",
+    "roleRequest",
+    "operationId",
+    "replayed",
+  ]);
+  assert.equal(roleRequestReceipt.user.id, "usr_role_request");
+  assert.equal(roleRequestReceipt.user.role, "patient");
+  assert.equal(roleRequestReceipt.user.requestedRole, "doctor");
+  assert.equal(roleRequestReceipt.user.roleRequestStatus, "pending");
+  assert.equal(
+    roleRequestReceipt.user.memberships.some(
+      (membership) => membership.organizationId === "org_alpha",
+    ),
+    false,
+    "a pending doctor request must not grant a target-workspace membership",
+  );
+  assert.equal(
+    roleRequestReceipt.user.capabilities.some((capability) =>
+      capability.startsWith("workspace."),
+    ),
+    false,
+    "a pending doctor request must not grant workspace capabilities",
+  );
+  assert.equal(
+    roleRequestReceipt.user.currentWorkspaceId,
+    "org_personal_patient",
+    "the existing personal membership remains the only operational workspace",
+  );
+  assert.equal(
+    roleRequestReceipt.user.currentWorkspace.status,
+    "active",
+    "the public workspace projection must expose its canonical lifecycle",
+  );
+  assert.equal(roleRequestReceipt.roleRequest.requestedRole, "doctor");
+  assert.equal(roleRequestReceipt.roleRequest.status, "pending");
+  assert.ok(roleRequestReceipt.roleRequest.requestedAt);
+  assert.ok(roleRequestReceipt.operationId);
+  assert.equal(roleRequestReceipt.replayed, false);
+  const legacyRoleRequestPayload = {
+    ...roleRequestPayload,
+    role: roleRequestPayload.requestedRole,
+  };
+  delete legacyRoleRequestPayload.requestedRole;
+  const replayedRoleRequestReceipt = await expectStatus(
+    "legacy path and role alias replay the original account receipt",
+    roleRequestUser,
+    "/api/auth/role-request",
+    200,
+    {
+      method: "POST",
+      headers: roleRequestHeaders,
+      body: JSON.stringify(legacyRoleRequestPayload),
+    },
+  );
+  assert.equal(replayedRoleRequestReceipt.replayed, true);
+  assert.equal(
+    replayedRoleRequestReceipt.operationId,
+    roleRequestReceipt.operationId,
+  );
+  assert.deepEqual(replayedRoleRequestReceipt.user, roleRequestReceipt.user);
+  assert.deepEqual(
+    replayedRoleRequestReceipt.roleRequest,
+    roleRequestReceipt.roleRequest,
+  );
+  const conflictingRoleRequest = await expectStatus(
+    "role request rejects reuse of the key with a different owner intent",
+    roleRequestUser,
+    "/api/v1/auth/role-request",
+    409,
+    {
+      method: "POST",
+      headers: roleRequestHeaders,
+      body: JSON.stringify({
+        ...roleRequestPayload,
+        department: "Neurology",
+      }),
+    },
+  );
+  assert.equal(conflictingRoleRequest.error.code, "IDEMPOTENCY_KEY_REUSED");
+  const pendingRoleRequestWorkspaceSwitch = await expectStatus(
+    "a pending doctor request cannot drift its persisted target through workspace switch",
+    roleRequestUser,
+    "/api/v1/me",
+    409,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-pending-role-request-target-drift",
+      },
+      body: JSON.stringify({ organizationId: "org_personal_patient" }),
+    },
+  );
+  assert.equal(
+    pendingRoleRequestWorkspaceSwitch.error.code,
+    "ROLE_REQUEST_TARGET_LOCKED",
+  );
+  const pendingRoleRequestActiveProfile = await expectStatus(
+    "active-profile selection preserves a pending doctor-request target",
+    roleRequestUser,
+    "/api/v1/me/active-profile",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-pending-role-request-active-profile",
+      },
+      body: JSON.stringify({ patientId: roleRequestReceipt.user.patientId }),
+    },
+  );
+  assert.equal(
+    pendingRoleRequestActiveProfile.user.organizationId,
+    roleRequestPayload.organizationId,
+  );
+  assert.equal(
+    pendingRoleRequestActiveProfile.user.currentWorkspaceId,
+    "org_personal_patient",
+  );
+  assert.equal(
+    pendingRoleRequestActiveProfile.user.activePatientId,
+    roleRequestReceipt.user.patientId,
+  );
+  const mismatchedRoleApprovalTarget = await expectStatus(
+    "platform approval cannot override the persisted doctor-request target",
+    platform,
+    `/api/v1/admin/doctor-requests/${roleRequestReceipt.user.id}/approve`,
+    409,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-role-approval-wrong-target",
+      },
+      body: JSON.stringify({ organizationId: "org_beta" }),
+    },
+  );
+  assert.equal(
+    mismatchedRoleApprovalTarget.error.code,
+    "DOCTOR_REQUEST_TARGET_MISMATCH",
+  );
+  const roleRequestsAfterMismatchedApproval = await expectStatus(
+    "platform can read the request ledger after a mismatched approval target",
+    platform,
+    "/api/v1/admin/doctor-requests?status=pending",
+    200,
+  );
+  const roleRequestAfterMismatchedApproval =
+    roleRequestsAfterMismatchedApproval.requests.find(
+      (request) => request.id === roleRequestReceipt.user.id,
+    );
+  assert.ok(roleRequestAfterMismatchedApproval);
+  assert.equal(roleRequestAfterMismatchedApproval.role, "patient");
+  assert.equal(roleRequestAfterMismatchedApproval.roleRequestStatus, "pending");
+  assert.equal(
+    roleRequestAfterMismatchedApproval.organizationId,
+    roleRequestPayload.organizationId,
+  );
+  assert.equal(
+    roleRequestAfterMismatchedApproval.memberships.some(
+      (membership) => membership.organizationId === roleRequestPayload.organizationId,
+    ),
+    false,
+  );
   assert.equal(suspendedGrantDoctor.user.memberships.length, 1);
   assert.equal(suspendedGrantDoctor.user.memberships[0].operational, false);
   assert.equal(suspendedGrantDoctor.user.capabilities.some((capability) => capability.startsWith("workspace.")), false);
@@ -721,6 +1439,16 @@ async function runScenario() {
   assert.equal(orphanDoctor.user.memberships.length, 0);
   assert.equal(orphanDoctor.user.capabilities.some((capability) => capability.startsWith("workspace.")), false);
   assert.deepEqual(orphanDoctor.user.allowedSurfaces, []);
+  const unassignedPatientDashboard = await expectStatus(
+    "a patient-role account without an operational membership cannot open the patient dashboard",
+    invitedStaff,
+    "/api/v1/patient/dashboard",
+    403,
+  );
+  assert.equal(
+    unassignedPatientDashboard.error.code,
+    "PATIENT_DASHBOARD_WORKSPACE_REQUIRED",
+  );
   assert.equal(
     pendingDoctor.user.capabilities.some((capability) => capability.startsWith("workspace.")),
     false,
@@ -785,6 +1513,107 @@ async function runScenario() {
     },
   );
   assert.equal(deniedWorkspaceSwitch.error.code, "WORKSPACE_MEMBERSHIP_REQUIRED");
+  const upgradedLegacyAccountReplay = await expectStatus(
+    "a matching legacy account receipt is replayed and upgraded during the compatibility window",
+    patient,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "legacy-patient-account-profile-safe",
+      },
+      body: JSON.stringify({}),
+    },
+  );
+  assertAccountProfileMutationReceipt(upgradedLegacyAccountReplay, {
+    userId: "usr_patient",
+    changedFields: [],
+    replayed: true,
+  });
+  const staleLegacyAccountReplay = await expectStatus(
+    "a stale legacy account receipt fails closed instead of returning mixed state",
+    patient,
+    "/api/v1/me",
+    409,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "legacy-patient-account-profile-stale",
+      },
+      body: JSON.stringify({ phone: "0999000000" }),
+    },
+  );
+  assert.equal(
+    staleLegacyAccountReplay.error.code,
+    "IDEMPOTENT_ACCOUNT_RESULT_STALE_LEGACY",
+  );
+  const missingAccountProfileKey = await expectStatus(
+    "canonical account profile update requires an Idempotency-Key header",
+    patient,
+    "/api/v1/me",
+    400,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Missing key" }),
+    },
+  );
+  assert.equal(missingAccountProfileKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const bodyOnlyAccountProfileKey = await expectStatus(
+    "canonical account profile update does not accept a body idempotency key",
+    patient,
+    "/api/v1/me",
+    400,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Body key", idempotencyKey: "body-only-profile-key" }),
+    },
+  );
+  assert.equal(bodyOnlyAccountProfileKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const unsupportedAccountProfileField = await expectStatus(
+    "canonical account profile update rejects fields owned by dedicated routes",
+    patient,
+    "/api/v1/me",
+    400,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-account-profile-unsupported-field",
+      },
+      body: JSON.stringify({ avatarUrl: "https://example.invalid/avatar.png" }),
+    },
+  );
+  assert.equal(
+    unsupportedAccountProfileField.error.code,
+    "ACCOUNT_PROFILE_FIELD_UNSUPPORTED",
+  );
+  const wrongOwnerAccountProfileReplay = await expectStatus(
+    "account profile replay cannot return another account receipt",
+    patient,
+    "/api/v1/me",
+    409,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-account-profile-wrong-owner",
+      },
+      body: JSON.stringify({ name: "Wrong owner replay probe" }),
+    },
+  );
+  assert.equal(
+    wrongOwnerAccountProfileReplay.error.code,
+    "IDEMPOTENT_ACCOUNT_RESULT_MISMATCH",
+  );
+  const patientProfilePayload = {
+    phone: "0909000111",
+    address: "Updated patient address",
+  };
   const updatedPatientAccount = await expectStatus(
     "account profile update returns only after backend persistence",
     patient,
@@ -793,10 +1622,54 @@ async function runScenario() {
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "Idempotency-Key": "patient-account-profile" },
-      body: JSON.stringify({ phone: "0909000111", address: "Updated patient address" }),
+      body: JSON.stringify(patientProfilePayload),
     },
   );
+  assertAccountProfileMutationReceipt(updatedPatientAccount, {
+    userId: "usr_patient",
+    changedFields: Object.keys(patientProfilePayload),
+    replayed: false,
+  });
   assert.equal(updatedPatientAccount.user.phone, "0909000111");
+  const replayedPatientAccount = await expectStatus(
+    "account profile exact retry returns the original owner-bound receipt",
+    patient,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-account-profile",
+      },
+      body: JSON.stringify(patientProfilePayload),
+    },
+  );
+  assertAccountProfileMutationReceipt(replayedPatientAccount, {
+    userId: "usr_patient",
+    changedFields: Object.keys(patientProfilePayload),
+    replayed: true,
+  });
+  assert.deepEqual(
+    replayedPatientAccount.user,
+    updatedPatientAccount.user,
+    "profile replay must return the original stable user projection",
+  );
+  const reusedPatientAccountKey = await expectStatus(
+    "account profile key cannot be reused for a different payload",
+    patient,
+    "/api/v1/me",
+    409,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-account-profile",
+      },
+      body: JSON.stringify({ phone: "0909000222" }),
+    },
+  );
+  assert.equal(reusedPatientAccountKey.error.code, "IDEMPOTENCY_KEY_REUSED");
   const persistedPatientAccount = await expectStatus("account profile update survives a fresh read", patient, "/api/v1/me", 200);
   assert.equal(persistedPatientAccount.user.phone, "0909000111");
   const switchedDoctorWorkspace = await expectStatus(
@@ -896,7 +1769,7 @@ async function runScenario() {
   assert.equal(doctorSwitchedToBeta.user.currentWorkspace.id, "org_beta");
   assert.equal(doctorSwitchedToBeta.user.currentWorkspace.patientCount, 1);
   assert.equal(doctorSwitchedToBeta.user.currentWorkspace.deviceCount, 1);
-  assert.equal(doctorSwitchedToBeta.user.currentWorkspace.scanCount, 1);
+  assert.equal(doctorSwitchedToBeta.user.currentWorkspace.scanCount, 2);
   assert.equal(doctorSwitchedToBeta.user.currentMembership.workspaceId, "org_beta");
   const doctorSwitchedBackToAlpha = await expectStatus("doctor can switch back to alpha workspace through /me", doctor, "/api/v1/me", 200, {
     method: "PATCH",
@@ -923,6 +1796,102 @@ async function runScenario() {
 
   const platformWorkspaces = await expectStatus("platform sees all workspaces", platform, "/api/v1/admin/workspaces", 200);
   assert.equal(platformWorkspaces.workspaces.length, 5);
+  assert.equal(
+    platformWorkspaces.workspaces.find((workspace) => workspace.id === "org_alpha")?.userCount,
+    8,
+    "the pending doctor request must not inflate operational workspace counts",
+  );
+  const soloRoleRequestPayload = {
+    requestedRole: "doctor",
+    accountType: "solo_doctor",
+    workspaceType: "solo_practice",
+    workspaceName: "Stable Solo Practice",
+    name: "Solo Role Request Doctor",
+    phone: "0907654321",
+    license: "SOLO-LIC-001",
+    department: "Cardiology",
+    registrationReason: "Independent remote care",
+  };
+  const rejectedSoloCrossTarget = await expectStatus(
+    "a solo role request cannot bind an unrelated explicit workspace",
+    soloRoleRequestUser,
+    "/api/v1/auth/role-request",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-solo-role-request-cross-target",
+      },
+      body: JSON.stringify({
+        ...soloRoleRequestPayload,
+        organizationId: "org_beta",
+      }),
+    },
+  );
+  assert.equal(
+    rejectedSoloCrossTarget.error.code,
+    "ROLE_REQUEST_WORKSPACE_MISMATCH",
+  );
+  const soloRoleRequestHeaders = {
+    "Content-Type": "application/json",
+    "Idempotency-Key": "workspace-solo-role-request-owner",
+  };
+  const soloRoleRequestReceipt = await expectStatus(
+    "a solo doctor submits an account-owned pending request",
+    soloRoleRequestUser,
+    "/api/v1/auth/role-request",
+    200,
+    {
+      method: "POST",
+      headers: soloRoleRequestHeaders,
+      body: JSON.stringify(soloRoleRequestPayload),
+    },
+  );
+  const soloWorkspaceId = "org_solo_usr_solo_role_request";
+  assert.equal(soloRoleRequestReceipt.roleRequest.status, "pending");
+  assert.equal(
+    soloRoleRequestReceipt.user.memberships.some(
+      (membership) => membership.organizationId === soloWorkspaceId,
+    ),
+    false,
+  );
+  const workspacesAfterSoloRequest = await expectStatus(
+    "platform sees the materialized solo request workspace",
+    platform,
+    "/api/v1/admin/workspaces",
+    200,
+  );
+  const stableSoloWorkspace = workspacesAfterSoloRequest.workspaces.find(
+    (workspace) => workspace.id === soloWorkspaceId,
+  );
+  assert.equal(stableSoloWorkspace?.name, "Stable Solo Practice");
+  const conflictingSoloRoleRequest = await expectStatus(
+    "a conflicting solo retry is rejected before workspace mutation",
+    soloRoleRequestUser,
+    "/api/v1/auth/role-request",
+    409,
+    {
+      method: "POST",
+      headers: soloRoleRequestHeaders,
+      body: JSON.stringify({
+        ...soloRoleRequestPayload,
+        workspaceName: "Mutated Solo Practice",
+      }),
+    },
+  );
+  assert.equal(conflictingSoloRoleRequest.error.code, "IDEMPOTENCY_KEY_REUSED");
+  const workspacesAfterSoloConflict = await expectStatus(
+    "solo workspace remains unchanged after a conflicting retry",
+    platform,
+    "/api/v1/admin/workspaces",
+    200,
+  );
+  const unchangedSoloWorkspace = workspacesAfterSoloConflict.workspaces.find(
+    (workspace) => workspace.id === soloWorkspaceId,
+  );
+  assert.equal(unchangedSoloWorkspace?.name, stableSoloWorkspace.name);
+  assert.equal(unchangedSoloWorkspace?.updatedAt, stableSoloWorkspace.updatedAt);
   const scopedWorkspaces = await expectStatus("workspace admin sees own workspace", workspaceAdmin, "/api/v1/admin/workspaces", 200);
   assert.deepEqual(scopedWorkspaces.workspaces.map((item) => item.id), ["org_alpha"]);
 
@@ -936,18 +1905,99 @@ async function runScenario() {
   assert.equal(portalStatus.scoped.devicesCount, 2);
   assert.equal(portalStatus.scoped.scansCount, 2);
   assert.equal(portalStatus.scoped.alertsCount, 2);
-  assert.equal(portalStatus.mode.authMode, "demo");
-  assert.equal(portalStatus.mode.dataBackend, "json");
+  assert.deepEqual(Object.keys(portalStatus.status).sort(), [
+    "activeScanId",
+    "devicesCount",
+    "devicesOnline",
+    "recording",
+    "updatedAt",
+    "workspaceId",
+  ]);
+  assert.equal(portalStatus.status.workspaceId, "org_alpha");
+  assert.equal(portalStatus.status.devicesCount, 2);
+  assert.equal(portalStatus.status.devicesOnline, 0);
   await expectStatus("platform admin is not a portal surface user", platform, "/api/portal/status", 403, {
     headers: portalHeaders,
   });
 
-  const portalOverview = await expectStatus("portal overview resolves through admin stats", workspaceAdmin, "/api/portal/overview?range=today&timezoneOffsetMinutes=420", 200, {
+  const publicStatus = await expectPublicStatus(
+    "public backend status exposes health only",
+    "/api/v1/status",
+    200,
+  );
+  assert.deepEqual(Object.keys(publicStatus).sort(), [
+    "ok",
+    "service",
+    "type",
+    "updatedAt",
+  ]);
+  assert.equal(publicStatus.type, "health");
+  for (const forbiddenField of [
+    "activeScanId",
+    "deviceId",
+    "esp",
+    "httpPort",
+    "listeners",
+    "patientId",
+    "sampleRate",
+    "scanId",
+    "sessionId",
+    "udpEsp",
+    "udpPort",
+    "workspaceId",
+    "wsEsp",
+  ]) {
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(publicStatus, forbiddenField),
+      false,
+      `public status must not expose ${forbiddenField}`,
+    );
+  }
+  await expectPublicStatus(
+    "unauthenticated caller cannot read clinical dashboard status",
+    "/api/v1/doctor/status",
+    401,
+  );
+  await expectStatus(
+    "patient role cannot read clinical dashboard status",
+    patient,
+    "/api/v1/doctor/status",
+    403,
+  );
+  const alphaDoctorStatus = await expectStatus(
+    "doctor reads only current alpha workspace dashboard status",
+    doctor,
+    "/api/v1/doctor/status",
+    200,
+  );
+  assert.equal(alphaDoctorStatus.workspaceId, "org_alpha");
+  assert.equal(alphaDoctorStatus.devicesCount, 2);
+  const betaDoctorStatus = await expectStatus(
+    "doctor in beta workspace cannot receive alpha dashboard aggregates",
+    betaDoctor,
+    "/api/v1/doctor/status",
+    200,
+  );
+  assert.equal(betaDoctorStatus.workspaceId, "org_beta");
+  assert.equal(betaDoctorStatus.devicesCount, 1);
+  assert.deepEqual(Object.keys(betaDoctorStatus).sort(), [
+    "activeScanId",
+    "devicesCount",
+    "devicesOnline",
+    "recording",
+    "updatedAt",
+    "workspaceId",
+  ]);
+
+  const portalOverview = await expectStatus("canonical portal overview resolves through workspace stats", workspaceAdmin, "/api/v1/portal/overview?range=today&timezoneOffsetMinutes=420", 200, {
     headers: portalHeaders,
   });
   assert.ok(portalOverview.stats);
+  assert.equal(portalOverview.workspaceId, "org_alpha");
   assert.equal(portalOverview.range.key, "today");
   assert.equal(portalOverview.range.timezoneOffsetMinutes, 420);
+  assert.equal(portalOverview.stats.devicesCount, 2);
+  assert.equal(portalOverview.stats.devicesOnline <= portalOverview.stats.devicesCount, true);
   assert.equal(Date.parse(portalOverview.generatedAt) > 0, true);
   assert.equal(
     portalOverview.measureData.reduce((sum, point) => sum + Number(point.count || 0), 0),
@@ -961,22 +2011,66 @@ async function runScenario() {
     "failed",
     "pending",
   ]);
+  const legacyPortalOverview = await expectStatus(
+    "legacy portal overview alias remains compatible",
+    workspaceAdmin,
+    "/api/portal/overview?range=today&timezoneOffsetMinutes=420",
+    200,
+    { headers: portalHeaders },
+  );
+  assert.equal(legacyPortalOverview.workspaceId, portalOverview.workspaceId);
+  assert.deepEqual(legacyPortalOverview.stats, portalOverview.stats);
   await expectStatus(
     "portal overview rejects unsupported synthetic ranges",
     workspaceAdmin,
-    "/api/portal/overview?range=90d&timezoneOffsetMinutes=420",
+    "/api/v1/portal/overview?range=90d&timezoneOffsetMinutes=420",
     400,
     { headers: portalHeaders },
   );
-  const portalMonitoring = await expectStatus("portal monitoring resolves scoped devices and scans", workspaceAdmin, "/api/portal/monitoring", 200, {
+  const portalMonitoring = await expectStatus("portal monitoring resolves scoped devices and scans", workspaceAdmin, "/api/v1/portal/monitoring", 200, {
     headers: portalHeaders,
   });
+  assert.equal(portalMonitoring.workspaceId, "org_alpha");
+  assert.equal(Number.isFinite(Date.parse(portalMonitoring.generatedAt)), true);
   assert.deepEqual(
     portalMonitoring.devices.map((device) => device.id),
     ["dev_alpha", "dev_claim_alpha"],
   );
+  assert.equal(
+    portalMonitoring.devices.every(
+      (device) =>
+        device.organizationId === portalMonitoring.workspaceId &&
+        typeof device.online === "boolean" &&
+        !Object.hasOwn(device, "secret") &&
+        !Object.hasOwn(device, "deviceSecret") &&
+        !Object.hasOwn(device, "secretHash") &&
+        !Object.hasOwn(device, "claimCodeHash"),
+    ),
+    true,
+  );
+  assert.equal(
+    portalMonitoring.devices.find((device) => device.id === "dev_alpha").online,
+    false,
+    "a legacy connected flag must not replace authenticated WSS presence",
+  );
   assert.deepEqual(portalMonitoring.scans.map((scan) => scan.id), ["scan_alpha", "scan_alpha_extra"]);
+  assert.equal(
+    portalMonitoring.scans.every(
+      (scan) => scan.organizationId === portalMonitoring.workspaceId,
+    ),
+    true,
+  );
   assert.deepEqual(portalMonitoring.alerts.map((alert) => alert.id), ["alert_alpha_seed"]);
+  assert.equal(portalMonitoring.status.recording, false);
+  assert.equal(portalMonitoring.status.workspaceId, null);
+  const legacyPortalMonitoring = await expectStatus(
+    "legacy portal monitoring alias remains compatible",
+    workspaceAdmin,
+    "/api/portal/monitoring",
+    200,
+    { headers: portalHeaders },
+  );
+  assert.equal(legacyPortalMonitoring.workspaceId, portalMonitoring.workspaceId);
 
   const pendingReviewQueue = await expectStatus(
     "portal review queue derives only current-workspace completed scans",
@@ -988,6 +2082,13 @@ async function runScenario() {
   assert.deepEqual(
     pendingReviewQueue.reviews.map((review) => review.scanId).sort(),
     ["scan_alpha", "scan_alpha_extra"],
+  );
+  assert.equal(pendingReviewQueue.workspaceId, "org_alpha");
+  assert.equal(
+    pendingReviewQueue.reviews.every(
+      (review) => review.organizationId === pendingReviewQueue.workspaceId,
+    ),
+    true,
   );
   assert.equal(pendingReviewQueue.reviews.every((review) => review.status === "pending" && review.version === 1), true);
   await expectStatus("technician cannot make or inspect clinical review decisions", technician, "/api/portal/review-queue", 403, {
@@ -1032,6 +2133,8 @@ async function runScenario() {
     reviewDecisionOptions,
   );
   assert.equal(reviewedScan.review.status, "reviewed");
+  assert.equal(reviewedScan.workspaceId, "org_alpha");
+  assert.equal(reviewedScan.review.organizationId, reviewedScan.workspaceId);
   assert.equal(reviewedScan.review.decision, "follow_up_required");
   assert.equal(reviewedScan.review.reviewerUserId, "usr_workspace_admin");
   assert.equal(reviewedScan.review.version, 2);
@@ -1059,6 +2162,7 @@ async function runScenario() {
   const initialAlertLedger = await expectStatus("portal alert ledger is workspace scoped", workspaceAdmin, "/api/portal/alerts", 200, {
     headers: portalHeaders,
   });
+  assert.equal(initialAlertLedger.workspaceId, "org_alpha");
   assert.deepEqual(initialAlertLedger.alerts.map((alert) => alert.id), ["alert_alpha_seed"]);
   await expectStatus("viewer without alert capability cannot read the ledger", viewer, "/api/portal/alerts", 403, {
     headers: portalHeaders,
@@ -1097,6 +2201,7 @@ async function runScenario() {
     headers: { ...portalJsonHeaders, "Idempotency-Key": "alert-open-alpha" },
     body: JSON.stringify(alertPayload),
   });
+  assert.equal(openedAlert.workspaceId, "org_alpha");
   assert.equal(openedAlert.alert.status, "open");
   assert.equal(openedAlert.alert.version, 1);
   const duplicateAlert = await expectStatus("a repeated source is deduplicated without another ledger row", workspaceAdmin, "/api/portal/alerts", 200, {
@@ -1119,6 +2224,7 @@ async function runScenario() {
     200,
     acknowledgeOptions,
   );
+  assert.equal(acknowledgedAlert.workspaceId, "org_alpha");
   assert.equal(acknowledgedAlert.alert.status, "acknowledged");
   assert.equal(acknowledgedAlert.alert.version, 2);
   assert.equal(acknowledgedAlert.alert.acknowledgedByUserId, "usr_workspace_admin");
@@ -1153,6 +2259,7 @@ async function runScenario() {
       body: JSON.stringify({ expectedVersion: 2, note: "Repeat measurement was completed" }),
     },
   );
+  assert.equal(resolvedAlert.workspaceId, "org_alpha");
   assert.equal(resolvedAlert.alert.status, "resolved");
   assert.equal(resolvedAlert.alert.version, 3);
   assert.equal(resolvedAlert.alert.resolvedByUserId, "usr_workspace_admin");
@@ -1172,23 +2279,32 @@ async function runScenario() {
   });
   assert.equal(portalReports.summary.patientsCount, 1);
   assert.equal(portalReports.summary.devicesCount, 2);
-  const portalBilling = await expectStatus("portal billing resolves workspace package and usage", workspaceAdmin, "/api/portal/billing", 200, {
+  const portalBilling = await expectStatus("canonical portal billing resolves workspace package and usage", workspaceAdmin, "/api/v1/portal/billing", 200, {
     headers: portalHeaders,
   });
   assert.equal(portalBilling.workspace.id, "org_alpha");
   assert.equal(portalBilling.package.id, "pkg_test");
   assert.equal(portalBilling.subscription.status, "active");
   assert.equal(portalBilling.subscription.billingCycle, "monthly");
+  assert.equal(portalBilling.subscription.organizationId, "org_alpha");
   assert.equal(portalBilling.billingContact.email, "billing@alpha.test");
+  assert.equal(portalBilling.invoicePolicy.mode, "manual");
+  assert.equal(portalBilling.invoicePolicy.providerConfigured, false);
+  assert.ok(Number.isFinite(Date.parse(portalBilling.generatedAt)));
   assert.equal(portalBilling.usageRows.some((row) => row.key === "patients" && row.used === 1 && row.limit === 10), true);
   assert.equal(portalBilling.usageRows.some((row) => row.key === "devices" && row.used === 2 && row.limit === 2), true);
   assert.equal(portalBilling.usageRows.some((row) => row.key === "aiMonthly" && row.used === 1 && row.limit === 100), true);
-  const billingPortalBilling = await expectStatus("billing role can read portal billing", billing, "/api/portal/billing", 200, {
+  const legacyPortalBilling = await expectStatus("legacy portal billing alias remains compatible", workspaceAdmin, "/api/portal/billing", 200, {
+    headers: portalHeaders,
+  });
+  assert.equal(legacyPortalBilling.workspace.id, portalBilling.workspace.id);
+  assert.deepEqual(legacyPortalBilling.usageRows, portalBilling.usageRows);
+  const billingPortalBilling = await expectStatus("billing role can read canonical portal billing", billing, "/api/v1/portal/billing", 200, {
     headers: portalHeaders,
   });
   assert.equal(billingPortalBilling.workspace.id, "org_alpha");
   assert.equal(billingPortalBilling.package.id, "pkg_test");
-  await expectStatus("viewer cannot read portal billing", viewer, "/api/portal/billing", 403, {
+  await expectStatus("viewer cannot read canonical portal billing", viewer, "/api/v1/portal/billing", 403, {
     headers: portalHeaders,
   });
   const portalAuditLog = await expectStatus("portal audit log resolves", workspaceAdmin, "/api/portal/audit-log", 200, {
@@ -1240,6 +2356,14 @@ async function runScenario() {
     headers: portalHeaders,
   });
   assert.deepEqual(portalPatients.patients.map((patient) => patient.id), ["pat_alpha"]);
+  const mobileClinicalPatients = await expectStatus(
+    "mobile clinical patient list is bound to the current workspace",
+    workspaceAdmin,
+    "/api/v1/patients",
+    200,
+  );
+  assert.equal(mobileClinicalPatients.workspaceId, "org_alpha");
+  assert.deepEqual(mobileClinicalPatients.patients.map((patient) => patient.id), ["pat_alpha"]);
   await expectStatus("portal cannot read cross workspace patient", workspaceAdmin, "/api/portal/patients/pat_beta", 403, {
     headers: portalHeaders,
   });
@@ -1422,7 +2546,7 @@ async function runScenario() {
   }
   const createdPatient = await expectStatus("portal creates patient in current workspace", workspaceAdmin, "/api/portal/patients", 201, {
     method: "POST",
-    headers: portalJsonHeaders,
+    headers: { ...portalJsonHeaders, "Idempotency-Key": "workspace-portal-patient-create" },
     body: JSON.stringify({
       patientCode: "PORTAL-001",
       name: "Portal Created Patient",
@@ -1438,7 +2562,7 @@ async function runScenario() {
     200,
     {
       method: "PATCH",
-      headers: portalJsonHeaders,
+      headers: { ...portalJsonHeaders, "Idempotency-Key": "workspace-portal-patient-update" },
       body: JSON.stringify({ notes: "Updated through portal smoke" }),
     },
   );
@@ -1644,24 +2768,75 @@ async function runScenario() {
     ).length,
     1,
   );
-  await expectStatus("portal deletes appointment", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 200, {
+  const appointmentDeleteHeaders = {
+    ...portalHeaders,
+    "Idempotency-Key": "workspace-smoke-appointment-delete",
+  };
+  const missingAppointmentDeleteKey = await expectStatus("appointment deletion requires Idempotency-Key", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 400, {
     method: "DELETE",
     headers: portalHeaders,
   });
+  assert.equal(missingAppointmentDeleteKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  await expectStatus("portal cannot soft-delete a cross-workspace appointment", workspaceAdmin, "/api/portal/appointments/appt_beta", 403, {
+    method: "DELETE",
+    headers: {
+      ...portalHeaders,
+      "Idempotency-Key": "workspace-smoke-cross-workspace-appointment-delete",
+    },
+  });
+  const deletedAppointment = await expectStatus("portal soft-deletes appointment", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 200, {
+    method: "DELETE",
+    headers: appointmentDeleteHeaders,
+  });
+  assert.equal(deletedAppointment.deleted, true);
+  assert.equal(deletedAppointment.appointmentId, createdAppointment.appointment.id);
+  assert.equal(deletedAppointment.workspaceId, "org_alpha");
+  assert.equal(deletedAppointment.replayed, false);
+  assert.ok(Number.isFinite(Date.parse(deletedAppointment.deletedAt)));
+  const replayedAppointmentDelete = await expectStatus("appointment soft-delete is idempotent", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 200, {
+    method: "DELETE",
+    headers: appointmentDeleteHeaders,
+  });
+  assert.equal(replayedAppointmentDelete.replayed, true);
+  assert.equal(replayedAppointmentDelete.deletedAt, deletedAppointment.deletedAt);
   await expectStatus("deleted portal appointment is gone", workspaceAdmin, `/api/portal/appointments/${createdAppointment.appointment.id}`, 404, {
     headers: portalHeaders,
   });
+  const appointmentsAfterDelete = await expectStatus("soft-deleted appointment is absent from the active ledger", workspaceAdmin, "/api/portal/appointments", 200, {
+    headers: portalHeaders,
+  });
+  assert.equal(
+    appointmentsAfterDelete.appointments.some((item) => item.id === createdAppointment.appointment.id),
+    false,
+  );
+  const auditAfterAppointmentDelete = await expectStatus("appointment soft-delete commits one audit row", workspaceAdmin, "/api/portal/audit-log", 200, {
+    headers: portalHeaders,
+  });
+  assert.equal(
+    auditAfterAppointmentDelete.logs.filter(
+      (log) => log.action === "appointment.delete" && log.resourceId === createdAppointment.appointment.id,
+    ).length,
+    1,
+  );
   await expectStatus(
     "portal deletes parallel idempotency appointment",
     workspaceAdmin,
     `/api/portal/appointments/${parallelCreateLeft.appointment.id}`,
     200,
-    { method: "DELETE", headers: portalHeaders },
+    {
+      method: "DELETE",
+      headers: {
+        ...portalHeaders,
+        "Idempotency-Key": "workspace-smoke-parallel-appointment-delete",
+      },
+    },
   );
 
   const shareTargets = await expectStatus("portal share targets stay workspace scoped", workspaceAdmin, "/api/share-targets", 200, {
     headers: portalHeaders,
   });
+  assert.equal(shareTargets.workspaceId, "org_alpha");
+  assert.ok(Number.isFinite(Date.parse(shareTargets.generatedAt)));
   assert.ok(shareTargets.doctors.some((target) => target.id === "usr_doctor"));
   assert.equal(shareTargets.doctors.some((target) => target.id === "usr_beta_doctor"), false);
   assert.deepEqual(shareTargets.workspaces.map((target) => target.id), ["org_alpha"]);
@@ -1683,6 +2858,9 @@ async function runScenario() {
     body: JSON.stringify({ doctorUserId: "usr_doctor", scope: "patient_profile" }),
   });
   assert.equal(share.share.patientId, "pat_alpha");
+  assert.equal(share.workspaceId, "org_alpha");
+  assert.equal(share.patientId, "pat_alpha");
+  assert.ok(Number.isFinite(Date.parse(share.generatedAt)));
   assert.equal(share.share.doctorUserId, "usr_doctor");
   assert.equal(share.share.authorityType, "clinician_access_grant");
   assert.equal(share.share.status, "active");
@@ -1695,6 +2873,9 @@ async function runScenario() {
   const shares = await expectStatus("portal lists patient shares", workspaceAdmin, "/api/portal/patients/pat_alpha/shares", 200, {
     headers: portalHeaders,
   });
+  assert.equal(shares.workspaceId, "org_alpha");
+  assert.equal(shares.patientId, "pat_alpha");
+  assert.ok(Number.isFinite(Date.parse(shares.generatedAt)));
   assert.ok(shares.shares.some((item) => item.id === share.share.id && item.active === true));
   await expectStatus(
     "portal revokes patient share",
@@ -1727,6 +2908,236 @@ async function runScenario() {
   assert.equal(activeChildProfile.activePatient.id, "pat_patient_child");
   const activeProfileFromMe = await expectStatus("active profile survives a fresh account read", patient, "/api/v1/me", 200);
   assert.equal(activeProfileFromMe.user.activePatientId, "pat_patient_child");
+  const dashboardPatientsBefore = JSON.stringify(
+    JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8")).patients,
+  );
+  const patientDashboard = await expectStatus(
+    "patient dashboard binds the active profile scans and personal device to exact authority",
+    patient,
+    "/api/v1/patient/dashboard",
+    200,
+  );
+  const dashboardPatientsAfter = JSON.stringify(
+    JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8")).patients,
+  );
+  assert.equal(
+    dashboardPatientsAfter,
+    dashboardPatientsBefore,
+    "GET patient dashboard must not create, rewrite, or backfill patient rows",
+  );
+  assert.equal(patientDashboard.dashboard.protocolVersion, 1);
+  assert.equal(patientDashboard.dashboard.userId, "usr_patient");
+  assert.equal(patientDashboard.dashboard.workspaceId, "org_personal_patient");
+  assert.equal(patientDashboard.dashboard.activePatientId, "pat_patient_child");
+  assert.equal(patientDashboard.dashboard.patient.id, "pat_patient_child");
+  assert.deepEqual(
+    patientDashboard.dashboard.recentScans.map((scan) => scan.id),
+    [
+      "scan_patient_child",
+      "scan_patient_child_processing",
+      "scan_patient_child_legacy",
+    ],
+  );
+  assert.equal(
+    patientDashboard.dashboard.recentScans[2].organizationId,
+    "org_personal_patient",
+    "legacy scans must be backfilled into the explicit response workspace during the compatibility window",
+  );
+  assert.equal(
+    Object.hasOwn(patientDashboard.dashboard.recentScans[0], "aiLabel"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(patientDashboard.dashboard.recentScans[0], "normal"),
+    false,
+  );
+  assert.equal(patientDashboard.dashboard.device.id, "dev_patient_personal");
+  assert.equal(patientDashboard.dashboard.device.ownerUserId, "usr_patient");
+  assert.equal(
+    patientDashboard.dashboard.device.organizationId,
+    "org_personal_patient",
+  );
+  assert.equal(
+    patientDashboard.dashboard.device.assignedPatientId,
+    "pat_patient_child",
+  );
+  assert.equal(patientDashboard.dashboard.device.battery, 0);
+  assert.equal(patientDashboard.dashboard.device.online, false);
+  assert.equal(patientDashboard.dashboard.sections.scans, "ready");
+  assert.equal(patientDashboard.dashboard.sections.device, "ready");
+  assert.equal(
+    Object.hasOwn(patientDashboard.stats, "abnormalCount"),
+    false,
+    "unreviewed AI labels must not be promoted into a clinical abnormal KPI",
+  );
+  assert.equal(
+    Object.hasOwn(patientDashboard.dashboard.patient, "scanCount"),
+    false,
+    "dashboard patient summary must not expose derived cross-workspace scan metadata",
+  );
+  const guardianStateBeforeRejectedSwitch = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  const guardianDeletedProfile = await expectStatus(
+    "assigned guardian cannot activate a soft-deleted dependent profile",
+    guardian,
+    "/api/v1/me/active-profile",
+    404,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "activate-guardian-deleted",
+      },
+      body: JSON.stringify({ patientId: "pat_guardian_deleted" }),
+    },
+  );
+  assert.equal(guardianDeletedProfile.error.code, "PROFILE_NOT_FOUND");
+  const guardianStateAfterRejectedSwitch = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  assert.deepEqual(
+    guardianStateAfterRejectedSwitch.users.find((item) => item.id === "usr_guardian"),
+    guardianStateBeforeRejectedSwitch.users.find((item) => item.id === "usr_guardian"),
+    "rejected active-profile mutation must not persist account changes",
+  );
+  assert.deepEqual(
+    guardianStateAfterRejectedSwitch.patients,
+    guardianStateBeforeRejectedSwitch.patients,
+    "rejected active-profile mutation must not persist patient changes",
+  );
+  const guardianActiveProfileWithoutKey = await expectStatus(
+    "assigned guardian active profile switch requires an idempotency key",
+    guardian,
+    "/api/v1/me/active-profile",
+    400,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patientId: "pat_guardian_dependent" }),
+    },
+  );
+  assert.equal(
+    guardianActiveProfileWithoutKey.error.code,
+    "IDEMPOTENCY_KEY_REQUIRED",
+  );
+  const guardianActiveProfile = await expectStatus(
+    "assigned guardian switches to the exact dependent profile",
+    guardian,
+    "/api/v1/me/active-profile",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "activate-guardian-dependent",
+      },
+      body: JSON.stringify({ patientId: "pat_guardian_dependent" }),
+    },
+  );
+  assert.equal(
+    guardianActiveProfile.activePatient.id,
+    "pat_guardian_dependent",
+  );
+  const guardianProfiles = await expectStatus(
+    "assigned guardian lists only legally accessible profiles",
+    guardian,
+    "/api/v1/patients",
+    200,
+  );
+  const guardianSelfProfile = guardianProfiles.patients.find(
+    (profile) =>
+      profile.ownerUserId === "usr_guardian" ||
+      profile.accountUserId === "usr_guardian" ||
+      profile.id === guardian.user.patientId,
+  );
+  assert.ok(
+    guardianSelfProfile?.id,
+    "guardian login must expose a canonical self profile for replay ordering proof",
+  );
+  const guardianSelfSwitch = await expectStatus(
+    "a later active-profile mutation advances current state",
+    guardian,
+    "/api/v1/me/active-profile",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "activate-guardian-self-after-dependent",
+      },
+      body: JSON.stringify({ patientId: guardianSelfProfile.id }),
+    },
+  );
+  assert.equal(guardianSelfSwitch.user.activePatientId, guardianSelfProfile.id);
+  const guardianDependentReplay = await expectStatus(
+    "an older idempotency replay returns its exact receipt without reverting current state",
+    guardian,
+    "/api/v1/me/active-profile",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "activate-guardian-dependent",
+      },
+      body: JSON.stringify({ patientId: "pat_guardian_dependent" }),
+    },
+  );
+  assert.equal(guardianDependentReplay.replayed, true);
+  assert.equal(
+    guardianDependentReplay.user.activePatientId,
+    "pat_guardian_dependent",
+    "the replay receipt must describe the original mutation, not the newer account row",
+  );
+  assert.equal(
+    guardianDependentReplay.activePatient.id,
+    "pat_guardian_dependent",
+  );
+  const guardianAfterReplay = await expectStatus(
+    "an older replay leaves the newer active profile authoritative",
+    guardian,
+    "/api/v1/me",
+    200,
+  );
+  assert.equal(guardianAfterReplay.user.activePatientId, guardianSelfProfile.id);
+  await expectStatus(
+    "guardian restores dependent profile for the dashboard scenario",
+    guardian,
+    "/api/v1/me/active-profile",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "activate-guardian-dependent-after-replay",
+      },
+      body: JSON.stringify({ patientId: "pat_guardian_dependent" }),
+    },
+  );
+  const guardianDashboard = await expectStatus(
+    "assigned guardian dashboard preserves legal actor identity without mixing owner data",
+    guardian,
+    "/api/v1/patient/dashboard",
+    200,
+  );
+  assert.equal(guardianDashboard.dashboard.userId, "usr_guardian");
+  assert.equal(
+    guardianDashboard.dashboard.activePatientId,
+    "pat_guardian_dependent",
+  );
+  assert.equal(
+    guardianDashboard.dashboard.patient.guardianUserId,
+    "usr_guardian",
+  );
+  assert.equal(
+    guardianDashboard.dashboard.patient.ownerUserId,
+    "usr_patient",
+  );
+  assert.equal(guardianDashboard.dashboard.recentScans.length, 0);
+  assert.equal(guardianDashboard.dashboard.device, null);
+  assert.equal(guardianDashboard.dashboard.sections.scans, "empty");
+  assert.equal(guardianDashboard.dashboard.sections.device, "empty");
   const crossUserProfileSwitch = await expectStatus(
     "patient cannot activate a profile outside own family",
     patient,
@@ -1739,15 +3150,65 @@ async function runScenario() {
     },
   );
   assert.equal(crossUserProfileSwitch.error.code, "PROFILE_SCOPE_DENIED");
+  const patientFamilySessions = await expectStatus(
+    "patient resolves the current auth-session authority for family mutations",
+    patient,
+    "/api/v1/auth/sessions",
+    200,
+  );
+  const currentFamilyAuthSession = patientFamilySessions.sessions.find(
+    (item) => item.current === true,
+  );
+  assert.ok(currentFamilyAuthSession?.id, "family mutations require a current server auth session");
+  const patientFamilyAuthorityHeaders = {
+    "X-Shcare-Expected-User-Id": "usr_patient",
+    "X-Shcare-Expected-Workspace-Id": "org_personal_patient",
+    "X-Shcare-Expected-Auth-Session-Id": currentFamilyAuthSession.id,
+  };
+  const patientFamilyJsonHeaders = {
+    "Content-Type": "application/json",
+    ...patientFamilyAuthorityHeaders,
+  };
   const selfDeleteDenied = await expectStatus(
     "patient cannot delete canonical self profile at the backend boundary",
     patient,
     "/api/v1/patients/pat_patient_self",
     409,
-    { method: "DELETE" },
+    {
+      method: "DELETE",
+      headers: { ...patientFamilyAuthorityHeaders, "Idempotency-Key": "family-self-delete-denied" },
+    },
   );
   assert.equal(selfDeleteDenied.error.code, "SELF_PROFILE_DELETE_FORBIDDEN");
   await expectStatus("patient cannot read workspace-owned patient profile", patient, "/api/v1/patients/pat_alpha", 403);
+  const missingFamilyCreateKey = await expectStatus(
+    "canonical family create requires an Idempotency-Key header",
+    patient,
+    "/api/v1/patients",
+    400,
+    {
+      method: "POST",
+      headers: patientFamilyJsonHeaders,
+      body: JSON.stringify({ name: "Missing Header Dependent", relationship: "other" }),
+    },
+  );
+  assert.equal(missingFamilyCreateKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const bodyOnlyFamilyCreateKey = await expectStatus(
+    "canonical family create rejects a body-only idempotency key",
+    patient,
+    "/api/v1/patients",
+    400,
+    {
+      method: "POST",
+      headers: patientFamilyJsonHeaders,
+      body: JSON.stringify({
+        name: "Body Key Dependent",
+        relationship: "other",
+        idempotencyKey: "family-create-body-only",
+      }),
+    },
+  );
+  assert.equal(bodyOnlyFamilyCreateKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
   const invalidDependentDob = await expectStatus(
     "dependent create rejects an invalid canonical date of birth",
     patient,
@@ -1755,14 +3216,99 @@ async function runScenario() {
     400,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": "family-invalid-dob" },
+      headers: { ...patientFamilyJsonHeaders, "Idempotency-Key": "family-invalid-dob" },
       body: JSON.stringify({ name: "Invalid DOB", dateOfBirth: "2035-02-30" }),
     },
   );
   assert.equal(invalidDependentDob.error.code, "PATIENT_DATE_OF_BIRTH_INVALID");
+  const familyAuthorityBaselineProfile = await expectStatus(
+    "patient captures the dependent snapshot before authority-race negatives",
+    patient,
+    "/api/v1/patients/pat_patient_child",
+    200,
+  );
+  const missingFamilyAuthority = await expectStatus(
+    "family create fails closed when the pinned authority headers are absent",
+    patient,
+    "/api/v1/patients",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "family-authority-denied-missing",
+      },
+      body: JSON.stringify({ name: "Authority Race Denied", relationship: "other" }),
+    },
+  );
+  assert.equal(missingFamilyAuthority.error.code, "PATIENT_MUTATION_AUTHORITY_REQUIRED");
+  const familyCreateWorkspaceSwitch = await expectStatus(
+    "family create rejects a workspace authority captured before a switch",
+    patient,
+    "/api/v1/patients",
+    409,
+    {
+      method: "POST",
+      headers: {
+        ...patientFamilyJsonHeaders,
+        "X-Shcare-Expected-Workspace-Id": "org_previous",
+        "Idempotency-Key": "family-authority-denied-create",
+      },
+      body: JSON.stringify({ name: "Authority Race Denied", relationship: "other" }),
+    },
+  );
+  assert.equal(familyCreateWorkspaceSwitch.error.code, "PATIENT_MUTATION_AUTHORITY_MISMATCH");
+  const familyUpdateAccountSwitch = await expectStatus(
+    "family update rejects an account authority captured before a switch",
+    patient,
+    "/api/v1/patients/pat_patient_child",
+    409,
+    {
+      method: "PATCH",
+      headers: {
+        ...patientFamilyJsonHeaders,
+        "X-Shcare-Expected-User-Id": "usr_previous",
+        "Idempotency-Key": "family-authority-denied-update",
+      },
+      body: JSON.stringify({ name: "Authority Race Denied" }),
+    },
+  );
+  assert.equal(familyUpdateAccountSwitch.error.code, "PATIENT_MUTATION_AUTHORITY_MISMATCH");
+  const familyDeleteSessionSwitch = await expectStatus(
+    "family delete rejects an auth-session authority captured before a switch",
+    patient,
+    "/api/v1/patients/pat_patient_child",
+    409,
+    {
+      method: "DELETE",
+      headers: {
+        ...patientFamilyAuthorityHeaders,
+        "X-Shcare-Expected-Auth-Session-Id": "session_previous",
+        "Idempotency-Key": "family-authority-denied-delete",
+      },
+    },
+  );
+  assert.equal(familyDeleteSessionSwitch.error.code, "PATIENT_MUTATION_AUTHORITY_MISMATCH");
+  const familyAuthorityProfileAfterDenials = await expectStatus(
+    "authority-race denials preserve the dependent snapshot",
+    patient,
+    "/api/v1/patients/pat_patient_child",
+    200,
+  );
+  assert.deepEqual(familyAuthorityProfileAfterDenials.patient, familyAuthorityBaselineProfile.patient);
+  const familyAuthorityListAfterDenials = await expectStatus(
+    "authority-race denials do not create a dependent",
+    patient,
+    "/api/v1/patients",
+    200,
+  );
+  assert.equal(
+    familyAuthorityListAfterDenials.patients.some((item) => item.name === "Authority Race Denied"),
+    false,
+  );
   const patientCreatedProfile = await expectStatus("patient creates dependent family profile", patient, "/api/v1/patients", 201, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": "family-dependent-create" },
+    headers: { ...patientFamilyJsonHeaders, "Idempotency-Key": "family-dependent-create" },
     body: JSON.stringify({
       patientCode: "FAMILY-NEW",
       name: "Patient Created Dependent",
@@ -1777,6 +3323,13 @@ async function runScenario() {
         relationship: "child",
       },
     }),
+  });
+  assertPatientMutationReceipt(patientCreatedProfile, {
+    userId: "usr_patient",
+    workspaceId: "org_personal_patient",
+    patientId: patientCreatedProfile.patient.id,
+    intent: "create",
+    replayed: false,
   });
   assert.equal(patientCreatedProfile.patient.ownerUserId, "usr_patient");
   assert.equal(patientCreatedProfile.patient.guardianUserId, "usr_patient");
@@ -1801,7 +3354,7 @@ async function runScenario() {
     201,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": "family-dependent-create" },
+      headers: { ...patientFamilyJsonHeaders, "Idempotency-Key": "family-dependent-create" },
       body: JSON.stringify({
         patientCode: "FAMILY-NEW",
         name: "Patient Created Dependent",
@@ -1814,7 +3367,18 @@ async function runScenario() {
       }),
     },
   );
-  assert.equal(patientCreatedProfileReplay.patient.id, patientCreatedProfile.patient.id);
+  assertPatientMutationReceipt(patientCreatedProfileReplay, {
+    userId: "usr_patient",
+    workspaceId: "org_personal_patient",
+    patientId: patientCreatedProfile.patient.id,
+    intent: "create",
+    replayed: true,
+  });
+  assert.deepEqual(
+    patientCreatedProfileReplay.patient,
+    patientCreatedProfile.patient,
+    "create replay must preserve the original canonical patient snapshot",
+  );
   const reusedDependentKey = await expectStatus(
     "dependent creation rejects an idempotency key reused with another payload",
     patient,
@@ -1822,11 +3386,38 @@ async function runScenario() {
     409,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": "family-dependent-create" },
+      headers: { ...patientFamilyJsonHeaders, "Idempotency-Key": "family-dependent-create" },
       body: JSON.stringify({ name: "Different Dependent", relationship: "other" }),
     },
   );
   assert.equal(reusedDependentKey.error.code, "IDEMPOTENCY_KEY_REUSED");
+  const missingFamilyUpdateKey = await expectStatus(
+    "canonical family update requires an Idempotency-Key header",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    400,
+    {
+      method: "PATCH",
+      headers: patientFamilyJsonHeaders,
+      body: JSON.stringify({ name: "Missing Header Update" }),
+    },
+  );
+  assert.equal(missingFamilyUpdateKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const bodyOnlyFamilyUpdateKey = await expectStatus(
+    "canonical family update rejects a body-only idempotency key",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    400,
+    {
+      method: "PATCH",
+      headers: patientFamilyJsonHeaders,
+      body: JSON.stringify({
+        name: "Body Key Update",
+        idempotencyKey: "family-update-body-only",
+      }),
+    },
+  );
+  assert.equal(bodyOnlyFamilyUpdateKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
   const patientUpdatedProfile = await expectStatus(
     "patient updates dependent family profile",
     patient,
@@ -1834,7 +3425,7 @@ async function runScenario() {
     200,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": "family-dependent-update" },
+      headers: { ...patientFamilyJsonHeaders, "Idempotency-Key": "family-dependent-update" },
       body: JSON.stringify({
         name: "Updated Dependent",
         relationship: "mother",
@@ -1847,6 +3438,13 @@ async function runScenario() {
       }),
     },
   );
+  assertPatientMutationReceipt(patientUpdatedProfile, {
+    userId: "usr_patient",
+    workspaceId: "org_personal_patient",
+    patientId: patientCreatedProfile.patient.id,
+    intent: "update",
+    replayed: false,
+  });
   assert.equal(patientUpdatedProfile.patient.name, "Updated Dependent");
   assert.equal(patientUpdatedProfile.patient.relationship, "mother");
   assert.equal(patientUpdatedProfile.patient.ownerUserId, "usr_patient");
@@ -1862,7 +3460,7 @@ async function runScenario() {
     200,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": "family-dependent-update" },
+      headers: { ...patientFamilyJsonHeaders, "Idempotency-Key": "family-dependent-update" },
       body: JSON.stringify({
         name: "Updated Dependent",
         relationship: "mother",
@@ -1875,8 +3473,18 @@ async function runScenario() {
       }),
     },
   );
-  assert.equal(patientUpdatedProfileReplay.patient.id, patientCreatedProfile.patient.id);
-  assert.equal(patientUpdatedProfileReplay.replayed, true);
+  assertPatientMutationReceipt(patientUpdatedProfileReplay, {
+    userId: "usr_patient",
+    workspaceId: "org_personal_patient",
+    patientId: patientCreatedProfile.patient.id,
+    intent: "update",
+    replayed: true,
+  });
+  assert.deepEqual(
+    patientUpdatedProfileReplay.patient,
+    patientUpdatedProfile.patient,
+    "update replay must preserve the original canonical patient snapshot",
+  );
   await expectStatus("patient cannot update workspace-owned patient profile", patient, "/api/v1/patients/pat_alpha", 403, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -1893,26 +3501,60 @@ async function runScenario() {
       body: JSON.stringify({ patientId: patientCreatedProfile.patient.id }),
     },
   );
+  const missingFamilyDeleteKey = await expectStatus(
+    "canonical family delete requires an Idempotency-Key header",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    400,
+    { method: "DELETE", headers: patientFamilyAuthorityHeaders },
+  );
+  assert.equal(missingFamilyDeleteKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const bodyOnlyFamilyDeleteKey = await expectStatus(
+    "canonical family delete rejects a body-only idempotency key",
+    patient,
+    `/api/v1/patients/${patientCreatedProfile.patient.id}`,
+    400,
+    {
+      method: "DELETE",
+      headers: patientFamilyJsonHeaders,
+      body: JSON.stringify({ idempotencyKey: "family-delete-body-only" }),
+    },
+  );
+  assert.equal(bodyOnlyFamilyDeleteKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
   const patientDeletedProfile = await expectStatus(
     "patient deletes dependent family profile",
     patient,
     `/api/v1/patients/${patientCreatedProfile.patient.id}`,
     200,
-    { method: "DELETE", headers: { "Idempotency-Key": "family-dependent-delete" } },
+    {
+      method: "DELETE",
+      headers: { ...patientFamilyAuthorityHeaders, "Idempotency-Key": "family-dependent-delete" },
+    },
   );
-  assert.equal(patientDeletedProfile.deleted, true);
-  assert.equal(patientDeletedProfile.patientId, patientCreatedProfile.patient.id);
-  assert.equal(patientDeletedProfile.replayed, false);
+  assertPatientMutationReceipt(patientDeletedProfile, {
+    userId: "usr_patient",
+    workspaceId: "org_personal_patient",
+    patientId: patientCreatedProfile.patient.id,
+    intent: "delete",
+    replayed: false,
+  });
   const patientDeletedProfileReplay = await expectStatus(
     "patient delete replays after the canonical patient is no longer readable",
     patient,
     `/api/v1/patients/${patientCreatedProfile.patient.id}`,
     200,
-    { method: "DELETE", headers: { "Idempotency-Key": "family-dependent-delete" } },
+    {
+      method: "DELETE",
+      headers: { ...patientFamilyAuthorityHeaders, "Idempotency-Key": "family-dependent-delete" },
+    },
   );
-  assert.equal(patientDeletedProfileReplay.deleted, true);
-  assert.equal(patientDeletedProfileReplay.patientId, patientCreatedProfile.patient.id);
-  assert.equal(patientDeletedProfileReplay.replayed, true);
+  assertPatientMutationReceipt(patientDeletedProfileReplay, {
+    userId: "usr_patient",
+    workspaceId: "org_personal_patient",
+    patientId: patientCreatedProfile.patient.id,
+    intent: "delete",
+    replayed: true,
+  });
   const activeProfileAfterDelete = await expectStatus(
     "deleting an active dependent falls back to canonical self profile",
     patient,
@@ -1926,7 +3568,110 @@ async function runScenario() {
     `/api/v1/patients/${patientCreatedProfile.patient.id}`,
     404,
   );
+  const doctorCreatedReplayProbe = await expectStatus(
+    "doctor creates a workspace-bound patient replay probe",
+    doctor,
+    "/api/v1/patients",
+    201,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "doctor-patient-delete-replay-probe-create",
+      },
+      body: JSON.stringify({
+        patientCode: "REPLAY-PROBE",
+        name: "Delete Replay Probe",
+        dateOfBirth: "1990-01-02",
+      }),
+    },
+  );
+  assertPatientMutationReceipt(doctorCreatedReplayProbe, {
+    userId: "usr_doctor",
+    workspaceId: "org_alpha",
+    patientId: doctorCreatedReplayProbe.patient.id,
+    intent: "create",
+    replayed: false,
+  });
+  const doctorDeletedReplayProbe = await expectStatus(
+    "doctor deletes the workspace-bound patient replay probe",
+    doctor,
+    `/api/v1/patients/${doctorCreatedReplayProbe.patient.id}`,
+    200,
+    {
+      method: "DELETE",
+      headers: { "Idempotency-Key": "doctor-patient-delete-replay-probe-delete" },
+    },
+  );
+  assertPatientMutationReceipt(doctorDeletedReplayProbe, {
+    userId: "usr_doctor",
+    workspaceId: "org_alpha",
+    patientId: doctorCreatedReplayProbe.patient.id,
+    intent: "delete",
+    replayed: false,
+  });
+  await expectStatus(
+    "doctor switches to beta before replaying an alpha patient deletion",
+    doctor,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "doctor-patient-delete-replay-probe-switch-beta",
+      },
+      body: JSON.stringify({ organizationId: "org_beta" }),
+    },
+  );
+  const foreignWorkspaceDeleteReplay = await expectStatus(
+    "patient delete replay fails closed after the actor changes workspace",
+    doctor,
+    `/api/v1/patients/${doctorCreatedReplayProbe.patient.id}`,
+    409,
+    {
+      method: "DELETE",
+      headers: { "Idempotency-Key": "doctor-patient-delete-replay-probe-delete" },
+    },
+  );
+  assert.equal(
+    foreignWorkspaceDeleteReplay.error.code,
+    "IDEMPOTENT_PATIENT_DELETE_MISMATCH",
+  );
+  await expectStatus(
+    "doctor restores alpha before replaying its canonical deletion",
+    doctor,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "doctor-patient-delete-replay-probe-switch-alpha",
+      },
+      body: JSON.stringify({ organizationId: "org_alpha" }),
+    },
+  );
+  const canonicalWorkspaceDeleteReplay = await expectStatus(
+    "patient delete replay succeeds again in its canonical workspace",
+    doctor,
+    `/api/v1/patients/${doctorCreatedReplayProbe.patient.id}`,
+    200,
+    {
+      method: "DELETE",
+      headers: { "Idempotency-Key": "doctor-patient-delete-replay-probe-delete" },
+    },
+  );
+  assertPatientMutationReceipt(canonicalWorkspaceDeleteReplay, {
+    userId: "usr_doctor",
+    workspaceId: "org_alpha",
+    patientId: doctorCreatedReplayProbe.patient.id,
+    intent: "delete",
+    replayed: true,
+  });
   const patientShareTargets = await expectStatus("patient resolves doctor share targets", patient, "/api/v1/share-targets", 200);
+  assert.ok(patientShareTargets.workspaceId);
+  assert.ok(Number.isFinite(Date.parse(patientShareTargets.generatedAt)));
   assert.ok(patientShareTargets.doctors.some((target) => target.id === "usr_doctor"));
   assert.equal(
     patientShareTargets.doctors.some((target) => target.id === "usr_pending_doctor"),
@@ -1950,6 +3695,9 @@ async function runScenario() {
     body: JSON.stringify({ doctorUserId: "usr_doctor", scope: "patient_profile" }),
   });
   assert.equal(patientShare.share.patientId, "pat_patient_child");
+  assert.equal(patientShare.patientId, "pat_patient_child");
+  assert.ok(patientShare.workspaceId);
+  assert.ok(Number.isFinite(Date.parse(patientShare.generatedAt)));
   assert.equal(patientShare.share.doctorUserId, "usr_doctor");
   assert.equal(patientShare.share.authorityType, "patient_consent");
   assert.equal(patientShare.share.status, "active");
@@ -2098,7 +3846,10 @@ async function runScenario() {
   assert.equal(legacyTwoFactor.error.code, "TWO_FACTOR_LEGACY_ENDPOINT_REMOVED");
   const unavailableEnrollment = await expectStatus("2FA enrollment fails closed without encryption key", patient, "/api/v1/me/2fa/enroll", 503, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "workspace-smoke-2fa-unavailable-enroll",
+    },
     body: JSON.stringify({ method: "app" }),
   });
   assert.equal(unavailableEnrollment.error.code, "TWO_FACTOR_UNAVAILABLE");
@@ -2119,24 +3870,195 @@ async function runScenario() {
   const secondaryPatientSession = patientSessions.sessions.find((item) => item.current !== true && !item.revokedAt);
   assert.ok(currentPatientSession);
   assert.ok(secondaryPatientSession);
+  const currentSessionRevoke = await expectStatus(
+    "patient cannot revoke the auth session backing the current request",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(currentPatientSession.id)}/revoke`,
+    409,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "patient-current-auth-session-revoke" },
+    },
+  );
+  assert.equal(currentSessionRevoke.error.code, "AUTH_SESSION_CURRENT");
+  await expectStatus(
+    "current auth session remains active after direct revoke denial",
+    patient,
+    "/api/v1/me",
+    200,
+  );
+  for (const [label, encodedSessionId] of [
+    ["whitespace auth session id", encodeURIComponent(` ${secondaryPatientSession.id}`)],
+    ["overlong auth session id", "x".repeat(161)],
+    ["malformed encoded auth session id", "%E0%A4%A"],
+  ]) {
+    const invalidSessionId = await expectStatus(
+      `auth session revocation rejects ${label}`,
+      patient,
+      `/api/v1/auth/sessions/${encodedSessionId}/revoke`,
+      400,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": `invalid-session-id-${label.replace(/\s+/g, "-")}` },
+      },
+    );
+    assert.equal(invalidSessionId.error.code, "AUTH_SESSION_ID_INVALID");
+  }
+  const missingSessionRevokeKey = await expectStatus(
+    "auth session revocation requires a stable caller idempotency key",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
+    400,
+    { method: "POST" },
+  );
+  assert.equal(missingSessionRevokeKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const blankSessionRevokeKey = await expectStatus(
+    "auth session revocation rejects a blank caller idempotency key",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
+    400,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "   " },
+    },
+  );
+  assert.equal(blankSessionRevokeKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const overlongSessionRevokeKey = await expectStatus(
+    "auth session revocation rejects rather than truncates an overlong idempotency key",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
+    400,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "x".repeat(161) },
+    },
+  );
+  assert.equal(overlongSessionRevokeKey.error.code, "IDEMPOTENCY_KEY_TOO_LONG");
   const revokedPatientSession = await expectStatus(
     "patient revokes another auth session",
     patient,
     `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
     200,
-    { method: "POST" },
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "patient-auth-session-revoke-001" },
+    },
   );
+  assert.deepEqual(Object.keys(revokedPatientSession), ["session", "revoked", "replayed"]);
   assert.equal(Boolean(revokedPatientSession.session.revokedAt), true);
+  assert.equal(revokedPatientSession.revoked, true);
+  assert.equal(revokedPatientSession.replayed, false);
   const realtimeCloseEvent = await patientSecondRealtimeClosed;
   assert.equal(realtimeCloseEvent.code, 1008, "revoking a backend session must close its realtime socket");
   const revokedPatientSessionReplay = await expectStatus(
-    "session revoke is naturally idempotent and preserves the original outcome",
+    "session revoke replays the caller-owned receipt without another mutation",
     patient,
     `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
     200,
-    { method: "POST" },
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "patient-auth-session-revoke-001" },
+    },
   );
+  assert.equal(revokedPatientSessionReplay.revoked, true);
+  assert.equal(revokedPatientSessionReplay.replayed, true);
   assert.equal(revokedPatientSessionReplay.session.revokedAt, revokedPatientSession.session.revokedAt);
+  const revokedPatientSessionFreshKey = await expectStatus(
+    "a fresh key against an already-revoked session is not reported as a replay",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(secondaryPatientSession.id)}/revoke`,
+    200,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "patient-auth-session-revoke-002" },
+    },
+  );
+  assert.equal(revokedPatientSessionFreshKey.revoked, true);
+  assert.equal(revokedPatientSessionFreshKey.replayed, false);
+  assert.equal(revokedPatientSessionFreshKey.session.revokedAt, revokedPatientSession.session.revokedAt);
+  const patientThirdLogin = await expectLoginPassword(
+    "patient opens a third backend auth session for key-reuse isolation",
+    "patient@alpha.test",
+    "12345678",
+    200,
+  );
+  const patientThirdSession = {
+    user: patientThirdLogin.user,
+    headers: { Authorization: `Bearer ${patientThirdLogin.token}` },
+  };
+  const patientSessionsBeforeKeyReuse = await expectStatus(
+    "patient refreshes own auth sessions before key-reuse test",
+    patient,
+    "/api/v1/auth/sessions",
+    200,
+  );
+  const thirdPatientSession = patientSessionsBeforeKeyReuse.sessions.find(
+    (item) => item.id !== currentPatientSession.id && item.id !== secondaryPatientSession.id,
+  );
+  assert.ok(thirdPatientSession);
+  const keyReuse = await expectStatus(
+    "one caller cannot reuse a session revoke key for another target",
+    patient,
+    `/api/v1/auth/sessions/${encodeURIComponent(thirdPatientSession.id)}/revoke`,
+    409,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "patient-auth-session-revoke-001" },
+    },
+  );
+  assert.equal(keyReuse.error.code, "IDEMPOTENCY_KEY_REUSED");
+  await expectStatus(
+    "key reuse does not revoke the different target session",
+    patientThirdSession,
+    "/api/v1/me",
+    200,
+  );
+  const legacySessionRevokePath = `/api/auth/sessions/${encodeURIComponent(thirdPatientSession.id)}/revoke`;
+  const legacySessionRevoke = await request(legacySessionRevokePath, {
+    method: "POST",
+    headers: patient.headers,
+  });
+  assert.equal(
+    legacySessionRevoke.response.status,
+    200,
+    `legacy auth session revoke expected 200, got ${legacySessionRevoke.response.status}: ${JSON.stringify(legacySessionRevoke.body)}`,
+  );
+  assert.equal(legacySessionRevoke.body.revoked, true);
+  assert.equal(legacySessionRevoke.body.replayed, false);
+  assert.equal(legacySessionRevoke.response.headers.get("deprecation"), "true");
+  assert.equal(
+    legacySessionRevoke.response.headers.get("x-shcare-compatibility-alias"),
+    "auth-session-revoke",
+  );
+  const legacySessionRevokeReplay = await request(legacySessionRevokePath, {
+    method: "POST",
+    headers: patient.headers,
+  });
+  assert.equal(
+    legacySessionRevokeReplay.response.status,
+    200,
+    `legacy auth session revoke replay expected 200, got ${legacySessionRevokeReplay.response.status}: ${JSON.stringify(legacySessionRevokeReplay.body)}`,
+  );
+  assert.equal(legacySessionRevokeReplay.body.revoked, true);
+  assert.equal(legacySessionRevokeReplay.body.replayed, true);
+  assert.equal(
+    legacySessionRevokeReplay.body.session.revokedAt,
+    legacySessionRevoke.body.session.revokedAt,
+  );
+  assert.equal(legacySessionRevokeReplay.response.headers.get("deprecation"), "true");
+  assert.equal(
+    legacySessionRevokeReplay.response.headers.get("x-shcare-compatibility-alias"),
+    "auth-session-revoke",
+  );
+  await expectStatus(
+    "legacy-revoked patient session cannot access account",
+    patientThirdSession,
+    "/api/v1/me",
+    401,
+  );
+  const legacyMetrics = await requestRaw("/metrics");
+  assert.equal(legacyMetrics.response.status, 200);
+  assert.match(legacyMetrics.text, /smart_health_legacy_auth_session_revoke_total 2(?:\r?\n|$)/);
   const sessionsAfterRevoke = await expectStatus("revoked sessions are excluded from active session list", patient, "/api/v1/auth/sessions", 200);
   assert.equal(sessionsAfterRevoke.sessions.some((item) => item.id === secondaryPatientSession.id), false);
   const crossUserSessionRevoke = await expectStatus(
@@ -2144,17 +4066,320 @@ async function runScenario() {
     doctor,
     `/api/v1/auth/sessions/${encodeURIComponent(currentPatientSession.id)}/revoke`,
     404,
-    { method: "POST" },
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": "patient-auth-session-revoke-001" },
+    },
   );
   assert.equal(crossUserSessionRevoke.error.code, "AUTH_SESSION_NOT_FOUND");
   await expectStatus("revoked patient session cannot access account", patientSecondSession, "/api/v1/me", 401);
-  await expectStatus("patient changes backend account password", patient, "/api/v1/me/password", 200, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ currentPassword: "12345678", newPassword: "PatientPass123" }),
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const repairedReceipt = await expectStatus(
+      "completed password receipt repairs missing ancillary evidence",
+      passwordRepairUser,
+      "/api/v1/me/password",
+      200,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "password-ancillary-repair",
+        },
+        body: JSON.stringify(ancillaryRepairPasswordPayload),
+      },
+    );
+    assert.deepEqual(repairedReceipt, {
+      ok: true,
+      user: { id: "usr_password_repair" },
+      provider: "demo",
+      operationId: ancillaryRepairOperationId,
+      replayed: true,
+    });
+  }
+  const repairedAncillaryDb = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  assert.equal(
+    repairedAncillaryDb.auditLogs.filter(
+      (entry) =>
+        entry.id ===
+        `audit_password_change_${ancillaryRepairOperationId}`,
+    ).length,
+    1,
+  );
+  assert.equal(
+    repairedAncillaryDb.notifications.filter(
+      (entry) =>
+        entry.id ===
+        `noti_password_change_${ancillaryRepairOperationId}`,
+    ).length,
+    1,
+  );
+  assert.equal(
+    repairedAncillaryDb.accessLogs.filter(
+      (entry) =>
+        entry.id ===
+        `log_password_change_${ancillaryRepairOperationId}`,
+    ).length,
+    1,
+  );
+  assert.equal(
+    repairedAncillaryDb.settings.privacy.passwordUpdatedAt,
+    repairedAncillaryDb.identityOperations.find(
+      (entry) => entry.id === ancillaryRepairOperationId,
+    ).completedAt,
+  );
+  const missingPasswordIdempotencyKey = await expectStatus(
+    "password change requires an explicit idempotency key",
+    patient,
+    "/api/v1/me/password",
+    400,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currentPassword: "12345678",
+        newPassword: " PatientPass123 ",
+      }),
+    },
+  );
+  assert.equal(
+    missingPasswordIdempotencyKey.code,
+    "IDEMPOTENCY_KEY_REQUIRED",
+  );
+  const legacyPasswordBody = await expectStatus(
+    "canonical password change rejects legacy or additional body fields",
+    patient,
+    "/api/v1/me/password",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-password-legacy-body",
+      },
+      body: JSON.stringify({
+        currentPassword: "12345678",
+        password: "PatientPass456",
+      }),
+    },
+  );
+  assert.deepEqual(Object.keys(legacyPasswordBody).sort(), [
+    "code",
+    "fieldErrors",
+    "message",
+    "requestId",
+  ]);
+  assert.equal(
+    legacyPasswordBody.code,
+    "PASSWORD_CHANGE_REQUEST_INVALID",
+  );
+  assert.deepEqual(legacyPasswordBody.fieldErrors, {
+    request: "Only currentPassword and newPassword are accepted",
   });
+  const normalizedCurrentPasswordAttempt = await expectStatus(
+    "password change does not trim the current secret",
+    patient,
+    "/api/v1/me/password",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-password-exact-current",
+      },
+      body: JSON.stringify({
+        currentPassword: " 12345678 ",
+        newPassword: "PatientPass456",
+      }),
+    },
+  );
+  assert.equal(
+    normalizedCurrentPasswordAttempt.code,
+    "PASSWORD_CURRENT_INVALID",
+  );
+  const weakPasswordAttempt = await expectStatus(
+    "password change rejects a weak new secret before mutation",
+    patient,
+    "/api/v1/me/password",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-password-weak",
+      },
+      body: JSON.stringify({
+        currentPassword: "12345678",
+        newPassword: "87654321",
+      }),
+    },
+  );
+  assert.equal(weakPasswordAttempt.code, "PASSWORD_TOO_WEAK");
+  const passwordPayload = {
+    currentPassword: "12345678",
+    newPassword: " PatientPass123 ",
+  };
+  const changedPassword = await expectStatus("patient changes backend account password", patient, "/api/v1/me/password", 200, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "patient-password-change",
+    },
+    body: JSON.stringify(passwordPayload),
+  });
+  assert.deepEqual(Object.keys(changedPassword).sort(), [
+    "ok",
+    "operationId",
+    "provider",
+    "replayed",
+    "user",
+  ]);
+  assert.equal(changedPassword.ok, true);
+  assert.deepEqual(Object.keys(changedPassword.user), ["id"]);
+  assert.equal(changedPassword.user.id, "usr_patient");
+  assert.equal(changedPassword.provider, "demo");
+  assert.ok(changedPassword.operationId);
+  assert.equal(changedPassword.replayed, false);
   await expectLoginPassword("old patient password is rejected after password change", "patient@alpha.test", "12345678", 401);
-  await expectLoginPassword("patient can sign in with changed backend password", "patient@alpha.test", "PatientPass123", 200);
+  await expectLoginPassword(
+    "trimmed password is rejected after exact password change",
+    "patient@alpha.test",
+    "PatientPass123",
+    401,
+  );
+  const changedPasswordLogin = await expectLoginPassword(
+    "patient can sign in with the exact changed backend password",
+    "patient@alpha.test",
+    " PatientPass123 ",
+    200,
+  );
+  const changedPasswordSession = {
+    user: changedPasswordLogin.user,
+    headers: { Authorization: `Bearer ${changedPasswordLogin.token}` },
+  };
+  const replayedPasswordChange = await expectStatus(
+    "password change replays the exact account-bound receipt",
+    changedPasswordSession,
+    "/api/v1/me/password",
+    200,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-password-change",
+      },
+      body: JSON.stringify(passwordPayload),
+    },
+  );
+  assert.equal(replayedPasswordChange.ok, true);
+  assert.deepEqual(Object.keys(replayedPasswordChange.user), ["id"]);
+  assert.equal(replayedPasswordChange.user.id, "usr_patient");
+  assert.equal(replayedPasswordChange.provider, "demo");
+  assert.equal(replayedPasswordChange.operationId, changedPassword.operationId);
+  assert.equal(replayedPasswordChange.replayed, true);
+  const conflictingPasswordReplay = await expectStatus(
+    "password change rejects reuse of a key with a different payload",
+    changedPasswordSession,
+    "/api/v1/me/password",
+    409,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "patient-password-change",
+      },
+      body: JSON.stringify({
+        ...passwordPayload,
+        newPassword: "DifferentPass456",
+      }),
+    },
+  );
+  assert.equal(conflictingPasswordReplay.code, "IDEMPOTENCY_KEY_REUSED");
+  const passwordEvidenceDb = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  const persistedPasswordOperation = passwordEvidenceDb.identityOperations.find(
+    (entry) => entry.id === changedPassword.operationId,
+  );
+  assert.ok(persistedPasswordOperation);
+  assert.equal(
+    JSON.stringify(persistedPasswordOperation).includes(
+      passwordPayload.currentPassword,
+    ),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(persistedPasswordOperation).includes(
+      passwordPayload.newPassword,
+    ),
+    false,
+  );
+  const persistedPasswordUser = passwordEvidenceDb.users.find(
+    (entry) => entry.id === "usr_patient",
+  );
+  assert.ok(persistedPasswordUser);
+  assert.equal(isPasswordHash(persistedPasswordUser.password), true);
+  assert.equal(
+    verifyPasswordSecret(
+      passwordPayload.newPassword,
+      persistedPasswordUser.password,
+    ),
+    true,
+  );
+  assert.equal(
+    JSON.stringify(persistedPasswordUser).includes(
+      passwordPayload.newPassword,
+    ),
+    false,
+  );
+  assert.equal(
+    passwordEvidenceDb.auditLogs.filter(
+      (entry) =>
+        entry.action === "account.password.change" &&
+        entry.metadata?.operationId === changedPassword.operationId,
+    ).length,
+    1,
+    "password replay must not duplicate the account audit",
+  );
+  assert.equal(
+    passwordEvidenceDb.auditLogs.some(
+      (entry) =>
+        entry.id ===
+        `audit_password_change_${changedPassword.operationId}`,
+    ),
+    true,
+  );
+  assert.equal(
+    passwordEvidenceDb.notifications.filter(
+      (entry) =>
+        entry.userId === "usr_patient" &&
+        entry.metadata?.operationId === changedPassword.operationId,
+    ).length,
+    1,
+    "password replay must not duplicate the account notification",
+  );
+  assert.equal(
+    passwordEvidenceDb.notifications.some(
+      (entry) =>
+        entry.id ===
+        `noti_password_change_${changedPassword.operationId}`,
+    ),
+    true,
+  );
+  assert.equal(
+    passwordEvidenceDb.accessLogs.filter(
+      (entry) =>
+        entry.id ===
+        `log_password_change_${changedPassword.operationId}`,
+    ).length,
+    1,
+    "password replay must repair without duplicating the access ledger",
+  );
+  assert.equal(
+    passwordEvidenceDb.settings.privacy.passwordUpdatedAt,
+    persistedPasswordOperation.completedAt,
+  );
 
   const portalScans = await expectStatus("portal lists only scoped scans", workspaceAdmin, "/api/portal/scans", 200, {
     headers: portalHeaders,
@@ -2317,6 +4542,21 @@ async function runScenario() {
   assert.equal(replayedReprocess.idempotent, true);
   assert.equal(replayedReprocess.scan.aiResultId, reprocessedScan.scan.aiResultId);
   assert.equal(replayedReprocess.scan.processingGeneration, reprocessedScan.scan.processingGeneration);
+  const controlledWaveform = await expectStatus(
+    "workspace admin reads the real tenant-scoped waveform artifact",
+    workspaceAdmin,
+    `/api/v1/scans/${controlledScan.scan.id}/waveform`,
+    200,
+  );
+  assert.equal(controlledWaveform.waveform.scanId, controlledScan.scan.id);
+  assert.equal(controlledWaveform.waveform.sampleRate, 16000);
+  assert.ok(controlledWaveform.waveform.points.length > 0);
+  await expectStatus(
+    "cross-workspace doctor cannot read the waveform artifact",
+    betaDoctor,
+    `/api/v1/scans/${controlledScan.scan.id}/waveform`,
+    403,
+  );
   await expectStatus(
     "beta doctor cannot reprocess unshared controlled scan",
     betaDoctor,
@@ -2367,13 +4607,68 @@ async function runScenario() {
   );
   assert.notEqual(scanAfterSpoofAttempt.scan.aiLabel, "diagnosed");
 
-  const portalDevices = await expectStatus("portal lists only scoped devices", workspaceAdmin, "/api/portal/devices", 200, {
+  const portalDevices = await expectStatus("portal lists only scoped devices", workspaceAdmin, "/api/v1/portal/devices", 200, {
     headers: portalHeaders,
   });
+  assert.equal(portalDevices.workspaceId, "org_alpha");
+  assert.ok(Number.isFinite(Date.parse(portalDevices.generatedAt)));
   assert.deepEqual(
     portalDevices.devices.map((device) => device.id),
     ["dev_alpha", "dev_claim_alpha"],
   );
+  assert.equal(
+    /"deviceSecret"|"secretHash"|"claimCode"|"claimCodeHash"|"tokenHash"|"signature"/.test(
+      JSON.stringify(portalDevices),
+    ),
+    false,
+  );
+  assert.equal(
+    portalDevices.devices.some(
+      (device) => device.connected === true && device.online === true,
+    ),
+    false,
+    "legacy connected must not promote a device to canonical online",
+  );
+  const legacyPortalDevices = await expectStatus(
+    "legacy portal device list alias remains additive",
+    workspaceAdmin,
+    "/api/portal/devices",
+    200,
+    { headers: portalHeaders },
+  );
+  assert.equal(legacyPortalDevices.workspaceId, "org_alpha");
+  assert.deepEqual(
+    legacyPortalDevices.devices.map((device) => device.id),
+    portalDevices.devices.map((device) => device.id),
+  );
+  const missingAssignmentKey = await expectStatus(
+    "portal device assignment requires an idempotency key",
+    workspaceAdmin,
+    "/api/v1/portal/devices/dev_alpha",
+    400,
+    {
+      method: "PATCH",
+      headers: portalJsonHeaders,
+      body: JSON.stringify({ assignedPatientId: "pat_alpha" }),
+    },
+  );
+  assert.equal(missingAssignmentKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const legacyAliasUpdate = await expectStatus(
+    "legacy portal device alias remains additive during the compatibility window",
+    workspaceAdmin,
+    "/api/portal/devices/dev_claim_alpha",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "legacy-alias-device-update",
+      },
+      body: JSON.stringify({ name: "Legacy Alias Device" }),
+    },
+  );
+  assert.equal(legacyAliasUpdate.device.name, "Legacy Alias Device");
+  assert.equal(legacyAliasUpdate.replayed, false);
   await expectStatus("viewer cannot update portal device", viewer, "/api/portal/devices/dev_alpha", 403, {
     method: "PATCH",
     headers: portalJsonHeaders,
@@ -2382,22 +4677,51 @@ async function runScenario() {
   const invalidProvisionedAssignment = await expectStatus(
     "portal cannot assign a provisioned device before claim",
     workspaceAdmin,
-    "/api/portal/devices/dev_claim_alpha",
+    "/api/v1/portal/devices/dev_claim_alpha",
     409,
     {
       method: "PATCH",
-      headers: portalJsonHeaders,
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-device-invalid-provisioned",
+      },
       body: JSON.stringify({ assignedPatientId: "pat_alpha" }),
     },
   );
   assert.equal(invalidProvisionedAssignment.error.code, "DEVICE_OWNERSHIP_TRANSITION_INVALID");
-  const updatedDevice = await expectStatus("portal assigns device to scoped patient", workspaceAdmin, "/api/portal/devices/dev_alpha", 200, {
+  const assignmentHeaders = {
+    ...portalJsonHeaders,
+    "Idempotency-Key": "workspace-device-assign-alpha",
+  };
+  const assignmentBody = JSON.stringify({
+    assignedPatientId: "pat_alpha",
+    name: "Alpha Device Updated",
+  });
+  const updatedDevice = await expectStatus("portal assigns device to scoped patient", workspaceAdmin, "/api/v1/portal/devices/dev_alpha", 200, {
     method: "PATCH",
-    headers: portalJsonHeaders,
-    body: JSON.stringify({ assignedPatientId: "pat_alpha", name: "Alpha Device Updated" }),
+    headers: assignmentHeaders,
+    body: assignmentBody,
   });
   assert.equal(updatedDevice.device.assignedPatientId, "pat_alpha");
-  const deviceCommand = await expectStatus("portal rejects command while device is offline", workspaceAdmin, "/api/portal/devices/dev_alpha/commands", 409, {
+  assert.equal(updatedDevice.replayed, false);
+  const replayedAssignment = await expectStatus(
+    "portal replays an exact device assignment",
+    workspaceAdmin,
+    "/api/v1/portal/devices/dev_alpha",
+    200,
+    {
+      method: "PATCH",
+      headers: assignmentHeaders,
+      body: assignmentBody,
+    },
+  );
+  assert.equal(replayedAssignment.replayed, true);
+  assert.equal(replayedAssignment.device.id, updatedDevice.device.id);
+  assert.equal(
+    replayedAssignment.device.assignedPatientId,
+    updatedDevice.device.assignedPatientId,
+  );
+  const deviceCommand = await expectStatus("portal cannot issue platform fleet commands", workspaceAdmin, "/api/portal/devices/dev_alpha/commands", 403, {
     method: "POST",
     headers: {
       ...portalJsonHeaders,
@@ -2405,11 +4729,50 @@ async function runScenario() {
     },
     body: JSON.stringify({ type: "wifi.status", payload: {} }),
   });
-  assert.equal(deviceCommand.error.code, "DEVICE_COMMAND_DEVICE_OFFLINE");
+  assert.equal(deviceCommand.error.code, "DEVICE_COMMAND_PLATFORM_ADMIN_REQUIRED");
 
   const portalStaff = await expectStatus("portal lists only workspace staff", workspaceAdmin, "/api/portal/staff", 200, {
     headers: portalHeaders,
   });
+  assert.equal(portalStaff.workspaceId, "org_alpha");
+  assert.ok(Number.isFinite(Date.parse(portalStaff.generatedAt)));
+  assert.ok(
+    portalStaff.staff.every(
+      (member) =>
+        member.workspaceMembership?.organizationId === "org_alpha" &&
+        member.workspaceMembership?.workspaceId === "org_alpha" &&
+        member.workspaceMembership?.userId === member.id,
+    ),
+  );
+  assert.ok(
+    portalStaff.staff.every(
+      (member) =>
+        JSON.stringify(Object.keys(member).sort()) ===
+        JSON.stringify(
+          [
+            "accountStatus",
+            "avatarUrl",
+            "department",
+            "email",
+            "hospital",
+            "id",
+            "license",
+            "name",
+            "phone",
+            "role",
+            "roleRequestStatus",
+            "specialty",
+            "title",
+            "verifiedEmail",
+            "workspaceMembership",
+          ].sort(),
+        ),
+    ),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(portalStaff),
+    /(?:password|firebaseClaims|twoFactor|session|token|secret)/i,
+  );
   assert.ok(portalStaff.doctors.some((member) => member.id === "usr_doctor"));
   assert.equal(portalStaff.doctors.some((member) => member.id === "usr_beta_doctor"), false);
   const newStaff = await expectStatus("portal blocks doctor creation until invitation identity flow exists", workspaceAdmin, "/api/portal/staff", 501, {
@@ -2690,20 +5053,365 @@ async function runScenario() {
     body: JSON.stringify({ notifications: { aiUpdates: true } }),
   });
   assert.equal(updatedSettings.settings.notifications.aiUpdates, true);
-  const updatedWorkspace = await expectStatus("portal updates workspace profile", workspaceAdmin, "/api/portal/settings/workspace", 200, {
+  const workspaceSettingsPayload = {
+    name: portalSettings.workspace.name,
+    address: portalSettings.workspace.address,
+    phone: "0289999999",
+    email: "ops@alpha.test",
+    website: portalSettings.workspace.website || "",
+    expectedVersion: portalSettings.workspace.version,
+  };
+  const workspaceSettingsKey = "workspace-settings-alpha-v1";
+  const missingWorkspaceSettingsKey = await expectStatus(
+    "canonical workspace settings requires an Idempotency-Key",
+    workspaceAdmin,
+    "/api/v1/portal/settings/workspace",
+    400,
+    {
+      method: "PATCH",
+      headers: portalJsonHeaders,
+      body: JSON.stringify(workspaceSettingsPayload),
+    },
+  );
+  assert.equal(missingWorkspaceSettingsKey.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  const forgedWorkspaceSettingsTarget = await expectStatus(
+    "workspace settings rejects a client-supplied cross-workspace target",
+    workspaceAdmin,
+    "/api/v1/portal/settings/workspace",
+    400,
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-settings-forged-target",
+      },
+      body: JSON.stringify({ ...workspaceSettingsPayload, workspaceId: "org_beta" }),
+    },
+  );
+  assert.equal(
+    forgedWorkspaceSettingsTarget.error.code,
+    "WORKSPACE_SETTINGS_FIELDS_UNSUPPORTED",
+  );
+  await expectStatus(
+    "viewer cannot mutate workspace settings",
+    viewer,
+    "/api/v1/portal/settings/workspace",
+    403,
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-settings-viewer-denied",
+      },
+      body: JSON.stringify(workspaceSettingsPayload),
+    },
+  );
+  const updatedWorkspace = await expectStatus("portal updates workspace profile", workspaceAdmin, "/api/v1/portal/settings/workspace", 200, {
     method: "PATCH",
-    headers: portalJsonHeaders,
-    body: JSON.stringify({ phone: "0289999999", email: "ops@alpha.test" }),
+    headers: { ...portalJsonHeaders, "Idempotency-Key": workspaceSettingsKey },
+    body: JSON.stringify(workspaceSettingsPayload),
+  });
+  assert.deepEqual(Object.keys(updatedWorkspace).sort(), [
+    "operationId",
+    "ownership",
+    "replayed",
+    "workspace",
+  ]);
+  assert.deepEqual(updatedWorkspace.ownership, {
+    userId: "usr_workspace_admin",
+    workspaceId: "org_alpha",
   });
   assert.equal(updatedWorkspace.workspace.phone, "0289999999");
   assert.equal(updatedWorkspace.workspace.email, "ops@alpha.test");
-  const updatedAccount = await expectStatus("portal updates account notification preferences", workspaceAdmin, "/api/v1/me", 200, {
-    method: "PATCH",
-    headers: portalJsonHeaders,
-    body: JSON.stringify({ notificationPreferences: { aiUpdates: true, messages: false } }),
+  assert.equal(updatedWorkspace.workspace.version, portalSettings.workspace.version + 1);
+  assert.equal(updatedWorkspace.replayed, false);
+  const replayedWorkspace = await expectStatus(
+    "workspace settings replays an ambiguous retry",
+    workspaceAdmin,
+    "/api/v1/portal/settings/workspace",
+    200,
+    {
+      method: "PATCH",
+      headers: { ...portalJsonHeaders, "Idempotency-Key": workspaceSettingsKey },
+      body: JSON.stringify(workspaceSettingsPayload),
+    },
+  );
+  assert.equal(replayedWorkspace.replayed, true);
+  assert.equal(replayedWorkspace.operationId, updatedWorkspace.operationId);
+  assert.equal(replayedWorkspace.workspace.version, updatedWorkspace.workspace.version);
+  const workspaceSettingsCollision = await expectStatus(
+    "workspace settings rejects a reused key with another payload",
+    workspaceAdmin,
+    "/api/v1/portal/settings/workspace",
+    409,
+    {
+      method: "PATCH",
+      headers: { ...portalJsonHeaders, "Idempotency-Key": workspaceSettingsKey },
+      body: JSON.stringify({
+        ...workspaceSettingsPayload,
+        email: "collision@alpha.test",
+      }),
+    },
+  );
+  assert.equal(workspaceSettingsCollision.error.code, "IDEMPOTENCY_KEY_REUSED");
+  const legacyWorkspaceReplay = await request(
+    "/api/portal/settings/workspace",
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        ...workspaceAdmin.headers,
+        "Idempotency-Key": workspaceSettingsKey,
+      },
+      body: JSON.stringify(workspaceSettingsPayload),
+    },
+  );
+  assert.equal(legacyWorkspaceReplay.response.status, 200);
+  assert.equal(legacyWorkspaceReplay.response.headers.get("deprecation"), "true");
+  assert.equal(
+    legacyWorkspaceReplay.response.headers.get("x-shcare-compatibility-alias"),
+    "workspace-settings-update",
+  );
+  assert.equal(legacyWorkspaceReplay.body.replayed, true);
+  const updatedAiPreferences = await expectStatus(
+    "portal updates the account AI notification preference through its dedicated contract",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "notification-preference-ai-updates-enable",
+      },
+      body: JSON.stringify({ key: "aiUpdates", enabled: true }),
+    },
+  );
+  assert.equal(updatedAiPreferences.preferences.aiUpdates, true);
+  const updatedAccountPreferences = await expectStatus(
+    "portal updates the account message preference through its dedicated contract",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "notification-preference-messages-disable-baseline",
+      },
+      body: JSON.stringify({ key: "messages", enabled: false }),
+    },
+  );
+  assert.equal(updatedAccountPreferences.preferences.aiUpdates, true);
+  assert.equal(updatedAccountPreferences.preferences.messages, false);
+  assert.equal(updatedAccountPreferences.preferences.appointments, true);
+  const notificationPreferencesBefore = await expectStatus(
+    "account reads canonical notification preferences and provider-safe availability",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+  );
+  assert.equal(notificationPreferencesBefore.userId, "usr_workspace_admin");
+  assert.equal(notificationPreferencesBefore.workspaceId, "org_alpha");
+  assert.deepEqual(notificationPreferencesBefore.ownership, {
+    kind: "self",
+    userId: "usr_workspace_admin",
   });
-  assert.equal(updatedAccount.user.notificationPreferences.aiUpdates, true);
-  assert.equal(updatedAccount.user.notificationPreferences.messages, false);
+  assert.deepEqual(Object.keys(notificationPreferencesBefore.preferences).sort(), [
+    "abnormalResults",
+    "aiUpdates",
+    "appointments",
+    "deviceOffline",
+    "doctorRequests",
+    "enabled",
+    "messages",
+    "newLogin",
+  ]);
+  assert.equal(notificationPreferencesBefore.preferences.aiUpdates, true);
+  assert.equal(notificationPreferencesBefore.preferences.messages, false);
+  assert.deepEqual(Object.keys(notificationPreferencesBefore.channels).sort(), [
+    "email",
+    "inApp",
+    "push",
+  ]);
+  assert.equal(notificationPreferencesBefore.channels.inApp.available, true);
+  assert.equal(notificationPreferencesBefore.replayed, false);
+  const serializedNotificationPreferences = JSON.stringify(notificationPreferencesBefore);
+  for (const forbidden of [
+    "provider",
+    "authSessionId",
+    "fcmToken",
+    "credential",
+    "privateKey",
+    "sound",
+    "vibration",
+  ]) {
+    assert.equal(
+      serializedNotificationPreferences.includes(forbidden),
+      false,
+      `notification preference response must not expose ${forbidden}`,
+    );
+  }
+  await expectStatus(
+    "field-level notification preference patch requires Idempotency-Key",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    400,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "messages", enabled: true }),
+    },
+  );
+  for (const [label, body] of [
+    ["client-only sound preference is rejected by the cloud endpoint", { key: "sound", enabled: false }],
+    ["client-only vibration preference is rejected by the cloud endpoint", { key: "vibration", enabled: false }],
+    ["notification preference patch rejects workspace targeting", { key: "messages", enabled: true, workspaceId: "org_beta" }],
+    ["notification preference patch rejects merged maps", { preferences: { messages: true } }],
+    ["notification preference patch requires a boolean", { key: "messages", enabled: "true" }],
+  ]) {
+    await expectStatus(
+      label,
+      workspaceAdmin,
+      "/api/v1/me/notification-preferences",
+      400,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `notification-preference-invalid-${label.length}`,
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+  const notificationPreferencePatchOptions = {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "notification-preference-messages-enable",
+    },
+    body: JSON.stringify({ key: "messages", enabled: true }),
+  };
+  const notificationPreferencesPatched = await expectStatus(
+    "account updates exactly one notification preference",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    notificationPreferencePatchOptions,
+  );
+  assert.equal(notificationPreferencesPatched.preferences.messages, true);
+  for (const [key, value] of Object.entries(notificationPreferencesBefore.preferences)) {
+    if (key !== "messages") {
+      assert.equal(
+        notificationPreferencesPatched.preferences[key],
+        value,
+        `field-level patch must preserve ${key}`,
+      );
+    }
+  }
+  const notificationPreferencesReplay = await expectStatus(
+    "exact notification preference replay returns a replay marker",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    notificationPreferencePatchOptions,
+  );
+  assert.equal(notificationPreferencesReplay.replayed, true);
+  const notificationPreferencesChangedAfterReceipt = await expectStatus(
+    "a later notification preference mutation can change the same field",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-preference-messages-disable-after-receipt",
+      },
+      body: JSON.stringify({ key: "messages", enabled: false }),
+    },
+  );
+  assert.equal(notificationPreferencesChangedAfterReceipt.preferences.messages, false);
+  const delayedNotificationPreferenceReplay = await expectStatus(
+    "delayed idempotent replay returns the original confirmed receipt",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    notificationPreferencePatchOptions,
+  );
+  assert.equal(delayedNotificationPreferenceReplay.replayed, true);
+  assert.equal(
+    delayedNotificationPreferenceReplay.preferences.messages,
+    true,
+    "a replay receipt must not be rewritten from newer account state",
+  );
+  const notificationPreferencesCurrentAfterReplay = await expectStatus(
+    "delayed replay does not roll current notification preferences backward",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+  );
+  assert.equal(notificationPreferencesCurrentAfterReplay.preferences.messages, false);
+  const notificationPreferencesRestoredAfterReplay = await expectStatus(
+    "account restores the message preference after delayed replay verification",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-preference-messages-restore-after-receipt",
+      },
+      body: JSON.stringify({ key: "messages", enabled: true }),
+    },
+  );
+  assert.equal(notificationPreferencesRestoredAfterReplay.preferences.messages, true);
+  await expectStatus(
+    "notification preference idempotency key cannot be reused for a different value",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    409,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-preference-messages-enable",
+      },
+      body: JSON.stringify({ key: "messages", enabled: false }),
+    },
+  );
+  const notificationsGloballyDisabled = await expectStatus(
+    "account can disable all account-wide notification categories",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-preference-global-disable",
+      },
+      body: JSON.stringify({ key: "enabled", enabled: false }),
+    },
+  );
+  assert.equal(notificationsGloballyDisabled.preferences.enabled, false);
+  const notificationsGloballyRestored = await expectStatus(
+    "account can restore account-wide notification delivery",
+    workspaceAdmin,
+    "/api/v1/me/notification-preferences",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-preference-global-restore",
+      },
+      body: JSON.stringify({ key: "enabled", enabled: true }),
+    },
+  );
+  assert.equal(notificationsGloballyRestored.preferences.enabled, true);
   const profileUpdate = {
     name: "Workspace Smoke Profile",
     title: "Operations Lead",
@@ -2716,8 +5424,16 @@ async function runScenario() {
   };
   const updatedAccountProfile = await expectStatus("portal updates account profile fields", workspaceAdmin, "/api/v1/me", 200, {
     method: "PATCH",
-    headers: portalJsonHeaders,
+    headers: {
+      ...portalJsonHeaders,
+      "Idempotency-Key": "workspace-account-profile-fields",
+    },
     body: JSON.stringify(profileUpdate),
+  });
+  assertAccountProfileMutationReceipt(updatedAccountProfile, {
+    userId: "usr_workspace_admin",
+    changedFields: Object.keys(profileUpdate),
+    replayed: false,
   });
   for (const [field, expected] of Object.entries(profileUpdate)) {
     assert.equal(updatedAccountProfile.user[field], expected);
@@ -2730,11 +5446,111 @@ async function runScenario() {
   }
   const accountAfterHospitalText = await expectStatus("profile hospital text does not switch workspace", workspaceAdmin, "/api/v1/me", 200, {
     method: "PATCH",
-    headers: portalJsonHeaders,
+    headers: {
+      ...portalJsonHeaders,
+      "Idempotency-Key": "workspace-account-profile-hospital-text",
+    },
     body: JSON.stringify({ hospital: "Beta Hospital" }),
+  });
+  assertAccountProfileMutationReceipt(accountAfterHospitalText, {
+    userId: "usr_workspace_admin",
+    changedFields: ["hospital"],
+    replayed: false,
   });
   assert.equal(accountAfterHospitalText.user.organizationId, "org_alpha");
   assert.equal(accountAfterHospitalText.user.hospital, "Beta Hospital");
+  const conflictingWorkspaceAliases = await expectStatus(
+    "workspace selection aliases fail closed when they disagree",
+    workspaceAdmin,
+    "/api/v1/me",
+    400,
+    {
+      method: "PATCH",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-account-profile-conflicting-alias",
+      },
+      body: JSON.stringify({ organizationId: "org_alpha", clinicId: "org_beta" }),
+    },
+  );
+  assert.equal(
+    conflictingWorkspaceAliases.error.code,
+    "WORKSPACE_SELECTION_CONFLICT",
+  );
+  const mixedProfileWorkspaceCompatibility = await request("/api/v1/me", {
+    method: "PATCH",
+    headers: {
+      ...workspaceAdmin.headers,
+      ...portalJsonHeaders,
+      "Idempotency-Key": "workspace-account-profile-mixed-compatibility",
+    },
+    body: JSON.stringify({ organizationId: "org_alpha", title: "Compatibility mix" }),
+  });
+  assert.equal(
+    mixedProfileWorkspaceCompatibility.response.status,
+    200,
+    JSON.stringify(mixedProfileWorkspaceCompatibility.body),
+  );
+  assert.equal(mixedProfileWorkspaceCompatibility.body.user.id, "usr_workspace_admin");
+  assert.equal(mixedProfileWorkspaceCompatibility.body.user.title, "Compatibility mix");
+  assert.equal(mixedProfileWorkspaceCompatibility.response.headers.get("deprecation"), "true");
+  assert.equal(
+    mixedProfileWorkspaceCompatibility.response.headers.get("x-shcare-compatibility-alias"),
+    "account-profile-workspace-mix",
+  );
+  const legacyWorkspaceFieldCompatibility = await request("/api/v1/me", {
+    method: "PATCH",
+    headers: {
+      ...workspaceAdmin.headers,
+      ...portalJsonHeaders,
+      "Idempotency-Key": "workspace-switch-clinic-id-compatibility",
+    },
+    body: JSON.stringify({ clinicId: "org_alpha" }),
+  });
+  assert.equal(
+    legacyWorkspaceFieldCompatibility.response.status,
+    200,
+    JSON.stringify(legacyWorkspaceFieldCompatibility.body),
+  );
+  assert.equal(legacyWorkspaceFieldCompatibility.body.user.currentWorkspaceId, "org_alpha");
+  assert.equal(legacyWorkspaceFieldCompatibility.response.headers.get("deprecation"), "true");
+  assert.equal(
+    legacyWorkspaceFieldCompatibility.response.headers.get("x-shcare-compatibility-alias"),
+    "workspace-switch-alias",
+  );
+  const legacyAccountProfileCompatibility = await request("/api/me", {
+    method: "PATCH",
+    headers: {
+      ...workspaceAdmin.headers,
+      ...portalJsonHeaders,
+    },
+    body: JSON.stringify({ title: "Legacy profile alias" }),
+  });
+  assert.equal(
+    legacyAccountProfileCompatibility.response.status,
+    200,
+    JSON.stringify(legacyAccountProfileCompatibility.body),
+  );
+  assert.equal(legacyAccountProfileCompatibility.body.user.title, "Legacy profile alias");
+  assert.equal(legacyAccountProfileCompatibility.response.headers.get("deprecation"), "true");
+  assert.equal(
+    legacyAccountProfileCompatibility.response.headers.get("x-shcare-compatibility-alias"),
+    "account-profile-update",
+  );
+  const accountProfileCompatibilityMetrics = await requestRaw("/metrics");
+  assert.equal(accountProfileCompatibilityMetrics.response.status, 200);
+  assert.match(
+    accountProfileCompatibilityMetrics.text,
+    /smart_health_legacy_account_profile_update_total 1(?:\r?\n|$)/,
+  );
+  assert.match(
+    accountProfileCompatibilityMetrics.text,
+    /smart_health_legacy_account_profile_workspace_mix_total 1(?:\r?\n|$)/,
+  );
+  assert.match(
+    accountProfileCompatibilityMetrics.text,
+    /smart_health_legacy_workspace_switch_alias_total 1(?:\r?\n|$)/,
+  );
   await expectStatus("portal cannot self-join another workspace via account profile", workspaceAdmin, "/api/v1/me", 403, {
     method: "PATCH",
     headers: portalJsonHeaders,
@@ -2747,14 +5563,78 @@ async function runScenario() {
 
   const supportTicket = await expectStatus("portal creates support ticket", workspaceAdmin, "/api/portal/support", 201, {
     method: "POST",
-    headers: portalJsonHeaders,
-    body: JSON.stringify({ type: "operations", description: "Portal smoke support request" }),
+    headers: {
+      ...portalJsonHeaders,
+      "Idempotency-Key": "workspace-support-ticket-1",
+    },
+    body: JSON.stringify({
+      type: "other",
+      description: "Portal smoke support request with enough context",
+    }),
   });
   assert.ok(supportTicket.ticket.id);
+  assert.equal(supportTicket.ticket.workspaceId, "org_alpha");
+  assert.equal(supportTicket.ticket.requesterUserId, "usr_workspace_admin");
+  assert.equal(supportTicket.ticket.status, "open");
+  assert.equal(supportTicket.replayed, false);
+  const replayedSupportTicket = await expectStatus(
+    "portal safely replays support ticket",
+    workspaceAdmin,
+    "/api/portal/support",
+    200,
+    {
+      method: "POST",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-support-ticket-1",
+      },
+      body: JSON.stringify({
+        type: "other",
+        description: "Portal smoke support request with enough context",
+      }),
+    },
+  );
+  assert.equal(replayedSupportTicket.ticket.id, supportTicket.ticket.id);
+  assert.equal(replayedSupportTicket.replayed, true);
+  await expectStatus(
+    "portal rejects support idempotency key reuse",
+    workspaceAdmin,
+    "/api/portal/support",
+    409,
+    {
+      method: "POST",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-support-ticket-1",
+      },
+      body: JSON.stringify({
+        type: "interface_issue",
+        description: "A different support request must not reuse the receipt",
+      }),
+    },
+  );
+  await expectStatus(
+    "portal cannot inject support ticket workspace authority",
+    workspaceAdmin,
+    "/api/portal/support",
+    400,
+    {
+      method: "POST",
+      headers: {
+        ...portalJsonHeaders,
+        "Idempotency-Key": "workspace-support-ticket-cross-tenant",
+      },
+      body: JSON.stringify({
+        type: "other",
+        description: "Cross workspace support authority injection attempt",
+        workspaceId: "org_beta",
+      }),
+    },
+  );
 
   await expectStatus("portal deletes created patient", workspaceAdmin, `/api/portal/patients/${createdPatient.patient.id}`, 200, {
     method: "DELETE",
-    headers: portalHeaders,
+    headers: { ...portalHeaders, "Idempotency-Key": "workspace-portal-patient-delete" },
   });
 
   const alphaDeviceEvents = await expectStatus("workspace admin reads own device events", workspaceAdmin, "/api/v1/devices/dev_alpha/events", 200);
@@ -2772,6 +5652,11 @@ async function runScenario() {
     betaDirectNotifications.notifications.some((notification) => notification.id === "notif_cross_tenant_direct"),
     false,
   );
+  assert.equal(
+    betaDirectNotifications.notifications.some((notification) => notification.id === "notif_implicit_global"),
+    false,
+    "an implicit-global row must fail closed for non-platform accounts",
+  );
   const platformNotifications = await expectStatus(
     "platform admin retains explicitly privileged notification visibility",
     platform,
@@ -2781,6 +5666,164 @@ async function runScenario() {
   assert.equal(
     platformNotifications.notifications.some((notification) => notification.id === "notif_cross_tenant_direct"),
     true,
+  );
+  assert.equal(
+    platformNotifications.notifications.some((notification) => notification.id === "notif_implicit_global"),
+    true,
+    "platform administrators retain explicit platform-level operational visibility",
+  );
+  const personalInbox = await expectStatus(
+    "personal notification inbox is bound to the authenticated account and active workspace",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox",
+    200,
+  );
+  assert.equal(personalInbox.userId, "usr_workspace_admin");
+  assert.equal(personalInbox.workspaceId, "org_alpha");
+  assert.equal(
+    personalInbox.notifications.some(
+      (notification) => notification.id === "notif_inbox_current",
+    ),
+    true,
+  );
+  assert.equal(
+    personalInbox.notifications.some(
+      (notification) => notification.id === "notif_inbox_account_wide",
+    ),
+    true,
+  );
+  assert.equal(
+    personalInbox.notifications.some(
+      (notification) => notification.id === "notif_inbox_old_workspace",
+    ),
+    false,
+  );
+  assert.ok(
+    personalInbox.notifications.every(
+      (notification) =>
+        notification.userId === personalInbox.userId &&
+        notification.workspaceId === personalInbox.workspaceId &&
+        (
+          notification.organizationId === "" ||
+          notification.organizationId === personalInbox.workspaceId
+        ),
+    ),
+  );
+  await expectStatus(
+    "notification inbox read requires an Idempotency-Key",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox/notif_inbox_current/read",
+    400,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    },
+  );
+  const readInboxItem = await expectStatus(
+    "notification inbox returns an owner-bound read receipt",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox/notif_inbox_current/read",
+    200,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-inbox-read-current",
+      },
+      body: "{}",
+    },
+  );
+  assert.equal(readInboxItem.action, "read");
+  assert.equal(readInboxItem.notification.id, "notif_inbox_current");
+  assert.equal(readInboxItem.notification.userId, "usr_workspace_admin");
+  assert.equal(readInboxItem.notification.workspaceId, "org_alpha");
+  assert.equal(readInboxItem.notification.read, true);
+  assert.equal(readInboxItem.replayed, false);
+  const replayedInboxRead = await expectStatus(
+    "notification inbox exact retry replays the original confirmed outcome",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox/notif_inbox_current/read",
+    200,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-inbox-read-current",
+      },
+      body: "{}",
+    },
+  );
+  assert.equal(replayedInboxRead.replayed, true);
+  assert.equal(
+    replayedInboxRead.notification.readAt,
+    readInboxItem.notification.readAt,
+  );
+  await expectStatus(
+    "notification inbox cannot mutate a stale-workspace item",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox/notif_inbox_old_workspace/read",
+    404,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-inbox-read-old-workspace",
+      },
+      body: "{}",
+    },
+  );
+  await expectStatus(
+    "notification inbox cannot mutate another account item",
+    betaDoctor,
+    "/api/v1/notifications/inbox/notif_inbox_current/read",
+    404,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-inbox-cross-account",
+      },
+      body: "{}",
+    },
+  );
+  const readAllInbox = await expectStatus(
+    "notification inbox read-all returns the complete canonical snapshot",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox/read-all",
+    200,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "notification-inbox-read-all",
+      },
+      body: "{}",
+    },
+  );
+  assert.equal(readAllInbox.action, "read_all");
+  assert.ok(readAllInbox.notifications.every((notification) => notification.read));
+  const deletedInboxItem = await expectStatus(
+    "notification inbox delete confirms exact owner, workspace and post-delete snapshot",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox/notif_inbox_account_wide",
+    200,
+    {
+      method: "DELETE",
+      headers: {
+        "Idempotency-Key": "notification-inbox-delete-account-wide",
+      },
+    },
+  );
+  assert.equal(deletedInboxItem.action, "delete");
+  assert.equal(deletedInboxItem.deletedId, "notif_inbox_account_wide");
+  assert.equal(deletedInboxItem.notification.userId, "usr_workspace_admin");
+  assert.equal(deletedInboxItem.notification.workspaceId, "org_alpha");
+  assert.equal(
+    deletedInboxItem.notifications.some(
+      (notification) => notification.id === "notif_inbox_account_wide",
+    ),
+    false,
   );
   const notificationOptions = await expectStatus(
     "workspace admin reads scoped notification audience and provider options",
@@ -2807,6 +5850,30 @@ async function runScenario() {
     },
   );
   await expectStatus(
+    "notification campaign rejects a type outside the published API allowlist",
+    workspaceAdmin,
+    "/api/v1/notifications",
+    400,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-notification-invalid-type",
+      },
+      body: JSON.stringify({
+        type: "critical",
+        title: "Unsupported campaign type",
+        message: "The runtime and OpenAPI contract must agree.",
+        audience: {
+          type: "users",
+          workspaceId: "org_alpha",
+          userIds: ["usr_doctor"],
+        },
+        channels: ["in_app"],
+      }),
+    },
+  );
+  await expectStatus(
     "viewer cannot delete a shared workspace notification",
     viewer,
     "/api/v1/notifications/notif_alpha",
@@ -2830,6 +5897,22 @@ async function runScenario() {
 
   const sharedFcmToken = "workspace-smoke-shared-fcm-token";
   await expectStatus(
+    "legacy notification protocol registration is rejected",
+    viewer,
+    "/api/v1/notifications/register-device",
+    400,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fcmToken: `${sharedFcmToken}-legacy`,
+        platform: "android",
+        notificationProtocolVersion: 1,
+        appVersion: "0.9.0",
+      }),
+    },
+  );
+  const viewerNotificationBinding = await expectStatus(
     "viewer registers the current Android notification token",
     viewer,
     "/api/v1/notifications/register-device",
@@ -2837,10 +5920,20 @@ async function runScenario() {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fcmToken: sharedFcmToken, platform: "android" }),
+      body: JSON.stringify({
+        fcmToken: sharedFcmToken,
+        platform: "android",
+        notificationProtocolVersion: 2,
+        appVersion: "1.0.0-rc.2",
+      }),
     },
   );
-  await expectStatus(
+  assert.equal(viewerNotificationBinding.device.userId, "usr_viewer");
+  assert.equal(viewerNotificationBinding.device.workspaceId, "org_alpha");
+  assert.ok(viewerNotificationBinding.device.authSessionId);
+  assert.equal(viewerNotificationBinding.device.notificationProtocolVersion, 2);
+  assert.equal(viewerNotificationBinding.device.appVersion, "1.0.0-rc.2");
+  const doctorNotificationBinding = await expectStatus(
     "same physical token is atomically rebound to the newly authenticated user",
     doctor,
     "/api/v1/notifications/register-device",
@@ -2848,9 +5941,17 @@ async function runScenario() {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fcmToken: sharedFcmToken, platform: "android" }),
+      body: JSON.stringify({
+        fcmToken: sharedFcmToken,
+        platform: "android",
+        notificationProtocolVersion: 2,
+        appVersion: "1.0.0-rc.2",
+      }),
     },
   );
+  assert.equal(doctorNotificationBinding.device.userId, "usr_doctor");
+  assert.equal(doctorNotificationBinding.device.workspaceId, "org_alpha");
+  assert.ok(doctorNotificationBinding.device.authSessionId);
   const reboundTokenRows = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"))
     .notificationDevices
     .filter((device) => device.fcmToken === sharedFcmToken);
@@ -2886,6 +5987,114 @@ async function runScenario() {
   assert.equal(unregisteredTokenRows.length, 1);
   assert.equal(unregisteredTokenRows[0].userId, "usr_doctor");
   assert.equal(unregisteredTokenRows[0].enabled, false);
+
+  const workspaceBoundToken = "workspace-smoke-doctor-workspace-token";
+  await expectStatus(
+    "doctor registers a token in the current alpha workspace",
+    doctor,
+    "/api/v1/notifications/register-device",
+    200,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fcmToken: workspaceBoundToken,
+        platform: "android",
+        notificationProtocolVersion: 2,
+        appVersion: "1.0.0-rc.2",
+      }),
+    },
+  );
+  await expectStatus(
+    "doctor switches to beta before rebinding the same notification token",
+    doctor,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: "org_beta" }),
+    },
+  );
+  const betaNotificationBinding = await expectStatus(
+    "same-account notification token is rebound to the current beta workspace",
+    doctor,
+    "/api/v1/notifications/register-device",
+    200,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fcmToken: workspaceBoundToken,
+        platform: "android",
+        notificationProtocolVersion: 2,
+        appVersion: "1.0.0-rc.2",
+      }),
+    },
+  );
+  assert.equal(betaNotificationBinding.device.workspaceId, "org_beta");
+  const workspaceBoundRows = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"))
+    .notificationDevices
+    .filter((device) => device.fcmToken === workspaceBoundToken);
+  assert.equal(workspaceBoundRows.length, 1);
+  assert.equal(workspaceBoundRows[0].workspaceId, "org_beta");
+  await expectStatus(
+    "doctor restores alpha after beta notification binding verification",
+    doctor,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: "org_alpha" }),
+    },
+  );
+  const staleWorkspaceUnregister = await expectStatus(
+    "same user cannot unregister a token from a stale workspace context",
+    doctor,
+    "/api/v1/notifications/unregister-device",
+    200,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fcmToken: workspaceBoundToken }),
+    },
+  );
+  assert.equal(staleWorkspaceUnregister.unregistered, false);
+  await expectStatus(
+    "doctor returns to beta to unregister the beta-bound token",
+    doctor,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: "org_beta" }),
+    },
+  );
+  const betaWorkspaceUnregister = await expectStatus(
+    "current beta workspace session unregisters its own notification token",
+    doctor,
+    "/api/v1/notifications/unregister-device",
+    200,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fcmToken: workspaceBoundToken }),
+    },
+  );
+  assert.equal(betaWorkspaceUnregister.unregistered, true);
+  await expectStatus(
+    "doctor restores alpha after notification workspace binding smoke",
+    doctor,
+    "/api/v1/me",
+    200,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: "org_alpha" }),
+    },
+  );
 
   const readNotification = await expectStatus("portal marks scoped notification read", workspaceAdmin, "/api/portal/notifications/notif_alpha/read", 200, {
     method: "POST",
@@ -3154,41 +6363,72 @@ async function runScenario() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ price: 2000 }),
   });
-  await expectStatus("technician can pair device", technician, "/api/v1/devices/pair", 200, {
+  const technicianClaim = await expectStatus(
+    "platform provisions claim material for an existing factory device",
+    platform,
+    "/api/v1/devices/provision-qr",
+    201,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-smoke-platform-provision-tech-device",
+      },
+      body: JSON.stringify({
+        deviceId: "dev_claim_alpha",
+        organizationId: "org_alpha",
+        name: "Tech Pair Device",
+      }),
+    },
+  );
+  await expectStatus("technician can claim a provisioned device", technician, "/api/v1/devices/pair", 200, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Idempotency-Key": "workspace-smoke-technician-pair",
     },
     body: JSON.stringify({
-      deviceId: "dev_pair_by_tech",
-      name: "Tech Pair Device",
-      deviceSecret: "workspace-smoke-device-secret-000001",
+      deviceId: "dev_claim_alpha",
+      organizationId: "org_alpha",
+      claimCode: technicianClaim.claim.claimCode,
+      connectionMethod: "QR",
     }),
   });
-  await expectStatus("workspace admin cannot transfer device between workspaces", workspaceAdmin, "/api/v1/devices/dev_pair_by_tech/transfer", 403, {
+  await expectStatus("workspace admin cannot transfer device between workspaces", workspaceAdmin, "/api/v1/devices/dev_claim_alpha/transfer", 403, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "workspace-admin-transfer-forbidden",
+    },
     body: JSON.stringify({ organizationId: "org_beta" }),
   });
-  await expectStatus("platform cannot transfer device to missing workspace", platform, "/api/v1/devices/dev_pair_by_tech/transfer", 404, {
+  await expectStatus("platform cannot transfer device to missing workspace", platform, "/api/v1/devices/dev_claim_alpha/transfer", 404, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "platform-transfer-missing-workspace",
+    },
     body: JSON.stringify({ organizationId: "org_missing" }),
   });
-  await expectStatus("platform cannot transfer device to owner outside target workspace", platform, "/api/v1/devices/dev_pair_by_tech/transfer", 403, {
+  await expectStatus("platform cannot transfer device to owner outside target workspace", platform, "/api/v1/devices/dev_claim_alpha/transfer", 403, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "platform-transfer-owner-mismatch",
+    },
     body: JSON.stringify({ organizationId: "org_beta", ownerUserId: "usr_workspace_admin" }),
   });
-  const transferredDevice = await expectStatus("platform can transfer device to matching workspace owner", platform, "/api/v1/devices/dev_pair_by_tech/transfer", 200, {
+  const transferredDevice = await expectStatus("platform can transfer device to matching workspace owner", platform, "/api/v1/devices/dev_claim_alpha/transfer", 200, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "platform-transfer-tech-device-to-beta",
+    },
     body: JSON.stringify({ organizationId: "org_beta", ownerUserId: "usr_beta_doctor" }),
   });
   assert.equal(transferredDevice.device.organizationId, "org_beta");
   assert.equal(transferredDevice.device.pairedUserId, "usr_beta_doctor");
-  const doctorClaim = await expectStatus("doctor can claim provisioned workspace device", doctor, "/api/v1/devices/pair", 200, {
+  const doctorClaim = await expectStatus("doctor cannot claim provisioned workspace device with view-only capability", doctor, "/api/v1/devices/pair", 403, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -3196,17 +6436,25 @@ async function runScenario() {
     },
     body: JSON.stringify({
       deviceId: "dev_claim_alpha",
+      organizationId: "org_alpha",
       claimCode: seededClaimCode,
       connectionMethod: "QR",
-      deviceSecret: "workspace-claim-device-secret-000001",
     }),
   });
-  assert.equal(doctorClaim.device.pairedUserId, "usr_doctor");
-  await expectStatus("doctor cannot create unprovisioned device without claim", doctor, "/api/v1/devices/pair", 403, {
+  assert.equal(doctorClaim.error.code, "DEVICE_CLAIM_WORKSPACE_MISMATCH");
+  const missingFactoryDevice = await expectStatus("pair cannot mint an unprovisioned device id", platform, "/api/v1/devices/pair", 404, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ deviceId: "dev_doctor_unprovisioned", name: "Doctor Unprovisioned Device" }),
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "platform-pair-missing-factory-device",
+    },
+    body: JSON.stringify({
+      deviceId: "dev_platform_unprovisioned",
+      organizationId: "org_alpha",
+      claimCode: "missing-factory-claim",
+    }),
   });
+  assert.equal(missingFactoryDevice.error.code, "DEVICE_NOT_PROVISIONED");
   await expectStatus("technician cannot edit package", technician, "/api/v1/admin/packages/pkg_test", 403, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -3283,6 +6531,16 @@ async function runScenario() {
   assert.equal(betaNotificationsAfterAiUpdate.notifications.some((notification) => notification.title === "Đã cập nhật mô hình AI"), false);
   const dataSummary = await expectStatus("workspace admin sees scoped Android data summary", workspaceAdmin, "/api/v1/data/summary", 200);
   assert.equal(dataSummary.storage.patientCount, 1);
+  const expectedAlphaAudioBytes = Buffer.byteLength("RIFFscan-alpha-audio", "utf8");
+  assert.equal(dataSummary.storage.cloudUsedBytes, 5 + expectedAlphaAudioBytes);
+  assert.equal(dataSummary.storage.audioUsedBytes, expectedAlphaAudioBytes);
+  assert.equal(dataSummary.storage.storageFileCount, 2);
+  assert.equal(dataSummary.storage.autoSync, false);
+  assert.equal(dataSummary.storage.cloudBackup, false);
+  assert.equal(dataSummary.storage.localUsedMb, 0);
+  assert.equal(dataSummary.storage.localTotalMb, 0);
+  assert.equal(dataSummary.storage.cacheMb, 0);
+  assert.equal(dataSummary.storage.audioFileCount, 1);
   const clearedCache = await expectStatus("workspace admin clears Android data cache with scoped summary", workspaceAdmin, "/api/v1/data/cache", 200, {
     method: "DELETE",
   });
@@ -3913,6 +7171,12 @@ async function runScenario() {
     staffAfterSuspend.staff.find((member) => member.id === "usr_doctor")?.workspaceMembership.status,
     "suspended",
   );
+  assert.equal(staffAfterSuspend.workspaceId, "org_alpha");
+  assert.equal(
+    staffAfterSuspend.doctors.some((member) => member.id === "usr_doctor"),
+    false,
+    "a suspended membership must remain in the staff ledger but leave the assignable-doctor catalog",
+  );
 
   const doctorAfterWorkspaceSuspend = await login("doctor@alpha.test");
   assert.equal(doctorAfterWorkspaceSuspend.user.accountStatus, "active");
@@ -3968,6 +7232,18 @@ async function runScenario() {
   assert.equal(reactivatedDoctorMembership.action, "reactivate");
   assert.equal(reactivatedDoctorMembership.membership.status, "active");
   assert.equal(reactivatedDoctorMembership.user.accountStatus, "active");
+  const staffAfterReactivate = await expectStatus(
+    "reactivated operational doctor returns to the assignable-doctor catalog",
+    workspaceAdmin,
+    "/api/portal/staff",
+    200,
+    { headers: portalHeaders },
+  );
+  assert.equal(
+    staffAfterReactivate.doctors.some((member) => member.id === "usr_doctor"),
+    true,
+  );
+  assert.equal(staffAfterReactivate.workspaceId, "org_alpha");
   const doctorAfterWorkspaceReactivate = await login("doctor@alpha.test");
   await expectStatus(
     "reactivating the matching workspace membership restores paired device detail",
@@ -4007,6 +7283,7 @@ async function runScenario() {
     { headers: portalHeaders },
   );
   assert.equal(staffAfterRevoke.staff.some((member) => member.id === "usr_doctor"), false);
+  assert.equal(staffAfterRevoke.workspaceId, "org_alpha");
 
   const doctorAfterWorkspaceRevoke = await login("doctor@alpha.test");
   assert.equal(doctorAfterWorkspaceRevoke.user.accountStatus, "active");
@@ -4014,6 +7291,17 @@ async function runScenario() {
   assert.equal(
     doctorAfterWorkspaceRevoke.user.memberships.find((item) => item.workspaceId === "org_beta")?.operational,
     true,
+  );
+  const preferencesAfterWorkspaceRevoke = await expectStatus(
+    "notification preference ownership binds to the remaining operational workspace",
+    doctorAfterWorkspaceRevoke,
+    "/api/v1/me/notification-preferences",
+    200,
+  );
+  assert.equal(
+    preferencesAfterWorkspaceRevoke.workspaceId,
+    "org_beta",
+    "the response must not fall back to a revoked legacy organization alias",
   );
   await expectStatus(
     "revoking Alpha membership leaves Beta membership usable",
@@ -4028,7 +7316,253 @@ async function runScenario() {
     403,
   );
 
+  const roleApprovalPath =
+    `/api/v1/admin/doctor-requests/${roleRequestReceipt.user.id}/approve`;
+  const roleApprovalOptions = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "workspace-role-approval-canonical-target",
+    },
+    body: JSON.stringify({}),
+  };
+  const approvedRoleRequest = await expectStatus(
+    "platform approves the exact persisted doctor-request target",
+    platform,
+    roleApprovalPath,
+    200,
+    roleApprovalOptions,
+  );
+  assert.equal(approvedRoleRequest.request.role, "doctor");
+  assert.equal(approvedRoleRequest.request.roleRequestStatus, "approved");
+  assert.equal(
+    approvedRoleRequest.request.organizationId,
+    roleRequestPayload.organizationId,
+  );
+  assert.equal(
+    approvedRoleRequest.request.currentWorkspaceId,
+    roleRequestPayload.organizationId,
+  );
+  assert.equal(
+    approvedRoleRequest.request.currentMembership?.organizationId,
+    roleRequestPayload.organizationId,
+  );
+  assert.equal(approvedRoleRequest.request.currentMembership?.role, "doctor");
+  assert.equal(
+    approvedRoleRequest.request.memberships.some(
+      (membership) =>
+        membership.organizationId === roleRequestPayload.organizationId &&
+        membership.role === "doctor" &&
+        membership.operational === true,
+    ),
+    true,
+    "the approval response must project the membership created by the mutation",
+  );
+  const replayedApprovedRoleRequest = await expectStatus(
+    "the exact doctor approval intent replays without a second mutation",
+    platform,
+    roleApprovalPath,
+    200,
+    roleApprovalOptions,
+  );
+  assert.equal(replayedApprovedRoleRequest.replayed, true);
+  assert.equal(
+    replayedApprovedRoleRequest.operationId,
+    approvedRoleRequest.operationId,
+  );
+  assert.equal(
+    replayedApprovedRoleRequest.request.currentMembership?.organizationId,
+    roleRequestPayload.organizationId,
+  );
+
   const persistedDb = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const persistedFamilyMutationReceipts = [
+    ["family-dependent-create", "create", false],
+    ["family-dependent-update", "update", false],
+    ["family-dependent-delete", "delete", true],
+  ].map(([key, intent, deleted]) => {
+    const entry = persistedDb.idempotencyKeys.find((candidate) => candidate.key === key);
+    assert.ok(entry, `${intent} must persist one idempotency receipt`);
+    assert.equal(entry.responseResource.userId, "usr_patient");
+    assert.equal(entry.responseResource.workspaceId, "org_personal_patient");
+    assert.equal(entry.responseResource.patientId, patientCreatedProfile.patient.id);
+    assert.equal(entry.responseResource.intent, intent);
+    assert.equal(entry.responseResource.replayed, false);
+    if (deleted) {
+      assert.equal(entry.responseResource.deleted, true);
+      assert.equal(Object.hasOwn(entry.responseResource, "patient"), false);
+    } else {
+      assert.equal(entry.responseResource.patient.id, patientCreatedProfile.patient.id);
+      assert.equal(
+        entry.responseResource.patient.organizationId,
+        "org_personal_patient",
+      );
+    }
+    return entry;
+  });
+  assert.equal(persistedFamilyMutationReceipts.length, 3);
+  assert.equal(
+    persistedDb.idempotencyKeys.some((entry) =>
+      String(entry.key || "").startsWith("family-authority-denied-"),
+    ),
+    false,
+    "denied family authority mutations must not persist idempotency receipts",
+  );
+  assert.equal(
+    persistedDb.patients.some((item) => item.name === "Authority Race Denied"),
+    false,
+    "denied family authority mutations must not persist patient writes",
+  );
+  const persistedWorkspaceDeleteReceipt = persistedDb.idempotencyKeys.find(
+    (entry) => entry.key === "doctor-patient-delete-replay-probe-delete",
+  );
+  assert.ok(persistedWorkspaceDeleteReceipt);
+  assert.equal(persistedWorkspaceDeleteReceipt.responseResource.userId, "usr_doctor");
+  assert.equal(persistedWorkspaceDeleteReceipt.responseResource.workspaceId, "org_alpha");
+  assert.equal(persistedWorkspaceDeleteReceipt.responseResource.intent, "delete");
+  assert.equal(persistedWorkspaceDeleteReceipt.responseResource.deleted, true);
+  assert.equal(
+    persistedDb.idempotencyKeys.some(
+      (entry) => entry.key === "workspace-approved-doctor-cross-target",
+    ),
+    false,
+    "a denied approved-doctor target must not create an idempotency receipt",
+  );
+  assert.equal(
+    persistedDb.idempotencyKeys.some(
+      (entry) => entry.key === "workspace-pending-role-request-target-drift",
+    ),
+    false,
+    "a denied pending-request workspace switch must not create a receipt",
+  );
+  assert.equal(
+    persistedDb.patients.some(
+      (patientRecord) =>
+        patientRecord.ownerUserId === roleRequestReceipt.user.id &&
+        patientRecord.organizationId === roleRequestPayload.organizationId,
+    ),
+    false,
+    "a pending doctor request must not create a patient profile inside its target clinic",
+  );
+  assert.equal(
+    persistedDb.identityOperations.some(
+      (entry) => entry.idempotencyKey === "workspace-role-approval-wrong-target",
+    ),
+    false,
+    "a mismatched approval target must not begin an identity-provider saga",
+  );
+  assert.equal(
+    persistedDb.auditLogs.filter(
+      (entry) =>
+        entry.action === "doctor.approve" &&
+        entry.resourceId === roleRequestReceipt.user.id,
+    ).length,
+    1,
+    "an exact approval replay must not duplicate its audit row",
+  );
+  const persistedRoleRequestReceipts = persistedDb.idempotencyKeys.filter(
+    (entry) =>
+      entry.scope === "usr_role_request" &&
+      entry.operation === "auth.role.request" &&
+      entry.key === "workspace-role-request-owner",
+  );
+  assert.equal(
+    persistedRoleRequestReceipts.length,
+    1,
+    "role request retry must keep one account-owned receipt",
+  );
+  assert.equal(
+    persistedRoleRequestReceipts[0].responseResource.operationId,
+    roleRequestReceipt.operationId,
+  );
+  assert.deepEqual(
+    persistedRoleRequestReceipts[0].responseResource.roleRequest,
+    roleRequestReceipt.roleRequest,
+  );
+  assert.equal(
+    persistedDb.auditLogs.filter(
+      (entry) =>
+        entry.action === "auth.role.request" &&
+        entry.resourceId === "usr_role_request",
+    ).length,
+    1,
+    "role request retry must not duplicate its transactional audit row",
+  );
+  const persistedRoleRequestNotifications = persistedDb.notifications.filter(
+    (entry) => entry.id === `noti_${roleRequestReceipt.operationId}`,
+  );
+  assert.equal(
+    persistedRoleRequestNotifications.length,
+    1,
+    "role request retry must not duplicate its approval notification",
+  );
+  assert.equal(
+    persistedRoleRequestNotifications[0].userId,
+    "usr_platform",
+    "a pending clinical role request must target an active platform reviewer",
+  );
+  assert.equal(
+    persistedRoleRequestNotifications[0].organizationId || "",
+    "",
+    "a pending clinical role request must not become a requested-workspace broadcast",
+  );
+  assert.equal(
+    persistedDb.accessLogs.filter(
+      (entry) => entry.operationId === roleRequestReceipt.operationId,
+    ).length,
+    1,
+    "role request retry must not duplicate its access ledger event",
+  );
+  const upgradedAccountReceipt = persistedDb.idempotencyKeys.find(
+    (entry) => entry.id === "idem_legacy_account_profile_safe",
+  )?.responseResource;
+  assertAccountProfileMutationReceipt(upgradedAccountReceipt, {
+    userId: "usr_patient",
+    changedFields: [],
+    replayed: false,
+  });
+  for (const forbiddenField of [
+    "password",
+    "firebaseClaims",
+    "avatarStorage",
+    "twoFactorSecret",
+    "twoFactorRecoveryCodes",
+  ]) {
+    assert.equal(
+      Object.hasOwn(upgradedAccountReceipt.user, forbiddenField),
+      false,
+      `account replay receipt must not persist ${forbiddenField}`,
+    );
+  }
+  const persistedPatientProfileReceipts = persistedDb.idempotencyKeys.filter(
+    (entry) =>
+      entry.scope === "usr_patient" &&
+      entry.operation === "account.profile.update" &&
+      entry.key === "patient-account-profile",
+  );
+  assert.equal(
+    persistedPatientProfileReceipts.length,
+    1,
+    "an exact profile retry must persist one owner-scoped idempotency receipt",
+  );
+  assertAccountProfileMutationReceipt(
+    persistedPatientProfileReceipts[0].responseResource,
+    {
+      userId: "usr_patient",
+      changedFields: Object.keys(patientProfilePayload),
+      replayed: false,
+    },
+  );
+  assert.equal(
+    persistedDb.auditLogs.filter(
+      (entry) =>
+        entry.action === "account.profile.update" &&
+        entry.actorUserId === "usr_patient" &&
+        entry.resourceId === "usr_patient",
+    ).length,
+    1,
+    "an exact profile retry must commit one account audit row",
+  );
   const persistedDoctor = persistedDb.users.find((item) => item.id === "usr_doctor");
   assert.ok(persistedDoctor, "workspace membership revoke must not delete the global account");
   assert.equal(persistedDoctor.accountStatus, "active");
@@ -4081,8 +7615,30 @@ async function runScenario() {
     1,
     "patient share revoke must not append a second server-side audit record",
   );
+  assert.equal(
+    persistedDb.auditLogs.filter(
+      (entry) =>
+        entry.action === "workspace.settings.update" &&
+        entry.actorUserId === "usr_workspace_admin" &&
+        entry.organizationId === "org_alpha" &&
+        entry.resourceId === "org_alpha",
+    ).length,
+    1,
+    "workspace settings mutation, exact retry and legacy alias replay must commit one audit row",
+  );
+  assert.equal(
+    persistedDb.idempotencyKeys.filter(
+      (entry) =>
+        entry.scope === "usr_workspace_admin:org_alpha" &&
+        entry.operation === "workspace.settings.update" &&
+        entry.key === "workspace-settings-alpha-v1",
+    ).length,
+    1,
+    "workspace settings must persist one owner/workspace-scoped replay receipt",
+  );
   const expectedIdentityAuditActions = [
     "account.profile.update",
+    "notification.preferences.patch",
     "workspace.switch",
     "profile.active.switch",
     "patient.update",
@@ -4108,6 +7664,7 @@ async function main() {
       DATA_BACKEND: "json",
       DATA_DIR: dataDir,
       AUTH_MODE: "demo",
+      PASSWORD_IDEMPOTENCY_HMAC_KEY: passwordIdempotencyTestKey,
       RATE_LIMIT_PER_MINUTE: "5000",
       FIREBASE_AUTH_ENABLED: "false",
       BREVO_API_KEY: "",

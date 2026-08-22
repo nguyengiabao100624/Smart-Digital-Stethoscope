@@ -15,6 +15,7 @@ import PatientsPage from "../../src/app/pages/portal/PatientsPage";
 
 const api = vi.hoisted(() => ({
   listPatients: vi.fn(),
+  resolvePatientMutationAuthority: vi.fn(),
   createPatient: vi.fn(),
   getPatient: vi.fn(),
   updatePatient: vi.fn(),
@@ -25,14 +26,19 @@ const api = vi.hoisted(() => ({
   listScans: vi.fn(),
 }));
 
+const auth = vi.hoisted(() => ({
+  user: {
+    id: "doctor-a",
+    role: "doctor",
+    raw: { role: "doctor" },
+    currentWorkspace: { id: "workspace-a", name: "Phòng khám A" },
+    capabilities: ["workspace.patients.manage"],
+  },
+}));
+
 vi.mock("../../src/lib/smart-health-api", () => ({ smartHealthApi: api }));
 vi.mock("../../src/app/context/AuthContext", () => ({
-  useAuth: () => ({
-    user: {
-      currentWorkspace: { id: "workspace-a", name: "Phòng khám A" },
-      capabilities: ["workspace.patients.manage"],
-    },
-  }),
+  useAuth: () => ({ user: auth.user }),
 }));
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -40,6 +46,7 @@ vi.mock("sonner", () => ({
 
 const patient = {
   id: "pat_01",
+  organizationId: "workspace-a",
   patientCode: "HS-900",
   name: "Trần Minh Anh",
   dateOfBirth: "1988-11-02",
@@ -68,22 +75,102 @@ function renderWithClient(node: React.ReactNode, initialEntries = ["/"]) {
       mutations: { retry: false },
     },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={initialEntries}>{node}</MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, client };
 }
 
 describe("patient portal pages", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
+    auth.user.currentWorkspace = {
+      id: "workspace-a",
+      name: "Phòng khám A",
+    };
+    auth.user.capabilities = ["workspace.patients.manage"];
+    auth.user.id = "doctor-a";
+    auth.user.role = "doctor";
+    auth.user.raw.role = "doctor";
+    api.resolvePatientMutationAuthority.mockResolvedValue({
+      expectedUserId: "patient-a",
+      expectedWorkspaceId: "workspace-a",
+      expectedAuthSessionId: "auth-session-a",
+      authSessionEpoch: 7,
+    });
     api.listPatients.mockResolvedValue({ patients: [patient] });
     api.getPatient.mockResolvedValue({ patient });
     api.listScans.mockResolvedValue({ scans: [] });
   });
 
+  it("fails closed instead of rendering a patient from another workspace", async () => {
+    api.listPatients.mockResolvedValue({
+      patients: [
+        {
+          ...patient,
+          organizationId: "workspace-b",
+          name: "Bệnh nhân workspace B",
+        },
+      ],
+    });
+
+    renderWithClient(<PatientsPage />);
+
+    expect(
+      await screen.findByText(/không thuộc workspace hiện tại/i),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Bệnh nhân workspace B"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("protects a dirty create draft from browser unload", async () => {
+    renderWithClient(<PatientsPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Thêm bệnh nhân" }),
+    );
+    fireEvent.change(screen.getByLabelText("Họ và tên *"), {
+      target: { value: "Bản nháp chưa lưu" },
+    });
+
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("fails closed instead of rendering scan history from another workspace", async () => {
+    api.listScans.mockResolvedValue({
+      scans: [
+        {
+          id: "scan_tenant_b",
+          organizationId: "workspace-b",
+          patientId: "pat_01",
+          aiLabel: "Tenant B scan",
+        },
+      ],
+    });
+
+    renderWithClient(
+      <Routes>
+        <Route path="/portal/patients/:id" element={<PatientDetail />} />
+      </Routes>,
+      ["/portal/patients/pat_01"],
+    );
+
+    expect(
+      await screen.findByText(/Không thể tải lịch sử lượt đo/i),
+    ).toBeVisible();
+    expect(screen.queryByText("Tenant B scan")).not.toBeInTheDocument();
+  });
+
   it("retries one unchanged patient create with the same idempotency key", async () => {
+    auth.user.id = "patient-a";
+    auth.user.role = "patient";
+    auth.user.raw.role = "patient";
+    auth.user.capabilities = ["personal.profiles.manage"];
     api.createPatient
       .mockRejectedValueOnce(new Error("Network offline"))
       .mockResolvedValueOnce({
@@ -134,6 +221,16 @@ describe("patient portal pages", () => {
       phone: "0901234567",
       allergies: [],
       emergencyContact: { name: "", phone: "", relationship: "" },
+    });
+    expect(api.resolvePatientMutationAuthority).toHaveBeenCalledWith(
+      "patient-a",
+      "workspace-a",
+    );
+    expect(api.createPatient.mock.calls[0][2]).toEqual({
+      expectedUserId: "patient-a",
+      expectedWorkspaceId: "workspace-a",
+      expectedAuthSessionId: "auth-session-a",
+      authSessionEpoch: 7,
     });
   });
 
@@ -192,6 +289,133 @@ describe("patient portal pages", () => {
     expect(api.deletePatient.mock.calls[1][1]).toBe(
       api.deletePatient.mock.calls[0][1],
     );
+  });
+
+  it("fails closed when import validation returns a batch from another workspace", async () => {
+    const file = new File(["name\nTenant B"], "patients.csv", {
+      type: "text/csv",
+    });
+    api.validatePatientImport.mockResolvedValue({
+      batch: {
+        id: "pimport_foreign",
+        organizationId: "workspace-b",
+        fileName: file.name,
+        fileSizeBytes: file.size,
+        status: "validated",
+        rowCount: 0,
+        validCount: 0,
+        invalidCount: 0,
+        duplicateCount: 0,
+        importedCount: 0,
+        patientIds: [],
+        rows: [],
+        version: 1,
+        expiresAt: "2026-07-24T00:00:00.000Z",
+        committedAt: "",
+        createdAt: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:00:00.000Z",
+      },
+      replayed: false,
+    });
+
+    renderWithClient(<PatientImportPage />);
+    fireEvent.change(screen.getByLabelText("Chọn file CSV"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra file" }));
+
+    expect(
+      await screen.findByText(/không thuộc workspace hiện tại/i),
+    ).toBeVisible();
+    expect(
+      screen.queryByTestId("patient-import-preview"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not overlap import refresh with validate or commit", async () => {
+    const file = new File(["name\nNguyễn An"], "patients.csv", {
+      type: "text/csv",
+    });
+    const validatedBatch = {
+      id: "pimport_busy",
+      organizationId: "workspace-a",
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      status: "validated",
+      rowCount: 1,
+      validCount: 1,
+      invalidCount: 0,
+      duplicateCount: 0,
+      importedCount: 0,
+      patientIds: [],
+      rows: [
+        {
+          rowNumber: 2,
+          status: "valid",
+          issues: [],
+          patient: {
+            id: "pat_busy",
+            patientCode: "BUSY-001",
+            name: "Nguyễn An",
+            dateOfBirth: "",
+            gender: "",
+            phone: "",
+            email: "",
+            address: "",
+            bloodType: "",
+            allergies: [],
+            emergencyContact: {},
+            notes: "",
+            profileType: "patient",
+          },
+        },
+      ],
+      version: 1,
+      expiresAt: "2026-07-24T00:00:00.000Z",
+      committedAt: "",
+      createdAt: "2026-07-23T00:00:00.000Z",
+      updatedAt: "2026-07-23T00:00:00.000Z",
+    };
+    api.validatePatientImport.mockResolvedValue({
+      batch: validatedBatch,
+      replayed: false,
+    });
+    api.getPatientImportBatch.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+
+    renderWithClient(<PatientImportPage />);
+    fireEvent.change(screen.getByLabelText("Chọn file CSV"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra file" }));
+    await screen.findByTestId("patient-import-preview");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Làm mới trạng thái" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Kiểm tra lại" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Import 1 hồ sơ" }),
+      ).toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import 1 hồ sơ" }));
+    expect(api.commitPatientImport).not.toHaveBeenCalled();
+  });
+
+  it("keeps import permission denial accessible with one route heading", () => {
+    auth.user.capabilities = ["workspace.patients.view"];
+
+    renderWithClient(<PatientImportPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Import bệnh nhân", level: 1 }),
+    ).toBeVisible();
+    expect(screen.getByText("Không có quyền import")).toBeVisible();
   });
 
   it("validates then commits one whole import batch without per-row creates", async () => {
@@ -254,12 +478,14 @@ describe("patient portal pages", () => {
       replayed: false,
     });
 
-    renderWithClient(<PatientImportPage />);
+    const { client } = renderWithClient(<PatientImportPage />);
+    const invalidateQueries = vi.spyOn(client, "invalidateQueries");
     const file = new File(
       ["name,patientCode\nBệnh nhân Import,IMPORT-001"],
       "patients.csv",
       { type: "text/csv" },
     );
+    validatedBatch.fileSizeBytes = file.size;
     fireEvent.change(screen.getByLabelText("Chọn file CSV"), {
       target: { files: [file] },
     });
@@ -282,5 +508,8 @@ describe("patient portal pages", () => {
     expect(api.commitPatientImport).toHaveBeenCalledTimes(1);
     expect(api.commitPatientImport.mock.calls[0][0]).toBe("pimport_01");
     expect(api.createPatient).not.toHaveBeenCalled();
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["portal", "workspace", "workspace-a", "patients"],
+    });
   });
 });

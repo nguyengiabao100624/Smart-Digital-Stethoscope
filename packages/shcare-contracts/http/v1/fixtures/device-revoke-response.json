@@ -1,0 +1,16 @@
+{
+  "device": {
+    "id": "dev_factory_alpha",
+    "organizationId": "org_alpha",
+    "ownershipState": "revoked",
+    "revokedByUserId": "usr_platform_admin",
+    "name": "Shcare Clinic Unit 01",
+    "type": "stethoscope",
+    "status": "revoked",
+    "connected": false,
+    "online": false,
+    "revokedAt": "2026-08-15T04:05:00.000Z",
+    "updatedAt": "2026-08-15T04:05:00.000Z"
+  },
+  "replayed": false
+}

@@ -1,4 +1,51 @@
 import { buildRealtimeConnection } from "./realtime";
+import {
+  parsePatientShareCreateResponse,
+  parsePatientShareListResponse,
+  parsePatientShareRevokeResponse,
+  parseShareTargetsResponse,
+} from "./consent-operations";
+import {
+  parseDevicePairingResponse,
+  parsePortalDeviceListResponse,
+} from "./device-operations";
+import { parsePortalMonitoringResponse } from "./monitoring-operations";
+import {
+  parsePublicClinicCatalog,
+  type PublicClinicOption,
+  type RoleRequestReceipt,
+} from "./role-request-contract";
+import {
+  assertAuthSessionRevokeIntent,
+  parseAuthSessionRevokeReceipt,
+  type AuthSessionRevokeIntent,
+} from "./auth-session-operations";
+import {
+  assertWorkspaceSettingsIntent,
+  parseWorkspaceSettingsReceipt,
+  type WorkspaceSettingsUpdateIntent,
+} from "./workspace-settings-operations";
+import type {
+  AvatarDeleteReceipt,
+  AvatarDeleteIntent,
+  AvatarMutationAuthority,
+  AvatarUploadReceipt,
+  AvatarUploadIntent,
+} from "./avatar-operations";
+import {
+  assertTwoFactorEnrollmentStartIntent,
+  assertTwoFactorEnrollmentIntent,
+  assertTwoFactorRecoveryAckIntent,
+  parseTwoFactorEnrollmentStartReceipt,
+  parseTwoFactorEnrollmentReceipt,
+  parseTwoFactorRecoveryAckReceipt,
+  TwoFactorEnrollmentContractError,
+  type TwoFactorEnrollmentIntent,
+  type TwoFactorEnrollmentReceipt,
+  type TwoFactorEnrollmentStartIntent,
+  type TwoFactorEnrollmentStartReceipt,
+  type TwoFactorRecoveryAckIntent,
+} from "./two-factor-enrollment-operations";
 
 type QueryValue = string | number | boolean | null | undefined;
 
@@ -60,6 +107,9 @@ export interface ClinicalAlert {
   sourceType?: "device" | "scan" | string;
   sourceId?: string;
   dedupeKey?: string;
+  occurrenceNumber?: number;
+  previousAlertId?: string;
+  occurredAt?: string;
   status: ClinicalAlertStatus;
   severity?: "info" | "warning" | "critical" | string;
   title?: string;
@@ -107,17 +157,9 @@ export interface TwoFactorEnrollment {
   expiresAt: string;
 }
 
-export interface TwoFactorEnrollmentResponse {
-  twoFactor: TwoFactorState;
-  enrollment: TwoFactorEnrollment;
-}
+export type TwoFactorEnrollmentResponse = TwoFactorEnrollmentStartReceipt;
 
-export interface TwoFactorVerifiedResponse {
-  twoFactor: TwoFactorState;
-  recoveryCodes: string[];
-  twoFactorToken: string;
-  tokenExpiresAt: string;
-}
+export type TwoFactorVerifiedResponse = TwoFactorEnrollmentReceipt;
 
 export interface TwoFactorChallengeDetails {
   challengeId: string;
@@ -150,7 +192,9 @@ export interface WorkspaceMembership {
   alertsCount?: number;
   scanCount?: number;
   scansCount?: number;
+  operational?: boolean;
   status?: "active" | "suspended" | "revoked" | string;
+  workspaceStatus?: string;
   suspendedAt?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -267,7 +311,7 @@ export interface BillingUsageRow {
 }
 
 export interface PortalBillingPayload {
-  generatedAt?: string;
+  generatedAt: string;
   workspace: WorkspaceSummary;
   package: ServicePackageSummary | null;
   subscription: {
@@ -283,7 +327,7 @@ export interface PortalBillingPayload {
     createdAt?: string;
     updatedAt?: string;
   };
-  usage: Record<string, number>;
+  usage: Record<string, number | string>;
   quota: Record<string, number>;
   usageRows: BillingUsageRow[];
   currentCharge: {
@@ -299,10 +343,10 @@ export interface PortalBillingPayload {
     phone?: string;
     address?: string;
   };
-  invoicePolicy?: {
-    mode?: string;
-    providerConfigured?: boolean;
-    message?: string;
+  invoicePolicy: {
+    mode: "manual";
+    providerConfigured: false;
+    message: string;
   };
 }
 
@@ -339,6 +383,316 @@ export interface ApiUser {
   verifiedEmail?: boolean;
   notificationPreferences?: Record<string, boolean>;
   [key: string]: unknown;
+}
+
+export const ACCOUNT_PROFILE_MUTATION_FIELDS = [
+  "name",
+  "title",
+  "phone",
+  "license",
+  "hospital",
+  "department",
+  "specialty",
+  "address",
+] as const;
+
+export type AccountProfileMutationField =
+  (typeof ACCOUNT_PROFILE_MUTATION_FIELDS)[number];
+
+export type AccountProfilePatch = Partial<
+  Record<AccountProfileMutationField, string>
+>;
+
+export interface AccountProfileUpdateIntent {
+  userId: string;
+  patch: AccountProfilePatch;
+  idempotencyKey: string;
+}
+
+export interface AccountProfileUserSnapshot {
+  id: string;
+  name: string;
+  title: string;
+  phone: string;
+  license: string;
+  hospital: string;
+  department: string;
+  specialty: string;
+  address: string;
+  organizationId: string;
+  updatedAt: string;
+}
+
+export interface AccountProfileUpdateReceipt {
+  userId: string;
+  intent: "profile_update";
+  changedFields: AccountProfileMutationField[];
+  user: AccountProfileUserSnapshot;
+  replayed: boolean;
+}
+
+function accountProfileRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function accountProfileText(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function accountProfileError(code: string, message: string, status = 502) {
+  return buildApiError({ code, message }, status);
+}
+
+function validAccountProfileTimestamp(value: unknown) {
+  const text = accountProfileText(value);
+  return (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      text,
+    ) && Number.isFinite(Date.parse(text))
+  );
+}
+
+export function assertAccountProfileUpdateIntent(
+  intent: AccountProfileUpdateIntent,
+) {
+  const patch = accountProfileRecord(intent?.patch);
+  const keys = patch ? Object.keys(patch).sort() : [];
+  const allowed = new Set<string>(ACCOUNT_PROFILE_MUTATION_FIELDS);
+  const validPatch =
+    patch &&
+    keys.length > 0 &&
+    keys.every((field) => allowed.has(field)) &&
+    keys.every((field) => {
+      const value = patch[field];
+      const maxLength = field === "address" ? 1000 : 160;
+      return (
+        typeof value === "string" &&
+        value === value.trim() &&
+        value.length <= maxLength &&
+        (field !== "name" || value.length > 0)
+      );
+    });
+  if (
+    !intent?.userId?.trim() ||
+    intent.userId.trim().length > 120 ||
+    !intent?.idempotencyKey?.trim() ||
+    intent.idempotencyKey.trim().length > 160 ||
+    !validPatch
+  ) {
+    throw accountProfileError(
+      "ACCOUNT_PROFILE_INTENT_INVALID",
+      "Không thể xác định chính xác thay đổi hồ sơ tài khoản cần gửi.",
+      400,
+    );
+  }
+  return intent;
+}
+
+export function createAccountProfileIdempotencyKey() {
+  const randomId =
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `account-profile-${randomId}`.slice(0, 160);
+}
+
+export function accountProfileIntentFingerprint(
+  intent: Omit<AccountProfileUpdateIntent, "idempotencyKey">,
+) {
+  const fields = Object.entries(intent.patch).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  return JSON.stringify([intent.userId, fields]);
+}
+
+export function isAccountProfileIdempotencyCollision(error: unknown) {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "IDEMPOTENCY_KEY_REUSED",
+  );
+}
+
+export function parseAccountProfileUpdateReceipt(
+  payload: unknown,
+  intent: AccountProfileUpdateIntent,
+  currentUserId: string,
+): AccountProfileUpdateReceipt {
+  assertAccountProfileUpdateIntent(intent);
+  const root = accountProfileRecord(payload);
+  const user = accountProfileRecord(root?.user);
+  const expectedFields = Object.keys(intent.patch).sort();
+  const changedFields = Array.isArray(root?.changedFields)
+    ? root.changedFields
+    : [];
+  const ownerValid =
+    currentUserId.trim() === intent.userId.trim() &&
+    root?.userId === intent.userId &&
+    user?.id === intent.userId;
+  if (!ownerValid) {
+    throw accountProfileError(
+      "ACCOUNT_PROFILE_RECEIPT_OWNER_MISMATCH",
+      "Biên nhận hồ sơ không thuộc tài khoản hiện tại; dữ liệu chưa được áp dụng.",
+    );
+  }
+  const userKeys = [
+    "id",
+    "name",
+    "title",
+    "phone",
+    "license",
+    "hospital",
+    "department",
+    "specialty",
+    "address",
+    "organizationId",
+    "updatedAt",
+  ] as const;
+  const snapshotValid =
+    hasExactKeys(user, userKeys) &&
+    userKeys
+      .filter((field) => field !== "updatedAt")
+      .every((field) => typeof user?.[field] === "string") &&
+    accountProfileText(user?.id).length <= 120 &&
+    accountProfileText(user?.organizationId).length <= 120 &&
+    ACCOUNT_PROFILE_MUTATION_FIELDS.every((field) => {
+      const maxLength = field === "address" ? 1000 : 160;
+      return accountProfileText(user?.[field]).length <= maxLength;
+    }) &&
+    validAccountProfileTimestamp(user?.updatedAt);
+  const receiptValid =
+    hasExactKeys(root, [
+      "userId",
+      "intent",
+      "changedFields",
+      "user",
+      "replayed",
+    ]) &&
+    root?.intent === "profile_update" &&
+    typeof root?.replayed === "boolean" &&
+    changedFields.length === expectedFields.length &&
+    changedFields.every((field) => typeof field === "string") &&
+    JSON.stringify(changedFields) === JSON.stringify(expectedFields) &&
+    new Set(changedFields).size === changedFields.length &&
+    snapshotValid &&
+    expectedFields.every(
+      (field) =>
+        user?.[field] === intent.patch[field as AccountProfileMutationField],
+    );
+  if (!receiptValid) {
+    throw accountProfileError(
+      "ACCOUNT_PROFILE_RECEIPT_INVALID",
+      "Backend chưa trả biên nhận hồ sơ chính xác; thao tác chưa được báo thành công.",
+    );
+  }
+  return payload as AccountProfileUpdateReceipt;
+}
+
+export interface PasswordChangeReceipt {
+  ok: true;
+  user: {
+    id: string;
+  };
+  provider: "firebase" | "demo";
+  operationId: string;
+  replayed: boolean;
+}
+
+export function parsePasswordChangeReceipt(
+  payload: unknown,
+): PasswordChangeReceipt {
+  const receipt =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  const user =
+    receipt?.user &&
+    typeof receipt.user === "object" &&
+    !Array.isArray(receipt.user)
+      ? (receipt.user as Record<string, unknown>)
+      : null;
+  const rootKeys = receipt ? Object.keys(receipt).sort() : [];
+  const userKeys = user ? Object.keys(user).sort() : [];
+  const exactRoot =
+    receipt !== null &&
+    rootKeys.length === 5 &&
+    rootKeys.join("|") === "ok|operationId|provider|replayed|user";
+  const exactUser =
+    user !== null && userKeys.length === 1 && userKeys[0] === "id";
+
+  if (
+    !exactRoot ||
+    !exactUser ||
+    receipt?.ok !== true ||
+    (receipt.provider !== "firebase" && receipt.provider !== "demo") ||
+    typeof receipt.operationId !== "string" ||
+    receipt.operationId.length === 0 ||
+    receipt.operationId.length > 160 ||
+    receipt.operationId !== receipt.operationId.trim() ||
+    typeof receipt.replayed !== "boolean" ||
+    typeof user?.id !== "string" ||
+    user.id.length === 0 ||
+    user.id.length > 120 ||
+    user.id !== user.id.trim()
+  ) {
+    throw buildApiError(
+      {
+        code: "PASSWORD_CHANGE_RESPONSE_INVALID",
+        message:
+          "Backend trả về biên nhận đổi mật khẩu không đầy đủ hoặc không đúng contract.",
+      },
+      502,
+    );
+  }
+
+  return payload as PasswordChangeReceipt;
+}
+
+export interface PortalStaffResponse {
+  workspaceId: string;
+  generatedAt: string;
+  staff: ApiUser[];
+  doctors: ApiUser[];
+}
+
+export type NotificationPreferenceKey =
+  | "enabled"
+  | "doctorRequests"
+  | "abnormalResults"
+  | "deviceOffline"
+  | "appointments"
+  | "messages"
+  | "aiUpdates"
+  | "newLogin";
+
+export type NotificationCloudPreferences = Record<
+  NotificationPreferenceKey,
+  boolean
+>;
+
+export interface NotificationChannelAvailability {
+  available: boolean;
+  status: "ready" | "disabled" | "unavailable" | string;
+  reasonCode: string;
+}
+
+export interface NotificationPreferencesResponse {
+  userId: string;
+  workspaceId: string | null;
+  ownership: {
+    kind: "self";
+    userId: string;
+  };
+  preferences: NotificationCloudPreferences;
+  channels: {
+    inApp: NotificationChannelAvailability;
+    email: NotificationChannelAvailability;
+    push: NotificationChannelAvailability;
+  };
+  updatedAt: string;
+  replayed: boolean;
 }
 
 export interface Patient {
@@ -450,6 +804,7 @@ export interface Appointment {
 
 export interface Scan {
   id: string;
+  organizationId?: string;
   patientId?: string;
   patient?: Patient;
   status?: string;
@@ -530,14 +885,6 @@ export interface DeviceCommandResponse {
   idempotent?: boolean;
 }
 
-export interface SendDeviceCommandInput {
-  type: DeviceCommandType;
-  payload?: Record<string, unknown>;
-  idempotencyKey: string;
-  correlationId?: string;
-  ttlMs?: number;
-}
-
 export interface DeviceTelemetry {
   uptimeMs?: number;
   resetReason?: string;
@@ -594,21 +941,63 @@ export interface DevicePairingResponse {
 export interface Notification {
   id: string;
   userId?: string;
+  workspaceId?: string;
   organizationId?: string;
   type?: string;
   title?: string;
   message?: string;
   campaignId?: string;
-  audienceType?: "workspace" | "role" | "users" | "legacy";
+  audienceType?: "workspace" | "role" | "users" | "direct" | "legacy";
   audienceRole?: string;
   requestedChannels?: Array<"in_app" | "email" | "push">;
   inAppStatus?: string;
   emailStatus?: string;
   pushStatus?: string;
   read?: boolean;
-  readAt?: string;
+  readAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface NotificationInboxItem extends Notification {
+  userId: string;
+  workspaceId: string;
+  organizationId: string;
+  type: string;
+  title: string;
+  message: string;
+  campaignId: string;
+  audienceType: "workspace" | "role" | "users" | "direct" | "legacy";
+  audienceRole: string;
+  requestedChannels: Array<"in_app" | "email" | "push">;
+  inAppStatus: string;
+  emailStatus: string;
+  pushStatus: string;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationInboxResponse {
+  userId: string;
+  workspaceId: string;
+  notifications: NotificationInboxItem[];
+  updatedAt: string;
+}
+
+export type NotificationInboxAction = "read" | "read_all" | "delete";
+
+export interface NotificationInboxMutationResponse {
+  userId: string;
+  workspaceId: string;
+  action: NotificationInboxAction;
+  notification: NotificationInboxItem | null;
+  notifications: NotificationInboxItem[];
+  affectedIds: string[];
+  deletedId: string | null;
+  updatedAt: string;
+  replayed: boolean;
 }
 
 export type AuditLogOutcome =
@@ -753,6 +1142,146 @@ export interface AuthSession {
   [key: string]: unknown;
 }
 
+export interface PatientMutationAuthority {
+  expectedUserId: string;
+  expectedWorkspaceId: string;
+  expectedAuthSessionId: string;
+  authSessionEpoch: number;
+}
+
+function patientMutationAuthorityHeaders(
+  authority?: PatientMutationAuthority,
+): Record<string, string> {
+  if (!authority) return {};
+  if (
+    !Number.isSafeInteger(authority.authSessionEpoch) ||
+    authority.authSessionEpoch < 0
+  ) {
+    throw buildApiError(
+      {
+        code: "PATIENT_MUTATION_AUTHORITY_INVALID",
+        message: "Mốc phiên đăng nhập của thao tác hồ sơ không hợp lệ.",
+      },
+      409,
+    );
+  }
+  if (getAuthSessionEpochSnapshot() !== authority.authSessionEpoch) {
+    throw buildApiError(
+      {
+        code: "AUTH_SESSION_REPLACED",
+        message: "Phiên đăng nhập đã thay đổi trước khi gửi thao tác hồ sơ.",
+      },
+      409,
+    );
+  }
+  const values = [
+    authority.expectedUserId,
+    authority.expectedWorkspaceId,
+    authority.expectedAuthSessionId,
+  ];
+  if (
+    values.some(
+      (value) =>
+        !value || value !== value.trim() || value.length > 160 || value.includes(","),
+    )
+  ) {
+    throw buildApiError(
+      {
+        code: "PATIENT_MUTATION_AUTHORITY_INVALID",
+        message: "Phiên tài khoản hoặc workspace của thao tác hồ sơ không hợp lệ.",
+      },
+      409,
+    );
+  }
+  return {
+    "X-Shcare-Expected-User-Id": authority.expectedUserId,
+    "X-Shcare-Expected-Workspace-Id": authority.expectedWorkspaceId,
+    "X-Shcare-Expected-Auth-Session-Id": authority.expectedAuthSessionId,
+  };
+}
+
+function avatarMutationAuthorityHeaders(
+  authority: AvatarMutationAuthority,
+): Record<string, string> {
+  const values = [
+    authority.userId,
+    authority.workspaceId,
+    authority.authSessionId,
+    authority.bearerToken,
+  ];
+  if (
+    !Number.isSafeInteger(authority.authSessionEpoch) ||
+    authority.authSessionEpoch < 0 ||
+    values.some(
+      (value) =>
+        !value ||
+        value !== value.trim() ||
+        value.length > 4096 ||
+        value.includes(","),
+    )
+  ) {
+    throw buildApiError(
+      {
+        code: "AVATAR_MUTATION_AUTHORITY_INVALID",
+        message:
+          "Không thể xác định chính xác tài khoản, workspace hoặc phiên đăng nhập của thao tác ảnh đại diện.",
+      },
+      409,
+    );
+  }
+  if (
+    authority.userId.length > 160 ||
+    authority.workspaceId.length > 160 ||
+    authority.authSessionId.length > 160
+  ) {
+    throw buildApiError(
+      {
+        code: "AVATAR_MUTATION_AUTHORITY_INVALID",
+        message:
+          "Định danh tài khoản, workspace hoặc phiên đăng nhập của thao tác ảnh đại diện không hợp lệ.",
+      },
+      409,
+    );
+  }
+  if (
+    getAuthSessionEpochSnapshot() !== authority.authSessionEpoch ||
+    getToken() !== authority.bearerToken
+  ) {
+    throw buildApiError(
+      {
+        code: "AUTH_SESSION_REPLACED",
+        message:
+          "Phiên đăng nhập đã thay đổi; kết quả thao tác ảnh đại diện cũ đã bị loại bỏ.",
+      },
+      409,
+    );
+  }
+  return {
+    "X-Shcare-Expected-User-Id": authority.userId,
+    "X-Shcare-Expected-Workspace-Id": authority.workspaceId,
+    "X-Shcare-Expected-Auth-Session-Id": authority.authSessionId,
+  };
+}
+
+function assertAvatarAuthSessionSnapshot(
+  authSessionEpoch: number,
+  bearerToken: string,
+  message: string,
+) {
+  if (
+    getAuthSessionEpochSnapshot() !== authSessionEpoch ||
+    getToken() !== bearerToken
+  ) {
+    throw buildApiError(
+      {
+        code: "AUTH_SESSION_REPLACED",
+        message,
+      },
+      409,
+    );
+  }
+}
+
 export interface ShareTarget {
   id: string;
   name?: string;
@@ -835,29 +1364,86 @@ export interface PatientShare {
   [key: string]: unknown;
 }
 
+export type OverviewRangeKey = "today" | "7d" | "30d";
+
+export interface OverviewQuery {
+  range: OverviewRangeKey;
+  timezoneOffsetMinutes: number;
+}
+
 export interface OverviewPayload {
-  stats: {
-    patientsCount?: number;
-    devicesOnline?: number;
-    scansCount?: number;
-    pendingDoctors?: number;
-    aiJobsFailed?: number;
-    storageUsed?: string;
+  generatedAt: string;
+  workspaceId: string;
+  range: {
+    key: OverviewRangeKey;
+    label: string;
+    startAt: string;
+    endAt: string;
+    timezoneOffsetMinutes: number;
+    bucket: "4h" | "day";
   };
-  measureData?: Array<{ time?: string; count?: number }>;
-  deviceData?: Array<{ name: string; value: number; color: string }>;
-  aiJobData?: Array<{ name: string; value: number; color: string }>;
+  stats: {
+    clinics: number;
+    workspaces: number;
+    patientsCount: number;
+    pendingDoctors: number;
+    devicesCount: number;
+    devicesOnline: number;
+    scansCount: number;
+    aiJobsFailed: number;
+    storageBytes: number;
+    storageUsed: string;
+  };
+  measureData: Array<{ time: string; day?: string; count: number }>;
+  deviceData: Array<{
+    key: "online" | "offline";
+    name: string;
+    value: number;
+    color: string;
+  }>;
+  aiJobData: Array<{
+    key: "processing" | "completed" | "failed" | "pending";
+    name: string;
+    value: number;
+    color: string;
+  }>;
+}
+
+export type SupportTicketType =
+  | "device_connection"
+  | "measurement_missing"
+  | "account_access"
+  | "interface_issue"
+  | "other";
+
+export interface SupportTicketCreateInput {
+  type: SupportTicketType;
+  description: string;
+}
+
+export interface SupportTicketReceipt {
+  id: string;
+  workspaceId: string;
+  requesterUserId: string;
+  type: SupportTicketType;
+  status: "open";
+  createdAt: string;
+}
+
+export interface SupportTicketCreateResponse {
+  ticket: SupportTicketReceipt;
+  replayed: boolean;
+}
+
+export interface SupportTicketReceiptExpectation {
+  workspaceId: string;
+  requesterUserId: string;
 }
 
 export interface PortalStatusPayload {
   ok: boolean;
   service: string;
   now: string;
-  mode: {
-    authMode: string;
-    dataBackend: string;
-    firebaseAuth: boolean;
-  };
   workspace: {
     id: string;
     name: string;
@@ -871,18 +1457,12 @@ export interface PortalStatusPayload {
     alertsCount: number;
   };
   status: {
-    type?: string;
-    esp?: number;
-    wsEsp?: number;
-    udpEsp?: number;
-    listeners?: number;
-    recording?: boolean;
-    activeScanId?: string | null;
-    activeScanStartedAt?: string | null;
-    sampleRate?: number;
-    udpPort?: number;
-    httpPort?: number;
-    updatedAt?: string;
+    workspaceId: string;
+    devicesCount: number;
+    devicesOnline: number;
+    recording: boolean;
+    activeScanId: string | null;
+    updatedAt: string;
   };
 }
 
@@ -891,17 +1471,56 @@ const API_BASE = (
 ).replace(/\/+$/, "");
 const TOKEN_KEY = "smart_health_token";
 const TWO_FACTOR_TOKEN_KEY = "shcare_two_factor_token";
+let observedPrimaryToken: string | undefined;
+let primaryAuthSessionEpoch = 0;
+
+function observePrimaryToken(token: string) {
+  if (observedPrimaryToken === undefined) {
+    observedPrimaryToken = token;
+  } else if (observedPrimaryToken !== token) {
+    observedPrimaryToken = token;
+    primaryAuthSessionEpoch += 1;
+  }
+  return token;
+}
 
 function getToken() {
-  return typeof window === "undefined"
-    ? ""
-    : window.localStorage.getItem(TOKEN_KEY) || "";
+  const token =
+    typeof window === "undefined"
+      ? ""
+      : window.localStorage.getItem(TOKEN_KEY) || "";
+  return observePrimaryToken(token);
 }
 
 function setToken(token: string) {
   if (typeof window === "undefined") return;
+  const previousToken = getToken();
   if (token) window.localStorage.setItem(TOKEN_KEY, token);
   else window.localStorage.removeItem(TOKEN_KEY);
+  if (token !== previousToken) {
+    observedPrimaryToken = token;
+    primaryAuthSessionEpoch += 1;
+  }
+}
+
+function getAuthSessionEpochSnapshot() {
+  getToken();
+  return primaryAuthSessionEpoch;
+}
+
+function assertCurrentTwoFactorAuthSession(expectedEpoch: number) {
+  if (getAuthSessionEpochSnapshot() !== expectedEpoch) {
+    throw new TwoFactorEnrollmentContractError(
+      "Phiên xác thực chính đã thay đổi; kết quả 2FA cũ đã bị loại bỏ.",
+    );
+  }
+}
+
+function clearTokenIfMatches(expectedToken: string) {
+  if (!expectedToken || getToken() !== expectedToken) return false;
+  setToken("");
+  setTwoFactorToken("");
+  return true;
 }
 
 function getTwoFactorToken() {
@@ -914,6 +1533,12 @@ function setTwoFactorToken(token: string) {
   if (typeof window === "undefined") return;
   if (token) window.sessionStorage.setItem(TWO_FACTOR_TOKEN_KEY, token);
   else window.sessionStorage.removeItem(TWO_FACTOR_TOKEN_KEY);
+}
+
+function clearTwoFactorTokenIfMatches(expectedToken: string) {
+  if (!expectedToken || getTwoFactorToken() !== expectedToken) return false;
+  setTwoFactorToken("");
+  return true;
 }
 
 function nestedError(payload: unknown) {
@@ -985,6 +1610,494 @@ function buildApiError(payload: unknown, status: number) {
   return error;
 }
 
+const supportTicketTypes = new Set<SupportTicketType>([
+  "device_connection",
+  "measurement_missing",
+  "account_access",
+  "interface_issue",
+  "other",
+]);
+
+function supportTicketRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function supportTicketText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function supportTicketContractError(code: string, message: string) {
+  return buildApiError({ code, message }, 502);
+}
+
+export function parseSupportTicketCreateResponse(
+  payload: unknown,
+  expected: SupportTicketReceiptExpectation,
+): SupportTicketCreateResponse {
+  const root = supportTicketRecord(payload);
+  const ticket = supportTicketRecord(root?.ticket);
+  const workspaceId = supportTicketText(ticket?.workspaceId);
+  const requesterUserId = supportTicketText(ticket?.requesterUserId);
+  const expectedWorkspaceId = expected.workspaceId.trim();
+  const expectedRequesterUserId = expected.requesterUserId.trim();
+  if (
+    !expectedWorkspaceId ||
+    !expectedRequesterUserId ||
+    workspaceId !== expectedWorkspaceId ||
+    requesterUserId !== expectedRequesterUserId
+  ) {
+    throw supportTicketContractError(
+      "SUPPORT_TICKET_RECEIPT_OWNER_MISMATCH",
+      "Backend trả về biên nhận hỗ trợ không thuộc tài khoản hoặc workspace hiện tại.",
+    );
+  }
+
+  const rootKeys = ["ticket", "replayed"] as const;
+  const ticketKeys = [
+    "id",
+    "workspaceId",
+    "requesterUserId",
+    "type",
+    "status",
+    "createdAt",
+  ] as const;
+  const id = supportTicketText(ticket?.id);
+  const type = supportTicketText(ticket?.type) as SupportTicketType;
+  const createdAt = supportTicketText(ticket?.createdAt);
+  const rootIsExact =
+    root !== null &&
+    rootKeys.every((key) => Object.hasOwn(root, key)) &&
+    Object.keys(root).every((key) =>
+      (rootKeys as readonly string[]).includes(key),
+    );
+  const ticketIsExact =
+    ticket !== null &&
+    ticketKeys.every((key) => Object.hasOwn(ticket, key)) &&
+    Object.keys(ticket).every((key) =>
+      (ticketKeys as readonly string[]).includes(key),
+    );
+  const valid =
+    rootIsExact &&
+    ticketIsExact &&
+    id.length > 0 &&
+    id.length <= 160 &&
+    supportTicketTypes.has(type) &&
+    ticket?.status === "open" &&
+    Boolean(createdAt) &&
+    Number.isFinite(Date.parse(createdAt)) &&
+    typeof root?.replayed === "boolean";
+
+  if (!valid) {
+    throw supportTicketContractError(
+      "SUPPORT_TICKET_RECEIPT_INVALID",
+      "Backend chưa trả về biên nhận hỗ trợ đầy đủ. Yêu cầu chưa được báo thành công.",
+    );
+  }
+  return payload as SupportTicketCreateResponse;
+}
+
+function billingRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function billingText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isNonNegativeFinite(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function billingContractError(code: string, message: string) {
+  return buildApiError({ code, message }, 502);
+}
+
+function parsePortalBillingResponse(
+  payload: unknown,
+  expectedWorkspaceId: string,
+): PortalBillingPayload {
+  const root = billingRecord(payload);
+  const workspace = billingRecord(root?.workspace);
+  const subscription = billingRecord(root?.subscription);
+  const servicePackage =
+    root?.package === null ? null : billingRecord(root?.package);
+  const usage = billingRecord(root?.usage);
+  const quota = billingRecord(root?.quota);
+  const billingContact = billingRecord(root?.billingContact);
+  const invoicePolicy = billingRecord(root?.invoicePolicy);
+  const currentCharge =
+    root?.currentCharge === null ? null : billingRecord(root?.currentCharge);
+  const workspaceId = billingText(workspace?.id);
+  const subscriptionWorkspaceId = billingText(subscription?.organizationId);
+  const expectedId = expectedWorkspaceId.trim();
+
+  if (
+    !expectedId ||
+    workspaceId !== expectedId ||
+    subscriptionWorkspaceId !== expectedId
+  ) {
+    throw billingContractError(
+      "BILLING_RESPONSE_WORKSPACE_MISMATCH",
+      "Backend trả về thông tin gói không thuộc workspace hiện tại. Dữ liệu chưa được hiển thị.",
+    );
+  }
+
+  const topLevelKeys = new Set([
+    "generatedAt",
+    "workspace",
+    "package",
+    "subscription",
+    "usage",
+    "quota",
+    "usageRows",
+    "currentCharge",
+    "billingContact",
+    "invoicePolicy",
+  ]);
+  const requiredTopLevelKeys = [...topLevelKeys];
+  const generatedAt = billingText(root?.generatedAt);
+  const rows = root?.usageRows;
+  const numericUsageKeys = [
+    "doctors",
+    "patients",
+    "devices",
+    "aiMonthly",
+    "storageGb",
+  ];
+  const quotaKeys = [
+    "maxDoctors",
+    "maxPatients",
+    "maxDevices",
+    "storageGb",
+    "aiMonthly",
+    "retentionDays",
+  ];
+
+  const invalidTopLevel =
+    !root ||
+    Object.keys(root).some((key) => !topLevelKeys.has(key)) ||
+    requiredTopLevelKeys.some((key) => !Object.hasOwn(root, key));
+  const invalidUsage =
+    !usage ||
+    numericUsageKeys.some((key) => !isNonNegativeFinite(usage[key])) ||
+    usage.storageMetric !== "total_storage";
+  const invalidQuota =
+    !quota || quotaKeys.some((key) => !isNonNegativeFinite(quota[key]));
+  const invalidRows =
+    !Array.isArray(rows) ||
+    rows.length > 20 ||
+    new Set(rows.map((row) => billingText(billingRecord(row)?.key))).size !==
+      rows.length ||
+    rows.some((candidate) => {
+      const row = billingRecord(candidate);
+      const key = billingText(row?.key);
+      const label = billingText(row?.label);
+      const unit = billingText(row?.unit);
+      const used = row?.used;
+      const limit = row?.limit;
+      const percent = row?.percent;
+      const status = billingText(row?.status);
+      if (
+        !key ||
+        !label ||
+        !unit ||
+        !isNonNegativeFinite(used) ||
+        !isNonNegativeFinite(limit)
+      ) {
+        return true;
+      }
+      const expectedPercent =
+        Number(limit) > 0
+          ? Math.min(100, Math.round((Number(used) / Number(limit)) * 100))
+          : null;
+      const expectedStatus =
+        expectedPercent === null
+          ? "unlimited"
+          : expectedPercent >= 100
+            ? "exceeded"
+            : expectedPercent >= 80
+              ? "warning"
+              : "ok";
+      return percent !== expectedPercent || status !== expectedStatus;
+    });
+  const invalidPackage =
+    servicePackage !== null &&
+    (!billingText(servicePackage?.id) ||
+      !billingText(servicePackage?.name) ||
+      !isNonNegativeFinite(servicePackage?.price) ||
+      billingText(servicePackage?.currency).length !== 3 ||
+      !billingText(servicePackage?.duration) ||
+      !billingRecord(servicePackage?.features));
+  const invalidCurrentCharge =
+    currentCharge !== null &&
+    (!billingText(currentCharge?.packageId) ||
+      !isNonNegativeFinite(currentCharge?.amount) ||
+      billingText(currentCharge?.currency).length !== 3 ||
+      !billingText(currentCharge?.cycle) ||
+      currentCharge?.source !== "service_package" ||
+      (servicePackage !== null &&
+        currentCharge?.packageId !== servicePackage?.id));
+  const invalidSubscription =
+    !subscription ||
+    !billingText(subscription.status) ||
+    !billingText(subscription.billingCycle) ||
+    !["subscription", "workspace"].includes(billingText(subscription.source));
+  const invalidContact =
+    !billingContact ||
+    ["name", "email", "phone", "address"].some(
+      (key) => typeof billingContact[key] !== "string",
+    );
+  const invalidInvoicePolicy =
+    !invoicePolicy ||
+    invoicePolicy.mode !== "manual" ||
+    invoicePolicy.providerConfigured !== false ||
+    !billingText(invoicePolicy.message);
+
+  if (
+    invalidTopLevel ||
+    !generatedAt ||
+    Number.isNaN(Date.parse(generatedAt)) ||
+    !billingText(workspace?.name) ||
+    invalidUsage ||
+    invalidQuota ||
+    invalidRows ||
+    invalidPackage ||
+    invalidCurrentCharge ||
+    invalidSubscription ||
+    invalidContact ||
+    invalidInvoicePolicy
+  ) {
+    throw billingContractError(
+      "BILLING_RESPONSE_INVALID",
+      "Backend trả về thông tin gói chưa đầy đủ hoặc chứa trạng thái thanh toán không được hỗ trợ. Dữ liệu chưa được hiển thị.",
+    );
+  }
+
+  return payload as PortalBillingPayload;
+}
+
+function overviewRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function overviewText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isOverviewCount(value: unknown) {
+  return Number.isInteger(value) && Number(value) >= 0;
+}
+
+function hasExactKeys(
+  record: Record<string, unknown> | null,
+  required: readonly string[],
+  optional: readonly string[] = [],
+) {
+  if (!record) return false;
+  const allowed = new Set([...required, ...optional]);
+  return (
+    required.every((key) => Object.hasOwn(record, key)) &&
+    Object.keys(record).every((key) => allowed.has(key))
+  );
+}
+
+function overviewContractError(code: string, message: string) {
+  return buildApiError({ code, message }, 502);
+}
+
+function parsePortalOverviewResponse(
+  payload: unknown,
+  expectedWorkspaceId: string,
+  expectedQuery: OverviewQuery,
+): OverviewPayload {
+  const root = overviewRecord(payload);
+  const workspaceId = overviewText(root?.workspaceId);
+  const expectedId = expectedWorkspaceId.trim();
+  if (!expectedId || workspaceId !== expectedId) {
+    throw overviewContractError(
+      "OVERVIEW_RESPONSE_WORKSPACE_MISMATCH",
+      "Backend trả về tổng quan không thuộc workspace hiện tại. Dữ liệu chưa được hiển thị.",
+    );
+  }
+
+  const rootKeys = [
+    "generatedAt",
+    "workspaceId",
+    "range",
+    "stats",
+    "measureData",
+    "deviceData",
+    "aiJobData",
+  ] as const;
+  const rangeKeys = [
+    "key",
+    "label",
+    "startAt",
+    "endAt",
+    "timezoneOffsetMinutes",
+    "bucket",
+  ] as const;
+  const statKeys = [
+    "clinics",
+    "workspaces",
+    "patientsCount",
+    "pendingDoctors",
+    "devicesCount",
+    "devicesOnline",
+    "scansCount",
+    "aiJobsFailed",
+    "storageBytes",
+    "storageUsed",
+  ] as const;
+  const rootIsExact = hasExactKeys(root, rootKeys);
+  const range = overviewRecord(root?.range);
+  const stats = overviewRecord(root?.stats);
+  const generatedAt = overviewText(root?.generatedAt);
+  const rangeStart = overviewText(range?.startAt);
+  const rangeEnd = overviewText(range?.endAt);
+  const rangeKey = overviewText(range?.key);
+  const rangeBucket = overviewText(range?.bucket);
+  const timezoneOffsetMinutes = range?.timezoneOffsetMinutes;
+  const validRange =
+    hasExactKeys(range, rangeKeys) &&
+    rangeKey === expectedQuery.range &&
+    overviewText(range?.label).length > 0 &&
+    Number.isFinite(Date.parse(rangeStart)) &&
+    Number.isFinite(Date.parse(rangeEnd)) &&
+    Date.parse(rangeStart) <= Date.parse(rangeEnd) &&
+    Number.isInteger(timezoneOffsetMinutes) &&
+    Number(timezoneOffsetMinutes) >= -720 &&
+    Number(timezoneOffsetMinutes) <= 840 &&
+    timezoneOffsetMinutes === expectedQuery.timezoneOffsetMinutes &&
+    rangeBucket === (rangeKey === "today" ? "4h" : "day");
+  const validStats =
+    hasExactKeys(stats, statKeys) &&
+    statKeys
+      .filter((key) => key !== "storageUsed")
+      .every((key) =>
+        key === "storageBytes"
+          ? isNonNegativeFinite(stats?.[key])
+          : isOverviewCount(stats?.[key]),
+      ) &&
+    overviewText(stats?.storageUsed).length > 0 &&
+    Number(stats?.devicesOnline) <= Number(stats?.devicesCount);
+
+  const measureData = root?.measureData;
+  const validMeasureData =
+    Array.isArray(measureData) &&
+    measureData.length >= 1 &&
+    measureData.length <= 30 &&
+    measureData.every((candidate) => {
+      const point = overviewRecord(candidate);
+      return (
+        hasExactKeys(point, ["time", "count"], ["day"]) &&
+        overviewText(point?.time).length > 0 &&
+        isOverviewCount(point?.count) &&
+        (!Object.hasOwn(point || {}, "day") ||
+          /^\d{4}-\d{2}-\d{2}$/.test(overviewText(point?.day)))
+      );
+    }) &&
+    measureData.reduce(
+      (sum, candidate) => sum + Number(overviewRecord(candidate)?.count || 0),
+      0,
+    ) === Number(stats?.scansCount);
+
+  const deviceData = root?.deviceData;
+  const expectedDeviceKeys = new Set(["online", "offline"]);
+  const validDeviceData =
+    Array.isArray(deviceData) &&
+    deviceData.length === expectedDeviceKeys.size &&
+    new Set(
+      deviceData.map((candidate) =>
+        overviewText(overviewRecord(candidate)?.key),
+      ),
+    ).size === expectedDeviceKeys.size &&
+    deviceData.every((candidate) => {
+      const point = overviewRecord(candidate);
+      return (
+        hasExactKeys(point, ["key", "name", "value", "color"]) &&
+        expectedDeviceKeys.has(overviewText(point?.key)) &&
+        overviewText(point?.name).length > 0 &&
+        isOverviewCount(point?.value) &&
+        /^#[0-9a-f]{6}$/i.test(overviewText(point?.color))
+      );
+    }) &&
+    deviceData.reduce(
+      (sum, candidate) => sum + Number(overviewRecord(candidate)?.value || 0),
+      0,
+    ) === Number(stats?.devicesCount) &&
+    Number(
+      overviewRecord(
+        deviceData.find(
+          (candidate) =>
+            overviewText(overviewRecord(candidate)?.key) === "online",
+        ),
+      )?.value,
+    ) === Number(stats?.devicesOnline);
+
+  const aiJobData = root?.aiJobData;
+  const expectedAiKeys = new Set([
+    "processing",
+    "completed",
+    "failed",
+    "pending",
+  ]);
+  const validAiJobData =
+    Array.isArray(aiJobData) &&
+    aiJobData.length === expectedAiKeys.size &&
+    new Set(
+      aiJobData.map((candidate) =>
+        overviewText(overviewRecord(candidate)?.key),
+      ),
+    ).size === expectedAiKeys.size &&
+    aiJobData.every((candidate) => {
+      const point = overviewRecord(candidate);
+      return (
+        hasExactKeys(point, ["key", "name", "value", "color"]) &&
+        expectedAiKeys.has(overviewText(point?.key)) &&
+        overviewText(point?.name).length > 0 &&
+        isOverviewCount(point?.value) &&
+        /^#[0-9a-f]{6}$/i.test(overviewText(point?.color))
+      );
+    }) &&
+    aiJobData.reduce(
+      (sum, candidate) => sum + Number(overviewRecord(candidate)?.value || 0),
+      0,
+    ) === Number(stats?.scansCount) &&
+    Number(
+      overviewRecord(
+        aiJobData.find(
+          (candidate) =>
+            overviewText(overviewRecord(candidate)?.key) === "failed",
+        ),
+      )?.value,
+    ) === Number(stats?.aiJobsFailed);
+
+  if (
+    !rootIsExact ||
+    !generatedAt ||
+    !Number.isFinite(Date.parse(generatedAt)) ||
+    !validRange ||
+    !validStats ||
+    !validMeasureData ||
+    !validDeviceData ||
+    !validAiJobData
+  ) {
+    throw overviewContractError(
+      "OVERVIEW_RESPONSE_INVALID",
+      "Backend trả về tổng quan thiếu dữ liệu đo được hoặc có KPI mâu thuẫn. Dữ liệu chưa được hiển thị.",
+    );
+  }
+
+  return payload as OverviewPayload;
+}
+
 async function requestWithResponse<T>(
   path: string,
   init: RequestInit & { query?: Record<string, QueryValue> } = {},
@@ -1020,8 +2133,8 @@ async function requestWithResponse<T>(
   if (!response.ok) {
     const code = apiErrorCode(payload);
     if (response.status === 401) {
-      setTwoFactorToken("");
-      if (!isTwoFactorAuthCode(code)) setToken("");
+      clearTwoFactorTokenIfMatches(twoFactorToken);
+      if (!isTwoFactorAuthCode(code)) clearTokenIfMatches(token);
     }
     throw buildApiError(payload, response.status);
   }
@@ -1125,8 +2238,8 @@ async function requestBlobWithResponse(
     }
     const code = apiErrorCode(payload);
     if (response.status === 401) {
-      setTwoFactorToken("");
-      if (!isTwoFactorAuthCode(code)) setToken("");
+      clearTwoFactorTokenIfMatches(twoFactorToken);
+      if (!isTwoFactorAuthCode(code)) clearTokenIfMatches(token);
     }
     throw buildApiError(payload, response.status);
   }
@@ -1277,11 +2390,15 @@ function parseCreatedExportResponse(
 
 export const smartHealthApi = {
   hasToken: () => Boolean(getToken()),
+  getTokenSnapshot: () => getToken(),
+  getAuthSessionEpochSnapshot: () => getAuthSessionEpochSnapshot(),
   getRealtimeConnection: () => buildRealtimeConnection(API_BASE, getToken()),
   clearToken: () => {
     setToken("");
     setTwoFactorToken("");
   },
+  clearTokenIfMatches: (expectedToken: string) =>
+    clearTokenIfMatches(expectedToken),
   async login(email: string, password: string) {
     const result = await request<
       | { token: string; user: ApiUser }
@@ -1308,7 +2425,7 @@ export const smartHealthApi = {
           isTwoFactorAuthCode(String((error as ApiError).code || ""))
         )
       ) {
-        setToken("");
+        clearTokenIfMatches(idToken);
       }
       throw error;
     }
@@ -1333,60 +2450,265 @@ export const smartHealthApi = {
       sentAt?: string;
       user?: ApiUser;
     }>("/auth/email-verification", { method: "POST" }),
-  async logout() {
+  async logoutIfTokenMatches(expectedToken: string) {
+    if (!expectedToken || getToken() !== expectedToken) return false;
+    let replacementTokenDetected = false;
     try {
       await request<{ ok: boolean }>("/auth/logout", { method: "POST" });
     } finally {
-      setToken("");
-      setTwoFactorToken("");
+      const currentToken = getToken();
+      if (currentToken === expectedToken) {
+        clearTokenIfMatches(expectedToken);
+      } else if (currentToken) {
+        replacementTokenDetected = true;
+      }
     }
+    return !replacementTokenDetected;
+  },
+  async logout() {
+    const token = getToken();
+    if (!token) {
+      setTwoFactorToken("");
+      return;
+    }
+    await this.logoutIfTokenMatches(token);
   },
   me: () => request<{ user: ApiUser }>("/me"),
-  updateMe: (payload: Partial<ApiUser> & { organizationId?: string }) =>
-    request<{ user: ApiUser }>("/me", {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
-  uploadMyAvatar: (file: File) =>
-    request<{ user: ApiUser; file: { id: string; name: string } }>(
-      "/me/avatar",
+  getNotificationPreferences: () =>
+    request<NotificationPreferencesResponse>("/v1/me/notification-preferences"),
+  patchNotificationPreference: (
+    key: NotificationPreferenceKey,
+    enabled: boolean,
+    idempotencyKey: string,
+  ) =>
+    request<NotificationPreferencesResponse>(
+      "/v1/me/notification-preferences",
       {
-        method: "POST",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-          "X-File-Name": file.name,
-        },
-        body: file,
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ key, enabled }),
       },
     ),
-  downloadMyAvatar: () => requestBlob("/me/avatar"),
-  deleteMyAvatar: () =>
-    request<{ user: ApiUser; deleted: boolean }>("/me/avatar", {
-      method: "DELETE",
+  updateMe: async (intent: AccountProfileUpdateIntent) => {
+    assertAccountProfileUpdateIntent(intent);
+    return parseAccountProfileUpdateReceipt(
+      await request<unknown>("/v1/me", {
+        method: "PATCH",
+        headers: { "Idempotency-Key": intent.idempotencyKey },
+        body: JSON.stringify(intent.patch),
+      }),
+      intent,
+      intent.userId,
+    );
+  },
+  switchWorkspace: (workspaceId: string, idempotencyKey: string) =>
+    request<{ user: ApiUser; replayed?: boolean }>("/v1/me", {
+      method: "PATCH",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ organizationId: workspaceId }),
     }),
-  changePassword: (payload: {
-    currentPassword?: string;
-    newPassword?: string;
-    firebaseClientUpdated?: boolean;
-  }) =>
-    request<{ ok: boolean; user: ApiUser }>("/me/password", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+  resolveAvatarMutationAuthority: async (
+    expectedUserId: string,
+    expectedWorkspaceId: string,
+  ): Promise<AvatarMutationAuthority> => {
+    const authSessionEpoch = getAuthSessionEpochSnapshot();
+    const bearerToken = getToken();
+    if (!bearerToken || !expectedUserId.trim() || !expectedWorkspaceId.trim()) {
+      throw buildApiError(
+        {
+          code: "AVATAR_MUTATION_AUTHORITY_REQUIRED",
+          message:
+            "Chưa xác nhận tài khoản, workspace và phiên đăng nhập hiện tại cho thao tác ảnh đại diện.",
+        },
+        409,
+      );
+    }
+    let result: { sessions: AuthSession[] };
+    try {
+      result = await request<{ sessions: AuthSession[] }>("/auth/sessions");
+    } catch (error) {
+      assertAvatarAuthSessionSnapshot(
+        authSessionEpoch,
+        bearerToken,
+        "Phiên đăng nhập đã thay đổi trong khi xác định quyền thao tác ảnh đại diện.",
+      );
+      throw error;
+    }
+    assertAvatarAuthSessionSnapshot(
+      authSessionEpoch,
+      bearerToken,
+      "Phiên đăng nhập đã thay đổi trước khi thao tác ảnh đại diện được gửi.",
+    );
+    const currentSession = result.sessions.find(
+      (session) => session.current === true && !session.revokedAt,
+    );
+    const authority = {
+      userId: expectedUserId.trim(),
+      workspaceId: expectedWorkspaceId.trim(),
+      authSessionId: String(currentSession?.id || "").trim(),
+      authSessionEpoch,
+      bearerToken,
+    } satisfies AvatarMutationAuthority;
+    avatarMutationAuthorityHeaders(authority);
+    return authority;
+  },
+  uploadMyAvatar: async (file: File, intent: AvatarUploadIntent) => {
+    if (!intent.idempotencyKey.trim()) {
+      throw buildApiError(
+        {
+          code: "IDEMPOTENCY_KEY_REQUIRED",
+          message:
+            "Tải ảnh đại diện cần mã thao tác ổn định để có thể thử lại an toàn.",
+        },
+        400,
+      );
+    }
+    const authority = {
+      userId: intent.userId,
+      workspaceId: intent.workspaceId,
+      authSessionId: intent.authSessionId,
+      authSessionEpoch: intent.authSessionEpoch,
+      bearerToken: intent.bearerToken,
+    } satisfies AvatarMutationAuthority;
+    const authorityHeaders = avatarMutationAuthorityHeaders(authority);
+    let receipt: AvatarUploadReceipt;
+    try {
+      receipt = await request<AvatarUploadReceipt>("/v1/me/avatar", {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type,
+          "X-File-Name": file.name,
+          "Idempotency-Key": intent.idempotencyKey,
+          ...authorityHeaders,
+        },
+        body: file,
+      });
+    } catch (error) {
+      avatarMutationAuthorityHeaders(authority);
+      throw error;
+    }
+    avatarMutationAuthorityHeaders(authority);
+    return receipt;
+  },
+  downloadMyAvatar: () => requestBlob("/v1/me/avatar"),
+  getMyAvatarCleanupStatus: () =>
+    request<unknown>("/v1/me/avatar/cleanup"),
+  deleteMyAvatar: async (intent: AvatarDeleteIntent) => {
+    if (
+      !intent.expectedAvatarFileId.trim() ||
+      !intent.idempotencyKey.trim()
+    ) {
+      throw buildApiError(
+        {
+          code: "AVATAR_DELETE_INTENT_INVALID",
+          message:
+            "Không thể xác định ảnh hoặc mã thao tác cần dùng để xoá an toàn.",
+        },
+        400,
+      );
+    }
+    const authority = {
+      userId: intent.userId,
+      workspaceId: intent.workspaceId,
+      authSessionId: intent.authSessionId,
+      authSessionEpoch: intent.authSessionEpoch,
+      bearerToken: intent.bearerToken,
+    } satisfies AvatarMutationAuthority;
+    const authorityHeaders = avatarMutationAuthorityHeaders(authority);
+    let receipt: AvatarDeleteReceipt;
+    try {
+      receipt = await request<AvatarDeleteReceipt>("/v1/me/avatar", {
+        method: "DELETE",
+        headers: {
+          "Idempotency-Key": intent.idempotencyKey,
+          ...authorityHeaders,
+        },
+        body: JSON.stringify({
+          expectedAvatarFileId: intent.expectedAvatarFileId,
+        }),
+      });
+    } catch (error) {
+      avatarMutationAuthorityHeaders(authority);
+      throw error;
+    }
+    avatarMutationAuthorityHeaders(authority);
+    return receipt;
+  },
+  changePassword: async (
+    payload: {
+      currentPassword: string;
+      newPassword: string;
+    },
+    idempotencyKey: string,
+  ) => {
+    if (!idempotencyKey.trim()) {
+      throw buildApiError(
+        {
+          code: "IDEMPOTENCY_KEY_REQUIRED",
+          message:
+            "Đổi mật khẩu cần mã thao tác ổn định để có thể thử lại an toàn.",
+        },
+        400,
+      );
+    }
+    return parsePasswordChangeReceipt(
+      await request<unknown>("/v1/me/password", {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      }),
+    );
+  },
   getTwoFactorStatus: () => request<TwoFactorStatusResponse>("/me/2fa"),
-  startTwoFactorEnrollment: () =>
-    request<TwoFactorEnrollmentResponse>("/me/2fa/enroll", {
+  async startTwoFactorEnrollment(intent: TwoFactorEnrollmentStartIntent) {
+    assertTwoFactorEnrollmentStartIntent(intent);
+    assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
+    const payload = await request<unknown>("/v1/me/2fa/enroll", {
       method: "POST",
+      headers: { "Idempotency-Key": intent.idempotencyKey },
       body: JSON.stringify({ method: "app" }),
-    }),
-  async verifyTwoFactorEnrollment(payload: {
-    enrollmentId: string;
-    code: string;
-  }) {
-    const result = await request<TwoFactorVerifiedResponse>("/me/2fa/verify", {
-      method: "POST",
-      body: JSON.stringify(payload),
     });
+    assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
+    return parseTwoFactorEnrollmentStartReceipt(payload, intent);
+  },
+  async verifyTwoFactorEnrollment(intent: TwoFactorEnrollmentIntent) {
+    assertTwoFactorEnrollmentIntent(intent);
+    assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
+    const payload = await request<unknown>("/v1/me/2fa/verify", {
+      method: "POST",
+      headers: { "Idempotency-Key": intent.idempotencyKey },
+      body: JSON.stringify({
+        enrollmentId: intent.enrollmentId,
+        code: intent.code,
+      }),
+    });
+    assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
+    const result = parseTwoFactorEnrollmentReceipt(
+      payload,
+      intent,
+    );
+    return result;
+  },
+  async acknowledgeTwoFactorRecoveryCodes(intent: TwoFactorRecoveryAckIntent) {
+    assertTwoFactorRecoveryAckIntent(intent);
+    assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
+    const payload = await request<unknown>("/v1/me/2fa/recovery-codes/ack", {
+      method: "POST",
+      headers: { "Idempotency-Key": intent.idempotencyKey },
+      body: JSON.stringify({
+        deliveryId: intent.deliveryId,
+        recoveryAckToken: intent.recoveryAckToken,
+      }),
+    });
+    assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
+    const result = parseTwoFactorRecoveryAckReceipt(
+      payload,
+      {
+        userId: intent.userId,
+        enrollmentId: intent.enrollmentId,
+        deliveryId: intent.deliveryId,
+      },
+    );
     setTwoFactorToken(result.twoFactorToken);
     return result;
   },
@@ -1396,31 +2718,79 @@ export const smartHealthApi = {
       body: JSON.stringify({ code }),
     }),
   listSessions: () => request<{ sessions: AuthSession[] }>("/auth/sessions"),
-  revokeSession: (sessionId: string, idempotencyKey: string) =>
-    request<{ session: AuthSession; revoked: boolean }>(
-      `/auth/sessions/${encodeURIComponent(sessionId)}/revoke`,
-      {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-      },
+  revokeSession: async (intent: AuthSessionRevokeIntent) => {
+    assertAuthSessionRevokeIntent(intent, intent.userId);
+    return parseAuthSessionRevokeReceipt(
+      await request<unknown>(
+        `/v1/auth/sessions/${encodeURIComponent(intent.sessionId)}/revoke`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": intent.idempotencyKey },
+        },
+      ),
+      intent,
+      intent.userId,
+    );
+  },
+  requestRole: async (
+    payload: Record<string, unknown>,
+    idempotencyKey: string,
+  ) => {
+    if (!idempotencyKey.trim()) {
+      throw buildApiError(
+        {
+          code: "IDEMPOTENCY_KEY_REQUIRED",
+          message:
+            "Gửi hồ sơ quyền cần mã thao tác ổn định để có thể thử lại an toàn.",
+        },
+        400,
+      );
+    }
+    return request<RoleRequestReceipt>("/v1/auth/role-request", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(payload),
+    });
+  },
+  listPublicClinics: async (): Promise<{ clinics: PublicClinicOption[] }> => ({
+    clinics: parsePublicClinicCatalog(
+      await request<unknown>("/catalog/clinics"),
     ),
-  requestRole: (payload: Record<string, unknown>) =>
-    request<{ user: ApiUser; roleRequest: { status: string } }>(
-      "/auth/role-request",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
+  }),
+  uploadRoleRequestDocument: async (file: File, idempotencyKey: string) => {
+    if (!idempotencyKey.trim()) {
+      throw buildApiError(
+        {
+          code: "IDEMPOTENCY_KEY_REQUIRED",
+          message:
+            "Tải tài liệu xác minh cần mã thao tác ổn định để có thể thử lại an toàn.",
+        },
+        400,
+      );
+    }
+    return request<{
+      document: {
+        id: string;
+        userId: string;
+        organizationId: string;
+        name: string;
+        contentType: string;
+        byteSize: number;
+        sha256: string;
+        uploadedAt: string;
+      };
+      operationId: string;
+      replayed: boolean;
+    }>("/auth/role-request-document", {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type,
+        "X-File-Name": file.name,
+        "Idempotency-Key": idempotencyKey,
       },
-    ),
-  uploadRoleRequestDocument: (file: File) =>
-    request<{ document: { id: string; name: string } }>(
-      "/auth/role-request-document",
-      {
-        method: "POST",
-        headers: { "Content-Type": file.type, "X-File-Name": file.name },
-        body: file,
-      },
-    ),
+      body: file,
+    });
+  },
   requestWorkspace: (
     payload: Record<string, unknown>,
     idempotencyKey: string,
@@ -1442,39 +2812,112 @@ export const smartHealthApi = {
       body: JSON.stringify(payload),
     }),
   portalStatus: () => request<PortalStatusPayload>("/portal/status"),
-  portalBilling: () => request<PortalBillingPayload>("/portal/billing"),
-  overview: () => request<OverviewPayload>("/portal/overview"),
-  monitoring: () =>
-    request<{
-      status: unknown;
-      devices: Device[];
-      scans: Scan[];
-      alerts: Array<Record<string, unknown>>;
-    }>("/portal/monitoring"),
+  portalBilling: async (expectedWorkspaceId: string) =>
+    parsePortalBillingResponse(
+      await request<unknown>("/v1/portal/billing"),
+      expectedWorkspaceId,
+    ),
+  overview: async (
+    expectedWorkspaceId: string,
+    query: OverviewQuery = { range: "today", timezoneOffsetMinutes: 0 },
+  ) =>
+    parsePortalOverviewResponse(
+      await request<unknown>("/v1/portal/overview", {
+        query: {
+          range: query.range,
+          timezoneOffsetMinutes: query.timezoneOffsetMinutes,
+        },
+      }),
+      expectedWorkspaceId,
+      query,
+    ),
+  monitoring: async (expectedWorkspaceId: string) =>
+    parsePortalMonitoringResponse(
+      await request<unknown>("/v1/portal/monitoring"),
+      expectedWorkspaceId,
+    ),
   listPatients: (q?: string) =>
     request<{ patients: Patient[] }>("/portal/patients", { query: { q } }),
   getPatient: (id: string) =>
     request<unknown>(`/portal/patients/${encodeURIComponent(id)}`),
-  createPatient: (payload: Partial<Patient>, idempotencyKey: string) =>
+  resolvePatientMutationAuthority: async (
+    expectedUserId: string,
+    expectedWorkspaceId: string,
+  ): Promise<PatientMutationAuthority> => {
+    const authSessionEpoch = getAuthSessionEpochSnapshot();
+    const bearerSnapshot = getToken();
+    if (!bearerSnapshot || !expectedUserId.trim() || !expectedWorkspaceId.trim()) {
+      throw buildApiError(
+        {
+          code: "PATIENT_MUTATION_AUTHORITY_REQUIRED",
+          message: "Chưa xác nhận tài khoản, workspace và phiên đăng nhập hiện tại.",
+        },
+        409,
+      );
+    }
+    const result = await request<{ sessions: AuthSession[] }>("/auth/sessions");
+    if (
+      getAuthSessionEpochSnapshot() !== authSessionEpoch ||
+      getToken() !== bearerSnapshot
+    ) {
+      throw buildApiError(
+        {
+          code: "AUTH_SESSION_REPLACED",
+          message: "Phiên đăng nhập đã thay đổi trước khi gửi thao tác hồ sơ.",
+        },
+        409,
+      );
+    }
+    const currentSession = result.sessions.find(
+      (session) => session.current === true && !session.revokedAt,
+    );
+    const authority = {
+      expectedUserId: expectedUserId.trim(),
+      expectedWorkspaceId: expectedWorkspaceId.trim(),
+      expectedAuthSessionId: String(currentSession?.id || "").trim(),
+      authSessionEpoch,
+    } satisfies PatientMutationAuthority;
+    patientMutationAuthorityHeaders(authority);
+    return authority;
+  },
+  createPatient: (
+    payload: Partial<Patient>,
+    idempotencyKey: string,
+    authority?: PatientMutationAuthority,
+  ) =>
     request<unknown>("/portal/patients", {
       method: "POST",
-      headers: { "Idempotency-Key": idempotencyKey },
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        ...patientMutationAuthorityHeaders(authority),
+      },
       body: JSON.stringify(payload),
     }),
   updatePatient: (
     id: string,
     payload: Partial<Patient>,
     idempotencyKey: string,
+    authority?: PatientMutationAuthority,
   ) =>
     request<unknown>(`/portal/patients/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      headers: { "Idempotency-Key": idempotencyKey },
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        ...patientMutationAuthorityHeaders(authority),
+      },
       body: JSON.stringify(payload),
     }),
-  deletePatient: (id: string, idempotencyKey: string) =>
+  deletePatient: (
+    id: string,
+    idempotencyKey: string,
+    authority?: PatientMutationAuthority,
+  ) =>
     request<unknown>(`/portal/patients/${encodeURIComponent(id)}`, {
       method: "DELETE",
-      headers: { "Idempotency-Key": idempotencyKey },
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        ...patientMutationAuthorityHeaders(authority),
+      },
     }),
   validatePatientImport: (file: File, idempotencyKey: string) =>
     request<unknown>("/portal/patients/import/validate", {
@@ -1496,34 +2939,48 @@ export const smartHealthApi = {
         headers: { "Idempotency-Key": idempotencyKey },
       },
     ),
-  listPatientShares: (id: string) =>
-    request<{ shares: PatientShare[] }>(
-      `/portal/patients/${encodeURIComponent(id)}/shares`,
+  listPatientShares: async (id: string, expectedWorkspaceId: string) =>
+    parsePatientShareListResponse(
+      await request<unknown>(
+        `/v1/portal/patients/${encodeURIComponent(id)}/shares`,
+      ),
+      { workspaceId: expectedWorkspaceId, patientId: id },
     ),
   createPatientShare: (
     id: string,
     payload: CreatePatientSharePayload,
     idempotencyKey: string,
+    expectedWorkspaceId: string,
   ) =>
-    request<{ share: PatientShare }>(
-      `/portal/patients/${encodeURIComponent(id)}/shares`,
-      {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify(payload),
-      },
+    request<unknown>(`/v1/portal/patients/${encodeURIComponent(id)}/shares`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(payload),
+    }).then((response) =>
+      parsePatientShareCreateResponse(response, {
+        workspaceId: expectedWorkspaceId,
+        patientId: id,
+        intent: payload,
+      }),
     ),
   revokePatientShare: (
     patientId: string,
     shareId: string,
     idempotencyKey: string,
+    expectedWorkspaceId: string,
   ) =>
-    request<{ revoked: boolean; share: PatientShare }>(
-      `/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(shareId)}`,
+    request<unknown>(
+      `/v1/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(shareId)}`,
       {
         method: "DELETE",
         headers: { "Idempotency-Key": idempotencyKey },
       },
+    ).then((response) =>
+      parsePatientShareRevokeResponse(response, {
+        workspaceId: expectedWorkspaceId,
+        patientId,
+        shareId,
+      }),
     ),
   listAppointments: (query: Record<string, QueryValue> = {}) =>
     request<{ appointments: Appointment[] }>("/portal/appointments", { query }),
@@ -1576,11 +3033,18 @@ export const smartHealthApi = {
         body: JSON.stringify(payload),
       },
     ),
-  deleteAppointment: (id: string) =>
-    request<{ deleted: boolean }>(
+  deleteAppointment: (id: string, idempotencyKey: string) =>
+    request<{
+      deleted: true;
+      appointmentId: string;
+      workspaceId: string;
+      deletedAt: string;
+      replayed: boolean;
+    }>(
       `/portal/appointments/${encodeURIComponent(id)}`,
       {
         method: "DELETE",
+        headers: { "Idempotency-Key": idempotencyKey },
       },
     ),
   async listScans(query: Record<string, QueryValue> = {}) {
@@ -1599,10 +3063,11 @@ export const smartHealthApi = {
     };
   },
   listReviewQueue: (query: Record<string, QueryValue> = {}) =>
-    request<{ reviews: ClinicalReview[]; reviewQueue?: ClinicalReview[] }>(
-      "/portal/review-queue",
-      { query },
-    ),
+    request<{
+      workspaceId: string;
+      reviews: ClinicalReview[];
+      reviewQueue?: ClinicalReview[];
+    }>("/portal/review-queue", { query }),
   decideReview: (
     scanId: string,
     input: {
@@ -1612,7 +3077,7 @@ export const smartHealthApi = {
       idempotencyKey: string;
     },
   ) =>
-    request<{ review: ClinicalReview }>(
+    request<{ workspaceId: string; review: ClinicalReview }>(
       `/portal/review-queue/${encodeURIComponent(scanId)}/decision`,
       {
         method: "POST",
@@ -1625,12 +3090,15 @@ export const smartHealthApi = {
       },
     ),
   listClinicalAlerts: (query: Record<string, QueryValue> = {}) =>
-    request<{ alerts: ClinicalAlert[] }>("/portal/alerts", { query }),
+    request<{ workspaceId: string; alerts: ClinicalAlert[] }>(
+      "/portal/alerts",
+      { query },
+    ),
   acknowledgeClinicalAlert: (
     alertId: string,
     input: { note: string; expectedVersion: number; idempotencyKey: string },
   ) =>
-    request<{ alert: ClinicalAlert }>(
+    request<{ workspaceId: string; alert: ClinicalAlert }>(
       `/portal/alerts/${encodeURIComponent(alertId)}/acknowledge`,
       {
         method: "POST",
@@ -1645,7 +3113,7 @@ export const smartHealthApi = {
     alertId: string,
     input: { note: string; expectedVersion: number; idempotencyKey: string },
   ) =>
-    request<{ alert: ClinicalAlert }>(
+    request<{ workspaceId: string; alert: ClinicalAlert }>(
       `/portal/alerts/${encodeURIComponent(alertId)}/resolve`,
       {
         method: "POST",
@@ -1665,53 +3133,44 @@ export const smartHealthApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-  listDevices: () => request<{ devices: Device[] }>("/portal/devices"),
-  updateDevice: (id: string, payload: Partial<Device>) =>
-    request<{ device: Device }>(`/portal/devices/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
+  listDevices: async (expectedWorkspaceId: string) =>
+    parsePortalDeviceListResponse(
+      await request<unknown>("/v1/portal/devices"),
+      expectedWorkspaceId,
+    ),
+  updateDevice: (
+    id: string,
+    payload: Partial<Device>,
+    idempotencyKey: string,
+  ) =>
+    request<{ device: Device; replayed: boolean }>(
+      `/v1/portal/devices/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    ),
   activateDeviceByClaim: (
     payload: {
       deviceId: string;
       claimCode: string;
-      connectionMethod: "QR" | "manual";
+      connectionMethod: "QR" | "Manual";
+      organizationId: string;
     },
     idempotencyKey: string,
   ) =>
-    request<DevicePairingResponse>("/portal/devices/pair", {
+    request<unknown>("/portal/devices/pair", {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
-    }),
-  sendDeviceCommand: (id: string, input: SendDeviceCommandInput) =>
-    request<DeviceCommandResponse>(
-      `/portal/devices/${encodeURIComponent(id)}/commands`,
-      {
-        method: "POST",
-        headers: { "Idempotency-Key": input.idempotencyKey },
-        body: JSON.stringify({
-          type: input.type,
-          payload: input.payload || {},
-          ...(input.correlationId
-            ? { correlationId: input.correlationId }
-            : {}),
-          ...(input.ttlMs ? { ttlMs: input.ttlMs } : {}),
-        }),
-      },
+    }).then((response) =>
+      parseDevicePairingResponse(response, {
+        workspaceId: payload.organizationId,
+        deviceId: payload.deviceId,
+      }),
     ),
-  getDeviceCommand: (id: string, commandId: string, signal?: AbortSignal) =>
-    request<{ command: DeviceCommand }>(
-      `/portal/devices/${encodeURIComponent(id)}/commands/${encodeURIComponent(commandId)}`,
-      { signal },
-    ),
-  listDeviceCommands: (id: string, signal?: AbortSignal) =>
-    request<{ commands: DeviceCommand[] }>(
-      `/portal/devices/${encodeURIComponent(id)}/commands`,
-      { signal },
-    ),
-  listStaff: () =>
-    request<{ staff: ApiUser[]; doctors: ApiUser[] }>("/portal/staff"),
+  listStaff: () => request<PortalStaffResponse>("/portal/staff"),
   listStaffInvitations: (
     query: {
       organizationId?: string;
@@ -1811,6 +3270,32 @@ export const smartHealthApi = {
     ),
   listNotifications: () =>
     request<{ notifications: Notification[] }>("/portal/notifications"),
+  getNotificationInbox: () =>
+    request<NotificationInboxResponse>("/portal/notifications/inbox"),
+  markNotificationInboxRead: (id: string, idempotencyKey: string) =>
+    request<NotificationInboxMutationResponse>(
+      `/portal/notifications/inbox/${encodeURIComponent(id)}/read`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    ),
+  markAllNotificationInboxRead: (idempotencyKey: string) =>
+    request<NotificationInboxMutationResponse>(
+      "/portal/notifications/inbox/read-all",
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    ),
+  deleteNotificationInboxItem: (id: string, idempotencyKey: string) =>
+    request<NotificationInboxMutationResponse>(
+      `/portal/notifications/inbox/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    ),
   markNotificationRead: (id: string) =>
     request<{ notification: Notification }>(
       `/portal/notifications/${encodeURIComponent(id)}/read`,
@@ -1971,21 +3456,38 @@ export const smartHealthApi = {
       settings: Record<string, unknown>;
       workspace?: WorkspaceSummary;
     }>("/portal/settings", { method: "PATCH", body: JSON.stringify(payload) }),
-  updateWorkspace: (payload: Partial<WorkspaceSummary>) =>
-    request<{ workspace: WorkspaceSummary }>("/portal/settings/workspace", {
+  updateWorkspace: (intent: WorkspaceSettingsUpdateIntent) => {
+    assertWorkspaceSettingsIntent(intent);
+    return request<unknown>("/v1/portal/settings/workspace", {
       method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
-  createSupportTicket: (payload: { type: string; description: string }) =>
-    request<{ ticket: { id: string; status: string } }>("/portal/support", {
+      headers: { "Idempotency-Key": intent.idempotencyKey },
+      body: JSON.stringify({
+        ...intent.payload,
+        expectedVersion: intent.expectedVersion,
+      }),
+    }).then((response) =>
+      parseWorkspaceSettingsReceipt(
+        response,
+        intent,
+        intent.userId,
+        intent.workspaceId,
+      ),
+    );
+  },
+  createSupportTicket: (
+    payload: SupportTicketCreateInput,
+    idempotencyKey: string,
+    expected: SupportTicketReceiptExpectation,
+  ) =>
+    request<unknown>("/v1/portal/support", {
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
-    }),
-  shareTargets: (q?: string) =>
-    request<{ doctors: ShareTarget[]; workspaces: ShareTarget[] }>(
-      "/share-targets",
-      {
-        query: { q },
-      },
+    }).then((response) => parseSupportTicketCreateResponse(response, expected)),
+  shareTargets: (expectedWorkspaceId: string, q?: string) =>
+    request<unknown>("/v1/share-targets", {
+      query: { q },
+    }).then((response) =>
+      parseShareTargetsResponse(response, expectedWorkspaceId),
     ),
 };

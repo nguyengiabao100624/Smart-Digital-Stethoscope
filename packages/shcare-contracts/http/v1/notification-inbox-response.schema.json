@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-inbox-response.schema.json",
+  "title": "Shcare personal notification inbox response",
+  "description": "Canonical notification inbox for the authenticated account in its active workspace. organizationId remains a compatibility alias and is either empty for an account-wide item or equal to workspaceId.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "userId",
+    "workspaceId",
+    "notifications",
+    "updatedAt"
+  ],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "notifications": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/notification"
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "notification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "userId",
+        "workspaceId",
+        "organizationId",
+        "type",
+        "title",
+        "message",
+        "campaignId",
+        "audienceType",
+        "audienceRole",
+        "requestedChannels",
+        "inAppStatus",
+        "emailStatus",
+        "pushStatus",
+        "read",
+        "readAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "campaignId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "audienceType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "audienceRole": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "requestedChannels": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "in_app",
+              "email",
+              "push"
+            ]
+          }
+        },
+        "inAppStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "emailStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "pushStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "readAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

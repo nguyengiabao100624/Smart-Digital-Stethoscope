@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -96,11 +96,6 @@ function portalRoleLabel(user: AuthUser | null, isClinic: boolean) {
 function canAccessPortalRoute(user: AuthUser, pathname: string) {
   return canAccessRoute(user.capabilities, pathname);
 }
-
-const popoverBackdropStyle = {
-  backdropFilter: "blur(18px) saturate(140%)",
-  WebkitBackdropFilter: "blur(18px) saturate(140%)",
-} satisfies CSSProperties;
 
 export default function PortalLayout() {
   const location = useLocation();
@@ -212,7 +207,7 @@ export default function PortalLayout() {
       ? "BE lỗi"
       : "Đang kiểm tra BE";
   const backendStatusTitle = backendStatus
-    ? `Backend ${backendStatus.service} · ${backendStatus.mode.dataBackend} · ${backendStatus.scoped.devicesOnline}/${backendStatus.scoped.devicesCount} thiết bị online`
+    ? `Backend ${backendStatus.service} · ${backendStatus.scoped.devicesOnline}/${backendStatus.scoped.devicesCount} thiết bị online`
     : "Portal đang kiểm tra kết nối backend Smart Health";
 
   const handleLogout = async () => {
@@ -338,10 +333,10 @@ export default function PortalLayout() {
                 <Menu size={20} />
               </button>
               <div className="clinical-topbar-title">
-                <p>
+                <p className="clinical-topbar-context">
                   {workspaceName} · {roleLabel}
                 </p>
-                <h1>{title}</h1>
+                <h1 className="clinical-topbar-page-title">{title}</h1>
               </div>
             </div>
 
@@ -390,7 +385,6 @@ export default function PortalLayout() {
                   {notifOpen && (
                     <motion.div
                       className="clinical-popover"
-                      style={popoverBackdropStyle}
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
@@ -462,7 +456,6 @@ export default function PortalLayout() {
                   {userMenuOpen && (
                     <motion.div
                       className="clinical-popover"
-                      style={popoverBackdropStyle}
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}

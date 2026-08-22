@@ -7,7 +7,6 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
-  updatePassword,
   type User,
 } from "firebase/auth";
 
@@ -60,7 +59,20 @@ export async function signOutFirebase() {
   await signOut(getFirebaseAuth());
 }
 
-export async function changeFirebasePassword(currentPassword: string, newPassword: string) {
+export function getCurrentFirebaseUid() {
+  return getFirebaseAuth().currentUser?.uid || null;
+}
+
+export async function signOutFirebaseIfUidMatches(expectedUid: string) {
+  const auth = getFirebaseAuth();
+  if (!expectedUid || auth.currentUser?.uid !== expectedUid) {
+    return false;
+  }
+  await signOut(auth);
+  return true;
+}
+
+export async function reauthenticateFirebasePassword(currentPassword: string) {
   const auth = getFirebaseAuth();
   const user = auth.currentUser;
   const email = user?.email || "";
@@ -70,8 +82,10 @@ export async function changeFirebasePassword(currentPassword: string, newPasswor
 
   const credential = EmailAuthProvider.credential(email, currentPassword);
   await reauthenticateWithCredential(user, credential);
-  await updatePassword(user, newPassword);
-  return user.getIdToken(true);
+  return {
+    idToken: await user.getIdToken(true),
+    uid: user.uid,
+  };
 }
 
 export async function sendFirebasePasswordReset(email: string) {

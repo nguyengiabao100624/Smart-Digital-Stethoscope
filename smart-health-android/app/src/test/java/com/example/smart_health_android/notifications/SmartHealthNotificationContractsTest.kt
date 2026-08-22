@@ -1,5 +1,7 @@
 package com.example.smart_health_android.notifications
 
+import com.example.smart_health_android.navigation.MobileExperience
+import com.example.smart_health_android.navigation.MobileRouteAccessContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +49,24 @@ class SmartHealthNotificationContractsTest {
     }
 
     @Test
+    fun backendDeviceDetailPayloadOpensTheNativeDeviceManagementSurface() {
+        assertEquals(
+            SmartHealthNotificationDestination.DeviceManagement,
+            SmartHealthNotificationDestination.fromPayload(
+                mapOf(
+                    "destination" to "device_detail",
+                    "deviceId" to "device-42",
+                    "type" to "success",
+                ),
+            ),
+        )
+        assertEquals(
+            SmartHealthNotificationDestination.DeviceManagement,
+            SmartHealthNotificationDestination.fromWire("device_detail", "device-42"),
+        )
+    }
+
+    @Test
     fun wireDestinationCannotInjectAnArbitraryNavigationRoute() {
         assertEquals(
             SmartHealthNotificationDestination.RecordDetail("record-1"),
@@ -77,63 +97,175 @@ class SmartHealthNotificationContractsTest {
     }
 
     @Test
-    fun preferenceMutationChangesOneFieldAndPreservesPortalManagedFields() {
-        val current = linkedMapOf(
-            "enabled" to false,
-            "messages" to true,
-            "doctorRequests" to false,
-            "newLogin" to false,
-            "portalOnly" to true,
-        )
-
+    fun preferenceMutationSendsExactlyOneCloudField() {
         val request = NotificationPreferenceMutation(
-            field = NotificationPreferenceField.Enabled,
-            value = true,
-        ).requestFields(current)
-        val merged = request.getValue("notificationPreferences")
+            field = NotificationPreferenceField.Appointments,
+            value = false,
+        ).requestFields()
 
-        assertEquals(true, merged["enabled"])
-        assertEquals(true, merged["messages"])
-        assertEquals(false, merged["doctorRequests"])
-        assertEquals(false, merged["newLogin"])
-        assertEquals(true, merged["portalOnly"])
-        assertEquals(current.keys, merged.keys)
+        assertEquals(
+            mapOf(
+                "key" to "appointments",
+                "enabled" to false,
+            ),
+            request,
+        )
     }
 
     @Test
-    fun enablingWithoutPermissionWaitsForTheSystemResultBeforePersisting() {
-        val initialDecision = NotificationPermissionPolicy.onToggle(
-            requestedEnabled = true,
-            hasSystemPermission = false,
+    fun soundAndVibrationAreNotCloudPreferenceFields() {
+        assertEquals(
+            setOf(
+                "enabled",
+                "doctorRequests",
+                "abnormalResults",
+                "deviceOffline",
+                "appointments",
+                "messages",
+                "aiUpdates",
+                "newLogin",
+            ),
+            NotificationPreferenceField.entries.map { it.backendKey }.toSet(),
+        )
+    }
+
+    @Test
+    fun androidDeliveryUsesStableSystemOwnedChannelIds() {
+        assertEquals(
+            "smart_health_alerts",
+            SmartHealthNotificationChannel.ClinicalAlerts.channelId,
+        )
+        assertEquals(
+            "shcare_updates",
+            SmartHealthNotificationChannel.GeneralUpdates.channelId,
+        )
+    }
+
+    @Test
+    fun runtimeReadinessRequiresPermissionAppChannelProviderAndSessionTruth() {
+        val ready = NotificationRuntimeReadiness(
+            firebaseConfigured = true,
+            runtimePermissionGranted = true,
+            appNotificationsEnabled = true,
+            channelEnabled = true,
+            encryptedSessionMatches = true,
         )
 
-        assertEquals(NotificationPermissionDecision.RequestSystemPermission, initialDecision)
-        assertEquals(
-            NotificationPermissionDecision.Persist(
-                NotificationPreferenceMutation(NotificationPreferenceField.Enabled, true)
-            ),
-            NotificationPermissionPolicy.onPermissionResult(granted = true),
-        )
-        assertEquals(
-            NotificationPermissionDecision.Persist(
-                NotificationPreferenceMutation(NotificationPreferenceField.Enabled, false)
-            ),
-            NotificationPermissionPolicy.onPermissionResult(granted = false),
-        )
+        assertTrue(ready.ready)
+        assertFalse(ready.copy(runtimePermissionGranted = false).ready)
+        assertFalse(ready.copy(appNotificationsEnabled = false).ready)
+        assertFalse(ready.copy(channelEnabled = false).ready)
     }
 
     @Test
     fun notificationNavigationWaitsForAnAuthenticatedDestination() {
-        assertFalse(NotificationNavigationPolicy.canNavigate("splash", hasAuthenticatedSession = false))
-        assertFalse(NotificationNavigationPolicy.canNavigate("login", hasAuthenticatedSession = true))
+        val authority = notificationAuthority()
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                "splash",
+                destinationRoute = "notifications",
+                hasAuthenticatedSession = false,
+                hasMatchingNotificationOwner = true,
+                authority = authority,
+            )
+        )
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                "login",
+                destinationRoute = "notifications",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = authority,
+            )
+        )
         assertFalse(
             NotificationNavigationPolicy.canNavigate(
                 "doctor-approval-pending",
+                destinationRoute = "notifications",
                 hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = authority,
             )
         )
-        assertTrue(NotificationNavigationPolicy.canNavigate("dashboard", hasAuthenticatedSession = true))
-        assertTrue(NotificationNavigationPolicy.canNavigate("notification-settings", hasAuthenticatedSession = true))
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                "dashboard",
+                destinationRoute = "notifications",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = false,
+                authority = authority,
+            )
+        )
+        assertTrue(
+            NotificationNavigationPolicy.canNavigate(
+                "dashboard",
+                destinationRoute = "notifications",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = authority,
+            )
+        )
+        assertTrue(
+            NotificationNavigationPolicy.canNavigate(
+                "notification-settings",
+                destinationRoute = "notifications",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = authority,
+            )
+        )
+    }
+
+    @Test
+    fun notificationDestinationIsWhitelistedAndCapabilityChecked() {
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                currentRoute = "dashboard",
+                destinationRoute = "records",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = notificationAuthority(),
+            ),
+        )
+        assertTrue(
+            NotificationNavigationPolicy.canNavigate(
+                currentRoute = "dashboard",
+                destinationRoute = "records",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = notificationAuthority(
+                    capabilities = setOf("workspace.scans.view"),
+                ),
+            ),
+        )
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                currentRoute = "dashboard",
+                destinationRoute = "../../settings",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = notificationAuthority(),
+            ),
+        )
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                currentRoute = "dashboard",
+                destinationRoute = "doctor-approval-pending",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = notificationAuthority(),
+            ),
+        )
+        assertFalse(
+            NotificationNavigationPolicy.canNavigate(
+                currentRoute = "dashboard",
+                destinationRoute = "notifications",
+                hasAuthenticatedSession = true,
+                hasMatchingNotificationOwner = true,
+                authority = notificationAuthority(),
+                expectedAuthorityEpoch = 2L,
+            ),
+        )
     }
 
     @Test
@@ -152,3 +284,14 @@ class SmartHealthNotificationContractsTest {
         assertEquals("appointments?appointmentId=appt%2F42%20west", destination.route)
     }
 }
+
+private fun notificationAuthority(
+    capabilities: Set<String> = setOf("workspace.dashboard.view"),
+) = MobileRouteAccessContext(
+    userId = "doctor-1",
+    workspaceId = "workspace-1",
+    role = "doctor",
+    capabilities = capabilities,
+    experience = MobileExperience.Clinical,
+    authorityEpoch = 1L,
+)

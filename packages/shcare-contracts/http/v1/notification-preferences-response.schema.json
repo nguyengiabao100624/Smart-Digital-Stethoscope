@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-preferences-response.schema.json",
+  "title": "Shcare notification preferences response",
+  "description": "Canonical account-wide notification settings returned by GET or PATCH /api/v1/me/notification-preferences. Identity, workspace scope and channel availability are backend authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "userId",
+    "workspaceId",
+    "ownership",
+    "preferences",
+    "channels",
+    "updatedAt",
+    "replayed"
+  ],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "workspaceId": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "ownership": {
+      "$ref": "#/$defs/ownership"
+    },
+    "preferences": {
+      "$ref": "#/$defs/preferences"
+    },
+    "channels": {
+      "$ref": "#/$defs/channels"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "userId"],
+      "properties": {
+        "kind": {
+          "const": "self"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "preferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "doctorRequests",
+        "abnormalResults",
+        "deviceOffline",
+        "appointments",
+        "messages",
+        "aiUpdates",
+        "newLogin"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "doctorRequests": {
+          "type": "boolean"
+        },
+        "abnormalResults": {
+          "type": "boolean"
+        },
+        "deviceOffline": {
+          "type": "boolean"
+        },
+        "appointments": {
+          "type": "boolean"
+        },
+        "messages": {
+          "type": "boolean"
+        },
+        "aiUpdates": {
+          "type": "boolean"
+        },
+        "newLogin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "channelAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "status", "reasonCode"],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["ready", "disabled", "unavailable"]
+        },
+        "reasonCode": {
+          "type": "string",
+          "maxLength": 160
+        }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inApp", "email", "push"],
+      "properties": {
+        "inApp": {
+          "$ref": "#/$defs/channelAvailability"
+        },
+        "email": {
+          "$ref": "#/$defs/channelAvailability"
+        },
+        "push": {
+          "$ref": "#/$defs/channelAvailability"
+        }
+      }
+    }
+  }
+}

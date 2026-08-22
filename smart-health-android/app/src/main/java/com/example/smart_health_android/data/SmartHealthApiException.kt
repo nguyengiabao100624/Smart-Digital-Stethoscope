@@ -12,7 +12,7 @@ class SmartHealthApiException(
 ) : IOException(message)
 
 fun SmartHealthApiException.twoFactorChallengeOrNull(): TwoFactorChallenge? {
-    if (code != "TWO_FACTOR_REQUIRED") return null
+    if (code !in setOf("TWO_FACTOR_REQUIRED", "TWO_FACTOR_CHALLENGE_REQUIRED")) return null
     val challengeId = details["challengeId"].orEmpty()
     val method = details["method"].orEmpty()
     val expiresAt = details["expiresAt"].orEmpty()

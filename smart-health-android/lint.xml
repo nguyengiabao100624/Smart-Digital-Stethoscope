@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+        SDK 37, AGP/Gradle, and dependency upgrades require their own compatibility
+        train with Firebase/provider and runtime verification. Keep the Phase 2
+        candidate on the versions already covered by source, unit, and build gates.
+        These ignores are limited to version recommendations in the owning files;
+        functional lint checks remain enabled and no baseline is used.
+    -->
+    <issue id="AndroidGradlePluginVersion">
+        <ignore path="gradle/libs.versions.toml" />
+        <ignore path="gradle/wrapper/gradle-wrapper.properties" />
+    </issue>
+    <issue id="GradleDependency">
+        <ignore path="app/build.gradle.kts" />
+        <ignore path="gradle/libs.versions.toml" />
+    </issue>
+    <issue id="NewerVersionAvailable">
+        <ignore path="gradle/libs.versions.toml" />
+    </issue>
+    <issue id="OldTargetApi">
+        <ignore path="app/build.gradle.kts" />
+    </issue>
+</lint>

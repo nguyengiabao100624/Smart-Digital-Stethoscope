@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-07-23
+Last updated: 2026-08-15
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -10,6 +10,53 @@ This file records the real project state. Keep it factual: implemented, partial,
 - Partial: some real integration exists, but important paths still use mock/demo/scaffold logic.
 - Scaffold: structure exists but is not the primary runtime path.
 - Not done: planned only.
+
+## 2026-08-15 Phase 3 complete; Phase 4 in progress
+
+- Governing plan: **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform
+  Admin, Android và firmware”**.
+- Phase 3 is real at source/build/local proof with no known P0/P1 after final
+  independent review. Web Avatar `62/62`, Auth `396/396`, contracts `121/121`,
+  TypeScript/ESLint/build pass; backend Avatar `22/22` + API, 2FA `35/35` and
+  aggregate repository/workspace gates pass.
+- Phase 4 remains partial/in progress. Current candidate evidence is shared
+  `44/44`; backend check plus device-security `42/42`; Web contracts `122/122`,
+  claim `10/10`, device-route subset `8/8`; Admin `183/183`; Android `108`
+  suites / `781` tests, device package `48/48`, main/AndroidTest compile, lint and
+  assemble. Android APK SHA-256 is
+  `F32C7C3A85E40A217ACC8AEEC2DDF6DD0DA6694FA69B53BC4AF94263DD6828FE`.
+- Firmware source-contract PASS and MCU compile-only PASS (`0` executed). Normal
+  and OTA images are both `1,104,640` bytes with SHA-256
+  `CB2B0A8749697FEEB14F4720E64A0CF8629109CDF6377784B7DB7F6CB2BAA7B5` and
+  `CA79DE814DAC8D6BB3A48EB87F80E6ADDF331C62009129C013C250F30A074801`.
+  Independent four-blocker re-review found no firmware software blocker in that
+  remediation scope; earlier pre-remediation hashes are superseded.
+- Cross-surface exit review reopened five P1 software blockers: exclude
+  revoke/rotate/OTA/audio types from generic Admin command; share the ownership
+  lock/current row in SQL pair; bind pair contract, Portal and Android to exact
+  active workspace plus receipt/poll authority; give Admin revoke a stable
+  `Idempotency-Key`; and add shared/OpenAPI command/revoke/rotate/OTA contracts.
+  Therefore this is non-final candidate proof, not a Phase 4 closure.
+- Provider/live/PostgreSQL runtime remains `BLOCKED`. Native C++ execution is
+  unavailable because host `gcc/g++` and equivalents are absent; firmware
+  HIL/flash/serial/I2S/WSS/rollback/16 MB proof is
+  `DEFERRED — chờ phần cứng`. These are separate proof classes.
+
+## 2026-08-09 Phase 2 closed; Phase 3 in progress
+
+- Real/source-local: Web/Admin brand, theme, canonical primitives/composites,
+  responsive states and independent Android mobile foundation. Active Web CSS
+  has no `!important`; Web, Admin and Android gates are green at the exact
+  counts recorded in `SMART_HEALTH_ACTIVE_CHECKPOINT.md`.
+- Real/source-local: typed Android authority/deep links, exact owner/workspace
+  epochs, SignUp abandonment cleanup, data-only notification binding and
+  session-revoke canonical receipt.
+- In progress: Phase 3 Identity/Profile/Security. Current implementation slices
+  are Forgot Password ViewModel/repository, Family CRUD exact receipts and
+  Workspace Settings atomic/idempotent mutation.
+- Blocked external proof: Firebase/provider credentials, emulator/TalkBack and
+  golden runs, live Portal performance, Postgres/live deployment and physical
+  firmware/HIL. These are not inferred from local builds.
 
 ## 2026-07-18 Phase 5 Scan/Audio/Review/Alert Source-Local Closure
 
@@ -2316,3 +2363,389 @@ KLTN report artifacts generated from this evidence set:
 - The exact compatibility, artifact and promotion record is
   `SMART_HEALTH_RELEASE_CANDIDATE_MANIFEST.md`. No preview/live promotion has
   occurred.
+
+## 2026-07-26 Shcare master-plan Phase 2 — Android authority/navigation foundation
+
+- Android now has a typed mobile route contract independent of Web layout. Protected destinations require backend-confirmed active account, exact Firebase UID binding, active workspace membership, supported native experience and route capabilities; account lock/delete, membership suspension, missing binding and stale authority fail closed.
+- Protected Compose content is gated before the first frame, on foreground return, while a retained destination crosses the 30-second authority TTL and across Activity/configuration replacement. Cancellation preserves the reauthorization lock for the replacement owner. Old `/me` success or failure cannot overwrite/clear a newer login or workspace authority because exact authority epoch, API auth-session epoch and atomic conditional invalidation are enforced.
+- API bearer token plus session epoch are one immutable request snapshot. Terminal HTTP/account/workspace failures are tagged with the request-owning epoch; stale-token outcomes cannot terminate a replacement session. Account-terminal teardown closes notification delivery first, clears posted notifications and push ownership, signs out Firebase and clears API auth. Workspace-terminal teardown closes the notification session while leaving account recovery possible.
+- The terminal authorization ledger is bounded but acknowledgement-owned: the current unacknowledged head is replayed across collector replacement and is never evicted by overflow. Missing Compose reauthorization runtime fails closed to startup instead of silently disabling TTL checks.
+- Verification: `279/279` unit tests, 43 suites, zero failure/error/skip; `25/25` connected tests on `Shcare_RC2_API35(AVD)` / Android 15; `assembleDebug` and focused Kotlin/AndroidTest compilation pass. Final independent security/correctness review found no remaining P0/P1/P2 in this change set.
+- Debug APK is `24,841,196` bytes, SHA-256 `367D9A2E17AAF05839510196F8FB699165A5A0882F5518952E306EF5279D91A7`. This is debug/source/emulator proof only: the build had no `google-services.json`, and no live Firebase/FCM/provider, production signing, physical device, TalkBack manual or firmware HIL proof was produced.
+- Global progress remains Phase 2 of **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. The next Android foundation work is native adaptive scaffold/navigation; Web and Android UI/UX remain deliberately separate.
+
+## 2026-07-27 Shcare master-plan Phase 2 — adaptive scaffold and secure notification wake-up
+
+- The exact governing plan remains **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Overall status is still Phase 2; internal slice names do not replace the Phase 0–8 overview.
+- Android has a native compact/rail scaffold, typed primary-route authority, purposeful 180–220 ms motion, accessible header actions and system-bar handling. Web/Admin components or layouts were not ported into Compose.
+- Notification registration now verifies exact backend user, workspace, auth session, token, protocol and app-version ownership. Encrypted local binding, workspace-switch invalidation, logout ordering, signed exported intents and stale account/workspace suppression fail closed.
+- Backend FCM is data-only protocol v2. It contains only notification ID, canonical owner/workspace, compatibility alias, protocol and time. It carries no provider clinical copy, entity ID, deep link, auth-session ID or app version; Android generates generic local copy only after its encrypted gate accepts the message.
+- Backend dependency audit is clean after pinning compatible `google-gax@5.0.4`: `npm audit` is `0` total. Backend check/base/repository/workspace gates pass, Firebase Admin compatibility is `4/4`, notification push is `9/9` including shared-schema parity, and shared contracts are `14/14`.
+- Android evidence: `304/304` unit tests in `48` suites, `33/33` API-35 connected tests, debug assemble and lint with `0` Fatal/Error, `40` warnings and `6` hints. APK is `24,842,110` bytes, SHA-256 `DFCD7DF38E4C40C8D6A8ABC78C4E874885006FE3187E612236D13EF2ADC0BE18`.
+- Source/local/emulator proof does not close provider/live/hardware gates. Real Firebase/FCM is blocked without `google-services.json`; PostgreSQL migration 044, production signing, physical-device/TalkBack, firmware HIL and production promotion are also unproven.
+- Phase 2 remains open for clinical Patients/Alerts screens, full dark-mode/token cleanup, two-pane/foldable/412 dp golden coverage, IME/edge-to-edge/font-200%/TalkBack runtime checks and remaining Web/Admin UI-foundation work.
+
+## 2026-07-27 Shcare master-plan Phase 2 — primary-screen semantic theme
+
+- Android now has light/dark semantic brand-header roles independent from Web tokens. Doctor dashboard, patient dashboard, Settings, Medical Records and New Scan use Material/Shcare semantic background, surface, border, content, action and status colors; the five files contain no `Color.White`, inline Compose hex colors or legacy light-only palette names.
+- Status containers use paired container/content roles for success, warning, offline and error instead of alpha-tinted fixed colors. Back/forward/logout icons on touched screens use Android auto-mirrored variants.
+- Regression coverage includes `PrimaryScreenThemeContractTest` plus light/dark runtime assertions in `PrimaryScreenThemeRuntimeTest`.
+- Fresh Android evidence is `307/307` JVM tests across `49` suites, `35/35` connected tests on the Android 15 API-35 AVD, debug assemble, lint with `0` Fatal/Error (`40` warnings, `6` hints), and clean `git diff --check`. APK is `24,849,877` bytes with SHA-256 `46E57E83EB500E379F34CF695C98C5FDFB4F00A8B6EC7223921E0C4BF168C25B`.
+- This closes only the five-screen source/build/emulator theme slice. Phase 2 remains in progress for remaining screens, native Patients/Alerts, adaptive/golden/IME/font/TalkBack work and the Web/Admin foundation. Provider/live, production-signing, physical-device and firmware-HIL proof remain unproven.
+
+## 2026-07-27 Shcare master-plan Phase 2 — Android Auth and approval truthfulness
+
+- Signup is migrated to native semantic light/dark styling with status/navigation/IME insets, field validation, retryable catalogs, an unsaved-change guard and exact untrimmed password handling.
+- The canonical email-link verification flow remains real. Legacy manual OTP and fake phone/contact success paths are removed, unavailable providers are explicit, and contact values are removed from navigation routes.
+- Doctor approval has native adaptive/auth UX, accessible pending/error states, catalog retry and guarded form submission. Resubmission is now a single complete role-request mutation and the UI accepts only a matching user plus a recognized backend lifecycle.
+- Source/build/emulator gates pass: `315/315` JVM tests in `50` suites, `35/35` connected tests, debug assemble, lint `0` Fatal/Error and clean `git diff --check`. Debug APK SHA-256 is `061FB2B1419514A258957A2FF950DA13E23679131039372601A5B909E91304F1`.
+- Phase 2 remains open for all remaining production-screen theme migrations, native Patients/Alerts, adaptive/golden/font/IME/TalkBack coverage and Web/Admin foundation work. Missing provider credentials and physical/live targets remain blockers, not successful proof.
+
+## 2026-07-27 Shcare master-plan Phase 2 — canonical Android device UI
+
+- The fake Bluetooth radar/hard-coded QR demo has zero callers and is archived outside all source sets with a recorded pre-archive checksum. Compatibility URLs resolve to `DevicePairingScreen`, not the demo.
+- The canonical pairing UI remains QR/manual claim → secure setup AP → authenticated WSS online confirmation. It never reports connected from a REST acceptance alone and exposes no BLE claim.
+- Stethoscope settings now use repository/ViewModel state and explicit loading, empty, error, stale and retry behavior. Only confirmed device inventory/telemetry is displayed.
+- Unsupported volume/sensitivity/noise/auto-connect controls and calibration were removed. Calibration remains backend/firmware unavailable rather than a button that always fails or reports local success.
+- Verification is `322/322` JVM, `37/37` connected, debug assemble, lint `0` Fatal/Error, clean diff check and APK SHA-256 `28225D36BAB539A032732DDE7B84C77DB52F784A9B9BAF3E29EBD88B6D4789A8`.
+- Hardware setup AP, WSS presence, firmware command ACK, OTA, BLE/GATT and calibration remain unproven/unsupported. Phase 2 remains open.
+
+## 2026-07-27 Shcare master-plan Phase 2 — Android Record/audio truthfulness
+
+- Record Detail now consumes a repository/ViewModel contract instead of direct composable API/local mutable state. It renders backend-confirmed waveform/audio only and covers loading, unavailable, stale, offline, permission, retry, error and capability-gated stop states.
+- Backend adds tenant-scoped waveform artifact access and a short-lived audio-access response. Artifacts are exact-scan bound, size/range validated, latest-result selected and audited; cross-workspace access is denied.
+- Android playback is lifecycle/audio-focus aware. Download has progress, authorization-epoch validation, bounded partial-file cleanup and no bearer forwarding to a foreign provider. Save uses the document picker; share uses the native Sharesheet and a narrow non-exported FileProvider cache that is purged on logout.
+- Shared contracts are `16/16`; backend check/base/API-production/repository/storage/workspace/KLT and OpenAPI parse pass. Android is `339/339` JVM tests across `56` suites, `40/40` connected tests, assemble and lint with `0` Fatal/Error. APK SHA-256 is `993A65B641ED179EE3163EDF64BFBF90CAD04FE6519EAF0ADDF5F348F3403CC3`.
+- Global progress remains Phase 2 of **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Live providers/database/storage, physical-device/manual accessibility, production signing, firmware HIL and deployment are not proven.
+
+## 2026-07-27 Shcare master-plan Phase 2 — Android storage/export truthfulness
+
+- Backend storage usage is now computed from tenant-visible storage/audio records with exact bytes and file counts. Compatibility-only local/quota/cache/sync/backup fields are zero/false rather than seeded values.
+- Android Data Storage is repository/ViewModel driven with explicit loading, empty, stale, offline, permission, retry and failure states. App-private cache is measured locally and can be cleared offline without mutating or pretending to clear backend storage.
+- Production navigation capability-gates storage/export and no longer exposes the platform-wide delete screen or `/data/all` client method. The unchanged legacy screen is archived outside source sets with SHA-256 `6E2E3E546F7EB35391764C2645B6C8EB4FA87AC00806373200F3AB6B51ABA792`.
+- Export creation is idempotent and tenant/owner bound. Same-origin download validates auth epoch, renderer, MIME, declared/job length and SHA-256 under a 100 MiB cap; partial files are removed. Success is emitted only after Android writes the complete verified artifact through the selected document provider.
+- Shared contracts are `18/18`; backend integrated gates and OpenAPI parse pass. Android is `356/356` JVM tests across `61` suites, `44/44` connected API-35 tests, assemble and lint with `0` Fatal/Error (`42` warnings, `1` hint). APK is `24,771,669` bytes with SHA-256 `28DF0BE4F51D4B1C937877C3812D4C06877A41A932017172BED100CBA88B8888`.
+- Global progress remains **Phase 2 in progress** under the named master plan. Notification Settings, remaining native screens, Patients/Alerts, adaptive/accessibility proof and the independent Web/Admin foundation remain open. Provider/live database, physical device, production signing, firmware HIL and deployment remain separate blockers.
+
+## 2026-07-28 Shcare master-plan Phase 2 — notification preferences and Android channel truth
+
+- The canonical personal settings API exposes one authenticated owner/workspace snapshot and an idempotent one-field PATCH. Atomic persistence, audit, replay, rollback, account state and recipient/workspace checks prevent stale Portal/App writes and cross-account delivery.
+- Portal Notification Settings now uses the canonical GET/PATCH contract, real channel availability, exact outcome validation, unsaved-change protection and retry-stable keys. It no longer saves a complete stale preference map through the generic profile endpoint.
+- Android uses the same cloud fields through its own native UI. Android system settings own sound/vibration/display; stable channel IDs and separated permission/app/channel/session readiness remove fake local controls and disabled-channel bypasses.
+- Push remains data-only protocol v2 and every retry reauthorizes account, workspace membership, token and auth session. Campaign opt-outs are recomputed without mutating immutable recipient/workspace binding.
+- Fresh proof is contracts `20/20`; focused backend `18/18` preferences, `9/9` push and `8/8` campaigns; Web lint, `109/109`, `63/63` and build; Android `373/373` JVM across `64` suites, `46/46` connected API-35 tests, assemble and lint with `0` Fatal/Error. APK SHA-256 is `78CBC616010EF6246B2B8F33CF4B3187475EB70B93215FC6BD8B0F15EB866DAB`.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Live providers/database, physical-device/manual accessibility, production signing, firmware HIL, deploy and remaining Web/Admin/Android UI foundation are not proven complete.
+
+## 2026-07-29 Shcare master-plan Phase 2 — native clinical Patients/Alerts
+
+- Android Patients and Alerts are now real native destinations rather than hidden placeholders. Typed route/capability authority and the canonical workspace feed repository/ViewModel immutable state; Compose does not perform direct API calls or infer permissions.
+- Patients supports search, compact detail and 840 dp two-pane presentation with backend-confirmed clinical identity/contact fields. Alerts supports role-appropriate filters, detail and versioned acknowledge/resolve actions. Both include loading, empty, stale, offline, permission, error and retry behavior, dark theme, large-font adaptation, 48 dp controls and TalkBack semantics.
+- Workspace mismatch and invalid mutation confirmation fail closed. Timeout retry reuses one idempotency key. HTTP `409` discards the stale mutation, prevents another action during canonical reload and never emits an acknowledge/resolve success.
+- Current source/local proof is contracts `23/23`; backend check, clinical workflow `8/8`, workspace/repository smokes; Android `395/395` JVM tests across `68` suites, AndroidTest compilation, assemble and lint with `0` Fatal/Error (`43` warnings, `1` hint). APK SHA-256 is `ED69FED5B831BA3480ABB4F9712ACFC77117D4FD7CCC5AA223045CA964D20347`.
+- Runtime status is partial: the new Compose instrumentation compiled but did not execute because `Pixel_8_Pro_2` remained ADB-offline and never reported boot completion. Provider/live database, physical-device/manual accessibility, production signing, firmware HIL and deploy also remain `BLOCKED` or open.
+- Global progress remains **Phase 2 in progress**. The independent Web/Admin foundation and remaining Android adaptive/manual acceptance work are not complete.
+
+## 2026-07-29 Shcare master-plan Phase 2 — personal Notification Inbox
+
+- Backend now owns a personal, current-workspace inbox with canonical list/read/read-all/delete operations. Active-account and tenant authority are rechecked for every mutation; idempotency receipt, inbox update and audit are committed together and rollback together.
+- Portal `/portal/notifications` uses the canonical server snapshot and has no optimistic read/delete success. Android consumes the same business contract through repository/ViewModel immutable state and a separate native Material 3 screen with loading, empty, stale, offline, permission, retry, error, progress and destructive-confirmation behavior.
+- Exact user/workspace mismatches, wrong mutation action and incomplete receipts fail closed on both clients. Technical Android progress text was replaced by a localized TalkBack state. Portal heading hierarchy now has one route-level `h1`.
+- Proof is contracts `25/25`; backend integrated gates plus inbox `8/8` and OpenAPI `68`-path/reference parse; Portal `117/117` Auth/component, `63/63` contract tests, lint/build and `66` Chromium browser checks at 390/768/1440 with light/system-dark/dark; Android `407/407` JVM tests across `71` suites, AndroidTest compilation, assemble and lint with `0` Fatal/Error.
+- APK is `23,826,433` bytes, SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`. No emulator/device is attached, so current instrumentation is compile-only. Live Firebase/FCM/PostgreSQL, production signing, physical/manual accessibility, firmware HIL and deploy are not proven.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Personal inbox firmware impact is `N/A`; remaining Web/Admin foundation and Android adaptive/manual acceptance stay open.
+
+## 2026-07-29 Shcare master-plan Phase 2 — canonical Web primitives
+
+- Web now uses only `src/components/ui`; the 48-file duplicate `src/app/components/ui` tree is gone. Audit, Reports, Permission Denied, Portal state and export dialog were migrated through resolved import targets rather than path-string guessing.
+- A contract prevents a second tree or any import that resolves into it. Full build verification caught shorthand imports omitted by the first resolver, and the guard was expanded before the slice was closed.
+- Chromium found that Permission Denied lost its `h1` when moved to a visual-only `CardTitle`; the page now owns an explicit route heading. Audit, Reports and 403 pass responsive light/dark/system, target-size and accessibility checks on the canonical primitives.
+- Proof is contracts `64/64`, Auth/UI `117/117`, lint, client/SSR build, UI-foundation browser `123/123` and Notification Inbox browser `66/66`. CSS is `387.99 KB`, `60.44 KB` gzip, down from `406.45 KB`, `62.37 KB` gzip before duplicate-tree removal.
+- Admin was not rewritten; its prior independent foundation remains authoritative. Its Git-ignored local CodeGraph was restored at `177` files / `2,218` nodes / `4,831` edges.
+- Firebase production build is blocked before compilation by six missing `VITE_FIREBASE_*` variables. Backend, Android and firmware are `N/A` for this source-only Web consolidation. Phase 2 remains open for legacy CSS/route styling and visual acceptance plus Android runtime/manual acceptance.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal device assignment
+
+- `/portal/devices/assign` is closed for source/build/local-browser scope. It now uses canonical Web primitives and brand tokens, scoped queries, exact-workspace device/patient eligibility, responsive 44 px controls and loading/empty/error/retry/offline states; legacy demo styling and toast-only success are removed.
+- Canonical v1 assignment requires one intent-stable idempotency key and an exact backend receipt before success. Ownership, audit and replay receipt commit atomically in JSON and PostgreSQL paths. The legacy unversioned alias remains backward compatible during backend-first deployment.
+- Proof is focused Web `6/6`, ownership repository `36/36`, HTTP contracts `19/19`, Web Auth/UI `123/123`, Web contracts `64/64`, lint/build, Chromium `189` checks, backend integrated gates, OpenAPI `69` paths and clean diff check. CSS is `380.47 KB`, `59.39 KB` gzip.
+- Android UI and firmware are `N/A` for this operational Web route. Android retains its independent native device claim/provision/status UX. Platform Admin fleet operation is unchanged.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Firebase/live/provider/deploy, Android runtime/manual, hardware and firmware-HIL evidence remain open or `BLOCKED`.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Billing Summary
+
+- `/portal/billing` is closed for source/build/local-browser scope. It is a canonical, responsive and theme-safe read-only summary with loading, empty package, empty usage, error/retry and offline states; it no longer uses demo CSS or exposes technical provider copy.
+- Web reads `/api/v1/portal/billing` and accepts success only when the backend snapshot matches the active workspace, has internally consistent measured usage and quota, and declares the supported manual billing policy. Missing package data stays missing; no zero charge, invoice, checkout or unlimited plan is fabricated.
+- Shared HTTP v1 schema/fixture and OpenAPI document the same contract. The legacy read alias remains during the compatibility window. No payment provider, mutation or migration was introduced.
+- Proof is focused Billing `6/6`, shared contracts `20/20` (`27/27` total), Web Auth/UI `129/129`, Web contracts `64/64`, lint/build, Chromium `246` checks, backend integrated gates, OpenAPI `70` paths/reference resolution and clean diff check. CSS is `380.79 KB`, `59.43 KB` gzip.
+- Browser QA caught and fixed a light-theme status-badge contrast regression before closure. Android remains an independent native surface and is `N/A` for Web pixel parity; firmware is `N/A`.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Firebase/live/provider/deploy, Android runtime/manual, physical-device and firmware-HIL proof remain open or `BLOCKED`.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Dashboard truthfulness/UI foundation
+
+- `/portal/dashboard` is closed for source/build/local-browser scope. Canonical primitives/tokens replace raw neon, glass, gradient and premium demo styling; the page has one `h1`, responsive 44 px actions and explicit loading, error/retry, offline snapshot, partial supplemental failure, empty and permission states.
+- Canonical `/api/v1/portal/overview` returns exact workspace identity plus measured patient, scan, device and AI-processing facts for the requested local range. Web rejects workspace/range drift and any inconsistent lifecycle total rather than fabricating zeros. The compatibility alias remains available.
+- Recent scans are optional workspace-bound detail. Their failure does not hide confirmed KPIs, cross-workspace rows are blocked and `aiLabel` is neither displayed nor used to infer a review queue.
+- Proof is focused Dashboard `7/7`, shared contracts `21/21` (`28/28` total), Web Auth/UI `136/136`, Web route contracts `64/64`, lint/build, Chromium `306`, backend overview `4/4` plus integrated gates, OpenAPI `70` paths/`345` resolved references and clean diff check. CSS is `381.26 KB`, `59.50 KB` gzip.
+- Platform Admin and Android keep independent dashboard UI/UX; firmware is `N/A`. No mutation or migration was added. Firebase/live/provider/deploy, Android runtime/manual, physical-device and firmware-HIL proof remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Onboarding truthfulness/UI foundation
+
+- `/portal/onboarding` is closed for source/build/local-browser scope. It now uses canonical Shcare primitives/tokens, responsive cards, one `h1`, 44 px actions and explicit loading/incomplete/unknown/error/retry/offline/capability-filtered states.
+- `/me` identity and membership must match the active workspace. Patient/device rows are exact-workspace checked, Billing uses its strict v1 parser and unauthorized roles issue no supplemental request. Failure or offline state remains `Chưa xác minh` instead of lowering progress as a fake incomplete task.
+- Device-online readiness requires backend `online=true`; account, workspace, patient, device and plan steps only become complete from confirmed facts. Each failed supplemental read has a narrow retry.
+- Proof is focused Onboarding `4/4` after a red TDD baseline, contracts `28/28`, Web `140/140` plus `64/64`, lint/build, Chromium `363`, same-checkpoint backend/OpenAPI gates, a clean legacy/raw-style scan and clean diff check. CSS is `381.21 KB`, `59.50 KB` gzip; Onboarding is `11.94 KB`, `4.12 KB` gzip.
+- Platform Admin, Android UI and firmware behavior are unchanged. Android keeps native onboarding rather than matching Portal. Firebase/live/provider/deploy, Android runtime/manual, physical-device and firmware-HIL evidence remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Help/support truthfulness/UI foundation
+
+- `/portal/help` is closed for source/build/local-browser scope. Canonical Shcare primitives/tokens replace legacy glass/premium/gradient/raw-color styling; the route has one `h1`, responsive guide/search/form/receipt composition, 44 px actions and explicit validation, offline, submitting, retry, unsaved-change and confirmed states.
+- Invented hotline/email/SLA copy and local toast-only success are gone. Web sends only canonical type/description plus an intent-stable idempotency header to `/api/v1/portal/support` and accepts success only when the backend receipt matches the authenticated requester and active workspace.
+- Backend migration `045` adds a private support ledger. JSON and PostgreSQL paths persist ticket, audit and replay receipt atomically; exact retry replays and key/payload drift, inactive tenant or client-injected authority fail closed. The old unversioned route remains a compatibility alias.
+- Proof is focused Web `7/7`, support repository `4/4`, shared HTTP `22/22` (`29/29` total), Web `147/147` plus `64/64`, lint/build, Chromium `420`, backend integrated gates, OpenAPI `71` paths / `353` resolved internal references and clean diff check. CSS is `381.36 KB`, `59.52 KB` gzip; Help is `14.65 KB`, `5.03 KB` gzip.
+- Platform Admin support processing is not implemented by this Portal foundation slice. Android is `N/A` for this Web-only actor path and retains its own native IA; firmware is `N/A`.
+- Firebase/live/provider/deploy is not claimed. Provider support mutation is `BLOCKED` by the lack of a requester withdrawal/cleanup contract; the live smoke no longer deletes a fake notification or reports cleanup success.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume from this row plus handoff/current diff and do not redo earlier closures without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal workspace selection
+
+- `/portal/workspace` is closed for source/build/local-browser scope. Canonical Shcare primitives/tokens replace neon/glow/glass/raw-color styling; the route has one `h1`, responsive 44 px controls and explicit loading, permission/session, empty, offline, error/retry, switching, active, disabled-membership and unavailable-metric states.
+- Web no longer turns omitted membership summaries into zero. `operational=false`, suspended/revoked membership and inactive workspace remain visible with an explanation but cannot be selected.
+- Shared `workspace-switch-request` permits only `organizationId`. Web and Android call `/api/v1/me` with an intent-stable idempotency header and expose a new authority only after exact backend confirmation. Web reconciles ambiguous results with `/me` and clears PHI queries before adopting a changed workspace.
+- Proof is focused Web `10/10`, shared HTTP `23/23` (`30/30` total), Web `153/153` plus `64/64`, TypeScript/lint/build, Chromium `459`, backend check/workspace-access and focused Android API/ViewModel tests. CSS is `381.77 KB`, `59.59 KB` gzip; Workspace is `8.94 KB`, `3.34 KB` gzip.
+- Android keeps its native adaptive workspace UI and was not pixel-matched. Platform Admin and firmware are `N/A`; no backend migration or device protocol changed.
+- Firebase/live/provider/deploy, Android runtime/manual accessibility, physical-device and firmware-HIL evidence remain open or `BLOCKED`. Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume with Workspace Settings from the latest handoff/current diff.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Workspace Settings UI foundation
+
+- `/portal/settings` is closed for source/build/local-browser UI-foundation scope. It now uses canonical Shcare primitives/tokens, one route `h1`, accessible responsive tabs, 44 px controls and explicit loading, permission/session, offline, validation, submitting, retry, unsaved-change and confirmed states.
+- Profile initially fetches only `/me`; Security, Notifications and Workspace datasets are lazy by tab. Account and workspace responses must match current authenticated authority before populating state. Profile, workspace, password and notification drafts share an unload guard and clear only after confirmed outcomes.
+- Proof is focused `12/12` after a deliberate `6/12` red baseline, Web Auth/UI `157/157`, route contracts `64/64`, TypeScript/lint/build and Chromium `525` across ten routes × three viewport/theme cases. CSS is `379.13 KB`, `59.20 KB` gzip; Workspace Settings is `50.32 KB`, `14.66 KB` gzip.
+- Android retains its separate native Profile/Password/Notification/Workspace UI and was not pixel-matched. Platform Admin remains a separate surface; firmware is `N/A`; no backend or device contract changed in this Web UI slice.
+- Stable retry idempotency and transaction/audit parity for legacy profile/workspace/avatar/password mutations remain open for Phase 3. Firebase/live/provider/deploy, Android runtime/manual accessibility, physical-device and firmware-HIL evidence remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume from the latest handoff/ledger/current diff and do not redo a closed slice without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Patients list/detail
+
+- `/portal/patients` and `/portal/patients/:id` are closed for source/build/local-browser UI and authority scope. Query caches are keyed by active workspace, patient payloads must match that workspace, and detail scan history must match both active workspace and route patient before any record is rendered.
+- Dirty create drafts are unload-protected; workspace-only invalidation, canonical ID versus display-code separation, canonical navigation controls, explicit retry states and capability-aware mutation controls are preserved. A view-only browser role cannot see add/save/delete actions.
+- TDD recorded the intended page and contract red baselines plus the missing scan-parser export. Final proof is focused UI `6/6`, focused contract/static `12/12`, Web Auth/UI `160/160`, route contracts `66/66`, TypeScript/lint/build and Chromium `624` across twelve routes × three viewport/theme cases. CSS is `379.13 KB`, `59.20 KB` gzip; Patients is `11.98 KB`, `4.33 KB` gzip; Patient Detail is `14.09 KB`, `4.87 KB` gzip; patient form is `14.34 KB`, `4.10 KB` gzip.
+- Android retains separate native Patient/Family/Profile UI; Platform Admin remains independent; firmware is `N/A`. No backend migration or cross-platform UI copy was introduced. Existing Patient CRUD and atomic Import backend closure remains intact.
+- Firebase/live/provider/deploy, Android runtime/manual accessibility, physical-device and firmware-HIL evidence remain open or `BLOCKED`. Phase 3 settings mutation parity also remains open.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume with Portal Patient Import UI acceptance from the latest handoff/ledger/current diff; never redo a closed slice without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Patient Import
+
+- `/portal/patients/import` is closed for source/build/local-browser UI and authority scope. Validation is bound to the active workspace and exact selected file, while refresh/commit are bound to exact workspace, batch and non-stale version. Success requires an advancing committed receipt.
+- Workspace/reset changes advance an operation epoch and clear stale file/batch/idempotency state. Late old-workspace responses are ignored, validate/refresh/commit cannot overlap, and successful commit invalidates only the active-workspace Patient cache.
+- The independently designed Web UI uses canonical Shcare primitives/tokens, a route heading in permission state, accessible table caption, focus-visible file control, 44 px actions and explicit validation/preview/busy/retry/confirmed states. Browser QA found and fixed light-theme file-control hover contrast.
+- TDD red baselines were parser `2/5` and Patient UI `5/8`. Final proof is parser `5/5`, Patient UI `9/9`, contract/static `10/10`, Web Auth/UI `163/163`, route/contracts `68/68`, TypeScript/lint/build and Chromium `702` across thirteen routes × three viewport/theme cases. CSS is `379.43 KB`, `59.30 KB` gzip; Patient Import is `30.17 KB`, `9.06 KB` gzip.
+- Existing atomic backend import was preserved rather than rebuilt. Android is `N/A` for batch import and keeps native Patient/Family UX; Platform Admin remains independent; firmware is `N/A`.
+- Firebase/live/provider/deploy, Android runtime/manual accessibility, physical-device and firmware-HIL evidence remain open or `BLOCKED`; Phase 3 settings mutation parity remains open.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume with Appointments inventory from the latest handoff/ledger/current diff; never redo a closed slice without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Appointments
+
+- `/portal/appointments` is closed for source/build/local-browser UI and authority scope. List, detail and mutation receipts must match the active workspace plus canonical appointment/patient/doctor/lifecycle/time identities; the detail dialog uses the exact detail endpoint and unchanged retries keep one idempotency key.
+- Workspace changes invalidate the operation epoch, close stale PHI/dialog/draft state and suppress old responses. Dirty forms use unload and discard guards. Patient-catalog failure blocks create with retry instead of exposing a dead form.
+- Backend now distinguishes the full staff ledger from the assignable-doctor catalog. Only approved active accounts with an active operational doctor membership in the current workspace are returned as doctors, while mutation-time backend validation remains authoritative. Web independently fails closed on foreign/suspended/locked/unapproved entries.
+- UI is independently Web-native with canonical primitives/Table/Caption, semantic status tokens, phone cards versus desktop table, 44 px actions and explicit loading, empty, offline, permission, partial, retry, busy, destructive and confirmed states. Chromium caught and drove fixes for phone-light contrast and invalid definition-list semantics.
+- Red baselines were a missing operation contract, initial Portal component `5/5` failures and a suspended-doctor backend assertion. Final proof is component `7/7`, focused contract/static `9/9`, Web Auth/UI `170/170`, Web contracts `73/73`, TypeScript/lint/build and Chromium `807` across fourteen routes × three viewport/theme cases, plus backend check/appointment-workspace smoke.
+- Android keeps its separate native Appointment UI/UX. Focused native contract/API/ViewModel/workflow tests pass `26/26`, `assembleDebug` passes and the APK remains `23,826,433` bytes with SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`; no Web UI was copied.
+- Platform Admin remains independent and firmware is `N/A`; there is no migration, notification or device-protocol change. Backend deploys before Web for the additive staff-operational field.
+- Firebase/live/provider/deploy, Android emulator/device/manual accessibility, physical-device and firmware-HIL proof remain open or `BLOCKED`. Global progress remains **Phase 2 in progress** under the named master plan; resume with Review/Alerts/Live and do not redo Appointments without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Review and Alerts
+
+- `/portal/records/review` and `/portal/alerts` are closed for source/build/local-browser UI and authority scope. Direct routes and navigation use the backend's exact review/alert capabilities; list and mutation data must match the active workspace plus canonical scan/alert/source identities.
+- Exact decision/transition receipts, advancing optimistic versions, stable workspace-bound idempotency and synchronous operation epochs prevent false success, double-submit and late old-workspace publication. Review API responses now include additive top-level `workspaceId`.
+- Web UI remains independently designed with canonical Shcare primitives/tokens, accessible headings/definition lists, semantic status colors, responsive 44 px interactions and complete loading/empty/offline/permission/retry/busy/destructive/confirmed states. Browser QA caught and fixed missing Review card-heading semantics.
+- Shared v1 review/alert schemas and fixtures are published; OpenAPI `0.4.0` now contains the five canonical review/alert paths with `394` valid internal references across `76` paths.
+- Final proof is focused Web `21/21`, Web Auth/UI `174/174`, Web contracts `77/77`, package contracts `31/31`, TypeScript/lint/build, Chromium `939` across sixteen routes × three cases, backend check/clinical `8/8`/workspace-access and clean style/diff checks.
+- Android keeps its separate native Clinical Alerts UI and passes focused clinical/alerts `20/20` plus `assembleDebug`; the APK remains `23,826,433` bytes with SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`. This does not claim emulator, FCM provider, Firebase runtime or physical-device proof.
+- Platform Admin remains independent; firmware protocol is unchanged. Firebase/live provider/database/deploy, Android emulator/device/manual accessibility, physical-device and firmware-HIL evidence remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under the named master plan. Resume with **Live Monitoring** from the latest handoff/ledger/current diff; never redo Review/Alerts or an earlier closure without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Live Monitoring
+
+- `/portal/live` is closed for source/build/local-browser UI and authority scope. Authenticated WSS is the canonical waveform/metric source; canonical `/api/v1/portal/monitoring` is a bounded tenant REST fallback only, with the unversioned alias retained for compatibility.
+- Snapshot parsing requires exact top-level/nested workspace and source identities, unique devices/scans/alerts, backend-confirmed `online`, valid timestamps and sanitized device data. A legacy `connected` bit never becomes presence, and authenticated WSS status no longer exposes global socket/listener counts or HTTP/UDP ports.
+- WSS status, metadata, metrics and binary protocol-v2 frames must match workspace/patient/device/scan/session identity. Workspace changes close the old socket and suppress late events. The UI never turns absent metrics into clinical zero values.
+- Independent Web UI uses canonical primitives/tokens and covers loading, empty, partial cached, stale refresh, browser offline, permission, reconnect/error, REST-only fallback, waiting metadata, active recording and dropped-packet states across responsive light/dark/system layouts.
+- Final proof is focused Live API/UI `9/9`, Web Auth/UI `183/183`, Web contracts `81/81`, package contracts `32/32`, TypeScript/lint/build, Chromium `987` over seventeen routes × three cases, backend check/workspace/clinical `8/8`/device-security `41/41`/audio-v2 `4/4`, OpenAPI `77` paths / `400` valid references and clean style/diff checks.
+- Android retains an independent native LiveAudio implementation and passes focused `13/13` plus `assembleDebug`; its APK remains `23,826,433` bytes with SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`. No Portal UI was copied and no Android source changed.
+- Platform Admin remains independent; firmware/audio protocol is unchanged. Firebase/live/provider/deploy, Android runtime/manual accessibility, physical audio and firmware-HIL evidence remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under the named master plan. Resume with **Portal Devices/Consent** from the latest handoff/ledger/current diff; never redo Live or an earlier closure without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Devices and Consent
+
+- `/portal/devices` and `/portal/consent` are closed for source/build/local-browser UI and authority scope. Device rows require exact workspace identity, sanitization and backend-confirmed `online`; patient access rows require exact workspace/patient, canonical authority/lifecycle/recipient/audit and intent-bound create/revoke receipts.
+- Backend returns bounded Portal device and patient-share responses with canonical workspace/patient/timestamps. Four shared v1 schemas/fixtures and OpenAPI aliases keep Web `/portal/patients/...` and native `/patients/...` on the same contract.
+- Independent Web UI uses canonical Shcare primitives and semantic status tokens, 44 px controls and complete loading/empty/stale/offline/permission/retry/busy/destructive/confirmed states. Chromium found and drove fixes for a false offline onboarding count, undersized radio targets and light-theme authority contrast.
+- Final proof is parsers `7/7`, API `5/5`, pages `17/17`, Web Auth/UI `195/195`, Web contracts `88/88`, package contracts `33/33`, TypeScript/lint/build, Chromium `1,128` over nineteen routes × three cases, backend check/KLT/workspace/repositories/device-security `41/41`, and OpenAPI `81` paths / `412` valid references.
+- Android keeps separate native Device/Consent UI and passes focused regression `59/59` across eight suites plus `assembleDebug`; the APK remains `23,826,433` bytes with SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`. Platform Admin fleet/OTA and firmware remain separate; no Web UI was copied.
+- Firebase/live/provider/database/deploy, Android emulator/device/manual accessibility, physical provisioning/command ACK and firmware-HIL evidence remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume with Portal Staff/Notifications UI-foundation integration from the latest handoff/ledger/current diff; never redo Devices/Consent or an earlier closure without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Portal Staff and Notifications
+
+- `/portal/staff` and `/portal/notifications` are closed for source/build/local-browser UI and authority scope. Staff data must match the active workspace and an exact bounded member/membership projection; notification data and mutations must match the authenticated owner and current workspace.
+- Reactive settled-authority keys now let both routes complete a real account/workspace transition while operation epochs clear stale dialogs, drafts and intents and reject late old-workspace responses. Read, delete and invitation outcomes remain backend-confirmed; no local-state success is accepted.
+- Backend Staff output is explicitly whitelisted and no longer carries Firebase claims, 2FA/session/token/secret data through a broad account spread. Shared v1 schema/fixture and OpenAPI publish the exact response.
+- Independent Web UI uses canonical Shcare primitives/tokens, responsive phone/desktop composition, one `h1`, 44 px actions and complete loading, empty, offline, permission, retry, busy, unsaved/destructive and confirmed states. Chromium found and drove fixes for the Staff authority-label contrast and globally translucent `select` values.
+- Final proof is focused `14/14`, Web Auth/UI `204/204`, Web contracts `95/95`, shared contracts `34/34`, TypeScript/lint/build, notification browser `66`, unified Chromium `1,374` across the 21 routes currently registered in the Portal matrix × three cases, backend check/workspace/staff `7/7`/inbox `8/8`/notification/OpenAPI, backend audit `0` and clean diff check. CSS is `59.24 KB` gzip plus `1.38 KB` token CSS; fonts remain about `82.57 KB`.
+- Android keeps separate native membership/workspace and Notifications UI; no Web layout was copied and no Android source changed. Platform Admin remains independent and firmware is `N/A`; there is no migration, device, audio or OTA impact.
+- Firebase/live database/provider/deploy, real provider delivery, Android emulator/device/manual accessibility, physical device and firmware HIL remain open or `BLOCKED`.
+- Global progress remains **Phase 2 in progress** under the named master plan. All 21 route cases currently registered in the Portal browser matrix pass; resume by comparing the remaining RouteContract aliases/details plus Public/Auth/Platform Admin and Android adaptive/runtime evidence, then take the first genuinely open row without redoing any closed slice.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Public Web UI foundation
+
+- All `22` canonical Public RouteContract routes are closed for source/build/local-browser UI foundation, including the shared shell, responsive navigation/footer, Home/product/solution/device/RPM/pricing/contact/security/legal pages and in-shell 404/maintenance state.
+- Public now uses the Shcare brand and semantic light/dark/system surfaces without production-path glass, glow, gradient text, autoplay hero media, infinite decorative loops or unverified support/customer/metric claims. Purposeful reveal motion is opacity/transform-only, capped, one-shot and disabled when the operating system requests reduced motion.
+- Final browser evidence is `5,325/5,325` checks across `22` routes × 360/390/768/1024/1440 × light/dark/system, plus focused Pricing `240/240`. Axe serious/critical, unexpected console/static/API errors, overflow, sub-44 px controls and forbidden visual effects are zero in that matrix.
+- Prettier, TypeScript, focused ESLint, Web contracts `99/99` and client/SSR build pass. Main CSS is `63.87 KB` gzip, token CSS `1.38 KB` gzip and self-hosted Vietnamese fonts total about `82.57 KB`.
+- Android remains independently native; Platform Admin remains a separate dense-management UI; firmware is `N/A`. No cross-surface UI was copied and no backend/device contract changed.
+- This is not a claim of live deployment, provider/runtime/hardware proof, Contact mutation browser proof, field Web Vitals or complete legacy CSS removal. `signal-horizon.css` and scoped precedence bridges remain tracked consolidation debt.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Resume with Auth shell/RouteContract UI-state foundation from the latest handoff/ledger/current diff; Public and earlier closures must not be rebuilt without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Auth UI/state foundation
+
+- All `15` Auth RouteContract routes now share the canonical Shcare Auth shell and explicit light/dark/system, responsive, reduced-motion, loading, offline, recovery and error behavior.
+- Password-reset confirmation is a dedicated Firebase action-code screen rather than the forgot-password request screen. It verifies the one-time code, masks the account email, validates and confirms the new password, reports invalid/expired codes and never displays or persists `oobCode`.
+- Anonymous approval URLs no longer fabricate “pending” status, and verification copy no longer exposes the outbound provider.
+- Final proof is focused `5/5`, Auth/UI `211/211`, Web contracts `104/104`, TypeScript, ESLint, client/SSR build and Chromium `3,615/3,615` across `15` routes × `5` viewports × `3` themes. CSS is `63.89 KB` gzip plus `1.38 KB` token CSS; fonts remain about `82.57 KB`; `git diff --check` passes.
+- Android Auth remains a separately designed native flow; Platform Admin remains independent and firmware is `N/A`. No cross-surface UI was copied and no backend/device contract changed.
+- This does not prove live Firebase action-handler configuration, provider delivery, preview/live deployment, Android runtime/manual accessibility, physical-device behavior or firmware HIL.
+- Global progress remains **Phase 2 in progress** under the named master plan. Resume with Platform Admin UI-foundation census, then independent Android adaptive/runtime evidence; keep Auth and earlier closures closed without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Platform Admin UI foundation
+
+- Platform Admin is closed for source/build/local-browser foundation under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. It retains a dense Admin-specific UX while using shared Shcare brand semantics; it does not copy Portal or native Android layout.
+- The shell now has light/dark/system theme, Shcare branding, command palette, offline state, responsive 44 px interaction floor, reduced-motion behavior and canonical accessible detail drawers. Demo gradients, blur/glass, looping decoration, stale branding and the global mobile `!important` override are absent from the production path.
+- Account Settings reads canonical 2FA status and does not expose the retired incomplete enable/disable mutation. Notification preferences use one field per `PATCH`, `Idempotency-Key`, authenticated-owner receipt validation, per-field busy protection and browser cleanup that restores the original value.
+- Runtime state proof covers loading, HTTP 503, retry, canonical empty, backend 403 and a real limited patient principal denied on direct `/clinics` before protected data is requested. Drawers cover accessible name, initial focus, Tab/Shift+Tab trap, Escape and focus restoration.
+- Browser QA reproduced and fixed a dark semantic error-label contrast failure and a WebKit controlled-drawer focus-return race. The canonical shared danger-text token and drawer primitive now pass without weakening Axe or focus assertions.
+- Final proof: contracts `169/169`; TypeScript; ESLint; production client/SSR build (`3,084`/`3,132` modules); backend `check`; notification-preference `18/18`; two-factor `15/15`; Chromium `225` visits over `15` routes × `5` viewports × `3` themes; critical Firefox and WebKit journeys. Aggregate browser evidence is `241` route checks, `19` palette/offline/Account-cleanup/drawer checks, `25` representative state checks and `5` direct denials. CSS is `114.44 KB` raw / `17.95 KB` gzip; token CSS is `1.38 KB` gzip.
+- This is not preview/live deployment or provider/database proof. Android remains independently native; emulator/device/manual TalkBack, Firebase/provider runtime, physical device and firmware HIL remain open or `BLOCKED`. Continue Phase 2 from the current Android authority/adaptive checkpoint, not by rebuilding Admin.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Android Settings and clinical-status checkpoint
+
+- Android Settings is closed for source/local proof with authority-bound immutable state, exact active membership and capability gates, locked/deleted-account checks, bounded offline/5xx stale data, global epoch-safe authority invalidation and authority-clear-first single-flight logout.
+- Accessibility fixes remove duplicate TalkBack action/state announcements, use a single polite stale-data live region, preserve headings and meet the 48 dp interaction floor.
+- The bounded status contract is health-only for anonymous callers and exact-workspace clinical data for authenticated doctor/Portal callers. Workspace recording selection, Android workspace validation/retry and Web Portal schema consumption are aligned.
+- Independent review found and the implementation fixed three clinical regressions and three Settings authority/accessibility defects before closure.
+- Evidence: backend clinical `4/4`, check and workspace access; Web contracts `105/105`, TypeScript, ESLint, client/SSR build, notification-inbox browser `66/66` and Portal UI-foundation browser `1,374/1,374`; Android `78` suites and `449/449` tests, both debug Kotlin compilers, AndroidTest compile, assemble and lint. APK SHA-256 is `D1611B9E51D4E7DBC39DFE4106D307C58641688040E8CC94BA90CB9A56456BDD`.
+- Firebase build/provider proof is `BLOCKED` by missing six `VITE_FIREBASE_*` variables. Android runtime/manual TalkBack/golden/FCM is `BLOCKED` because `google-services.json` and an attached ADB target are absent. No live/provider/device/hardware claim is made.
+- Global progress remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Continue with Patient Dashboard native foundation; do not reopen Settings/clinical status without a reproduced regression.
+
+## 2026-07-29 Shcare master-plan Phase 2 — Patient Dashboard native foundation
+
+- Versioned `GET /api/v1/patient/dashboard` is closed for source/build/local proof as a pure read of the canonical `activePatientId` persisted by accepted idempotent active-profile PATCH. It requires the authenticated owner/account/guardian and exact operational workspace, prevents tenant/profile/scan/device mixing, and does not mutate account, patient, audit or presence state.
+- Shared HTTP v1 schema/fixture and OpenAPI align the backend response with Android. The Android parser and immutable ViewModel validate exact protocol, account, workspace, active patient, scans and device ownership and fail closed on authority changes.
+- The separately designed native screen provides loading, empty, partial, stale, offline, permission, error and retry states; capability-gated actions; typed `NewScan`; truthful `online` presence; nullable battery including `0%`; 48 dp/TalkBack semantics; and adaptive 360/412/600/840 dp layouts with large-font one-column fallback. Provider-unverified AI remains hidden.
+- Evidence passes backend patient-dashboard `7/7`, workspace-access, `check` and `npm test`; shared contracts `35/35`; Android focused `32/32`, full unit `473/473`, both Kotlin compile gates, AndroidTest compile, assemble and lint. APK is `24,001,564` bytes, SHA-256 `BDD617D4E175892660720BD9944F0A6055B200DDE5A1FFD792BB1DD45ACC22AE`.
+- `google-services.json` is absent and ADB reports no target. Emulator/golden/manual TalkBack/FCM/live-provider/physical-device/hardware proof remains `BLOCKED`.
+- `scanIsNormal` remains P0 clinical debt in `DashboardScreen`, `MedicalRecordsScreen` and `RecordDetailScreen` for Phase 5. Global status is still **Phase 2 in progress**; Deep Security remains untouched at `running/preflight`.
+
+## 2026-07-29 Patient Dashboard hardening status — supersedes prior proof
+
+- Governing plan is **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Phase 0–1 complete; **Phase 2 in progress**; Phase 3–8 pending.
+- Backend validation is now side-effect free before active-profile acceptance, dashboard GET remains pure, retry receipts are exact, and legacy idempotency receipts have a safe-upgrade/stable-409 compatibility path.
+- Android enforces every closed DTO field type/range, retains the same mutation key across recoverable retries and advances an authority subject epoch only after an exact backend-confirmed profile switch. Cached PHI from the former active profile cannot reappear through Back.
+- Verified: backend Patient Dashboard `9/9`, workspace/check/full/repository smokes; shared contracts `35/35`; Android focused `62/62`, full unit `487/487`, compile/AndroidTest compile/assemble/lint. APK `24,018,920` bytes; SHA-256 `751A9CDACB18B18D19C8CE88116D24B664451495FDFF2AC68EBD5BD9CF311C20`.
+- This is source/build/local evidence only. Missing `google-services.json` and an empty ADB device list keep emulator, manual accessibility/golden, FCM/provider/live, physical device and hardware proof `BLOCKED`. Phase 5 retains `scanIsNormal` cleanup in Dashboard, Medical Records and Record Detail.
+- Restart from the latest handoff, execution ledger, current diff and generated proof. Never redo this or an earlier closure without a reproduced regression; inventory the next truly open Phase 2 Android-native row first.
+
+## 2026-07-29 Shcare master-plan Phase 2 — account password workflow
+
+- The password workflow is closed for source/build/local proof across backend, shared contracts, Web Portal, Platform Admin and native Android. UI/UX remains surface-specific; only business rules, authority, lifecycle, error and receipt semantics are synchronized.
+- Backend is the sole provider mutator. It requires an idempotency key, exact secrets, current account/workspace authority and Firebase current-password proof; persists a durable owner-bound operation; finalizes audit/notification/account state transactionally; and returns only the exact minimal receipt.
+- Password-provider confirmation is operation-aware. `reset_password` requires `updated: true`, so a concurrently deleted Firebase identity cannot be converted into a durable success. Replays repair deterministic finalization without repeating the provider call, while uncertain crash windows fail closed for reconciliation.
+- Web and Admin do not update Firebase locally. Web auth cleanup now uses attempt epochs plus UID/token ownership to prevent late callbacks or sign-out from clearing a replacement account. Android binds every stage to account/Firebase/workspace/epoch authority, uses a stable retry key only for ambiguous outcomes and logs out only the receipt owner.
+- Verified: backend password/Firebase `22/22`, check/full/repository/workspace/KLT gates; shared `29/29`; Web `227/227` Auth/UI, `105/105` contracts, lint/build and Portal browser `1,374/1,374`; Admin `175/175`, lint/build and targeted `/account` browser acceptance; Android `518/518` in 86 suites, both Kotlin compilers, AndroidTest compile, assemble and lint.
+- APK is `24,066,508` bytes with SHA-256 `5DC07A7E02A0F97FB62C80FBD1201EDBE5E3E2174F71F335FBCA053917DE9FD0`.
+- Global status remains **Phase 2 in progress** under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Runtime/provider/device evidence and a full Admin browser-matrix rerun remain open; resume from the direct-API Android inventory rather than rebuilding closed work.
+
+## 2026-08-01 registration and role-request foundation status
+
+- The cross-surface registration/email-verification/role-request row is closed for source/build/local proof. Web, Portal/Admin-compatible backend contracts and native Android share authority, tenant, lifecycle, validation, idempotency, audit and receipt rules while retaining separate UI/UX.
+- Web registration/approval is exact-owner and exact-bearer safe across A→B→A replacement, locks identity after account creation, fingerprints intent and document bytes, requires a canonical workspace even for solo practice and performs an authenticated authority preflight before approval mutations.
+- Backend denies patient self-enrollment into arbitrary clinics, applies the 10 MiB document cap while streaming, rejects cross-tenant migrated object keys, and uses per-attempt storage keys plus ledger ownership checks so cleanup cannot orphan PHI or delete a concurrent committed winner.
+- Android exact-owner teardown cannot clear a replacement account. Email Verification and Doctor Approval fail closed on incoherent or inactive workspace/membership state, and notification registration ACK fields require exact JSON types before a delivery session can activate.
+- Gates: Web `288/288`, contracts `105/105`, TypeScript/lint/build; backend role-document `13/13`, shared `38/38`, check/base/workspace/repository; Android focused `40/40`, full `579/579`, compile/AndroidTest compile/assemble/lint. APK `24,123,768` bytes, SHA-256 `C0230EB545E4BFA34D9EE68857CC0FE9C6C1C2217783F3874557F08E338FE7E6`.
+- Independent final reviews report no P0/P1 in the changed Web/backend/Android scope. Live PostgreSQL/provider, Firebase/FCM, emulator/device/manual accessibility and hardware proof remain `BLOCKED`; Phase 2 remains in progress.
+- The next Phase 2 row is the Doctor Approval architecture boundary: preserve the closed owner/workspace guards but move remaining direct API/Firebase/coroutine/local state out of the Composable into repository/ViewModel `UiState`/`UiAction`/`UiEffect`. SignUp follows; clinical Dashboard/Live/Records/New Scan remain Phase 5.
+
+## 2026-08-02 Doctor Approval and role-target authority status
+
+- Doctor Approval is closed for source/build/local proof. Its Compose UI is renderer-only and independently native; repository/ViewModel state owns catalogs, refresh/polling, needs-info submit, retry intent, errors, unsaved changes and effects.
+- Android and backend distinguish current operational workspace from the requested doctor target. Nonterminal receipts retain personal patient authority; approval requires the exact target/current workspace and active doctor membership.
+- Backend target override/drift, ghost patient bootstrap and stale approval projection are closed. Doctor Approval logout binds the complete Firebase owner epoch and rejects A→B→A replacement teardown.
+- Proof: shared `31/31`; backend check/test/workspace/repository gates; Android `95` suites / `611/611`, AndroidTest compile, assemble and lint; APK `25,552,231` bytes, SHA-256 `84D99052B50E91282589F81DF94BDCC8BFF606CD410BC6E4CC84132364B216FA`. No bounded P0/P1 remains after independent review.
+- Runtime/provider/device proof remains `BLOCKED` without `google-services.json`, an ADB target and live credentials. `organizationId` target separation and approval transaction atomicity remain P2.
+- Global status remains **Phase 2 in progress**. The next open row is **Android SignUp architecture-bound native foundation**; closed Web/Admin/Android rows are not reopened.
+
+## 2026-08-02 Android auth/session owner hardening — trạng thái source/build/local
+
+- Master plan vẫn là **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**: Phase 0–1 đã hoàn tất, **Phase 2 vẫn đang thực hiện**, Phase 3–8 còn pending. Mục này supersede checkpoint auth/session hiện hành mà không sửa các hàng lịch sử và không đóng Phase 2.
+- Đã hiện thực binding owner chính xác qua Splash, Login, SignUp, Verify và Doctor bằng `FirebaseOwnerBinding`. Năm P1 đã đóng gồm Verify recapture, Doctor ABA owner, thay thế stale termination, clear global authority khi reauthorization và global teardown khi workspace/profile stale.
+- Xác nhận workspace/profile yêu cầu đúng snapshot `MobileSessionAuthority` và từ chối trường hợp cùng identity nhưng epoch mới. `AppNav` không còn gọi global `authorityStore.clear()` hoặc `SmartHealthSessionTerminator.terminate()`.
+- Review độc lập cuối cùng không còn P0/P1/P2 trong các đường đã sửa. P2 ngoài phạm vi sửa vẫn mở: luồng bỏ dở một phần SignUp hoặc Back có thể để Firebase owner trên Login công khai.
+- Bằng chứng Android: `98` suites / `655` tests, failures `0`, errors `0`, skipped `0`; AndroidTest compile + debug assemble + lint `BUILD SUCCESSFUL` trong `4m43s`, `56` tasks; lint `43` warnings / `0` errors và `0` vấn đề auth/session trong phạm vi; diff check Android sạch.
+- Artifact: APK debug `24,172,920` bytes, SHA-256 `CEB6BFC23995B361AD0BD23B24F4F836E0464BCB215105C8A6EDE8BACDAC5F69`.
+- Trạng thái runtime vẫn `BLOCKED`: thiếu `app/google-services.json` và ADB không có target, nên chưa có bằng chứng Firebase/provider/navigation trên emulator hoặc thiết bị thật.
+- Hàng hoạt động tiếp theo là kiểm toán hoàn tất Phase 2 foundation trên Web foundation và Android native foundation. Dashboard, Live, Medical Records, New Scan và audio vẫn thuộc Phase 5.
+
+## 2026-08-02 Phase 2 foundation checkpoint — Web CSS A và Android adaptive shell
+
+- Global status: Phase 0–1 complete; **Phase 2 in progress**; Phase 3–8 pending under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**.
+- Web closed source/build/local for CSS slice A: retired demo selectors have zero production consumers, Portal shell is opaque/no-blur with semantic mobile-visible `h1`, active import parsing is recursive and bypass-resistant, and `!important` debt is ratcheted at `1,839` after dropping from `1,909`.
+- Web gates: contracts `112/112`, TypeScript, Vite build, ESLint, focused final `7/7`, clean scoped diff, Chromium Portal `1,374` checks and Public `5,325` checks. Firefox/WebKit critical, visual snapshot and performance acceptance remain open.
+- Android closed source/build/local for reusable adaptive shell: typed compact/rail/two-pane modes, exact float breakpoints, 200% font single-pane fallback, reusable list/detail slots, Clinical Patients migration, BackHandler and selected semantics.
+- Android gates: `99` suites / `660/660`, AndroidTest compile, assemble and lint; `43` warnings / `0` errors. APK `24,172,920` bytes, SHA-256 `AF2E8648AF12B2F360B1AE2FA7DEC59386C52872185D4605001BC353F800F66B`.
+- Still open: legacy CSS debt plus cross-browser/visual/performance proof; Android resource extraction, external deep link and route test-tag binding; large-font navigation geometry/golden proof; SignUp abandonment/back. Runtime/provider/device evidence remains `BLOCKED` without Firebase config or an ADB target.
+
+## 2026-08-06 Phase 2 closure correction
+
+- **Phase 2 remains in progress; Phase 3 remains pending.** Independent Web and Android audits found no foundation P0/P1 in the tested scope, but that is not a Phase PASS while known obligations remain.
+- Web is green at foundation `27/27`, contracts `114/114`, Auth/component `288/288`, TypeScript/lint/client+SSR build. CSS is `62.10 kB gzip`; fonts total `82,572 bytes`. Chromium/Firefox/WebKit Portal and Firefox/WebKit Public critical smokes pass.
+- Android is green at focused `32/32`, main Kotlin and AndroidTest compilation, and targeted diff check. Native theme, adaptive scaffold and typed authority route foundations are present.
+- A canonical session revocation receipt slice was started early; finish its cross-surface integration safely, then return to Phase 2. It does not advance the official Phase.
+- CSS/bundle/visual and Android resource/testTag/deep-link/golden/SignUp obligations remain part of the open gate. Provider/device/live proof remains `BLOCKED`, not silently promoted to complete.
+
+## 2026-08-15 current status — Phase 5 active
+
+- Canonical plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 0–4 are complete at their software/source/build/local gates; Phase 5 is in progress; Phase 6–8 remain pending.
+- Phase 4 OTA/private firmware exit is GREEN: backend check; `24/24` repository/lifecycle, `8/8` HTTP private download and `67/67` ownership/storage. Delivery expiry and execution expiry are separate and enforced atomically with grant revocation.
+- Android Phase 4 is GREEN at `109` suites / `793` tests plus assemble/lint, with APK SHA-256 `DCEEEC05251FAE3AD475F5C1F4B41CA6D43E9728AC68C961553E57F9BAF47B34`; Firebase/ADB runtime proof is still `BLOCKED`.
+- Firmware Phase 4 source/build is GREEN with production and OTA artifacts. Native test runtime lacks `gcc/g++`; physical HIL remains `DEFERRED — chờ phần cứng`.
+- Phase 5 is test-first and not PASS: audio v2 wire/schema convergence, scan stop/failure/restart/idempotency, and Android live/record architecture/runtime are active. Current five RED device-security cases belong to this active Phase 5 work.
+
+## 2026-08-22 current status — Phase 6 active
+
+- Canonical plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 0–5 are complete at software/source/build/local gates; Phase 6 is in progress; Phase 7–8 remain pending.
+- Phase 5 is now GREEN: backend device/clinical/audio gates `82/82`, `8/8`, `4/4`, `4/4`, `6/6`; Web/Portal `28/28 + 12/12` and direct TypeScript/lint/build; Android `116` suites / `830` tests plus AndroidTest compile/assemble/lint; firmware audio-v2 source/build PASS.
+- Android debug APK: `26,948,657` bytes, SHA-256 `BABAAA7BFB7289E33A7BF84A4289282A450C9908A3834E762A11938F0D18F7C7`. Firmware Phase-5 binary: `1,121,328` bytes, SHA-256 `CC53E0084BB699BC4787FC10DD20E1AFEC3454E46A05286DE61B56671F357EF6`.
+- Active work is Phase 6 appointment/consent/alert/notification parity and truthfulness. Firebase/provider/ADB remain `BLOCKED`; hardware HIL remains `DEFERRED — chờ phần cứng`; no runtime PASS is inferred.
+
+## 2026-08-22 current status — Phase 7 active
+
+- Canonical plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 0–6 are complete at software/source/build/local gates; Phase 7 is in progress; Phase 8 remains pending.
+- Phase 6 is GREEN: additive appointment soft-delete migration and strict shared receipts are integrated across backend/Portal; shared contracts `49/49`; backend workspace/repository/notification gates, Web contracts/components/type/lint/build, Admin `183/183`/lint/build and Android `830/830`/compile/assemble/lint pass.
+- Active Phase 7 scope is Admin operations and remaining functions: real data for overview/lists, truthful mutations, permission/direct-URL handling, audit/export/settings, device state/OTA visibility and manual billing summary.
+- Firebase/provider/ADB evidence stays `BLOCKED`; hardware HIL stays `DEFERRED — chờ phần cứng`; these do not create a fake runtime PASS.
+
+## 2026-08-22 current status — Phase 8 active
+
+- Canonical plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 0–7 are complete at software/source/build/local gates; Phase 8 release-candidate/demo work is in progress.
+
+## 2026-08-22 — RC2 local demo ready; external Phase 8 gates open
+
+- A production-isolated one-command demo starts backend/audio/Web/Admin, seeds local actors, verifies readiness and cleans all processes/data on exit. Admin and Portal doctor authentication were exercised with Playwright against the real local backend.
+- Final affected gates are Web `390/390 + 123/123`, type/lint/build and zero audit; Admin `186/186`, lint/build and 72-route Chromium accessibility/permission/mutation proof; backend check/base/KLT/admin-list/workspace/repository and zero audit; Android `116/830` with APK SHA-256 `BABAAA7BFB7289E33A7BF84A4289282A450C9908A3834E762A11938F0D18F7C7`; firmware `1.0.1` production/OTA build.
+- RC2 artifact hashes, versions, compatibility, blockers and rollback sequence are canonical in [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md).
+- Verdict: local demo/source/build is ready. Phase 8 and the overall plan remain open because production provider/database/secret/public-URL gates, Android runtime/signing and physical HIL have not been proven.
+- Phase 7 is GREEN: the five high-volume Admin surfaces use tenant-authorized backend query/pagination, full-ledger summaries and strict error handling; Overview, Notifications, Audit, Export, Settings and manual Billing retain their existing truthfulness/receipt contracts.
+- Evidence: shared contracts `50/50`; backend check, admin-list `3/3`, workspace and repository smokes; Admin contracts `185/185`, lint and Vite client+SSR build; clean whitespace diff check.
+- Provider/live deployment, Firebase/ADB runtime and physical firmware HIL remain separate evidence rows and cannot be inferred from source/build success.

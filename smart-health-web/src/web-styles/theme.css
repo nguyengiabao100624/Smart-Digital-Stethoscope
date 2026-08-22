@@ -116,10 +116,26 @@
   body {
     @apply bg-background text-foreground antialiased;
     background-image:
-      radial-gradient(ellipse at 10% 0%, rgba(114, 87, 232, 0.22) 0%, transparent 40%),
-      radial-gradient(ellipse at 90% 5%, rgba(0, 168, 150, 0.18) 0%, transparent 40%),
-      radial-gradient(ellipse at 50% 100%, rgba(11, 92, 154, 0.22) 0%, transparent 50%),
-      radial-gradient(ellipse at 50% 50%, rgba(0, 255, 209, 0.04) 0%, transparent 60%),
+      radial-gradient(
+        ellipse at 10% 0%,
+        rgba(114, 87, 232, 0.22) 0%,
+        transparent 40%
+      ),
+      radial-gradient(
+        ellipse at 90% 5%,
+        rgba(0, 168, 150, 0.18) 0%,
+        transparent 40%
+      ),
+      radial-gradient(
+        ellipse at 50% 100%,
+        rgba(11, 92, 154, 0.22) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        ellipse at 50% 50%,
+        rgba(0, 255, 209, 0.04) 0%,
+        transparent 60%
+      ),
       linear-gradient(180deg, #080f1c 0%, #060c17 100%);
     background-attachment: fixed;
   }
@@ -192,17 +208,6 @@
 
 /* ─── COMPONENT CLASSES ─── */
 @layer components {
-  /* Glass panel — luminous navy, inset highlight */
-  .glass-panel {
-    background: rgba(11, 30, 58, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.13);
-    backdrop-filter: blur(24px) saturate(1.4);
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.32),
-      inset 0 1px 0 rgba(255, 255, 255, 0.09),
-      inset 0 0 0 1px rgba(0, 255, 209, 0.02);
-  }
-
   /* Navy card — richer, stronger tint */
   .navy-card {
     background: rgba(11, 30, 58, 0.7);
@@ -241,53 +246,26 @@
 
   /* Glow card variants */
   .glow-card-cyan {
-    border-color: rgba(0, 255, 209, 0.25) !important;
+    border-color: rgba(0, 255, 209, 0.25);
     box-shadow:
       0 0 30px rgba(0, 255, 209, 0.1),
       inset 0 1px 0 rgba(0, 255, 209, 0.06);
   }
   .glow-card-blue {
-    border-color: rgba(74, 164, 224, 0.25) !important;
+    border-color: rgba(74, 164, 224, 0.25);
     box-shadow: 0 0 30px rgba(74, 164, 224, 0.1);
   }
   .glow-card-purple {
-    border-color: rgba(114, 87, 232, 0.25) !important;
+    border-color: rgba(114, 87, 232, 0.25);
     box-shadow: 0 0 30px rgba(114, 87, 232, 0.1);
   }
   .glow-card-amber {
-    border-color: rgba(245, 158, 11, 0.25) !important;
+    border-color: rgba(245, 158, 11, 0.25);
     box-shadow: 0 0 30px rgba(245, 158, 11, 0.08);
   }
   .glow-card-red {
-    border-color: rgba(255, 75, 75, 0.25) !important;
+    border-color: rgba(255, 75, 75, 0.25);
     box-shadow: 0 0 30px rgba(255, 75, 75, 0.1);
-  }
-
-  /* Premium gradient button */
-  .premium-button {
-    @apply rounded-full px-6 py-3 font-bold uppercase tracking-widest transition-all duration-300;
-    background: linear-gradient(135deg, #0b5c9a, #00ffd1);
-    color: #07111f;
-    box-shadow: 0 0 20px rgba(0, 255, 209, 0.35);
-  }
-  .premium-button:hover {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 0 35px rgba(0, 255, 209, 0.55);
-  }
-
-  /* Brand gradient text — white → sky → cyan */
-  .brand-gradient-text {
-    background: linear-gradient(135deg, #ffffff 15%, #c5eeff 50%, #00ffd1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    filter: drop-shadow(0 0 18px rgba(0, 255, 209, 0.25));
-    display: inline-block;
-    line-height: 1.32;
-    padding: 0.08em 0.12em 0.22em 0.02em;
-    overflow: visible;
-    -webkit-box-decoration-break: clone;
-    box-decoration-break: clone;
   }
 
   /* Hero gradient text — wider range, stronger cyan, safe descenders */
@@ -328,7 +306,11 @@
     background: rgba(11, 30, 58, 0.35);
   }
   .section-purple-tint {
-    background: radial-gradient(ellipse at 50% 0%, rgba(114, 87, 232, 0.08) 0%, transparent 60%);
+    background: radial-gradient(
+      ellipse at 50% 0%,
+      rgba(114, 87, 232, 0.08) 0%,
+      transparent 60%
+    );
   }
 
   /* Neon text glow helpers */
@@ -347,22 +329,6 @@
   .neon-amber {
     color: #f59e0b;
     filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
-  }
-
-  /* Input — consistent dark style */
-  .cyber-input {
-    @apply w-full px-3 rounded-xl outline-none transition-all;
-    height: 2.5rem;
-    background: rgba(11, 30, 58, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #f0f8ff;
-  }
-  .cyber-input::placeholder {
-    color: rgba(255, 255, 255, 0.28);
-  }
-  .cyber-input:focus {
-    border-color: rgba(0, 255, 209, 0.55);
-    box-shadow: 0 0 0 3px rgba(0, 255, 209, 0.1);
   }
 
   /* Subtle data row */
@@ -414,9 +380,21 @@ html:not(.dark) {
 
 html:not(.dark) body {
   background-image:
-    radial-gradient(ellipse at 10% 0%, rgba(114, 87, 232, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at 90% 5%, rgba(0, 168, 150, 0.1) 0%, transparent 45%),
-    radial-gradient(ellipse at 50% 100%, rgba(11, 92, 154, 0.1) 0%, transparent 50%),
+    radial-gradient(
+      ellipse at 10% 0%,
+      rgba(114, 87, 232, 0.08) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      ellipse at 90% 5%,
+      rgba(0, 168, 150, 0.1) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      ellipse at 50% 100%,
+      rgba(11, 92, 154, 0.1) 0%,
+      transparent 50%
+    ),
     linear-gradient(180deg, #f4f8ff 0%, #e7f0fb 100%);
 }
 html:not(.dark) ::selection {
@@ -425,7 +403,6 @@ html:not(.dark) ::selection {
 }
 
 /* Component class overrides */
-html:not(.dark) .glass-panel,
 html:not(.dark) .navy-card,
 html:not(.dark) .premium-card {
   background: rgba(255, 255, 255, 0.85);
@@ -445,81 +422,69 @@ html:not(.dark) .section-alt {
   background: rgba(255, 255, 255, 0.55);
 }
 html:not(.dark) .section-purple-tint {
-  background: radial-gradient(ellipse at 50% 0%, rgba(114, 87, 232, 0.08) 0%, transparent 60%);
-}
-html:not(.dark) .cyber-input {
-  background: #ffffff;
-  color: #0b1a2e;
-  border-color: rgba(11, 26, 46, 0.14);
-}
-html:not(.dark) .cyber-input::placeholder {
-  color: rgba(11, 26, 46, 0.4);
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(114, 87, 232, 0.08) 0%,
+    transparent 60%
+  );
 }
 html:not(.dark) .medical-grid {
   background-image:
     linear-gradient(rgba(11, 92, 154, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(11, 92, 154, 0.06) 1px, transparent 1px);
 }
-html:not(.dark) .brand-gradient-text {
-  background: linear-gradient(135deg, #0b1a2e 15%, #0b5c9a 55%, #00a896 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 12px rgba(0, 168, 150, 0.2));
-}
-
 /* Hardcoded utility overrides — applied app-wide in light mode so the
    theme toggle visibly re-skins every page, not only themable wrappers. */
 html:not(.dark) body {
   color: #0b1a2e;
 }
 html:not(.dark) .text-white {
-  color: #0b1a2e !important;
+  color: #0b1a2e;
 }
 html:not(.dark) .text-white\/90 {
-  color: rgba(11, 26, 46, 0.92) !important;
+  color: rgba(11, 26, 46, 0.92);
 }
 html:not(.dark) .text-white\/80 {
-  color: rgba(11, 26, 46, 0.82) !important;
+  color: rgba(11, 26, 46, 0.82);
 }
 html:not(.dark) .text-white\/70 {
-  color: rgba(11, 26, 46, 0.72) !important;
+  color: rgba(11, 26, 46, 0.72);
 }
 html:not(.dark) .text-white\/60 {
-  color: rgba(11, 26, 46, 0.62) !important;
+  color: rgba(11, 26, 46, 0.62);
 }
 html:not(.dark) .text-white\/50 {
-  color: rgba(11, 26, 46, 0.55) !important;
+  color: rgba(11, 26, 46, 0.55);
 }
 html:not(.dark) .text-white\/40 {
-  color: rgba(11, 26, 46, 0.45) !important;
+  color: rgba(11, 26, 46, 0.45);
 }
 
 html:not(.dark) .bg-\[\#080f1c\],
 html:not(.dark) .bg-\[\#060f1c\],
 html:not(.dark) .bg-\[\#07111f\] {
-  background-color: transparent !important;
+  background-color: transparent;
 }
 html:not(.dark) .bg-\[\#0d1a30\] {
-  background-color: rgba(255, 255, 255, 0.55) !important;
+  background-color: rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(8px);
 }
 html:not(.dark) .bg-\[\#0d1a30\]\/60 {
-  background-color: rgba(255, 255, 255, 0.45) !important;
+  background-color: rgba(255, 255, 255, 0.45);
 }
 html:not(.dark) .bg-\[\#0d1a30\]\/40 {
-  background-color: rgba(255, 255, 255, 0.35) !important;
+  background-color: rgba(255, 255, 255, 0.35);
 }
 html:not(.dark) .bg-\[\#0a1426\],
 html:not(.dark) .bg-\[\#0a1426\]\/80 {
-  background-color: rgba(255, 255, 255, 0.55) !important;
+  background-color: rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(8px);
 }
 
 html:not(.dark) .bg-white\/5,
 html:not(.dark) .bg-white\/8,
 html:not(.dark) .bg-white\/10 {
-  background-color: rgba(11, 26, 46, 0.05) !important;
+  background-color: rgba(11, 26, 46, 0.05);
 }
 
 html:not(.dark) .border-white\/5,
@@ -527,12 +492,12 @@ html:not(.dark) .border-white\/8,
 html:not(.dark) .border-white\/10,
 html:not(.dark) .border-white\/15,
 html:not(.dark) .border-white\/20 {
-  border-color: rgba(11, 26, 46, 0.12) !important;
+  border-color: rgba(11, 26, 46, 0.12);
 }
 
 html:not(.dark) .bg-black\/40,
 html:not(.dark) .bg-black\/50 {
-  background-color: rgba(255, 255, 255, 0.7) !important;
+  background-color: rgba(255, 255, 255, 0.7);
 }
 
 /* ─── QUANTUM SKY / LUMINOUS LIGHT PORTAL ─── */
@@ -569,9 +534,21 @@ html:not(.dark) {
 html:not(.dark) body {
   background-color: #bdddf2;
   background-image:
-    radial-gradient(ellipse at 8% 0%, rgba(0, 175, 218, 0.34) 0%, transparent 34%),
-    radial-gradient(ellipse at 92% 8%, rgba(0, 87, 214, 0.27) 0%, transparent 38%),
-    radial-gradient(ellipse at 50% 100%, rgba(0, 61, 132, 0.24) 0%, transparent 48%),
+    radial-gradient(
+      ellipse at 8% 0%,
+      rgba(0, 175, 218, 0.34) 0%,
+      transparent 34%
+    ),
+    radial-gradient(
+      ellipse at 92% 8%,
+      rgba(0, 87, 214, 0.27) 0%,
+      transparent 38%
+    ),
+    radial-gradient(
+      ellipse at 50% 100%,
+      rgba(0, 61, 132, 0.24) 0%,
+      transparent 48%
+    ),
     linear-gradient(180deg, #d5edf9 0%, #bdddf2 48%, #a9cee7 100%);
 }
 
@@ -592,13 +569,21 @@ html:not(.dark) body::before {
     40px 40px,
     200px 200px,
     200px 200px;
-  mask-image: linear-gradient(to bottom, black 8%, rgba(0, 0, 0, 0.75) 74%, transparent 100%);
+  mask-image: linear-gradient(
+    to bottom,
+    black 8%,
+    rgba(0, 0, 0, 0.75) 74%,
+    transparent 100%
+  );
 }
 
-html:not(.dark) .glass-panel,
 html:not(.dark) .navy-card,
 html:not(.dark) .premium-card {
-  background: linear-gradient(145deg, rgba(225, 242, 251, 0.97), rgba(190, 220, 239, 0.92));
+  background: linear-gradient(
+    145deg,
+    rgba(225, 242, 251, 0.97),
+    rgba(190, 220, 239, 0.92)
+  );
   border-color: rgba(0, 76, 150, 0.3);
   box-shadow:
     0 18px 50px rgba(0, 52, 108, 0.22),
@@ -615,35 +600,31 @@ html:not(.dark) .premium-card:hover {
     inset 0 1px 0 #fff;
 }
 
-html:not(.dark) .hero-gradient-text,
-html:not(.dark) .brand-gradient-text {
-  background: linear-gradient(120deg, #10213d 8%, #2563eb 52%, #38bdf8 82%, #6366f1 100%);
+html:not(.dark) .hero-gradient-text {
+  background: linear-gradient(
+    120deg,
+    #10213d 8%,
+    #2563eb 52%,
+    #38bdf8 82%,
+    #6366f1 100%
+  );
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 8px 20px rgba(37, 99, 235, 0.18));
 }
 
-html:not(.dark) .premium-button {
-  background: linear-gradient(135deg, #2563eb, #38bdf8);
-  color: #ffffff;
-  box-shadow:
-    0 12px 30px rgba(37, 99, 235, 0.25),
-    0 0 22px rgba(56, 189, 248, 0.2);
-}
-
-html:not(.dark) .cyber-input,
 html:not(.dark) input,
 html:not(.dark) textarea,
 html:not(.dark) select {
-  color: #10213d !important;
-  background-color: rgba(218, 237, 248, 0.94) !important;
-  border-color: rgba(0, 78, 154, 0.24) !important;
+  color: #10213d;
+  background-color: rgba(218, 237, 248, 0.94);
+  border-color: rgba(0, 78, 154, 0.24);
   box-shadow: inset 0 1px 0 rgba(244, 252, 255, 0.72);
 }
 html:not(.dark) input::placeholder,
 html:not(.dark) textarea::placeholder {
-  color: rgba(47, 72, 105, 0.5) !important;
+  color: rgba(47, 72, 105, 0.5);
 }
 
 /* Normalize legacy dark page wrappers, panels, menus, tables and overlays. */
@@ -652,7 +633,7 @@ html:not(.dark) [class*="bg-[#0a1426]"],
 html:not(.dark) [class*="bg-[#080f1c]"],
 html:not(.dark) [class*="bg-[#07111f]"],
 html:not(.dark) [class*="bg-[#060f1c]"] {
-  background-color: rgba(205, 229, 243, 0.88) !important;
+  background-color: rgba(205, 229, 243, 0.88);
 }
 html:not(.dark) [style*="background: rgb(13, 26, 48)"],
 html:not(.dark) [style*="background: #0d1a30"],
@@ -660,23 +641,23 @@ html:not(.dark) [style*="rgba(7,17,31"],
 html:not(.dark) [style*="rgba(6,15,28"],
 html:not(.dark) [style*="rgba(11,28,52"],
 html:not(.dark) [style*="rgba(11, 28, 52"] {
-  background: rgba(210, 232, 245, 0.94) !important;
-  color: #10213d !important;
-  border-color: rgba(37, 99, 235, 0.14) !important;
-  box-shadow: 0 16px 45px rgba(37, 99, 235, 0.1) !important;
+  background: rgba(210, 232, 245, 0.94);
+  color: #10213d;
+  border-color: rgba(37, 99, 235, 0.14);
+  box-shadow: 0 16px 45px rgba(37, 99, 235, 0.1);
 }
 html:not(.dark) footer[style] {
   background: linear-gradient(
     180deg,
     rgba(244, 250, 255, 0.96),
     rgba(226, 242, 255, 0.98)
-  ) !important;
-  color: #10213d !important;
-  border-color: rgba(37, 99, 235, 0.12) !important;
+  );
+  color: #10213d;
+  border-color: rgba(37, 99, 235, 0.12);
 }
 html:not(.dark) .app-shell {
-  background: transparent !important;
-  color: #10213d !important;
+  background: transparent;
+  color: #10213d;
 }
 html:not(.dark) .app-shell header[style],
 html:not(.dark) .app-shell aside[style],
@@ -686,138 +667,146 @@ html:not(.dark) .auth-shell > div[class*="bg-"] {
     145deg,
     rgba(218, 238, 249, 0.96),
     rgba(187, 218, 237, 0.9)
-  ) !important;
-  color: #10213d !important;
-  border-color: rgba(37, 99, 235, 0.12) !important;
+  );
+  color: #10213d;
+  border-color: rgba(37, 99, 235, 0.12);
   box-shadow:
     0 18px 55px rgba(37, 99, 235, 0.11),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 html:not(.dark) .public-shell > header,
 html:not(.dark) .portal-shell > div > header {
-  background: rgba(207, 231, 245, 0.94) !important;
-  color: #10213d !important;
-  border-color: rgba(37, 99, 235, 0.11) !important;
-  box-shadow: 0 10px 36px rgba(37, 99, 235, 0.1) !important;
+  background: rgba(207, 231, 245, 0.94);
+  color: #10213d;
+  border-color: rgba(37, 99, 235, 0.11);
+  box-shadow: 0 10px 36px rgba(37, 99, 235, 0.1);
 }
 html:not(.dark) .public-header {
   background:
     linear-gradient(rgba(0, 102, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 102, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(105deg, rgba(215, 238, 249, 0.98), rgba(187, 221, 240, 0.97)) !important;
+    linear-gradient(
+      105deg,
+      rgba(215, 238, 249, 0.98),
+      rgba(187, 221, 240, 0.97)
+    );
   background-size:
     32px 32px,
     32px 32px,
-    auto !important;
-  color: #10213d !important;
-  border-bottom: 1px solid rgba(0, 102, 255, 0.24) !important;
+    auto;
+  color: #10213d;
+  border-bottom: 1px solid rgba(0, 102, 255, 0.24);
   box-shadow:
     0 12px 38px rgba(0, 67, 135, 0.14),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.8) !important;
+    inset 0 -1px 0 rgba(255, 255, 255, 0.8);
 }
 html:not(.dark) .luminous-hero {
   background:
     radial-gradient(circle at 16% 26%, rgba(0, 162, 216, 0.3), transparent 34%),
     radial-gradient(circle at 83% 18%, rgba(71, 76, 205, 0.2), transparent 32%),
-    linear-gradient(180deg, rgba(205, 232, 247, 0.97), rgba(177, 215, 237, 0.94)) !important;
+    linear-gradient(
+      180deg,
+      rgba(205, 232, 247, 0.97),
+      rgba(177, 215, 237, 0.94)
+    );
 }
 html:not(.dark) .luminous-hero-effects {
   opacity: 0.7;
   mix-blend-mode: multiply;
 }
 html:not(.dark) .luminous-hero-effects > div:first-child {
-  background-color: rgba(56, 189, 248, 0.2) !important;
+  background-color: rgba(56, 189, 248, 0.2);
 }
 html:not(.dark) .luminous-hero-effects > div:nth-child(2) {
-  background-color: rgba(37, 99, 235, 0.12) !important;
+  background-color: rgba(37, 99, 235, 0.12);
 }
 html:not(.dark) .luminous-hero-effects > div:nth-child(3) {
-  background-color: rgba(99, 102, 241, 0.1) !important;
+  background-color: rgba(99, 102, 241, 0.1);
 }
 html:not(.dark) .public-shell > div:first-child {
-  background: linear-gradient(90deg, #2563eb, #38bdf8, #6366f1) !important;
-  color: #ffffff !important;
+  background: linear-gradient(90deg, #2563eb, #38bdf8, #6366f1);
+  color: #ffffff;
 }
 html:not(.dark) .public-shell > div:first-child .text-white,
 html:not(.dark) .public-shell > div:first-child [class*="text-white"] {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 html:not(.dark) .app-shell main {
   color: #10213d;
 }
 html:not(.dark) .app-shell [class*="shadow-[0_0_"],
 html:not(.dark) .app-shell [class*="shadow-[0_20px_"] {
-  --tw-shadow-color: rgba(37, 99, 235, 0.12) !important;
+  --tw-shadow-color: rgba(37, 99, 235, 0.12);
 }
 html:not(.dark) .app-shell .text-\[\#07111f\],
 html:not(.dark) .app-shell .text-\[\#0d1a30\] {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 html:not(.dark) .app-shell .bg-white\/5,
 html:not(.dark) .app-shell .bg-white\/8,
 html:not(.dark) .app-shell .bg-white\/10 {
-  background-color: rgba(255, 255, 255, 0.66) !important;
+  background-color: rgba(255, 255, 255, 0.66);
 }
 html:not(.dark) .app-shell .bg-\[\#00FFD1\]\/5,
 html:not(.dark) .app-shell .bg-\[\#00FFD1\]\/10,
 html:not(.dark) .app-shell .bg-\[\#00FFD1\]\/15,
 html:not(.dark) .app-shell .bg-\[\#00FFD1\]\/20 {
-  background-color: rgba(56, 189, 248, 0.12) !important;
+  background-color: rgba(56, 189, 248, 0.12);
 }
 html:not(.dark) .app-shell nav[style],
 html:not(.dark) .app-shell nav a,
 html:not(.dark) .app-shell nav button {
-  color: #405574 !important;
+  color: #405574;
 }
 html:not(.dark) .portal-shell aside nav a[style*="#00FFD1"] {
-  color: #2563eb !important;
+  color: #2563eb;
 }
 html:not(.dark) .portal-shell aside {
   background: linear-gradient(
     180deg,
     rgba(249, 252, 255, 0.96),
     rgba(229, 244, 255, 0.9)
-  ) !important;
+  );
 }
 html:not(.dark) .portal-shell .portal-sidebar[style] {
   background: linear-gradient(
     180deg,
     rgba(244, 251, 255, 0.98),
     rgba(213, 238, 253, 0.96)
-  ) !important;
-  color: #06162c !important;
-  border-color: rgba(0, 74, 145, 0.2) !important;
-  box-shadow: 16px 0 46px rgba(0, 61, 122, 0.13) !important;
+  );
+  color: #06162c;
+  border-color: rgba(0, 74, 145, 0.2);
+  box-shadow: 16px 0 46px rgba(0, 61, 122, 0.13);
 }
 html:not(.dark) .portal-shell .portal-sidebar nav a {
-  color: #304d6b !important;
+  color: #304d6b;
 }
 html:not(.dark) .portal-shell .portal-sidebar nav a[style*="#00FFD1"] {
-  color: #005ed8 !important;
+  color: #005ed8;
 }
 html:not(.dark) .portal-shell .portal-sidebar .text-white,
 html:not(.dark) .portal-shell .portal-sidebar .text-white\/70,
 html:not(.dark) .portal-shell .portal-sidebar .text-white\/60,
 html:not(.dark) .portal-shell .portal-sidebar .text-white\/50,
 html:not(.dark) .portal-shell .portal-sidebar .text-white\/40 {
-  color: #173b5d !important;
+  color: #173b5d;
 }
 html:not(.dark) .portal-shell main,
 html:not(.dark) .auth-shell {
-  background-color: transparent !important;
+  background-color: transparent;
 }
 html:not(.dark) .auth-shell svg polyline {
   stroke: #2563eb;
 }
 html:not(.dark) .text-\[\#00FFD1\] {
-  color: #2563eb !important;
+  color: #2563eb;
 }
 html:not(.dark) .bg-\[\#00FFD1\] {
-  background-color: #2563eb !important;
+  background-color: #2563eb;
 }
 html:not(.dark) .border-\[\#00FFD1\]\/30,
 html:not(.dark) .border-\[\#00FFD1\]\/20 {
-  border-color: rgba(37, 99, 235, 0.25) !important;
+  border-color: rgba(37, 99, 235, 0.25);
 }
 html:not(.dark) .neon-cyan {
   color: #2563eb;
@@ -830,13 +819,17 @@ html:not(.dark) .data-row:hover {
   background: rgba(56, 189, 248, 0.07);
 }
 html:not(.dark) option {
-  color: #10213d !important;
-  background: #ffffff !important;
+  color: #10213d;
+  background: #ffffff;
 }
 
 /* Complete light-mode normalization for legacy cyber surfaces. */
 html:not(.dark) .app-shell {
-  --luminous-surface: linear-gradient(145deg, rgba(216, 237, 248, 0.98), rgba(177, 211, 232, 0.94));
+  --luminous-surface: linear-gradient(
+    145deg,
+    rgba(216, 237, 248, 0.98),
+    rgba(177, 211, 232, 0.94)
+  );
   --luminous-surface-strong: rgba(211, 234, 247, 0.98);
   --luminous-line: rgba(0, 65, 133, 0.31);
   --luminous-copy: #06162c;
@@ -845,17 +838,17 @@ html:not(.dark) .app-shell {
 html:not(.dark) .app-shell .text-\[\#94b8d0\],
 html:not(.dark) .app-shell .text-\[\#8aa5ba\],
 html:not(.dark) .app-shell .text-\[\#64748B\] {
-  color: var(--luminous-muted) !important;
+  color: var(--luminous-muted);
 }
 html:not(.dark) .app-shell .text-\[\#eefbff\],
 html:not(.dark) .app-shell .text-\[\#f0f8ff\],
 html:not(.dark) .app-shell .text-\[\#0F172A\] {
-  color: var(--luminous-copy) !important;
+  color: var(--luminous-copy);
 }
 html:not(.dark) .app-shell .text-white,
 html:not(.dark) .app-shell .text-white\/90,
 html:not(.dark) .app-shell .text-white\/80 {
-  color: #06162c !important;
+  color: #06162c;
 }
 html:not(.dark) .app-shell .text-white\/70,
 html:not(.dark) .app-shell .text-white\/60,
@@ -864,7 +857,7 @@ html:not(.dark) .app-shell .text-white\/50,
 html:not(.dark) .app-shell .text-white\/40,
 html:not(.dark) .app-shell .text-white\/30,
 html:not(.dark) .app-shell .text-white\/20 {
-  color: #304d6b !important;
+  color: #304d6b;
 }
 html:not(.dark) .app-shell [class*="bg-[#0d1a30]"],
 html:not(.dark) .app-shell [class*="bg-[#0a1426]"],
@@ -873,121 +866,99 @@ html:not(.dark) .app-shell [class*="bg-[#07111f]"],
 html:not(.dark) .app-shell [class*="bg-[#060f1c]"],
 html:not(.dark) .app-shell .bg-black\/40,
 html:not(.dark) .app-shell .bg-black\/50 {
-  background: var(--luminous-surface) !important;
-  border-color: var(--luminous-line) !important;
-  color: var(--luminous-copy) !important;
+  background: var(--luminous-surface);
+  border-color: var(--luminous-line);
+  color: var(--luminous-copy);
 }
 html:not(.dark) .app-shell [style*="rgba(11,28,52"],
 html:not(.dark) .app-shell [style*="rgba(11, 28, 52"],
 html:not(.dark) .app-shell [style*="rgba(7,17,31"],
 html:not(.dark) .app-shell [style*="rgba(6,15,28"] {
-  background: var(--luminous-surface) !important;
-  border-color: var(--luminous-line) !important;
-  color: var(--luminous-copy) !important;
+  background: var(--luminous-surface);
+  border-color: var(--luminous-line);
+  color: var(--luminous-copy);
   box-shadow:
     0 18px 48px rgba(37, 99, 235, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 html:not(.dark) .app-shell .bg-white\/8,
 html:not(.dark) .app-shell .bg-white\/5,
 html:not(.dark) .app-shell .bg-white\/10 {
-  background-color: rgba(207, 230, 244, 0.82) !important;
+  background-color: rgba(207, 230, 244, 0.82);
 }
 html:not(.dark) .app-shell .divide-white\/5 > :not(:last-child),
 html:not(.dark) .app-shell .divide-white\/10 > :not(:last-child) {
-  border-color: rgba(37, 99, 235, 0.09) !important;
+  border-color: rgba(37, 99, 235, 0.09);
 }
 html:not(.dark) .app-shell table thead,
 html:not(.dark) .app-shell table thead tr {
-  background: rgba(190, 220, 239, 0.88) !important;
+  background: rgba(190, 220, 239, 0.88);
 }
 html:not(.dark) .app-shell table tbody {
-  background: rgba(210, 232, 245, 0.7) !important;
+  background: rgba(210, 232, 245, 0.7);
 }
 html:not(.dark) .app-shell table tbody tr:hover {
-  background: rgba(56, 189, 248, 0.08) !important;
+  background: rgba(56, 189, 248, 0.08);
 }
 html:not(.dark) .portal-shell aside [style*="rgba(255,255,255"] {
-  border-color: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.12);
 }
 html:not(.dark) .portal-shell aside > div,
 html:not(.dark) .portal-shell aside nav {
   color: var(--luminous-copy);
 }
 html:not(.dark) .portal-shell header input {
-  background: rgba(215, 236, 248, 0.96) !important;
+  background: rgba(215, 236, 248, 0.96);
 }
 html:not(.dark) .public-header nav a:hover,
 html:not(.dark) .public-header nav button:hover {
-  color: #2563eb !important;
-  background: rgba(56, 189, 248, 0.1) !important;
-}
-html:not(.dark) .public-header > div > a .brand-gradient-text,
-html:not(.dark) .portal-shell aside .brand-gradient-text,
-html:not(.dark) .auth-shell .brand-gradient-text {
-  background-image: linear-gradient(110deg, #06162c 8%, #0066e8 58%, #008eae 100%) !important;
-  filter: drop-shadow(0 4px 12px rgba(0, 87, 173, 0.2));
+  color: #2563eb;
+  background: rgba(56, 189, 248, 0.1);
 }
 html:not(.dark) .public-header > div > div > a[href="/login"] {
-  color: #183653 !important;
+  color: #183653;
 }
 html:not(.dark) .public-header > div > div > a[href="/login"]:hover {
-  color: #005ed8 !important;
+  color: #005ed8;
 }
 html:not(.dark) .app-shell .public-header .header-primary-action[style],
 html:not(.dark) .app-shell .public-header .header-primary-action[style]:hover {
-  color: #ffffff !important;
-  background: linear-gradient(120deg, #005ed8, #008fca) !important;
+  color: #ffffff;
+  background: linear-gradient(120deg, #005ed8, #008fca);
   box-shadow:
     0 8px 24px rgba(0, 94, 216, 0.28),
-    0 0 18px rgba(0, 190, 230, 0.2) !important;
+    0 0 18px rgba(0, 190, 230, 0.2);
 }
 html:not(.dark) .app-shell .public-header .header-primary-action svg {
-  color: #bffbff !important;
+  color: #bffbff;
 }
 html:not(.dark) .app-shell .public-header .header-menu-button[style] {
-  color: #064b86 !important;
-  background: rgba(202, 229, 244, 0.97) !important;
-  border-color: rgba(0, 102, 255, 0.25) !important;
-  box-shadow: 0 5px 16px rgba(0, 71, 145, 0.14) !important;
-}
-html:not(.dark) .portal-popover,
-html:not(.dark) .portal-popover[style] {
-  background: rgba(207, 231, 245, 0.99) !important;
-  color: #06162c !important;
-  border-color: rgba(0, 102, 255, 0.2) !important;
-  box-shadow: 0 20px 55px rgba(0, 53, 108, 0.2) !important;
-}
-html:not(.dark) .app-shell .portal-popover .text-white,
-html:not(.dark) .app-shell .portal-popover .text-white\/70,
-html:not(.dark) .app-shell .portal-popover .text-white\/60,
-html:not(.dark) .portal-popover p[style] {
-  color: #173b5d !important;
-}
-html:not(.dark) .portal-popover > div {
-  border-color: rgba(0, 74, 145, 0.12) !important;
+  color: #064b86;
+  background: rgba(202, 229, 244, 0.97);
+  border-color: rgba(0, 102, 255, 0.25);
+  box-shadow: 0 5px 16px rgba(0, 71, 145, 0.14);
 }
 html:not(.dark) .auth-shell > div:first-child {
   background: linear-gradient(
     155deg,
     rgba(196, 226, 243, 0.99),
     rgba(158, 204, 233, 0.96)
-  ) !important;
+  );
 }
 html:not(.dark) .auth-shell .auth-visual-panel {
-  color: #06162c !important;
-  border-color: rgba(0, 74, 145, 0.18) !important;
+  color: #06162c;
+  border-color: rgba(0, 74, 145, 0.18);
 }
 html:not(.dark) .auth-shell .auth-visual-panel .text-white {
-  color: #06162c !important;
+  color: #06162c;
 }
 html:not(.dark) .auth-shell .auth-visual-panel .text-white\/70,
 html:not(.dark) .auth-shell .auth-visual-panel .text-white\/60,
 html:not(.dark) .auth-shell .auth-visual-panel .text-white\/55 {
-  color: #304d6b !important;
+  color: #304d6b;
 }
 html:not(.dark) .auth-shell [class*="rounded-[2rem]"] > div:last-child {
-  background: rgba(211, 234, 247, 0.97) !important;
+  background: rgba(211, 234, 247, 0.97);
 }
 html:not(.dark) .auth-shell .bg-clip-text.bg-gradient-to-r,
 html:not(.dark) .public-header .bg-clip-text.bg-gradient-to-r {
@@ -995,36 +966,40 @@ html:not(.dark) .public-header .bg-clip-text.bg-gradient-to-r {
 }
 html:not(.dark) .app-shell .bg-clip-text.text-transparent,
 html:not(.dark) .app-shell [style*="WebkitTextFillColor"] {
-  background-image: linear-gradient(120deg, #06162c 5%, #005ed8 54%, #008fb4 100%) !important;
-  background-clip: text !important;
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
+  background-image: linear-gradient(
+    120deg,
+    #06162c 5%,
+    #005ed8 54%,
+    #008fb4 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 5px 14px rgba(0, 87, 173, 0.18));
 }
 html:not(.dark) .public-shell > div:first-child .bg-clip-text,
 html:not(.dark) .public-shell > div:first-child [style*="WebkitTextFillColor"] {
-  background-image: linear-gradient(90deg, #ffffff, #c8fbff) !important;
+  background-image: linear-gradient(90deg, #ffffff, #c8fbff);
 }
 html:not(.dark) .app-shell .text-\[\#00FFD1\] {
-  color: #005ed8 !important;
+  color: #005ed8;
 }
 html:not(.dark) .app-shell .text-\[\#4AA4E0\] {
-  color: #0069b8 !important;
+  color: #0069b8;
 }
 html:not(.dark) .app-shell .text-\[\#F59E0B\] {
-  color: #9a5700 !important;
+  color: #9a5700;
 }
 html:not(.dark) .app-shell .text-\[\#FF4B4B\],
 html:not(.dark) .app-shell .text-\[\#FF6B6B\] {
-  color: #c2253d !important;
+  color: #c2253d;
 }
 /* Preserve readable foregrounds on saturated actions and status badges. */
-html:not(.dark) .app-shell .premium-button,
 html:not(.dark) .app-shell .bg-\[\#FF4B4B\].text-white,
 html:not(.dark) .app-shell .bg-\[\#0B5C9A\].text-white,
 html:not(.dark) .app-shell [class*="bg-[#FF4B4B]"] .text-white,
 html:not(.dark) .app-shell [class*="bg-[#0B5C9A]"] .text-white {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 html:not(.dark) .app-shell button:disabled,
 html:not(.dark) .app-shell [aria-disabled="true"] {
@@ -1032,7 +1007,7 @@ html:not(.dark) .app-shell [aria-disabled="true"] {
 }
 html:not(.dark) .app-shell input::placeholder,
 html:not(.dark) .app-shell textarea::placeholder {
-  color: #59718a !important;
+  color: #59718a;
   opacity: 1;
 }
 html:not(.dark) .app-shell label,
@@ -1042,73 +1017,7 @@ html:not(.dark) .app-shell legend {
 html:not(.dark) .app-shell .medical-grid,
 html:not(.dark) .app-shell [style*="backgroundSize: 20px 20px"],
 html:not(.dark) .app-shell [style*="background-size: 20px 20px"] {
-  opacity: 0.72 !important;
-}
-
-/* Footer stays a high-contrast cyber-clinical anchor in both themes. */
-.cyber-footer,
-html:not(.dark) .cyber-footer,
-html:not(.dark) footer.cyber-footer[style] {
-  color: #f4fbff !important;
-  background:
-    linear-gradient(rgba(0, 217, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 217, 255, 0.055) 1px, transparent 1px),
-    radial-gradient(circle at 20% 0%, rgba(0, 195, 255, 0.2), transparent 34%),
-    radial-gradient(circle at 82% 100%, rgba(0, 102, 255, 0.16), transparent 36%),
-    linear-gradient(180deg, #07182d 0%, #020a17 100%) !important;
-  background-size:
-    44px 44px,
-    44px 44px,
-    auto,
-    auto,
-    auto !important;
-  border-top: 1px solid rgba(79, 225, 255, 0.5) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 -18px 54px rgba(0, 102, 255, 0.13) !important;
-}
-.cyber-footer::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 4%, #00d9ff 48%, #4d7cff 68%, transparent 96%);
-  box-shadow: 0 0 22px rgba(0, 217, 255, 0.7);
-}
-html:not(.dark) .app-shell .cyber-footer .text-white,
-html:not(.dark) .app-shell .cyber-footer .text-white\/90,
-html:not(.dark) .app-shell .cyber-footer .text-white\/80,
-html:not(.dark) .app-shell .cyber-footer .text-white\/70,
-html:not(.dark) .app-shell .cyber-footer .text-white\/60,
-html:not(.dark) .app-shell .cyber-footer .text-white\/50,
-html:not(.dark) .app-shell .cyber-footer .text-white\/40,
-html:not(.dark) .app-shell .cyber-footer .text-white\/30,
-html:not(.dark) .app-shell .cyber-footer .text-white\/20 {
-  color: #f4fbff !important;
-}
-.cyber-footer p[style],
-.cyber-footer ul[style] {
-  color: #a9c6da !important;
-}
-.cyber-footer > div > div:last-child[style] {
-  color: #8eafc8 !important;
-  border-color: rgba(126, 211, 255, 0.17) !important;
-}
-.cyber-footer .brand-gradient-text,
-html:not(.dark) .cyber-footer .brand-gradient-text {
-  background-image: linear-gradient(105deg, #ffffff 6%, #71e6ff 55%, #5c8dff 100%) !important;
-  filter: drop-shadow(0 0 14px rgba(0, 217, 255, 0.3));
-}
-.cyber-footer a {
-  color: inherit;
-}
-.cyber-footer a:hover {
-  color: #71e6ff !important;
-}
-.cyber-footer a[title] {
-  background: rgba(110, 211, 255, 0.08) !important;
-  border-color: rgba(126, 211, 255, 0.2) !important;
-  color: #a9c6da !important;
+  opacity: 0.72;
 }
 
 @keyframes portal-sparkle {
@@ -1124,8 +1033,16 @@ html:not(.dark) .cyber-footer .brand-gradient-text {
 }
 .luminous-noise {
   background-image:
-    radial-gradient(circle at 20% 30%, currentColor 0 0.55px, transparent 0.75px),
-    radial-gradient(circle at 72% 64%, currentColor 0 0.45px, transparent 0.7px),
+    radial-gradient(
+      circle at 20% 30%,
+      currentColor 0 0.55px,
+      transparent 0.75px
+    ),
+    radial-gradient(
+      circle at 72% 64%,
+      currentColor 0 0.45px,
+      transparent 0.7px
+    ),
     radial-gradient(circle at 44% 82%, currentColor 0 0.4px, transparent 0.65px);
   background-size:
     5px 5px,
@@ -1140,10 +1057,26 @@ html:not(.dark) .app-shell::before {
   z-index: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.95) 0 1px, transparent 2px),
-    radial-gradient(circle at 78% 22%, rgba(56, 189, 248, 0.65) 0 1px, transparent 2px),
-    radial-gradient(circle at 38% 74%, rgba(99, 102, 241, 0.4) 0 1px, transparent 2px),
-    radial-gradient(circle at 88% 68%, rgba(255, 255, 255, 0.9) 0 1px, transparent 2px);
+    radial-gradient(
+      circle at 12% 18%,
+      rgba(255, 255, 255, 0.95) 0 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 78% 22%,
+      rgba(56, 189, 248, 0.65) 0 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 38% 74%,
+      rgba(99, 102, 241, 0.4) 0 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 88% 68%,
+      rgba(255, 255, 255, 0.9) 0 1px,
+      transparent 2px
+    );
   background-size:
     190px 190px,
     240px 240px,
@@ -1240,28 +1173,28 @@ html:not(.dark) .app-shell > * {
   .luminous-loader-dot,
   .luminous-loader-orb,
   .animated-border {
-    animation: none !important;
+    animation: none;
   }
 }
 
 /* ─── Public header nav dropdown (works in both themes) ─── */
 .public-nav-dropdown {
-  background: rgba(8, 18, 36, 0.96) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(8, 18, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   -webkit-backdrop-filter: blur(30px);
   backdrop-filter: blur(30px);
   box-shadow:
     0 20px 50px rgba(0, 0, 0, 0.55),
-    0 0 22px rgba(0, 168, 150, 0.1) !important;
-  color: rgba(255, 255, 255, 0.78) !important;
+    0 0 22px rgba(0, 168, 150, 0.1);
+  color: rgba(255, 255, 255, 0.78);
 }
 .public-nav-dropdown-item {
-  color: rgba(255, 255, 255, 0.78) !important;
-  background: transparent !important;
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
 }
 .public-nav-dropdown-item:hover {
-  color: #00ffd1 !important;
-  background: rgba(0, 255, 209, 0.1) !important;
+  color: #00ffd1;
+  background: rgba(0, 255, 209, 0.1);
 }
 .public-nav-dropdown-dot {
   background: #00ffd1;
@@ -1274,19 +1207,19 @@ html:not(.dark) .public-nav-dropdown {
     160deg,
     rgba(243, 250, 255, 0.98),
     rgba(214, 234, 248, 0.96)
-  ) !important;
-  border: 1px solid rgba(0, 102, 255, 0.22) !important;
+  );
+  border: 1px solid rgba(0, 102, 255, 0.22);
   box-shadow:
     0 22px 55px rgba(0, 67, 135, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
-  color: #10213d !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: #10213d;
 }
 html:not(.dark) .public-nav-dropdown-item {
-  color: #183653 !important;
+  color: #183653;
 }
 html:not(.dark) .public-nav-dropdown-item:hover {
-  color: #005ed8 !important;
-  background: rgba(56, 189, 248, 0.16) !important;
+  color: #005ed8;
+  background: rgba(56, 189, 248, 0.16);
 }
 html:not(.dark) .public-nav-dropdown-dot {
   background: #005ed8;
@@ -1296,13 +1229,13 @@ html:not(.dark) .public-nav-dropdown-dot {
 /* Ensure public sticky header is never clipped; portal/auth shells stay viewport-locked. */
 .app-shell:not(.portal-shell):not(.auth-shell),
 .public-shell {
-  overflow: visible !important;
+  overflow: visible;
 }
 .auth-shell {
-  height: 100svh !important;
-  min-height: 100svh !important;
-  max-height: 100svh !important;
-  overflow: hidden !important;
+  height: 100svh;
+  min-height: 100svh;
+  max-height: 100svh;
+  overflow: hidden;
 }
 .auth-shell .auth-form-host {
   align-items: center;
@@ -1317,60 +1250,14 @@ html:not(.dark) .public-nav-dropdown-dot {
   }
 }
 .portal-shell {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  height: 100vh !important;
-  height: 100svh !important;
-  max-height: 100vh !important;
-  max-height: 100svh !important;
-  overflow: hidden !important;
-  isolation: isolate;
-}
-.portal-ambient {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  max-height: 100vh;
+  max-height: 100svh;
   overflow: hidden;
-}
-.portal-ambient-orb {
-  position: absolute;
-  border-radius: 999px;
-  pointer-events: none;
-}
-.portal-ambient-orb-a {
-  top: -350px;
-  left: 25%;
-  width: 700px;
-  height: 700px;
-  background: radial-gradient(
-    circle,
-    rgba(114, 87, 232, 0.18) 0%,
-    rgba(11, 92, 154, 0.12) 50%,
-    transparent 70%
-  );
-  filter: blur(160px);
-}
-.portal-ambient-orb-b {
-  right: -120px;
-  bottom: -200px;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(
-    circle,
-    rgba(0, 255, 209, 0.12) 0%,
-    rgba(0, 168, 150, 0.08) 50%,
-    transparent 70%
-  );
-  filter: blur(130px);
-}
-.portal-ambient-orb-c {
-  top: 50%;
-  right: 25%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(11, 92, 154, 0.1) 0%, transparent 70%);
-  filter: blur(120px);
+  isolation: isolate;
 }
 .portal-sidebar,
 .portal-content {
@@ -1382,15 +1269,15 @@ html:not(.dark) .public-nav-dropdown-dot {
   z-index: 2;
 }
 .portal-shell > .flex-1 {
-  min-width: 0 !important;
-  max-width: calc(100vw - 280px) !important;
+  min-width: 0;
+  max-width: calc(100vw - 280px);
 }
 .portal-shell main {
-  overflow: auto !important;
+  overflow: auto;
 }
 @media (max-width: 767px) {
   .portal-shell > .flex-1 {
-    max-width: 100vw !important;
+    max-width: 100vw;
   }
 }
 
@@ -1400,12 +1287,26 @@ html:not(.dark) body {
     /* fine grid */
     linear-gradient(rgba(0, 102, 255, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 102, 255, 0.05) 1px, transparent 1px),
-    /* coarse grid */ linear-gradient(rgba(0, 67, 135, 0.07) 1px, transparent 1px),
+    /* coarse grid */
+    linear-gradient(rgba(0, 67, 135, 0.07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 67, 135, 0.07) 1px, transparent 1px),
-    /* glow orbs */ radial-gradient(ellipse at 12% 8%, rgba(0, 162, 216, 0.18) 0%, transparent 42%),
-    radial-gradient(ellipse at 88% 12%, rgba(99, 102, 241, 0.14) 0%, transparent 42%),
-    radial-gradient(ellipse at 50% 95%, rgba(0, 94, 216, 0.16) 0%, transparent 50%),
-    linear-gradient(180deg, #cbe4f6 0%, #b6d6ec 55%, #a4c8e3 100%) !important;
+    /* glow orbs */
+    radial-gradient(
+        ellipse at 12% 8%,
+        rgba(0, 162, 216, 0.18) 0%,
+        transparent 42%
+      ),
+    radial-gradient(
+      ellipse at 88% 12%,
+      rgba(99, 102, 241, 0.14) 0%,
+      transparent 42%
+    ),
+    radial-gradient(
+      ellipse at 50% 95%,
+      rgba(0, 94, 216, 0.16) 0%,
+      transparent 50%
+    ),
+    linear-gradient(180deg, #cbe4f6 0%, #b6d6ec 55%, #a4c8e3 100%);
   background-size:
     32px 32px,
     32px 32px,
@@ -1414,8 +1315,8 @@ html:not(.dark) body {
     auto,
     auto,
     auto,
-    auto !important;
-  background-attachment: fixed !important;
+    auto;
+  background-attachment: fixed;
 }
 
 /* Force-add subtle vignette grid to <main> in case body bg is overridden by a section */
@@ -1467,9 +1368,17 @@ html:not(.dark) .auth-shell {
     linear-gradient(90deg, rgba(0, 67, 135, 0.055) 1px, transparent 1px),
     linear-gradient(rgba(0, 102, 255, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 102, 255, 0.035) 1px, transparent 1px),
-    radial-gradient(ellipse at 16% 12%, rgba(0, 162, 216, 0.16), transparent 42%),
-    radial-gradient(ellipse at 82% 20%, rgba(99, 102, 241, 0.12), transparent 42%),
-    linear-gradient(180deg, #d6edf8 0%, #c4e1f3 55%, #b3d4eb 100%) !important;
+    radial-gradient(
+      ellipse at 16% 12%,
+      rgba(0, 162, 216, 0.16),
+      transparent 42%
+    ),
+    radial-gradient(
+      ellipse at 82% 20%,
+      rgba(99, 102, 241, 0.12),
+      transparent 42%
+    ),
+    linear-gradient(180deg, #d6edf8 0%, #c4e1f3 55%, #b3d4eb 100%);
   background-size:
     96px 96px,
     96px 96px,
@@ -1477,7 +1386,7 @@ html:not(.dark) .auth-shell {
     32px 32px,
     auto,
     auto,
-    auto !important;
+    auto;
 }
 
 /* ─── Aggressive white-text contrast safeguards (light mode) ─── */
@@ -1489,7 +1398,7 @@ html:not(.dark) [style*="color:white"],
 html:not(.dark) [style*="color: rgb(255, 255, 255)"],
 html:not(.dark) [style*="color: rgba(255,255,255"],
 html:not(.dark) [style*="color: rgba(255, 255, 255"] {
-  color: #0b1a2e !important;
+  color: #0b1a2e;
 }
 
 /* Preserve white text on truly dark surfaces (announcement bar, dark gradient pills/buttons) */
@@ -1497,16 +1406,13 @@ html:not(.dark) .public-shell > div:first-child [style*="color"],
 html:not(.dark) .public-shell > div:first-child *,
 html:not(.dark) [class*="from-[#0"] [style*="color"],
 html:not(.dark) [class*="bg-gradient"] [style*="color: rgb(255, 255, 255)"],
-html:not(.dark) .cyber-footer *,
 html:not(.dark) button[class*="bg-gradient"],
 html:not(.dark) a[class*="bg-gradient"] {
   /* leave colors as authored */
 }
 html:not(.dark) .public-shell > div:first-child .text-white,
-html:not(.dark) .public-shell > div:first-child [class*="text-white"],
-html:not(.dark) .cyber-footer .text-white,
-html:not(.dark) .cyber-footer [class*="text-white"] {
-  color: #ffffff !important;
+html:not(.dark) .public-shell > div:first-child [class*="text-white"] {
+  color: #ffffff;
 }
 
 /* Tab/pill style: inactive pill text must not be near-white on light bg */
@@ -1516,7 +1422,7 @@ html:not(.dark) [class*="text-white/40"],
 html:not(.dark) [class*="text-white/45"],
 html:not(.dark) [class*="text-white/50"],
 html:not(.dark) [class*="text-white/55"] {
-  color: #2a4a73 !important;
+  color: #2a4a73;
 }
 html:not(.dark) [class*="text-white/60"],
 html:not(.dark) [class*="text-white/65"],
@@ -1526,27 +1432,26 @@ html:not(.dark) [class*="text-white/80"],
 html:not(.dark) [class*="text-white/85"],
 html:not(.dark) [class*="text-white/90"],
 html:not(.dark) [class*="text-white/95"] {
-  color: #0f2541 !important;
+  color: #0f2541;
 }
 
 /* Light pricing/card panels: bold numbers stay dark for contrast */
 html:not(.dark) [class*="bg-gradient-to-"] .text-white,
 html:not(.dark) [class*="bg-white/"] .text-white {
-  color: #06162c !important;
+  color: #06162c;
 }
 
 /* Inputs/textareas placeholder + value contrast */
 html:not(.dark) input::placeholder,
-html:not(.dark) textarea::placeholder,
-html:not(.dark) select {
-  color: rgba(15, 37, 65, 0.55) !important;
+html:not(.dark) textarea::placeholder {
+  color: rgba(15, 37, 65, 0.55);
 }
 
 /* Section backgrounds that were dark-only — let body grid show through */
 html:not(.dark) section[class*="bg-[#"],
 html:not(.dark) section[style*="background: #0"],
 html:not(.dark) section[style*="background:#0"] {
-  background: transparent !important;
+  background: transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1557,76 +1462,37 @@ html:not(.dark) section[style*="background:#0"] {
    on every section, not just some.
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── 1. CYBER FOOTER: stays dark, text stays white ─── */
-html:not(.dark) .cyber-footer,
-html:not(.dark) footer.cyber-footer,
-html:not(.dark) .app-shell .cyber-footer {
-  background:
-    linear-gradient(rgba(0, 217, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 217, 255, 0.055) 1px, transparent 1px),
-    radial-gradient(circle at 20% 0%, rgba(0, 195, 255, 0.22), transparent 34%),
-    radial-gradient(circle at 82% 100%, rgba(0, 102, 255, 0.18), transparent 36%),
-    linear-gradient(180deg, #07182d 0%, #020a17 100%) !important;
-  background-size:
-    44px 44px,
-    44px 44px,
-    auto,
-    auto,
-    auto !important;
-  color: #f4fbff !important;
-  border-top: 1px solid rgba(79, 225, 255, 0.5) !important;
-}
-/* Override the body::before grid blend on top of footer */
-html:not(.dark) .cyber-footer {
-  isolation: isolate;
-}
-
-/* Defeat the broad [style*="color: rgba(255,255,255"] clobber inside footer */
-html:not(.dark) .cyber-footer [style*="color: rgba(255, 255, 255"],
-html:not(.dark) .cyber-footer [style*="color: rgba(255,255,255"],
-html:not(.dark) .cyber-footer [style*="color:rgba(255,255,255"],
-html:not(.dark) .cyber-footer p[style],
-html:not(.dark) .cyber-footer ul[style],
-html:not(.dark) .cyber-footer li[style],
-html:not(.dark) .cyber-footer span[style],
-html:not(.dark) .cyber-footer div[style],
-html:not(.dark) .cyber-footer a[style] {
-  color: rgba(255, 255, 255, 0.7) !important;
-}
-html:not(.dark) .cyber-footer h4,
-html:not(.dark) .cyber-footer h4 span,
-html:not(.dark) .cyber-footer .text-white {
-  color: #ffffff !important;
-}
-html:not(.dark) .cyber-footer a:hover {
-  color: #71e6ff !important;
-}
-html:not(.dark) .cyber-footer .brand-gradient-text {
-  background-image: linear-gradient(105deg, #ffffff 6%, #71e6ff 55%, #5c8dff 100%) !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
-}
-
 /* ─── 2. ANNOUNCEMENT BAR (top of public layout): stays dark ─── */
 html:not(.dark) .public-shell > div:first-child,
 html:not(.dark) .app-shell.public-shell > div:first-child {
-  background: linear-gradient(90deg, #061830, #0b5c9a, #005046) !important;
-  color: #ffffff !important;
+  background: linear-gradient(90deg, #061830, #0b5c9a, #005046);
+  color: #ffffff;
 }
-html:not(.dark) .public-shell > div:first-child [style*="color: rgba(255,255,255"],
-html:not(.dark) .public-shell > div:first-child [style*="color: rgba(255, 255, 255"],
+html:not(.dark)
+  .public-shell
+  > div:first-child
+  [style*="color: rgba(255,255,255"],
+html:not(.dark)
+  .public-shell
+  > div:first-child
+  [style*="color: rgba(255, 255, 255"],
 html:not(.dark) .public-shell > div:first-child span,
 html:not(.dark) .public-shell > div:first-child .text-white {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 html:not(.dark) .public-shell > div:first-child .text-white\/60,
 html:not(.dark) .public-shell > div:first-child .text-white\/70 {
-  color: rgba(255, 255, 255, 0.78) !important;
+  color: rgba(255, 255, 255, 0.78);
 }
-html:not(.dark) .public-shell > div:first-child [style*="WebkitTextFillColor: transparent"],
-html:not(.dark) .public-shell > div:first-child [style*="-webkit-text-fill-color: transparent"] {
-  background-image: linear-gradient(90deg, #ffffff, #00ffd1) !important;
+html:not(.dark)
+  .public-shell
+  > div:first-child
+  [style*="WebkitTextFillColor: transparent"],
+html:not(.dark)
+  .public-shell
+  > div:first-child
+  [style*="-webkit-text-fill-color: transparent"] {
+  background-image: linear-gradient(90deg, #ffffff, #00ffd1);
 }
 
 /* ─── 3. DARK GRADIENT BUTTONS keep white text ─── */
@@ -1637,11 +1503,9 @@ html:not(.dark) .app-shell a[class*="bg-gradient-to"] .text-white,
 html:not(.dark) .app-shell button[class*="bg-gradient-to-r"] span,
 html:not(.dark) .app-shell button[class*="bg-gradient-to-br"] span,
 html:not(.dark) .app-shell .header-primary-action,
-html:not(.dark) .app-shell .header-primary-action *,
-html:not(.dark) .app-shell .premium-button,
-html:not(.dark) .app-shell .premium-button * {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
+html:not(.dark) .app-shell .header-primary-action * {
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
 
 /* ─── 4. AUTH LEFT VISUAL PANEL stays cyber-dark ─── */
@@ -1649,36 +1513,34 @@ html:not(.dark) .app-shell .auth-visual-panel,
 html:not(.dark) .auth-shell .auth-visual-panel {
   background:
     radial-gradient(circle at 0% 0%, rgba(11, 92, 154, 0.35), transparent 50%),
-    radial-gradient(circle at 100% 100%, rgba(0, 255, 209, 0.1), transparent 50%),
-    linear-gradient(155deg, #0a1426 0%, #060d1c 100%) !important;
-  border-right: 1px solid rgba(0, 255, 209, 0.12) !important;
-  color: #ffffff !important;
+    radial-gradient(
+      circle at 100% 100%,
+      rgba(0, 255, 209, 0.1),
+      transparent 50%
+    ),
+    linear-gradient(155deg, #0a1426 0%, #060d1c 100%);
+  border-right: 1px solid rgba(0, 255, 209, 0.12);
+  color: #ffffff;
 }
 html:not(.dark) .auth-visual-panel .text-white,
 html:not(.dark) .auth-visual-panel h2,
 html:not(.dark) .auth-visual-panel span {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 html:not(.dark) .auth-visual-panel .text-white\/55,
 html:not(.dark) .auth-visual-panel .text-white\/60,
 html:not(.dark) .auth-visual-panel .text-white\/70 {
-  color: rgba(255, 255, 255, 0.72) !important;
+  color: rgba(255, 255, 255, 0.72);
 }
 html:not(.dark) .auth-visual-panel a {
-  color: rgba(255, 255, 255, 0.75) !important;
+  color: rgba(255, 255, 255, 0.75);
 }
 html:not(.dark) .auth-visual-panel a:hover {
-  color: #00ffd1 !important;
-}
-html:not(.dark) .auth-visual-panel .brand-gradient-text {
-  background: linear-gradient(135deg, #ffffff 15%, #c5eeff 50%, #00ffd1 100%) !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
+  color: #00ffd1;
 }
 html:not(.dark) .auth-visual-panel [style*="color: rgba(255, 255, 255"],
 html:not(.dark) .auth-visual-panel [style*="color: rgba(255,255,255"] {
-  color: rgba(255, 255, 255, 0.72) !important;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 /* The generic auth surface selector above is intentionally broad. This more
@@ -1687,11 +1549,15 @@ html:not(.dark) .auth-visual-panel [style*="color: rgba(255,255,255"] {
 html:not(.dark) body .app-shell.auth-shell > .auth-visual-panel[class*="bg-"] {
   background:
     radial-gradient(circle at 0% 0%, rgba(11, 92, 154, 0.35), transparent 50%),
-    radial-gradient(circle at 100% 100%, rgba(0, 255, 209, 0.1), transparent 50%),
-    linear-gradient(155deg, #0a1426 0%, #060d1c 100%) !important;
-  color: #ffffff !important;
-  border-right-color: rgba(0, 255, 209, 0.16) !important;
-  box-shadow: 18px 0 55px rgba(3, 24, 48, 0.18) !important;
+    radial-gradient(
+      circle at 100% 100%,
+      rgba(0, 255, 209, 0.1),
+      transparent 50%
+    ),
+    linear-gradient(155deg, #0a1426 0%, #060d1c 100%);
+  color: #ffffff;
+  border-right-color: rgba(0, 255, 209, 0.16);
+  box-shadow: 18px 0 55px rgba(3, 24, 48, 0.18);
 }
 
 /* ─── 5. PORTAL DASHBOARD CARDS — readable in light mode ─── */
@@ -1705,41 +1571,41 @@ html:not(.dark) .portal-shell [class*="bg-[#060f1c]"] {
     155deg,
     rgba(255, 255, 255, 0.94),
     rgba(232, 243, 253, 0.88)
-  ) !important;
-  border-color: rgba(37, 99, 235, 0.16) !important;
+  );
+  border-color: rgba(37, 99, 235, 0.16);
   box-shadow:
     0 10px 30px rgba(37, 99, 235, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
-  color: #06162c !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: #06162c;
 }
 html:not(.dark) .portal-shell [class*="bg-[#0d1a30]"] .text-white,
 html:not(.dark) .portal-shell [class*="bg-[#0a1426]"] .text-white,
 html:not(.dark) .portal-shell [class*="bg-[#080f1c]"] .text-white {
-  color: #06162c !important;
+  color: #06162c;
 }
 html:not(.dark) .portal-shell .bg-white\/5,
 html:not(.dark) .portal-shell .bg-white\/8,
 html:not(.dark) .portal-shell .bg-white\/10 {
-  background-color: rgba(255, 255, 255, 0.75) !important;
-  border-color: rgba(37, 99, 235, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.75);
+  border-color: rgba(37, 99, 235, 0.12);
 }
 html:not(.dark) .portal-shell .border-white\/5,
 html:not(.dark) .portal-shell .border-white\/8,
 html:not(.dark) .portal-shell .border-white\/10,
 html:not(.dark) .portal-shell .border-white\/15,
 html:not(.dark) .portal-shell .border-white\/20 {
-  border-color: rgba(37, 99, 235, 0.16) !important;
+  border-color: rgba(37, 99, 235, 0.16);
 }
 
 /* Portal sidebar items always legible */
 html:not(.dark) .portal-shell aside a,
 html:not(.dark) .portal-shell aside button {
-  color: #173b5d !important;
+  color: #173b5d;
 }
 html:not(.dark) .portal-shell aside a:hover,
 html:not(.dark) .portal-shell aside button:hover {
-  color: #005ed8 !important;
-  background: rgba(56, 189, 248, 0.1) !important;
+  color: #005ed8;
+  background: rgba(56, 189, 248, 0.1);
 }
 
 /* ─── 6. UNIFORM GRID BACKGROUND across sections ─── */
@@ -1748,14 +1614,18 @@ html:not(.dark) .portal-shell aside button:hover {
 html:not(.dark) .luminous-hero {
   background:
     radial-gradient(circle at 16% 26%, rgba(0, 162, 216, 0.2), transparent 38%),
-    radial-gradient(circle at 83% 18%, rgba(99, 102, 241, 0.16), transparent 36%),
-    linear-gradient(180deg, rgba(213, 235, 248, 0.35), rgba(189, 221, 242, 0.3)) !important;
+    radial-gradient(
+      circle at 83% 18%,
+      rgba(99, 102, 241, 0.16),
+      transparent 36%
+    ),
+    linear-gradient(180deg, rgba(213, 235, 248, 0.35), rgba(189, 221, 242, 0.3));
 }
 html:not(.dark) section[class*="bg-[#0d1a30]"],
 html:not(.dark) section[class*="bg-[#0a1426]"],
 html:not(.dark) section[class*="bg-[#080f1c]"],
 html:not(.dark) section[class*="bg-[#07111f]"] {
-  background: transparent !important;
+  background: transparent;
 }
 html:not(.dark) .public-shell section {
   overflow: clip;
@@ -1764,27 +1634,33 @@ html:not(.dark) .public-shell section.py-20,
 html:not(.dark) .public-shell section.py-24,
 html:not(.dark) .public-shell section.py-28,
 html:not(.dark) .public-shell section.py-32 {
-  padding-top: clamp(3.25rem, 6vw, 5rem) !important;
-  padding-bottom: clamp(3.25rem, 6vw, 5rem) !important;
+  padding-top: clamp(3.25rem, 6vw, 5rem);
+  padding-bottom: clamp(3.25rem, 6vw, 5rem);
 }
 html:not(.dark) .public-shell main > div > section:first-child {
-  padding-top: clamp(4.5rem, 8vw, 6rem) !important;
-  padding-bottom: clamp(4rem, 7vw, 5.5rem) !important;
+  padding-top: clamp(4.5rem, 8vw, 6rem);
+  padding-bottom: clamp(4rem, 7vw, 5.5rem);
 }
 html:not(.dark) .public-shell main > div > section + section {
-  padding-top: clamp(2.5rem, 5vw, 4rem) !important;
-  padding-bottom: clamp(2.5rem, 5vw, 4rem) !important;
+  padding-top: clamp(2.5rem, 5vw, 4rem);
+  padding-bottom: clamp(2.5rem, 5vw, 4rem);
 }
-html:not(.dark) .app-shell section [class*="bg-gradient-to-t"][class*="from-[#0d1a30]"],
-html:not(.dark) .app-shell section [class*="bg-gradient-to-b"][class*="from-[#0d1a30]"],
+html:not(.dark)
+  .app-shell
+  section
+  [class*="bg-gradient-to-t"][class*="from-[#0d1a30]"],
+html:not(.dark)
+  .app-shell
+  section
+  [class*="bg-gradient-to-b"][class*="from-[#0d1a30]"],
 html:not(.dark) .app-shell section [class*="from-[#0d1a30]"],
 html:not(.dark) .app-shell section [class*="to-[#0d1a30]"] {
-  background: transparent !important;
+  background: transparent;
 }
 
 /* The CTA section uses mix-blend that turns the whole thing dark — soften it */
 html:not(.dark) .app-shell section .bg-\[\#00A896\].mix-blend-color-burn {
-  opacity: 0.05 !important;
+  opacity: 0.05;
 }
 
 /* ─── FINAL HIGH-SPEC OVERRIDES (light mode) ─── */
@@ -1797,67 +1673,52 @@ html:not(.dark) body button[class*="from-[#"],
 html:not(.dark) body button[class*="from-[#"] *,
 html:not(.dark) body a[class*="from-[#"],
 html:not(.dark) body a[class*="from-[#"] * {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
 
 /* Announcement bar everything */
 html:not(.dark) body .public-shell > div:first-child,
 html:not(.dark) body .public-shell > div:first-child * {
-  color: #ffffff !important;
-}
-
-/* Cyber footer everything */
-html:not(.dark) body .cyber-footer h4,
-html:not(.dark) body .cyber-footer h4 * {
-  color: #ffffff !important;
-}
-html:not(.dark) body .cyber-footer p,
-html:not(.dark) body .cyber-footer li,
-html:not(.dark) body .cyber-footer a,
-html:not(.dark) body .cyber-footer span:not(.brand-gradient-text) {
-  color: rgba(255, 255, 255, 0.72) !important;
-}
-html:not(.dark) body .cyber-footer a:hover {
-  color: #71e6ff !important;
+  color: #ffffff;
 }
 
 /* ─── PORTAL LIGHT MODE LAYOUT LOCK ─── */
 @media (min-width: 768px) {
   html:not(.dark) .portal-shell,
   .portal-shell {
-    display: grid !important;
-    grid-template-columns: 280px minmax(0, 1fr) !important;
-    width: 100vw !important;
-    max-width: 100vw !important;
-    height: 100vh !important;
-    max-height: 100vh !important;
-    overflow: hidden !important;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
   }
   .portal-shell .portal-sidebar {
-    position: relative !important;
-    inset: auto !important;
-    grid-column: 1 !important;
-    width: 280px !important;
-    min-width: 280px !important;
-    max-width: 280px !important;
-    transform: none !important;
+    position: relative;
+    inset: auto;
+    grid-column: 1;
+    width: 280px;
+    min-width: 280px;
+    max-width: 280px;
+    transform: none;
   }
   .portal-shell > .flex-1 {
-    grid-column: 2 !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    overflow: hidden !important;
+    grid-column: 2;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
   }
   .portal-shell main {
-    min-width: 0 !important;
-    overflow: auto !important;
+    min-width: 0;
+    overflow: auto;
   }
 }
 html:not(.dark) .portal-shell main::before {
-  content: none !important;
-  display: none !important;
+  content: none;
+  display: none;
 }
 html:not(.dark) .portal-shell {
   background-image:
@@ -1865,36 +1726,40 @@ html:not(.dark) .portal-shell {
     linear-gradient(90deg, rgba(0, 67, 135, 0.08) 1px, transparent 1px),
     linear-gradient(rgba(0, 102, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 102, 255, 0.045) 1px, transparent 1px),
-    radial-gradient(ellipse at 20% 10%, rgba(0, 162, 216, 0.14), transparent 42%),
-    linear-gradient(180deg, #d6edf8 0%, #b8d8ee 100%) !important;
+    radial-gradient(
+      ellipse at 20% 10%,
+      rgba(0, 162, 216, 0.14),
+      transparent 42%
+    ),
+    linear-gradient(180deg, #d6edf8 0%, #b8d8ee 100%);
   background-size:
     96px 96px,
     96px 96px,
     32px 32px,
     32px 32px,
     auto,
-    auto !important;
+    auto;
 }
 html:not(.dark) .portal-shell header,
 html:not(.dark) .portal-shell main,
 html:not(.dark) .portal-shell main > * {
-  position: relative !important;
-  z-index: 2 !important;
+  position: relative;
+  z-index: 2;
 }
 @media (max-width: 767px) {
   .portal-shell .portal-sidebar {
-    position: fixed !important;
-    inset: 0 auto 0 0 !important;
-    width: 280px !important;
-    max-width: min(280px, 86vw) !important;
-    z-index: 40 !important;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 280px;
+    max-width: min(280px, 86vw);
+    z-index: 40;
   }
   .portal-shell .portal-content {
-    grid-column: 1 !important;
-    width: 100vw !important;
-    max-width: 100vw !important;
-    height: 100svh !important;
-    min-height: 0 !important;
+    grid-column: 1;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100svh;
+    min-height: 0;
   }
 }
 
@@ -1902,24 +1767,45 @@ html:not(.dark) .portal-shell main > * {
    trust panel, so later global light-mode utility normalization must not turn
    them navy. The monitoring card remains a light inset with dark text. */
 html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-back,
-html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-heading,
-html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-copy {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
+html:not(.dark)
+  body
+  .app-shell.auth-shell
+  .auth-visual-panel
+  .auth-visual-heading,
+html:not(.dark)
+  body
+  .app-shell.auth-shell
+  .auth-visual-panel
+  .auth-visual-copy {
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
-html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-back {
-  color: rgba(255, 255, 255, 0.78) !important;
-  -webkit-text-fill-color: rgba(255, 255, 255, 0.78) !important;
+html:not(.dark)
+  body
+  .app-shell.auth-shell
+  .auth-visual-panel
+  .auth-visual-back {
+  color: rgba(255, 255, 255, 0.78);
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.78);
 }
-html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-copy {
-  color: rgba(255, 255, 255, 0.72) !important;
-  -webkit-text-fill-color: rgba(255, 255, 255, 0.72) !important;
+html:not(.dark)
+  body
+  .app-shell.auth-shell
+  .auth-visual-panel
+  .auth-visual-copy {
+  color: rgba(255, 255, 255, 0.72);
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.72);
 }
-html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-heading > span {
-  background-image: linear-gradient(90deg, #6dc8ff, #00ffd1) !important;
-  background-clip: text !important;
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
+html:not(.dark)
+  body
+  .app-shell.auth-shell
+  .auth-visual-panel
+  .auth-visual-heading
+  > span {
+  background-image: linear-gradient(90deg, #6dc8ff, #00ffd1);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* ─── Mobile hamburger button (default = dark theme) ─── */
@@ -1959,36 +1845,36 @@ html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-headi
 
 /* ─── Light mode overrides ─── */
 html:not(.dark) .header-menu-button {
-  background: rgba(11, 26, 46, 0.04) !important;
-  border-color: rgba(11, 26, 46, 0.14) !important;
-  color: #0b1a2e !important;
+  background: rgba(11, 26, 46, 0.04);
+  border-color: rgba(11, 26, 46, 0.14);
+  color: #0b1a2e;
 }
 html:not(.dark) .header-menu-button:hover {
-  background: rgba(11, 92, 154, 0.1) !important;
+  background: rgba(11, 92, 154, 0.1);
 }
 html:not(.dark) .public-mobile-menu {
-  background: rgba(255, 255, 255, 0.97) !important;
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(40px);
-  border-bottom: 1px solid rgba(11, 26, 46, 0.1) !important;
-  box-shadow: 0 20px 60px rgba(11, 26, 46, 0.12) !important;
+  border-bottom: 1px solid rgba(11, 26, 46, 0.1);
+  box-shadow: 0 20px 60px rgba(11, 26, 46, 0.12);
 }
 html:not(.dark) .public-mobile-menu-link {
-  color: rgba(11, 26, 46, 0.82) !important;
+  color: rgba(11, 26, 46, 0.82);
 }
 html:not(.dark) .public-mobile-menu-link:hover {
-  color: #0b5c9a !important;
-  background: rgba(11, 92, 154, 0.06) !important;
+  color: #0b5c9a;
+  background: rgba(11, 92, 154, 0.06);
 }
 html:not(.dark) .public-mobile-menu-footer {
-  border-top-color: rgba(11, 26, 46, 0.1) !important;
+  border-top-color: rgba(11, 26, 46, 0.1);
 }
 html:not(.dark) .public-mobile-menu-login {
-  color: #0b1a2e !important;
-  border-color: rgba(11, 26, 46, 0.18) !important;
+  color: #0b1a2e;
+  border-color: rgba(11, 26, 46, 0.18);
   background: rgba(255, 255, 255, 0.6);
 }
 html:not(.dark) .public-mobile-menu-login:hover {
-  background: rgba(11, 92, 154, 0.08) !important;
+  background: rgba(11, 92, 154, 0.08);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2001,15 +1887,16 @@ html:not(.dark) .public-mobile-menu-login:hover {
 :root,
 html,
 body {
-  --font-sans: "Inter", "Nunito Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  --font-sans:
+    "Inter", "Nunito Sans", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
   --font-tech: "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
   --font-hero: "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
 html {
-  font-family: var(--font-sans) !important;
+  font-family: var(--font-sans);
 }
 
 body {
@@ -2020,7 +1907,7 @@ body {
 h1,
 h2,
 h3 {
-  font-family: var(--font-display) !important;
+  font-family: var(--font-display);
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
@@ -2034,61 +1921,57 @@ input,
 textarea,
 select,
 button {
-  font-family: var(--font-sans) !important;
+  font-family: var(--font-sans);
 }
 
-.brand-gradient-text,
 .hero-gradient-text,
 .vietnamese-gradient-text,
 [class*="bg-clip-text"][class*="text-transparent"] {
-  background: none !important;
-  filter: none !important;
-  -webkit-background-clip: initial !important;
-  background-clip: initial !important;
-  -webkit-text-fill-color: currentColor !important;
-  color: #f8fbff !important;
-  text-shadow: none !important;
+  background: none;
+  filter: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+  color: #f8fbff;
+  text-shadow: none;
 }
 
-html:not(.dark) .brand-gradient-text,
 html:not(.dark) .hero-gradient-text,
 html:not(.dark) .vietnamese-gradient-text,
 html:not(.dark) [class*="bg-clip-text"][class*="text-transparent"] {
-  color: #0b1a2e !important;
-  -webkit-text-fill-color: #0b1a2e !important;
+  color: #0b1a2e;
+  -webkit-text-fill-color: #0b1a2e;
 }
 
 .public-shell h1 .vietnamese-gradient-text,
 .public-shell h2 .vietnamese-gradient-text {
-  color: #7be6d7 !important;
+  color: #7be6d7;
 }
 
 html:not(.dark) .public-shell h1 .vietnamese-gradient-text,
 html:not(.dark) .public-shell h2 .vietnamese-gradient-text {
-  color: #0b5c9a !important;
-  -webkit-text-fill-color: #0b5c9a !important;
+  color: #0b5c9a;
+  -webkit-text-fill-color: #0b5c9a;
 }
 
-.glass-panel,
 .navy-card,
 .premium-card {
-  background: rgba(11, 30, 58, 0.82) !important;
-  border: 1px solid rgba(148, 184, 208, 0.18) !important;
-  border-radius: 1rem !important;
-  backdrop-filter: blur(10px) saturate(1.04) !important;
+  background: rgba(11, 30, 58, 0.82);
+  border: 1px solid rgba(148, 184, 208, 0.18);
+  border-radius: 1rem;
+  backdrop-filter: blur(10px) saturate(1.04);
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-html:not(.dark) .glass-panel,
 html:not(.dark) .navy-card,
 html:not(.dark) .premium-card {
-  background: rgba(255, 255, 255, 0.94) !important;
-  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(15, 23, 42, 0.12);
   box-shadow:
     0 10px 24px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .premium-card:hover,
@@ -2096,20 +1979,7 @@ html:not(.dark) .premium-card:hover {
   transform: translateY(-2px);
   box-shadow:
     0 12px 26px rgba(15, 23, 42, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
-}
-
-.premium-button {
-  background: #0b5c9a !important;
-  color: #ffffff !important;
-  box-shadow: 0 8px 18px rgba(11, 92, 154, 0.22) !important;
-  text-transform: none !important;
-  letter-spacing: 0.01em !important;
-}
-
-.premium-button:hover {
-  transform: translateY(-1px) !important;
-  box-shadow: 0 10px 22px rgba(11, 92, 154, 0.25) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .neon-cyan,
@@ -2120,14 +1990,14 @@ html:not(.dark) .premium-card:hover {
 [style*="drop-shadow(0 0"],
 [style*="rgba(0,255,209"],
 [style*="rgba(0, 255, 209"] {
-  filter: none !important;
+  filter: none;
 }
 
 .public-shell [class*="shadow-[0_0"],
 .public-shell [style*="box-shadow: 0 0"],
 .portal-shell [class*="shadow-[0_0"],
 .portal-shell [style*="box-shadow: 0 0"] {
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
 }
 
 .public-shell .rounded-3xl,
@@ -2136,18 +2006,17 @@ html:not(.dark) .premium-card:hover {
 .portal-shell [class*="rounded-[3rem]"],
 .public-shell [class*="rounded-[40px]"],
 .portal-shell [class*="rounded-[40px]"] {
-  border-radius: 1.125rem !important;
+  border-radius: 1.125rem;
 }
 
 .public-shell .rounded-2xl,
 .portal-shell .rounded-2xl {
-  border-radius: 1rem !important;
+  border-radius: 1rem;
 }
 
 .public-shell .luminous-hero-effects [class*="blur"],
-.public-shell footer [class*="blur"],
-.portal-shell .portal-ambient-orb {
-  opacity: 0.22 !important;
+.public-shell footer [class*="blur"] {
+  opacity: 0.22;
 }
 
 .public-shell .animate-pulse,
@@ -2159,10 +2028,10 @@ html:not(.dark) .premium-card:hover {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms;
+    animation-iteration-count: 1;
+    scroll-behavior: auto;
+    transition-duration: 0.001ms;
   }
 }
 
@@ -2171,124 +2040,125 @@ html:not(.dark) .premium-card:hover {
   background:
     radial-gradient(circle at 8% 0%, rgba(11, 92, 154, 0.16), transparent 34%),
     radial-gradient(circle at 90% 6%, rgba(0, 168, 150, 0.12), transparent 32%),
-    linear-gradient(180deg, #07111f 0%, #09172a 48%, #07111f 100%) !important;
+    linear-gradient(180deg, #07111f 0%, #09172a 48%, #07111f 100%);
 }
 
 html:not(.dark) .public-shell {
   background:
     radial-gradient(circle at 10% 0%, rgba(11, 92, 154, 0.08), transparent 34%),
     radial-gradient(circle at 88% 6%, rgba(0, 168, 150, 0.08), transparent 32%),
-    linear-gradient(180deg, #f6f9fc 0%, #eef5fb 52%, #f8fbff 100%) !important;
+    linear-gradient(180deg, #f6f9fc 0%, #eef5fb 52%, #f8fbff 100%);
 }
 
 .public-header.quantum-header {
-  box-shadow: none !important;
+  box-shadow: none;
 }
 
-.public-nav-dropdown,
-.portal-popover {
-  background: #07111f !important;
-  border: 1px solid rgba(148, 184, 208, 0.18) !important;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28) !important;
-  backdrop-filter: blur(14px) !important;
+.public-nav-dropdown {
+  background: #07111f;
+  border: 1px solid rgba(148, 184, 208, 0.18);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px);
 }
 
-html:not(.dark) .public-nav-dropdown,
-html:not(.dark) .portal-popover {
-  background: #ffffff !important;
-  border-color: rgba(15, 23, 42, 0.12) !important;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14) !important;
+html:not(.dark) .public-nav-dropdown {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
 }
 
 .public-nav-dropdown-item {
-  color: rgba(226, 242, 250, 0.78) !important;
+  color: rgba(226, 242, 250, 0.78);
 }
 
 .public-nav-dropdown-item:hover {
-  background: rgba(0, 168, 150, 0.1) !important;
-  color: #ffffff !important;
+  background: rgba(0, 168, 150, 0.1);
+  color: #ffffff;
 }
 
 html:not(.dark) .public-nav-dropdown-item {
-  color: #334155 !important;
+  color: #334155;
 }
 
 html:not(.dark) .public-nav-dropdown-item:hover {
-  color: #0b5c9a !important;
-  background: rgba(11, 92, 154, 0.07) !important;
+  color: #0b5c9a;
+  background: rgba(11, 92, 154, 0.07);
 }
 
 .public-nav-dropdown-dot {
-  background: #00a896 !important;
+  background: #00a896;
 }
 
 /* Portal shell: keep density and focus while removing decorative cyber glow. */
 .portal-shell {
   background:
     radial-gradient(circle at 92% 0%, rgba(0, 168, 150, 0.08), transparent 30%),
-    linear-gradient(180deg, #07111f 0%, #0a1628 100%) !important;
+    linear-gradient(180deg, #07111f 0%, #0a1628 100%);
 }
 
 html:not(.dark) .portal-shell {
   background:
     radial-gradient(circle at 92% 0%, rgba(0, 168, 150, 0.08), transparent 30%),
-    linear-gradient(180deg, #f5f7fa 0%, #eef5fb 100%) !important;
+    linear-gradient(180deg, #f5f7fa 0%, #eef5fb 100%);
 }
 
 .portal-sidebar {
-  background: #07111f !important;
-  border-right: 1px solid rgba(148, 184, 208, 0.16) !important;
-  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.2) !important;
-  backdrop-filter: none !important;
+  background: #07111f;
+  border-right: 1px solid rgba(148, 184, 208, 0.16);
+  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.2);
+  backdrop-filter: none;
 }
 
 html:not(.dark) .portal-sidebar {
-  background: #ffffff !important;
-  border-right-color: rgba(15, 23, 42, 0.1) !important;
-  box-shadow: 10px 0 28px rgba(15, 23, 42, 0.06) !important;
+  background: #ffffff;
+  border-right-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 10px 0 28px rgba(15, 23, 42, 0.06);
 }
 
-html:not(.dark) .portal-sidebar .brand-gradient-text,
 html:not(.dark) .portal-sidebar .text-white {
-  color: #0f172a !important;
-  -webkit-text-fill-color: #0f172a !important;
+  color: #0f172a;
+  -webkit-text-fill-color: #0f172a;
 }
 
 .portal-shell header {
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
 }
 
 html:not(.dark) .portal-shell header {
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
-.portal-input,
-.cyber-input {
-  border-radius: 0.75rem !important;
+.portal-input {
+  border-radius: 0.75rem;
 }
 
 html:not(.dark) .portal-input {
-  background: #ffffff !important;
-  border-color: rgba(15, 23, 42, 0.14) !important;
-  color: #0f172a !important;
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.14);
+  color: #0f172a;
 }
 
 /* Make Recharts/data surfaces legible and calm in the clinical light mode. */
 html:not(.dark) .recharts-text,
 html:not(.dark) .recharts-cartesian-axis-tick-value {
-  fill: #334155 !important;
+  fill: #334155;
 }
 
 html:not(.dark) .recharts-cartesian-grid line {
-  stroke: rgba(15, 23, 42, 0.12) !important;
+  stroke: rgba(15, 23, 42, 0.12);
 }
 
 /* Final auth panel exception after the no-gradient rule above. */
-html:not(.dark) body .app-shell.auth-shell .auth-visual-panel .auth-visual-heading > span,
+html:not(.dark)
+  body
+  .app-shell.auth-shell
+  .auth-visual-panel
+  .auth-visual-heading
+  > span,
 body .app-shell.auth-shell .auth-visual-panel .auth-visual-heading > span {
-  color: #7be6d7 !important;
-  -webkit-text-fill-color: #7be6d7 !important;
-  background: none !important;
+  color: #7be6d7;
+  -webkit-text-fill-color: #7be6d7;
+  background: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -2300,7 +2170,8 @@ body .app-shell.auth-shell .auth-visual-panel .auth-visual-heading > span {
 :root,
 html,
 body {
-  --font-sans: "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
   --shc-ink: #eef7ff;
   --shc-muted: #9db3c7;
@@ -2337,13 +2208,13 @@ html:not(.dark) body {
 .shc-public-layout,
 .shc-home,
 .shc-auth-layout {
-  font-family: var(--font-sans) !important;
+  font-family: var(--font-sans);
   color: var(--shc-ink);
 }
 
 .public-shell.shc-public-layout,
 .shc-home {
-  background: var(--shc-page) !important;
+  background: var(--shc-page);
 }
 
 .shc-container {
@@ -2561,7 +2432,7 @@ html:not(.dark) .shc-brand-mark {
 
 .shc-button-primary {
   background: var(--shc-primary);
-  color: #06141f !important;
+  color: #06141f;
   border: 1px solid transparent;
 }
 
@@ -2570,7 +2441,7 @@ html:not(.dark) .shc-brand-mark {
 }
 
 html:not(.dark) .shc-button-primary {
-  color: #ffffff !important;
+  color: #ffffff;
   background: var(--shc-primary-strong);
 }
 
@@ -2722,7 +2593,11 @@ html:not(.dark) .shc-button-secondary {
   position: relative;
   border: 1px solid var(--shc-line);
   border-radius: 1.4rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.02)
+  );
   box-shadow: var(--shc-shadow);
   overflow: hidden;
 }
@@ -2792,7 +2667,7 @@ html:not(.dark) .shc-preview-sidebar {
 }
 
 .shc-preview-sidebar .is-active {
-  color: var(--shc-ink) !important;
+  color: var(--shc-ink);
   background: rgba(79, 195, 182, 0.12);
 }
 
@@ -3165,7 +3040,7 @@ html:not(.dark) .shc-footer {
   min-height: 100svh;
   max-height: 100svh;
   overflow: hidden;
-  background: var(--shc-page) !important;
+  background: var(--shc-page);
 }
 
 .shc-auth-aside {
@@ -3176,7 +3051,11 @@ html:not(.dark) .shc-footer {
   gap: 2rem;
   border-right: 1px solid var(--shc-line);
   background:
-    radial-gradient(circle at 18% 10%, rgba(79, 195, 182, 0.18), transparent 34%),
+    radial-gradient(
+      circle at 18% 10%,
+      rgba(79, 195, 182, 0.18),
+      transparent 34%
+    ),
     #07111f;
   padding: clamp(2rem, 4vw, 3rem);
 }
@@ -3316,7 +3195,11 @@ html:not(.dark) .shc-footer {
   min-width: 0;
   flex-direction: column;
   background:
-    radial-gradient(circle at 90% 12%, rgba(79, 195, 182, 0.1), transparent 28%),
+    radial-gradient(
+      circle at 90% 12%,
+      rgba(79, 195, 182, 0.1),
+      transparent 28%
+    ),
     transparent;
 }
 
@@ -3367,7 +3250,7 @@ html:not(.dark) .shc-auth-card {
 .shc-auth-card select,
 .shc-auth-card textarea {
   min-height: 3rem;
-  border-radius: 0.85rem !important;
+  border-radius: 0.85rem;
 }
 
 .shc-auth-card button,

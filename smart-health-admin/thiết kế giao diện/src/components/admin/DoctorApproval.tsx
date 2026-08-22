@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   AlertCircle,
   Building2,
@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Stethoscope,
   UserRoundCheck,
-  X,
   XCircle,
   Filter,
 } from "lucide-react";
@@ -31,6 +30,12 @@ import { itemMotion, listMotion } from "./motion-presets";
 import { PaginationFooter } from "./PaginationFooter";
 import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
 import { CapabilityGate } from "./AdminAccessContext";
+import {
+  DetailDrawer,
+  DetailDrawerClose,
+  DetailDrawerDescription,
+  DetailDrawerTitle,
+} from "./DetailDrawer";
 import { useAdminAccess } from "./useAdminAccess";
 import { DOCTOR_REQUEST_MANAGE_CAPABILITIES } from "./action-permissions";
 
@@ -314,7 +319,7 @@ export function DoctorApproval() {
   const handleApproveRequest = async () => {
     if (!selectedDoc) return;
     if (!canManageDoctorRequests) {
-      toast.error("Tai khoan khong co quyen duyet bac si.");
+      toast.error("Tài khoản không có quyền duyệt bác sĩ.");
       return;
     }
 
@@ -411,7 +416,11 @@ export function DoctorApproval() {
         animate="show"
         className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
       >
-        <div className="overflow-x-auto scrollbar-subtle">
+        <div
+          className="overflow-x-auto scrollbar-subtle"
+          tabIndex={0}
+          aria-label="Bảng yêu cầu duyệt bác sĩ"
+        >
           <table className="data-table w-full whitespace-nowrap text-left text-sm">
             <thead>
               <tr>
@@ -616,236 +625,214 @@ export function DoctorApproval() {
         ))}
       </Tabs.Root>
 
-      <AnimatePresence>
+      <DetailDrawer
+        open={Boolean(selectedDoc)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedDoc(null);
+        }}
+        title={selectedDoc ? `Hồ sơ bác sĩ ${selectedDoc.name}` : "Hồ sơ bác sĩ"}
+        className="max-w-[480px]"
+      >
         {selectedDoc && (
           <>
-            <motion.div
-              key="doctor-approval-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedDoc(null)}
-              className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[1px]"
-            />
-            <motion.aside
-              key="doctor-approval-drawer"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 320, damping: 34 }}
-              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-border bg-card shadow-2xl"
-            >
-              <div className="border-b border-border p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <UserRoundCheck className="h-6 w-6" />
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="truncate text-lg font-semibold text-foreground">
-                        {selectedDoc.name}
-                      </h2>
-                      <p className="mt-1 truncate text-sm text-muted-foreground">
-                        {selectedDoc.email}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {getStatusBadge(selectedDoc.status)}
-                        <StatusBadge
-                          label={selectedDoc.verification}
-                          tone={getVerificationTone(selectedDoc.verification)}
-                        />
-                      </div>
-                    </div>
+            <div className="border-b border-border p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <UserRoundCheck className="h-6 w-6" />
                   </div>
-                  <button
-                    onClick={() => setSelectedDoc(null)}
-                    className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label="Đóng hồ sơ"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-
-              <Tabs.Root defaultValue="info" className="flex min-h-0 flex-1 flex-col">
-                <Tabs.List className="flex gap-2 border-b border-border px-5 py-3">
-                  {["Thông tin", "Lịch sử", "Audit"].map((label, index) => (
-                    <Tabs.Trigger
-                      key={label}
-                      value={index === 0 ? "info" : index === 1 ? "history" : "audit"}
-                      className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-                    >
-                      {label}
-                    </Tabs.Trigger>
-                  ))}
-                </Tabs.List>
-
-                <Tabs.Content
-                  value="info"
-                  className="min-h-0 flex-1 overflow-y-auto p-6 outline-none"
-                >
-                  <div className="space-y-6">
-                    <section className="space-y-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Hồ sơ bác sĩ
-                      </h3>
-                      <div className="grid gap-3">
-                        <InfoRow icon={Mail} label="Email" value={selectedDoc.email} />
-                        <InfoRow icon={Phone} label="Số điện thoại" value={selectedDoc.phone} />
-                        <InfoRow
-                          icon={UserRoundCheck}
-                          label="Loại đăng ký"
-                          value={selectedDoc.requestType}
-                        />
-                        <InfoRow
-                          icon={Building2}
-                          label="Phòng khám/cơ sở"
-                          value={selectedDoc.clinic}
-                        />
-                        <InfoRow
-                          icon={FileText}
-                          label="Số giấy phép hành nghề"
-                          value={selectedDoc.license}
-                        />
-                        <InfoRow
-                          icon={Stethoscope}
-                          label="Chuyên khoa"
-                          value={selectedDoc.specialty}
-                        />
-                        <InfoRow
-                          icon={ShieldCheck}
-                          label="UID Firebase"
-                          value={selectedDoc.uid}
-                          mono
-                        />
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border border-border bg-muted/30 p-4">
-                      <div className="mb-2 text-sm font-semibold text-foreground">
-                        Lý do đăng ký
-                      </div>
-                      <p className="text-sm leading-6 text-muted-foreground">
-                        {selectedDoc.reason}
-                      </p>
-                    </section>
-                  </div>
-                </Tabs.Content>
-
-                <Tabs.Content
-                  value="history"
-                  className="min-h-0 flex-1 overflow-y-auto p-6 outline-none"
-                >
-                  <div className="space-y-5">
-                    <InfoRow icon={Calendar} label="Ngày gửi yêu cầu" value={selectedDoc.date} />
-                    <InfoRow
-                      icon={ShieldCheck}
-                      label="Lịch sử đăng nhập"
-                      value={selectedDoc.lastLogin}
-                    />
-                    <div>
-                      <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Diễn biến xác minh
-                      </h3>
-                      <Timeline
-                        items={[
-                          {
-                            title: "Tạo tài khoản Firebase",
-                            time: selectedDoc.date,
-                            description: `UID ${selectedDoc.uid} được ghi nhận trên hệ thống.`,
-                            tone: "primary",
-                          },
-                          {
-                            title: selectedDoc.verification,
-                            time: "Sau khi gửi yêu cầu",
-                            description: "Hồ sơ được đối chiếu với thông tin phòng khám và CCHN.",
-                            tone:
-                              getVerificationTone(selectedDoc.verification) === "success"
-                                ? "success"
-                                : "warning",
-                          },
-                        ]}
+                  <div className="min-w-0">
+                    <DetailDrawerTitle className="truncate">{selectedDoc.name}</DetailDrawerTitle>
+                    <DetailDrawerDescription className="mt-1 truncate">
+                      {selectedDoc.email}
+                    </DetailDrawerDescription>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {getStatusBadge(selectedDoc.status)}
+                      <StatusBadge
+                        label={selectedDoc.verification}
+                        tone={getVerificationTone(selectedDoc.verification)}
                       />
                     </div>
                   </div>
-                </Tabs.Content>
-
-                <Tabs.Content
-                  value="audit"
-                  className="min-h-0 flex-1 overflow-y-auto p-6 outline-none"
-                >
-                  <Timeline
-                    items={[
-                      {
-                        title: "Nhận yêu cầu duyệt tài khoản",
-                        time: `${selectedDoc.date} 09:10`,
-                        description: `Resource ID ${selectedDoc.id}, actor system@smarthealth.vn.`,
-                        tone: "primary",
-                      },
-                      {
-                        title: "Đọc hồ sơ xác minh",
-                        time: "Hôm nay 08:42",
-                        description:
-                          "Actor admin@smarthealth.vn mở detail drawer để kiểm tra thông tin.",
-                        tone: "success",
-                      },
-                      {
-                        title: "Chờ quyết định quản trị",
-                        time: "Hiện tại",
-                        description:
-                          "Các hành động phê duyệt, từ chối hoặc yêu cầu bổ sung sẽ được ghi bất biến.",
-                        tone: "warning",
-                      },
-                    ]}
-                  />
-                </Tabs.Content>
-              </Tabs.Root>
-
-              <div className="border-t border-border bg-muted/30 p-5">
-                {selectedDoc.status === "pending" || selectedDoc.status === "needs_info" ? (
-                  <CapabilityGate capabilities={DOCTOR_REQUEST_MANAGE_CAPABILITIES}>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <button
-                        onClick={() => setRejectOpen(true)}
-                        className="inline-flex items-center justify-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/15"
-                      >
-                        <XCircle className="h-4 w-4" />
-                        Từ chối
-                      </button>
-                      <button
-                        onClick={() => {
-                          setInfoFields(
-                            selectedDoc.requiredFields?.length
-                              ? selectedDoc.requiredFields
-                              : ["license", "clinic", "specialty"],
-                          );
-                          setInfoOpen(true);
-                        }}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
-                      >
-                        <Send className="h-4 w-4" />
-                        Bổ sung
-                      </button>
-                      <button
-                        onClick={() => setApproveOpen(true)}
-                        className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        Phê duyệt
-                      </button>
-                    </div>
-                  </CapabilityGate>
-                ) : (
-                  <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-                    Hồ sơ này đã có quyết định. Các nút phê duyệt/từ chối chỉ hiển thị ở trạng thái
-                    chờ duyệt hoặc cần bổ sung.
-                  </div>
-                )}
+                </div>
+                <DetailDrawerClose label="Đóng hồ sơ bác sĩ" className="rounded-full" />
               </div>
-            </motion.aside>
+            </div>
+
+            <Tabs.Root defaultValue="info" className="flex min-h-0 flex-1 flex-col">
+              <Tabs.List className="flex gap-2 border-b border-border px-5 py-3">
+                {["Thông tin", "Lịch sử", "Audit"].map((label, index) => (
+                  <Tabs.Trigger
+                    key={label}
+                    value={index === 0 ? "info" : index === 1 ? "history" : "audit"}
+                    className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+                  >
+                    {label}
+                  </Tabs.Trigger>
+                ))}
+              </Tabs.List>
+
+              <Tabs.Content
+                value="info"
+                className="min-h-0 flex-1 overflow-y-auto p-6 outline-none"
+              >
+                <div className="space-y-6">
+                  <section className="space-y-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      Hồ sơ bác sĩ
+                    </h3>
+                    <div className="grid gap-3">
+                      <InfoRow icon={Mail} label="Email" value={selectedDoc.email} />
+                      <InfoRow icon={Phone} label="Số điện thoại" value={selectedDoc.phone} />
+                      <InfoRow
+                        icon={UserRoundCheck}
+                        label="Loại đăng ký"
+                        value={selectedDoc.requestType}
+                      />
+                      <InfoRow
+                        icon={Building2}
+                        label="Phòng khám/cơ sở"
+                        value={selectedDoc.clinic}
+                      />
+                      <InfoRow
+                        icon={FileText}
+                        label="Số giấy phép hành nghề"
+                        value={selectedDoc.license}
+                      />
+                      <InfoRow
+                        icon={Stethoscope}
+                        label="Chuyên khoa"
+                        value={selectedDoc.specialty}
+                      />
+                      <InfoRow
+                        icon={ShieldCheck}
+                        label="UID Firebase"
+                        value={selectedDoc.uid}
+                        mono
+                      />
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl border border-border bg-muted/30 p-4">
+                    <div className="mb-2 text-sm font-semibold text-foreground">Lý do đăng ký</div>
+                    <p className="text-sm leading-6 text-muted-foreground">{selectedDoc.reason}</p>
+                  </section>
+                </div>
+              </Tabs.Content>
+
+              <Tabs.Content
+                value="history"
+                className="min-h-0 flex-1 overflow-y-auto p-6 outline-none"
+              >
+                <div className="space-y-5">
+                  <InfoRow icon={Calendar} label="Ngày gửi yêu cầu" value={selectedDoc.date} />
+                  <InfoRow
+                    icon={ShieldCheck}
+                    label="Lịch sử đăng nhập"
+                    value={selectedDoc.lastLogin}
+                  />
+                  <div>
+                    <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      Diễn biến xác minh
+                    </h3>
+                    <Timeline
+                      items={[
+                        {
+                          title: "Tạo tài khoản Firebase",
+                          time: selectedDoc.date,
+                          description: `UID ${selectedDoc.uid} được ghi nhận trên hệ thống.`,
+                          tone: "primary",
+                        },
+                        {
+                          title: selectedDoc.verification,
+                          time: "Sau khi gửi yêu cầu",
+                          description: "Hồ sơ được đối chiếu với thông tin phòng khám và CCHN.",
+                          tone:
+                            getVerificationTone(selectedDoc.verification) === "success"
+                              ? "success"
+                              : "warning",
+                        },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </Tabs.Content>
+
+              <Tabs.Content
+                value="audit"
+                className="min-h-0 flex-1 overflow-y-auto p-6 outline-none"
+              >
+                <Timeline
+                  items={[
+                    {
+                      title: "Nhận yêu cầu duyệt tài khoản",
+                      time: `${selectedDoc.date} 09:10`,
+                      description: `Resource ID ${selectedDoc.id}, actor system@smarthealth.vn.`,
+                      tone: "primary",
+                    },
+                    {
+                      title: "Đọc hồ sơ xác minh",
+                      time: "Hôm nay 08:42",
+                      description:
+                        "Actor admin@smarthealth.vn mở detail drawer để kiểm tra thông tin.",
+                      tone: "success",
+                    },
+                    {
+                      title: "Chờ quyết định quản trị",
+                      time: "Hiện tại",
+                      description:
+                        "Các hành động phê duyệt, từ chối hoặc yêu cầu bổ sung sẽ được ghi bất biến.",
+                      tone: "warning",
+                    },
+                  ]}
+                />
+              </Tabs.Content>
+            </Tabs.Root>
+
+            <div className="border-t border-border bg-muted/30 p-5">
+              {selectedDoc.status === "pending" || selectedDoc.status === "needs_info" ? (
+                <CapabilityGate capabilities={DOCTOR_REQUEST_MANAGE_CAPABILITIES}>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <button
+                      onClick={() => setRejectOpen(true)}
+                      className="inline-flex items-center justify-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/15"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Từ chối
+                    </button>
+                    <button
+                      onClick={() => {
+                        setInfoFields(
+                          selectedDoc.requiredFields?.length
+                            ? selectedDoc.requiredFields
+                            : ["license", "clinic", "specialty"],
+                        );
+                        setInfoOpen(true);
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                    >
+                      <Send className="h-4 w-4" />
+                      Bổ sung
+                    </button>
+                    <button
+                      onClick={() => setApproveOpen(true)}
+                      className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Phê duyệt
+                    </button>
+                  </div>
+                </CapabilityGate>
+              ) : (
+                <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                  Hồ sơ này đã có quyết định. Các nút phê duyệt/từ chối chỉ hiển thị ở trạng thái
+                  chờ duyệt hoặc cần bổ sung.
+                </div>
+              )}
+            </div>
           </>
         )}
-      </AnimatePresence>
+      </DetailDrawer>
 
       <Dialog.Root open={canManageDoctorRequests && approveOpen} onOpenChange={setApproveOpen}>
         <Dialog.Portal>
@@ -866,14 +853,13 @@ export function DoctorApproval() {
                 fallbackLabel={selectedDoc?.clinic || "Chọn tổ chức/phòng khám"}
                 onChange={setApproveOrganizationId}
               />
-              <label className="block space-y-1.5">
-                <span className="text-sm font-medium">Chọn vai trò</span>
-                <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring">
-                  <option>Bác sĩ</option>
-                  <option>Trưởng khoa</option>
-                  <option>Admin phòng khám</option>
-                </select>
-              </label>
+              <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Vai trò được cấp: Bác sĩ</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Yêu cầu duyệt bác sĩ chỉ cấp role doctor. Các vai trò nhân sự khác được quản lý
+                  trong quy trình thành viên workspace.
+                </p>
+              </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button

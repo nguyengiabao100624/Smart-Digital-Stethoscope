@@ -1,15 +1,22 @@
 {
-  "twoFactor": { "enabled": true, "method": "app", "enrollmentPending": false },
+  "userId": "user_two_factor_fixture",
+  "enrollmentId": "tfa_enroll_fixture_01",
+  "twoFactor": { "enabled": false, "method": "", "enrollmentPending": true },
   "recoveryCodes": [
-    "A8F2-K6Q9-P3TX",
-    "B4M7-R2VK-X9CW",
-    "C9P3-W8HN-K5YD",
-    "D6T4-Q7ZM-R2JF",
-    "E3V8-N5CX-H7PK",
-    "F7K2-Y9JW-M4QR",
-    "G5R9-P3TD-V8NX",
-    "H2W6-X4KF-Q9MC"
+    "A8F2C6-6A9F31",
+    "B4A7F2-BA9C4D",
+    "C9F3A8-BAC5AD",
+    "D6A4C7-A2AF31",
+    "E3B8A5-CA7FAB",
+    "F7A2A9-AB4C31",
+    "A5C9F3-ADB8AA",
+    "B2A6C4-FA9ACA"
   ],
-  "twoFactorToken": "tfa_session_fixture_token_0123456789abcdef",
-  "tokenExpiresAt": "2026-07-14T22:00:00.000Z"
+  "recoveryDelivery": {
+    "id": "2fa_delivery_fixture_01",
+    "expiresAt": "2026-07-14T14:25:00.000Z",
+    "acknowledged": false
+  },
+  "recoveryAckToken": "tfa_recovery_ack_fixture_token_0123456789abcdef",
+  "replayed": false
 }

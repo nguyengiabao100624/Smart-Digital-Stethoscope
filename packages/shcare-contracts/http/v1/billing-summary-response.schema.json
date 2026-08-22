@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/billing-summary-response.schema.json",
+  "title": "Shcare workspace billing summary response",
+  "description": "Read-only workspace package, measured usage, quota, billing contact and an explicitly manual billing policy. This contract does not claim an online payment provider.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generatedAt",
+    "workspace",
+    "package",
+    "subscription",
+    "usage",
+    "quota",
+    "usageRows",
+    "currentCharge",
+    "billingContact",
+    "invoicePolicy"
+  ],
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workspace": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "type": {
+          "type": "string"
+        },
+        "workspaceType": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "packageId": {
+          "type": "string"
+        },
+        "subscriptionStatus": {
+          "type": "string"
+        },
+        "billingCycle": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "package": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/servicePackage"
+        }
+      ]
+    },
+    "subscription": {
+      "$ref": "#/$defs/subscription"
+    },
+    "usage": {
+      "$ref": "#/$defs/usage"
+    },
+    "quota": {
+      "$ref": "#/$defs/quota"
+    },
+    "usageRows": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/usageRow"
+      }
+    },
+    "currentCharge": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/currentCharge"
+        }
+      ]
+    },
+    "billingContact": {
+      "$ref": "#/$defs/billingContact"
+    },
+    "invoicePolicy": {
+      "$ref": "#/$defs/invoicePolicy"
+    }
+  },
+  "$defs": {
+    "canonicalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+    },
+    "servicePackage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "name", "price", "currency", "duration", "features"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "duration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "number",
+              "string"
+            ]
+          }
+        }
+      }
+    },
+    "subscription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "organizationId",
+        "packageId",
+        "status",
+        "billingCycle",
+        "source",
+        "startedAt",
+        "renewsAt",
+        "canceledAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "organizationId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "billingCycle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "source": {
+          "enum": [
+            "subscription",
+            "workspace"
+          ]
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "renewsAt": {
+          "type": "string"
+        },
+        "canceledAt": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doctors",
+        "patients",
+        "devices",
+        "aiMonthly",
+        "storageGb",
+        "storageMetric"
+      ],
+      "properties": {
+        "doctors": {
+          "type": "number",
+          "minimum": 0
+        },
+        "patients": {
+          "type": "number",
+          "minimum": 0
+        },
+        "devices": {
+          "type": "number",
+          "minimum": 0
+        },
+        "aiMonthly": {
+          "type": "number",
+          "minimum": 0
+        },
+        "storageGb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "storageMetric": {
+          "const": "total_storage"
+        }
+      }
+    },
+    "quota": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxDoctors",
+        "maxPatients",
+        "maxDevices",
+        "storageGb",
+        "aiMonthly",
+        "retentionDays"
+      ],
+      "properties": {
+        "maxDoctors": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxPatients": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxDevices": {
+          "type": "number",
+          "minimum": 0
+        },
+        "storageGb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "aiMonthly": {
+          "type": "number",
+          "minimum": 0
+        },
+        "retentionDays": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "usageRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "label",
+        "used",
+        "limit",
+        "unit",
+        "percent",
+        "status"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "used": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "percent": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "warning",
+            "exceeded",
+            "unlimited"
+          ]
+        }
+      }
+    },
+    "currentCharge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "amount",
+        "currency",
+        "cycle",
+        "source"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "cycle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "source": {
+          "const": "service_package"
+        }
+      }
+    },
+    "billingContact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "email",
+        "phone",
+        "address"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 240
+        }
+      }
+    },
+    "invoicePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "providerConfigured",
+        "message"
+      ],
+      "properties": {
+        "mode": {
+          "const": "manual"
+        },
+        "providerConfigured": {
+          "const": false
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}

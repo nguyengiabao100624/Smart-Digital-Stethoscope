@@ -48,6 +48,7 @@ interface Props {
   notification: NotificationItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  readAcknowledgementError?: string;
 }
 
 type DetailRow = {
@@ -352,7 +353,12 @@ function safeNotificationActionPath(value: unknown) {
   return actionPath.split(/[?#]/, 1)[0];
 }
 
-export function NotificationDetailDialog({ notification, open, onOpenChange }: Props) {
+export function NotificationDetailDialog({
+  notification,
+  open,
+  onOpenChange,
+  readAcknowledgementError = "",
+}: Props) {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   if (!notification) return null;
@@ -430,6 +436,14 @@ export function NotificationDetailDialog({ notification, open, onOpenChange }: P
             </header>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+              {readAcknowledgementError ? (
+                <p
+                  role="alert"
+                  className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm leading-6 text-destructive"
+                >
+                  {readAcknowledgementError}
+                </p>
+              ) : null}
               <Dialog.Description className="text-sm leading-6 text-foreground/85">
                 {notification.message}
               </Dialog.Description>

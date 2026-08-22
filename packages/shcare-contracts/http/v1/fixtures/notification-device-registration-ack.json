@@ -1,0 +1,15 @@
+{
+  "device": {
+    "id": "ndev_android_001",
+    "userId": "usr_clinician_001",
+    "workspaceId": "wsp_clinic_001",
+    "fcmToken": "fixture-fcm-token-owned-by-this-android-installation",
+    "authSessionId": "auth_session_001",
+    "platform": "android",
+    "enabled": true,
+    "notificationProtocolVersion": 2,
+    "appVersion": "2.0.0-rc2",
+    "createdAt": "2026-07-27T01:00:00.000Z",
+    "updatedAt": "2026-07-27T01:00:00.000Z"
+  }
+}

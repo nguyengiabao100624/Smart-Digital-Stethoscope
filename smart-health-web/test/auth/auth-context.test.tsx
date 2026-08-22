@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,12 +8,26 @@ import { AuthProvider, useAuth } from "../../src/app/context/AuthContext";
 const api = vi.hoisted(() => ({
   hasToken: vi.fn(),
   me: vi.fn(),
+  switchWorkspace: vi.fn(),
   updateMe: vi.fn(),
   clearToken: vi.fn(),
+  clearTokenIfMatches: vi.fn(),
   authenticateFirebase: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
+  getTokenSnapshot: vi.fn(),
+  logoutIfTokenMatches: vi.fn(),
   completeTwoFactorChallenge: vi.fn(),
+}));
+
+const firebase = vi.hoisted(() => ({
+  hasFirebaseWebConfig: vi.fn(),
+  isProductionAuthMode: vi.fn(),
+  onFirebaseAuthStateChange: vi.fn(),
+  signInWithFirebaseEmail: vi.fn(),
+  signOutFirebase: vi.fn(),
+  getCurrentFirebaseUid: vi.fn(),
+  signOutFirebaseIfUidMatches: vi.fn(),
 }));
 
 const rawUser = {
@@ -57,14 +71,15 @@ const workspaceTwoUser = {
   },
 };
 
+const replacementUser = {
+  ...rawUser,
+  id: "user-2",
+  name: "Replacement User",
+  email: "replacement@example.test",
+};
+
 vi.mock("../../src/lib/smart-health-api", () => ({ smartHealthApi: api }));
-vi.mock("../../src/lib/firebase-client", () => ({
-  hasFirebaseWebConfig: () => false,
-  isProductionAuthMode: () => false,
-  onFirebaseAuthStateChange: vi.fn(),
-  signInWithFirebaseEmail: vi.fn(),
-  signOutFirebase: vi.fn(),
-}));
+vi.mock("../../src/lib/firebase-client", () => firebase);
 
 function AuthProbe() {
   const { user, switchWorkspace } = useAuth();
@@ -137,6 +152,32 @@ function InvitationIdentityProbe() {
   );
 }
 
+function LogoutRaceProbe() {
+  const { user, logout, refreshUser } = useAuth();
+  const [result, setResult] = useState("idle");
+  return (
+    <div>
+      <output aria-label="active-user">{user?.id || "none"}</output>
+      <output aria-label="logout-result">{result}</output>
+      <button
+        type="button"
+        onClick={() =>
+          void logout({
+            userId: "user-1",
+            firebaseUid: "firebase-user-1",
+            authToken: "token-user-1",
+          }).then((closed) => setResult(String(closed)))
+        }
+      >
+        Đăng xuất tài khoản cũ
+      </button>
+      <button type="button" onClick={() => void refreshUser()}>
+        Làm mới tài khoản
+      </button>
+    </div>
+  );
+}
+
 function renderAuthProbe(client = new QueryClient()) {
   return render(
     <QueryClientProvider client={client}>
@@ -150,12 +191,18 @@ function renderAuthProbe(client = new QueryClient()) {
 describe("AuthContext workspace switching", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
+    Object.values(firebase).forEach((mock) => mock.mockReset());
     api.hasToken.mockReturnValue(true);
     api.me.mockResolvedValue({ user: rawUser });
+    firebase.hasFirebaseWebConfig.mockReturnValue(false);
+    firebase.isProductionAuthMode.mockReturnValue(false);
   });
 
   it("keeps the current workspace when a 200 response does not confirm the requested workspace", async () => {
-    api.updateMe.mockResolvedValue({ user: rawUser });
+    api.switchWorkspace.mockResolvedValue({ user: rawUser });
+    api.me.mockResolvedValueOnce({ user: rawUser }).mockResolvedValueOnce({
+      user: rawUser,
+    });
     renderAuthProbe();
 
     await waitFor(() =>
@@ -183,7 +230,7 @@ describe("AuthContext workspace switching", () => {
     client.setQueryData(oldAlertKey, { alerts: [{ id: "alert-workspace-1" }] });
     client.setQueryData(accountKey, { user: { id: "user-1" } });
     client.setQueryData(sessionsKey, { sessions: [{ id: "session-1" }] });
-    api.updateMe.mockResolvedValue({ user: workspaceTwoUser });
+    api.switchWorkspace.mockResolvedValue({ user: workspaceTwoUser });
 
     renderAuthProbe(client);
     await waitFor(() =>
@@ -204,6 +251,39 @@ describe("AuthContext workspace switching", () => {
     expect(client.getQueryData(sessionsKey)).toEqual({
       sessions: [{ id: "session-1" }],
     });
+  });
+
+  it("reuses one idempotency key when the same failed workspace intent is retried", async () => {
+    api.switchWorkspace
+      .mockRejectedValueOnce(new Error("temporary transport failure"))
+      .mockResolvedValueOnce({ user: workspaceTwoUser });
+    api.me
+      .mockResolvedValueOnce({ user: rawUser })
+      .mockResolvedValueOnce({ user: rawUser });
+    renderAuthProbe();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("workspace")).toHaveTextContent(
+        "workspace-1",
+      ),
+    );
+    screen.getByRole("button", { name: /chuyển workspace/i }).click();
+    await screen.findByText("temporary transport failure");
+    screen.getByRole("button", { name: /chuyển workspace/i }).click();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("workspace")).toHaveTextContent(
+        "workspace-2",
+      ),
+    );
+    expect(api.switchWorkspace).toHaveBeenCalledTimes(2);
+    expect(api.switchWorkspace.mock.calls[0][0]).toBe("workspace-2");
+    expect(api.switchWorkspace.mock.calls[0][1]).toMatch(
+      /^portal-workspace-switch-/,
+    );
+    expect(api.switchWorkspace.mock.calls[1][1]).toBe(
+      api.switchWorkspace.mock.calls[0][1],
+    );
   });
 
   it("keeps an invitation identity session without granting Portal access", async () => {
@@ -291,5 +371,195 @@ describe("AuthContext workspace switching", () => {
     expect(screen.getByLabelText("portal-authenticated")).toHaveTextContent(
       "false",
     );
+  });
+
+  it("preserves a replacement account that appears while the previous owner is logging out", async () => {
+    let currentToken = "token-user-1";
+    let currentFirebaseUid: string | null = "firebase-user-1";
+    let resolveBackendLogout: ((closed: boolean) => void) | undefined;
+    const backendLogout = new Promise<boolean>((resolve) => {
+      resolveBackendLogout = resolve;
+    });
+
+    api.getTokenSnapshot.mockImplementation(() => currentToken);
+    api.logoutIfTokenMatches.mockReturnValue(backendLogout);
+    firebase.getCurrentFirebaseUid.mockImplementation(
+      () => currentFirebaseUid,
+    );
+    firebase.signOutFirebaseIfUidMatches.mockResolvedValue(true);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <LogoutRaceProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("active-user")).toHaveTextContent("user-1"),
+    );
+    screen
+      .getByRole("button", { name: "Đăng xuất tài khoản cũ" })
+      .click();
+    await waitFor(() =>
+      expect(api.logoutIfTokenMatches).toHaveBeenCalledWith("token-user-1"),
+    );
+
+    currentToken = "token-user-2";
+    currentFirebaseUid = "firebase-user-2";
+    api.me.mockResolvedValueOnce({ user: replacementUser });
+    screen.getByRole("button", { name: "Làm mới tài khoản" }).click();
+    await waitFor(() =>
+      expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2"),
+    );
+
+    await act(async () => {
+      resolveBackendLogout?.(true);
+      await backendLogout;
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("logout-result")).toHaveTextContent("false"),
+    );
+    expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2");
+    expect(firebase.signOutFirebaseIfUidMatches).not.toHaveBeenCalled();
+  });
+
+  it("does not clear replacement state when it appears while the old Firebase sign-out is pending", async () => {
+    let currentToken = "token-user-1";
+    let currentFirebaseUid: string | null = "firebase-user-1";
+    let resolveFirebaseLogout: ((closed: boolean) => void) | undefined;
+    const firebaseLogout = new Promise<boolean>((resolve) => {
+      resolveFirebaseLogout = resolve;
+    });
+
+    api.getTokenSnapshot.mockImplementation(() => currentToken);
+    api.logoutIfTokenMatches.mockImplementation(async () => {
+      currentToken = "";
+      return true;
+    });
+    firebase.getCurrentFirebaseUid.mockImplementation(
+      () => currentFirebaseUid,
+    );
+    firebase.signOutFirebaseIfUidMatches.mockReturnValue(firebaseLogout);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <LogoutRaceProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("active-user")).toHaveTextContent("user-1"),
+    );
+
+    screen
+      .getByRole("button", { name: "Đăng xuất tài khoản cũ" })
+      .click();
+    await waitFor(() =>
+      expect(firebase.signOutFirebaseIfUidMatches).toHaveBeenCalledWith(
+        "firebase-user-1",
+      ),
+    );
+
+    currentToken = "token-user-2";
+    currentFirebaseUid = "firebase-user-2";
+    api.me.mockResolvedValueOnce({ user: replacementUser });
+    screen.getByRole("button", { name: "Làm mới tài khoản" }).click();
+    await waitFor(() =>
+      expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2"),
+    );
+
+    await act(async () => {
+      resolveFirebaseLogout?.(true);
+      await firebaseLogout;
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("logout-result")).toHaveTextContent("false"),
+    );
+    expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2");
+    expect(currentToken).toBe("token-user-2");
+  });
+
+  it("preserves a replacement account when an older Firebase auth callback fails late", async () => {
+    type FirebaseUserStub = {
+      uid: string;
+      getIdToken: () => Promise<string>;
+    };
+    let authStateListener:
+      | ((firebaseUser: FirebaseUserStub | null) => Promise<void>)
+      | undefined;
+    let rejectStaleAuthentication: ((reason: Error) => void) | undefined;
+    let currentToken = "";
+    let currentFirebaseUid: string | null = "firebase-user-1";
+
+    firebase.isProductionAuthMode.mockReturnValue(true);
+    firebase.hasFirebaseWebConfig.mockReturnValue(true);
+    firebase.getCurrentFirebaseUid.mockImplementation(
+      () => currentFirebaseUid,
+    );
+    firebase.onFirebaseAuthStateChange.mockImplementation((listener) => {
+      authStateListener = listener;
+      return vi.fn();
+    });
+    api.getTokenSnapshot.mockImplementation(() => currentToken);
+    api.clearTokenIfMatches.mockImplementation((expectedToken: string) => {
+      if (currentToken !== expectedToken) return false;
+      currentToken = "";
+      return true;
+    });
+    api.authenticateFirebase.mockImplementation((token: string) => {
+      currentToken = token;
+      if (token === "firebase-token-user-a") {
+        return new Promise((_, reject) => {
+          rejectStaleAuthentication = reject;
+        });
+      }
+      return Promise.resolve({ user: replacementUser });
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <LogoutRaceProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(authStateListener).toBeTypeOf("function"));
+
+    const staleCallback = authStateListener?.({
+      uid: "firebase-user-1",
+      getIdToken: async () => "firebase-token-user-a",
+    });
+    await waitFor(() =>
+      expect(api.authenticateFirebase).toHaveBeenCalledWith(
+        "firebase-token-user-a",
+      ),
+    );
+
+    currentFirebaseUid = "firebase-user-2";
+    await authStateListener?.({
+      uid: "firebase-user-2",
+      getIdToken: async () => "firebase-token-user-b",
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2"),
+    );
+
+    await authStateListener?.(null);
+    expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2");
+    expect(currentToken).toBe("firebase-token-user-b");
+
+    await act(async () => {
+      rejectStaleAuthentication?.(new Error("stale user A request failed"));
+      await staleCallback;
+    });
+
+    expect(screen.getByLabelText("active-user")).toHaveTextContent("user-2");
+    expect(currentToken).toBe("firebase-token-user-b");
+    expect(api.clearToken).not.toHaveBeenCalled();
   });
 });

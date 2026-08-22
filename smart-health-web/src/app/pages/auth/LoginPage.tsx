@@ -30,7 +30,10 @@ function getLoginErrorMessage(error?: string) {
 }
 
 function getTwoFactorErrorMessage(error?: string) {
-  if (error === "TWO_FACTOR_CHALLENGE_EXPIRED" || error === "two_factor_expired") {
+  if (
+    error === "TWO_FACTOR_CHALLENGE_EXPIRED" ||
+    error === "two_factor_expired"
+  ) {
     return "Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.";
   }
   if (error === "TWO_FACTOR_CHALLENGE_LOCKED") {
@@ -151,14 +154,22 @@ export default function LoginPage() {
           description="Mở ứng dụng xác thực đã liên kết với Shcare và nhập mã gồm 6 chữ số."
         />
 
-        <form method="post" noValidate onSubmit={handleTwoFactor} className="shc-auth-form">
+        <form
+          method="post"
+          noValidate
+          onSubmit={handleTwoFactor}
+          className="shc-auth-form"
+        >
           <AuthField
             id="login-otp"
             label="Mã xác thực"
-            hint={`Phiên xác thực hết hạn lúc ${new Intl.DateTimeFormat("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }).format(new Date(twoFactorChallenge.expiresAt))}.`}
+            hint={`Phiên xác thực hết hạn lúc ${new Intl.DateTimeFormat(
+              "vi-VN",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            ).format(new Date(twoFactorChallenge.expiresAt))}.`}
             error={otpError}
             required
           >
@@ -180,7 +191,8 @@ export default function LoginPage() {
           </AuthField>
 
           <AuthAlert tone="info">
-            Shcare chỉ xác nhận đăng nhập sau khi backend kiểm tra mã này. Hệ thống không yêu cầu bạn gửi mã qua email hoặc tin nhắn.
+            Shcare chỉ xác nhận đăng nhập sau khi backend kiểm tra mã này. Hệ
+            thống không yêu cầu bạn gửi mã qua email hoặc tin nhắn.
           </AuthAlert>
 
           <AuthPrimaryButton
@@ -214,7 +226,12 @@ export default function LoginPage() {
         description="Dùng tài khoản đã được cấp quyền cho bác sĩ hoặc cơ sở y tế."
       />
 
-      <form method="post" noValidate onSubmit={handleLogin} className="shc-auth-form">
+      <form
+        method="post"
+        noValidate
+        onSubmit={handleLogin}
+        className="shc-auth-form"
+      >
         <AuthField
           id="login-email"
           label="Email đăng nhập"

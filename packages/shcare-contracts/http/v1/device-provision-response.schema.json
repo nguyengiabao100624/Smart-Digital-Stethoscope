@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-provision-response.schema.json",
+  "title": "Shcare one-time device setup artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "claim"],
+  "properties": {
+    "device": { "$ref": "#/$defs/publicDevice" },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "claimCode", "expiresAt", "qrPayload"],
+      "properties": {
+        "deviceId": { "$ref": "#/$defs/deviceId" },
+        "claimCode": { "$ref": "#/$defs/claimCode" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "qrPayload": { "$ref": "#/$defs/setupQrPayload" }
+      }
+    },
+    "idempotent": { "type": "boolean" }
+  },
+  "$defs": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+    },
+    "claimCode": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,80}$"
+    },
+    "publicDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "organizationId", "ownershipState", "status", "connected", "online"],
+      "properties": {
+        "id": { "$ref": "#/$defs/deviceId" },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "name": { "type": "string", "maxLength": 120 },
+        "type": { "type": "string", "enum": ["stethoscope", "respiratory", "other"] },
+        "manufacturer": { "type": "string", "maxLength": 120 },
+        "model": { "type": "string", "maxLength": 120 },
+        "serialNumber": { "type": "string", "maxLength": 120 },
+        "purchaseDate": { "type": "string", "format": "date" },
+        "ownershipState": { "type": "string", "enum": ["provisioned", "claimed", "assigned", "unassigned", "revoked"] },
+        "status": { "type": "string", "maxLength": 40 },
+        "connected": { "type": "boolean" },
+        "online": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["secret"] },
+          { "required": ["deviceSecret"] },
+          { "required": ["secretHash"] },
+          { "required": ["claimCode"] },
+          { "required": ["claimCodeHash"] },
+          { "required": ["factoryCredential"] }
+        ]
+      }
+    },
+    "setupQrPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "protocolVersion", "deviceId", "claimCode", "claimExpiresAt", "setupAp"],
+      "properties": {
+        "type": { "const": "shcare.device.setup" },
+        "protocolVersion": { "const": 1 },
+        "deviceId": { "$ref": "#/$defs/deviceId" },
+        "claimCode": { "$ref": "#/$defs/claimCode" },
+        "claimExpiresAt": { "type": "string", "format": "date-time" },
+        "setupAp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ssid", "security", "proofOfPossession"],
+          "properties": {
+            "ssid": { "type": "string", "pattern": "^Shcare-[A-F0-9]{12}$" },
+            "security": { "const": "WPA2_PSK" },
+            "proofOfPossession": { "type": "string", "pattern": "^[A-Za-z0-9_-]{20}$" }
+          }
+        }
+      }
+    }
+  },
+  "x-shcare-delivery": {
+    "claimMaterial": "one-time",
+    "persistInIdempotencyLedger": false,
+    "successLevel": "backend-provisioned"
+  }
+}

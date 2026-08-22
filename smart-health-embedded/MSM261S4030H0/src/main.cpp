@@ -17,6 +17,8 @@
 #include <esp_flash_encrypt.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <sdkconfig.h>
 #include <math.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/gcm.h>
@@ -73,7 +75,7 @@ using namespace websockets;
 #endif
 
 #ifndef SMART_HEALTH_FIRMWARE_VERSION
-#define SMART_HEALTH_FIRMWARE_VERSION "1.0.0"
+#define SMART_HEALTH_FIRMWARE_VERSION "1.0.1"
 #endif
 
 #ifndef SMART_HEALTH_OTA_PASSWORD
@@ -165,10 +167,19 @@ const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
 const unsigned long CLOUD_RECONNECT_BASE_MS = 1000;
 const unsigned long CLOUD_RECONNECT_MAX_MS = 30000;
 const unsigned long CLOUD_TELEMETRY_INTERVAL_MS = 10000;
+const unsigned long I2S_RETRY_BASE_MS = 1000;
+const unsigned long I2S_RETRY_MAX_MS = 60000;
+const std::uint32_t I2S_READ_FAILURE_THRESHOLD = 3;
+const std::uint32_t TASK_WATCHDOG_TIMEOUT_SECONDS = 30;
+const std::uint32_t BUILT_TASK_WATCHDOG_TIMEOUT_SECONDS =
+    CONFIG_ESP_TASK_WDT_TIMEOUT_S;
+const unsigned long TASK_WATCHDOG_RETRY_MS = 60000;
+const std::size_t OFFLINE_OPERATIONAL_QUEUE_CAPACITY = 8;
 const unsigned long OTA_BOOT_STABILITY_MS =
     SMART_HEALTH_OTA_BOOT_STABILITY_MS;
 const unsigned long OTA_BOOT_HEALTH_TIMEOUT_MS =
     SMART_HEALTH_OTA_BOOT_HEALTH_TIMEOUT_MS;
+const unsigned long OTA_RECOVERY_SAFE_MODE_STATUS_MS = 15000;
 const int FACTORY_RESET_PIN = SMART_HEALTH_FACTORY_RESET_PIN;
 const unsigned long FACTORY_RESET_HOLD_MS = SMART_HEALTH_FACTORY_RESET_HOLD_MS;
 const unsigned long SETUP_PORTAL_TTL_MS = SMART_HEALTH_SETUP_PORTAL_TTL_MS;
@@ -183,6 +194,9 @@ bool configServerStarted = false;
 bool otaReady = false;
 bool mdnsReady = false;
 bool i2sReady = false;
+bool i2sDriverInstalled = false;
+bool i2sMaintenancePaused = false;
+bool taskWatchdogReady = false;
 bool cloudTransportConnected = false;
 bool cloudConnected = false;
 bool cloudConfigured = false;
@@ -190,16 +204,31 @@ bool udpAudioReady = false;
 bool deviceLocked = false;
 bool authenticatedProductionHeartbeatObserved = false;
 bool pendingFirmwareVerification = false;
-bool otaRollbackAttempted = false;
+bool otaRollbackTerminal = false;
+bool otaInProgress = false;
+bool otaTaskWatchdogSuspended = false;
 unsigned long factoryResetPressedAtMs = 0;
 bool factoryResetWarningPrinted = false;
 unsigned long setupPortalStartedAtMs = 0;
 unsigned long pendingFirmwareBootStartedMs = 0;
 unsigned long pendingFirmwareLastStatusMs = 0;
+unsigned long pendingOtaEventLastAttemptMs = 0;
 unsigned long lastCloudConnectAttemptMs = 0;
 unsigned long cloudReconnectDelayMs = 0;
 std::uint32_t cloudReconnectFailureCount = 0;
 unsigned long lastCloudTelemetryMs = 0;
+unsigned long lastOfflineTelemetryMarkerMs = 0;
+unsigned long lastI2sAttemptMs = 0;
+unsigned long lastTaskWatchdogSetupAttemptMs = 0;
+unsigned long i2sRetryDelayMs = I2S_RETRY_BASE_MS;
+std::uint32_t i2sBackoffAttemptCount = 0;
+std::uint32_t i2sRecoveryAttemptCount = 0;
+std::uint32_t i2sRecoverySuccessCount = 0;
+std::uint32_t i2sInitFailureCount = 0;
+std::uint32_t i2sReadFailureCount = 0;
+std::uint32_t i2sConsecutiveReadFailures = 0;
+std::uint32_t taskWatchdogFeedFailures = 0;
+std::uint32_t offlineQueueFlushFailures = 0;
 String cloudSessionId = "";
 String cloudAuthChallengeId = "";
 String cloudAuthNonce = "";
@@ -211,17 +240,65 @@ bool pendingCredentialRotationReady = false;
 bool authUsingPendingCredential = false;
 String activeAudioSessionId = "";
 String activeAudioScanId = "";
+String otaBootOutcome = "";
 bool audioSessionActive = false;
 bool audioDiscontinuityPending = false;
 uint32_t audioSequence = 0;
 shcare::RecentCommandIds recentCommandIds(32);
 shcare::CommandJournal commandJournal(6);
+shcare::OfflineOperationalQueue offlineOperationalQueue(
+    OFFLINE_OPERATIONAL_QUEUE_CAPACITY);
+shcare::PendingReconnectCommand pendingReconnectCommand;
+bool pendingReconnectCommandReady = false;
+shcare::PendingOtaReceipt pendingOtaReceipt;
+bool pendingOtaReceiptReady = false;
+bool pendingOtaConfirmationPersistence = false;
+bool otaRecoverySafeMode = false;
+shcare::OtaRecoverySafeModeReason otaRecoverySafeModeReason =
+    shcare::OtaRecoverySafeModeReason::None;
+unsigned long otaRecoverySafeModeLastStatusMs = 0;
 shcare::AuthHandshakeState cloudAuthHandshake;
 shcare::RuntimeSecurityDecision cloudSecurityDecision;
 
-void sendCloudEvent(const char *type, const char *status = "",
+enum class I2sRuntimeState {
+  Starting,
+  Ready,
+  Degraded,
+  Retrying,
+};
+
+I2sRuntimeState i2sRuntimeState = I2sRuntimeState::Starting;
+String lastI2sFailureCode = "";
+
+bool sendCloudEvent(const char *type, const char *status = "",
                     const char *detail = "");
+bool setupTaskWatchdog();
+void feedTaskWatchdog();
+void maintainTaskWatchdog();
+bool beginBlockingOtaRuntime(String &failureCode);
+void endBlockingOtaRuntime();
+bool persistOtaBootOutcome(const char *outcome);
+String loadOtaBootOutcome();
+void handleI2SRecovery();
+void releaseI2SDriver();
+void markI2sCaptureDegraded(const char *stableCode);
+void queueOfflineTelemetryIfDue();
+void flushOfflineOperationalQueue(std::size_t maxRecords = 2);
 void handlePendingFirmwareHealth();
+bool finalizeConfirmedOtaDurably();
+bool otaRecoveryRuntimeServicesAllowed();
+void enterOtaRecoverySafeMode(shcare::OtaRecoverySafeModeReason reason);
+void handleOtaRecoverySafeMode();
+void confirmPendingReconnectCommand();
+bool erasePendingReconnectReceipt();
+bool persistPendingOtaReceipt(const shcare::CommandEnvelope &command,
+                              const shcare::OtaManifest &manifest,
+                              const std::string &manifestFingerprint);
+bool persistPendingOtaStatus(const char *status);
+bool erasePendingOtaReceipt();
+void loadPendingOtaReceipt();
+void replayPendingOtaTerminalEvent();
+String buildWifiConfigProof(const String &ssid, const String &password);
 
 // =======================
 // MSM261S4030H0 I2S pins
@@ -236,6 +313,11 @@ void handlePendingFirmwareHealth();
 // 8 ms packets keep latency low while avoiding browser/network underruns.
 #define BUFFER_LEN 128
 #define I2S_CHANNEL_COUNT 2
+
+static_assert(SAMPLE_RATE == shcare::kAudioSampleRate,
+              "capture rate must match the canonical audio contract");
+static_assert(BUFFER_LEN == shcare::kAudioPacketSamples,
+              "capture packet size must match the canonical audio contract");
 
 int32_t micBuffer[BUFFER_LEN * I2S_CHANNEL_COUNT];
 int16_t pcmBuffer[BUFFER_LEN];
@@ -492,6 +574,130 @@ const char *resetReasonLabel() {
   }
 }
 
+bool setupTaskWatchdog() {
+  lastTaskWatchdogSetupAttemptMs = millis();
+  bool initializedHere = false;
+  esp_err_t status = esp_task_wdt_status(nullptr);
+  if (status == ESP_OK) {
+    taskWatchdogReady = true;
+    Serial.printf(
+        "Task watchdog already active with built %lu second timeout.\n",
+        static_cast<unsigned long>(BUILT_TASK_WATCHDOG_TIMEOUT_SECONDS));
+    return true;
+  }
+  if (status == ESP_ERR_INVALID_STATE) {
+    status = esp_task_wdt_init(TASK_WATCHDOG_TIMEOUT_SECONDS, true);
+    if (status != ESP_OK) {
+      taskWatchdogReady = false;
+      offlineOperationalQueue.enqueueEvent(
+          "watchdog.degraded", "degraded",
+          static_cast<std::uint32_t>(millis()));
+      Serial.printf("Task watchdog initialization failed: %s\n",
+                    esp_err_to_name(status));
+      return false;
+    }
+    initializedHere = true;
+  }
+
+  status = esp_task_wdt_add(nullptr);
+  taskWatchdogReady = status == ESP_OK;
+  if (!taskWatchdogReady) {
+    offlineOperationalQueue.enqueueEvent(
+        "watchdog.degraded", "degraded",
+        static_cast<std::uint32_t>(millis()));
+    Serial.printf("Task watchdog registration failed: %s\n",
+                  esp_err_to_name(status));
+    return false;
+  }
+  Serial.printf("Task watchdog active with %lu second timeout.\n",
+                static_cast<unsigned long>(
+                    initializedHere ? TASK_WATCHDOG_TIMEOUT_SECONDS
+                                    : BUILT_TASK_WATCHDOG_TIMEOUT_SECONDS));
+  return true;
+}
+
+void feedTaskWatchdog() {
+  if (!taskWatchdogReady) {
+    return;
+  }
+  const esp_err_t result = esp_task_wdt_reset();
+  if (result == ESP_OK) {
+    return;
+  }
+  if (taskWatchdogFeedFailures != UINT32_MAX) {
+    ++taskWatchdogFeedFailures;
+  }
+  taskWatchdogReady = false;
+  offlineOperationalQueue.enqueueEvent(
+      "watchdog.degraded", "degraded",
+      static_cast<std::uint32_t>(millis()));
+  Serial.printf("Task watchdog feed failed: %s\n", esp_err_to_name(result));
+}
+
+void maintainTaskWatchdog() {
+  if (otaInProgress || otaTaskWatchdogSuspended) {
+    return;
+  }
+  if (!taskWatchdogReady &&
+      millis() - lastTaskWatchdogSetupAttemptMs >=
+          TASK_WATCHDOG_RETRY_MS) {
+    setupTaskWatchdog();
+  }
+  feedTaskWatchdog();
+}
+
+bool beginBlockingOtaRuntime(String &failureCode) {
+  if (otaInProgress) {
+    failureCode = "DEVICE_BUSY_OTA";
+    return false;
+  }
+  if (audioSessionActive) {
+    failureCode = "OTA_RECORDING_ACTIVE";
+    return false;
+  }
+
+  const esp_err_t watchdogStatus = esp_task_wdt_status(nullptr);
+  if (watchdogStatus == ESP_OK) {
+    const esp_err_t deleteResult = esp_task_wdt_delete(nullptr);
+    if (deleteResult != ESP_OK) {
+      failureCode = "OTA_WATCHDOG_HANDOFF_FAILED";
+      Serial.printf("OTA watchdog handoff failed: %s\n",
+                    esp_err_to_name(deleteResult));
+      return false;
+    }
+    otaTaskWatchdogSuspended = true;
+    taskWatchdogReady = false;
+  } else if (watchdogStatus != ESP_ERR_NOT_FOUND &&
+             watchdogStatus != ESP_ERR_INVALID_STATE) {
+    failureCode = "OTA_WATCHDOG_STATE_INVALID";
+    Serial.printf("OTA watchdog state check failed: %s\n",
+                  esp_err_to_name(watchdogStatus));
+    return false;
+  }
+
+  otaInProgress = true;
+  Serial.printf(
+      "Cloud OTA entered blocking runtime; loop task left built %lu second TWDT.\n",
+      static_cast<unsigned long>(BUILT_TASK_WATCHDOG_TIMEOUT_SECONDS));
+  return true;
+}
+
+void endBlockingOtaRuntime() {
+  if (otaTaskWatchdogSuspended) {
+    const esp_err_t addResult = esp_task_wdt_add(nullptr);
+    taskWatchdogReady = addResult == ESP_OK;
+    otaTaskWatchdogSuspended = false;
+    if (!taskWatchdogReady) {
+      offlineOperationalQueue.enqueueEvent(
+          "watchdog.degraded", "degraded",
+          static_cast<std::uint32_t>(millis()));
+      Serial.printf("Task watchdog restore after OTA failed: %s\n",
+                    esp_err_to_name(addResult));
+    }
+  }
+  otaInProgress = false;
+}
+
 void copyConfigValue(char *target, size_t targetSize, const char *value) {
   if (targetSize == 0) {
     return;
@@ -580,6 +786,23 @@ const char *activeAudioTransportLabel() {
     return shcare::cloudTransportLabel(cloudSecurityDecision.transport);
   }
   return udpAudioReady ? "UDP_DEVELOPMENT" : "DISABLED";
+}
+
+const char *i2sStatusLabel() {
+  if (i2sMaintenancePaused) {
+    return "maintenance";
+  }
+  switch (i2sRuntimeState) {
+  case I2sRuntimeState::Starting:
+    return "starting";
+  case I2sRuntimeState::Ready:
+    return "ready";
+  case I2sRuntimeState::Retrying:
+    return "retrying";
+  case I2sRuntimeState::Degraded:
+  default:
+    return "degraded";
+  }
 }
 
 bool hasUdpAudioConfig() {
@@ -803,6 +1026,169 @@ bool commitPendingCredentialRotation() {
   return true;
 }
 
+bool persistPendingReconnectReceipt(
+    const shcare::CommandEnvelope &command,
+    const String &expectedWifiSsid = "",
+    const String &expectedWifiConfigProof = "") {
+  if (pendingReconnectCommandReady) {
+    return false;
+  }
+  shcare::PendingReconnectCommand candidate;
+  candidate.commandId = command.id;
+  candidate.correlationId = command.correlationId;
+  candidate.type = command.type;
+  candidate.expectedWifiSsid = expectedWifiSsid.c_str();
+  candidate.expectedWifiConfigProof = expectedWifiConfigProof.c_str();
+  const std::string serialized =
+      shcare::serializePendingReconnectCommand(candidate);
+  if (serialized.empty()) {
+    return false;
+  }
+
+  devicePrefs.begin("smart-health", false);
+  const size_t written =
+      devicePrefs.putString("pendingCmd", serialized.c_str());
+  devicePrefs.end();
+  if (written == 0) {
+    erasePendingReconnectReceipt();
+    return false;
+  }
+
+  devicePrefs.begin("smart-health", true);
+  const String persisted = devicePrefs.getString("pendingCmd", "");
+  devicePrefs.end();
+  if (persisted != String(serialized.c_str())) {
+    erasePendingReconnectReceipt();
+    return false;
+  }
+  pendingReconnectCommand = candidate;
+  pendingReconnectCommandReady = true;
+  return true;
+}
+
+bool erasePendingReconnectReceipt() {
+  devicePrefs.begin("smart-health", false);
+  if (devicePrefs.isKey("pendingCmd")) {
+    devicePrefs.remove("pendingCmd");
+  }
+  devicePrefs.end();
+  devicePrefs.begin("smart-health", true);
+  const bool erased = !devicePrefs.isKey("pendingCmd");
+  devicePrefs.end();
+  if (erased) {
+    pendingReconnectCommand = shcare::PendingReconnectCommand{};
+    pendingReconnectCommandReady = false;
+  }
+  return erased;
+}
+
+bool persistPendingOtaReceipt(const shcare::CommandEnvelope &command,
+                              const shcare::OtaManifest &manifest,
+                              const std::string &manifestFingerprint) {
+  shcare::PendingOtaReceipt candidate;
+  candidate.commandId = command.id;
+  candidate.correlationId = command.correlationId;
+  candidate.otaId = command.id;
+  candidate.firmwareVersion = manifest.firmwareVersion;
+  candidate.manifestFingerprint = manifestFingerprint;
+  candidate.status = "pending";
+  const std::string serialized = shcare::serializePendingOtaReceipt(candidate);
+  if (serialized.empty()) {
+    return false;
+  }
+  if (pendingOtaReceiptReady) {
+    // An existing receipt is a durable idempotency fence. The command handler
+    // must replay or reject it; it must never turn an existing receipt into
+    // authorization for a second download/flash side effect.
+    return false;
+  }
+
+  if (!devicePrefs.begin("smart-health", false)) {
+    return false;
+  }
+  const size_t written = devicePrefs.putString("pendingOta", serialized.c_str());
+  devicePrefs.end();
+  if (written == 0 || !devicePrefs.begin("smart-health", true)) {
+    erasePendingOtaReceipt();
+    return false;
+  }
+  const String persisted = devicePrefs.getString("pendingOta", "");
+  devicePrefs.end();
+  if (persisted != String(serialized.c_str())) {
+    erasePendingOtaReceipt();
+    return false;
+  }
+  pendingOtaReceipt = candidate;
+  pendingOtaReceiptReady = true;
+  return true;
+}
+
+bool persistPendingOtaStatus(const char *status) {
+  if (!pendingOtaReceiptReady || status == nullptr || strlen(status) == 0) {
+    return false;
+  }
+  if (pendingOtaReceipt.status == status) {
+    return true;
+  }
+  shcare::PendingOtaReceipt candidate = pendingOtaReceipt;
+  candidate.status = status;
+  const std::string serialized = shcare::serializePendingOtaReceipt(candidate);
+  if (serialized.empty() || !devicePrefs.begin("smart-health", false)) {
+    return false;
+  }
+  const size_t written = devicePrefs.putString("pendingOta", serialized.c_str());
+  devicePrefs.end();
+  if (written == 0 || !devicePrefs.begin("smart-health", true)) {
+    return false;
+  }
+  const String persisted = devicePrefs.getString("pendingOta", "");
+  devicePrefs.end();
+  if (persisted != String(serialized.c_str())) {
+    return false;
+  }
+  pendingOtaReceipt = candidate;
+  return true;
+}
+
+bool erasePendingOtaReceipt() {
+  if (!devicePrefs.begin("smart-health", false)) {
+    return false;
+  }
+  if (devicePrefs.isKey("pendingOta")) {
+    devicePrefs.remove("pendingOta");
+  }
+  devicePrefs.end();
+  if (!devicePrefs.begin("smart-health", true)) {
+    return false;
+  }
+  const bool erased = !devicePrefs.isKey("pendingOta");
+  devicePrefs.end();
+  if (erased) {
+    pendingOtaReceipt = shcare::PendingOtaReceipt{};
+    pendingOtaReceiptReady = false;
+  }
+  return erased;
+}
+
+void loadPendingOtaReceipt() {
+  pendingOtaReceipt = shcare::PendingOtaReceipt{};
+  pendingOtaReceiptReady = false;
+  if (!devicePrefs.begin("smart-health", true)) {
+    return;
+  }
+  const String serialized = devicePrefs.getString("pendingOta", "");
+  devicePrefs.end();
+  if (serialized.length() == 0) {
+    return;
+  }
+  pendingOtaReceiptReady = shcare::restorePendingOtaReceipt(
+      std::string(serialized.c_str()), pendingOtaReceipt);
+  if (!pendingOtaReceiptReady) {
+    Serial.println("Pending OTA receipt ignored: stored data is invalid.");
+    erasePendingOtaReceipt();
+  }
+}
+
 void loadRuntimeConfig() {
   copyConfigValue(wifiSsid, sizeof(wifiSsid), DEFAULT_WIFI_SSID);
   copyConfigValue(wifiPass, sizeof(wifiPass), DEFAULT_WIFI_PASS);
@@ -933,8 +1319,31 @@ void loadRuntimeConfig() {
     Serial.println(
         "Command journal ignored: stored data is invalid or incompatible.");
   }
+  const String persistedPendingCommand =
+      devicePrefs.getString("pendingCmd", "");
+  bool invalidPendingCommand = false;
+  pendingReconnectCommand = shcare::PendingReconnectCommand{};
+  pendingReconnectCommandReady = false;
+  if (persistedPendingCommand.length() > 0) {
+    pendingReconnectCommandReady =
+        shcare::restorePendingReconnectCommand(
+            std::string(persistedPendingCommand.c_str()),
+            pendingReconnectCommand);
+    invalidPendingCommand = !pendingReconnectCommandReady;
+    if (pendingReconnectCommandReady) {
+      Serial.print("Pending reconnect command restored: ");
+      Serial.println(pendingReconnectCommand.type.c_str());
+    } else {
+      Serial.println(
+          "Pending reconnect command ignored: stored receipt is invalid.");
+    }
+  }
 
   devicePrefs.end();
+
+  if (invalidPendingCommand) {
+    erasePendingReconnectReceipt();
+  }
 
   if (pendingCredentialRotationReady &&
       (strlen(pendingDeviceSecret) < 32 ||
@@ -1021,8 +1430,9 @@ bool persistCommandJournalSnapshot(
 }
 
 bool persistTerminalCommand(const shcare::CommandEnvelope &command,
-                            const char *state, const char *code,
-                            const char *result) {
+                             const char *state, const char *code,
+                             const char *result,
+                             const std::string &effectFingerprint = {}) {
   shcare::CommandJournal candidate = commandJournal;
   shcare::CommandJournalEntry entry;
   entry.commandId = command.id;
@@ -1031,6 +1441,7 @@ bool persistTerminalCommand(const shcare::CommandEnvelope &command,
   entry.state = state == nullptr ? "failed" : state;
   entry.code = code == nullptr ? "COMMAND_FAILED" : code;
   entry.result = result == nullptr ? "" : result;
+  entry.effectFingerprint = effectFingerprint;
   if (!candidate.recordTerminal(entry) ||
       !persistCommandJournalSnapshot(candidate)) {
     return false;
@@ -1132,8 +1543,12 @@ void handleSetupSave() {
 
   ssid.trim();
 
-  if (ssid.length() == 0) {
-    sendSetupHtml(400, buildSetupPage("WiFi SSID is required."));
+  if (!shcare::validWifiCredentials(
+          std::string(ssid.c_str()), std::string(pass.c_str()))) {
+    sendSetupHtml(
+        400,
+        buildSetupPage(
+            "WiFi requires a 1-32 byte SSID and either an open network or an 8-63 character WPA passphrase."));
     return;
   }
 
@@ -1227,8 +1642,14 @@ void runSetupPortal(const char *reason) {
           "No setup/reset GPIO is configured; use a wired recovery flash.");
     }
     while (WiFi.status() != WL_CONNECTED) {
+      maintainTaskWatchdog();
+      handleI2SRecovery();
       handleFactoryResetButton();
       handlePendingFirmwareHealth();
+      if (!otaRecoveryRuntimeServicesAllowed()) {
+        handleOtaRecoverySafeMode();
+        return;
+      }
       delay(100);
     }
     return;
@@ -1245,8 +1666,14 @@ void runSetupPortal(const char *reason) {
         "WiFi recovery AP remains closed: canonical device identity and "
         "device credential are required.");
     while (true) {
+      maintainTaskWatchdog();
+      handleI2SRecovery();
       handleFactoryResetButton();
       handlePendingFirmwareHealth();
+      if (!otaRecoveryRuntimeServicesAllowed()) {
+        handleOtaRecoverySafeMode();
+        return;
+      }
       delay(100);
     }
   }
@@ -1258,8 +1685,14 @@ void runSetupPortal(const char *reason) {
     Serial.println(
         "WiFi recovery AP remains closed: per-device WPA2 derivation failed.");
     while (true) {
+      maintainTaskWatchdog();
+      handleI2SRecovery();
       handleFactoryResetButton();
       handlePendingFirmwareHealth();
+      if (!otaRecoveryRuntimeServicesAllowed()) {
+        handleOtaRecoverySafeMode();
+        return;
+      }
       delay(100);
     }
   }
@@ -1282,7 +1715,14 @@ void runSetupPortal(const char *reason) {
   if (!accessPointStarted) {
     Serial.println("Cannot start Smart Health setup access point.");
     while (true) {
+      maintainTaskWatchdog();
+      handleI2SRecovery();
+      handleFactoryResetButton();
       handlePendingFirmwareHealth();
+      if (!otaRecoveryRuntimeServicesAllowed()) {
+        handleOtaRecoverySafeMode();
+        return;
+      }
       delay(1000);
     }
   }
@@ -1305,6 +1745,8 @@ void runSetupPortal(const char *reason) {
   Serial.println(setupPortalIp);
 
   while (true) {
+    maintainTaskWatchdog();
+    handleI2SRecovery();
     if (shcare::setupPortalExpired(
             static_cast<std::uint32_t>(millis()),
             static_cast<std::uint32_t>(setupPortalStartedAtMs),
@@ -1318,14 +1760,25 @@ void runSetupPortal(const char *reason) {
       configServerStarted = false;
       setupPortalCsrfToken = "";
       while (true) {
+        maintainTaskWatchdog();
+        handleI2SRecovery();
         handleFactoryResetButton();
         handlePendingFirmwareHealth();
+        if (!otaRecoveryRuntimeServicesAllowed()) {
+          handleOtaRecoverySafeMode();
+          return;
+        }
         delay(100);
       }
     }
     setupDns.processNextRequest();
     setupServer.handleClient();
+    handleFactoryResetButton();
     handlePendingFirmwareHealth();
+    if (!otaRecoveryRuntimeServicesAllowed()) {
+      handleOtaRecoverySafeMode();
+      return;
+    }
     delay(2);
   }
 }
@@ -1556,6 +2009,79 @@ String buildDeviceAuthProof(const String &challengeId, const String &nonce,
   return base64UrlEncode(proof, sizeof(proof));
 }
 
+String buildWifiConfigProof(const String &ssid, const String &password) {
+  if (ssid.length() == 0 || strlen(deviceSecret) == 0) {
+    return "";
+  }
+  const mbedtls_md_info_t *sha256 =
+      mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  if (sha256 == nullptr) {
+    return "";
+  }
+  const char label[] = "SHCARE-WIFI-CONFIG-V1";
+  const auto writeLength = [](size_t length, uint8_t output[4]) {
+    output[0] = static_cast<uint8_t>((length >> 24) & 0xffU);
+    output[1] = static_cast<uint8_t>((length >> 16) & 0xffU);
+    output[2] = static_cast<uint8_t>((length >> 8) & 0xffU);
+    output[3] = static_cast<uint8_t>(length & 0xffU);
+  };
+  uint8_t ssidLength[4];
+  uint8_t passwordLength[4];
+  uint8_t proof[32];
+  writeLength(ssid.length(), ssidLength);
+  writeLength(password.length(), passwordLength);
+
+  mbedtls_md_context_t context;
+  mbedtls_md_init(&context);
+  int result = mbedtls_md_setup(&context, sha256, 1);
+  if (result == 0) {
+    result = mbedtls_md_hmac_starts(
+        &context, reinterpret_cast<const unsigned char *>(deviceSecret),
+        strlen(deviceSecret));
+  }
+  if (result == 0) {
+    result = mbedtls_md_hmac_update(
+        &context, reinterpret_cast<const unsigned char *>(label),
+        sizeof(label) - 1);
+  }
+  if (result == 0) {
+    result = mbedtls_md_hmac_update(&context, ssidLength,
+                                    sizeof(ssidLength));
+  }
+  if (result == 0) {
+    result = mbedtls_md_hmac_update(
+        &context, reinterpret_cast<const unsigned char *>(ssid.c_str()),
+        ssid.length());
+  }
+  if (result == 0) {
+    result = mbedtls_md_hmac_update(&context, passwordLength,
+                                    sizeof(passwordLength));
+  }
+  if (result == 0 && password.length() > 0) {
+    result = mbedtls_md_hmac_update(
+        &context, reinterpret_cast<const unsigned char *>(password.c_str()),
+        password.length());
+  }
+  if (result == 0) {
+    result = mbedtls_md_hmac_finish(&context, proof);
+  }
+  mbedtls_md_free(&context);
+  if (result != 0) {
+    memset(proof, 0, sizeof(proof));
+    return "";
+  }
+
+  const char *hex = "0123456789abcdef";
+  String encoded;
+  encoded.reserve(sizeof(proof) * 2);
+  for (const uint8_t value : proof) {
+    encoded += hex[(value >> 4) & 0x0fU];
+    encoded += hex[value & 0x0fU];
+  }
+  memset(proof, 0, sizeof(proof));
+  return encoded;
+}
+
 String cloudWsUrl() {
   String url = backendUseTls ? "wss://" : "ws://";
   url += backendHost;
@@ -1606,8 +2132,47 @@ String cloudTelemetryJson(const char *type) {
   json += String(ESP.getFreeHeap());
   json += ",";
   json += "\"i2sStatus\":\"";
-  json += i2sReady ? "ready" : "degraded";
+  json += i2sStatusLabel();
   json += "\",";
+  json += "\"i2sLastFailureCode\":\"";
+  json += jsonEscape(lastI2sFailureCode.c_str());
+  json += "\",";
+  json += "\"i2sRecoveryAttempts\":";
+  json += String(i2sRecoveryAttemptCount);
+  json += ",";
+  json += "\"i2sRecoverySuccesses\":";
+  json += String(i2sRecoverySuccessCount);
+  json += ",";
+  json += "\"i2sInitFailures\":";
+  json += String(i2sInitFailureCount);
+  json += ",";
+  json += "\"i2sReadFailures\":";
+  json += String(i2sReadFailureCount);
+  json += ",";
+  json += "\"i2sRetryDelayMs\":";
+  json += String(i2sReady ? 0 : i2sRetryDelayMs);
+  json += ",";
+  json += "\"taskWatchdogStatus\":\"";
+  json += taskWatchdogReady ? "active" : "degraded";
+  json += "\",";
+  json += "\"taskWatchdogFeedFailures\":";
+  json += String(taskWatchdogFeedFailures);
+  json += ",";
+  json += "\"offlineQueueDepth\":";
+  json += String(offlineOperationalQueue.size());
+  json += ",";
+  json += "\"offlineQueueDropped\":";
+  json += String(offlineOperationalQueue.droppedCount());
+  json += ",";
+  json += "\"offlineQueueCoalesced\":";
+  json += String(offlineOperationalQueue.coalescedCount());
+  json += ",";
+  json += "\"offlineQueueRejected\":";
+  json += String(offlineOperationalQueue.rejectedCount());
+  json += ",";
+  json += "\"offlineQueueFlushFailures\":";
+  json += String(offlineQueueFlushFailures);
+  json += ",";
   json += "\"audioPacketsSent\":";
   json += String(wsPacketsSent + udpPacketsSent);
   json += ",";
@@ -1634,9 +2199,10 @@ String cloudTelemetryJson(const char *type) {
     json += jsonEscape(lastOtaStatus.c_str());
   } else if (pendingFirmwareVerification) {
     json += "pending_verification";
-  } else if (otaRollbackAttempted) {
-    json += "rolling_back";
   }
+  json += "\",";
+  json += "\"otaBootOutcome\":\"";
+  json += jsonEscape(otaBootOutcome.c_str());
   json += "\",";
   json += "\"wifiSsid\":\"";
   json += jsonEscape(wifiSsid);
@@ -1676,18 +2242,239 @@ void rejectCloudTransport(const char *code) {
   resetAudioSession();
 }
 
+bool validOtaBootOutcome(const String &outcome) {
+  return outcome == "prepared" || outcome == "pending" ||
+         outcome == "confirming" ||
+         outcome == "confirmed" ||
+         outcome == "rollback_requested" || outcome == "rolled_back" ||
+         outcome == "rollback_unavailable" || outcome == "rollback_failed";
+}
+
+String loadOtaBootOutcome() {
+  if (!devicePrefs.begin("smart-health", true)) {
+    return "";
+  }
+  const String outcome = devicePrefs.getString("otaBoot", "");
+  devicePrefs.end();
+  return validOtaBootOutcome(outcome) ? outcome : String("");
+}
+
+bool persistOtaBootOutcome(const char *outcome) {
+  const String candidate = outcome == nullptr ? "" : String(outcome);
+  if (!validOtaBootOutcome(candidate) ||
+      !devicePrefs.begin("smart-health", false)) {
+    return false;
+  }
+  const bool written = devicePrefs.putString("otaBoot", candidate) > 0;
+  devicePrefs.end();
+  if (!written || !devicePrefs.begin("smart-health", true)) {
+    return false;
+  }
+  const String verified = devicePrefs.getString("otaBoot", "");
+  devicePrefs.end();
+  if (verified != candidate) {
+    return false;
+  }
+  otaBootOutcome = candidate;
+  return true;
+}
+
+bool otaRecoveryRuntimeServicesAllowed() {
+  return !otaRecoverySafeMode &&
+         shcare::otaRecoveryServicesAllowed(otaRecoverySafeModeReason);
+}
+
+void enterOtaRecoverySafeMode(
+    const shcare::OtaRecoverySafeModeReason reason) {
+  if (shcare::otaRecoveryServicesAllowed(reason)) {
+    return;
+  }
+  if (!otaRecoverySafeMode) {
+    otaRecoverySafeModeReason = reason;
+  }
+  otaRecoverySafeMode = true;
+  pendingFirmwareVerification = false;
+  pendingOtaConfirmationPersistence = false;
+  otaRollbackTerminal = true;
+  otaInProgress = false;
+  cloudSocket.close();
+  audioUdp.stop();
+  if (configServerStarted) {
+    setupServer.stop();
+  }
+  setupDns.stop();
+  if (mdnsReady) {
+    MDNS.end();
+  }
+  WiFi.softAPdisconnect(true);
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
+  releaseI2SDriver();
+  cloudConnected = false;
+  cloudTransportConnected = false;
+  cloudConfigured = false;
+  authenticatedProductionHeartbeatObserved = false;
+  udpAudioReady = false;
+  otaReady = false;
+  mdnsReady = false;
+  setupPortalActive = false;
+  configServerStarted = false;
+  setupPortalCsrfToken = "";
+  i2sReady = false;
+  resetAudioSession();
+
+  Serial.print("OTA recovery safe mode active: ");
+  Serial.println(
+      shcare::otaRecoverySafeModeStableCode(otaRecoverySafeModeReason));
+  Serial.println(
+      "Network, cloud control, OTA control, and audio services are disabled. "
+      "Hold the physical factory-reset button for local recovery; a signed "
+      "serial reflash may be required.");
+}
+
+void handleOtaRecoverySafeMode() {
+  maintainTaskWatchdog();
+  handleFactoryResetButton();
+  const unsigned long now = millis();
+  if (otaRecoverySafeModeLastStatusMs == 0 ||
+      now - otaRecoverySafeModeLastStatusMs >=
+          OTA_RECOVERY_SAFE_MODE_STATUS_MS) {
+    otaRecoverySafeModeLastStatusMs = now;
+    Serial.print("OTA recovery safe mode remains active: ");
+    Serial.println(
+        shcare::otaRecoverySafeModeStableCode(otaRecoverySafeModeReason));
+  }
+  delay(25);
+  feedTaskWatchdog();
+}
+
 void beginPendingFirmwareHealthCheck() {
+  loadPendingOtaReceipt();
+  otaBootOutcome = loadOtaBootOutcome();
   const esp_partition_t *runningPartition = esp_ota_get_running_partition();
   esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
-  if (runningPartition != nullptr &&
-      esp_ota_get_state_partition(runningPartition, &state) == ESP_OK &&
-      state == ESP_OTA_IMG_PENDING_VERIFY) {
+  const bool stateKnown =
+      runningPartition != nullptr &&
+      esp_ota_get_state_partition(runningPartition, &state) == ESP_OK;
+  const bool pendingImage =
+      stateKnown && state == ESP_OTA_IMG_PENDING_VERIFY;
+  const bool targetFirmwareRunning =
+      pendingOtaReceiptReady &&
+      pendingOtaReceipt.firmwareVersion == FIRMWARE_VERSION;
+  const shcare::PendingOtaRecoveryAction recovery =
+      shcare::evaluatePendingOtaRecovery(
+          pendingOtaReceipt, pendingOtaReceiptReady, stateKnown, pendingImage,
+          targetFirmwareRunning, stateKnown && state == ESP_OTA_IMG_VALID,
+          std::string(otaBootOutcome.c_str()));
+  if (recovery == shcare::PendingOtaRecoveryAction::Confirmed) {
+    pendingFirmwareVerification = false;
+    otaRollbackTerminal = true;
+    pendingOtaConfirmationPersistence = true;
+    if (!finalizeConfirmedOtaDurably()) {
+      Serial.println(
+          "Recovered OTA confirmation is waiting for durable persistence.");
+    }
+  } else if (recovery == shcare::PendingOtaRecoveryAction::RolledBack) {
+    // The boot-slot inference is not reportable until its durable marker is
+    // updated. This prevents a stale marker from contaminating the next OTA.
+    const bool markerStored = persistOtaBootOutcome("rolled_back");
+    const bool receiptStored =
+        markerStored && persistPendingOtaStatus("rolled_back");
+    if (receiptStored) {
+      Serial.println(
+          "Recovered an interrupted OTA as rolled_back on the previous app slot.");
+    } else {
+      persistOtaBootOutcome("rollback_failed");
+      persistPendingOtaStatus("failed");
+      Serial.println(
+          "Rollback inference could not be made durable; failed closed.");
+    }
+  } else if (recovery == shcare::PendingOtaRecoveryAction::Failed) {
+    if (persistPendingOtaStatus("failed")) {
+      Serial.println("Recovered an OTA interrupted before reboot as failed.");
+    } else {
+      Serial.println("Interrupted OTA failure could not be persisted.");
+    }
+  } else if (recovery ==
+             shcare::PendingOtaRecoveryAction::RollbackRequired) {
+    pendingFirmwareVerification = false;
+    otaRollbackTerminal = true;
+    if (!esp_ota_check_rollback_is_possible()) {
+      enterOtaRecoverySafeMode(
+          shcare::OtaRecoverySafeModeReason::RollbackUnavailable);
+      persistOtaBootOutcome("rollback_unavailable");
+      if (pendingOtaReceiptReady) {
+        persistPendingOtaStatus("failed");
+      }
+      Serial.println(
+          "Unbound or mismatched pending image rejected; rollback unavailable.");
+      return;
+    }
+    if (!persistOtaBootOutcome("rollback_requested")) {
+      enterOtaRecoverySafeMode(
+          shcare::OtaRecoverySafeModeReason::RollbackIntentPersistenceFailed);
+      persistOtaBootOutcome("rollback_failed");
+      if (pendingOtaReceiptReady) {
+        persistPendingOtaStatus("failed");
+      }
+      Serial.println(
+          "Unbound or mismatched pending image rejected; rollback intent persistence failed.");
+      return;
+    }
+    if (pendingOtaReceiptReady) {
+      persistPendingOtaStatus("rolling_back");
+    }
+    Serial.println(
+        "Unbound or mismatched pending image rejected; rolling back.");
+    delay(100);
+    const esp_err_t result = esp_ota_mark_app_invalid_rollback_and_reboot();
+    enterOtaRecoverySafeMode(
+        shcare::OtaRecoverySafeModeReason::RollbackApiReturned);
+    persistOtaBootOutcome("rollback_failed");
+    if (pendingOtaReceiptReady) {
+      persistPendingOtaStatus("failed");
+    }
+    Serial.print("Rejected pending-image rollback failed: ");
+    Serial.println(esp_err_to_name(result));
+    return;
+  }
+  if (recovery == shcare::PendingOtaRecoveryAction::AwaitBootHealth) {
     pendingFirmwareVerification = true;
     pendingFirmwareBootStartedMs = millis();
     pendingFirmwareLastStatusMs = pendingFirmwareBootStartedMs;
-    otaRollbackAttempted = false;
+    otaRollbackTerminal = false;
+    if (otaBootOutcome == "rollback_requested") {
+      enterOtaRecoverySafeMode(
+          shcare::OtaRecoverySafeModeReason::RollbackApiReturned);
+      persistOtaBootOutcome("rollback_failed");
+      Serial.println(
+          "OTA rollback request returned to the same pending image; automatic retry disabled.");
+    } else if (otaBootOutcome == "rollback_unavailable") {
+      enterOtaRecoverySafeMode(
+          shcare::OtaRecoverySafeModeReason::RollbackUnavailable);
+      Serial.println(
+          "OTA rollback remains unavailable from the durable boot marker; automatic retry disabled.");
+    } else if (otaBootOutcome == "rollback_failed") {
+      enterOtaRecoverySafeMode(
+          shcare::OtaRecoverySafeModeReason::RollbackApiReturned);
+      Serial.println(
+          "OTA rollback is terminal from the durable boot marker; automatic retry disabled.");
+    } else if (!persistOtaBootOutcome("pending")) {
+      Serial.println("OTA pending boot marker could not be persisted.");
+    }
     Serial.print("OTA image pending boot-health confirmation on partition ");
     Serial.println(runningPartition->label);
+    return;
+  }
+
+  if (stateKnown && otaBootOutcome == "rollback_requested") {
+    if (persistOtaBootOutcome("rolled_back")) {
+      sendCloudEvent("ota.rollback", "rolled_back",
+                     "booted a non-pending image after durable rollback request");
+      Serial.println("OTA rollback outcome inferred from the booted app slot.");
+    } else {
+      Serial.println("OTA rollback outcome marker could not be finalized.");
+    }
   }
 }
 
@@ -1707,8 +2494,32 @@ bool pendingFirmwareHealthReady() {
   return shcare::otaBootHealthReady(health);
 }
 
+bool finalizeConfirmedOtaDurably() {
+  if (!pendingOtaConfirmationPersistence || !pendingOtaReceiptReady) {
+    return false;
+  }
+  const bool markerStored = persistOtaBootOutcome("confirmed");
+  const bool receiptStored =
+      markerStored && persistPendingOtaStatus("confirmed");
+  const shcare::OtaConfirmationAction action =
+      shcare::evaluateOtaConfirmationAction(true, true, markerStored,
+                                             receiptStored);
+  if (action != shcare::OtaConfirmationAction::PublishConfirmed) {
+    return false;
+  }
+  pendingOtaConfirmationPersistence = false;
+  sendCloudEvent("ota.confirmed", "confirmed",
+                 "boot health confirmed; rollback cancelled");
+  Serial.println("OTA boot health confirmed and durably recorded.");
+  return true;
+}
+
 void confirmPendingFirmwareIfHealthy() {
-  if (!pendingFirmwareHealthReady()) {
+  if (pendingOtaConfirmationPersistence) {
+    finalizeConfirmedOtaDurably();
+    return;
+  }
+  if (otaRollbackTerminal || !pendingFirmwareHealthReady()) {
     return;
   }
   const esp_partition_t *runningPartition = esp_ota_get_running_partition();
@@ -1716,20 +2527,37 @@ void confirmPendingFirmwareIfHealthy() {
   if (runningPartition != nullptr &&
       esp_ota_get_state_partition(runningPartition, &state) == ESP_OK &&
       state == ESP_OTA_IMG_PENDING_VERIFY) {
+    const bool confirmingMarkerStored =
+        persistOtaBootOutcome("confirming");
+    if (shcare::evaluateOtaConfirmationAction(
+            confirmingMarkerStored, false, false, false) !=
+        shcare::OtaConfirmationAction::CancelRollback) {
+      Serial.println(
+          "OTA confirmation blocked: durable confirming marker unavailable.");
+      return;
+    }
     const esp_err_t result = esp_ota_mark_app_valid_cancel_rollback();
     if (result == ESP_OK) {
       pendingFirmwareVerification = false;
-      sendCloudEvent("ota.confirmed", "confirmed",
-                     "boot health confirmed; rollback cancelled");
-      Serial.println("OTA boot health confirmed; rollback cancelled.");
+      otaRollbackTerminal = true;
+      pendingOtaConfirmationPersistence = true;
+      if (!finalizeConfirmedOtaDurably()) {
+        Serial.println(
+            "OTA rollback was cancelled; durable confirmation will retry.");
+      }
       return;
     }
+    persistOtaBootOutcome("pending");
     Serial.print("OTA boot confirmation failed: ");
     Serial.println(esp_err_to_name(result));
   }
 }
 
 void handlePendingFirmwareHealth() {
+  if (pendingOtaConfirmationPersistence) {
+    finalizeConfirmedOtaDurably();
+    return;
+  }
   if (!pendingFirmwareVerification) {
     return;
   }
@@ -1750,31 +2578,60 @@ void handlePendingFirmwareHealth() {
   }
 
   const unsigned long elapsed = millis() - pendingFirmwareBootStartedMs;
-  if (elapsed < OTA_BOOT_HEALTH_TIMEOUT_MS) {
+  const bool timeoutElapsed = elapsed >= OTA_BOOT_HEALTH_TIMEOUT_MS;
+  if (!timeoutElapsed) {
     if (millis() - pendingFirmwareLastStatusMs >= 15000) {
       pendingFirmwareLastStatusMs = millis();
       Serial.println("OTA boot health still pending.");
     }
     return;
   }
-  if (otaRollbackAttempted) {
+  if (otaRollbackTerminal) {
     return;
   }
-  otaRollbackAttempted = true;
+
+  const bool rollbackPossible = esp_ota_check_rollback_is_possible();
+  const shcare::OtaRollbackAction action = shcare::evaluateOtaRollbackAction(
+      pendingFirmwareVerification, timeoutElapsed, rollbackPossible,
+      otaRollbackTerminal);
+  if (action == shcare::OtaRollbackAction::Terminal ||
+      action == shcare::OtaRollbackAction::None ||
+      action == shcare::OtaRollbackAction::Wait) {
+    return;
+  }
+
+  if (action == shcare::OtaRollbackAction::FailUnavailable) {
+    enterOtaRecoverySafeMode(
+        shcare::OtaRecoverySafeModeReason::RollbackUnavailable);
+    persistOtaBootOutcome("rollback_unavailable");
+    Serial.println("OTA rollback unavailable: no valid alternate app slot.");
+    sendCloudEvent("ota.failed", "failed",
+                   "boot health timeout; rollback slot unavailable");
+    return;
+  }
+
+  if (!persistOtaBootOutcome("rollback_requested")) {
+    enterOtaRecoverySafeMode(
+        shcare::OtaRecoverySafeModeReason::RollbackIntentPersistenceFailed);
+    persistOtaBootOutcome("rollback_failed");
+    Serial.println("OTA rollback blocked: durable intent marker failed.");
+    sendCloudEvent("ota.failed", "failed",
+                   "rollback intent could not be persisted");
+    return;
+  }
+
+  otaRollbackTerminal = true;
   Serial.println("OTA boot health timed out; rolling back to the last valid slot.");
   sendCloudEvent("ota.rollback", "rolling_back",
                  "boot health timeout; reverting firmware");
   delay(100);
-  if (!esp_ota_check_rollback_is_possible()) {
-    Serial.println("OTA rollback unavailable: no valid alternate app slot.");
-    otaRollbackAttempted = false;
-    pendingFirmwareLastStatusMs = millis();
-    return;
-  }
   const esp_err_t result = esp_ota_mark_app_invalid_rollback_and_reboot();
+  enterOtaRecoverySafeMode(
+      shcare::OtaRecoverySafeModeReason::RollbackApiReturned);
   Serial.print("OTA rollback request failed: ");
   Serial.println(esp_err_to_name(result));
-  otaRollbackAttempted = false;
+  persistOtaBootOutcome("rollback_failed");
+  sendCloudEvent("ota.failed", "failed", "bootloader rollback request failed");
 }
 
 void answerCloudAuthChallenge(const String &message) {
@@ -1892,7 +2749,9 @@ void handleCloudAuthMessage(const String &type, const String &message) {
     Serial.print("Cloud device authentication accepted over ");
     Serial.println(
         shcare::cloudTransportLabel(cloudSecurityDecision.transport));
+    flushOfflineOperationalQueue();
     sendCloudTelemetry("telemetry");
+    confirmPendingReconnectCommand();
     confirmPendingFirmwareIfHealthy();
     return;
   }
@@ -1932,46 +2791,276 @@ void sendCommandState(const shcare::CommandEnvelope &command,
   cloudSocket.send(String(json.c_str()));
 }
 
-void sendCloudEvent(const char *type, const char *status, const char *detail) {
-  if (type != nullptr && String(type).startsWith("ota.")) {
-    lastOtaStatus = status == nullptr ? "" : status;
-  }
-  if (!cloudConnected) {
+void sendDurableReconnectFailure(
+    const shcare::CommandEnvelope &command, const char *code,
+    const char *detail) {
+  if (!persistTerminalCommand(command, "failed", code, detail)) {
+    sendCommandState(
+        command, "applying", "COMMAND_JOURNAL_RETRY",
+        "failure result persistence unavailable; exact command may be retried");
     return;
   }
-  String json = "{";
-  json += "\"type\":\"";
-  json += type;
-  json += "\",\"deviceId\":\"";
-  json += jsonEscape(deviceId);
-  json += "\"";
-  if (status != NULL && strlen(status) > 0) {
-    json += ",\"otaStatus\":\"";
-    json += jsonEscape(status);
-    json += "\"";
+  sendCommandState(command, "failed", code, detail);
+}
+
+void queueOfflineTelemetryIfDue() {
+  const unsigned long nowMs = millis();
+  if (lastOfflineTelemetryMarkerMs == 0) {
+    lastOfflineTelemetryMarkerMs = nowMs;
+    return;
   }
-  if (detail != NULL && strlen(detail) > 0) {
-    json += ",\"detail\":\"";
-    json += jsonEscape(detail);
-    json += "\"";
+  if (nowMs - lastOfflineTelemetryMarkerMs <
+      CLOUD_TELEMETRY_INTERVAL_MS) {
+    return;
   }
-  json += "}";
-  cloudSocket.send(json);
+  offlineOperationalQueue.enqueueTelemetry(
+      static_cast<std::uint32_t>(nowMs));
+  lastOfflineTelemetryMarkerMs = nowMs;
+}
+
+String queuedOperationalJson(
+    const shcare::OfflineOperationalRecord &record) {
+  JsonDocument document;
+  if (record.kind == shcare::OfflineOperationalKind::Telemetry) {
+    if (deserializeJson(document, cloudTelemetryJson("telemetry"))) {
+      return "";
+    }
+  } else {
+    document["type"] = record.type;
+    document["deviceId"] = deviceId;
+    document["protocolVersion"] = shcare::kDeviceProtocolVersion;
+    if (!record.status.empty()) {
+      if (record.type.rfind("ota.", 0) == 0) {
+        document["otaStatus"] = record.status;
+      } else if (record.type.rfind("audio.", 0) == 0) {
+        document["audioStatus"] = record.status;
+      } else {
+        document["status"] = record.status;
+      }
+    }
+    if (record.type.rfind("ota.", 0) == 0) {
+      document["commandId"] = record.commandId;
+      document["correlationId"] = record.correlationId;
+      document["otaId"] = record.otaId;
+      if (record.status == "confirmed") {
+        document["firmwareVersion"] = FIRMWARE_VERSION;
+        document["otaBootOutcome"] = otaBootOutcome;
+      }
+    }
+  }
+  document["queuedOffline"] = true;
+  document["occurredAtUptimeMs"] = record.occurredAtUptimeMs;
+  document["occurrences"] = record.occurrences;
+  document["offlineQueueDropped"] = offlineOperationalQueue.droppedCount();
+  String json;
+  serializeJson(document, json);
+  return json;
+}
+
+void flushOfflineOperationalQueue(std::size_t maxRecords) {
+  if (!cloudConnected || maxRecords == 0) {
+    return;
+  }
+  for (std::size_t sent = 0; sent < maxRecords; ++sent) {
+    shcare::OfflineOperationalRecord record;
+    if (!offlineOperationalQueue.front(record)) {
+      return;
+    }
+    const String json = queuedOperationalJson(record);
+    if (json.length() == 0 || !cloudSocket.send(json)) {
+      if (offlineQueueFlushFailures != UINT32_MAX) {
+        ++offlineQueueFlushFailures;
+      }
+      return;
+    }
+    offlineOperationalQueue.popFront();
+    if (record.kind == shcare::OfflineOperationalKind::Telemetry) {
+      lastCloudTelemetryMs = millis();
+      lastOfflineTelemetryMarkerMs = lastCloudTelemetryMs;
+    }
+  }
+}
+
+bool sendCloudEvent(const char *type, const char *status, const char *detail) {
+  const std::string eventType = type == nullptr ? "" : type;
+  const std::string eventStatus = status == nullptr ? "" : status;
+  const bool otaEvent = eventType.rfind("ota.", 0) == 0;
+  if (otaEvent) {
+    if (!pendingOtaReceiptReady ||
+        (!eventStatus.empty() && !persistPendingOtaStatus(eventStatus.c_str()))) {
+      return false;
+    }
+    lastOtaStatus = status == nullptr ? "" : status;
+  }
+  const std::string commandId = otaEvent && pendingOtaReceiptReady
+                                    ? pendingOtaReceipt.commandId
+                                    : std::string{};
+  const std::string correlationId = otaEvent && pendingOtaReceiptReady
+                                        ? pendingOtaReceipt.correlationId
+                                        : std::string{};
+  const std::string otaId = otaEvent && pendingOtaReceiptReady
+                                ? pendingOtaReceipt.otaId
+                                : std::string{};
+  if (!cloudConnected) {
+    offlineOperationalQueue.enqueueEvent(
+        eventType, eventStatus, static_cast<std::uint32_t>(millis()),
+        commandId, correlationId, otaId);
+    return false;
+  }
+  JsonDocument document;
+  document["type"] = eventType;
+  document["deviceId"] = deviceId;
+  document["protocolVersion"] = shcare::kDeviceProtocolVersion;
+  if (!eventStatus.empty()) {
+    if (otaEvent) {
+      document["otaStatus"] = eventStatus;
+    } else if (eventType.rfind("audio.", 0) == 0) {
+      document["audioStatus"] = eventStatus;
+    } else {
+      document["status"] = eventStatus;
+    }
+  }
+  if (otaEvent) {
+    document["commandId"] = commandId;
+    document["correlationId"] = correlationId;
+    document["otaId"] = otaId;
+    if (eventStatus == "confirmed") {
+      document["firmwareVersion"] = FIRMWARE_VERSION;
+      document["otaBootOutcome"] = otaBootOutcome;
+    }
+  }
+  if (detail != nullptr && strlen(detail) > 0) {
+    document["detail"] = detail;
+  }
+  String json;
+  serializeJson(document, json);
+  const bool sent = cloudSocket.send(json);
+  if (!sent) {
+    offlineOperationalQueue.enqueueEvent(
+        eventType, eventStatus, static_cast<std::uint32_t>(millis()),
+        commandId, correlationId, otaId);
+    return false;
+  }
+  return true;
+}
+
+void replayPendingOtaTerminalEvent() {
+  if (!cloudConnected || !pendingOtaReceiptReady ||
+      millis() - pendingOtaEventLastAttemptMs < 5000UL) {
+    return;
+  }
+  const std::string status = pendingOtaReceipt.status;
+  const bool terminal = status == "confirmed" || status == "rolled_back" ||
+                        status == "failed" || status == "expired";
+  if (!terminal) {
+    return;
+  }
+  pendingOtaEventLastAttemptMs = millis();
+  const char *eventType = status == "confirmed"
+                              ? "ota.confirmed"
+                              : status == "rolled_back" ? "ota.rollback"
+                                                        : "ota.failed";
+  sendCloudEvent(eventType, status.c_str(),
+                 "durable terminal OTA outcome replay");
 }
 
 bool sendCloudTelemetry(const char *type = "telemetry") {
   if (!cloudConnected) {
+    offlineOperationalQueue.enqueueTelemetry(
+        static_cast<std::uint32_t>(millis()));
+    lastOfflineTelemetryMarkerMs = millis();
     return false;
   }
   if (!cloudSocket.send(cloudTelemetryJson(type))) {
+    offlineOperationalQueue.enqueueTelemetry(
+        static_cast<std::uint32_t>(millis()));
+    lastOfflineTelemetryMarkerMs = millis();
     return false;
   }
   lastCloudTelemetryMs = millis();
+  lastOfflineTelemetryMarkerMs = lastCloudTelemetryMs;
   if (isProductionProfile() && cloudSecurityDecision.ready() &&
       cloudSecurityDecision.transport == shcare::CloudTransport::Wss) {
     authenticatedProductionHeartbeatObserved = true;
   }
   return true;
+}
+
+void confirmPendingReconnectCommand() {
+  if (!pendingReconnectCommandReady) {
+    return;
+  }
+  const String connectedSsid = WiFi.status() == WL_CONNECTED
+                                   ? WiFi.SSID()
+                                   : String("");
+  const String currentWifiConfigProof =
+      pendingReconnectCommand.type == "wifi.update"
+          ? buildWifiConfigProof(String(wifiSsid), String(wifiPass))
+          : String("");
+  const shcare::PendingReconnectDecision decision =
+      shcare::evaluatePendingReconnectCommand(
+          pendingReconnectCommand, cloudConnected,
+          WiFi.status() == WL_CONNECTED,
+          std::string(connectedSsid.c_str()),
+          std::string(currentWifiConfigProof.c_str()));
+  if (decision ==
+      shcare::PendingReconnectDecision::WaitingForReconnect) {
+    return;
+  }
+
+  shcare::CommandEnvelope command;
+  command.protocolVersion = shcare::kDeviceProtocolVersion;
+  command.id = pendingReconnectCommand.commandId;
+  command.correlationId = pendingReconnectCommand.correlationId;
+  command.type = pendingReconnectCommand.type;
+
+  shcare::CommandJournalEntry existing;
+  if (commandJournal.find(command.id, existing)) {
+    if (existing.type != command.type ||
+        existing.correlationId != command.correlationId) {
+      sendCommandState(command, "failed", "COMMAND_ID_CONFLICT",
+                       "pending reconnect receipt conflicts with terminal journal");
+    } else {
+      sendCommandState(command, existing.state.c_str(),
+                       existing.code.c_str(), existing.result.c_str());
+    }
+    if (!erasePendingReconnectReceipt()) {
+      Serial.println(
+          "Pending reconnect receipt cleanup will retry after next boot.");
+    }
+    return;
+  }
+
+  const bool confirmed =
+      decision == shcare::PendingReconnectDecision::Confirmed;
+  const char *state = confirmed ? "applied" : "failed";
+  const char *code = nullptr;
+  const char *detail = nullptr;
+  if (!confirmed) {
+    code = decision == shcare::PendingReconnectDecision::NetworkMismatch
+               ? "WIFI_RECONNECT_NETWORK_MISMATCH"
+               : "RECONNECT_RECEIPT_INVALID";
+    detail = decision == shcare::PendingReconnectDecision::NetworkMismatch
+                 ? "authenticated reconnect did not match the staged WiFi configuration"
+                 : "pending reconnect receipt rejected";
+  } else if (command.type == "wifi.update") {
+    code = "WIFI_RECONNECT_CONFIRMED";
+    detail = "configured WiFi and authenticated cloud reconnect confirmed";
+  } else {
+    code = "RESTART_RECONNECT_CONFIRMED";
+    detail = "device reboot and authenticated cloud reconnect confirmed";
+  }
+
+  if (!persistTerminalCommand(command, state, code, detail)) {
+    sendCommandState(command, "applying", "COMMAND_JOURNAL_RETRY",
+                     "reconnect confirmed; terminal persistence will retry");
+    return;
+  }
+  if (!erasePendingReconnectReceipt()) {
+    Serial.println(
+        "Pending reconnect receipt cleanup will retry after next boot.");
+  }
+  sendCommandState(command, state, code, detail);
 }
 
 String sha256Hex(const uint8_t digest[32]) {
@@ -2035,7 +3124,40 @@ bool sha256Buffer(const uint8_t *data, size_t length, uint8_t digest[32]) {
   return mbedtls_sha256_ret(data, length, digest, 0) == 0;
 }
 
-bool performCloudOta(const shcare::OtaManifest &manifest,
+std::string otaManifestEffectFingerprint(
+    const shcare::OtaManifest &manifest) {
+  const std::string binding = shcare::buildOtaEffectBindingMessage(manifest);
+  uint8_t digest[32];
+  if (binding.empty() ||
+      !sha256Buffer(reinterpret_cast<const uint8_t *>(binding.data()),
+                    binding.size(), digest)) {
+    return {};
+  }
+  const String encoded = sha256Hex(digest);
+  memset(digest, 0, sizeof(digest));
+  return std::string(encoded.c_str());
+}
+
+std::string otaCommandEffectFingerprint(
+    const shcare::CommandEnvelope &command) {
+  if (command.type != "ota.update") {
+    return {};
+  }
+  shcare::OtaManifest manifest;
+  manifest.url = command.payloadString("url");
+  manifest.firmwareVersion = command.payloadString("firmwareVersion");
+  manifest.checksum = command.payloadString("checksum");
+  manifest.signature = command.payloadString("signature");
+  manifest.hardwareTarget = command.payloadString("hardwareTarget");
+  manifest.partitionTarget = command.payloadString("partitionTarget");
+  manifest.minimumProtocolVersion =
+      command.payloadInt("minimumProtocolVersion", 0);
+  return otaManifestEffectFingerprint(manifest);
+}
+
+bool performCloudOta(const shcare::CommandEnvelope &command,
+                     const shcare::OtaManifest &manifest,
+                     const std::string &manifestFingerprint,
                      String &failureCode) {
   const String url(manifest.url.c_str());
   const String version(manifest.firmwareVersion.c_str());
@@ -2046,6 +3168,16 @@ bool performCloudOta(const shcare::OtaManifest &manifest,
   if (!url.startsWith("https://")) {
     failureCode = "OTA_HTTPS_REQUIRED";
     sendCloudEvent("ota.failed", "failed", "https firmware url required");
+    return false;
+  }
+  const shcare::PendingOtaCommandDecision fence =
+      shcare::evaluatePendingOtaCommand(
+          pendingOtaReceipt, pendingOtaReceiptReady, command.id,
+          command.correlationId, command.type, manifestFingerprint);
+  if (fence != shcare::PendingOtaCommandDecision::Replay ||
+      pendingOtaReceipt.status != "pending" ||
+      otaBootOutcome != "prepared") {
+    failureCode = "OTA_RECEIPT_REQUIRED";
     return false;
   }
   if (expectedChecksum.length() != 64) {
@@ -2085,10 +3217,35 @@ bool performCloudOta(const shcare::OtaManifest &manifest,
     return false;
   }
 
+  if (!beginBlockingOtaRuntime(failureCode)) {
+    sendCloudEvent("ota.failed", "failed", failureCode.c_str());
+    return false;
+  }
+
   Serial.println("Starting verified cloud OTA download.");
   sendCloudEvent("ota.downloading", "downloading", "download started");
 
   HTTPClient http;
+  bool audioPaused = false;
+  auto failOta = [&](const char *code, const char *detail, bool abortUpdate) {
+    failureCode = code;
+    if (abortUpdate) {
+      Update.abort();
+    }
+    http.end();
+    if (audioPaused) {
+      const esp_err_t resumeResult = i2s_start(MIC_I2S_PORT);
+      audioPaused = false;
+      i2sMaintenancePaused = false;
+      if (resumeResult != ESP_OK) {
+        markI2sCaptureDegraded("I2S_OTA_RESUME_FAILED");
+      }
+    }
+    endBlockingOtaRuntime();
+    sendCloudEvent("ota.failed", "failed", detail);
+    return false;
+  };
+
   WiFiClientSecure secureClient;
   secureClient.setCACert(OTA_CA_CERT);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -2098,48 +3255,38 @@ bool performCloudOta(const shcare::OtaManifest &manifest,
   const bool began = http.begin(secureClient, url);
 
   if (!began) {
-    failureCode = "OTA_DOWNLOAD_OPEN_FAILED";
-    sendCloudEvent("ota.failed", "failed", "cannot open firmware url");
-    return false;
+    return failOta("OTA_DOWNLOAD_OPEN_FAILED", "cannot open firmware url",
+                   false);
+  }
+
+  if (!manifest.downloadAuthorization.empty()) {
+    const String authorization =
+        String("Bearer ") + manifest.downloadAuthorization.c_str();
+    http.addHeader("Authorization", authorization, true, true);
   }
 
   const int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
-    http.end();
-    failureCode = "OTA_DOWNLOAD_HTTP_FAILED";
-    sendCloudEvent("ota.failed", "failed", "firmware download http error");
-    return false;
+    return failOta("OTA_DOWNLOAD_HTTP_FAILED",
+                   "firmware download http error", false);
   }
 
   const int totalSize = http.getSize();
   if (totalSize <= 0 ||
       static_cast<size_t>(totalSize) > updatePartition->size) {
-    http.end();
-    failureCode = "OTA_IMAGE_SIZE_INVALID";
-    sendCloudEvent("ota.failed", "failed",
-                   "firmware content length missing or too large");
-    return false;
+    return failOta("OTA_IMAGE_SIZE_INVALID",
+                   "firmware content length missing or too large", false);
   }
 
-  bool audioPaused = false;
   if (i2sReady) {
-    i2s_stop(MIC_I2S_PORT);
-    audioPaused = true;
+    const esp_err_t pauseResult = i2s_stop(MIC_I2S_PORT);
+    if (pauseResult == ESP_OK) {
+      i2sMaintenancePaused = true;
+      audioPaused = true;
+    } else {
+      markI2sCaptureDegraded("I2S_OTA_PAUSE_FAILED");
+    }
   }
-
-  auto failOta = [&](const char *code, const char *detail, bool abortUpdate) {
-    failureCode = code;
-    if (abortUpdate) {
-      Update.abort();
-    }
-    http.end();
-    if (audioPaused) {
-      i2s_start(MIC_I2S_PORT);
-      audioPaused = false;
-    }
-    sendCloudEvent("ota.failed", "failed", detail);
-    return false;
-  };
 
   if (!Update.begin(static_cast<size_t>(totalSize), U_FLASH)) {
     return failOta("OTA_FLASH_BEGIN_FAILED", "cannot begin update", false);
@@ -2194,6 +3341,12 @@ bool performCloudOta(const shcare::OtaManifest &manifest,
         lastProgressMs = millis();
         sendCloudEvent("ota.downloading", "downloading", "download progress");
       }
+      // The loop task is intentionally not watched during blocking OTA; yield
+      // so the still-watched idle task can satisfy the SDK's built 5s TWDT.
+      delay(1);
+      // Service WSS receipts even while the HTTP stream remains continuously
+      // readable; otherwise event.accepted can be starved for the full flash.
+      cloudSocket.poll();
     } else {
       if (millis() - lastReadMs > 15000) {
         mbedtls_sha256_free(&shaContext);
@@ -2257,12 +3410,21 @@ bool performCloudOta(const shcare::OtaManifest &manifest,
     return failOta("OTA_BOOT_PARTITION_MISMATCH",
                    "updated partition was not selected for boot", false);
   }
+  if (!persistOtaBootOutcome("pending")) {
+    if (runningPartition != nullptr) {
+      esp_ota_set_boot_partition(runningPartition);
+    }
+    return failOta("OTA_BOOT_MARKER_PERSIST_FAILED",
+                   "pending boot outcome marker could not be persisted",
+                   false);
+  }
 
   http.end();
 
   sendCloudEvent("ota.rebooting", "rebooting", version.c_str());
   delay(1000);
   ESP.restart();
+  endBlockingOtaRuntime();
   return true;
 }
 
@@ -2292,14 +3454,65 @@ bool replayTerminalCommand(const shcare::CommandEnvelope &command) {
   if (!commandJournal.find(command.id, entry)) {
     return false;
   }
+  const std::string effectFingerprint =
+      command.type == "ota.update" ? otaCommandEffectFingerprint(command)
+                                   : std::string{};
   if (entry.type != command.type ||
-      entry.correlationId != command.correlationId) {
+      entry.correlationId != command.correlationId ||
+      (entry.type == "ota.update" &&
+       (effectFingerprint.empty() ||
+        entry.effectFingerprint != effectFingerprint))) {
     sendCommandState(command, "failed", "COMMAND_ID_CONFLICT",
                      "command id was already used for another request");
     return true;
   }
   sendCommandState(command, entry.state.c_str(), entry.code.c_str(),
                    entry.result.c_str());
+  return true;
+}
+
+bool handlePendingOtaCommandFence(
+    const shcare::CommandEnvelope &command) {
+  const shcare::PendingOtaCommandDecision decision =
+      shcare::evaluatePendingOtaCommand(
+          pendingOtaReceipt, pendingOtaReceiptReady, command.id,
+          command.correlationId, command.type,
+          otaCommandEffectFingerprint(command));
+  if (decision == shcare::PendingOtaCommandDecision::NoFence) {
+    return false;
+  }
+  if (decision ==
+      shcare::PendingOtaCommandDecision::CommandIdConflict) {
+    sendCommandState(command, "failed", "COMMAND_ID_CONFLICT",
+                     "command id conflicts with the durable ota binding");
+    return true;
+  }
+  if (decision == shcare::PendingOtaCommandDecision::OtaReceiptBusy) {
+    sendCommandState(
+        command, "failed", "OTA_RECEIPT_BUSY",
+        "the previous ota outcome still awaits durable acknowledgement");
+    return true;
+  }
+  if (decision == shcare::PendingOtaCommandDecision::InvalidFence) {
+    sendCommandState(command, "failed", "OTA_RECEIPT_INVALID",
+                     "the durable ota identity fence is invalid");
+    return true;
+  }
+
+  shcare::PendingOtaReplayOutcome outcome;
+  if (!shcare::buildPendingOtaReplayOutcome(pendingOtaReceipt, outcome)) {
+    sendCommandState(command, "failed", "OTA_RECEIPT_INVALID",
+                     "the durable ota outcome cannot be replayed");
+    return true;
+  }
+  sendCommandState(command, outcome.commandState.c_str(),
+                   outcome.commandCode.c_str(),
+                   "durable ota command outcome replay");
+  if (outcome.emitsEvent()) {
+    sendCloudEvent(outcome.eventType.c_str(),
+                   pendingOtaReceipt.status.c_str(),
+                   "durable ota event outcome replay");
+  }
   return true;
 }
 
@@ -2313,12 +3526,17 @@ void beginValidatedCommand(const shcare::CommandEnvelope &command,
 }
 
 void handleCloudCommand(const String &message) {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   const shcare::CommandParseResult result = shcare::parseCommandEnvelope(
       std::string(message.c_str()), currentEpochMillis());
   if (!result.ok()) {
-    if (result.code == shcare::CommandParseCode::Expired &&
-        replayTerminalCommand(result.command)) {
-      return;
+    if (result.code == shcare::CommandParseCode::Expired) {
+      if (replayTerminalCommand(result.command) ||
+          handlePendingOtaCommandFence(result.command)) {
+        return;
+      }
     }
     sendCommandProtocolError(result);
     return;
@@ -2328,9 +3546,47 @@ void handleCloudCommand(const String &message) {
   if (replayTerminalCommand(command)) {
     return;
   }
+  if (handlePendingOtaCommandFence(command)) {
+    return;
+  }
   if (recentCommandIds.seen(command.id)) {
+    if (pendingReconnectCommandReady &&
+        pendingReconnectCommand.commandId == command.id &&
+        (pendingReconnectCommand.type != command.type ||
+         pendingReconnectCommand.correlationId != command.correlationId)) {
+      sendCommandState(command, "failed", "COMMAND_ID_CONFLICT",
+                       "command id was already used for another request");
+      return;
+    }
     sendCommandState(command, "acknowledged", "DUPLICATE_COMMAND",
                      "command already received; no action repeated");
+    return;
+  }
+  if (pendingReconnectCommandReady &&
+      pendingReconnectCommand.commandId == command.id &&
+      pendingReconnectCommand.type == command.type &&
+      pendingReconnectCommand.correlationId == command.correlationId) {
+    confirmPendingReconnectCommand();
+    return;
+  }
+
+  const shcare::DeviceCommandAdmission admission =
+      shcare::evaluateDeviceCommandAdmission(
+          command.type, otaInProgress, audioSessionActive);
+  if (admission == shcare::DeviceCommandAdmission::OtaBusy) {
+    recentCommandIds.rememberValidated(command.id, true);
+    sendCommandState(command, "acknowledged", "DEVICE_BUSY_OTA",
+                     "command authenticated while verified ota is applying");
+    sendCommandState(command, "failed", "DEVICE_BUSY_OTA",
+                     "verified ota is already applying");
+    return;
+  }
+  if (admission == shcare::DeviceCommandAdmission::RecordingActive) {
+    recentCommandIds.rememberValidated(command.id, true);
+    sendCommandState(command, "acknowledged", "OTA_RECORDING_ACTIVE",
+                     "command authenticated while recording is active");
+    sendCommandState(command, "failed", "OTA_RECORDING_ACTIVE",
+                     "stop the active recording before ota");
     return;
   }
 
@@ -2340,7 +3596,19 @@ void handleCloudCommand(const String &message) {
   Serial.println(command.id.c_str());
 
   if (command.type == "restart") {
-    beginValidatedCommand(command);
+    beginValidatedCommand(command, false);
+    if (pendingReconnectCommandReady) {
+      sendDurableReconnectFailure(
+          command, "RECONNECT_COMMAND_ALREADY_PENDING",
+          "another reboot-dependent command is awaiting confirmation");
+      return;
+    }
+    if (!persistPendingReconnectReceipt(command)) {
+      sendDurableReconnectFailure(command, "RECONNECT_RECEIPT_WRITE_FAILED",
+                                  "restart receipt was not durably stored");
+      return;
+    }
+    recentCommandIds.rememberValidated(command.id, true);
     sendCommandState(command, "applying", "RESTARTING",
                      "device is restarting; applied requires reconnect");
     delay(500);
@@ -2437,22 +3705,26 @@ void handleCloudCommand(const String &message) {
     const String scanId(command.payloadString("scanId").c_str());
     const String workspaceId(command.payloadString("workspaceId").c_str());
     const String patientId(command.payloadString("patientId").c_str());
+    const String frameEncoding(
+        command.payloadString("frameEncoding").c_str());
     const String encoding(command.payloadString("encoding").c_str());
     const int sampleRate = command.payloadInt("sampleRate", 0);
     const int sampleCount = command.payloadInt("sampleCount", 0);
-    if (!i2sReady) {
+    const auto audioContract = shcare::evaluateAudioSessionContract(
+        audioProtocolVersion, std::string(frameEncoding.c_str()),
+        std::string(encoding.c_str()), sampleRate,
+        sampleCount > 0 ? static_cast<size_t>(sampleCount) : 0);
+    if (!i2sReady || i2sMaintenancePaused) {
       sendCommandState(command, "failed", "AUDIO_NOT_READY",
                        "i2s capture is unavailable");
       return;
     }
-    if (audioProtocolVersion != 2 || commandDeviceId != String(deviceId) ||
+    if (!audioContract.accepted() || commandDeviceId != String(deviceId) ||
         workspaceId.length() == 0 || patientId.length() == 0 ||
         sessionId.length() == 0 ||
         sessionId.length() > shcare::kAudioV2MaxSessionIdBytes ||
         scanId.length() == 0 ||
-        scanId.length() > shcare::kAudioV2MaxScanIdBytes ||
-        sampleRate != SAMPLE_RATE || sampleCount != BUFFER_LEN ||
-        encoding != "pcm_s16le") {
+        scanId.length() > shcare::kAudioV2MaxScanIdBytes) {
       sendCommandState(command, "failed", "INVALID_AUDIO_SESSION",
                        "audio session contract rejected");
       return;
@@ -2491,26 +3763,51 @@ void handleCloudCommand(const String &message) {
       password = String(command.payloadString("pass").c_str());
     }
     ssid.trim();
-    if (ssid.length() == 0 || ssid.length() >= sizeof(wifiSsid) ||
-        password.length() >= sizeof(wifiPass)) {
-      sendCommandState(command, "failed", "INVALID_WIFI_CONFIG",
-                       "ssid/password length invalid");
+    if (!shcare::validWifiCredentials(
+            std::string(ssid.c_str()), std::string(password.c_str()))) {
+      sendDurableReconnectFailure(
+          command, "INVALID_WIFI_CONFIG",
+          "WiFi requires SSID 1-32 bytes and open or WPA password 8-63 characters");
       return;
     }
-    beginValidatedCommand(command);
+    beginValidatedCommand(command, false);
+    if (pendingReconnectCommandReady) {
+      sendDurableReconnectFailure(
+          command, "RECONNECT_COMMAND_ALREADY_PENDING",
+          "another reboot-dependent command is awaiting confirmation");
+      return;
+    }
     const String previousSsid = wifiSsid;
     const String previousPassword = wifiPass;
+    const String expectedWifiConfigProof =
+        buildWifiConfigProof(ssid, password);
+    if (expectedWifiConfigProof.length() != 64 ||
+        !persistPendingReconnectReceipt(command, ssid,
+                                        expectedWifiConfigProof)) {
+      sendDurableReconnectFailure(
+          command, "RECONNECT_RECEIPT_WRITE_FAILED",
+          "WiFi reconnect receipt was not durably stored");
+      return;
+    }
     copyConfigValue(wifiSsid, sizeof(wifiSsid), ssid);
     copyConfigValue(wifiPass, sizeof(wifiPass), password, false);
     if (!saveRuntimeConfig()) {
       copyConfigValue(wifiSsid, sizeof(wifiSsid), previousSsid);
       copyConfigValue(wifiPass, sizeof(wifiPass), previousPassword, false);
-      sendCommandState(command, "failed", "WIFI_CONFIG_PERSIST_FAILED",
-                       "wifi configuration was not durably stored");
+      const bool rollbackStored = saveRuntimeConfig();
+      const bool receiptErased = erasePendingReconnectReceipt();
+      sendDurableReconnectFailure(
+          command,
+          rollbackStored && receiptErased ? "WIFI_CONFIG_PERSIST_FAILED"
+                                          : "WIFI_CONFIG_ROLLBACK_FAILED",
+          rollbackStored && receiptErased
+              ? "wifi configuration was not durably stored"
+              : "wifi configuration rollback requires local recovery");
       return;
     }
-    sendCommandState(command, "applied", "OK",
-                     "wifi configuration persisted; restarting");
+    recentCommandIds.rememberValidated(command.id, true);
+    sendCommandState(command, "applying", "WIFI_RECONNECTING",
+                     "wifi configuration persisted; applied requires authenticated reconnect");
     delay(500);
     ESP.restart();
     return;
@@ -2525,10 +3822,33 @@ void handleCloudCommand(const String &message) {
                        "ota manifest rejected");
       return;
     }
+    const std::string manifestFingerprint =
+        otaManifestEffectFingerprint(ota.manifest);
+    if (manifestFingerprint.empty()) {
+      sendCommandState(command, "failed", "OTA_FINGERPRINT_FAILED",
+                       "signed ota effect fingerprint could not be created");
+      return;
+    }
+
+    // Reset any terminal marker from a previous OTA before installing the new
+    // durable receipt. A power loss after this write but before the receipt is
+    // harmless; no download or flash side effect has started.
+    if (!persistOtaBootOutcome("prepared")) {
+      sendCommandState(command, "failed", "OTA_BOOT_MARKER_PREPARE_FAILED",
+                       "new ota boot marker could not be prepared durably");
+      return;
+    }
+    if (!persistPendingOtaReceipt(command, ota.manifest,
+                                  manifestFingerprint)) {
+      sendCommandState(command, "failed", "OTA_RECEIPT_PERSIST_FAILED",
+                       "ota identity receipt could not be stored durably");
+      return;
+    }
 
     beginValidatedCommand(command);
     String failureCode;
-    const bool applied = performCloudOta(ota.manifest, failureCode);
+    const bool applied = performCloudOta(
+        command, ota.manifest, manifestFingerprint, failureCode);
     if (!applied) {
       sendCommandState(command, "failed", failureCode.c_str(),
                        "verified firmware update failed");
@@ -2538,6 +3858,9 @@ void handleCloudCommand(const String &message) {
 }
 
 void handleCloudMessage(const String &message) {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   JsonDocument document;
   if (deserializeJson(document, message)) {
     rejectCloudTransport("INVALID_JSON");
@@ -2557,10 +3880,55 @@ void handleCloudMessage(const String &message) {
     rejectCloudTransport("AUTH_IDENTITY_MISMATCH");
     return;
   }
+  if (type == "event.accepted" || type == "event.rejected") {
+    const String eventType = document["eventType"] | "";
+    const String acceptedStatus = document["otaStatus"] | "";
+    const String commandId = document["commandId"] | "";
+    const String correlationId = document["correlationId"] | "";
+    const String otaId = document["otaId"] | "";
+    const bool terminal = acceptedStatus == "confirmed" ||
+                          acceptedStatus == "rolled_back" ||
+                          acceptedStatus == "failed" ||
+                          acceptedStatus == "expired";
+    if (type == "event.accepted" && pendingOtaReceiptReady && terminal &&
+        eventType.startsWith("ota.") &&
+        commandId == pendingOtaReceipt.commandId.c_str() &&
+        correlationId == pendingOtaReceipt.correlationId.c_str() &&
+        otaId == pendingOtaReceipt.otaId.c_str() &&
+        acceptedStatus == pendingOtaReceipt.status.c_str()) {
+      shcare::PendingOtaReplayOutcome outcome;
+      shcare::CommandEnvelope tombstoneCommand;
+      tombstoneCommand.protocolVersion = shcare::kDeviceProtocolVersion;
+      tombstoneCommand.id = pendingOtaReceipt.commandId;
+      tombstoneCommand.correlationId = pendingOtaReceipt.correlationId;
+      tombstoneCommand.type = "ota.update";
+      const bool tombstoneStored =
+          shcare::buildPendingOtaReplayOutcome(pendingOtaReceipt, outcome) &&
+          persistTerminalCommand(
+              tombstoneCommand, outcome.commandState.c_str(),
+              outcome.commandCode.c_str(),
+              "durable ota terminal event accepted",
+              pendingOtaReceipt.manifestFingerprint);
+      if (!tombstoneStored) {
+        Serial.println(
+            "Accepted OTA event tombstone persistence failed; receipt retained.");
+      } else if (!erasePendingOtaReceipt()) {
+        Serial.println("Accepted OTA event receipt cleanup will retry.");
+      }
+    } else if (type == "event.rejected") {
+      const String rejectionCode = document["code"] | "DEVICE_EVENT_REJECTED";
+      Serial.print("OTA event receipt was rejected and will retry: ");
+      Serial.println(rejectionCode);
+    }
+    return;
+  }
   handleCloudCommand(message);
 }
 
 void setupCloudSocket() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   cloudSecurityDecision = evaluateCloudSecurity();
   if (!cloudSecurityDecision.ready()) {
     Serial.print("Cloud control disabled: ");
@@ -2606,6 +3974,9 @@ void setupCloudSocket() {
 }
 
 void connectCloudSocketIfNeeded() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   if (!cloudConfigured || WiFi.status() != WL_CONNECTED || deviceLocked) {
     return;
   }
@@ -2630,18 +4001,29 @@ void connectCloudSocketIfNeeded() {
 }
 
 void handleCloudSocket() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   if (!cloudConfigured) {
+    queueOfflineTelemetryIfDue();
     return;
   }
   cloudSocket.poll();
   connectCloudSocketIfNeeded();
-  if (cloudConnected && millis() - lastCloudTelemetryMs > CLOUD_TELEMETRY_INTERVAL_MS) {
+  if (!cloudConnected) {
+    queueOfflineTelemetryIfDue();
+    return;
+  }
+  flushOfflineOperationalQueue();
+  replayPendingOtaTerminalEvent();
+  if (millis() - lastCloudTelemetryMs > CLOUD_TELEMETRY_INTERVAL_MS) {
     sendCloudTelemetry("telemetry");
   }
 }
 
 void sendAudioCloud(const int samplesRead) {
-  if (samplesRead <= 0 || WiFi.status() != WL_CONNECTED || deviceLocked) {
+  if (!otaRecoveryRuntimeServicesAllowed() || samplesRead <= 0 ||
+      WiFi.status() != WL_CONNECTED || deviceLocked) {
     return;
   }
 
@@ -2713,6 +4095,9 @@ void startMdns() {
 }
 
 void setupArduinoOta() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   if (otaReady) {
     return;
   }
@@ -2730,16 +4115,41 @@ void setupArduinoOta() {
   ArduinoOTA.setPassword(otaPassword);
   ArduinoOTA.onStart([]() {
     Serial.println("ArduinoOTA update started.");
+    otaInProgress = true;
     if (i2sReady) {
-      i2s_stop(MIC_I2S_PORT);
+      const esp_err_t pauseResult = i2s_stop(MIC_I2S_PORT);
+      if (pauseResult == ESP_OK) {
+        i2sMaintenancePaused = true;
+      } else {
+        markI2sCaptureDegraded("I2S_LAN_OTA_PAUSE_FAILED");
+      }
     }
   });
-  ArduinoOTA.onEnd([]() { Serial.println("ArduinoOTA update finished."); });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("ArduinoOTA update finished.");
+    if (i2sReady && i2sMaintenancePaused) {
+      const esp_err_t result = i2s_start(MIC_I2S_PORT);
+      i2sMaintenancePaused = false;
+      if (result != ESP_OK) {
+        markI2sCaptureDegraded("I2S_LAN_OTA_RESUME_FAILED");
+      }
+    }
+    otaInProgress = false;
+  });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    feedTaskWatchdog();
     Serial.printf("ArduinoOTA progress: %u%%\r", (progress * 100) / total);
   });
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("ArduinoOTA error[%u]\n", error);
+    if (i2sReady && i2sMaintenancePaused) {
+      const esp_err_t result = i2s_start(MIC_I2S_PORT);
+      i2sMaintenancePaused = false;
+      if (result != ESP_OK) {
+        markI2sCaptureDegraded("I2S_LAN_OTA_RESUME_FAILED");
+      }
+    }
+    otaInProgress = false;
   });
   ArduinoOTA.begin();
   otaReady = true;
@@ -2749,6 +4159,9 @@ void setupArduinoOta() {
 }
 
 void startStationServices() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   setupCloudSocket();
   connectCloudSocketIfNeeded();
   if (SMART_HEALTH_ENABLE_LAN_OTA != 0) {
@@ -2759,13 +4172,19 @@ void startStationServices() {
 }
 
 void handleDeviceServices() {
+  maintainTaskWatchdog();
   handleFactoryResetButton();
+
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
+  handleI2SRecovery();
 
   if (setupPortalActive && configServerStarted) {
     setupServer.handleClient();
   }
 
-  if (otaReady) {
+  if (otaReady && !audioSessionActive && !otaInProgress) {
     ArduinoOTA.handle();
   }
 
@@ -2911,11 +4330,20 @@ void setupHeartbeatFilters() {
 }
 
 void setupWiFi() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   if (!hasWiFiConfig()) {
     runSetupPortal("WiFi SSID is missing.");
+    if (!otaRecoveryRuntimeServicesAllowed()) {
+      return;
+    }
   }
   if (setupPortalPhysicalGesture) {
     runSetupPortal("Physical setup gesture requested WiFi recovery.");
+    if (!otaRecoveryRuntimeServicesAllowed()) {
+      return;
+    }
   }
 
   Serial.println();
@@ -2929,6 +4357,7 @@ void setupWiFi() {
   const unsigned long startedAt = millis();
   while (WiFi.status() != WL_CONNECTED &&
          millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
+    maintainTaskWatchdog();
     delay(300);
     Serial.print(".");
   }
@@ -2936,6 +4365,9 @@ void setupWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println();
     runSetupPortal("Cannot connect to the configured WiFi network.");
+    if (!otaRecoveryRuntimeServicesAllowed()) {
+      return;
+    }
   }
 
   Serial.println();
@@ -2949,6 +4381,9 @@ void setupWiFi() {
 }
 
 void setupAudioUdp() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
   udpAudioReady = false;
   if (!shcare::developmentUdpAllowed(
           isProductionProfile(),
@@ -2978,7 +4413,8 @@ void setupAudioUdp() {
 }
 
 void sendAudioUdp(const int samplesRead) {
-  if (!udpAudioReady || WiFi.status() != WL_CONNECTED || samplesRead <= 0) {
+  if (!otaRecoveryRuntimeServicesAllowed() || !udpAudioReady ||
+      WiFi.status() != WL_CONNECTED || samplesRead <= 0) {
     return;
   }
 
@@ -2994,8 +4430,48 @@ void sendAudioUdp(const int samplesRead) {
   }
 }
 
-void setupI2S() {
+void releaseI2SDriver() {
+  if (!i2sDriverInstalled) {
+    return;
+  }
+  i2s_stop(MIC_I2S_PORT);
+  i2s_driver_uninstall(MIC_I2S_PORT);
+  i2sDriverInstalled = false;
+  i2sMaintenancePaused = false;
+}
+
+void scheduleI2sRetry(const char *stableCode, bool initFailure) {
   i2sReady = false;
+  i2sRuntimeState = I2sRuntimeState::Degraded;
+  lastI2sFailureCode = stableCode == nullptr ? "I2S_FAILED" : stableCode;
+  lastI2sAttemptMs = millis();
+  if (initFailure && i2sInitFailureCount != UINT32_MAX) {
+    ++i2sInitFailureCount;
+  }
+  if (i2sBackoffAttemptCount < 31U) {
+    ++i2sBackoffAttemptCount;
+  }
+  i2sRetryDelayMs = shcare::reconnectBackoffDelayMs(
+      i2sBackoffAttemptCount, I2S_RETRY_BASE_MS, I2S_RETRY_MAX_MS);
+  resetAudioSession();
+  sendCloudEvent("i2s.degraded", "degraded",
+                 lastI2sFailureCode.c_str());
+}
+
+bool setupI2S(bool recoveryAttempt) {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return false;
+  }
+  if (i2sDriverInstalled) {
+    releaseI2SDriver();
+  }
+  i2sReady = false;
+  i2sRuntimeState = recoveryAttempt ? I2sRuntimeState::Retrying
+                                    : I2sRuntimeState::Starting;
+  lastI2sAttemptMs = millis();
+  if (recoveryAttempt && i2sRecoveryAttemptCount != UINT32_MAX) {
+    ++i2sRecoveryAttemptCount;
+  }
   const i2s_config_t i2s_config = {
       .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
       .sample_rate = SAMPLE_RATE,
@@ -3019,22 +4495,65 @@ void setupI2S() {
   err = i2s_driver_install(MIC_I2S_PORT, &i2s_config, 0, NULL);
   if (err != ESP_OK) {
     Serial.print("i2s_driver_install failed: ");
-    Serial.println(err);
-    return;
+    Serial.println(esp_err_to_name(err));
+    scheduleI2sRetry("I2S_DRIVER_INSTALL_FAILED", true);
+    return false;
   }
+  i2sDriverInstalled = true;
 
   err = i2s_set_pin(MIC_I2S_PORT, &pin_config);
   if (err != ESP_OK) {
     Serial.print("i2s_set_pin failed: ");
-    Serial.println(err);
-    i2s_driver_uninstall(MIC_I2S_PORT);
-    return;
+    Serial.println(esp_err_to_name(err));
+    releaseI2SDriver();
+    scheduleI2sRetry("I2S_PIN_CONFIG_FAILED", true);
+    return false;
   }
 
-  i2s_zero_dma_buffer(MIC_I2S_PORT);
+  err = i2s_zero_dma_buffer(MIC_I2S_PORT);
+  if (err != ESP_OK) {
+    Serial.print("i2s_zero_dma_buffer failed: ");
+    Serial.println(esp_err_to_name(err));
+    releaseI2SDriver();
+    scheduleI2sRetry("I2S_DMA_INIT_FAILED", true);
+    return false;
+  }
   i2sReady = true;
+  i2sMaintenancePaused = false;
+  i2sRuntimeState = I2sRuntimeState::Ready;
+  i2sConsecutiveReadFailures = 0;
+  const bool recovered = recoveryAttempt || i2sBackoffAttemptCount > 0;
+  i2sBackoffAttemptCount = 0;
+  i2sRetryDelayMs = I2S_RETRY_BASE_MS;
+  lastI2sFailureCode = "";
+  if (recovered) {
+    if (i2sRecoverySuccessCount != UINT32_MAX) {
+      ++i2sRecoverySuccessCount;
+    }
+    sendCloudEvent("i2s.recovered", "ready",
+                   "i2s capture recovered; a new audio session is required");
+  }
 
   Serial.println("I2S microphone ready");
+  return true;
+}
+
+void markI2sCaptureDegraded(const char *stableCode) {
+  const bool sessionInterrupted = audioSessionActive;
+  releaseI2SDriver();
+  scheduleI2sRetry(stableCode, false);
+  if (sessionInterrupted) {
+    sendCloudEvent("audio.failed", "failed",
+                   "i2s capture interrupted; session was closed");
+  }
+}
+
+void handleI2SRecovery() {
+  if (i2sReady ||
+      millis() - lastI2sAttemptMs < i2sRetryDelayMs) {
+    return;
+  }
+  setupI2S(true);
 }
 
 float preprocessRawSample(int32_t raw) {
@@ -3279,15 +4798,22 @@ void setup() {
 
   beginPendingFirmwareHealthCheck();
   setupFactoryResetButton();
+  setupTaskWatchdog();
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    Serial.println(
+        "Startup remains fail-closed in OTA recovery safe mode; only watchdog "
+        "and physical recovery input are active.");
+    return;
+  }
   loadRuntimeConfig();
-  setupI2S();
+  setupI2S(false);
   setupHeartbeatFilters();
   setupWiFi();
   setupAudioUdp();
   startStationServices();
   handlePendingFirmwareHealth();
 
-  if (!i2sReady) {
+  if (!i2sReady || i2sMaintenancePaused) {
     Serial.println("Audio capture degraded; device services remain active");
   } else {
     Serial.print("Audio capture ready; active transport: ");
@@ -3296,6 +4822,10 @@ void setup() {
 }
 
 void loop() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    handleOtaRecoverySafeMode();
+    return;
+  }
   handleDeviceServices();
   handlePendingFirmwareHealth();
 
@@ -3306,7 +4836,7 @@ void loop() {
     startStationServices();
   }
 
-  if (!i2sReady) {
+  if (!i2sReady || i2sMaintenancePaused) {
     delay(25);
     handleDeviceServices();
     handlePendingFirmwareHealth();
@@ -3319,6 +4849,7 @@ void loop() {
                               &bytesRead, pdMS_TO_TICKS(250));
 
   if (result == ESP_OK && bytesRead > 0) {
+    i2sConsecutiveReadFailures = 0;
     int samplesRead = bytesRead / (sizeof(int32_t) * I2S_CHANNEL_COUNT);
 
     for (int i = 0; i < samplesRead; i++) {
@@ -3342,6 +4873,21 @@ void loop() {
     }
 
     sendAudioCloud(samplesRead);
+  } else {
+    if (i2sReadFailureCount != UINT32_MAX) {
+      ++i2sReadFailureCount;
+    }
+    if (i2sConsecutiveReadFailures != UINT32_MAX) {
+      ++i2sConsecutiveReadFailures;
+    }
+    if (i2sConsecutiveReadFailures >= I2S_READ_FAILURE_THRESHOLD) {
+      const char *stableCode = result == ESP_OK ? "I2S_READ_EMPTY"
+                                                : "I2S_READ_FAILED";
+      Serial.print("I2S capture degraded after bounded read failures: ");
+      Serial.println(result == ESP_OK ? stableCode : esp_err_to_name(result));
+      i2sConsecutiveReadFailures = 0;
+      markI2sCaptureDegraded(stableCode);
+    }
   }
 
   handleDeviceServices();

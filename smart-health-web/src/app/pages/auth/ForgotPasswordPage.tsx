@@ -20,7 +20,8 @@ import { useSEO } from "@/lib/useSEO";
 export default function ForgotPasswordPage() {
   useSEO({
     title: "Khôi phục mật khẩu | Shcare",
-    description: "Nhận liên kết đặt lại mật khẩu cho tài khoản Shcare Workspace.",
+    description:
+      "Nhận liên kết đặt lại mật khẩu cho tài khoản Shcare Workspace.",
     path: "/quen-mat-khau",
   });
 
@@ -62,8 +63,8 @@ export default function ForgotPasswordPage() {
           description={`Nếu email ${email.trim()} thuộc một tài khoản Shcare, bạn sẽ nhận được liên kết đặt lại mật khẩu.`}
         />
         <AuthAlert tone="info">
-          Liên kết có thể mất vài phút để đến. Hãy kiểm tra cả thư rác và chỉ mở email có
-          nguồn gửi Shcare mà bạn tin cậy.
+          Liên kết có thể mất vài phút để đến. Hãy kiểm tra cả thư rác và chỉ mở
+          email có nguồn gửi Shcare mà bạn tin cậy.
         </AuthAlert>
         <div className="shc-auth-result-actions">
           <Link to="/login" className="shc-auth-link-button">
@@ -87,7 +88,12 @@ export default function ForgotPasswordPage() {
         description="Nhập email tài khoản. Firebase sẽ gửi liên kết đặt lại mật khẩu nếu yêu cầu hợp lệ."
       />
 
-      <form method="post" noValidate onSubmit={submit} className="shc-auth-form">
+      <form
+        method="post"
+        noValidate
+        onSubmit={submit}
+        className="shc-auth-form"
+      >
         <AuthField
           id="reset-email"
           label="Email nhận liên kết"

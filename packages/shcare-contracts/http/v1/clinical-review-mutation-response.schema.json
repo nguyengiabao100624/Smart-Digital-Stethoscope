@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/clinical-review-mutation-response.schema.json",
+  "title": "Shcare clinical review mutation response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "review"],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "review": {
+      "$ref": "clinical-review-list-response.schema.json#/$defs/clinicalReview"
+    }
+  }
+}

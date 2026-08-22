@@ -67,6 +67,8 @@ class SmartHealthDeviceApiTest {
                       "device": {
                         "id": "Device_Aa-01",
                         "name": "Shcare 001",
+                        "organizationId": "workspace-1",
+                        "connected": false,
                         "online": false
                       },
                       "pairing": {
@@ -84,6 +86,7 @@ class SmartHealthDeviceApiTest {
             deviceId = "Device_Aa-01",
             claimCode = "Claim_aB-123",
             connectionMethod = "Manual",
+            organizationId = "workspace-1",
             idempotencyKey = "pair-key-1",
         )
         val request = server.takeRequest()
@@ -100,6 +103,11 @@ class SmartHealthDeviceApiTest {
         assertEquals("Device_Aa-01", body.getString("deviceId"))
         assertEquals("Claim_aB-123", body.getString("claimCode"))
         assertEquals("Manual", body.getString("connectionMethod"))
+        assertEquals("workspace-1", body.getString("organizationId"))
+        assertEquals(
+            setOf("deviceId", "claimCode", "connectionMethod", "organizationId"),
+            body.keys().asSequence().toSet(),
+        )
     }
 
     @Test
@@ -114,6 +122,7 @@ class SmartHealthDeviceApiTest {
                       "device": {
                         "id": "Device_Aa-01",
                         "name": "Shcare 001",
+                        "organizationId": "workspace-1",
                         "connected": true,
                         "online": true
                       },
@@ -133,6 +142,7 @@ class SmartHealthDeviceApiTest {
             deviceId = "Device_Aa-01",
             claimCode = "Claim_aB-123",
             connectionMethod = "QR",
+            organizationId = "workspace-1",
             idempotencyKey = "pair-key-2",
         )
 
@@ -149,7 +159,7 @@ class SmartHealthDeviceApiTest {
         assertPairingContractFailure(
             """
             {
-              "device": {"id": "Device_Aa-02", "online": false},
+              "device": {"id": "Device_Aa-02", "organizationId": "workspace-1", "connected": false, "online": false},
               "pairing": {
                 "outcome": "accepted",
                 "presence": "awaiting_online",
@@ -166,7 +176,7 @@ class SmartHealthDeviceApiTest {
         assertPairingContractFailure(
             """
             {
-              "device": {"id": "Device_Aa-01", "online": false},
+              "device": {"id": "Device_Aa-01", "organizationId": "workspace-1", "connected": false, "online": false},
               "pairing": {
                 "outcome": "accepted",
                 "presence": "online",
@@ -183,7 +193,7 @@ class SmartHealthDeviceApiTest {
         assertPairingContractFailure(
             """
             {
-              "device": {"id": "Device_Aa-01", "online": false},
+              "device": {"id": "Device_Aa-01", "organizationId": "workspace-1", "connected": false, "online": false},
               "pairing": {
                 "outcome": "accepted",
                 "presence": "awaiting_online",
@@ -201,6 +211,7 @@ class SmartHealthDeviceApiTest {
             {
               "device": {
                 "id": "Device_Aa-01",
+                "organizationId": "workspace-1",
                 "connected": false,
                 "online": false
               },
@@ -209,6 +220,28 @@ class SmartHealthDeviceApiTest {
                 "presence": "online",
                 "onlineConfirmed": true,
                 "authenticatedTransport": "wss"
+              }
+            }
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun pairDeviceRejectsMismatchedWorkspaceIdentity() {
+        assertPairingContractFailure(
+            """
+            {
+              "device": {
+                "id": "Device_Aa-01",
+                "organizationId": "workspace-other",
+                "connected": false,
+                "online": false
+              },
+              "pairing": {
+                "outcome": "accepted",
+                "presence": "awaiting_online",
+                "onlineConfirmed": false,
+                "authenticatedTransport": null
               }
             }
             """.trimIndent(),
@@ -229,6 +262,7 @@ class SmartHealthDeviceApiTest {
                     deviceId = "Device_Aa-01",
                     claimCode = "Claim_aB-123",
                     connectionMethod = "QR",
+                    organizationId = "workspace-1",
                     idempotencyKey = "pair-key-negative",
                 )
             }

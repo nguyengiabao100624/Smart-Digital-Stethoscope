@@ -1,5 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   Plus,
@@ -17,16 +16,25 @@ import {
   Pencil,
   Trash2,
   ShieldAlert,
-  X,
 } from "lucide-react";
 import { AddPatientDialog } from "./dialogs/AddPatientDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PageHeader } from "./design-system";
 import { PaginationFooter } from "./PaginationFooter";
-import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
-import { smartHealthApi, type SmartHealthPatient } from "@/lib/smart-health-api";
+import { ADMIN_TABLE_PAGE_SIZE } from "./pagination-utils";
+import {
+  smartHealthApi,
+  type SmartHealthListPagination,
+  type SmartHealthPatient,
+} from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { CapabilityGate } from "./AdminAccessContext";
+import {
+  DetailDrawer,
+  DetailDrawerClose,
+  DetailDrawerDescription,
+  DetailDrawerTitle,
+} from "./DetailDrawer";
 import { useAdminAccess } from "./useAdminAccess";
 import { PATIENT_MANAGE_CAPABILITIES } from "./action-permissions";
 import {
@@ -187,7 +195,6 @@ function hasBackendScanSummary(patient: Patient) {
 }
 
 export function Patients() {
-  const shouldReduceMotion = useReducedMotion();
   const { hasAnyCapability } = useAdminAccess();
   const canManagePatients = hasAnyCapability(PATIENT_MANAGE_CAPABILITIES);
   const [searchTerm, setSearchTerm] = useState("");
@@ -201,65 +208,63 @@ export function Patients() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<SmartHealthListPagination>({
+    totalCount: 0,
+    page: 1,
+    limit: ADMIN_TABLE_PAGE_SIZE,
+    pageCount: 0,
+  });
+  const deferredSearchTerm = React.useDeferredValue(searchTerm.trim());
   const deleteAttemptRef = useRef<PatientOperationAttempt | null>(null);
 
-  const loadPatients = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const backendPatients = parsePatientListResponse(await smartHealthApi.listPatients());
-      setPatients(backendPatients.map(mapBackendPatient));
-      setSelectedPatient((current) => {
-        if (!current) return null;
-        const refreshed = backendPatients.find((patient) => patient.id === current.id);
-        return refreshed ? mapBackendPatient(refreshed) : null;
-      });
-      setBackendError(null);
-    } catch (err) {
-      setBackendError(toVietnameseErrorMessage(err, "Không thể tải dữ liệu bệnh nhân."));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const loadPatients = useCallback(
+    async (signal?: AbortSignal) => {
+      setIsLoading(true);
+      try {
+        const response = await smartHealthApi.listPatients({
+          q: deferredSearchTerm || undefined,
+          page,
+          limit: ADMIN_TABLE_PAGE_SIZE,
+          sort: "updatedAt:desc",
+          signal,
+        });
+        const backendPatients = parsePatientListResponse(response);
+        setPatients(backendPatients.map(mapBackendPatient));
+        const nextPagination = response.pagination || {
+          totalCount: backendPatients.length,
+          page,
+          limit: ADMIN_TABLE_PAGE_SIZE,
+          pageCount: backendPatients.length > 0 ? 1 : 0,
+        };
+        setPagination(nextPagination);
+        if (page > Math.max(1, nextPagination.pageCount)) {
+          setPage(Math.max(1, nextPagination.pageCount));
+        }
+        setSelectedPatient((current) => {
+          if (!current) return null;
+          const refreshed = backendPatients.find((patient) => patient.id === current.id);
+          return refreshed ? mapBackendPatient(refreshed) : null;
+        });
+        setBackendError(null);
+      } catch (err) {
+        if (signal?.aborted) return;
+        setBackendError(toVietnameseErrorMessage(err, "Không thể tải dữ liệu bệnh nhân."));
+      } finally {
+        if (!signal?.aborted) setIsLoading(false);
+      }
+    },
+    [deferredSearchTerm, page],
+  );
 
   useEffect(() => {
-    void loadPatients();
+    const controller = new AbortController();
+    void loadPatients(controller.signal);
+    return () => controller.abort();
   }, [loadPatients]);
-
-  const visiblePatients = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-
-    return patients.filter((patient) => {
-      if (!query) {
-        return true;
-      }
-
-      return [
-        patient.id,
-        patient.patientCode,
-        patient.name,
-        patient.phone,
-        patient.email,
-        patient.address,
-        patient.doctorName,
-        patient.primaryDoctorId,
-        patient.organizationId,
-        patient.lastSignalLabel,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
-  }, [patients, searchTerm]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, patients.length]);
-
-  const pagedPatients = useMemo(
-    () => paginateItems(visiblePatients, page, ADMIN_TABLE_PAGE_SIZE),
-    [page, visiblePatients],
-  );
+  }, [deferredSearchTerm]);
   const emptyMessage = backendError
     ? "Không thể hiển thị danh sách vì backend chưa phản hồi."
     : searchTerm.trim()
@@ -343,7 +348,7 @@ export function Patients() {
       />
 
       {backendError && (
-        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
+        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
           Chưa tải được dữ liệu bệnh nhân từ backend. Trang không dùng dữ liệu mẫu để tránh hiển thị
           sai: {backendError}
         </div>
@@ -376,7 +381,7 @@ export function Patients() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {pagedPatients.map((patient) => (
+              {patients.map((patient) => (
                 <tr key={patient.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
@@ -476,7 +481,7 @@ export function Patients() {
                   </td>
                 </tr>
               )}
-              {!isLoading && visiblePatients.length === 0 && (
+              {!isLoading && patients.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">
                     {emptyMessage}
@@ -489,8 +494,8 @@ export function Patients() {
 
         <PaginationFooter
           page={page}
-          totalItems={visiblePatients.length}
-          sourceTotalItems={patients.length}
+          pageSize={pagination.limit}
+          totalItems={pagination.totalCount}
           itemLabel="bệnh nhân"
           onPageChange={setPage}
         />
@@ -506,229 +511,210 @@ export function Patients() {
         onSaved={handleSaved}
       />
 
-      <AnimatePresence>
+      <DetailDrawer
+        open={Boolean(selectedPatient)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedPatient(null);
+        }}
+        title={
+          selectedPatient ? `Chi tiết bệnh nhân ${selectedPatient.name}` : "Chi tiết bệnh nhân"
+        }
+      >
         {selectedPatient && (
           <>
-            <motion.div
-              initial={shouldReduceMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedPatient(null)}
-              className="fixed inset-0 z-40 bg-slate-950/40"
-            />
-            <motion.aside
-              initial={shouldReduceMotion ? false : { x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="patient-detail-title"
-              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[520px] flex-col border-l border-border bg-card shadow-2xl"
-            >
-              <div className="flex items-start justify-between gap-4 border-b border-border p-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Users className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h2 id="patient-detail-title" className="text-lg font-semibold text-foreground">
-                      {selectedPatient.name}
-                    </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {selectedPatient.patientCode || "Chưa có mã hồ sơ"} •{" "}
-                      {patientDemographics(selectedPatient)}
-                    </p>
-                  </div>
+            <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Users className="h-6 w-6" />
                 </div>
-                <button
-                  type="button"
-                  aria-label="Đóng chi tiết bệnh nhân"
-                  onClick={() => setSelectedPatient(null)}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div>
+                  <DetailDrawerTitle>{selectedPatient.name}</DetailDrawerTitle>
+                  <DetailDrawerDescription className="mt-1">
+                    {selectedPatient.patientCode || "Chưa có mã hồ sơ"} •{" "}
+                    {patientDemographics(selectedPatient)}
+                  </DetailDrawerDescription>
+                </div>
               </div>
+              <DetailDrawerClose label="Đóng chi tiết bệnh nhân" className="rounded-full" />
+            </div>
 
-              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-                <section className="rounded-xl border border-border p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">Thông tin cơ bản</h3>
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+              <section className="rounded-xl border border-border p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">Thông tin cơ bản</h3>
+                <div className="space-y-3 text-sm">
+                  <PatientInfo icon={Phone} label="Số điện thoại" value={selectedPatient.phone} />
+                  <PatientInfo icon={Mail} label="Email" value={selectedPatient.email} />
+                  <PatientInfo
+                    icon={Calendar}
+                    label="Ngày sinh"
+                    value={formatDate(selectedPatient.dateOfBirth)}
+                  />
+                  <PatientInfo
+                    icon={HeartPulse}
+                    label="Nhóm máu"
+                    value={selectedPatient.bloodType}
+                  />
+                  <PatientInfo icon={MapPin} label="Địa chỉ" value={selectedPatient.address} />
+                  <PatientInfo
+                    icon={FileText}
+                    label="Ghi chú hồ sơ"
+                    value={selectedPatient.notes}
+                  />
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">
+                  Dị ứng và liên hệ khẩn cấp
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <PatientInfo
+                    icon={ShieldAlert}
+                    label="Dị ứng đã khai báo"
+                    value={
+                      selectedPatient.allergies?.length
+                        ? selectedPatient.allergies.join(", ")
+                        : undefined
+                    }
+                  />
+                  <PatientInfo
+                    icon={Phone}
+                    label="Liên hệ khẩn cấp"
+                    value={
+                      selectedPatient.emergencyContact?.name ||
+                      selectedPatient.emergencyContact?.phone
+                        ? [
+                            selectedPatient.emergencyContact?.name,
+                            selectedPatient.emergencyContact?.phone,
+                            selectedPatient.emergencyContact?.relationship,
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")
+                        : undefined
+                    }
+                  />
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">
+                  Bác sĩ phụ trách trong hồ sơ
+                </h3>
+                {patientDoctor(selectedPatient) ? (
+                  <div className="rounded-lg bg-muted/40 px-3 py-2">
+                    <div className="text-sm font-semibold text-foreground">
+                      {selectedPatient.doctorName || selectedPatient.primaryDoctorId}
+                    </div>
+                    {selectedPatient.doctorName && selectedPatient.primaryDoctorId && (
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Mã bác sĩ: {selectedPatient.primaryDoctorId}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-4 text-sm text-muted-foreground">
+                    Backend chưa cung cấp bác sĩ phụ trách cho hồ sơ này.
+                  </div>
+                )}
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  Phân công trong hồ sơ không thay thế trạng thái quyền truy cập hoặc chấp thuận của
+                  bệnh nhân.
+                </p>
+              </section>
+
+              <section className="rounded-xl border border-border p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">
+                  Tóm tắt lượt đo từ backend
+                </h3>
+                {hasBackendScanSummary(selectedPatient) ? (
                   <div className="space-y-3 text-sm">
-                    <PatientInfo icon={Phone} label="Số điện thoại" value={selectedPatient.phone} />
-                    <PatientInfo icon={Mail} label="Email" value={selectedPatient.email} />
                     <PatientInfo
-                      icon={Calendar}
-                      label="Ngày sinh"
-                      value={formatDate(selectedPatient.dateOfBirth)}
+                      icon={Activity}
+                      label="Số lượt đo"
+                      value={
+                        selectedPatient.scanCount === undefined
+                          ? undefined
+                          : `${selectedPatient.scanCount} lượt`
+                      }
+                    />
+                    <PatientInfo
+                      icon={Clock}
+                      label="Lần đo gần nhất"
+                      value={formatDate(selectedPatient.lastScanAt)}
                     />
                     <PatientInfo
                       icon={HeartPulse}
-                      label="Nhóm máu"
-                      value={selectedPatient.bloodType}
+                      label="Nhãn xử lý gần nhất"
+                      value={selectedPatient.lastSignalLabel || undefined}
                     />
-                    <PatientInfo icon={MapPin} label="Địa chỉ" value={selectedPatient.address} />
-                    <PatientInfo
-                      icon={FileText}
-                      label="Ghi chú hồ sơ"
-                      value={selectedPatient.notes}
-                    />
+                    {selectedPatient.lastSignalLabel && (
+                      <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        Nhãn xử lý do backend trả về, không phải chẩn đoán.
+                      </p>
+                    )}
                   </div>
-                </section>
-
-                <section className="rounded-xl border border-border p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">
-                    Dị ứng và liên hệ khẩn cấp
-                  </h3>
-                  <div className="space-y-3 text-sm">
-                    <PatientInfo
-                      icon={ShieldAlert}
-                      label="Dị ứng đã khai báo"
-                      value={
-                        selectedPatient.allergies?.length
-                          ? selectedPatient.allergies.join(", ")
-                          : undefined
-                      }
-                    />
-                    <PatientInfo
-                      icon={Phone}
-                      label="Liên hệ khẩn cấp"
-                      value={
-                        selectedPatient.emergencyContact?.name ||
-                        selectedPatient.emergencyContact?.phone
-                          ? [
-                              selectedPatient.emergencyContact?.name,
-                              selectedPatient.emergencyContact?.phone,
-                              selectedPatient.emergencyContact?.relationship,
-                            ]
-                              .filter(Boolean)
-                              .join(" • ")
-                          : undefined
-                      }
-                    />
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-4 text-sm text-muted-foreground">
+                    Không có dữ liệu lượt đo từ backend.
                   </div>
-                </section>
+                )}
+              </section>
 
-                <section className="rounded-xl border border-border p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">
-                    Bác sĩ phụ trách trong hồ sơ
-                  </h3>
-                  {patientDoctor(selectedPatient) ? (
-                    <div className="rounded-lg bg-muted/40 px-3 py-2">
-                      <div className="text-sm font-semibold text-foreground">
-                        {selectedPatient.doctorName || selectedPatient.primaryDoctorId}
-                      </div>
-                      {selectedPatient.doctorName && selectedPatient.primaryDoctorId && (
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          Mã bác sĩ: {selectedPatient.primaryDoctorId}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-4 text-sm text-muted-foreground">
-                      Backend chưa cung cấp bác sĩ phụ trách cho hồ sơ này.
-                    </div>
-                  )}
-                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                    Phân công trong hồ sơ không thay thế trạng thái quyền truy cập hoặc chấp thuận
-                    của bệnh nhân.
-                  </p>
-                </section>
-
-                <section className="rounded-xl border border-border p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">
-                    Tóm tắt lượt đo từ backend
-                  </h3>
-                  {hasBackendScanSummary(selectedPatient) ? (
-                    <div className="space-y-3 text-sm">
-                      <PatientInfo
-                        icon={Activity}
-                        label="Số lượt đo"
-                        value={
-                          selectedPatient.scanCount === undefined
-                            ? undefined
-                            : `${selectedPatient.scanCount} lượt`
-                        }
-                      />
-                      <PatientInfo
-                        icon={Clock}
-                        label="Lần đo gần nhất"
-                        value={formatDate(selectedPatient.lastScanAt)}
-                      />
-                      <PatientInfo
-                        icon={HeartPulse}
-                        label="Nhãn xử lý gần nhất"
-                        value={selectedPatient.lastSignalLabel || undefined}
-                      />
-                      {selectedPatient.lastSignalLabel && (
-                        <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                          Nhãn xử lý do backend trả về, không phải chẩn đoán.
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-4 text-sm text-muted-foreground">
-                      Không có dữ liệu lượt đo từ backend.
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-xl border border-border p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">Thông tin hệ thống</h3>
-                  <div className="space-y-3 text-sm">
-                    <PatientInfo
-                      icon={FileText}
-                      label="ID hệ thống canonical"
-                      value={selectedPatient.id}
-                    />
-                    <PatientInfo
-                      icon={FileText}
-                      label="Mã hồ sơ hiển thị"
-                      value={selectedPatient.patientCode}
-                    />
-                    <PatientInfo
-                      icon={Building2}
-                      label="Workspace"
-                      value={selectedPatient.organizationId}
-                    />
-                    <PatientInfo
-                      icon={Clock}
-                      label="Tạo lúc"
-                      value={formatDate(selectedPatient.createdAt)}
-                    />
-                    <PatientInfo
-                      icon={Clock}
-                      label="Cập nhật lúc"
-                      value={formatDate(selectedPatient.updatedAt)}
-                    />
-                  </div>
-                </section>
-              </div>
-
-              {canManagePatients ? (
-                <div className="flex flex-col gap-3 border-t border-border bg-card p-5 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(selectedPatient)}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Chỉnh sửa
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => requestDelete(selectedPatient)}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Xóa hồ sơ
-                  </button>
+              <section className="rounded-xl border border-border p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">Thông tin hệ thống</h3>
+                <div className="space-y-3 text-sm">
+                  <PatientInfo
+                    icon={FileText}
+                    label="ID hệ thống canonical"
+                    value={selectedPatient.id}
+                  />
+                  <PatientInfo
+                    icon={FileText}
+                    label="Mã hồ sơ hiển thị"
+                    value={selectedPatient.patientCode}
+                  />
+                  <PatientInfo
+                    icon={Building2}
+                    label="Workspace"
+                    value={selectedPatient.organizationId}
+                  />
+                  <PatientInfo
+                    icon={Clock}
+                    label="Tạo lúc"
+                    value={formatDate(selectedPatient.createdAt)}
+                  />
+                  <PatientInfo
+                    icon={Clock}
+                    label="Cập nhật lúc"
+                    value={formatDate(selectedPatient.updatedAt)}
+                  />
                 </div>
-              ) : null}
-            </motion.aside>
+              </section>
+            </div>
+
+            {canManagePatients ? (
+              <div className="flex flex-col gap-3 border-t border-border bg-card p-5 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => openEdit(selectedPatient)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Chỉnh sửa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestDelete(selectedPatient)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Xóa hồ sơ
+                </button>
+              </div>
+            ) : null}
           </>
         )}
-      </AnimatePresence>
+      </DetailDrawer>
 
       <ConfirmActionDialog
         open={Boolean(deleteTarget)}

@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,8 +53,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,6 +69,9 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -73,14 +81,19 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.net.toUri
 import com.example.smart_health_android.R
+import com.example.smart_health_android.devices.DeviceManualSetupField
+import com.example.smart_health_android.devices.DevicePairingFailureKind
 import com.example.smart_health_android.devices.DevicePairingStage
 import com.example.smart_health_android.devices.DevicePairingUiAction
 import com.example.smart_health_android.devices.DevicePairingUiEffect
 import com.example.smart_health_android.devices.DevicePairingUiState
+import com.example.smart_health_android.devices.DevicePairingAuthoritySnapshot
 import com.example.smart_health_android.devices.DevicePairingViewModel
+import com.example.smart_health_android.devices.DevicePairingViewModelFactory
 import com.example.smart_health_android.ui.components.ShcareErrorState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
 import com.example.smart_health_android.ui.theme.ShcareTheme
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanner
@@ -94,7 +107,17 @@ import kotlinx.coroutines.launch
 fun DevicePairingScreen(
     onNavigateBack: () -> Unit,
     onConnectionSuccess: (deviceName: String) -> Unit,
-    viewModel: DevicePairingViewModel = viewModel(),
+    expectedAuthority: DevicePairingAuthoritySnapshot? = null,
+    currentAuthority: () -> DevicePairingAuthoritySnapshot? = { expectedAuthority },
+    viewModel: DevicePairingViewModel = viewModel(
+        key = expectedAuthority?.let { authority ->
+            "device-pairing-${authority.userId}-${authority.workspaceId}-${authority.authorityEpoch}"
+        } ?: "device-pairing-authority-denied",
+        factory = DevicePairingViewModelFactory(
+            expectedAuthority = expectedAuthority,
+            currentAuthority = currentAuthority,
+        ),
+    ),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -218,31 +241,61 @@ fun DevicePairingScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
 
-                DevicePairingStage.ClaimFailed -> ShcareErrorState(
-                    title = stringResource(R.string.device_pairing_claim_failed_title),
-                    message = state.resolveErrorMessageWithRequestId(
-                        fallback = stringResource(R.string.device_pairing_claim_failed_message),
-                    ),
-                    retryLabel = stringResource(
-                        if (state.canRetryClaim) {
-                            R.string.device_pairing_retry_claim
-                        } else {
-                            R.string.device_pairing_enter_claim_again
-                        },
-                    ),
-                    onRetry = {
-                        viewModel.onAction(
-                            if (state.canRetryClaim) {
-                                DevicePairingUiAction.RetryClaim
-                            } else {
-                                DevicePairingUiAction.Reset
-                            },
+                DevicePairingStage.ClaimFailed -> {
+                    if (
+                        state.failureKind in setOf(
+                            DevicePairingFailureKind.Permission,
+                            DevicePairingFailureKind.Session,
                         )
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("device_pairing.retry_claim"),
-                )
+                    ) {
+                        ShcarePermissionState(
+                            title = stringResource(
+                                if (state.failureKind == DevicePairingFailureKind.Session) {
+                                    R.string.device_pairing_session_title
+                                } else {
+                                    R.string.device_pairing_permission_title
+                                },
+                            ),
+                            message = state.resolveErrorMessageWithRequestId(
+                                fallback = stringResource(R.string.device_pairing_claim_failed_message),
+                            ),
+                            actionLabel = stringResource(R.string.device_pairing_back),
+                            onRequestPermission = {
+                                viewModel.onAction(DevicePairingUiAction.Cancel)
+                                onNavigateBack()
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("device_pairing.permission_denied"),
+                        )
+                    } else {
+                        ShcareErrorState(
+                            title = stringResource(R.string.device_pairing_claim_failed_title),
+                            message = state.resolveErrorMessageWithRequestId(
+                                fallback = stringResource(R.string.device_pairing_claim_failed_message),
+                            ),
+                            retryLabel = stringResource(
+                                if (state.canRetryClaim) {
+                                    R.string.device_pairing_retry_claim
+                                } else {
+                                    R.string.device_pairing_enter_claim_again
+                                },
+                            ),
+                            onRetry = {
+                                viewModel.onAction(
+                                    if (state.canRetryClaim) {
+                                        DevicePairingUiAction.RetryClaim
+                                    } else {
+                                        DevicePairingUiAction.Reset
+                                    },
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("device_pairing.retry_claim"),
+                        )
+                    }
+                }
 
                 DevicePairingStage.SetupReady -> DevicePairingSetupContent(
                     state = state,
@@ -328,7 +381,8 @@ private fun DevicePairingEntryContent(
 ) {
     val spacing = ShcareTheme.spacing
     val resolvedErrorMessage = state.resolveErrorMessage()
-    val manualInputError = state.errorMessageRes == R.string.device_pairing_invalid_manual
+    var showClaimCode by rememberSaveable { mutableStateOf(false) }
+    var showSetupProof by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -425,32 +479,138 @@ private fun DevicePairingEntryContent(
             Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
                 OutlinedTextField(
                     value = state.manualDeviceId,
-                    onValueChange = { onAction(DevicePairingUiAction.DeviceIdChanged(it)) },
+                    onValueChange = { onAction(DevicePairingUiAction.ManualDeviceIdChanged(it)) },
                     label = { Text(stringResource(R.string.device_pairing_device_id)) },
                     placeholder = { Text(stringResource(R.string.device_pairing_device_id_hint)) },
                     enabled = !state.isBusy,
-                    isError = manualInputError,
+                    isError = DeviceManualSetupField.DeviceId in state.manualFieldErrors,
+                    supportingText = if (DeviceManualSetupField.DeviceId in state.manualFieldErrors) {
+                        { Text(stringResource(R.string.device_pairing_invalid_device_id)) }
+                    } else {
+                        null
+                    },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii,
+                        imeAction = ImeAction.Next,
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("device_pairing.device_id"),
                 )
                 OutlinedTextField(
                     value = state.manualClaimCode,
-                    onValueChange = { onAction(DevicePairingUiAction.ClaimCodeChanged(it)) },
+                    onValueChange = { onAction(DevicePairingUiAction.ManualClaimCodeChanged(it)) },
                     label = { Text(stringResource(R.string.device_pairing_claim_code)) },
                     placeholder = { Text(stringResource(R.string.device_pairing_claim_code_hint)) },
                     enabled = !state.isBusy,
-                    isError = manualInputError,
+                    isError = DeviceManualSetupField.ClaimCode in state.manualFieldErrors,
+                    supportingText = if (DeviceManualSetupField.ClaimCode in state.manualFieldErrors) {
+                        { Text(stringResource(R.string.device_pairing_invalid_claim_code)) }
+                    } else {
+                        null
+                    },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    visualTransformation = if (showClaimCode) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showClaimCode = !showClaimCode }) {
+                            Icon(
+                                imageVector = if (showClaimCode) {
+                                    Icons.Default.VisibilityOff
+                                } else {
+                                    Icons.Default.Visibility
+                                },
+                                contentDescription = stringResource(
+                                    if (showClaimCode) {
+                                        R.string.device_pairing_hide_claim_code
+                                    } else {
+                                        R.string.device_pairing_show_claim_code
+                                    },
+                                ),
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Next,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("device_pairing.claim_code"),
+                )
+                OutlinedTextField(
+                    value = state.manualSetupSsid,
+                    onValueChange = { onAction(DevicePairingUiAction.ManualSetupSsidChanged(it)) },
+                    label = { Text(stringResource(R.string.device_pairing_manual_setup_ssid)) },
+                    placeholder = { Text(stringResource(R.string.device_pairing_manual_setup_ssid_hint)) },
+                    enabled = !state.isBusy,
+                    isError = DeviceManualSetupField.SetupSsid in state.manualFieldErrors,
+                    supportingText = if (DeviceManualSetupField.SetupSsid in state.manualFieldErrors) {
+                        { Text(stringResource(R.string.device_pairing_invalid_setup_ssid)) }
+                    } else {
+                        null
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii,
+                        imeAction = ImeAction.Next,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("device_pairing.setup_ssid"),
+                )
+                OutlinedTextField(
+                    value = state.manualProofOfPossession,
+                    onValueChange = { onAction(DevicePairingUiAction.ManualProofChanged(it)) },
+                    label = { Text(stringResource(R.string.device_pairing_manual_setup_proof)) },
+                    placeholder = { Text(stringResource(R.string.device_pairing_manual_setup_proof_hint)) },
+                    enabled = !state.isBusy,
+                    isError = DeviceManualSetupField.ProofOfPossession in state.manualFieldErrors,
+                    supportingText = if (
+                        DeviceManualSetupField.ProofOfPossession in state.manualFieldErrors
+                    ) {
+                        { Text(stringResource(R.string.device_pairing_invalid_setup_proof)) }
+                    } else {
+                        { Text(stringResource(R.string.device_pairing_manual_setup_help)) }
+                    },
+                    singleLine = true,
+                    visualTransformation = if (showSetupProof) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showSetupProof = !showSetupProof }) {
+                            Icon(
+                                imageVector = if (showSetupProof) {
+                                    Icons.Default.VisibilityOff
+                                } else {
+                                    Icons.Default.Visibility
+                                },
+                                contentDescription = stringResource(
+                                    if (showSetupProof) {
+                                        R.string.device_pairing_hide_setup_proof
+                                    } else {
+                                        R.string.device_pairing_show_setup_proof
+                                    },
+                                ),
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
                     keyboardActions = KeyboardActions(
                         onDone = { onAction(DevicePairingUiAction.SubmitManual) },
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("device_pairing.claim_code"),
+                        .testTag("device_pairing.setup_proof"),
                 )
                 Button(
                     onClick = { onAction(DevicePairingUiAction.SubmitManual) },
@@ -465,7 +625,7 @@ private fun DevicePairingEntryContent(
             }
         }
 
-        if (resolvedErrorMessage.isNotBlank()) {
+        if (resolvedErrorMessage.isNotBlank() && state.manualFieldErrors.isEmpty()) {
             item { DevicePairingInlineError(state, resolvedErrorMessage) }
         }
     }

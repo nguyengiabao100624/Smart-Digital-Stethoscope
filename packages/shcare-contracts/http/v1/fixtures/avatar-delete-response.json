@@ -1,0 +1,14 @@
+{
+  "deleted": true,
+  "avatar": {
+    "fileId": "file_avatar_3c6c37e77f5e7e046418d808e6510ee5",
+    "ownerUserId": "user_avatar_owner",
+    "deletedAt": "2026-08-09T09:05:00.000Z"
+  },
+  "cleanup": {
+    "status": "pending",
+    "previousFileId": "file_avatar_3c6c37e77f5e7e046418d808e6510ee5"
+  },
+  "operationId": "avatar_delete_9bc7ac46a7613d18a9bf2a80",
+  "replayed": false
+}

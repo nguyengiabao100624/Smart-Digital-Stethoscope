@@ -112,6 +112,7 @@ describe("smartHealthApi two-factor contract", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         jsonResponse({
+          userId: "usr_1",
           twoFactor: {
             enabled: false,
             method: "",
@@ -123,37 +124,251 @@ describe("smartHealthApi two-factor contract", () => {
             manualKey: "JBSWY3DPEHPK3PXP",
             otpauthUri:
               "otpauth://totp/Shcare:user?secret=JBSWY3DPEHPK3PXP&issuer=Shcare",
-            expiresAt: "2026-07-14T14:15:00.000Z",
+              expiresAt: "2026-07-14T14:15:00.000Z",
           },
+          replayed: false,
+          superseded: false,
         }),
       )
       .mockResolvedValueOnce(
         jsonResponse({
           twoFactor: {
-            enabled: true,
-            method: "app",
-            enrollmentPending: false,
+            enabled: false,
+            method: "",
+            enrollmentPending: true,
           },
+          userId: "usr_1",
+          enrollmentId: "enroll_1",
           recoveryCodes: [
-            "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8",
+            "111111-AAAAAA",
+            "222222-BBBBBB",
+            "333333-CCCCCC",
+            "444444-DDDDDD",
+            "555555-EEEEEE",
+            "666666-FFFFFF",
+            "777777-ABCDEF",
+            "888888-FEDCBA",
           ],
-          twoFactorToken: "verified-tfa-token-0123456789abcdef",
-          tokenExpiresAt: "2026-07-14T22:00:00.000Z",
+          recoveryDelivery: {
+            id: "2fa_delivery_usr_1",
+            expiresAt: "2030-07-14T22:00:00.000Z",
+            acknowledged: false,
+          },
+          recoveryAckToken: "pending-recovery-ack-token-0123456789abcdef",
+          replayed: false,
         }),
       );
 
-    const enrollment = await smartHealthApi.startTwoFactorEnrollment();
+    const enrollmentStartIntent = {
+      userId: "usr_1",
+      authSessionEpoch: smartHealthApi.getAuthSessionEpochSnapshot(),
+      idempotencyKey: "two-factor-start-api-stable-key",
+    };
+    const enrollment = await smartHealthApi.startTwoFactorEnrollment(
+      enrollmentStartIntent,
+    );
     expect(enrollment.twoFactor.enabled).toBe(false);
     expect(window.sessionStorage.getItem(SECOND_FACTOR_TOKEN_KEY)).toBeNull();
+    const [, startInit] = vi.mocked(fetch).mock.calls[0];
+    expect(new Headers(startInit?.headers).get("Idempotency-Key")).toBe(
+      enrollmentStartIntent.idempotencyKey,
+    );
+    expect(JSON.parse(String(startInit?.body))).toEqual({ method: "app" });
 
     const verified = await smartHealthApi.verifyTwoFactorEnrollment({
+      userId: "usr_1",
+      authSessionEpoch: smartHealthApi.getAuthSessionEpochSnapshot(),
       enrollmentId: enrollment.enrollment.id,
       code: "123456",
+      idempotencyKey: "two-factor-enrollment-api-stable-key",
     });
-    expect(verified.twoFactor.enabled).toBe(true);
-    expect(window.sessionStorage.getItem(SECOND_FACTOR_TOKEN_KEY)).toBe(
-      "verified-tfa-token-0123456789abcdef",
+    expect(verified.twoFactor.enabled).toBe(false);
+    expect(window.sessionStorage.getItem(SECOND_FACTOR_TOKEN_KEY)).toBeNull();
+    const [, verifyInit] = vi.mocked(fetch).mock.calls[1];
+    expect(new Headers(verifyInit?.headers).get("Idempotency-Key")).toBe(
+      "two-factor-enrollment-api-stable-key",
     );
+    expect(JSON.parse(String(verifyInit?.body))).toEqual({
+      enrollmentId: "enroll_1",
+      code: "123456",
+    });
+  });
+
+  it("rejects a late enrollment start receipt after the primary auth session changes", async () => {
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-a");
+    const intent = {
+      userId: "usr_1",
+      authSessionEpoch: smartHealthApi.getAuthSessionEpochSnapshot(),
+      idempotencyKey: "two-factor-start-late-response-key",
+    };
+    let resolveResponse: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+
+    const pending = smartHealthApi.startTwoFactorEnrollment(intent);
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-b");
+    smartHealthApi.clearToken();
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-b");
+    resolveResponse?.(
+      jsonResponse({
+        userId: "usr_1",
+        twoFactor: { enabled: false, method: "", enrollmentPending: true },
+        enrollment: {
+          id: "enroll_late",
+          method: "app",
+          manualKey: "JBSWY3DPEHPK3PXP",
+          otpauthUri:
+            "otpauth://totp/Shcare:user?secret=JBSWY3DPEHPK3PXP&issuer=Shcare",
+          expiresAt: "2030-07-14T14:15:00.000Z",
+        },
+        replayed: false,
+        superseded: false,
+      }),
+    );
+
+    await expect(pending).rejects.toThrow(/phiên xác thực chính đã thay đổi/i);
+  });
+
+  it("acknowledges the exact recovery delivery without sending owner authority in the body", async () => {
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-token");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        userId: "usr_1",
+        enrollmentId: "enroll_1",
+        twoFactor: { enabled: true, method: "app", enrollmentPending: false },
+        recoveryDelivery: {
+          id: "2fa_delivery_usr_1",
+          expiresAt: "2030-07-14T22:00:00.000Z",
+          acknowledged: true,
+          acknowledgedAt: "2030-07-14T21:05:00.000Z",
+        },
+        twoFactorToken: "completed-tfa-token-0123456789abcdef",
+        tokenExpiresAt: "2030-07-14T22:15:00.000Z",
+        replayed: false,
+      }),
+    );
+
+    await expect(
+      smartHealthApi.acknowledgeTwoFactorRecoveryCodes({
+        userId: "usr_1",
+        authSessionEpoch: smartHealthApi.getAuthSessionEpochSnapshot(),
+        enrollmentId: "enroll_1",
+        deliveryId: "2fa_delivery_usr_1",
+        recoveryAckToken: "pending-recovery-ack-token-0123456789abcdef",
+        idempotencyKey: "two-factor-enrollment-api-stable-key",
+      }),
+    ).resolves.toMatchObject({
+      userId: "usr_1",
+      recoveryDelivery: { acknowledged: true },
+    });
+    expect(window.sessionStorage.getItem(SECOND_FACTOR_TOKEN_KEY)).toBe(
+      "completed-tfa-token-0123456789abcdef",
+    );
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toBe(
+      "http://localhost:3000/api/v1/me/2fa/recovery-codes/ack",
+    );
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBe(
+      "two-factor-enrollment-api-stable-key",
+    );
+    expect(JSON.parse(String(init?.body))).toEqual({
+      deliveryId: "2fa_delivery_usr_1",
+      recoveryAckToken: "pending-recovery-ack-token-0123456789abcdef",
+    });
+  });
+
+  it("rejects a late verification receipt after the primary auth session changes", async () => {
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-a");
+    const authSessionEpoch = smartHealthApi.getAuthSessionEpochSnapshot();
+    let resolveResponse: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+
+    const verification = smartHealthApi.verifyTwoFactorEnrollment({
+      userId: "usr_1",
+      authSessionEpoch,
+      enrollmentId: "enroll_1",
+      code: "123456",
+      idempotencyKey: "two-factor-session-a-key",
+    });
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-b");
+    resolveResponse?.(
+      jsonResponse({
+        userId: "usr_1",
+        enrollmentId: "enroll_1",
+        twoFactor: { enabled: false, method: "", enrollmentPending: true },
+        recoveryCodes: [
+          "111111-AAAAAA",
+          "222222-BBBBBB",
+          "333333-CCCCCC",
+          "444444-DDDDDD",
+          "555555-EEEEEE",
+          "666666-FFFFFF",
+          "777777-ABCDEF",
+          "888888-FEDCBA",
+        ],
+        recoveryDelivery: {
+          id: "2fa_delivery_usr_1",
+          expiresAt: "2030-07-14T22:00:00.000Z",
+          acknowledged: false,
+        },
+        recoveryAckToken: "pending-recovery-ack-token-session-a",
+        replayed: false,
+      }),
+    );
+
+    await expect(verification).rejects.toThrow(
+      /phiên xác thực chính đã thay đổi/i,
+    );
+  });
+
+  it("does not install a completed second factor from a stale ACK response", async () => {
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-a");
+    const authSessionEpoch = smartHealthApi.getAuthSessionEpochSnapshot();
+    let resolveResponse: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+
+    const acknowledgement = smartHealthApi.acknowledgeTwoFactorRecoveryCodes({
+      userId: "usr_1",
+      authSessionEpoch,
+      enrollmentId: "enroll_1",
+      deliveryId: "2fa_delivery_usr_1",
+      recoveryAckToken: "pending-recovery-ack-token-session-a",
+      idempotencyKey: "two-factor-session-a-key",
+    });
+    window.localStorage.setItem(PRIMARY_TOKEN_KEY, "primary-session-b");
+    resolveResponse?.(
+      jsonResponse({
+        userId: "usr_1",
+        enrollmentId: "enroll_1",
+        twoFactor: { enabled: true, method: "app", enrollmentPending: false },
+        recoveryDelivery: {
+          id: "2fa_delivery_usr_1",
+          expiresAt: "2030-07-14T22:00:00.000Z",
+          acknowledged: true,
+          acknowledgedAt: "2030-07-14T21:05:00.000Z",
+        },
+        twoFactorToken: "stale-completed-token-0123456789abcdef",
+        tokenExpiresAt: "2030-07-14T22:15:00.000Z",
+        replayed: false,
+      }),
+    );
+
+    await expect(acknowledgement).rejects.toThrow(
+      /phiên xác thực chính đã thay đổi/i,
+    );
+    expect(window.sessionStorage.getItem(SECOND_FACTOR_TOKEN_KEY)).toBeNull();
   });
 
   it("clears both factors for a non-2FA unauthorized response", async () => {

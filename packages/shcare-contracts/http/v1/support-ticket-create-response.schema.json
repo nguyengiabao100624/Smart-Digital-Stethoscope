@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/support-ticket-create-response.schema.json",
+  "title": "Shcare support ticket create response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticket",
+    "replayed"
+  ],
+  "properties": {
+    "ticket": {
+      "$ref": "#/$defs/ticket"
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "ticket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workspaceId",
+        "requesterUserId",
+        "type",
+        "status",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "requesterUserId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "device_connection",
+            "measurement_missing",
+            "account_access",
+            "interface_issue",
+            "other"
+          ]
+        },
+        "status": {
+          "const": "open"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

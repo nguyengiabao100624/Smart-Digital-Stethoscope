@@ -1,9 +1,12 @@
 package com.example.smart_health_android.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import com.example.smart_health_android.data.DevicePairingOutcome
 import com.example.smart_health_android.data.DevicePairingPresence
 import com.example.smart_health_android.data.DevicePairingResponse
@@ -12,12 +15,14 @@ import com.example.smart_health_android.data.SmartDevice
 import com.example.smart_health_android.devices.DeviceClaimPayload
 import com.example.smart_health_android.devices.DeviceClaimRepository
 import com.example.smart_health_android.devices.DevicePairingStage
+import com.example.smart_health_android.devices.DevicePairingAuthoritySnapshot
 import com.example.smart_health_android.devices.DevicePairingUiAction
 import com.example.smart_health_android.devices.DevicePairingViewModel
 import com.example.smart_health_android.ui.theme.ShcareMobileTheme
 import org.junit.Rule
 import org.junit.Test
 import java.time.Instant
+import androidx.compose.ui.unit.dp
 
 class DevicePairingScreenTest {
     @get:Rule
@@ -27,6 +32,8 @@ class DevicePairingScreenTest {
     fun secureQrShowsNativeSetupGuidanceWithoutPretendingDeviceIsOnline() {
         val viewModel = DevicePairingViewModel(
             repository = OfflineClaimRepository,
+            expectedAuthority = TestAuthority,
+            currentAuthority = { TestAuthority },
             idempotencyKeyFactory = { "android-test-pairing-key" },
             onlineRetryDelaysMillis = listOf(60_000L),
             nowMillis = { Instant.parse("2026-07-18T00:00:00Z").toEpochMilli() },
@@ -54,6 +61,40 @@ class DevicePairingScreenTest {
         composeRule.onNodeWithTag("device_pairing.open_wifi_settings").assertIsDisplayed()
     }
 
+    @Test
+    fun manualFallbackUsesNativeFieldsAndKeepsPrimaryActionsAtLeastFortyEightDp() {
+        val viewModel = DevicePairingViewModel(
+            repository = OfflineClaimRepository,
+            expectedAuthority = TestAuthority,
+            currentAuthority = { TestAuthority },
+            idempotencyKeyFactory = { "android-test-manual-key" },
+            nowMillis = { Instant.parse("2026-07-18T00:00:00Z").toEpochMilli() },
+        )
+        composeRule.setContent {
+            ShcareMobileTheme(useDynamicColor = false) {
+                DevicePairingScreen(
+                    onNavigateBack = {},
+                    onConnectionSuccess = {},
+                    viewModel = viewModel,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("device_pairing.back").assertHeightIsAtLeast(48.dp)
+        listOf(
+            "device_pairing.device_id",
+            "device_pairing.claim_code",
+            "device_pairing.setup_ssid",
+            "device_pairing.setup_proof",
+            "device_pairing.submit_manual",
+        ).forEach { tag ->
+            composeRule.onNodeWithTag("device_pairing.entry")
+                .performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertIsDisplayed()
+        }
+        composeRule.onNodeWithTag("device_pairing.submit_manual").assertHeightIsAtLeast(48.dp)
+    }
+
     private object OfflineClaimRepository : DeviceClaimRepository {
         override suspend fun claimDevice(
             payload: DeviceClaimPayload,
@@ -63,6 +104,7 @@ class DevicePairingScreenTest {
             device = SmartDevice(
                 id = payload.deviceId,
                 name = "Shcare test",
+                organizationId = "workspace-1",
                 online = false,
             ),
             pairing = DevicePairingState(
@@ -76,6 +118,11 @@ class DevicePairingScreenTest {
     }
 
     private companion object {
+        val TestAuthority = DevicePairingAuthoritySnapshot.create(
+            userId = "user-1",
+            workspaceId = "workspace-1",
+            authorityEpoch = 1L,
+        )
         val SecureSetupQr =
             """
             {

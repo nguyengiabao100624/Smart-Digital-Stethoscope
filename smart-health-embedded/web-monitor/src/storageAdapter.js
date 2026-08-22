@@ -5,6 +5,71 @@ function readString(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function assertObjectSizeWithinLimit(byteSize, maxBytes) {
+  if (!Number.isFinite(maxBytes)) return;
+  if (!Number.isFinite(byteSize) || byteSize < 0 || byteSize > maxBytes) {
+    const error = new Error(`Storage object exceeds the ${maxBytes}-byte limit`);
+    error.code = "STORAGE_OBJECT_TOO_LARGE";
+    throw error;
+  }
+}
+
+async function collectStreamWithLimit(body, maxBytes = Number.POSITIVE_INFINITY) {
+  if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
+    const buffer = Buffer.from(body);
+    assertObjectSizeWithinLimit(buffer.length, maxBytes);
+    return buffer;
+  }
+
+  const chunks = [];
+  let totalBytes = 0;
+  const append = (chunk) => {
+    const normalized = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += normalized.length;
+    assertObjectSizeWithinLimit(totalBytes, maxBytes);
+    chunks.push(normalized);
+  };
+
+  if (body && typeof body[Symbol.asyncIterator] === "function") {
+    try {
+      for await (const chunk of body) append(chunk);
+    } catch (error) {
+      if (typeof body.destroy === "function") body.destroy(error);
+      throw error;
+    }
+    return Buffer.concat(chunks, totalBytes);
+  }
+
+  if (body && typeof body.getReader === "function") {
+    const reader = body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        append(value);
+      }
+    } catch (error) {
+      await reader.cancel(error).catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+    return Buffer.concat(chunks, totalBytes);
+  }
+
+  if (
+    maxBytes === Number.POSITIVE_INFINITY &&
+    body &&
+    typeof body.transformToByteArray === "function"
+  ) {
+    return Buffer.from(await body.transformToByteArray());
+  }
+
+  const error = new Error("Storage object body does not support bounded streaming");
+  error.code = "STORAGE_BODY_NOT_STREAMABLE";
+  throw error;
+}
+
 function createStorageAdapter(options = {}) {
   const env = options.env || process.env;
   const provider = readString(env.OBJECT_STORAGE_PROVIDER, "local").toLowerCase();
@@ -40,6 +105,9 @@ function createStorageAdapter(options = {}) {
   }
 
   async function createS3Client() {
+    if (typeof options.s3ClientFactory === "function") {
+      return options.s3ClientFactory();
+    }
     const { S3Client } = require("@aws-sdk/client-s3");
     return new S3Client({
       region: env.S3_REGION || "auto",
@@ -128,9 +196,12 @@ function createStorageAdapter(options = {}) {
     return presign(client, new GetObjectCommand({ Bucket: bucket, Key: objectKey }), { expiresIn: expiresInSeconds });
   }
 
-  async function getBuffer(objectKey) {
+  async function getBuffer(objectKey, maxBytes = Number.POSITIVE_INFINITY) {
     if (!objectKey) {
       throw new Error("objectKey is required");
+    }
+    if (!(Number.isFinite(maxBytes) && maxBytes > 0) && maxBytes !== Number.POSITIVE_INFINITY) {
+      throw new Error("maxBytes must be a positive number");
     }
 
     if (provider !== "s3") {
@@ -139,7 +210,10 @@ function createStorageAdapter(options = {}) {
       if (!resolved.startsWith(localRoot)) {
         throw new Error("Invalid local object path");
       }
-      return fs.promises.readFile(resolved);
+      const stat = await fs.promises.stat(resolved);
+      assertObjectSizeWithinLimit(stat.size, maxBytes);
+      const stream = fs.createReadStream(resolved);
+      return collectStreamWithLimit(stream, maxBytes);
     }
 
     const { GetObjectCommand } = require("@aws-sdk/client-s3");
@@ -152,14 +226,18 @@ function createStorageAdapter(options = {}) {
     if (!response.Body) {
       return Buffer.alloc(0);
     }
-    if (typeof response.Body.transformToByteArray === "function") {
-      return Buffer.from(await response.Body.transformToByteArray());
+    if (
+      response.ContentLength !== undefined &&
+      response.ContentLength !== null &&
+      response.ContentLength !== false &&
+      response.ContentLength !== ""
+    ) {
+      const contentLength = Number(response.ContentLength);
+      if (Number.isFinite(contentLength) && contentLength >= 0) {
+        assertObjectSizeWithinLimit(contentLength, maxBytes);
+      }
     }
-    const chunks = [];
-    for await (const chunk of response.Body) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
+    return collectStreamWithLimit(response.Body, maxBytes);
   }
 
   async function deleteObject(objectKey) {
@@ -206,5 +284,6 @@ function buildScanObjectKey(orgId, patientId, scanId, fileName) {
 
 module.exports = {
   buildScanObjectKey,
+  collectStreamWithLimit,
   createStorageAdapter,
 };

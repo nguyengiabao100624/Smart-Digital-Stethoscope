@@ -1,0 +1,59 @@
+{
+  "userId": "usr_clinician_001",
+  "workspaceId": "wsp_clinic_001",
+  "action": "read",
+  "notification": {
+    "id": "noti_001",
+    "userId": "usr_clinician_001",
+    "workspaceId": "wsp_clinic_001",
+    "organizationId": "wsp_clinic_001",
+    "type": "appointment_scheduled",
+    "title": "Lịch hẹn mới",
+    "message": "Một lịch hẹn mới đã được xác nhận trong workspace hiện tại.",
+    "campaignId": "",
+    "audienceType": "direct",
+    "audienceRole": "doctor",
+    "requestedChannels": [
+      "in_app",
+      "push"
+    ],
+    "inAppStatus": "ready",
+    "emailStatus": "skipped",
+    "pushStatus": "sent",
+    "read": true,
+    "readAt": "2026-07-29T08:01:00.000Z",
+    "createdAt": "2026-07-29T08:00:00.000Z",
+    "updatedAt": "2026-07-29T08:01:00.000Z"
+  },
+  "notifications": [
+    {
+      "id": "noti_001",
+      "userId": "usr_clinician_001",
+      "workspaceId": "wsp_clinic_001",
+      "organizationId": "wsp_clinic_001",
+      "type": "appointment_scheduled",
+      "title": "Lịch hẹn mới",
+      "message": "Một lịch hẹn mới đã được xác nhận trong workspace hiện tại.",
+      "campaignId": "",
+      "audienceType": "direct",
+      "audienceRole": "doctor",
+      "requestedChannels": [
+        "in_app",
+        "push"
+      ],
+      "inAppStatus": "ready",
+      "emailStatus": "skipped",
+      "pushStatus": "sent",
+      "read": true,
+      "readAt": "2026-07-29T08:01:00.000Z",
+      "createdAt": "2026-07-29T08:00:00.000Z",
+      "updatedAt": "2026-07-29T08:01:00.000Z"
+    }
+  ],
+  "affectedIds": [
+    "noti_001"
+  ],
+  "deletedId": null,
+  "updatedAt": "2026-07-29T08:01:00.000Z",
+  "replayed": false
+}

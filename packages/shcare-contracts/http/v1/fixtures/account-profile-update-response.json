@@ -1,0 +1,19 @@
+{
+  "userId": "usr_patient",
+  "intent": "profile_update",
+  "changedFields": ["address", "phone"],
+  "user": {
+    "id": "usr_patient",
+    "name": "Nguyen An",
+    "title": "",
+    "phone": "0909000111",
+    "license": "",
+    "hospital": "",
+    "department": "",
+    "specialty": "",
+    "address": "12 Shcare Street",
+    "organizationId": "org_personal_patient",
+    "updatedAt": "2026-08-09T10:00:00.000Z"
+  },
+  "replayed": false
+}

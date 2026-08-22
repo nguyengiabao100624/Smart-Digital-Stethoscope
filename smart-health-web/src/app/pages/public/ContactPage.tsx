@@ -1,7 +1,14 @@
 ﻿import { useState } from "react";
 import { cloneElement, type ReactElement } from "react";
 import { Link } from "react-router";
-import { CheckCircle2, Loader2, Mail, MapPin, Phone, ShieldAlert } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  MailCheck,
+  MessageSquareText,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 import { useSEO } from "@/lib/useSEO";
 import { smartHealthApi } from "@/lib/smart-health-api";
 
@@ -52,7 +59,10 @@ export default function ContactPage() {
       setState("success");
     } catch (error) {
       setErrors({
-        submit: error instanceof Error ? error.message : "Không thể gửi yêu cầu liên hệ.",
+        submit:
+          error instanceof Error
+            ? error.message
+            : "Không thể gửi yêu cầu liên hệ.",
       });
       setState("error");
     }
@@ -65,11 +75,16 @@ export default function ContactPage() {
           <CheckCircle2 size={44} />
           <h1>Yêu cầu đã được gửi</h1>
           <p>
-            Yêu cầu đã được backend tiếp nhận. Đội ngũ Shcare sẽ phản hồi qua email hoặc số điện
-            thoại bạn cung cấp theo quy trình hỗ trợ hiện hành.
+            Yêu cầu đã được backend tiếp nhận. Đội ngũ Shcare sẽ phản hồi qua
+            email hoặc số điện thoại bạn cung cấp theo quy trình hỗ trợ hiện
+            hành.
           </p>
           <div>
-            <button type="button" className="shc-button shc-button-secondary" onClick={() => setState("idle")}>
+            <button
+              type="button"
+              className="shc-button shc-button-secondary"
+              onClick={() => setState("idle")}
+            >
               Gửi yêu cầu khác
             </button>
             <Link to="/" className="shc-button shc-button-primary">
@@ -88,15 +103,20 @@ export default function ContactPage() {
           <p>Liên hệ</p>
           <h1>Nói rõ quy mô, chúng tôi tư vấn cách triển khai phù hợp.</h1>
           <span>
-            Gửi thông tin cơ sở, vai trò và nhu cầu theo dõi từ xa. Đội ngũ Shcare sẽ
-            phản hồi bằng lộ trình triển khai thực tế, không dùng lời hứa mơ hồ.
+            Gửi thông tin cơ sở, vai trò và nhu cầu theo dõi từ xa. Đội ngũ
+            Shcare sẽ phản hồi bằng lộ trình triển khai thực tế, không dùng lời
+            hứa mơ hồ.
           </span>
         </div>
       </section>
 
       <section className="shc-section">
         <div className="shc-container shc-contact-grid">
-          <form method="post" onSubmit={handleSubmit} className="shc-contact-form">
+          <form
+            method="post"
+            onSubmit={handleSubmit}
+            className="shc-contact-form"
+          >
             <div className="shc-form-grid">
               <Field label="Họ và tên" error={errors.name}>
                 <input
@@ -155,14 +175,18 @@ export default function ContactPage() {
                 <input
                   autoComplete="organization"
                   value={form.clinic}
-                  onChange={(event) => setForm({ ...form, clinic: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, clinic: event.target.value })
+                  }
                   placeholder="Phòng khám Tim mạch An Tâm"
                 />
               </Field>
               <Field label="Quy mô dự kiến">
                 <select
                   value={form.scale}
-                  onChange={(event) => setForm({ ...form, scale: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, scale: event.target.value })
+                  }
                 >
                   <option value="" disabled>
                     Chọn quy mô
@@ -178,7 +202,9 @@ export default function ContactPage() {
             <Field label="Nội dung cần tư vấn">
               <textarea
                 value={form.message}
-                onChange={(event) => setForm({ ...form, message: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, message: event.target.value })
+                }
                 rows={5}
                 placeholder="Mô tả nhu cầu thiết bị, số bác sĩ, nhóm bệnh nhân hoặc quy trình hiện tại..."
               />
@@ -187,7 +213,8 @@ export default function ContactPage() {
             {state === "error" && (
               <p className="shc-form-error">
                 <ShieldAlert size={16} />
-                {errors.submit || "Không thể gửi yêu cầu. Vui lòng thử lại hoặc gọi hotline."}
+                {errors.submit ||
+                  "Không thể gửi yêu cầu. Vui lòng kiểm tra kết nối và thử lại."}
               </p>
             )}
 
@@ -196,7 +223,9 @@ export default function ContactPage() {
               disabled={state === "sending"}
               className="shc-button shc-button-primary shc-form-submit"
             >
-              {state === "sending" && <Loader2 size={17} className="animate-spin" />}
+              {state === "sending" && (
+                <Loader2 size={17} className="animate-spin" />
+              )}
               Gửi yêu cầu tư vấn
             </button>
           </form>
@@ -204,29 +233,29 @@ export default function ContactPage() {
           <aside className="shc-contact-aside">
             <h2>Kênh liên hệ</h2>
             <p>
-              Nếu bạn cần kiểm thử nhanh một workspace hoặc xác nhận cấu hình triển khai, gửi thông
-              tin qua form hoặc liên hệ trực tiếp trong giờ làm việc.
+              Nếu bạn cần kiểm thử một workspace hoặc xác nhận cấu hình triển
+              khai, hãy gửi biểu mẫu và theo dõi biên nhận từ hệ thống.
             </p>
             <div className="shc-contact-methods">
-              <a href="tel:18001234">
-                <Phone size={18} />
-                <span>
-                  <strong>1800 1234</strong>
-                  Hotline tư vấn
-                </span>
-              </a>
-              <a href="mailto:connect@shcare.vn">
-                <Mail size={18} />
-                <span>
-                  <strong>connect@shcare.vn</strong>
-                  Email tư vấn
-                </span>
-              </a>
               <span>
-                <MapPin size={18} />
+                <MessageSquareText size={18} />
                 <span>
-                  <strong>TP. Hồ Chí Minh</strong>
-                  08:00 - 18:00, thứ 2 đến thứ 6
+                  <strong>Biểu mẫu trên trang</strong>
+                  Chỉ hoàn tất khi backend xác nhận tiếp nhận
+                </span>
+              </span>
+              <span>
+                <MailCheck size={18} />
+                <span>
+                  <strong>Thông tin bạn cung cấp</strong>
+                  Dùng để phản hồi đúng yêu cầu triển khai
+                </span>
+              </span>
+              <span>
+                <ShieldCheck size={18} />
+                <span>
+                  <strong>Không phải kênh cấp cứu</strong>
+                  Liên hệ cơ sở y tế phù hợp khi cần trợ giúp khẩn cấp
                 </span>
               </span>
             </div>

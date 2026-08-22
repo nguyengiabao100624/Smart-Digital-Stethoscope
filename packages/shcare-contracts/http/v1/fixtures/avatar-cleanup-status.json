@@ -1,0 +1,12 @@
+{
+  "userId": "user_avatar_owner",
+  "workspaceId": "workspace_avatar_owner",
+  "status": "dead_letter",
+  "operationId": "avatar_delete_cleanup_01",
+  "action": "delete",
+  "previousFileId": "file-avatar-old",
+  "attempts": 8,
+  "lastErrorCode": "PROVIDER_UNAVAILABLE",
+  "updatedAt": "2026-08-09T12:30:00.000Z",
+  "manualSupportRequired": true
+}

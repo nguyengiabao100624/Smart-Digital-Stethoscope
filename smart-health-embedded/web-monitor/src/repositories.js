@@ -6,6 +6,19 @@ const {
   sanitizeDeviceTelemetry,
 } = require("./deviceSessionSecurity");
 const {
+  createDeviceOtaAuthoritySnapshot,
+  createDeviceOtaOwnershipBinding,
+  isCanonicalDeviceOtaLifecycle,
+  OTA_TERMINAL_STATUSES,
+  normalizeDeviceOtaStatus,
+  sanitizeDeviceOtaLifecycle,
+  transitionDeviceOtaLifecycle,
+} = require("./deviceOtaLifecycle");
+const {
+  expireDeviceCommandIfOverdue,
+  transitionDeviceCommand,
+} = require("./deviceCommandLifecycle");
+const {
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,
   inferDeviceOwnershipState,
@@ -21,6 +34,9 @@ const { createClinicalWorkflowRepository } = require("./clinicalWorkflowReposito
 const { createScanAudioUploadRepository } = require("./scanAudioUploadRepository");
 const { createStorageMetadataRepository } = require("./storageMetadataRepository");
 const { createStaffInvitationRepository } = require("./staffInvitationRepository");
+const { createSupportTicketRepository } = require("./supportTicketRepository");
+const { createRoleRequestDocumentRepository } = require("./roleRequestDocumentRepository");
+const { createAvatarMutationRepository } = require("./avatarMutationRepository");
 const { createWorkspaceLifecycleRepository } = require("./workspaceLifecycleRepository");
 const { normalizeWorkspaceCreate, publicWorkspaceLifecycle } = require("./workspaceLifecycleContract");
 const { SIGNAL_QUALITY_ANALYZER_VERSION } = require("./aiRuntime");
@@ -39,6 +55,16 @@ const {
   normalizeAuditLogQuery,
   sanitizeAuditMetadata,
 } = require("./auditLogContract");
+const {
+  CLOUD_NOTIFICATION_PREFERENCE_KEYS,
+  mergeNotificationPushStatus,
+  normalizeNotificationPreferences,
+  resolveNotificationPreferenceDecision,
+} = require("./notificationPreferences");
+const {
+  normalizePasswordHash,
+  verifyPasswordSecret,
+} = require("./passwordHash");
 
 function toIso(value) {
   if (!value) return "";
@@ -56,6 +82,17 @@ function optionalTimestamp(value) {
 
 function objectOf(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function normalizeUserPasswordMaterial(user) {
+  if (!user || typeof user !== "object") return user;
+  const passwordHash = normalizePasswordHash(
+    user.passwordHash || user.password || "",
+  );
+  if (passwordHash) user.password = passwordHash;
+  else delete user.password;
+  delete user.passwordHash;
+  return user;
 }
 
 function sanitizeTwoFactorClaims(value = {}) {
@@ -434,6 +471,8 @@ function rowToAppointment(row) {
     rescheduleReason: row.reschedule_reason || "",
     rescheduledAt: toIso(row.rescheduled_at),
     rescheduledByUserId: row.rescheduled_by_user_id || "",
+    deletedAt: toIso(row.deleted_at),
+    deletedByUserId: row.deleted_by_user_id || "",
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
@@ -475,6 +514,9 @@ function rowToPatientShare(row) {
 
 function rowToDevice(row) {
   if (!row) return null;
+  const ota = sanitizeDeviceOtaLifecycle(row.ota);
+  const otaStatus = normalizeDeviceOtaStatus(row.ota_status || ota.status);
+  if (otaStatus) ota.status = otaStatus;
   return normalizeDeviceSecretMaterial({
     id: row.id,
     organizationId: row.organization_id || "",
@@ -496,6 +538,8 @@ function rowToDevice(row) {
     connectionMethod: row.connection_method || "",
     secretHash: row.secret_hash || "",
     credentialRotation: sanitizeDeviceCredentialRotation(row.credential_rotation),
+    ota,
+    otaStatus,
     firmwareVersion: row.firmware_version || "",
     telemetry: sanitizeDeviceTelemetry(row.telemetry),
     lastSeenAt: toIso(row.last_seen_at),
@@ -523,6 +567,7 @@ function rowToDeviceCommand(row) {
     delivery: objectOf(row.delivery),
     issuedAt: toIso(row.issued_at),
     expiresAt: toIso(row.expires_at),
+    executionExpiresAt: toIso(row.execution_expires_at),
     acceptedAt: toIso(row.accepted_at),
     queuedAt: toIso(row.queued_at),
     deliveredAt: toIso(row.delivered_at),
@@ -546,6 +591,21 @@ async function repairLegacyDeviceSecretRows(pool, rows = []) {
       [row.id, canonicalMaterial, storedMaterial],
     );
     row.secret_hash = canonicalMaterial;
+  }
+}
+
+async function repairLegacyPasswordRows(pool, rows = []) {
+  for (const row of rows) {
+    const storedMaterial =
+      typeof row?.password_hash === "string" ? row.password_hash : "";
+    if (!storedMaterial) continue;
+    const canonicalMaterial = normalizePasswordHash(storedMaterial);
+    if (canonicalMaterial === storedMaterial) continue;
+    await pool.query(
+      "UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1 AND password_hash = $3",
+      [row.id, canonicalMaterial, storedMaterial],
+    );
+    row.password_hash = canonicalMaterial;
   }
 }
 
@@ -655,6 +715,15 @@ function rowToTwoFactorEnrollment(row) {
     createdAt: toIso(row.created_at),
     expiresAt: toIso(row.expires_at),
     consumedAt: toIso(row.consumed_at) || null,
+    verifiedAt: toIso(row.verified_at) || null,
+    pendingActivation:
+      row.pending_activation && typeof row.pending_activation === "object"
+        ? row.pending_activation
+        : null,
+    startIntent:
+      row.start_intent && typeof row.start_intent === "object"
+        ? row.start_intent
+        : null,
   };
 }
 
@@ -729,8 +798,12 @@ function rowToNotificationDevice(row) {
   return {
     id: row.id,
     userId: row.user_id || "",
+    workspaceId: row.workspace_id || "",
     platform: row.platform || "android",
     fcmToken: row.fcm_token || "",
+    authSessionId: row.auth_session_id || "",
+    notificationProtocolVersion: Number(row.notification_protocol_version || 0),
+    appVersion: row.app_version || "",
     enabled: Boolean(row.enabled),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -972,6 +1045,10 @@ function createRepositories(options) {
   const nowIso = options.nowIso;
   const getPool = options.getPool || (() => null);
   const onSqlError = options.onSqlError || ((err) => console.warn(`Repository SQL fallback: ${err.message}`));
+  const projectRoleRequestUser =
+    typeof options.projectRoleRequestUser === "function"
+      ? options.projectRoleRequestUser
+      : accountMutationUserSnapshot;
   const aiChatInFlight = new Map();
   const twoFactorChallengeInFlight = new Map();
   const twoFactorUserInFlight = new Map();
@@ -984,6 +1061,11 @@ function createRepositories(options) {
   const exportMutationInFlight = new Map();
   const servicePackageMutationInFlight = new Map();
   const notificationCampaignMutationInFlight = new Map();
+  const notificationPreferenceMutationInFlight = new Map();
+  const notificationDeliveryMutationInFlight = new Map();
+  const notificationInboxMutationInFlight = new Map();
+  const roleRequestMutationInFlight = new Map();
+  const userAuthorityMutationInFlight = new Map();
   const clinicalWorkflow = createClinicalWorkflowRepository({
     getDb,
     saveDb,
@@ -1013,6 +1095,27 @@ function createRepositories(options) {
     nowIso,
     getPool,
   });
+  const supportTickets = createSupportTicketRepository({
+    getDb,
+    saveDb,
+    createId,
+    nowIso,
+    getPool,
+  });
+  const roleRequestDocuments = createRoleRequestDocumentRepository({
+    getDb,
+    saveDb,
+    createId,
+    nowIso,
+    getPool,
+  });
+  const avatarMutations = createAvatarMutationRepository({
+    getDb,
+    saveDb,
+    createId,
+    nowIso,
+    getPool,
+  });
   const workspaceLifecycle = createWorkspaceLifecycleRepository({
     getDb,
     saveDb,
@@ -1027,6 +1130,382 @@ function createRepositories(options) {
 
   function cloneRuntimeValue(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  }
+
+  function accountMutationUserSnapshot(user = {}) {
+    return {
+      id: String(user.id || ""),
+      firebaseUid: String(user.firebaseUid || ""),
+      email: String(user.email || ""),
+      phone: String(user.phone || ""),
+      role: String(user.role || "patient"),
+      name: String(user.name || ""),
+      title: String(user.title || ""),
+      license: String(user.license || ""),
+      hospital: String(user.hospital || ""),
+      department: String(user.department || ""),
+      specialty: String(user.specialty || ""),
+      address: String(user.address || ""),
+      avatarFileId: String(user.avatarFileId || ""),
+      avatarUrl: String(user.avatarUrl || ""),
+      twoFactorEnabled: Boolean(user.twoFactorEnabled),
+      twoFactorMethod: String(user.twoFactorMethod || ""),
+      notificationPreferences: cloneRuntimeValue(objectOf(user.notificationPreferences)),
+      activePatientId: String(user.activePatientId || user.patientId || ""),
+      organizationId: String(user.organizationId || ""),
+      patientId: String(user.patientId || ""),
+      verifiedEmail: Boolean(user.verifiedEmail),
+      verifiedPhone: Boolean(user.verifiedPhone),
+      accountStatus: String(user.accountStatus || "active"),
+      requestedRole: String(user.requestedRole || ""),
+      roleRequestStatus: String(user.roleRequestStatus || ""),
+      roleRequestedAt: String(user.roleRequestedAt || ""),
+      roleApprovedAt: String(user.roleApprovedAt || ""),
+      roleRejectedAt: String(user.roleRejectedAt || ""),
+      roleRejectReason: String(user.roleRejectReason || ""),
+      roleInfoRequestAt: String(user.roleInfoRequestAt || ""),
+      roleInfoRequestMessage: String(user.roleInfoRequestMessage || ""),
+      roleInfoRequiredFields: Array.isArray(user.roleInfoRequiredFields)
+        ? cloneRuntimeValue(user.roleInfoRequiredFields)
+        : [],
+      registrationReason: String(user.registrationReason || ""),
+      workspaceType: String(user.workspaceType || ""),
+      accountType: String(user.accountType || ""),
+      clinicSuggestion: String(user.clinicSuggestion || ""),
+      createdAt: String(user.createdAt || ""),
+      updatedAt: String(user.updatedAt || ""),
+    };
+  }
+
+  const ACCOUNT_PROFILE_MUTATION_FIELDS = Object.freeze([
+    "name",
+    "title",
+    "phone",
+    "license",
+    "hospital",
+    "department",
+    "specialty",
+    "address",
+  ]);
+
+  function accountProfileUserSnapshot(user = {}) {
+    return {
+      id: String(user.id || ""),
+      name: String(user.name || ""),
+      title: String(user.title || ""),
+      phone: String(user.phone || ""),
+      license: String(user.license || ""),
+      hospital: String(user.hospital || ""),
+      department: String(user.department || ""),
+      specialty: String(user.specialty || ""),
+      address: String(user.address || ""),
+      organizationId: String(user.organizationId || ""),
+      updatedAt: String(user.updatedAt || ""),
+    };
+  }
+
+  function accountProfileChangedFields(auditInput = {}) {
+    const fields = Array.isArray(auditInput?.metadata?.fields)
+      ? auditInput.metadata.fields
+      : [];
+    return [...new Set(fields.map(String).filter((field) =>
+      ACCOUNT_PROFILE_MUTATION_FIELDS.includes(field),
+    ))].sort();
+  }
+
+  function isAccountProfileMutation(auditInput = {}, idempotency = null) {
+    return String(auditInput.action || "") === "account.profile.update" ||
+      String(idempotency?.operation || "") === "account.profile.update";
+  }
+
+  function accountProfileResponseSnapshot(user, auditInput = {}) {
+    const profile = accountProfileUserSnapshot(user);
+    if (!profile.id) {
+      throw repositoryError(
+        500,
+        "ACCOUNT_PROFILE_RECEIPT_INVALID",
+        "The account profile receipt cannot be created without an owner",
+      );
+    }
+    return {
+      userId: profile.id,
+      intent: "profile_update",
+      changedFields: accountProfileChangedFields(auditInput),
+      user: profile,
+      replayed: false,
+    };
+  }
+
+  function accountMutationResponseSnapshot(user, auditInput = {}, idempotency = null) {
+    if (isAccountProfileMutation(auditInput, idempotency)) {
+      return accountProfileResponseSnapshot(user, auditInput);
+    }
+    return {
+      user: accountMutationUserSnapshot(user),
+    };
+  }
+
+  function readAccountProfileResponseSnapshot(
+    responseResource = {},
+    expectedUserId = "",
+    expectedChangedFields = [],
+  ) {
+    const resource = objectOf(responseResource);
+    const looksCanonical =
+      Object.prototype.hasOwnProperty.call(resource, "intent") ||
+      Object.prototype.hasOwnProperty.call(resource, "userId") ||
+      Object.prototype.hasOwnProperty.call(resource, "changedFields");
+    if (!looksCanonical) return null;
+    const expectedKeys = ["changedFields", "intent", "replayed", "user", "userId"];
+    if (
+      JSON.stringify(Object.keys(resource).sort()) !== JSON.stringify(expectedKeys) ||
+      resource.intent !== "profile_update" ||
+      resource.replayed !== false ||
+      String(resource.userId || "") !== String(expectedUserId || "") ||
+      !resource.user ||
+      typeof resource.user !== "object" ||
+      Array.isArray(resource.user)
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ACCOUNT_RESULT_MISMATCH",
+        "The original account mutation result does not match this account",
+      );
+    }
+    const profile = accountProfileUserSnapshot(resource.user);
+    if (!profile.id || profile.id !== String(expectedUserId || "")) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ACCOUNT_RESULT_MISMATCH",
+        "The original account mutation result does not match this account",
+      );
+    }
+    const changedFields = Array.isArray(resource.changedFields)
+      ? [...new Set(resource.changedFields.map(String))].sort()
+      : [];
+    if (
+      changedFields.some((field) => !ACCOUNT_PROFILE_MUTATION_FIELDS.includes(field)) ||
+      JSON.stringify(changedFields) !== JSON.stringify([...expectedChangedFields].sort())
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ACCOUNT_RESULT_MISMATCH",
+        "The original account mutation fields do not match this request",
+      );
+    }
+    return {
+      userId: profile.id,
+      intent: "profile_update",
+      changedFields,
+      user: profile,
+      replayed: false,
+    };
+  }
+
+  function readAccountMutationUserSnapshot(responseResource = {}, expectedUserId = "") {
+    const snapshot = objectOf(responseResource).user;
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      return null;
+    }
+    const user = accountMutationUserSnapshot(snapshot);
+    if (!user.id || user.id !== String(expectedUserId || "")) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ACCOUNT_RESULT_MISMATCH",
+        "The original account mutation result does not match this account",
+      );
+    }
+    return user;
+  }
+
+  function accountMutationPatchMatches(user = {}, patch = {}) {
+    return Object.entries(objectOf(patch)).every(([field, expected]) => {
+      const actual = user[field];
+      if (expected && typeof expected === "object") {
+        return JSON.stringify(actual || (Array.isArray(expected) ? [] : {})) === JSON.stringify(expected);
+      }
+      if (typeof expected === "boolean") return Boolean(actual) === expected;
+      if (typeof expected === "number") return Number(actual) === expected;
+      return String(actual || "") === String(expected || "");
+    });
+  }
+
+  function resolveAccountMutationReplay({
+    responseResource,
+    receiptResourceId,
+    currentUser,
+    patch,
+    auditInput = {},
+    idempotency = null,
+  }) {
+    if (!currentUser) return null;
+    if (
+      receiptResourceId &&
+      String(receiptResourceId) !== String(currentUser.id)
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ACCOUNT_RESULT_MISMATCH",
+        "The original account mutation result does not match this account",
+      );
+    }
+    const profileMutation = isAccountProfileMutation(auditInput, idempotency);
+    const exactProfile = profileMutation
+      ? readAccountProfileResponseSnapshot(
+          responseResource,
+          currentUser.id,
+          accountProfileChangedFields(auditInput),
+        )
+      : null;
+    if (exactProfile) {
+      return {
+        user: cloneRuntimeValue(exactProfile.user),
+        responseSnapshot: cloneRuntimeValue(exactProfile),
+        legacyReceiptUpgraded: false,
+      };
+    }
+    const exactUser = readAccountMutationUserSnapshot(
+      responseResource,
+      currentUser.id,
+    );
+    if (exactUser) {
+      const responseSnapshot = profileMutation
+        ? accountProfileResponseSnapshot(exactUser, auditInput)
+        : cloneRuntimeValue(responseResource);
+      return {
+        user: profileMutation ? cloneRuntimeValue(responseSnapshot.user) : exactUser,
+        responseSnapshot,
+        legacyReceiptUpgraded: profileMutation,
+      };
+    }
+    const legacyId = String(objectOf(responseResource).id || "");
+    if (
+      (legacyId && legacyId !== String(currentUser.id)) ||
+      !accountMutationPatchMatches(currentUser, patch)
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ACCOUNT_RESULT_STALE_LEGACY",
+        "The legacy idempotency receipt cannot be replayed after account state changed",
+      );
+    }
+    const responseSnapshot = accountMutationResponseSnapshot(
+      currentUser,
+      auditInput,
+      idempotency,
+    );
+    return {
+      user: cloneRuntimeValue(responseSnapshot.user),
+      responseSnapshot,
+      legacyReceiptUpgraded: true,
+    };
+  }
+
+  function roleRequestSnapshot(user = {}) {
+    return {
+      requestedRole: String(user.requestedRole || ""),
+      status: String(user.roleRequestStatus || ""),
+      requestedAt: String(user.roleRequestedAt || ""),
+    };
+  }
+
+  function roleRequestResponseSnapshot(user, operationId) {
+    const projectedUser = cloneRuntimeValue(projectRoleRequestUser(user));
+    if (
+      !projectedUser ||
+      typeof projectedUser !== "object" ||
+      Array.isArray(projectedUser) ||
+      String(projectedUser.id || "") !== String(user?.id || "")
+    ) {
+      throw repositoryError(
+        500,
+        "ROLE_REQUEST_PROJECTION_INVALID",
+        "The role request public account projection is invalid",
+      );
+    }
+    return {
+      projectionVersion: 1,
+      user: projectedUser,
+      roleRequest: roleRequestSnapshot(user),
+      operationId: String(operationId || ""),
+    };
+  }
+
+  function resolveRoleRequestMutationReplay({
+    responseResource,
+    receiptResourceId,
+    currentUser,
+  }) {
+    if (!currentUser) return null;
+    if (
+      receiptResourceId &&
+      String(receiptResourceId) !== String(currentUser.id)
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ROLE_REQUEST_RESULT_MISMATCH",
+        "The original role request result does not match this account",
+      );
+    }
+    const response = objectOf(responseResource);
+    const projectedUser = objectOf(response.user);
+    const hasCanonicalProjection = response.projectionVersion === 1;
+    const user = hasCanonicalProjection
+      ? cloneRuntimeValue(projectedUser)
+      : readAccountMutationUserSnapshot(response, currentUser.id);
+    const roleRequest = objectOf(response.roleRequest);
+    const operationId = String(response.operationId || "");
+    if (
+      !user ||
+      String(user.id || "") !== String(currentUser.id || "") ||
+      !operationId ||
+      !roleRequest.requestedRole ||
+      !roleRequest.status ||
+      !roleRequest.requestedAt ||
+      String(roleRequest.requestedRole) !== user.requestedRole ||
+      String(roleRequest.status) !== user.roleRequestStatus ||
+      String(roleRequest.requestedAt) !== user.roleRequestedAt
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ROLE_REQUEST_RESULT_INVALID",
+        "The original role request receipt is incomplete or inconsistent",
+      );
+    }
+    if (
+      hasCanonicalProjection &&
+      [
+        "password",
+        "avatarStorage",
+        "twoFactorSecret",
+        "twoFactorSecretPreview",
+        "twoFactorRecoveryCodes",
+      ].some((field) => Object.prototype.hasOwnProperty.call(user, field))
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ROLE_REQUEST_RESULT_UNSAFE",
+        "The stored role request projection contains a private account field",
+      );
+    }
+    if (
+      !hasCanonicalProjection &&
+      (String(currentUser.requestedRole || "") !== user.requestedRole ||
+        String(currentUser.roleRequestStatus || "") !== user.roleRequestStatus ||
+        String(currentUser.roleRequestedAt || "") !== user.roleRequestedAt)
+    ) {
+      throw repositoryError(
+        409,
+        "IDEMPOTENT_ROLE_REQUEST_RESULT_STALE_LEGACY",
+        "The legacy role request receipt cannot be replayed after account state changed",
+      );
+    }
+    return {
+      user,
+      roleRequest: cloneRuntimeValue(roleRequest),
+      operationId,
+      responseSnapshot: cloneRuntimeValue(response),
+    };
   }
 
   function restoreRuntimeDb(runtimeDb, snapshot) {
@@ -1051,6 +1530,30 @@ function createRepositories(options) {
     } finally {
       if (twoFactorUserInFlight.get(userId) === promise) twoFactorUserInFlight.delete(userId);
     }
+  }
+
+  async function runUserAuthorityMutationExclusive(userId, operation) {
+    const key = String(userId || "");
+    while (userAuthorityMutationInFlight.has(key)) {
+      await userAuthorityMutationInFlight.get(key).catch(() => {});
+    }
+    const promise = Promise.resolve().then(operation);
+    userAuthorityMutationInFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (userAuthorityMutationInFlight.get(key) === promise) {
+        userAuthorityMutationInFlight.delete(key);
+      }
+    }
+  }
+
+  async function runAuthSessionMutationExclusive(userId, operation) {
+    return runUserAuthorityMutationExclusive(userId, operation);
+  }
+
+  async function runAccountProfileMutationExclusive(userId, operation) {
+    return runUserAuthorityMutationExclusive(userId, operation);
   }
 
   async function runPatientShareMutationExclusive(_patientId, operation) {
@@ -1201,6 +1704,70 @@ function createRepositories(options) {
     }
   }
 
+  async function runNotificationPreferenceMutationExclusive(userId, operation) {
+    const key = String(userId || "");
+    while (notificationPreferenceMutationInFlight.has(key)) {
+      await notificationPreferenceMutationInFlight.get(key).catch(() => {});
+    }
+    const promise = Promise.resolve().then(operation);
+    notificationPreferenceMutationInFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (notificationPreferenceMutationInFlight.get(key) === promise) {
+        notificationPreferenceMutationInFlight.delete(key);
+      }
+    }
+  }
+
+  async function runNotificationDeliveryMutationExclusive(notificationId, operation) {
+    const key = String(notificationId || "");
+    while (notificationDeliveryMutationInFlight.has(key)) {
+      await notificationDeliveryMutationInFlight.get(key).catch(() => {});
+    }
+    const promise = Promise.resolve().then(operation);
+    notificationDeliveryMutationInFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (notificationDeliveryMutationInFlight.get(key) === promise) {
+        notificationDeliveryMutationInFlight.delete(key);
+      }
+    }
+  }
+
+  async function runNotificationInboxMutationExclusive(userId, workspaceId, operation) {
+    const key = `${String(userId || "")}:${String(workspaceId || "")}`;
+    while (notificationInboxMutationInFlight.has(key)) {
+      await notificationInboxMutationInFlight.get(key).catch(() => {});
+    }
+    const promise = Promise.resolve().then(operation);
+    notificationInboxMutationInFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (notificationInboxMutationInFlight.get(key) === promise) {
+        notificationInboxMutationInFlight.delete(key);
+      }
+    }
+  }
+
+  async function runRoleRequestMutationExclusive(userId, operation) {
+    const key = String(userId || "");
+    while (roleRequestMutationInFlight.has(key)) {
+      await roleRequestMutationInFlight.get(key).catch(() => {});
+    }
+    const promise = Promise.resolve().then(operation);
+    roleRequestMutationInFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (roleRequestMutationInFlight.get(key) === promise) {
+        roleRequestMutationInFlight.delete(key);
+      }
+    }
+  }
+
   async function runServicePackageMutationExclusive(operation) {
     // JSON has no unique index or advisory lock. Serialize the catalog so
     // duplicate names/ids and idempotency replays are decided atomically.
@@ -1284,6 +1851,36 @@ function createRepositories(options) {
     error.code = code;
     if (details) error.details = details;
     return error;
+  }
+
+  function passwordProviderReconciliationRequired(operationId) {
+    return repositoryError(
+      409,
+      "IDENTITY_PROVIDER_RECONCILIATION_REQUIRED",
+      "The password provider outcome must be reconciled before this operation can continue",
+      { operationId: String(operationId || "") },
+    );
+  }
+
+  function assertRetryablePasswordProviderState(
+    identityOperation,
+    requestedProvider = "",
+  ) {
+    if (identityOperation?.operation !== "reset_password") return;
+    const durableProvider = String(
+      identityOperation.targetState?.provider || "",
+    ).trim().toLowerCase();
+    const normalizedRequestedProvider = String(requestedProvider || "")
+      .trim()
+      .toLowerCase();
+    if (
+      identityOperation.status === "provider_failed" ||
+      !["firebase", "demo"].includes(durableProvider) ||
+      (normalizedRequestedProvider &&
+        durableProvider !== normalizedRequestedProvider)
+    ) {
+      throw passwordProviderReconciliationRequired(identityOperation.id);
+    }
   }
 
   const WORKSPACE_OWNER_MEMBERSHIP_ROLES = new Set(["owner", "workspace_owner"]);
@@ -1558,6 +2155,9 @@ function createRepositories(options) {
   }
 
   async function upsertUserSql(user) {
+    const passwordHash = normalizePasswordHash(
+      user.passwordHash || user.password || "",
+    );
     await withSql((pool) =>
       pool.query(
         `
@@ -1610,7 +2210,7 @@ function createRepositories(options) {
           optional(user.phone),
           user.role || "patient",
           user.name || user.email || user.id,
-          optional(user.passwordHash || user.password),
+          optional(passwordHash),
           optional(user.license),
           optional(user.hospital),
           optional(user.department),
@@ -1907,7 +2507,7 @@ function createRepositories(options) {
           type, status, starts_at, ends_at, location, channel, reason, notes,
           cancellation_reason, cancelled_at, completed_at,
           reschedule_reason, rescheduled_at, rescheduled_by_user_id,
-          created_at, updated_at
+          deleted_at, deleted_by_user_id, created_at, updated_at
         )
         VALUES (
           $1, $2,
@@ -1917,7 +2517,9 @@ function createRepositories(options) {
           $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13,
           $14, $15::timestamptz, $16::timestamptz, $17, $18::timestamptz,
           CASE WHEN $19 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $19) THEN $19 ELSE NULL END,
-          COALESCE($20::timestamptz, now()), COALESCE($21::timestamptz, now())
+          $20::timestamptz,
+          CASE WHEN $21 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $21) THEN $21 ELSE NULL END,
+          COALESCE($22::timestamptz, now()), COALESCE($23::timestamptz, now())
         )
         ON CONFLICT (id)
         DO UPDATE SET
@@ -1939,6 +2541,8 @@ function createRepositories(options) {
           reschedule_reason = EXCLUDED.reschedule_reason,
           rescheduled_at = EXCLUDED.rescheduled_at,
           rescheduled_by_user_id = EXCLUDED.rescheduled_by_user_id,
+          deleted_at = EXCLUDED.deleted_at,
+          deleted_by_user_id = EXCLUDED.deleted_by_user_id,
           updated_at = EXCLUDED.updated_at
       `,
       [
@@ -1961,6 +2565,8 @@ function createRepositories(options) {
         optional(appointment.rescheduleReason),
         optionalTimestamp(appointment.rescheduledAt),
         optional(appointment.rescheduledByUserId),
+        optionalTimestamp(appointment.deletedAt),
+        optional(appointment.deletedByUserId),
         optionalTimestamp(appointment.createdAt),
         appointment.updatedAt || nowIso(),
       ],
@@ -2032,12 +2638,16 @@ function createRepositories(options) {
   async function queryUpsertDevice(queryable, device, options = {}) {
     normalizeDeviceSecretMaterial(device);
     const telemetry = sanitizeDeviceTelemetry(device.telemetry);
+    const ota = sanitizeDeviceOtaLifecycle(device.ota);
+    const otaStatus = normalizeDeviceOtaStatus(device.otaStatus || ota.status);
+    if (otaStatus) ota.status = otaStatus;
     const ownershipState = inferDeviceOwnershipState(device);
     const ownerUserId = device.ownerUserId || device.pairedUserId || null;
     const writeOwnership = options.writeOwnership === true;
     const writeSecretHash = options.writeSecretHash === true;
     const writeSecretHashIfMissing = options.writeSecretHashIfMissing === true;
     const writeCredentialRotation = options.writeCredentialRotation === true;
+    const writeOta = options.writeOta === true;
     const secretHashUpdate = writeSecretHash
       ? "EXCLUDED.secret_hash"
       : writeSecretHashIfMissing
@@ -2049,7 +2659,8 @@ function createRepositories(options) {
             id, organization_id, paired_user_id, ownership_state, owner_user_id,
             assigned_patient_id, revoked_by_user_id, name, type, status, signal, battery, connected,
             connection_method, secret_hash, firmware_version, manufacturer, model, serial_number, purchase_date,
-            last_seen_at, revoked_at, created_at, updated_at, telemetry, credential_rotation
+            last_seen_at, revoked_at, created_at, updated_at, telemetry, credential_rotation,
+            ota, ota_status
           )
           VALUES (
             $1, $2,
@@ -2060,7 +2671,8 @@ function createRepositories(options) {
             $7,
             $8, $9, $10, $11, $12, $13,
             $14, $15, $16, $17, $18, $19, $20::date, $21, $22,
-            COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now()), $25::jsonb, $26::jsonb
+            COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now()), $25::jsonb, $26::jsonb,
+            $27::jsonb, $28
           )
           ON CONFLICT (id)
           DO UPDATE SET
@@ -2095,6 +2707,8 @@ function createRepositories(options) {
             credential_rotation = ${writeCredentialRotation
               ? "EXCLUDED.credential_rotation"
               : "devices.credential_rotation"},
+            ota = ${writeOta ? "EXCLUDED.ota" : "devices.ota"},
+            ota_status = ${writeOta ? "EXCLUDED.ota_status" : "devices.ota_status"},
             updated_at = EXCLUDED.updated_at
           RETURNING *
         `,
@@ -2125,6 +2739,8 @@ function createRepositories(options) {
           device.updatedAt || nowIso(),
           JSON.stringify(telemetry),
           JSON.stringify(sanitizeDeviceCredentialRotation(device.credentialRotation)),
+          JSON.stringify(ota),
+          otaStatus,
         ]
       );
   }
@@ -2516,7 +3132,7 @@ function createRepositories(options) {
             id, device_id, organization_id, requested_by_user_id,
             protocol_version, command_type, correlation_id, state, code, detail,
             delivery, idempotency_key, request_fingerprint,
-            issued_at, expires_at, accepted_at, queued_at, delivered_at,
+            issued_at, expires_at, execution_expires_at, accepted_at, queued_at, delivered_at,
             acknowledged_at, applying_at, applied_at, failed_at, expired_at,
             created_at, updated_at
           )
@@ -2526,13 +3142,15 @@ function createRepositories(options) {
             $14::timestamptz, $15::timestamptz, $16::timestamptz,
             $17::timestamptz, $18::timestamptz, $19::timestamptz,
             $20::timestamptz, $21::timestamptz, $22::timestamptz,
-            $23::timestamptz, $24::timestamptz, $25::timestamptz
+            $23::timestamptz, $24::timestamptz, $25::timestamptz,
+            $26::timestamptz
           )
           ON CONFLICT (id) DO UPDATE SET
             state = EXCLUDED.state,
             code = EXCLUDED.code,
             detail = EXCLUDED.detail,
             delivery = EXCLUDED.delivery,
+            execution_expires_at = COALESCE(EXCLUDED.execution_expires_at, device_commands.execution_expires_at),
             queued_at = COALESCE(EXCLUDED.queued_at, device_commands.queued_at),
             delivered_at = COALESCE(EXCLUDED.delivered_at, device_commands.delivered_at),
             acknowledged_at = COALESCE(EXCLUDED.acknowledged_at, device_commands.acknowledged_at),
@@ -2558,6 +3176,7 @@ function createRepositories(options) {
           optional(command.requestFingerprint),
           command.issuedAt,
           command.expiresAt,
+          optional(command.executionExpiresAt),
           command.acceptedAt || command.issuedAt,
           optional(command.queuedAt),
           optional(command.deliveredAt),
@@ -2580,12 +3199,22 @@ function createRepositories(options) {
     return withSql(async (pool) => {
       const result = await pool.query(
         `
-          INSERT INTO notification_devices (id, user_id, platform, fcm_token, enabled, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()), COALESCE($7::timestamptz, now()))
+          INSERT INTO notification_devices (
+            id, user_id, workspace_id, platform, fcm_token, auth_session_id,
+            notification_protocol_version, app_version, enabled, created_at, updated_at
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, COALESCE($10::timestamptz, now()), COALESCE($11::timestamptz, now())
+          )
           ON CONFLICT (fcm_token)
           DO UPDATE SET
             user_id = EXCLUDED.user_id,
+            workspace_id = EXCLUDED.workspace_id,
             platform = EXCLUDED.platform,
+            auth_session_id = EXCLUDED.auth_session_id,
+            notification_protocol_version = EXCLUDED.notification_protocol_version,
+            app_version = EXCLUDED.app_version,
             enabled = EXCLUDED.enabled,
             updated_at = EXCLUDED.updated_at
           RETURNING *
@@ -2593,8 +3222,12 @@ function createRepositories(options) {
         [
           device.id,
           device.userId,
+          device.workspaceId,
           device.platform || "android",
           device.fcmToken,
+          device.authSessionId,
+          Number(device.notificationProtocolVersion || 0),
+          device.appVersion || "",
           device.enabled !== false,
           optional(device.createdAt),
           device.updatedAt || nowIso(),
@@ -2666,17 +3299,17 @@ function createRepositories(options) {
       `
         UPDATE users
         SET
-          name = $2,
-          phone = $3,
-          license = $4,
-          hospital = $5,
-          department = $6,
-          address = $7,
-          organization_id = CASE WHEN $8 IS NULL THEN organization_id ELSE $8 END,
+          name = CASE WHEN $2::boolean THEN $3 ELSE users.name END,
+          phone = CASE WHEN $4::boolean THEN $5 ELSE users.phone END,
+          license = CASE WHEN $6::boolean THEN $7 ELSE users.license END,
+          hospital = CASE WHEN $8::boolean THEN $9 ELSE users.hospital END,
+          department = CASE WHEN $10::boolean THEN $11 ELSE users.department END,
+          address = CASE WHEN $12::boolean THEN $13 ELSE users.address END,
+          organization_id = CASE WHEN $14::boolean THEN $15 ELSE users.organization_id END,
           firebase_claims = jsonb_set(
             COALESCE(users.firebase_claims, '{}'::jsonb),
             '{profile}',
-            COALESCE(users.firebase_claims->'profile', '{}'::jsonb) || $9::jsonb,
+            COALESCE(users.firebase_claims->'profile', '{}'::jsonb) || $16::jsonb,
             true
           ),
           updated_at = now()
@@ -2685,12 +3318,19 @@ function createRepositories(options) {
       `,
       [
         id,
+        Object.prototype.hasOwnProperty.call(patch, "name"),
         patch.name || "",
+        Object.prototype.hasOwnProperty.call(patch, "phone"),
         patch.phone || "",
+        Object.prototype.hasOwnProperty.call(patch, "license"),
         patch.license || "",
+        Object.prototype.hasOwnProperty.call(patch, "hospital"),
         patch.hospital || "",
+        Object.prototype.hasOwnProperty.call(patch, "department"),
         patch.department || "",
+        Object.prototype.hasOwnProperty.call(patch, "address"),
         patch.address || "",
+        Boolean(patch.organizationId),
         patch.organizationId || null,
         JSON.stringify(accountProfileClaimsPatch(patch)),
       ],
@@ -2724,12 +3364,165 @@ function createRepositories(options) {
     }
     if (authorization.kind === "active_profile") {
       const patientId = String(authorization.patientId || "");
+      const organizationId = String(authorization.organizationId || "");
       const patient = (getDb().patients || []).find(
         (item) => item.id === patientId && !item.deletedAt,
       );
-      if (!patient || (patient.ownerUserId !== actorUserId && patient.accountUserId !== actorUserId)) {
+      if (
+        !patient ||
+        !organizationId ||
+        patient.organizationId !== organizationId ||
+        (
+          patient.ownerUserId !== actorUserId &&
+          patient.accountUserId !== actorUserId &&
+          patient.guardianUserId !== actorUserId
+        )
+      ) {
         throw repositoryError(403, "PROFILE_SCOPE_DENIED", "Active profile is outside the authenticated family scope");
       }
+    }
+  }
+
+  function assertRoleRequestMutationAuthority(
+    user,
+    patch = {},
+    auditInput = {},
+    idempotency = null,
+  ) {
+    const authorization = objectOf(auditInput.authorization);
+    if (
+      !user ||
+      authorization.kind !== "self" ||
+      String(authorization.actorUserId || "") !== String(user.id || "") ||
+      String(auditInput.actorUserId || "") !== String(user.id || "")
+    ) {
+      throw repositoryError(
+        403,
+        "ROLE_REQUEST_SCOPE_DENIED",
+        "Role requests are restricted to the authenticated account owner",
+      );
+    }
+    if (
+      !idempotency ||
+      !idempotency.key ||
+      !idempotency.fingerprint ||
+      idempotency.operation !== "auth.role.request" ||
+      idempotency.scope !== String(user.id || "")
+    ) {
+      throw repositoryError(
+        400,
+        "ROLE_REQUEST_IDEMPOTENCY_REQUIRED",
+        "Role requests require an account-scoped Idempotency-Key",
+      );
+    }
+    const requestedWorkspaceId = String(patch.organizationId || "");
+    const auditWorkspaceId = String(auditInput.organizationId || "");
+    const authorizedWorkspaceId = String(authorization.organizationId || "");
+    if (
+      !requestedWorkspaceId ||
+      auditWorkspaceId !== requestedWorkspaceId ||
+      authorizedWorkspaceId !== requestedWorkspaceId
+    ) {
+      throw repositoryError(
+        403,
+        "ROLE_REQUEST_WORKSPACE_SCOPE_DENIED",
+        "Role request workspace authority does not match the requested target",
+      );
+    }
+  }
+
+  function normalizeRoleRequestWorkspaceInput(workspaceInput, patch = {}) {
+    if (!workspaceInput || typeof workspaceInput !== "object" || Array.isArray(workspaceInput)) {
+      return null;
+    }
+    const workspace = {
+      ...workspaceInput,
+      id: String(workspaceInput.id || "").trim(),
+      name: String(workspaceInput.name || workspaceInput.id || "").trim(),
+    };
+    if (!workspace.id || workspace.id !== String(patch.organizationId || "")) {
+      throw repositoryError(
+        403,
+        "ROLE_REQUEST_WORKSPACE_SCOPE_DENIED",
+        "Role request workspace materialization does not match the requested target",
+      );
+    }
+    return workspace;
+  }
+
+  async function queryEnsureRoleRequestWorkspace(queryable, workspace) {
+    if (!workspace) return;
+    await queryable.query(
+      `
+        INSERT INTO organizations (
+          id, name, type, workspace_type, address, phone, email, website, status,
+          legal_name, representative, owner_user_id, package_id, subscription_status,
+          billing_cycle, request_metadata, created_at, updated_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11,
+          CASE WHEN $12 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12) THEN $12 ELSE NULL END,
+          $13, $14, $15, $16::jsonb, now(), now()
+        )
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [
+        workspace.id,
+        workspace.name || workspace.id,
+        workspace.type || "clinic",
+        workspace.workspaceType || workspace.type || "clinic",
+        optional(workspace.address),
+        optional(workspace.phone),
+        optional(workspace.email),
+        optional(workspace.website),
+        workspace.status || "active",
+        optional(workspace.legalName),
+        optional(workspace.representative),
+        optional(workspace.ownerUserId),
+        optional(workspace.packageId),
+        workspace.subscriptionStatus || "trial",
+        workspace.billingCycle || "monthly",
+        JSON.stringify(objectOf(workspace.requestMetadata)),
+      ],
+    );
+  }
+
+  function assertRoleRequestAccountActive(user) {
+    if (
+      ["deleted", "disabled", "inactive", "locked", "suspended"].includes(
+        String(user?.accountStatus || "active").toLowerCase(),
+      )
+    ) {
+      throw repositoryError(
+        403,
+        "ACCOUNT_INACTIVE",
+        "The authenticated account is not active",
+      );
+    }
+  }
+
+  function assertRoleRequestTransitionEligible(user) {
+    if (String(user?.role || "patient") !== "patient") {
+      throw repositoryError(
+        409,
+        "ROLE_TRANSITION_REQUIRES_ADMIN",
+        "Operational roles must use the controlled administrative transition",
+      );
+    }
+  }
+
+  function assertRuntimeNotificationPreferenceAuthorization(authorization, user) {
+    if (!authorization) {
+      throw repositoryError(
+        403,
+        "ACCOUNT_SCOPE_DENIED",
+        "Notification preferences require an authenticated account scope",
+      );
+    }
+    assertRuntimeAccountMutationAuthorization(authorization, user);
+    if (!isActiveRuntimeUser(user)) {
+      throw repositoryError(403, "ACCOUNT_INACTIVE", "Authenticated account is not active");
     }
   }
 
@@ -2769,16 +3562,50 @@ function createRepositories(options) {
     if (authorization.kind === "active_profile") {
       const patient = await client.query(
         `
-          SELECT 1 FROM patients
+          SELECT organization_id, owner_user_id, account_user_id, guardian_user_id
+          FROM patients
           WHERE id = $1 AND deleted_at IS NULL
-            AND (owner_user_id = $2 OR account_user_id = $2)
           LIMIT 1 FOR UPDATE
         `,
-        [String(authorization.patientId || ""), actorUserId],
+        [String(authorization.patientId || "")],
       );
-      if (!patient.rows[0]) {
+      const organizationId = String(authorization.organizationId || "");
+      if (
+        !patient.rows[0] ||
+        !organizationId ||
+        patient.rows[0].organization_id !== organizationId ||
+        (
+          patient.rows[0].owner_user_id !== actorUserId &&
+          patient.rows[0].account_user_id !== actorUserId &&
+          patient.rows[0].guardian_user_id !== actorUserId
+        )
+      ) {
         throw repositoryError(403, "PROFILE_SCOPE_DENIED", "Active profile is outside the authenticated family scope");
       }
+    }
+  }
+
+  async function assertSqlNotificationPreferenceAuthorization(client, authorization, userId) {
+    if (!authorization) {
+      throw repositoryError(
+        403,
+        "ACCOUNT_SCOPE_DENIED",
+        "Notification preferences require an authenticated account scope",
+      );
+    }
+    const actorUserId = String(authorization.actorUserId || "");
+    if (!actorUserId || actorUserId !== userId) {
+      throw repositoryError(403, "ACCOUNT_SCOPE_DENIED", "Account mutation is outside the authenticated user scope");
+    }
+    const actor = await client.query(
+      "SELECT id, role, account_status FROM users WHERE id = $1 LIMIT 1 FOR UPDATE",
+      [actorUserId],
+    );
+    if (!actor.rows[0]) {
+      throw repositoryError(403, "ACCOUNT_SCOPE_DENIED", "Authenticated account no longer exists");
+    }
+    if (String(actor.rows[0].account_status || "active").toLowerCase() !== "active") {
+      throw repositoryError(403, "ACCOUNT_INACTIVE", "Authenticated account is not active");
     }
   }
 
@@ -2791,8 +3618,143 @@ function createRepositories(options) {
     "doctor",
   ]);
 
+  function patientMutationAuthorityExpectation(authorization) {
+    if (!authorization) return null;
+    const kind = String(authorization.kind || "");
+    const expectedUserId = String(authorization.expectedUserId || "").trim();
+    const expectedWorkspaceId = String(authorization.expectedWorkspaceId || "").trim();
+    const expectedAuthSessionId = String(authorization.expectedAuthSessionId || "").trim();
+    const authorityRequired =
+      kind === "personal" ||
+      Boolean(expectedUserId || expectedWorkspaceId || expectedAuthSessionId);
+    if (!authorityRequired) return null;
+    if (!expectedUserId || !expectedWorkspaceId || !expectedAuthSessionId) {
+      throw repositoryError(
+        400,
+        "PATIENT_MUTATION_AUTHORITY_REQUIRED",
+        "Patient mutation authority requires an account, workspace, and authentication session",
+      );
+    }
+    if (String(authorization.actorUserId || "") !== expectedUserId) {
+      throw repositoryError(
+        409,
+        "PATIENT_MUTATION_AUTHORITY_MISMATCH",
+        "Patient mutation account authority changed before commit",
+      );
+    }
+    return { expectedUserId, expectedWorkspaceId, expectedAuthSessionId };
+  }
+
+  function assertRuntimePatientMutationAuthority(authorization) {
+    const expected = patientMutationAuthorityExpectation(authorization);
+    if (!expected) return;
+    const runtimeDb = getDb();
+    const actor = (runtimeDb.users || []).find(
+      (item) => item.id === expected.expectedUserId,
+    ) || null;
+    const accountStatus = String(actor?.accountStatus || "active").toLowerCase();
+    const demoSession = (Array.isArray(runtimeDb.sessions) ? runtimeDb.sessions : []).find(
+      (item) =>
+        item.id === expected.expectedAuthSessionId &&
+        item.userId === expected.expectedUserId,
+    ) || null;
+    const firebaseSession = demoSession
+      ? null
+      : (Array.isArray(runtimeDb.authSessions) ? runtimeDb.authSessions : []).find(
+          (item) =>
+            item.id === expected.expectedAuthSessionId &&
+            item.userId === expected.expectedUserId,
+        ) || null;
+    const sessionBinding = firebaseSession
+      ? runtimeDb.authSessions.filter(
+          (item) =>
+            item.userId === expected.expectedUserId &&
+            item.sessionKey === firebaseSession.sessionKey,
+        )
+      : [];
+    const sessionActive = demoSession
+      ? !demoSession.revokedAt
+      : Boolean(
+          firebaseSession &&
+          sessionBinding.length > 0 &&
+          sessionBinding.every((item) => !item.revokedAt),
+        );
+    if (
+      !actor ||
+      ["deleted", "disabled", "inactive", "locked", "suspended"].includes(accountStatus) ||
+      String(actor.organizationId || "") !== expected.expectedWorkspaceId ||
+      !sessionActive
+    ) {
+      throw repositoryError(
+        409,
+        "PATIENT_MUTATION_AUTHORITY_MISMATCH",
+        "Patient mutation authority changed before commit",
+      );
+    }
+  }
+
+  async function assertSqlPatientMutationAuthority(client, authorization) {
+    const expected = patientMutationAuthorityExpectation(authorization);
+    if (!expected) return;
+    const actor = await client.query(
+      `
+        SELECT id, organization_id, account_status
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [expected.expectedUserId],
+    );
+    const accountStatus = String(actor.rows[0]?.account_status || "active").toLowerCase();
+    if (
+      !actor.rows[0] ||
+      ["deleted", "disabled", "inactive", "locked", "suspended"].includes(accountStatus) ||
+      String(actor.rows[0].organization_id || "") !== expected.expectedWorkspaceId
+    ) {
+      throw repositoryError(
+        409,
+        "PATIENT_MUTATION_AUTHORITY_MISMATCH",
+        "Patient mutation account or workspace authority changed before commit",
+      );
+    }
+    const selectedSession = await client.query(
+      `
+        SELECT id, refresh_token_hash
+        FROM auth_sessions
+        WHERE id = $1
+          AND user_id = $2
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [expected.expectedAuthSessionId, expected.expectedUserId],
+    );
+    let sessionActive = false;
+    if (selectedSession.rows[0]) {
+      const binding = await client.query(
+        `
+          SELECT id, revoked_at
+          FROM auth_sessions
+          WHERE user_id = $1
+            AND refresh_token_hash = $2
+          FOR UPDATE
+        `,
+        [expected.expectedUserId, selectedSession.rows[0].refresh_token_hash],
+      );
+      sessionActive = binding.rows.length > 0 && binding.rows.every((item) => !item.revoked_at);
+    }
+    if (!sessionActive) {
+      throw repositoryError(
+        409,
+        "PATIENT_MUTATION_AUTHORITY_MISMATCH",
+        "Patient mutation authentication session changed before commit",
+      );
+    }
+  }
+
   function assertRuntimePatientMutationAuthorization(authorization, patient) {
     if (!authorization) return;
+    assertRuntimePatientMutationAuthority(authorization);
     const actorUserId = String(authorization.actorUserId || "");
     const organizationId = String(authorization.organizationId || patient.organizationId || "");
     const operation = String(authorization.operation || "update");
@@ -2845,6 +3807,7 @@ function createRepositories(options) {
 
   async function assertSqlPatientMutationAuthorization(client, authorization, patient) {
     if (!authorization) return;
+    await assertSqlPatientMutationAuthority(client, authorization);
     const actorUserId = String(authorization.actorUserId || "");
     const organizationId = String(authorization.organizationId || patient.organizationId || "");
     const operation = String(authorization.operation || "update");
@@ -3228,7 +4191,13 @@ function createRepositories(options) {
         patient = user.patientId
           ? (runtimeDb.patients || []).find(
               (item) => item.id === user.patientId && !item.deletedAt &&
-                (item.accountUserId === user.id || item.ownerUserId === user.id),
+                (
+                  item.accountUserId === user.id ||
+                  (
+                    item.ownerUserId === user.id &&
+                    (item.profileType === "self" || item.relationship === "self")
+                  )
+                ),
             ) || null
           : null;
         if (!patient) {
@@ -3249,7 +4218,15 @@ function createRepositories(options) {
         patient.relationship = "self";
         user.patientId = patient.id;
         user.activePatientId = user.activePatientId && (runtimeDb.patients || []).some(
-          (item) => item.id === user.activePatientId && item.ownerUserId === user.id && !item.deletedAt,
+          (item) =>
+            item.id === user.activePatientId &&
+            item.organizationId === membership.organizationId &&
+            !item.deletedAt &&
+            (
+              item.ownerUserId === user.id ||
+              item.accountUserId === user.id ||
+              item.guardianUserId === user.id
+            ),
         ) ? user.activePatientId : patient.id;
       }
 
@@ -3387,7 +4364,10 @@ function createRepositories(options) {
               `
                 SELECT * FROM patients
                 WHERE id = $1 AND deleted_at IS NULL
-                  AND (account_user_id = $2 OR owner_user_id = $2)
+                  AND (
+                    account_user_id = $2 OR
+                    (owner_user_id = $2 AND (profile_type = 'self' OR relationship = 'self'))
+                  )
                 LIMIT 1 FOR UPDATE
               `,
               [user.patientId, user.id],
@@ -3417,7 +4397,22 @@ function createRepositories(options) {
         patient.profileType = "self";
         patient.relationship = "self";
         await queryUpsertPatient(client, patient);
-        const activePatientId = user.activePatientId || patient.id;
+        const activePatientResult = user.activePatientId
+          ? await client.query(
+              `
+                SELECT id
+                FROM patients
+                WHERE id = $1
+                  AND deleted_at IS NULL
+                  AND organization_id = $3
+                  AND (owner_user_id = $2 OR account_user_id = $2 OR guardian_user_id = $2)
+                LIMIT 1
+                FOR UPDATE
+              `,
+              [user.activePatientId, user.id, membership.organizationId],
+            )
+          : { rows: [] };
+        const activePatientId = activePatientResult.rows[0]?.id || patient.id;
         const updatedUser = await client.query(
           `
             UPDATE users
@@ -3810,6 +4805,7 @@ function createRepositories(options) {
               completedAt: "",
             };
             const activationPending = buildActivationPendingResponse(reservation, activationOperationId);
+            normalizeUserPasswordMaterial(candidate);
             syncArrayItem(runtimeDb.users, candidate);
             if (membership) syncArrayItem(runtimeDb.memberships, membership);
             runtimeDb.identityOperations.unshift(activationOperation);
@@ -3938,7 +4934,7 @@ function createRepositories(options) {
             optional(candidate.phone),
             candidate.role || "workspace_admin",
             candidate.name || normalizedEmail,
-            optional(candidate.passwordHash || candidate.password),
+            optional(normalizePasswordHash(candidate.passwordHash || candidate.password || "")),
             optional(candidate.license),
             optional(candidate.hospital),
             optional(candidate.department),
@@ -4273,11 +5269,319 @@ function createRepositories(options) {
     },
 
     async save(user) {
+      normalizeUserPasswordMaterial(user);
       user.updatedAt = nowIso();
       syncArrayItem(getDb().users, user);
       await upsertUserSql(user);
       await saveDb();
       return user;
+    },
+
+    async updatePasswordExact(identifier, password) {
+      const id = String(identifier || "");
+      if (!id || typeof password !== "string" || password.length === 0 || password.length > 200) {
+        throw repositoryError(
+          400,
+          "PASSWORD_MUTATION_INVALID",
+          "Password mutation requires an account id and an exact bounded secret",
+        );
+      }
+      if (getPool()) {
+        const passwordHash = normalizePasswordHash(password);
+        try {
+          const result = await getPool().query(
+            "UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1 RETURNING *",
+            [id, passwordHash],
+          );
+          if (!result.rows[0]) {
+            throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
+          }
+          const updated = rowToUser(result.rows[0]);
+          syncArrayItem(getDb().users, updated);
+          await saveDb();
+          return updated;
+        } catch (error) {
+          if (error?.code === "ACCOUNT_NOT_FOUND") throw error;
+          onSqlError(error);
+          throw repositoryError(
+            503,
+            "IDENTITY_STORAGE_UNAVAILABLE",
+            "Identity storage is unavailable",
+          );
+        }
+      }
+      const user = getDb().users.find((candidate) => candidate.id === id) || null;
+      if (!user) {
+        throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
+      }
+      user.password = normalizePasswordHash(password);
+      delete user.passwordHash;
+      user.updatedAt = nowIso();
+      await saveDb();
+      return user;
+    },
+
+    async patchNotificationPreferenceWithAudit(
+      identifier,
+      preferenceKey,
+      enabled,
+      auditInput = {},
+      idempotencyInput = null,
+    ) {
+      const id = String(identifier || "");
+      const key = String(preferenceKey || "");
+      if (!CLOUD_NOTIFICATION_PREFERENCE_KEYS.includes(key) || typeof enabled !== "boolean") {
+        throw repositoryError(
+          400,
+          "NOTIFICATION_PREFERENCE_PATCH_INVALID",
+          "Notification preference field and enabled value are required",
+        );
+      }
+      const idempotency = normalizeMutationIdempotency(idempotencyInput);
+      if (!idempotency) {
+        throw repositoryError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required");
+      }
+      const initialUser = getDb().users.find(
+        (item) =>
+          item.id === id ||
+          item.firebaseUid === id ||
+          String(item.email || "").toLowerCase() === id.toLowerCase(),
+      );
+
+      if (!getPool()) {
+        if (!initialUser) return null;
+        return runNotificationPreferenceMutationExclusive(initialUser.id, async () => {
+          const runtimeDb = getDb();
+          const user = (runtimeDb.users || []).find((item) => item.id === initialUser.id) || null;
+          if (!user) return null;
+          assertRuntimeNotificationPreferenceAuthorization(auditInput.authorization, user);
+
+          const existing = findRuntimeIdempotency(idempotency);
+          if (existing) {
+            assertIdempotencyFingerprint(existing, idempotency);
+            const replay = cloneRuntimeValue(existing.responseResource || {});
+            if (
+              replay.userId !== user.id ||
+              !replay.notificationPreferences ||
+              typeof replay.notificationPreferences !== "object"
+            ) {
+              throw repositoryError(
+                409,
+                "IDEMPOTENT_NOTIFICATION_PREFERENCE_MISSING",
+                "The original notification preference result is no longer available",
+              );
+            }
+            return {
+              user,
+              preferences: cloneRuntimeValue(replay.notificationPreferences),
+              updatedAt: String(replay.updatedAt || ""),
+              auditLog: null,
+              replayed: true,
+            };
+          }
+
+          const previousUser = cloneRuntimeValue(user);
+          const updatedAt = nowIso();
+          const nextPreferences = normalizeNotificationPreferences({
+            ...objectOf(user.notificationPreferences),
+            [key]: enabled,
+          });
+          user.notificationPreferences = nextPreferences;
+          user.updatedAt = updatedAt;
+          const responseSnapshot = {
+            userId: user.id,
+            notificationPreferences: cloneRuntimeValue(nextPreferences),
+            updatedAt,
+          };
+          const auditLog = createAuditLog({
+            ...auditInput,
+            actorUserId: auditInput.actorUserId || user.id,
+            organizationId: auditInput.organizationId || user.organizationId || "",
+            action: auditInput.action || "notification.preferences.patch",
+            resourceType: "user",
+            resourceId: user.id,
+            metadata: {
+              ...objectOf(auditInput.metadata),
+              preferenceKey: key,
+              enabled,
+            },
+          });
+          let receipt = null;
+          try {
+            syncArrayItem(runtimeDb.users, user);
+            syncRuntimeAuditLog(auditLog);
+            receipt = syncRuntimeMutationIdempotency(
+              idempotency,
+              "user_notification_preferences",
+              user.id,
+              200,
+              responseSnapshot,
+            );
+            await saveDb();
+          } catch (error) {
+            const persistedRuntimeUser = (runtimeDb.users || []).find((entry) => entry.id === previousUser.id);
+            if (persistedRuntimeUser) {
+              for (const field of Object.keys(persistedRuntimeUser)) delete persistedRuntimeUser[field];
+              Object.assign(persistedRuntimeUser, previousUser);
+            }
+            runtimeDb.auditLogs = (runtimeDb.auditLogs || []).filter((entry) => entry.id !== auditLog.id);
+            if (receipt) {
+              runtimeDb.idempotencyKeys = (runtimeDb.idempotencyKeys || []).filter(
+                (entry) => entry.id !== receipt.id,
+              );
+            }
+            throw error;
+          }
+          return {
+            user,
+            preferences: cloneRuntimeValue(nextPreferences),
+            updatedAt,
+            auditLog,
+            replayed: false,
+          };
+        });
+      }
+
+      const result = await withSqlTransaction(async (client) => {
+        const selected = await client.query(
+          `
+            SELECT *
+            FROM users
+            WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1)
+            LIMIT 1
+            FOR UPDATE
+          `,
+          [id],
+        );
+        const canonicalUser = selected.rows[0] ? rowToUser(selected.rows[0]) : null;
+        if (!canonicalUser) return { missing: true };
+        await assertSqlNotificationPreferenceAuthorization(
+          client,
+          auditInput.authorization,
+          canonicalUser.id,
+        );
+
+        const replayEntry = await findSqlMutationReplay(client, idempotency);
+        if (replayEntry) {
+          const replay = cloneRuntimeValue(replayEntry.response_json || {});
+          if (
+            replay.userId !== canonicalUser.id ||
+            !replay.notificationPreferences ||
+            typeof replay.notificationPreferences !== "object"
+          ) {
+            throw repositoryError(
+              409,
+              "IDEMPOTENT_NOTIFICATION_PREFERENCE_MISSING",
+              "The original notification preference result is no longer available",
+            );
+          }
+          return {
+            user: canonicalUser,
+            preferences: cloneRuntimeValue(replay.notificationPreferences),
+            updatedAt: String(replay.updatedAt || ""),
+            responseSnapshot: replay,
+            auditLog: null,
+            replayed: true,
+          };
+        }
+
+        const updated = await client.query(
+          `
+            UPDATE users
+            SET
+              firebase_claims = jsonb_set(
+                COALESCE(users.firebase_claims, '{}'::jsonb),
+                '{profile}',
+                COALESCE(users.firebase_claims->'profile', '{}'::jsonb)
+                  || jsonb_build_object(
+                    'notificationPreferences',
+                    COALESCE(
+                      users.firebase_claims->'profile'->'notificationPreferences',
+                      '{}'::jsonb
+                    ) || jsonb_build_object($2::text, $3::boolean)
+                  ),
+                true
+              ),
+              updated_at = now()
+            WHERE id = $1
+            RETURNING *
+          `,
+          [canonicalUser.id, key, enabled],
+        );
+        const persisted = updated.rows[0] ? rowToUser(updated.rows[0]) : null;
+        if (!persisted) return { missing: true };
+        const preferences = normalizeNotificationPreferences(persisted.notificationPreferences);
+        const responseSnapshot = {
+          userId: persisted.id,
+          notificationPreferences: cloneRuntimeValue(preferences),
+          updatedAt: persisted.updatedAt,
+        };
+        const auditLog = createAuditLog({
+          ...auditInput,
+          actorUserId: auditInput.actorUserId || persisted.id,
+          organizationId: auditInput.organizationId || persisted.organizationId || "",
+          action: auditInput.action || "notification.preferences.patch",
+          resourceType: "user",
+          resourceId: persisted.id,
+          metadata: {
+            ...objectOf(auditInput.metadata),
+            preferenceKey: key,
+            enabled,
+          },
+        });
+        await queryInsertAuditLog(client, auditLog);
+        await insertSqlMutationIdempotency(
+          client,
+          idempotency,
+          "user_notification_preferences",
+          persisted.id,
+          200,
+          responseSnapshot,
+        );
+        return {
+          user: persisted,
+          preferences,
+          updatedAt: persisted.updatedAt,
+          responseSnapshot,
+          auditLog,
+          replayed: false,
+        };
+      });
+
+      if (!result || result.missing) {
+        getDb().users = (getDb().users || []).filter(
+          (user) =>
+            user.id !== id &&
+            user.firebaseUid !== id &&
+            String(user.email || "").toLowerCase() !== id.toLowerCase(),
+        );
+        return null;
+      }
+      // A replay receipt is historical evidence, not current account state.
+      // Keep the runtime mirror aligned with the canonical row selected under
+      // lock and return the original preference snapshot separately.
+      syncArrayItem(getDb().users, result.user);
+      if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+      syncRuntimeMutationIdempotency(
+        idempotency,
+        "user_notification_preferences",
+        result.user.id,
+        200,
+        result.responseSnapshot,
+      );
+      try {
+        await saveDb();
+      } catch (error) {
+        error.backendCommitted = true;
+        throw error;
+      }
+      return {
+        user: result.user,
+        preferences: cloneRuntimeValue(result.preferences),
+        updatedAt: result.updatedAt,
+        auditLog: result.auditLog,
+        replayed: result.replayed,
+      };
     },
 
     async updateAccountProfile(identifier, patch = {}) {
@@ -4308,56 +5612,167 @@ function createRepositories(options) {
     async updateAccountProfileWithAudit(identifier, patch = {}, auditInput = {}, idempotencyInput = null) {
       const id = String(identifier || "");
       const idempotency = normalizeMutationIdempotency(idempotencyInput);
-      const runtimeUser = getDb().users.find(
+      const initialRuntimeUser = getDb().users.find(
         (item) => item.id === id || item.firebaseUid === id || String(item.email || "").toLowerCase() === id.toLowerCase(),
       );
-      if (!runtimeUser) return null;
-      assertRuntimeAccountMutationAuthorization(auditInput.authorization, runtimeUser);
-      const responseSnapshot = { id: runtimeUser.id };
+      if (!initialRuntimeUser) return null;
+      assertRuntimeAccountMutationAuthorization(auditInput.authorization, initialRuntimeUser);
+      if (!getPool()) {
+        return runAccountProfileMutationExclusive(initialRuntimeUser.id, async () => {
+          const runtimeDb = getDb();
+          const runtimeSnapshot = snapshotRuntimeDb(runtimeDb);
+          try {
+            const runtimeUser = (runtimeDb.users || []).find(
+              (item) =>
+                item.id === id ||
+                item.firebaseUid === id ||
+                String(item.email || "").toLowerCase() === id.toLowerCase(),
+            );
+            if (!runtimeUser) return null;
+            assertRuntimeAccountMutationAuthorization(
+              auditInput.authorization,
+              runtimeUser,
+            );
+            const existing = idempotency
+              ? findRuntimeIdempotency(idempotency)
+              : null;
+            if (existing) {
+              assertIdempotencyFingerprint(existing, idempotency);
+              existing.lastSeenAt = nowIso();
+              const replay = resolveAccountMutationReplay({
+                responseResource: existing.responseResource,
+                receiptResourceId: existing.resourceId,
+                currentUser: runtimeUser,
+                patch,
+                auditInput,
+                idempotency,
+              });
+              if (!replay) return null;
+              if (replay.legacyReceiptUpgraded) {
+                syncRuntimeMutationIdempotency(
+                  idempotency,
+                  "user",
+                  runtimeUser.id,
+                  200,
+                  replay.responseSnapshot,
+                );
+                console.warn(
+                  `[idempotency] upgraded legacy account receipt ${idempotency.operation}`,
+                );
+              }
+              await saveDb();
+              return {
+                user: replay.user,
+                responseSnapshot: replay.responseSnapshot,
+                auditLog: null,
+                replayed: true,
+              };
+            }
+            const auditLog = createAuditLog({
+              ...auditInput,
+              actorUserId: auditInput.actorUserId || runtimeUser.id,
+              organizationId:
+                auditInput.organizationId ||
+                patch.organizationId ||
+                runtimeUser.organizationId ||
+                "",
+              resourceType: "user",
+              resourceId: runtimeUser.id,
+            });
+            Object.assign(runtimeUser, patch, { updatedAt: nowIso() });
+            const responseSnapshot = accountMutationResponseSnapshot(
+              runtimeUser,
+              auditInput,
+              idempotency,
+            );
+            syncArrayItem(runtimeDb.users, runtimeUser);
+            syncRuntimeAuditLog(auditLog);
+            syncRuntimeMutationIdempotency(
+              idempotency,
+              "user",
+              runtimeUser.id,
+              200,
+              responseSnapshot,
+            );
+            await saveDb();
+            return {
+              user: runtimeUser,
+              responseSnapshot,
+              auditLog,
+              replayed: false,
+            };
+          } catch (error) {
+            restoreRuntimeDb(runtimeDb, runtimeSnapshot);
+            throw error;
+          }
+        });
+      }
       const auditLog = createAuditLog({
         ...auditInput,
-        actorUserId: auditInput.actorUserId || runtimeUser.id,
-        organizationId: auditInput.organizationId || patch.organizationId || runtimeUser.organizationId || "",
+        actorUserId: auditInput.actorUserId || initialRuntimeUser.id,
+        organizationId:
+          auditInput.organizationId ||
+          patch.organizationId ||
+          initialRuntimeUser.organizationId ||
+          "",
         resourceType: "user",
-        resourceId: runtimeUser.id,
+        resourceId: initialRuntimeUser.id,
       });
-      if (!getPool()) {
-        const existing = idempotency ? findRuntimeIdempotency(idempotency) : null;
-        if (existing) {
-          assertIdempotencyFingerprint(existing, idempotency);
-          existing.lastSeenAt = nowIso();
-          return {
-            user: runtimeUser,
-            auditLog: null,
-            replayed: true,
-          };
-        }
-        Object.assign(runtimeUser, patch, { updatedAt: nowIso() });
-        syncArrayItem(getDb().users, runtimeUser);
-        syncRuntimeAuditLog(auditLog);
-        syncRuntimeMutationIdempotency(
-          idempotency,
-          "user",
-          runtimeUser.id,
-          200,
-          responseSnapshot,
-        );
-        await saveDb();
-        return { user: runtimeUser, auditLog, replayed: false };
-      }
       const result = await withSqlTransaction(async (client) => {
-        await assertSqlAccountMutationAuthorization(client, auditInput.authorization, runtimeUser.id);
+        await assertSqlAccountMutationAuthorization(
+          client,
+          auditInput.authorization,
+          initialRuntimeUser.id,
+        );
         const replay = await findSqlMutationReplay(client, idempotency);
         if (replay) {
-          const current = await client.query("SELECT * FROM users WHERE id = $1 LIMIT 1", [runtimeUser.id]);
+          const current = await client.query(
+            "SELECT * FROM users WHERE id = $1 LIMIT 1",
+            [initialRuntimeUser.id],
+          );
+          const currentUser = current.rows[0] ? rowToUser(current.rows[0]) : null;
+          const resolvedReplay = resolveAccountMutationReplay({
+            responseResource: replay.response_json,
+            receiptResourceId: replay.resource_id,
+            currentUser,
+            patch,
+            auditInput,
+            idempotency,
+          });
+          if (!resolvedReplay) return null;
+          if (resolvedReplay.legacyReceiptUpgraded) {
+            await client.query(
+              `
+                UPDATE mutation_idempotency
+                SET response_json = $4::jsonb, updated_at = now()
+                WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+              `,
+              [
+                idempotency.scope,
+                idempotency.operation,
+                idempotency.key,
+                JSON.stringify(resolvedReplay.responseSnapshot),
+              ],
+            );
+            console.warn(
+              `[idempotency] upgraded legacy account receipt ${idempotency.operation}`,
+            );
+          }
           return {
-            user: current.rows[0] ? rowToUser(current.rows[0]) : null,
+            user: resolvedReplay.user,
+            currentUser,
+            responseSnapshot: resolvedReplay.responseSnapshot,
             auditLog: null,
             replayed: true,
           };
         }
         const persisted = await queryUpdateAccountProfile(client, id, patch);
         if (!persisted) return null;
+        const responseSnapshot = accountMutationResponseSnapshot(
+          persisted,
+          auditInput,
+          idempotency,
+        );
         await queryInsertAuditLog(client, auditLog);
         await insertSqlMutationIdempotency(
           client,
@@ -4367,19 +5782,299 @@ function createRepositories(options) {
           200,
           responseSnapshot,
         );
-        return { user: persisted, auditLog, replayed: false };
+        return {
+          user: persisted,
+          currentUser: persisted,
+          responseSnapshot,
+          auditLog,
+          replayed: false,
+        };
       });
       if (!result || !result.user) return null;
-      syncArrayItem(getDb().users, result.user);
+      if (result.currentUser) syncArrayItem(getDb().users, result.currentUser);
       if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
       syncRuntimeMutationIdempotency(
         idempotency,
         "user",
         result.user.id,
         200,
-        responseSnapshot,
+        result.responseSnapshot,
       );
-      await saveDb();
+      try {
+        await saveDb();
+      } catch (error) {
+        error.backendCommitted = true;
+        throw error;
+      }
+      return result;
+    },
+
+    async submitRoleRequestWithAudit(
+      identifier,
+      patch = {},
+      auditInput = {},
+      idempotencyInput = null,
+      workspaceInput = null,
+    ) {
+      const id = String(identifier || "");
+      const idempotency = normalizeMutationIdempotency(idempotencyInput);
+      const roleRequestWorkspace = normalizeRoleRequestWorkspaceInput(
+        workspaceInput,
+        patch,
+      );
+      const findRuntimeUser = () =>
+        (getDb().users || []).find(
+          (item) =>
+            item.id === id ||
+            item.firebaseUid === id ||
+            String(item.email || "").toLowerCase() === id.toLowerCase(),
+        ) || null;
+      const initialUser = findRuntimeUser();
+      if (!initialUser) return null;
+      assertRoleRequestMutationAuthority(
+        initialUser,
+        patch,
+        auditInput,
+        idempotency,
+      );
+
+      if (!getPool()) {
+        return runRoleRequestMutationExclusive(initialUser.id, async () => {
+          const runtimeUser = findRuntimeUser();
+          if (!runtimeUser) return null;
+          assertRoleRequestMutationAuthority(
+            runtimeUser,
+            patch,
+            auditInput,
+            idempotency,
+          );
+          assertRoleRequestAccountActive(runtimeUser);
+          const existing = findRuntimeIdempotency(idempotency);
+          if (existing) {
+            assertIdempotencyFingerprint(existing, idempotency);
+            existing.lastSeenAt = nowIso();
+            const replay = resolveRoleRequestMutationReplay({
+              responseResource: existing.responseResource,
+              receiptResourceId: existing.resourceId,
+              currentUser: runtimeUser,
+            });
+            return {
+              user: replay.user,
+              roleRequest: replay.roleRequest,
+              operationId: replay.operationId,
+              auditLog: null,
+              responseSnapshot: replay.responseSnapshot,
+              replayed: true,
+            };
+          }
+
+          assertRoleRequestTransitionEligible(runtimeUser);
+          const runtimeDb = getDb();
+          const rollbackSnapshot = snapshotRuntimeDb(runtimeDb);
+          const operationId = createId("role_request");
+          try {
+            Object.assign(runtimeUser, patch, { updatedAt: nowIso() });
+            const roleRequest = roleRequestSnapshot(runtimeUser);
+            const responseSnapshot = roleRequestResponseSnapshot(
+              runtimeUser,
+              operationId,
+            );
+            const auditLog = createAuditLog({
+              ...auditInput,
+              actorUserId: runtimeUser.id,
+              organizationId:
+                auditInput.organizationId ||
+                runtimeUser.organizationId ||
+                "",
+              action: auditInput.action || "auth.role.request",
+              resourceType: "user",
+              resourceId: runtimeUser.id,
+              metadata: {
+                ...objectOf(auditInput.metadata),
+                operationId,
+                requestedRole: roleRequest.requestedRole,
+                status: roleRequest.status,
+              },
+            });
+            syncArrayItem(runtimeDb.users, runtimeUser);
+            syncRuntimeAuditLog(auditLog);
+            syncRuntimeMutationIdempotency(
+              idempotency,
+              "user_role_request",
+              runtimeUser.id,
+              200,
+              responseSnapshot,
+            );
+            await saveDb();
+            return {
+              user: cloneRuntimeValue(responseSnapshot.user),
+              roleRequest,
+              operationId,
+              auditLog,
+              responseSnapshot,
+              replayed: false,
+            };
+          } catch (error) {
+            restoreRuntimeDb(runtimeDb, rollbackSnapshot);
+            throw error;
+          }
+        });
+      }
+
+      const result = await withSqlTransaction(async (client) => {
+        await assertSqlAccountMutationAuthorization(
+          client,
+          auditInput.authorization,
+          initialUser.id,
+        );
+        const replayEntry = await findSqlMutationReplay(client, idempotency);
+        const selected = await client.query(
+          "SELECT * FROM users WHERE id = $1 LIMIT 1 FOR UPDATE",
+          [initialUser.id],
+        );
+        const currentUser = selected.rows[0]
+          ? rowToUser(selected.rows[0])
+          : null;
+        if (!currentUser) return null;
+        assertRoleRequestMutationAuthority(
+          currentUser,
+          patch,
+          auditInput,
+          idempotency,
+        );
+        assertRoleRequestAccountActive(currentUser);
+        if (replayEntry) {
+          const replay = resolveRoleRequestMutationReplay({
+            responseResource: replayEntry.response_json,
+            receiptResourceId: replayEntry.resource_id,
+            currentUser,
+          });
+          return {
+            user: replay.user,
+            currentUser,
+            roleRequest: replay.roleRequest,
+            operationId: replay.operationId,
+            auditLog: null,
+            responseSnapshot: replay.responseSnapshot,
+            replayed: true,
+          };
+        }
+
+        assertRoleRequestTransitionEligible(currentUser);
+        await queryEnsureRoleRequestWorkspace(client, roleRequestWorkspace);
+        const nextUser = {
+          ...currentUser,
+          ...patch,
+          updatedAt: nowIso(),
+        };
+        const updated = await client.query(
+          `
+            UPDATE users
+            SET
+              requested_role = $2,
+              role = $3,
+              role_request_status = $4,
+              account_status = $5,
+              role_requested_at = $6,
+              role_approved_at = $7,
+              role_rejected_at = $8,
+              role_reject_reason = $9,
+              role_info_request_at = $10,
+              role_info_request_message = $11,
+              name = $12,
+              phone = $13,
+              license = $14,
+              hospital = $15,
+              department = $16,
+              organization_id = $17,
+              firebase_claims = $18::jsonb,
+              updated_at = now()
+            WHERE id = $1
+            RETURNING *
+          `,
+          [
+            currentUser.id,
+            nextUser.requestedRole || "patient",
+            nextUser.role || "patient",
+            nextUser.roleRequestStatus || "approved",
+            nextUser.accountStatus || "active",
+            optionalTimestamp(nextUser.roleRequestedAt),
+            optionalTimestamp(nextUser.roleApprovedAt),
+            optionalTimestamp(nextUser.roleRejectedAt),
+            nextUser.roleRejectReason || "",
+            optionalTimestamp(nextUser.roleInfoRequestAt),
+            nextUser.roleInfoRequestMessage || "",
+            nextUser.name || "",
+            nextUser.phone || "",
+            nextUser.license || "",
+            nextUser.hospital || "",
+            nextUser.department || "",
+            nextUser.organizationId || "",
+            JSON.stringify(firebaseClaimsForUser(nextUser)),
+          ],
+        );
+        const persisted = updated.rows[0]
+          ? rowToUser(updated.rows[0])
+          : null;
+        if (!persisted) return null;
+        const operationId = createId("role_request");
+        const roleRequest = roleRequestSnapshot(persisted);
+        const responseSnapshot = roleRequestResponseSnapshot(
+          persisted,
+          operationId,
+        );
+        const auditLog = createAuditLog({
+          ...auditInput,
+          actorUserId: persisted.id,
+          organizationId:
+            auditInput.organizationId || persisted.organizationId || "",
+          action: auditInput.action || "auth.role.request",
+          resourceType: "user",
+          resourceId: persisted.id,
+          metadata: {
+            ...objectOf(auditInput.metadata),
+            operationId,
+            requestedRole: roleRequest.requestedRole,
+            status: roleRequest.status,
+          },
+        });
+        await queryInsertAuditLog(client, auditLog);
+        await insertSqlMutationIdempotency(
+          client,
+          idempotency,
+          "user_role_request",
+          persisted.id,
+          200,
+          responseSnapshot,
+        );
+        return {
+          user: cloneRuntimeValue(responseSnapshot.user),
+          currentUser: persisted,
+          roleRequest,
+          operationId,
+          auditLog,
+          responseSnapshot,
+          replayed: false,
+        };
+      });
+      if (!result || !result.user) return null;
+      if (result.currentUser) {
+        syncArrayItem(getDb().users, result.currentUser);
+      }
+      if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+      syncRuntimeMutationIdempotency(
+        idempotency,
+        "user_role_request",
+        result.user.id,
+        200,
+        result.responseSnapshot,
+      );
+      try {
+        await saveDb();
+      } catch (error) {
+        error.backendCommitted = true;
+        throw error;
+      }
       return result;
     },
 
@@ -4435,7 +6130,10 @@ function createRepositories(options) {
       if (getPool()) {
         try {
           const result = await getPool().query("SELECT * FROM users WHERE id = $1 LIMIT 1", [id]);
-          if (!result.rows[0]) return null;
+          if (!result.rows[0]) {
+            getDb().users = (getDb().users || []).filter((user) => user.id !== id);
+            return null;
+          }
           return syncArrayItem(getDb().users, rowToUser(result.rows[0]));
         } catch (error) {
           onSqlError(error);
@@ -6798,7 +8496,7 @@ function createRepositories(options) {
   };
 
   function assertRuntimeNotificationAudience(notification) {
-    if (!notification.organizationId) return;
+    if (!notification.organizationId) return null;
     const runtimeDb = getDb();
     const workspace = (runtimeDb.organizations || []).find(
       (organization) => organization.id === notification.organizationId,
@@ -6806,7 +8504,7 @@ function createRepositories(options) {
     if (!workspace) {
       throw repositoryError(404, "NOTIFICATION_WORKSPACE_NOT_FOUND", "Notification workspace was not found");
     }
-    if (!notification.userId) return;
+    if (!notification.userId) return null;
     const targetUser = (runtimeDb.users || []).find((user) => user.id === notification.userId);
     const membership = (runtimeDb.memberships || []).find(
       (item) => item.userId === notification.userId && item.organizationId === notification.organizationId,
@@ -6831,10 +8529,11 @@ function createRepositories(options) {
         "Notification user is not an active member of its workspace",
       );
     }
+    return targetUser;
   }
 
   async function assertSqlNotificationAudience(client, notification) {
-    if (!notification.organizationId) return;
+    if (!notification.organizationId) return null;
     const selectedWorkspace = await client.query(
       "SELECT id, status, owner_user_id FROM organizations WHERE id = $1 LIMIT 1 FOR SHARE",
       [notification.organizationId],
@@ -6843,9 +8542,9 @@ function createRepositories(options) {
     if (!workspace) {
       throw repositoryError(404, "NOTIFICATION_WORKSPACE_NOT_FOUND", "Notification workspace was not found");
     }
-    if (!notification.userId) return;
+    if (!notification.userId) return null;
     const selectedUser = await client.query(
-      "SELECT id, role, account_status FROM users WHERE id = $1 LIMIT 1 FOR SHARE",
+      "SELECT id, role, account_status, firebase_claims FROM users WHERE id = $1 LIMIT 1 FOR SHARE",
       [notification.userId],
     );
     const targetUser = selectedUser.rows[0] || null;
@@ -6879,6 +8578,339 @@ function createRepositories(options) {
         "Notification user is not an active member of its workspace",
       );
     }
+    return targetUser;
+  }
+
+  function applyCanonicalCampaignPreference(notification, targetUser) {
+    if (!notification?.userId || !targetUser) return notification;
+    const firebaseClaims = objectOf(targetUser.firebase_claims || targetUser.firebaseClaims);
+    const profile = objectOf(firebaseClaims.profile);
+    const preferences = targetUser.notificationPreferences || profile.notificationPreferences;
+    const decision = resolveNotificationPreferenceDecision(preferences, notification);
+    if (decision.allowed) return notification;
+
+    const requestedChannels = Array.isArray(notification.requestedChannels)
+      ? notification.requestedChannels
+      : [];
+    if (requestedChannels.includes("in_app")) notification.inAppStatus = "skipped";
+    if (requestedChannels.includes("email")) {
+      notification.emailStatus = "skipped";
+      notification.deliveryStatus = "skipped";
+      notification.emailErrorMessage = decision.reasonCode;
+    }
+    if (requestedChannels.includes("push")) {
+      notification.pushStatus = "skipped";
+      notification.pushErrorMessage = decision.reasonCode;
+    }
+    return notification;
+  }
+
+  function summarizeNotificationCampaign(notifications, requestedChannels) {
+    const summarize = (field) => {
+      const counts = {};
+      for (const notification of notifications) {
+        const status = String(notification[field] || "skipped");
+        counts[status] = Number(counts[status] || 0) + 1;
+      }
+      return counts;
+    };
+    const channelSummary = {
+      in_app: summarize("inAppStatus"),
+      email: summarize("emailStatus"),
+      push: summarize("pushStatus"),
+    };
+    const requestedStatuses = notifications.flatMap((notification) =>
+      requestedChannels.map((channel) =>
+        channel === "in_app"
+          ? notification.inAppStatus
+          : channel === "email"
+            ? notification.emailStatus
+            : notification.pushStatus,
+      ),
+    );
+    const hasReady = requestedStatuses.some((status) =>
+      ["ready", "sent", "partial"].includes(status),
+    );
+    const hasUnavailable = requestedStatuses.some((status) =>
+      ["disabled", "failed", "no_devices", "no_recipient", "skipped", "unavailable"].includes(status),
+    );
+    return {
+      channelSummary,
+      status: hasReady && hasUnavailable ? "partial" : hasReady ? "ready" : "unavailable",
+    };
+  }
+
+  const NOTIFICATION_INBOX_HIDDEN_STATUSES = new Set([
+    "skipped",
+    "skipped_preference",
+    "disabled",
+  ]);
+  const NOTIFICATION_INBOX_ACTIONS = new Set(["read", "read_all", "delete"]);
+
+  function normalizeNotificationInboxAuthority(input = {}) {
+    const userId = String(input.userId || "").trim();
+    const workspaceId = String(input.workspaceId || "").trim();
+    if (!userId || !workspaceId) {
+      throw repositoryError(
+        403,
+        "NOTIFICATION_INBOX_AUTHORITY_REQUIRED",
+        "A backend-confirmed account and active workspace are required",
+      );
+    }
+    return { userId, workspaceId };
+  }
+
+  function notificationBelongsToInbox(notification, authority) {
+    if (!notification || String(notification.userId || "") !== authority.userId) {
+      return false;
+    }
+    const notificationWorkspaceId = String(notification.organizationId || "");
+    if (
+      notificationWorkspaceId &&
+      notificationWorkspaceId !== authority.workspaceId
+    ) {
+      return false;
+    }
+    return !NOTIFICATION_INBOX_HIDDEN_STATUSES.has(
+      String(notification.inAppStatus || "ready"),
+    );
+  }
+
+  function toNotificationInboxItem(notification, authority, fallbackTimestamp) {
+    if (!notificationBelongsToInbox(notification, authority)) {
+      throw repositoryError(
+        409,
+        "NOTIFICATION_INBOX_BINDING_MISMATCH",
+        "Notification does not belong to the requested account workspace",
+      );
+    }
+    const timestamp =
+      String(notification.updatedAt || notification.createdAt || fallbackTimestamp || nowIso());
+    const createdAt = String(notification.createdAt || timestamp);
+    const read = Boolean(notification.read || notification.readAt);
+    return {
+      id: String(notification.id || ""),
+      userId: authority.userId,
+      workspaceId: authority.workspaceId,
+      organizationId: String(notification.organizationId || ""),
+      type: String(notification.type || "info"),
+      title: String(notification.title || ""),
+      message: String(notification.message || ""),
+      campaignId: String(notification.campaignId || ""),
+      audienceType: String(notification.audienceType || "legacy"),
+      audienceRole: String(notification.audienceRole || ""),
+      requestedChannels:
+        Array.isArray(notification.requestedChannels) &&
+        notification.requestedChannels.length > 0
+          ? [...notification.requestedChannels]
+          : [String(notification.channel || "in_app")],
+      inAppStatus: String(notification.inAppStatus || "ready"),
+      emailStatus: String(notification.emailStatus || "skipped"),
+      pushStatus: String(notification.pushStatus || "skipped"),
+      read,
+      readAt: read ? String(notification.readAt || timestamp) : null,
+      createdAt,
+      updatedAt: timestamp,
+    };
+  }
+
+  function canonicalNotificationInbox(items, authority, fallbackTimestamp) {
+    return items
+      .filter((item) => notificationBelongsToInbox(item, authority))
+      .map((item) =>
+        toNotificationInboxItem(item, authority, fallbackTimestamp),
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, 200);
+  }
+
+  async function queryNotificationInboxRows(queryable, authority, lockRows = false) {
+    const result = await queryable.query(
+      `
+        SELECT *
+        FROM notifications
+        WHERE user_id = $1
+          AND (
+            organization_id = $2
+            OR organization_id IS NULL
+            OR organization_id = ''
+          )
+          AND COALESCE(in_app_status, 'ready') NOT IN (
+            'skipped',
+            'skipped_preference',
+            'disabled'
+          )
+        ORDER BY created_at DESC
+        LIMIT 200
+        ${lockRows ? "FOR UPDATE" : ""}
+      `,
+      [authority.userId, authority.workspaceId],
+    );
+    return result.rows.map(rowToNotification);
+  }
+
+  function assertNotificationInboxActor(authority, auditInput = {}) {
+    const authorization = objectOf(auditInput.authorization);
+    if (
+      String(auditInput.actorUserId || "") !== authority.userId ||
+      String(authorization.kind || "") !== "self" ||
+      String(authorization.actorUserId || "") !== authority.userId
+    ) {
+      throw repositoryError(
+        403,
+        "NOTIFICATION_INBOX_SCOPE_DENIED",
+        "Notification inbox mutations are restricted to the authenticated owner",
+      );
+    }
+  }
+
+  function assertActiveRuntimeNotificationInboxAccount(authority) {
+    const user = (getDb().users || []).find(
+      (candidate) => String(candidate.id || "") === authority.userId,
+    );
+    const accountStatus = String(user?.accountStatus || "active").toLowerCase();
+    if (
+      !user ||
+      ["deleted", "disabled", "inactive", "locked", "suspended"].includes(
+        accountStatus,
+      )
+    ) {
+      throw repositoryError(
+        403,
+        "NOTIFICATION_INBOX_ACCOUNT_UNAVAILABLE",
+        "The notification inbox owner is not an active account",
+      );
+    }
+  }
+
+  function normalizeNotificationInboxMutation(
+    input = {},
+    auditInput = {},
+    idempotencyInput = null,
+  ) {
+    const authority = normalizeNotificationInboxAuthority(input);
+    const action = String(input.action || "");
+    const notificationId = String(input.notificationId || "").trim();
+    if (!NOTIFICATION_INBOX_ACTIONS.has(action)) {
+      throw repositoryError(
+        400,
+        "NOTIFICATION_INBOX_ACTION_INVALID",
+        "Notification inbox action is invalid",
+      );
+    }
+    if (action !== "read_all" && !notificationId) {
+      throw repositoryError(
+        400,
+        "NOTIFICATION_INBOX_ITEM_REQUIRED",
+        "A notification id is required for this inbox action",
+      );
+    }
+    assertNotificationInboxActor(authority, auditInput);
+    const idempotency = normalizeMutationIdempotency(idempotencyInput);
+    const expectedOperation = `notification.inbox.${action}`;
+    const expectedScope = `${authority.userId}:${authority.workspaceId}`;
+    if (
+      !idempotency ||
+      !idempotency.fingerprint ||
+      idempotency.operation !== expectedOperation ||
+      idempotency.scope !== expectedScope
+    ) {
+      throw repositoryError(
+        400,
+        "NOTIFICATION_INBOX_IDEMPOTENCY_REQUIRED",
+        "Notification inbox mutation requires a scoped Idempotency-Key",
+      );
+    }
+    return {
+      action,
+      notificationId,
+      authority,
+      idempotency,
+    };
+  }
+
+  function notificationInboxAudit(
+    mutation,
+    auditInput,
+    affectedIds,
+  ) {
+    return createAuditLog({
+      actorUserId: mutation.authority.userId,
+      organizationId: mutation.authority.workspaceId,
+      action:
+        mutation.action === "delete"
+          ? "notification.delete"
+          : "notification.read",
+      resourceType: "notification",
+      resourceId:
+        mutation.action === "read_all" ? "all" : mutation.notificationId,
+      ip: auditInput.ip || "",
+      userAgent: auditInput.userAgent || "",
+      metadata: {
+        scope: "personal_inbox",
+        action: mutation.action,
+        affectedIds,
+      },
+    });
+  }
+
+  function buildNotificationInboxMutationReceipt({
+    mutation,
+    notification,
+    notifications,
+    affectedIds,
+    updatedAt,
+    replayed,
+  }) {
+    return {
+      userId: mutation.authority.userId,
+      workspaceId: mutation.authority.workspaceId,
+      action: mutation.action,
+      notification,
+      notifications,
+      affectedIds,
+      deletedId:
+        mutation.action === "delete" ? mutation.notificationId : null,
+      updatedAt,
+      replayed,
+    };
+  }
+
+  function buildNotificationRecord(input = {}) {
+    return {
+      id: input.id || createId("noti"),
+      userId: input.userId || "",
+      organizationId: input.organizationId || "",
+      type: input.type || "info",
+      title: input.title || "",
+      message: input.message || "",
+      channel: input.channel || "in_app",
+      deliveryStatus: input.deliveryStatus || "ready",
+      sentAt: input.sentAt || "",
+      failedAt: input.failedAt || "",
+      retryCount: Number(input.retryCount || 0),
+      errorMessage: input.errorMessage || "",
+      campaignId: input.campaignId || "",
+      audienceType: input.audienceType || "legacy",
+      audienceRole: input.audienceRole || "",
+      requestedChannels:
+        Array.isArray(input.requestedChannels) && input.requestedChannels.length > 0
+          ? [...input.requestedChannels]
+          : [input.channel || "in_app"],
+      inAppStatus: input.inAppStatus || "ready",
+      emailStatus: input.emailStatus || "skipped",
+      emailErrorMessage: input.emailErrorMessage || "",
+      pushStatus: input.pushStatus || "ready",
+      pushSentAt: input.pushSentAt || "",
+      pushFailedAt: input.pushFailedAt || "",
+      pushErrorMessage: input.pushErrorMessage || "",
+      pushAttempts: Array.isArray(input.pushAttempts) ? input.pushAttempts : [],
+      metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
+      read: Boolean(input.read),
+      readAt: input.readAt || "",
+      createdAt: input.createdAt || nowIso(),
+      updatedAt: nowIso(),
+    };
   }
 
   const notifications = {
@@ -6887,7 +8919,7 @@ function createRepositories(options) {
         const result = await pool.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 200");
         return result.rows.map(rowToNotification);
       });
-      if (sqlNotifications && sqlNotifications.length > 0) {
+      if (sqlNotifications !== null) {
         const db = getDb();
         db.notifications = sqlNotifications;
         return sqlNotifications;
@@ -6895,41 +8927,343 @@ function createRepositories(options) {
       return getDb().notifications;
     },
 
+    async listInbox(input = {}) {
+      const authority = normalizeNotificationInboxAuthority(input);
+      const snapshotAt = nowIso();
+      const sqlNotifications = await withSql((pool) =>
+        queryNotificationInboxRows(pool, authority),
+      );
+      if (sqlNotifications !== null) {
+        const db = getDb();
+        db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+        const scopedIds = new Set(
+          db.notifications
+            .filter((item) => notificationBelongsToInbox(item, authority))
+            .map((item) => item.id),
+        );
+        db.notifications = db.notifications.filter(
+          (item) => !scopedIds.has(item.id),
+        );
+        for (const item of sqlNotifications) {
+          syncArrayItem(db.notifications, item);
+        }
+        return canonicalNotificationInbox(
+          sqlNotifications,
+          authority,
+          snapshotAt,
+        );
+      }
+      return canonicalNotificationInbox(
+        getDb().notifications || [],
+        authority,
+        snapshotAt,
+      );
+    },
+
+    async mutateInboxWithAudit(
+      input = {},
+      auditInput = {},
+      idempotencyInput = null,
+    ) {
+      const mutation = normalizeNotificationInboxMutation(
+        input,
+        auditInput,
+        idempotencyInput,
+      );
+
+      if (!getPool()) {
+        return runNotificationInboxMutationExclusive(
+          mutation.authority.userId,
+          mutation.authority.workspaceId,
+          async () => {
+            const runtimeDb = getDb();
+            const snapshot = snapshotRuntimeDb(runtimeDb);
+            try {
+              assertActiveRuntimeNotificationInboxAccount(mutation.authority);
+              const existing = findRuntimeIdempotency(mutation.idempotency);
+              if (existing) {
+                assertIdempotencyFingerprint(existing, mutation.idempotency);
+                existing.lastSeenAt = nowIso();
+                return {
+                  ...cloneRuntimeValue(existing.responseResource),
+                  replayed: true,
+                  responseStatus: existing.responseStatus || 200,
+                };
+              }
+
+              runtimeDb.notifications = Array.isArray(runtimeDb.notifications)
+                ? runtimeDb.notifications
+                : [];
+              const beforeItems = runtimeDb.notifications.filter((item) =>
+                notificationBelongsToInbox(item, mutation.authority),
+              );
+              const target = mutation.notificationId
+                ? beforeItems.find(
+                    (item) => String(item.id || "") === mutation.notificationId,
+                  )
+                : null;
+              if (mutation.action !== "read_all" && !target) {
+                throw repositoryError(
+                  404,
+                  "NOTIFICATION_INBOX_ITEM_NOT_FOUND",
+                  "Notification is outside the current personal inbox",
+                );
+              }
+
+              const updatedAt = nowIso();
+              let affectedIds = [];
+              let mutatedNotification = null;
+              if (mutation.action === "read") {
+                target.read = true;
+                target.readAt = target.readAt || updatedAt;
+                target.updatedAt = updatedAt;
+                affectedIds = [target.id];
+                mutatedNotification = toNotificationInboxItem(
+                  target,
+                  mutation.authority,
+                  updatedAt,
+                );
+              } else if (mutation.action === "read_all") {
+                affectedIds = beforeItems.map((item) => item.id);
+                for (const item of beforeItems) {
+                  item.read = true;
+                  item.readAt = item.readAt || updatedAt;
+                  item.updatedAt = updatedAt;
+                }
+              } else {
+                affectedIds = [target.id];
+                mutatedNotification = toNotificationInboxItem(
+                  target,
+                  mutation.authority,
+                  updatedAt,
+                );
+                runtimeDb.notifications = runtimeDb.notifications.filter(
+                  (item) => item.id !== target.id,
+                );
+              }
+
+              const canonicalItems = canonicalNotificationInbox(
+                runtimeDb.notifications,
+                mutation.authority,
+                updatedAt,
+              );
+              const receipt = buildNotificationInboxMutationReceipt({
+                mutation,
+                notification: mutatedNotification,
+                notifications: canonicalItems,
+                affectedIds,
+                updatedAt,
+                replayed: false,
+              });
+              const auditLog = notificationInboxAudit(
+                mutation,
+                auditInput,
+                affectedIds,
+              );
+              syncRuntimeAuditLog(auditLog);
+              syncRuntimeMutationIdempotency(
+                mutation.idempotency,
+                "notification_inbox",
+                mutation.notificationId || "all",
+                200,
+                receipt,
+              );
+              await saveDb();
+              return {
+                ...receipt,
+                auditLog,
+                responseStatus: 200,
+              };
+            } catch (error) {
+              restoreRuntimeDb(runtimeDb, snapshot);
+              throw error;
+            }
+          },
+        );
+      }
+
+      const result = await withSqlTransaction(async (client) => {
+        const replay = await findSqlMutationReplay(
+          client,
+          mutation.idempotency,
+        );
+        if (replay) {
+          return {
+            ...objectOf(replay.response_json),
+            replayed: true,
+            responseStatus: Number(replay.response_status || 200),
+          };
+        }
+
+        const accountResult = await client.query(
+          `
+            SELECT id, account_status
+            FROM users
+            WHERE id = $1
+            LIMIT 1
+            FOR SHARE
+          `,
+          [mutation.authority.userId],
+        );
+        const account = accountResult.rows[0] || null;
+        if (
+          !account ||
+          ["deleted", "disabled", "inactive", "locked", "suspended"].includes(
+            String(account.account_status || "active").toLowerCase(),
+          )
+        ) {
+          throw repositoryError(
+            403,
+            "NOTIFICATION_INBOX_ACCOUNT_UNAVAILABLE",
+            "The notification inbox owner is not an active account",
+          );
+        }
+
+        const beforeItems = await queryNotificationInboxRows(
+          client,
+          mutation.authority,
+          true,
+        );
+        const target = mutation.notificationId
+          ? beforeItems.find(
+              (item) => String(item.id || "") === mutation.notificationId,
+            )
+          : null;
+        if (mutation.action !== "read_all" && !target) {
+          throw repositoryError(
+            404,
+            "NOTIFICATION_INBOX_ITEM_NOT_FOUND",
+            "Notification is outside the current personal inbox",
+          );
+        }
+
+        const updatedAt = nowIso();
+        let affectedIds = [];
+        let mutatedNotification = null;
+        if (mutation.action === "read") {
+          const updateResult = await client.query(
+            `
+              UPDATE notifications
+              SET read_at = COALESCE(read_at, $2::timestamptz),
+                  updated_at = $2::timestamptz
+              WHERE id = $1
+              RETURNING *
+            `,
+            [mutation.notificationId, updatedAt],
+          );
+          affectedIds = [mutation.notificationId];
+          mutatedNotification = toNotificationInboxItem(
+            rowToNotification(updateResult.rows[0]),
+            mutation.authority,
+            updatedAt,
+          );
+        } else if (mutation.action === "read_all") {
+          affectedIds = beforeItems.map((item) => item.id);
+          if (affectedIds.length > 0) {
+            await client.query(
+              `
+                UPDATE notifications
+                SET read_at = COALESCE(read_at, $2::timestamptz),
+                    updated_at = $2::timestamptz
+                WHERE id = ANY($1::text[])
+              `,
+              [affectedIds, updatedAt],
+            );
+          }
+        } else {
+          const deleteResult = await client.query(
+            `
+              DELETE FROM notifications
+              WHERE id = $1
+              RETURNING *
+            `,
+            [mutation.notificationId],
+          );
+          affectedIds = [mutation.notificationId];
+          mutatedNotification = toNotificationInboxItem(
+            rowToNotification(deleteResult.rows[0]),
+            mutation.authority,
+            updatedAt,
+          );
+        }
+
+        const finalItems = canonicalNotificationInbox(
+          await queryNotificationInboxRows(client, mutation.authority),
+          mutation.authority,
+          updatedAt,
+        );
+        const receipt = buildNotificationInboxMutationReceipt({
+          mutation,
+          notification: mutatedNotification,
+          notifications: finalItems,
+          affectedIds,
+          updatedAt,
+          replayed: false,
+        });
+        const auditLog = notificationInboxAudit(
+          mutation,
+          auditInput,
+          affectedIds,
+        );
+        await queryInsertAuditLog(client, auditLog);
+        await insertSqlMutationIdempotency(
+          client,
+          mutation.idempotency,
+          "notification_inbox",
+          mutation.notificationId || "all",
+          200,
+          receipt,
+        );
+        return {
+          ...receipt,
+          auditLog,
+          responseStatus: 200,
+        };
+      });
+
+      const runtimeDb = getDb();
+      runtimeDb.notifications = Array.isArray(runtimeDb.notifications)
+        ? runtimeDb.notifications
+        : [];
+      if (mutation.action === "delete") {
+        runtimeDb.notifications = runtimeDb.notifications.filter(
+          (item) => item.id !== mutation.notificationId,
+        );
+      }
+      for (const item of result.notifications || []) {
+        const runtimeItem = {
+          ...item,
+          organizationId: item.organizationId || "",
+        };
+        delete runtimeItem.workspaceId;
+        syncArrayItem(runtimeDb.notifications, runtimeItem);
+      }
+      if (result.auditLog) {
+        syncRuntimeAuditLog(result.auditLog);
+      }
+      syncRuntimeMutationIdempotency(
+        mutation.idempotency,
+        "notification_inbox",
+        mutation.notificationId || "all",
+        result.responseStatus || 200,
+        {
+          userId: result.userId,
+          workspaceId: result.workspaceId,
+          action: result.action,
+          notification: result.notification,
+          notifications: result.notifications,
+          affectedIds: result.affectedIds,
+          deletedId: result.deletedId,
+          updatedAt: result.updatedAt,
+          replayed: false,
+        },
+      );
+      await saveDb();
+      return result;
+    },
+
     async create(input) {
-      const notification = {
-        id: input.id || createId("noti"),
-        userId: input.userId || "",
-        organizationId: input.organizationId || "",
-        type: input.type || "info",
-        title: input.title || "",
-        message: input.message || "",
-        channel: input.channel || "in_app",
-        deliveryStatus: input.deliveryStatus || "ready",
-        sentAt: input.sentAt || "",
-        failedAt: input.failedAt || "",
-        retryCount: Number(input.retryCount || 0),
-        errorMessage: input.errorMessage || "",
-        campaignId: input.campaignId || "",
-        audienceType: input.audienceType || "legacy",
-        audienceRole: input.audienceRole || "",
-        requestedChannels:
-          Array.isArray(input.requestedChannels) && input.requestedChannels.length > 0
-            ? [...input.requestedChannels]
-            : [input.channel || "in_app"],
-        inAppStatus: input.inAppStatus || "ready",
-        emailStatus: input.emailStatus || "skipped",
-        emailErrorMessage: input.emailErrorMessage || "",
-        pushStatus: input.pushStatus || "ready",
-        pushSentAt: input.pushSentAt || "",
-        pushFailedAt: input.pushFailedAt || "",
-        pushErrorMessage: input.pushErrorMessage || "",
-        pushAttempts: Array.isArray(input.pushAttempts) ? input.pushAttempts : [],
-        metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
-        read: Boolean(input.read),
-        readAt: input.readAt || "",
-        createdAt: input.createdAt || nowIso(),
-        updatedAt: nowIso(),
-      };
+      const notification = buildNotificationRecord(input);
       if (getPool()) {
         await withSqlTransaction(async (client) => {
           await assertSqlNotificationAudience(client, notification);
@@ -6942,6 +9276,212 @@ function createRepositories(options) {
       getDb().notifications = getDb().notifications.slice(0, 200);
       await saveDb();
       return notification;
+    },
+
+    async createOnce(input = {}) {
+      const notificationId = String(input.id || "");
+      if (!notificationId) {
+        throw repositoryError(
+          400,
+          "NOTIFICATION_ID_REQUIRED",
+          "Idempotent notification creation requires a stable id",
+        );
+      }
+      if (!getPool() && !input.__notificationCreateExclusive) {
+        return runManagedAdminCreateExclusive(() => notifications.createOnce({
+          ...input,
+          __notificationCreateExclusive: true,
+        }));
+      }
+
+      let result;
+      if (getPool()) {
+        result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `notification-create:${notificationId}`,
+          ]);
+          const selected = await client.query(
+            "SELECT * FROM notifications WHERE id = $1 LIMIT 1 FOR UPDATE",
+            [notificationId],
+          );
+          if (selected.rows[0]) {
+            return {
+              notification: rowToNotification(selected.rows[0]),
+              created: false,
+            };
+          }
+          const notification = buildNotificationRecord(input);
+          await assertSqlNotificationAudience(client, notification);
+          await queryUpsertNotification(client, notification);
+          return { notification, created: true };
+        });
+      } else {
+        const runtimeDb = getDb();
+        runtimeDb.notifications = Array.isArray(runtimeDb.notifications)
+          ? runtimeDb.notifications
+          : [];
+        const existing = runtimeDb.notifications.find(
+          (item) => item.id === notificationId,
+        );
+        if (existing) {
+          return { notification: existing, created: false };
+        }
+        const notification = buildNotificationRecord(input);
+        assertRuntimeNotificationAudience(notification);
+        syncArrayItem(runtimeDb.notifications, notification);
+        runtimeDb.notifications = runtimeDb.notifications.slice(0, 200);
+        result = { notification, created: true };
+      }
+
+      syncArrayItem(getDb().notifications, result.notification);
+      getDb().notifications = getDb().notifications.slice(0, 200);
+      await saveDb();
+      return result;
+    },
+
+    async updateDeliveryStatus(input = {}) {
+      const notificationId = String(input.id || "");
+      if (!notificationId) {
+        throw repositoryError(
+          400,
+          "NOTIFICATION_DELIVERY_ID_REQUIRED",
+          "Notification delivery update requires an id",
+        );
+      }
+
+      const assertBinding = (existing) => {
+        const expectedUserId = String(existing.userId || "");
+        const expectedOrganizationId = String(existing.organizationId || "");
+        if (
+          String(input.userId || "") !== expectedUserId ||
+          String(input.organizationId || "") !== expectedOrganizationId
+        ) {
+          throw repositoryError(
+            409,
+            "NOTIFICATION_DELIVERY_BINDING_MISMATCH",
+            "Notification delivery status cannot change recipient or workspace binding",
+          );
+        }
+      };
+      const mergeAttempts = (existingAttempts, incomingAttempts) => {
+        const merged = [];
+        const seen = new Set();
+        for (const attempt of [
+          ...(Array.isArray(existingAttempts) ? existingAttempts : []),
+          ...(Array.isArray(incomingAttempts) ? incomingAttempts : []),
+        ]) {
+          if (!attempt || typeof attempt !== "object") continue;
+          const identity = String(attempt.id || JSON.stringify(attempt));
+          if (seen.has(identity)) continue;
+          seen.add(identity);
+          merged.push(cloneRuntimeValue(attempt));
+        }
+        return merged.slice(-50);
+      };
+      const nextString = (field, fallback) =>
+        Object.prototype.hasOwnProperty.call(input, field)
+          ? String(input[field] || "")
+          : String(fallback || "");
+      const buildNext = (existing) => ({
+        ...existing,
+        deliveryStatus: nextString("deliveryStatus", existing.deliveryStatus || "ready"),
+        sentAt: nextString("sentAt", existing.sentAt),
+        failedAt: nextString("failedAt", existing.failedAt),
+        retryCount: Number.isFinite(Number(input.retryCount))
+          ? Math.max(0, Math.trunc(Number(input.retryCount)))
+          : Number(existing.retryCount || 0),
+        errorMessage: nextString("errorMessage", existing.errorMessage),
+        emailStatus: nextString("emailStatus", existing.emailStatus || "skipped"),
+        emailErrorMessage: nextString("emailErrorMessage", existing.emailErrorMessage),
+        pushStatus: mergeNotificationPushStatus(
+          existing.pushStatus,
+          input.pushStatus || existing.pushStatus,
+        ),
+        pushSentAt: nextString("pushSentAt", existing.pushSentAt),
+        pushFailedAt: nextString("pushFailedAt", existing.pushFailedAt),
+        pushErrorMessage: nextString("pushErrorMessage", existing.pushErrorMessage),
+        pushAttempts: mergeAttempts(existing.pushAttempts, input.pushAttempts),
+        updatedAt: nowIso(),
+      });
+
+      if (!getPool()) {
+        return runNotificationDeliveryMutationExclusive(notificationId, async () => {
+          const runtimeDb = getDb();
+          const existing = (runtimeDb.notifications || []).find(
+            (notification) => notification.id === notificationId,
+          );
+          if (!existing) return null;
+          assertBinding(existing);
+          const before = cloneRuntimeValue(existing);
+          const next = buildNext(existing);
+          try {
+            Object.assign(existing, next);
+            await saveDb();
+          } catch (error) {
+            for (const key of Object.keys(existing)) delete existing[key];
+            Object.assign(existing, before);
+            throw error;
+          }
+          return existing;
+        });
+      }
+
+      const result = await withSqlTransaction(async (client) => {
+        const selected = await client.query(
+          "SELECT * FROM notifications WHERE id = $1 LIMIT 1 FOR UPDATE",
+          [notificationId],
+        );
+        const existing = selected.rows[0] ? rowToNotification(selected.rows[0]) : null;
+        if (!existing) return null;
+        assertBinding(existing);
+        const next = buildNext(existing);
+        const updated = await client.query(
+          `
+            UPDATE notifications
+            SET
+              delivery_status = $2,
+              sent_at = $3::timestamptz,
+              failed_at = $4::timestamptz,
+              retry_count = $5,
+              error_message = $6,
+              email_status = $7,
+              email_error_message = $8,
+              push_status = $9,
+              push_sent_at = $10::timestamptz,
+              push_failed_at = $11::timestamptz,
+              push_error_message = $12,
+              push_attempts = $13::jsonb,
+              updated_at = now()
+            WHERE id = $1
+            RETURNING *
+          `,
+          [
+            notificationId,
+            next.deliveryStatus,
+            optionalTimestamp(next.sentAt),
+            optionalTimestamp(next.failedAt),
+            next.retryCount,
+            optional(next.errorMessage),
+            next.emailStatus,
+            optional(next.emailErrorMessage),
+            next.pushStatus,
+            optionalTimestamp(next.pushSentAt),
+            optionalTimestamp(next.pushFailedAt),
+            optional(next.pushErrorMessage),
+            JSON.stringify(next.pushAttempts),
+          ],
+        );
+        return updated.rows[0] ? rowToNotification(updated.rows[0]) : null;
+      });
+      if (!result) return null;
+      syncArrayItem(getDb().notifications, result);
+      try {
+        await saveDb();
+      } catch (error) {
+        error.backendCommitted = true;
+        throw error;
+      }
+      return result;
     },
 
     async createCampaignWithAudit(input = {}, auditInput = {}, idempotencyInput = null) {
@@ -6983,7 +9523,9 @@ function createRepositories(options) {
           );
         }
         seenUsers.add(userId);
-        const inAppStatus = requestedChannels.includes("in_app") ? "ready" : "skipped";
+        const inAppStatus = requestedChannels.includes("in_app")
+          ? String(recipient.inAppStatus || "ready")
+          : "skipped";
         const emailStatus = requestedChannels.includes("email")
           ? String(recipient.emailStatus || "unavailable")
           : "skipped";
@@ -7022,32 +9564,7 @@ function createRepositories(options) {
         };
       });
 
-      const summarize = (field) => {
-        const counts = {};
-        for (const notification of notifications) {
-          const status = String(notification[field] || "skipped");
-          counts[status] = Number(counts[status] || 0) + 1;
-        }
-        return counts;
-      };
-      const channelSummary = {
-        in_app: summarize("inAppStatus"),
-        email: summarize("emailStatus"),
-        push: summarize("pushStatus"),
-      };
-      const requestedStatuses = notifications.flatMap((notification) =>
-        requestedChannels.map((channel) =>
-          channel === "in_app"
-            ? notification.inAppStatus
-            : channel === "email"
-              ? notification.emailStatus
-              : notification.pushStatus,
-        ),
-      );
-      const hasReady = requestedStatuses.some((status) => ["ready", "sent", "partial"].includes(status));
-      const hasUnavailable = requestedStatuses.some((status) =>
-        ["disabled", "failed", "no_devices", "no_recipient", "skipped", "unavailable"].includes(status),
-      );
+      const initialOutcome = summarizeNotificationCampaign(notifications, requestedChannels);
       const campaign = {
         id: campaignId,
         operationId: campaignId,
@@ -7056,8 +9573,8 @@ function createRepositories(options) {
         requestedChannels,
         recipientCount: notifications.length,
         notificationIds: notifications.map((notification) => notification.id),
-        channelSummary,
-        status: hasReady && hasUnavailable ? "partial" : hasReady ? "ready" : "unavailable",
+        channelSummary: initialOutcome.channelSummary,
+        status: initialOutcome.status,
         createdAt,
       };
       const response = { campaign, notifications };
@@ -7072,7 +9589,7 @@ function createRepositories(options) {
           audience,
           requestedChannels,
           recipientCount: notifications.length,
-          channelSummary,
+          channelSummary: initialOutcome.channelSummary,
         },
       });
 
@@ -7098,9 +9615,14 @@ function createRepositories(options) {
           try {
             runtimeDb.notifications = Array.isArray(runtimeDb.notifications) ? runtimeDb.notifications : [];
             for (const notification of notifications) {
-              assertRuntimeNotificationAudience(notification);
+              const targetUser = assertRuntimeNotificationAudience(notification);
+              applyCanonicalCampaignPreference(notification, targetUser);
               syncArrayItem(runtimeDb.notifications, notification);
             }
+            const canonicalOutcome = summarizeNotificationCampaign(notifications, requestedChannels);
+            campaign.channelSummary = canonicalOutcome.channelSummary;
+            campaign.status = canonicalOutcome.status;
+            auditLog.metadata.channelSummary = cloneRuntimeValue(canonicalOutcome.channelSummary);
             runtimeDb.notifications = runtimeDb.notifications.slice(0, 200);
             syncRuntimeAuditLog(auditLog);
             syncRuntimeMutationIdempotency(
@@ -7133,9 +9655,14 @@ function createRepositories(options) {
           return { ...replay, auditLog: null, replayed: true, responseStatus: Number(replayEntry.response_status || 201) };
         }
         for (const notification of notifications) {
-          await assertSqlNotificationAudience(client, notification);
+          const targetUser = await assertSqlNotificationAudience(client, notification);
+          applyCanonicalCampaignPreference(notification, targetUser);
           await queryUpsertNotification(client, notification);
         }
+        const canonicalOutcome = summarizeNotificationCampaign(notifications, requestedChannels);
+        campaign.channelSummary = canonicalOutcome.channelSummary;
+        campaign.status = canonicalOutcome.status;
+        auditLog.metadata.channelSummary = cloneRuntimeValue(canonicalOutcome.channelSummary);
         await queryInsertAuditLog(client, auditLog);
         await insertSqlMutationIdempotency(
           client,
@@ -7446,57 +9973,151 @@ function createRepositories(options) {
       return [...firebaseSessions, ...demoSessions];
     },
 
-    async revokeForUser(userId, sessionId, auditInput = {}) {
+    async revokeForUser(
+      userId,
+      sessionId,
+      auditInput = {},
+      idempotencyInput = null,
+      protectedSessionInput = null,
+    ) {
       const actorId = String(userId || "");
       const id = String(sessionId || "");
-      const demoSession = (getDb().sessions || []).find((item) => item.id === id && item.userId === actorId) || null;
-      if (demoSession) {
-        if (demoSession.revokedAt) return { session: demoSession, auditLog: null, replayed: true };
-        demoSession.revokedAt = nowIso();
-        const auditLog = createAuditLog({
-          ...auditInput,
-          actorUserId: actorId,
-          action: auditInput.action || "auth.session.revoke",
-          resourceType: "auth_session",
-          resourceId: id,
-        });
-        syncRuntimeAuditLog(auditLog);
-        await saveDb();
-        return { session: demoSession, auditLog, replayed: false };
+      const protectedSessionId = String(protectedSessionInput?.id || "");
+      const protectedSessionKey = String(protectedSessionInput?.sessionKey || "");
+      const assertSessionIsNotCurrent = (session) => {
+        if (
+          session &&
+          (
+            (protectedSessionId && session.id === protectedSessionId) ||
+            (protectedSessionKey && session.sessionKey === protectedSessionKey)
+          )
+        ) {
+          throw repositoryError(
+            409,
+            "AUTH_SESSION_CURRENT",
+            "The current auth session must be ended through logout",
+          );
+        }
+      };
+      let normalizedIdempotencyInput = idempotencyInput;
+      if (idempotencyInput !== null && idempotencyInput !== undefined) {
+        const rawKey = typeof idempotencyInput.key === "string" ? idempotencyInput.key : "";
+        if (!rawKey.trim()) {
+          throw repositoryError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required");
+        }
+        if (rawKey.length > 160) {
+          throw repositoryError(
+            400,
+            "IDEMPOTENCY_KEY_TOO_LONG",
+            "Idempotency-Key exceeds the supported length",
+          );
+        }
+        normalizedIdempotencyInput = { ...idempotencyInput, key: rawKey.trim() };
+      }
+      const idempotency = normalizeMutationIdempotency(normalizedIdempotencyInput);
+      if (
+        idempotency &&
+        (
+          idempotency.scope !== actorId ||
+          idempotency.operation !== "auth.session.revoke" ||
+          !idempotency.fingerprint
+        )
+      ) {
+        throw repositoryError(
+          400,
+          "AUTH_SESSION_IDEMPOTENCY_INVALID",
+          "Auth session revocation requires account-scoped idempotency context",
+        );
       }
 
-      if (!getPool()) {
-        const session = (getDb().authSessions || []).find((item) => item.id === id && item.userId === actorId) || null;
-        if (!session) return null;
-        const binding = (getDb().authSessions || []).filter(
-          (item) => item.userId === actorId && item.sessionKey === session.sessionKey,
-        );
-        const previousRevocation = binding.find((item) => item.revokedAt)?.revokedAt || "";
-        const revokedAt = previousRevocation || nowIso();
-        for (const item of binding) item.revokedAt = item.revokedAt || revokedAt;
-        if (previousRevocation) return { session: { ...session, revokedAt }, auditLog: null, replayed: true };
-        const auditLog = createAuditLog({
-          ...auditInput,
-          actorUserId: actorId,
-          action: auditInput.action || "auth.session.revoke",
-          resourceType: "auth_session",
-          resourceId: id,
+      const runtimeDemoSession = (getDb().sessions || []).find(
+        (item) => item.id === id && item.userId === actorId,
+      ) || null;
+      if (runtimeDemoSession || !getPool()) {
+        return runAuthSessionMutationExclusive(actorId, async () => {
+          const runtimeDb = getDb();
+          runtimeDb.sessions = Array.isArray(runtimeDb.sessions) ? runtimeDb.sessions : [];
+          runtimeDb.authSessions = Array.isArray(runtimeDb.authSessions) ? runtimeDb.authSessions : [];
+          const demoSession = runtimeDb.sessions.find(
+            (item) => item.id === id && item.userId === actorId,
+          ) || null;
+          const firebaseSession = runtimeDb.authSessions.find(
+            (item) => item.id === id && item.userId === actorId,
+          ) || null;
+          const session = demoSession || firebaseSession;
+          if (!session) return null;
+          assertSessionIsNotCurrent(session);
+
+          const replay = idempotency ? findRuntimeIdempotency(idempotency) : null;
+          if (replay) {
+            assertIdempotencyFingerprint(replay, idempotency);
+            return { session, auditLog: null, replayed: true };
+          }
+
+          const snapshot = snapshotRuntimeDb(runtimeDb);
+          try {
+            const binding = demoSession
+              ? [demoSession]
+              : runtimeDb.authSessions.filter(
+                  (item) => item.userId === actorId && item.sessionKey === session.sessionKey,
+                );
+            const previousRevocation = binding.find((item) => item.revokedAt)?.revokedAt || "";
+            const revokedAt = previousRevocation || nowIso();
+            for (const item of binding) item.revokedAt = item.revokedAt || revokedAt;
+            session.revokedAt = session.revokedAt || revokedAt;
+
+            let auditLog = null;
+            if (!previousRevocation) {
+              auditLog = createAuditLog({
+                ...auditInput,
+                actorUserId: actorId,
+                action: auditInput.action || "auth.session.revoke",
+                resourceType: "auth_session",
+                resourceId: id,
+              });
+              syncRuntimeAuditLog(auditLog);
+            }
+            if (idempotency) {
+              syncRuntimeMutationIdempotency(idempotency, "auth_session", id, 200, {
+                sessionId: id,
+                revokedAt,
+              });
+            }
+            await saveDb();
+            return {
+              session: { ...session, revokedAt },
+              auditLog,
+              replayed: false,
+            };
+          } catch (error) {
+            restoreRuntimeDb(runtimeDb, snapshot);
+            throw error;
+          }
         });
-        syncRuntimeAuditLog(auditLog);
-        await saveDb();
-        return { session, auditLog, replayed: false };
       }
 
       const result = await withSqlTransaction(async (client) => {
-        const selected = await client.query(
+        let selected = await client.query(
           "SELECT * FROM auth_sessions WHERE id = $1 AND user_id = $2",
           [id, actorId],
         );
         if (!selected.rows[0]) return null;
-        const session = rowToAuthSession(selected.rows[0]);
+        let session = rowToAuthSession(selected.rows[0]);
+        assertSessionIsNotCurrent(session);
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
           `auth-session:${actorId}:${session.sessionKey}`,
         ]);
+        selected = await client.query(
+          "SELECT * FROM auth_sessions WHERE id = $1 AND user_id = $2",
+          [id, actorId],
+        );
+        if (!selected.rows[0]) return null;
+        session = rowToAuthSession(selected.rows[0]);
+        assertSessionIsNotCurrent(session);
+        const replay = idempotency ? await findSqlMutationReplay(client, idempotency) : null;
+        if (replay) {
+          return { session, auditLog: null, replayed: true };
+        }
         const binding = await client.query(
           `
             SELECT * FROM auth_sessions
@@ -7508,27 +10129,40 @@ function createRepositories(options) {
         );
         const previousRevocation = binding.rows.map(rowToAuthSession).find((item) => item.revokedAt)?.revokedAt || "";
         session.revokedAt = previousRevocation || nowIso();
-        if (previousRevocation) return { session, auditLog: null, replayed: true };
-        await client.query(
-          `
-            UPDATE auth_sessions
-            SET revoked_at = $3::timestamptz, last_seen_at = now()
-            WHERE user_id = $1 AND refresh_token_hash = $2
-          `,
-          [actorId, session.sessionKey, session.revokedAt],
-        );
-        const auditLog = createAuditLog({
-          ...auditInput,
-          actorUserId: actorId,
-          action: auditInput.action || "auth.session.revoke",
-          resourceType: "auth_session",
-          resourceId: id,
-        });
-        await queryInsertAuditLog(client, auditLog);
+        let auditLog = null;
+        if (!previousRevocation) {
+          await client.query(
+            `
+              UPDATE auth_sessions
+              SET revoked_at = $3::timestamptz, last_seen_at = now()
+              WHERE user_id = $1 AND refresh_token_hash = $2
+            `,
+            [actorId, session.sessionKey, session.revokedAt],
+          );
+          auditLog = createAuditLog({
+            ...auditInput,
+            actorUserId: actorId,
+            action: auditInput.action || "auth.session.revoke",
+            resourceType: "auth_session",
+            resourceId: id,
+          });
+          await queryInsertAuditLog(client, auditLog);
+        }
+        if (idempotency) {
+          await insertSqlMutationIdempotency(client, idempotency, "auth_session", id, 200, {
+            sessionId: id,
+            revokedAt: session.revokedAt,
+          });
+        }
         return { session, auditLog, replayed: false };
       });
       if (!result) return null;
       getDb().authSessions = Array.isArray(getDb().authSessions) ? getDb().authSessions : [];
+      getDb().authSessions = getDb().authSessions.map((item) =>
+        item.userId === actorId && item.sessionKey === result.session.sessionKey
+          ? { ...item, revokedAt: item.revokedAt || result.session.revokedAt }
+          : item,
+      );
       syncArrayItem(getDb().authSessions, result.session);
       if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
       await saveDb();
@@ -7550,6 +10184,14 @@ function createRepositories(options) {
       const operation = String(input.operation || "");
       const idempotencyKey = String(input.idempotencyKey || "");
       const requestFingerprint = String(input.requestFingerprint || "");
+      const expectedCurrentPassword =
+        typeof input.expectedCurrentPassword === "string"
+          ? input.expectedCurrentPassword
+          : null;
+      const requireActiveTarget = input.requireActiveTarget === true;
+      const preserveAccountStatus =
+        input.preserveAccountStatus === true && operation === "reset_password";
+      const preserveSessionId = String(input.preserveSessionId || "");
       const requestedTargetState = objectOf(input.targetState);
       const targetState = operation === "change_role"
         ? {
@@ -7560,7 +10202,11 @@ function createRepositories(options) {
             accountStatus: String(requestedTargetState.accountStatus || "active").trim(),
             hospital: String(requestedTargetState.hospital || "").trim(),
           }
-        : {};
+        : operation === "reset_password"
+          ? {
+              provider: String(requestedTargetState.provider || "").trim().toLowerCase(),
+            }
+          : {};
       const operationOrganizationId = operation === "change_role" ? targetState.organizationId : organizationId;
       const protectLastPlatformAdmin = Boolean(input.protectLastPlatformAdmin) && ["lock", "delete", "change_role"].includes(operation);
       if (!targetUserId || !actorUserId || !idempotencyKey || !requestFingerprint) {
@@ -7584,6 +10230,16 @@ function createRepositories(options) {
         ) {
           throw repositoryError(400, "IDENTITY_ROLE_TARGET_INVALID", "Role transition target state is invalid");
         }
+      }
+      if (
+        operation === "reset_password" &&
+        !["firebase", "demo"].includes(targetState.provider)
+      ) {
+        throw repositoryError(
+          400,
+          "IDENTITY_PASSWORD_PROVIDER_INVALID",
+          "Password operations require a durable identity provider",
+        );
       }
       const pendingAccountStatus = {
         lock: "locked",
@@ -7616,6 +10272,16 @@ function createRepositories(options) {
             const identityOperation = rowToIdentityOperation(existing.rows[0]);
             if (identityOperation.requestFingerprint !== requestFingerprint) {
               throw repositoryError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different identity request");
+            }
+            if (
+              ["pending_provider", "provider_failed"].includes(
+                identityOperation.status,
+              )
+            ) {
+              assertRetryablePasswordProviderState(
+                identityOperation,
+                targetState.provider,
+              );
             }
             if (identityOperation.status !== "completed") {
               if (identityOperation.operation === "change_role") {
@@ -7664,6 +10330,31 @@ function createRepositories(options) {
             throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
           }
           const previousUser = rowToUser(selected.rows[0]);
+          if (
+            operation === "reset_password" &&
+            requireActiveTarget &&
+            String(previousUser.accountStatus || "active").toLowerCase() !== "active"
+          ) {
+            throw repositoryError(
+              403,
+              "PASSWORD_CHANGE_ACCOUNT_INACTIVE",
+              "Password changes require an active account",
+            );
+          }
+          if (
+            operation === "reset_password" &&
+            expectedCurrentPassword !== null &&
+            !verifyPasswordSecret(
+              expectedCurrentPassword,
+              previousUser.password,
+            )
+          ) {
+            throw repositoryError(
+              400,
+              "PASSWORD_CURRENT_INVALID",
+              "Current password is incorrect",
+            );
+          }
           if (protectLastPlatformAdmin && ["admin", "platform_admin"].includes(previousUser.role)) {
             const remainingAdmins = await client.query(
               `
@@ -7689,7 +10380,12 @@ function createRepositories(options) {
           await queryAssertWorkspaceOwnerTransition(client, targetUserId, operation, targetState);
           const updated = await client.query(
             "UPDATE users SET account_status = $2, updated_at = now() WHERE id = $1 RETURNING *",
-            [targetUserId, pendingAccountStatus],
+            [
+              targetUserId,
+              preserveAccountStatus
+                ? previousUser.accountStatus || "active"
+                : pendingAccountStatus,
+            ],
           );
           let revokedCount = 0;
           if (revokeSessions) {
@@ -7697,10 +10393,12 @@ function createRepositories(options) {
               `
                 UPDATE auth_sessions
                 SET revoked_at = COALESCE(revoked_at, now()), last_seen_at = now()
-                WHERE user_id = $1 AND revoked_at IS NULL
+                WHERE user_id = $1
+                  AND revoked_at IS NULL
+                  AND ($2 = '' OR id <> $2)
                 RETURNING id
               `,
-              [targetUserId],
+              [targetUserId, preserveSessionId],
             );
             revokedCount = revoked.rows.length;
           }
@@ -7757,6 +10455,14 @@ function createRepositories(options) {
           if (existing.requestFingerprint !== requestFingerprint) {
             throw repositoryError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different identity request");
           }
+          if (
+            ["pending_provider", "provider_failed"].includes(existing.status)
+          ) {
+            assertRetryablePasswordProviderState(
+              existing,
+              targetState.provider,
+            );
+          }
           if (existing.status !== "completed") {
             if (existing.operation === "change_role") {
               assertRuntimeOperationalWorkspace(runtimeDb, existing.targetState);
@@ -7784,6 +10490,28 @@ function createRepositories(options) {
         }
         const user = runtimeDb.users.find((item) => item.id === targetUserId);
         if (!user) throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
+        if (
+          operation === "reset_password" &&
+          requireActiveTarget &&
+          String(user.accountStatus || "active").toLowerCase() !== "active"
+        ) {
+          throw repositoryError(
+            403,
+            "PASSWORD_CHANGE_ACCOUNT_INACTIVE",
+            "Password changes require an active account",
+          );
+        }
+        if (
+          operation === "reset_password" &&
+          expectedCurrentPassword !== null &&
+          !verifyPasswordSecret(expectedCurrentPassword, user.password)
+        ) {
+          throw repositoryError(
+            400,
+            "PASSWORD_CURRENT_INVALID",
+            "Current password is incorrect",
+          );
+        }
         if (protectLastPlatformAdmin && ["admin", "platform_admin"].includes(user.role)) {
           const remainingAdmins = runtimeDb.users.filter(
             (item) => item.id !== targetUserId && ["admin", "platform_admin"].includes(item.role) && (item.accountStatus || "active") === "active",
@@ -7801,20 +10529,30 @@ function createRepositories(options) {
         }
         assertRuntimeWorkspaceOwnerTransition(runtimeDb, targetUserId, operation, targetState);
         const previousAccountStatus = user.accountStatus || "active";
-        user.accountStatus = pendingAccountStatus;
+        user.accountStatus = preserveAccountStatus
+          ? previousAccountStatus
+          : pendingAccountStatus;
         user.updatedAt = nowIso();
         let revokedCount = 0;
         let demoSessionsRevoked = 0;
         if (revokeSessions) {
           runtimeDb.authSessions = (runtimeDb.authSessions || []).map((session) => {
-            if (session.userId === targetUserId && !session.revokedAt) {
+            if (
+              session.userId === targetUserId &&
+              !session.revokedAt &&
+              session.id !== preserveSessionId
+            ) {
               revokedCount += 1;
               return { ...session, revokedAt: nowIso() };
             }
             return session;
           });
           runtimeDb.sessions = (runtimeDb.sessions || []).map((session) => {
-            if (session.userId === targetUserId && !session.revokedAt) {
+            if (
+              session.userId === targetUserId &&
+              !session.revokedAt &&
+              session.id !== preserveSessionId
+            ) {
               demoSessionsRevoked += 1;
               return { ...session, revokedAt: nowIso() };
             }
@@ -7852,7 +10590,11 @@ function createRepositories(options) {
       if (revokeSessions && getPool()) {
         let demoSessionsRevoked = 0;
         getDb().sessions = (getDb().sessions || []).map((session) => {
-          if (session.userId === targetUserId && !session.revokedAt) {
+          if (
+            session.userId === targetUserId &&
+            !session.revokedAt &&
+            session.id !== preserveSessionId
+          ) {
             demoSessionsRevoked += 1;
             return { ...session, revokedAt: nowIso() };
           }
@@ -7862,10 +10604,390 @@ function createRepositories(options) {
         result.firebaseSessionsRevoked = result.revokedCount;
       }
       for (const session of getDb().authSessions || []) {
-        if (session.userId === targetUserId && revokeSessions && !session.revokedAt) session.revokedAt = nowIso();
+        if (
+          session.userId === targetUserId &&
+          revokeSessions &&
+          !session.revokedAt &&
+          session.id !== preserveSessionId
+        ) {
+          session.revokedAt = nowIso();
+        }
       }
       if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
       await saveDb();
+      return result;
+    },
+
+    async findByIntent(input = {}) {
+      const targetUserId = String(input.targetUserId || "");
+      const operation = String(input.operation || "");
+      const idempotencyKey = String(input.idempotencyKey || "");
+      const requestFingerprint = String(input.requestFingerprint || "");
+      if (
+        !targetUserId ||
+        !operation ||
+        !idempotencyKey ||
+        !requestFingerprint
+      ) {
+        throw repositoryError(
+          400,
+          "IDENTITY_OPERATION_INVALID",
+          "Identity operation lookup context is incomplete",
+        );
+      }
+      if (getPool()) {
+        try {
+          const selected = await getPool().query(
+            `SELECT * FROM identity_operations
+             WHERE target_user_id = $1 AND operation = $2 AND idempotency_key = $3
+             LIMIT 1`,
+            [targetUserId, operation, idempotencyKey],
+          );
+          if (!selected.rows[0]) return null;
+          const identityOperation = rowToIdentityOperation(selected.rows[0]);
+          if (identityOperation.requestFingerprint !== requestFingerprint) {
+            throw repositoryError(
+              409,
+              "IDEMPOTENCY_KEY_REUSED",
+              "Idempotency-Key was already used with a different identity request",
+            );
+          }
+          return { identityOperation };
+        } catch (error) {
+          if (error?.code === "IDEMPOTENCY_KEY_REUSED") throw error;
+          onSqlError(error);
+          throw repositoryError(
+            503,
+            "IDENTITY_STORAGE_UNAVAILABLE",
+            "Identity operation storage is unavailable",
+          );
+        }
+      }
+      const identityOperation = (getDb().identityOperations || []).find(
+        (item) =>
+          item.targetUserId === targetUserId &&
+          item.operation === operation &&
+          item.idempotencyKey === idempotencyKey,
+      );
+      if (!identityOperation) return null;
+      if (identityOperation.requestFingerprint !== requestFingerprint) {
+        throw repositoryError(
+          409,
+          "IDEMPOTENCY_KEY_REUSED",
+          "Idempotency-Key was already used with a different identity request",
+        );
+      }
+      return { identityOperation };
+    },
+
+    async backfillPasswordProvider(input = {}) {
+      if (!getPool() && !input.__identityMutationExclusive) {
+        return runManagedAdminCreateExclusive(() =>
+          identityOperations.backfillPasswordProvider({
+            ...input,
+            __identityMutationExclusive: true,
+          }),
+        );
+      }
+      const operationId = String(input.operationId || "");
+      const provider = String(input.provider || "").trim().toLowerCase();
+      if (!operationId || !["firebase", "demo"].includes(provider)) {
+        throw repositoryError(
+          400,
+          "IDENTITY_PASSWORD_PROVIDER_INVALID",
+          "A valid password operation id and provider are required",
+        );
+      }
+      let result;
+      if (getPool()) {
+        result = await withSqlTransaction(async (client) => {
+          const lookup = await client.query(
+            "SELECT target_user_id FROM identity_operations WHERE id = $1 LIMIT 1",
+            [operationId],
+          );
+          if (!lookup.rows[0]) {
+            throw repositoryError(
+              404,
+              "IDENTITY_OPERATION_NOT_FOUND",
+              "Identity operation was not found",
+            );
+          }
+          await client.query(
+            "SELECT pg_advisory_xact_lock(hashtext($1))",
+            [`identity-operation:${lookup.rows[0].target_user_id}`],
+          );
+          const selected = await client.query(
+            "SELECT * FROM identity_operations WHERE id = $1 LIMIT 1 FOR UPDATE",
+            [operationId],
+          );
+          const identityOperation = rowToIdentityOperation(selected.rows[0]);
+          if (
+            identityOperation.operation !== "reset_password" ||
+            !["completed", "provider_applied"].includes(
+              identityOperation.status,
+            )
+          ) {
+            throw passwordProviderReconciliationRequired(operationId);
+          }
+          const durableProvider = String(
+            identityOperation.targetState?.provider || "",
+          ).trim().toLowerCase();
+          if (durableProvider) {
+            if (durableProvider !== provider) {
+              throw passwordProviderReconciliationRequired(operationId);
+            }
+            return {
+              identityOperation,
+              auditLog: null,
+              replayed: true,
+            };
+          }
+          const updated = await client.query(
+            `UPDATE identity_operations
+             SET target_state =
+                   COALESCE(target_state, '{}'::jsonb) ||
+                   jsonb_build_object('provider', $2::text),
+                 updated_at = now()
+             WHERE id = $1
+             RETURNING *`,
+            [operationId, provider],
+          );
+          const repairedOperation = rowToIdentityOperation(updated.rows[0]);
+          const auditLog = createAuditLog({
+            actorUserId: repairedOperation.actorUserId,
+            organizationId: repairedOperation.organizationId,
+            action: "identity.reset_password.provider_backfilled",
+            resourceType: "user",
+            resourceId: repairedOperation.targetUserId,
+            metadata: { operationId, provider },
+          });
+          await queryInsertAuditLog(client, auditLog);
+          return {
+            identityOperation: repairedOperation,
+            auditLog,
+            replayed: false,
+          };
+        });
+      } else {
+        const runtimeDb = getDb();
+        runtimeDb.identityOperations = Array.isArray(
+          runtimeDb.identityOperations,
+        )
+          ? runtimeDb.identityOperations
+          : [];
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          const identityOperation = runtimeDb.identityOperations.find(
+            (item) => item.id === operationId,
+          );
+          if (!identityOperation) {
+            throw repositoryError(
+              404,
+              "IDENTITY_OPERATION_NOT_FOUND",
+              "Identity operation was not found",
+            );
+          }
+          if (
+            identityOperation.operation !== "reset_password" ||
+            !["completed", "provider_applied"].includes(
+              identityOperation.status,
+            )
+          ) {
+            throw passwordProviderReconciliationRequired(operationId);
+          }
+          const durableProvider = String(
+            identityOperation.targetState?.provider || "",
+          ).trim().toLowerCase();
+          if (durableProvider) {
+            if (durableProvider !== provider) {
+              throw passwordProviderReconciliationRequired(operationId);
+            }
+            return {
+              identityOperation,
+              auditLog: null,
+              replayed: true,
+            };
+          }
+          identityOperation.targetState = {
+            ...objectOf(identityOperation.targetState),
+            provider,
+          };
+          identityOperation.updatedAt = nowIso();
+          const auditLog = createAuditLog({
+            actorUserId: identityOperation.actorUserId,
+            organizationId: identityOperation.organizationId,
+            action: "identity.reset_password.provider_backfilled",
+            resourceType: "user",
+            resourceId: identityOperation.targetUserId,
+            metadata: { operationId, provider },
+          });
+          syncRuntimeAuditLog(auditLog);
+          await saveDb();
+          result = { identityOperation, auditLog, replayed: false };
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      }
+      syncArrayItem(getDb().identityOperations, result.identityOperation);
+      if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+      if (getPool()) await saveDb();
+      return result;
+    },
+
+    async markProviderApplying(input = {}) {
+      if (!getPool() && !input.__identityMutationExclusive) {
+        return runManagedAdminCreateExclusive(() =>
+          identityOperations.markProviderApplying({
+            ...input,
+            __identityMutationExclusive: true,
+          }),
+        );
+      }
+      const operationId = String(input.operationId || "");
+      if (!operationId) {
+        throw repositoryError(
+          400,
+          "IDENTITY_OPERATION_INVALID",
+          "Identity operation id is required",
+        );
+      }
+      let result;
+      if (getPool()) {
+        result = await withSqlTransaction(async (client) => {
+          const lookup = await client.query(
+            "SELECT target_user_id FROM identity_operations WHERE id = $1 LIMIT 1",
+            [operationId],
+          );
+          if (!lookup.rows[0]) {
+            throw repositoryError(
+              404,
+              "IDENTITY_OPERATION_NOT_FOUND",
+              "Identity operation was not found",
+            );
+          }
+          await client.query(
+            "SELECT pg_advisory_xact_lock(hashtext($1))",
+            [`identity-operation:${lookup.rows[0].target_user_id}`],
+          );
+          const selected = await client.query(
+            "SELECT * FROM identity_operations WHERE id = $1 LIMIT 1 FOR UPDATE",
+            [operationId],
+          );
+          if (!selected.rows[0]) {
+            throw repositoryError(
+              404,
+              "IDENTITY_OPERATION_NOT_FOUND",
+              "Identity operation was not found",
+            );
+          }
+          const current = rowToIdentityOperation(selected.rows[0]);
+          if (
+            current.status === "completed" ||
+            current.status === "provider_applied" ||
+            current.providerStatus === "applying"
+          ) {
+            return {
+              identityOperation: current,
+              auditLog: null,
+              replayed: true,
+            };
+          }
+          assertRetryablePasswordProviderState(current);
+          if (!["pending_provider", "provider_failed"].includes(current.status)) {
+            throw repositoryError(
+              409,
+              "IDENTITY_PROVIDER_STATE_INVALID",
+              "Identity provider execution cannot start from the current state",
+            );
+          }
+          const updated = await client.query(
+            `UPDATE identity_operations
+             SET status = 'pending_provider', provider_status = 'applying',
+                 provider_result = '{}'::jsonb, error_code = NULL, updated_at = now()
+             WHERE id = $1
+             RETURNING *`,
+            [operationId],
+          );
+          const identityOperation = rowToIdentityOperation(updated.rows[0]);
+          const auditLog = createAuditLog({
+            actorUserId: identityOperation.actorUserId,
+            organizationId: identityOperation.organizationId,
+            action: `identity.${identityOperation.operation}.provider_applying`,
+            resourceType: "user",
+            resourceId: identityOperation.targetUserId,
+            metadata: { operationId },
+          });
+          await queryInsertAuditLog(client, auditLog);
+          return { identityOperation, auditLog, replayed: false };
+        });
+      } else {
+        const runtimeDb = getDb();
+        runtimeDb.identityOperations = Array.isArray(runtimeDb.identityOperations)
+          ? runtimeDb.identityOperations
+          : [];
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          const identityOperation = runtimeDb.identityOperations.find(
+            (item) => item.id === operationId,
+          );
+          if (!identityOperation) {
+            throw repositoryError(
+              404,
+              "IDENTITY_OPERATION_NOT_FOUND",
+              "Identity operation was not found",
+            );
+          }
+          if (
+            identityOperation.status === "completed" ||
+            identityOperation.status === "provider_applied" ||
+            identityOperation.providerStatus === "applying"
+          ) {
+            return {
+              identityOperation,
+              auditLog: null,
+              replayed: true,
+            };
+          }
+          assertRetryablePasswordProviderState(identityOperation);
+          if (
+            !["pending_provider", "provider_failed"].includes(
+              identityOperation.status,
+            )
+          ) {
+            throw repositoryError(
+              409,
+              "IDENTITY_PROVIDER_STATE_INVALID",
+              "Identity provider execution cannot start from the current state",
+            );
+          }
+          identityOperation.status = "pending_provider";
+          identityOperation.providerStatus = "applying";
+          identityOperation.providerResult = {};
+          identityOperation.errorCode = "";
+          identityOperation.updatedAt = nowIso();
+          const auditLog = createAuditLog({
+            actorUserId: identityOperation.actorUserId,
+            organizationId: identityOperation.organizationId,
+            action: `identity.${identityOperation.operation}.provider_applying`,
+            resourceType: "user",
+            resourceId: identityOperation.targetUserId,
+            metadata: { operationId },
+          });
+          syncRuntimeAuditLog(auditLog);
+          await saveDb();
+          result = { identityOperation, auditLog, replayed: false };
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      }
+      getDb().identityOperations = Array.isArray(getDb().identityOperations)
+        ? getDb().identityOperations
+        : [];
+      syncArrayItem(getDb().identityOperations, result.identityOperation);
+      if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+      if (getPool()) await saveDb();
       return result;
     },
 
@@ -8489,8 +11611,18 @@ function createRepositories(options) {
       return patient;
     },
 
-    async saveWithAudit(patient, auditInput = {}, idempotencyInput = null, responseStatus = 200) {
+    async saveWithAudit(
+      patient,
+      auditInput = {},
+      idempotencyInput = null,
+      responseStatus = 200,
+      responseResource = null,
+    ) {
       const idempotency = normalizeMutationIdempotency(idempotencyInput);
+      const responseSnapshot =
+        responseResource && typeof responseResource === "object" && !Array.isArray(responseResource)
+          ? cloneRuntimeValue(responseResource)
+          : { id: patient.id };
       assertRuntimePatientMutationAuthorization(auditInput.authorization, patient);
       const auditLog = createAuditLog({
         ...auditInput,
@@ -8499,10 +11631,13 @@ function createRepositories(options) {
         resourceId: patient.id,
       });
       if (!getPool()) {
-        return runPatientMutationExclusive(async () => {
+        return runUserAuthorityMutationExclusive(
+          auditInput.authorization?.actorUserId || auditInput.actorUserId,
+          () => runPatientMutationExclusive(async () => {
           const runtimeDb = getDb();
           const snapshot = snapshotRuntimeDb(runtimeDb);
           try {
+            assertRuntimePatientMutationAuthorization(auditInput.authorization, patient);
             const existing = idempotency ? findRuntimeIdempotency(idempotency) : null;
             if (existing) {
               assertIdempotencyFingerprint(existing, idempotency);
@@ -8515,18 +11650,32 @@ function createRepositories(options) {
                 auditLog: null,
                 replayed: true,
                 responseStatus: Number(existing.responseStatus || responseStatus),
+                responseResource: cloneRuntimeValue(existing.responseResource || {}),
               };
             }
             syncArrayItem(runtimeDb.patients, patient);
             syncRuntimeAuditLog(auditLog);
-            syncRuntimeMutationIdempotency(idempotency, "patient", patient.id, responseStatus, { id: patient.id });
+            syncRuntimeMutationIdempotency(
+              idempotency,
+              "patient",
+              patient.id,
+              responseStatus,
+              responseSnapshot,
+            );
             await saveDb();
-            return { patient, auditLog, replayed: false, responseStatus };
+            return {
+              patient,
+              auditLog,
+              replayed: false,
+              responseStatus,
+              responseResource: cloneRuntimeValue(responseSnapshot),
+            };
           } catch (error) {
             restoreRuntimeDb(runtimeDb, snapshot);
             throw error;
           }
-        });
+          }),
+        );
       }
 
       const result = await withSqlTransaction(async (client) => {
@@ -8542,36 +11691,65 @@ function createRepositories(options) {
             auditLog: null,
             replayed: true,
             responseStatus: Number(replay.response_status || responseStatus),
+            responseResource: cloneRuntimeValue(replay.response_json || {}),
           };
         }
         await queryUpsertPatient(client, patient);
         await queryInsertAuditLog(client, auditLog);
-        await insertSqlMutationIdempotency(client, idempotency, "patient", patient.id, responseStatus, { id: patient.id });
-        return { patient, auditLog, replayed: false, responseStatus };
+        await insertSqlMutationIdempotency(
+          client,
+          idempotency,
+          "patient",
+          patient.id,
+          responseStatus,
+          responseSnapshot,
+        );
+        return {
+          patient,
+          auditLog,
+          replayed: false,
+          responseStatus,
+          responseResource: cloneRuntimeValue(responseSnapshot),
+        };
       });
       if (!result.patient) return result;
       syncArrayItem(getDb().patients, result.patient);
       if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
-      syncRuntimeMutationIdempotency(idempotency, "patient", result.patient.id, result.responseStatus, { id: result.patient.id });
+      syncRuntimeMutationIdempotency(
+        idempotency,
+        "patient",
+        result.patient.id,
+        result.responseStatus,
+        result.responseResource || responseSnapshot,
+      );
       await saveDb();
       return result;
     },
 
-    async findMutationReplay(idempotencyInput = null) {
+    async findMutationReplay(idempotencyInput = null, authorization = null) {
       const idempotency = normalizeMutationIdempotency(idempotencyInput);
       if (!idempotency) return null;
       if (!getPool()) {
-        const replay = findRuntimeIdempotency(idempotency);
-        if (!replay) return null;
-        assertIdempotencyFingerprint(replay, idempotency);
-        return {
-          resourceType: replay.resourceType || "",
-          resourceId: replay.resourceId || "",
-          responseStatus: Number(replay.responseStatus || 200),
-          responseResource: cloneRuntimeValue(replay.responseResource || {}),
-        };
+        return runUserAuthorityMutationExclusive(
+          authorization?.actorUserId,
+          () => runPatientMutationExclusive(async () => {
+            assertRuntimePatientMutationAuthority(authorization);
+            const replay = findRuntimeIdempotency(idempotency);
+            if (!replay) return null;
+            assertIdempotencyFingerprint(replay, idempotency);
+            return {
+              resourceType: replay.resourceType || "",
+              resourceId: replay.resourceId || "",
+              responseStatus: Number(replay.responseStatus || 200),
+              responseResource: cloneRuntimeValue(replay.responseResource || {}),
+            };
+          }),
+        );
       }
-      const replay = await withSqlTransaction((client) => findSqlMutationReplay(client, idempotency));
+      const replay = await withSqlTransaction(async (client) => {
+        await assertSqlPatientMutationAuthority(client, authorization);
+        return findSqlMutationReplay(client, idempotency);
+      });
       if (!replay) return null;
       return {
         resourceType: replay.resource_type || "",
@@ -8594,9 +11772,16 @@ function createRepositories(options) {
     async deleteWithAudit(id, auditInput = {}, options = {}) {
       const patientId = String(id || "");
       const idempotency = normalizeMutationIdempotency(options.idempotency);
+      const responseSnapshot =
+        options.responseResource &&
+        typeof options.responseResource === "object" &&
+        !Array.isArray(options.responseResource)
+          ? cloneRuntimeValue(options.responseResource)
+          : { deleted: true, patientId };
       const runtimePatient = getDb().patients.find((item) => item.id === patientId && !item.deletedAt) || null;
       if (getPool()) {
         const result = await withSqlTransaction(async (client) => {
+          await assertSqlPatientMutationAuthority(client, auditInput.authorization);
           const replay = await findSqlMutationReplay(client, idempotency);
           if (replay) {
             return {
@@ -8604,6 +11789,7 @@ function createRepositories(options) {
               auditLog: null,
               replayed: true,
               responseStatus: Number(replay.response_status || 200),
+              responseResource: cloneRuntimeValue(replay.response_json || {}),
             };
           }
           if (!runtimePatient) return null;
@@ -8642,13 +11828,14 @@ function createRepositories(options) {
             "patient_delete",
             patientId,
             200,
-            { deleted: true, patientId },
+            responseSnapshot,
           );
           return {
             patient: rowToPatient(deleted.rows[0]),
             auditLog,
             replayed: false,
             responseStatus: 200,
+            responseResource: cloneRuntimeValue(responseSnapshot),
           };
         });
         if (!result) return null;
@@ -8663,15 +11850,18 @@ function createRepositories(options) {
           "patient_delete",
           patientId,
           result.responseStatus,
-          { deleted: true, patientId },
+          result.responseResource || responseSnapshot,
         );
         await saveDb();
         return result;
       }
-      return runPatientMutationExclusive(async () => {
+      return runUserAuthorityMutationExclusive(
+        auditInput.authorization?.actorUserId || auditInput.actorUserId,
+        () => runPatientMutationExclusive(async () => {
         const runtimeDb = getDb();
         const snapshot = snapshotRuntimeDb(runtimeDb);
         try {
+          assertRuntimePatientMutationAuthority(auditInput.authorization);
           const replay = idempotency ? findRuntimeIdempotency(idempotency) : null;
           if (replay) {
             assertIdempotencyFingerprint(replay, idempotency);
@@ -8681,6 +11871,7 @@ function createRepositories(options) {
               auditLog: null,
               replayed: true,
               responseStatus: Number(replay.responseStatus || 200),
+              responseResource: cloneRuntimeValue(replay.responseResource || {}),
             };
           }
           const currentPatient = runtimeDb.patients.find(
@@ -8705,15 +11896,22 @@ function createRepositories(options) {
             "patient_delete",
             patientId,
             200,
-            { deleted: true, patientId },
+            responseSnapshot,
           );
           await saveDb();
-          return { patient: currentPatient, auditLog, replayed: false, responseStatus: 200 };
+          return {
+            patient: currentPatient,
+            auditLog,
+            replayed: false,
+            responseStatus: 200,
+            responseResource: cloneRuntimeValue(responseSnapshot),
+          };
         } catch (error) {
           restoreRuntimeDb(runtimeDb, snapshot);
           throw error;
         }
-      });
+        }),
+      );
     },
   };
 
@@ -9117,11 +12315,13 @@ function createRepositories(options) {
   };
 
   function findRuntimeAppointmentConflict(candidate) {
+    if (candidate.deletedAt) return null;
     if (!["scheduled", "confirmed"].includes(candidate.status)) return null;
     const startsAt = Date.parse(candidate.startsAt || "");
     const endsAt = Date.parse(candidate.endsAt || "");
     return (getDb().appointments || []).find((appointment) => {
       if (!appointment || appointment.id === candidate.id) return false;
+      if (appointment.deletedAt) return false;
       if (appointment.organizationId !== candidate.organizationId) return false;
       if (!["scheduled", "confirmed"].includes(appointment.status)) return false;
       const samePatient = Boolean(candidate.patientId && appointment.patientId === candidate.patientId);
@@ -9279,7 +12479,7 @@ function createRepositories(options) {
       const db = getDb();
       db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
       const sqlAppointments = await withSql(async (pool) => {
-        const where = [];
+        const where = ["deleted_at IS NULL"];
         const values = [];
         const add = (field, value) => {
           if (value === undefined || value === null || value === "") return;
@@ -9305,16 +12505,21 @@ function createRepositories(options) {
         db.appointments = mergeSqlListWithRuntime(db.appointments, sqlAppointments);
       }
       return db.appointments
+        .filter((appointment) => !appointment.deletedAt)
         .filter((appointment) => !filters.patientId || appointment.patientId === filters.patientId)
         .filter((appointment) => !filters.doctorUserId || appointment.doctorUserId === filters.doctorUserId)
         .filter((appointment) => !filters.organizationId || appointment.organizationId === filters.organizationId)
         .filter((appointment) => !filters.status || appointment.status === filters.status);
     },
 
-    async findById(id) {
+    async findById(id, options = {}) {
       const appointmentId = String(id || "");
+      const includeDeleted = options.includeDeleted === true;
       const sqlAppointment = await withSql(async (pool) => {
-        const result = await pool.query("SELECT * FROM appointments WHERE id = $1 LIMIT 1", [appointmentId]);
+        const result = await pool.query(
+          `SELECT * FROM appointments WHERE id = $1${includeDeleted ? "" : " AND deleted_at IS NULL"} LIMIT 1`,
+          [appointmentId],
+        );
         return result.rows[0] ? rowToAppointment(result.rows[0]) : null;
       });
       if (sqlAppointment) {
@@ -9324,7 +12529,9 @@ function createRepositories(options) {
       }
       const db = getDb();
       db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
-      return db.appointments.find((appointment) => appointment.id === appointmentId) || null;
+      return db.appointments.find(
+        (appointment) => appointment.id === appointmentId && (includeDeleted || !appointment.deletedAt),
+      ) || null;
     },
 
     async save(appointment) {
@@ -9446,6 +12653,7 @@ function createRepositories(options) {
               FROM appointments
               WHERE organization_id = $1
                 AND id <> $2
+                AND deleted_at IS NULL
                 AND status IN ('scheduled', 'confirmed')
                 AND starts_at < $3::timestamptz
                 AND ends_at > $4::timestamptz
@@ -9511,14 +12719,11 @@ function createRepositories(options) {
     },
 
     async delete(id) {
-      const appointmentId = String(id || "");
-      const db = getDb();
-      db.appointments = Array.isArray(db.appointments) ? db.appointments : [];
-      const appointment = db.appointments.find((item) => item.id === appointmentId) || null;
-      db.appointments = db.appointments.filter((item) => item.id !== appointmentId);
-      await withSql((pool) => pool.query("DELETE FROM appointments WHERE id = $1", [appointmentId]));
-      await saveDb();
-      return appointment;
+      throw repositoryError(
+        409,
+        "APPOINTMENT_SOFT_DELETE_REQUIRED",
+        `Appointment ${String(id || "")} must be deleted through the audited soft-delete mutation`,
+      );
     },
   };
 
@@ -10234,8 +13439,322 @@ function createRepositories(options) {
     };
   }
 
+  function normalizeDeviceOwnershipReplayRole(role = "") {
+    const normalized = String(role || "").trim().toLowerCase();
+    if (normalized === "admin") return "workspace_admin";
+    if (normalized === "owner") return "workspace_owner";
+    return normalized || "viewer";
+  }
+
+  function isActiveDeviceOwnershipReplayAccount(user = {}) {
+    return Boolean(
+      user.id &&
+      !user.deletedAt &&
+      String(user.accountStatus || "active").toLowerCase() === "active",
+    );
+  }
+
+  function isPlatformDeviceOwnershipReplayActor(
+    user = {},
+    membership = null,
+    workspace = null,
+  ) {
+    if (!isActiveDeviceOwnershipReplayAccount(user)) return false;
+    if (String(user.role || "").toLowerCase() === "admin") return true;
+    return Boolean(
+      isOperationalDeviceOwnershipReplayMembership(user, membership, workspace) &&
+      normalizeDeviceOwnershipReplayRole(membership?.role) === "platform_admin",
+    );
+  }
+
+  function isOperationalDeviceOwnershipReplayMembership(
+    user = {},
+    membership = null,
+    workspace = null,
+  ) {
+    if (
+      !membership ||
+      membership.revokedAt ||
+      String(membership.status || "active").toLowerCase() !== "active"
+    ) {
+      return false;
+    }
+    const role = normalizeDeviceOwnershipReplayRole(
+      membership.role || user.role,
+    );
+    const workspaceType = String(
+      workspace?.workspaceType || workspace?.type || "",
+    ).toLowerCase();
+    if (role === "platform_admin") return true;
+    if (role !== "patient" && workspaceType === "personal") return false;
+    if (role === "patient") return true;
+    if (role === "doctor") {
+      return (
+        String(user.requestedRole || "").toLowerCase() === "doctor" &&
+        String(user.roleRequestStatus || "").toLowerCase() === "approved" &&
+        String(user.role || "").toLowerCase() === "doctor"
+      );
+    }
+    return String(user.roleRequestStatus || "").toLowerCase() === "approved";
+  }
+
+  function actorCanReplayDeviceOwnershipMutation(
+    user = {},
+    membership = null,
+    workspace = null,
+    device = {},
+    operation = "",
+  ) {
+    if (!isActiveDeviceOwnershipReplayAccount(user)) return false;
+    if (
+      !workspace ||
+      workspace.deletedAt ||
+      String(workspace.status || "active").toLowerCase() !== "active"
+    ) {
+      return false;
+    }
+    if (isPlatformDeviceOwnershipReplayActor(user, membership, workspace)) return true;
+    if (["transfer", "revoke"].includes(String(operation || "").toLowerCase())) {
+      return false;
+    }
+    if (
+      !isOperationalDeviceOwnershipReplayMembership(
+        user,
+        membership,
+        workspace,
+      )
+    ) {
+      return false;
+    }
+    const role = normalizeDeviceOwnershipReplayRole(
+      membership.role || user.role,
+    );
+    if (["workspace_owner", "workspace_admin", "nurse", "technician"].includes(role)) {
+      return true;
+    }
+    if (role === "patient") {
+      return Boolean(
+        String(user.role || "").toLowerCase() === "patient" &&
+        [device.ownerUserId, device.pairedUserId]
+          .map((value) => String(value || ""))
+          .includes(String(user.id)),
+      );
+    }
+    const workspaceType = String(
+      workspace.workspaceType || workspace.type || "",
+    ).toLowerCase();
+    return (
+      role === "doctor" &&
+      workspaceType === "solo_practice" &&
+      String(workspace.ownerUserId || "") === String(user.id)
+    );
+  }
+
+  function expectedDeviceOwnershipIdempotencyOperation(operation, deviceId) {
+    const normalized = String(operation || "").toLowerCase();
+    if (["update", "assign", "unassign"].includes(normalized)) {
+      return `device.ownership.update:${deviceId}`;
+    }
+    if (normalized === "transfer") return `device.transfer:${deviceId}`;
+    if (normalized === "revoke") return `device.revoke:${deviceId}`;
+    return "";
+  }
+
+  function assertDeviceOwnershipIdempotencyAuthority(intent, idempotency) {
+    if (!idempotency) return;
+    const actorUserId = String(intent.actorUserId || "");
+    const scope = String(idempotency.scope || "");
+    const expectedOperation = expectedDeviceOwnershipIdempotencyOperation(
+      intent.operation,
+      intent.deviceId,
+    );
+    if (
+      !actorUserId ||
+      (scope !== actorUserId && !scope.startsWith(`${actorUserId}:`)) ||
+      !expectedOperation ||
+      idempotency.operation !== expectedOperation
+    ) {
+      throw repositoryError(
+        403,
+        "DEVICE_OWNERSHIP_IDEMPOTENCY_AUTHORITY_INVALID",
+        "The ownership idempotency receipt is not bound to this actor and operation",
+      );
+    }
+  }
+
+  function assertDeviceOwnershipReplayAuditActor(auditInputs, actorUserId) {
+    const inputs = Array.isArray(auditInputs) ? auditInputs : [auditInputs];
+    if (
+      inputs.length === 0 ||
+      inputs.some((input) => String(input?.actorUserId || "") !== actorUserId)
+    ) {
+      throw repositoryError(
+        403,
+        "DEVICE_OWNERSHIP_REPLAY_ACTOR_MISMATCH",
+        "The replay audit actor must match the original mutation actor",
+      );
+    }
+  }
+
+  function assertDeviceOwnershipReplayCurrent(replay, currentDevice, intent) {
+    const response = objectOf(replay?.response_json || replay?.responseResource);
+    const replayDevice = objectOf(response.device);
+    const resourceType = String(replay?.resource_type || replay?.resourceType || "");
+    const resourceId = String(replay?.resource_id || replay?.resourceId || "");
+    if (
+      resourceType !== "device_ownership" ||
+      resourceId !== intent.deviceId ||
+      String(replayDevice.id || "") !== intent.deviceId
+    ) {
+      throw repositoryError(
+        409,
+        "DEVICE_OWNERSHIP_REPLAY_INVALID",
+        "The stored device ownership receipt does not match this device",
+      );
+    }
+    const receipt = deviceOwnershipSnapshot(replayDevice);
+    const canonical = deviceOwnershipSnapshot(currentDevice);
+    const mismatches = Object.keys(receipt).filter(
+      (field) => receipt[field] !== canonical[field],
+    );
+    if (mismatches.length > 0) {
+      throw repositoryError(
+        409,
+        "DEVICE_OWNERSHIP_REPLAY_STALE",
+        "The stored ownership receipt is stale against canonical device authority",
+        {
+          deviceId: intent.deviceId,
+          mismatches,
+          receipt,
+          canonical,
+        },
+      );
+    }
+    return currentDevice;
+  }
+
+  function assertRuntimeDeviceOwnershipReplayAuthority(
+    runtimeDb,
+    currentDevice,
+    intent,
+    auditInputs,
+  ) {
+    assertDeviceOwnershipReplayAuditActor(auditInputs, intent.actorUserId);
+    const user = (runtimeDb.users || []).find(
+      (candidate) => candidate.id === intent.actorUserId,
+    );
+    const workspace = (runtimeDb.organizations || []).find(
+      (candidate) => candidate.id === currentDevice.organizationId,
+    );
+    const membership = (runtimeDb.memberships || []).find(
+      (candidate) =>
+        candidate.userId === intent.actorUserId &&
+        candidate.organizationId === currentDevice.organizationId,
+    );
+    if (
+      !actorCanReplayDeviceOwnershipMutation(
+        user,
+        membership,
+        workspace,
+        currentDevice,
+        intent.operation,
+      )
+    ) {
+      throw repositoryError(
+        403,
+        "DEVICE_OWNERSHIP_REPLAY_FORBIDDEN",
+        "The ownership mutation actor no longer has authority in the canonical workspace",
+      );
+    }
+  }
+
+  async function assertSqlDeviceOwnershipReplayAuthority(
+    client,
+    currentDevice,
+    intent,
+    auditInputs,
+  ) {
+    assertDeviceOwnershipReplayAuditActor(auditInputs, intent.actorUserId);
+    const authorityResult = await client.query(
+      `
+        SELECT
+          actor.id,
+          actor.role,
+          actor.account_status,
+          actor.requested_role,
+          actor.role_request_status,
+          workspace.id AS workspace_id,
+          workspace.status AS workspace_status,
+          workspace.workspace_type,
+          workspace.type AS workspace_type_legacy,
+          workspace.owner_user_id AS workspace_owner_user_id,
+          workspace.deleted_at AS workspace_deleted_at
+        FROM users actor
+        JOIN organizations workspace ON workspace.id = $2
+        WHERE actor.id = $1
+        FOR SHARE OF actor, workspace
+      `,
+      [intent.actorUserId, currentDevice.organizationId],
+    );
+    const membershipResult = await client.query(
+      `
+        SELECT role, status
+        FROM memberships
+        WHERE user_id = $1 AND organization_id = $2
+        FOR SHARE
+      `,
+      [intent.actorUserId, currentDevice.organizationId],
+    );
+    const row = authorityResult.rows[0] || {};
+    const membershipRow = membershipResult.rows[0] || {};
+    const user = {
+      id: row.id,
+      role: row.role,
+      accountStatus: row.account_status,
+      requestedRole: row.requested_role,
+      roleRequestStatus: row.role_request_status,
+    };
+    const workspace = row.workspace_id
+      ? {
+          id: row.workspace_id,
+          status: row.workspace_status,
+          workspaceType: row.workspace_type,
+          type: row.workspace_type_legacy,
+          ownerUserId: row.workspace_owner_user_id,
+          deletedAt: row.workspace_deleted_at,
+        }
+      : null;
+    const membership = membershipRow.role
+      ? {
+          role: membershipRow.role,
+          status: membershipRow.status,
+        }
+      : null;
+    if (
+      !actorCanReplayDeviceOwnershipMutation(
+        user,
+        membership,
+        workspace,
+        currentDevice,
+        intent.operation,
+      )
+    ) {
+      throw repositoryError(
+        403,
+        "DEVICE_OWNERSHIP_REPLAY_FORBIDDEN",
+        "The ownership mutation actor no longer has authority in the canonical workspace",
+      );
+    }
+  }
+
   function mergeGenericDeviceUpdate(currentDevice, incomingDevice) {
-    if (!currentDevice) return cloneRuntimeValue(incomingDevice);
+    if (!currentDevice) {
+      const inserted = cloneRuntimeValue(incomingDevice);
+      inserted.ota = sanitizeDeviceOtaLifecycle(inserted.ota);
+      inserted.otaStatus = normalizeDeviceOtaStatus(inserted.otaStatus || inserted.ota.status);
+      if (inserted.otaStatus) inserted.ota.status = inserted.otaStatus;
+      return inserted;
+    }
     const merged = {
       ...cloneRuntimeValue(incomingDevice),
       organizationId: currentDevice.organizationId || "",
@@ -10247,12 +13766,347 @@ function createRepositories(options) {
       revokedAt: currentDevice.revokedAt || null,
       secretHash: currentDevice.secretHash || "",
       credentialRotation: cloneRuntimeValue(currentDevice.credentialRotation || {}),
+      ota: sanitizeDeviceOtaLifecycle(currentDevice.ota),
+      otaStatus: normalizeDeviceOtaStatus(currentDevice.otaStatus || currentDevice.ota?.status),
     };
+    if (merged.otaStatus) merged.ota.status = merged.otaStatus;
     if (inferDeviceOwnershipState(currentDevice) === "revoked") {
       merged.connected = false;
       merged.status = "revoked";
     }
     return merged;
+  }
+
+  function canonicalDeviceOtaAuthority(device, otaInput = device?.ota) {
+    return createDeviceOtaAuthoritySnapshot(
+      {
+        ...objectOf(device),
+        ownershipState: inferDeviceOwnershipState(device),
+      },
+      otaInput,
+    );
+  }
+
+  function assertExpectedDeviceOtaAuthority(currentDevice, options = {}) {
+    const currentOta = sanitizeDeviceOtaLifecycle(currentDevice?.ota);
+    const currentStatus = normalizeDeviceOtaStatus(currentOta.status);
+    const allowedStatuses = Array.isArray(options.allowedCurrentStatuses)
+      ? options.allowedCurrentStatuses.map(normalizeDeviceOtaStatus).filter(Boolean)
+      : [];
+    if (allowedStatuses.length > 0 && !allowedStatuses.includes(currentStatus)) {
+      throw repositoryError(
+        409,
+        "DEVICE_OTA_STATE_CHANGED",
+        "The OTA lifecycle advanced before this mutation could be committed",
+        { currentStatus, allowedStatuses },
+      );
+    }
+
+    if (options.requireFutureExpiryAt !== undefined) {
+      const checkedAt = Date.parse(String(options.requireFutureExpiryAt || ""));
+      const expiresAt = Date.parse(currentOta.expiresAt || "");
+      if (
+        !Number.isFinite(checkedAt) ||
+        !Number.isFinite(expiresAt) ||
+        expiresAt <= checkedAt
+      ) {
+        throw repositoryError(
+          409,
+          "DEVICE_OTA_AUTHORIZATION_EXPIRED",
+          "The private OTA download authorization is no longer in its finite validity window",
+        );
+      }
+    }
+
+    const expected = objectOf(options.expectedAuthority);
+    if (Object.keys(expected).length === 0) return;
+    const canonical = canonicalDeviceOtaAuthority(currentDevice, currentOta);
+    const mismatches = Object.keys(expected).filter((field) => {
+      if (!Object.prototype.hasOwnProperty.call(canonical, field)) return true;
+      return String(expected[field] ?? "") !== String(canonical[field] ?? "");
+    });
+    if (options.requireCanonicalOwnershipBinding === true) {
+      const expectedBinding = createDeviceOtaOwnershipBinding({
+        organizationId: canonical.organizationId,
+        ownerUserId: canonical.ownerUserId,
+        ownershipState: canonical.ownershipState,
+      });
+      if (
+        canonical.grantOrganizationId !== canonical.organizationId ||
+        canonical.grantOwnerUserId !== canonical.ownerUserId ||
+        canonical.grantOwnershipState !== canonical.ownershipState ||
+        canonical.ownershipBinding !== expectedBinding
+      ) {
+        mismatches.push("ownershipBinding");
+      }
+    }
+    if (mismatches.length > 0) {
+      throw repositoryError(
+        409,
+        "DEVICE_OTA_AUTHORITY_CHANGED",
+        "The private OTA lifecycle, ownership or firmware binding changed before persistence",
+        {
+          deviceId: currentDevice?.id || "",
+          mismatches: [...new Set(mismatches)],
+        },
+      );
+    }
+  }
+
+  function mergeDeviceOtaLifecycleUpdate(currentDevice, otaInput, options = {}) {
+    if (!currentDevice) {
+      throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+    const incomingOta = sanitizeDeviceOtaLifecycle(otaInput);
+    const nextStatus = normalizeDeviceOtaStatus(incomingOta.status);
+    if (!incomingOta.id || !incomingOta.commandId || !nextStatus) {
+      throw repositoryError(
+        400,
+        "DEVICE_OTA_LIFECYCLE_INVALID",
+        "Canonical OTA, command and lifecycle status are required",
+      );
+    }
+    const currentOta = sanitizeDeviceOtaLifecycle(currentDevice.ota);
+    assertExpectedDeviceOtaAuthority(currentDevice, options);
+    if (options.expectedOtaId && currentOta.id !== String(options.expectedOtaId)) {
+      throw repositoryError(
+        409,
+        "DEVICE_OTA_LIFECYCLE_CHANGED",
+        "The active OTA lifecycle changed before persistence",
+      );
+    }
+
+    let canonicalOta;
+    if (!currentOta.id || currentOta.id !== incomingOta.id) {
+      if (options.allowReplace !== true) {
+        throw repositoryError(
+          409,
+          currentOta.id ? "DEVICE_OTA_LIFECYCLE_MISMATCH" : "DEVICE_OTA_LIFECYCLE_MISSING",
+          currentOta.id
+            ? "The OTA update does not match the active lifecycle"
+            : "An OTA lifecycle must be initialized explicitly",
+        );
+      }
+      if (
+        currentOta.id &&
+        !OTA_TERMINAL_STATUSES.has(normalizeDeviceOtaStatus(currentOta.status))
+      ) {
+        throw repositoryError(
+          409,
+          "DEVICE_OTA_IN_PROGRESS",
+          "Another OTA lifecycle is still active for this device",
+        );
+      }
+      if (nextStatus === "confirmed" && options.allowConfirmed !== true) {
+        throw repositoryError(
+          409,
+          "DEVICE_OTA_CONFIRMATION_RECONNECT_REQUIRED",
+          "OTA confirmation requires an authenticated reconnect",
+        );
+      }
+      canonicalOta = incomingOta;
+    } else {
+      const transition = transitionDeviceOtaLifecycle(currentOta, nextStatus, {
+        allowConfirmed: options.allowConfirmed === true,
+        at: incomingOta.updatedAt || options.at || nowIso(),
+        metadata: incomingOta,
+      });
+      if (!transition.changed && normalizeDeviceOtaStatus(currentOta.status) !== nextStatus) {
+        canonicalOta = currentOta;
+      } else {
+        canonicalOta = sanitizeDeviceOtaLifecycle({
+          ...currentOta,
+          ...incomingOta,
+          ...transition.ota,
+          status: nextStatus,
+          updatedAt: incomingOta.updatedAt || transition.ota.updatedAt || options.at || nowIso(),
+        });
+        if (OTA_TERMINAL_STATUSES.has(nextStatus)) {
+          // Object spread cannot express deletion. A terminal lifecycle must
+          // revoke the persisted bearer verifier, even when the previous OTA
+          // snapshot contained tokenHash.
+          delete canonicalOta.tokenHash;
+        }
+      }
+    }
+
+    const nextDevice = cloneRuntimeValue(currentDevice);
+    nextDevice.ota = canonicalOta;
+    nextDevice.otaStatus = normalizeDeviceOtaStatus(canonicalOta.status);
+    nextDevice.updatedAt = canonicalOta.updatedAt || options.at || nowIso();
+    return nextDevice;
+  }
+
+  function mergeCanonicalDeviceCommand(currentCommand, incomingCommand) {
+    const incoming = cloneRuntimeValue(incomingCommand);
+    if (!currentCommand) return incoming;
+    if (
+      currentCommand.id !== incoming.id ||
+      currentCommand.deviceId !== incoming.deviceId ||
+      currentCommand.type !== incoming.type ||
+      currentCommand.requestedByUserId !== incoming.requestedByUserId
+    ) {
+      throw repositoryError(
+        409,
+        "DEVICE_COMMAND_IDENTITY_MISMATCH",
+        "The device command identity changed before persistence",
+      );
+    }
+    const canonical = cloneRuntimeValue(currentCommand);
+    if (!canonical.executionExpiresAt && incoming.executionExpiresAt) {
+      canonical.executionExpiresAt = incoming.executionExpiresAt;
+    }
+    const progressOrder = [
+      "accepted",
+      "queued",
+      "delivered",
+      "acknowledged",
+      "applying",
+      "applied",
+    ];
+    const currentIndex = progressOrder.indexOf(canonical.state);
+    const targetIndex = progressOrder.indexOf(incoming.state);
+    if (currentIndex >= 0 && targetIndex >= 0) {
+      if (targetIndex <= currentIndex) return canonical;
+      const nextProgressState = () => {
+        if (canonical.state === "accepted") {
+          if (incoming.state === "queued") return "queued";
+          if (incoming.state === "delivered") return "delivered";
+          return "acknowledged";
+        }
+        if (canonical.state === "queued") {
+          return incoming.state === "delivered" ? "delivered" : "acknowledged";
+        }
+        if (canonical.state === "delivered") return "acknowledged";
+        if (canonical.state === "acknowledged") {
+          return incoming.state === "applying" ? "applying" : "applied";
+        }
+        if (canonical.state === "applying") return "applied";
+        return "";
+      };
+      while (canonical.state !== incoming.state) {
+        const nextState = nextProgressState();
+        if (!nextState) break;
+        const evidenceAt = incoming[`${nextState}At`] || incoming.updatedAt;
+        if (
+          (nextState === "delivered" && !incoming.delivery?.delivered && !incoming.deliveredAt) ||
+          (nextState === "acknowledged" && !incoming.acknowledgedAt) ||
+          (nextState === "applying" && !incoming.applyingAt) ||
+          (nextState === "applied" && !incoming.appliedAt)
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_COMMAND_PROGRESS_EVIDENCE_MISSING",
+            `The ${nextState} command transition is missing durable evidence`,
+          );
+        }
+        transitionDeviceCommand(canonical, nextState, {
+          at: evidenceAt || nowIso(),
+          code: nextState === incoming.state
+            ? incoming.code
+            : `COMMAND_${nextState.toUpperCase()}_RECONCILED`,
+          detail: nextState === incoming.state
+            ? incoming.detail
+            : "Intermediate authenticated command progress reconciled durably",
+          delivery: incoming.delivery,
+        });
+      }
+      return canonical;
+    }
+    const transition = transitionDeviceCommand(canonical, incoming.state, {
+      at: incoming.updatedAt || nowIso(),
+      code: incoming.code,
+      detail: incoming.detail,
+      delivery: incoming.delivery,
+    });
+    return transition.command;
+  }
+
+  function refreshCanonicalOtaDownloadAuthority(
+    currentDevice,
+    currentCommand,
+    otaIdInput,
+    checkedAtInput,
+    options = {},
+  ) {
+    const otaId = String(otaIdInput || "").trim();
+    const checkedAt = new Date(checkedAtInput || nowIso());
+    if (!Number.isFinite(checkedAt.getTime())) {
+      throw repositoryError(
+        400,
+        "DEVICE_OTA_DOWNLOAD_TIME_INVALID",
+        "The OTA download authority check timestamp is invalid",
+      );
+    }
+    if (!currentDevice) {
+      throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+    const currentOta = sanitizeDeviceOtaLifecycle(currentDevice.ota);
+    if (!otaId || currentOta.id !== otaId || !currentOta.commandId) {
+      throw repositoryError(
+        409,
+        "DEVICE_OTA_LIFECYCLE_CHANGED",
+        "The active OTA lifecycle changed before download authorization",
+      );
+    }
+    assertExpectedDeviceOtaAuthority(currentDevice, options);
+    if (
+      !currentCommand ||
+      currentCommand.id !== currentOta.commandId ||
+      currentCommand.deviceId !== currentDevice.id ||
+      currentCommand.type !== "ota.update" ||
+      currentCommand.correlationId !== currentOta.correlationId ||
+      String(currentCommand.organizationId || "") !== String(currentDevice.organizationId || "")
+    ) {
+      throw repositoryError(
+        409,
+        "DEVICE_OTA_COMMAND_MISSING",
+        "The private OTA grant has no matching canonical command",
+      );
+    }
+
+    const nextCommand = cloneRuntimeValue(currentCommand);
+    const commandExpiry = expireDeviceCommandIfOverdue(nextCommand, checkedAt);
+    let nextDevice = cloneRuntimeValue(currentDevice);
+    let otaChanged = false;
+    if (
+      nextCommand.state === "expired" &&
+      !OTA_TERMINAL_STATUSES.has(normalizeDeviceOtaStatus(currentOta.status))
+    ) {
+      const otaTransition = transitionDeviceOtaLifecycle(currentOta, "expired", {
+        at: nextCommand.updatedAt || checkedAt.toISOString(),
+        metadata: {
+          failureCode: nextCommand.code || "COMMAND_EXPIRED",
+          detail: nextCommand.detail || "The OTA command delivery deadline expired",
+        },
+      });
+      nextDevice = mergeDeviceOtaLifecycleUpdate(currentDevice, otaTransition.ota, {
+        expectedOtaId: currentOta.id,
+      });
+      otaChanged = otaTransition.changed;
+    } else if (
+      options.transitionToDownloading === true &&
+      normalizeDeviceOtaStatus(currentOta.status) !== "downloading"
+    ) {
+      const otaTransition = transitionDeviceOtaLifecycle(currentOta, "downloading", {
+        at: checkedAt.toISOString(),
+        eventType: "ota.download",
+      });
+      nextDevice = mergeDeviceOtaLifecycleUpdate(currentDevice, otaTransition.ota, {
+        ...options,
+        expectedOtaId: currentOta.id,
+      });
+      otaChanged = otaTransition.changed;
+    }
+
+    return {
+      device: nextDevice,
+      command: nextCommand,
+      expired: nextCommand.state === "expired",
+      changed: commandExpiry.changed || otaChanged,
+      commandChanged: commandExpiry.changed,
+      otaChanged,
+    };
   }
 
   function assertExpectedCredentialRotation(device, expectedInput) {
@@ -10397,6 +14251,64 @@ function createRepositories(options) {
     }
     nextDevice.updatedAt = at;
     return nextDevice;
+  }
+
+  function ownershipAuthorityChanged(currentDevice, nextDevice) {
+    const current = deviceOwnershipSnapshot(currentDevice);
+    const next = deviceOwnershipSnapshot(nextDevice);
+    return ["organizationId", "ownerUserId", "ownershipState"].some(
+      (field) => current[field] !== next[field],
+    );
+  }
+
+  function invalidateActiveDeviceOtaForOwnershipChange(
+    currentDevice,
+    nextDevice,
+    currentCommand,
+    operation,
+    at,
+  ) {
+    const currentOta = sanitizeDeviceOtaLifecycle(currentDevice?.ota);
+    const currentStatus = normalizeDeviceOtaStatus(currentOta.status);
+    if (
+      !ownershipAuthorityChanged(currentDevice, nextDevice) ||
+      !currentOta.id ||
+      !currentOta.commandId ||
+      !currentStatus ||
+      OTA_TERMINAL_STATUSES.has(currentStatus)
+    ) {
+      return { device: nextDevice, command: null };
+    }
+
+    const code = operation === "revoke"
+      ? "OTA_DEVICE_REVOKED"
+      : "OTA_OWNERSHIP_CHANGED";
+    const detail = operation === "revoke"
+      ? "The device was revoked while this OTA grant was active"
+      : "Device ownership authority changed while this OTA grant was active";
+    const transition = transitionDeviceOtaLifecycle(currentOta, "failed", {
+      at,
+      metadata: { failureCode: code, error: detail },
+    });
+    nextDevice.ota = transition.ota;
+    nextDevice.otaStatus = "failed";
+    nextDevice.updatedAt = at;
+
+    if (!currentCommand) return { device: nextDevice, command: null };
+    if (
+      currentCommand.id !== currentOta.commandId ||
+      currentCommand.deviceId !== currentDevice.id ||
+      currentCommand.type !== "ota.update"
+    ) {
+      throw repositoryError(
+        409,
+        "DEVICE_OTA_COMMAND_MISMATCH",
+        "The active OTA command no longer matches the ownership mutation",
+      );
+    }
+    const nextCommand = cloneRuntimeValue(currentCommand);
+    transitionDeviceCommand(nextCommand, "failed", { at, code, detail });
+    return { device: nextDevice, command: nextCommand };
   }
 
   function assertDeviceOwnershipShape(device = {}) {
@@ -10686,6 +14598,73 @@ function createRepositories(options) {
   }
 
   const devices = {
+    async backfillOtaLifecycleFromRuntime() {
+      if (!getPool()) {
+        return { scanned: 0, backfilled: 0, skipped: 0 };
+      }
+      const runtimeDevices = (Array.isArray(getDb().devices) ? getDb().devices : [])
+        .map((device) => ({
+          id: String(device?.id || ""),
+          organizationId: String(device?.organizationId || ""),
+          ota: sanitizeDeviceOtaLifecycle(device?.ota),
+        }))
+        .filter((device) =>
+          device.id &&
+           isCanonicalDeviceOtaLifecycle(device.ota))
+        .sort((left, right) => left.id.localeCompare(right.id));
+      if (runtimeDevices.length === 0) {
+        return { scanned: 0, backfilled: 0, skipped: 0 };
+      }
+
+      return withSqlTransaction(async (client) => {
+        let backfilled = 0;
+        let skipped = 0;
+        for (const runtimeDevice of runtimeDevices) {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ownership:${runtimeDevice.id}`,
+          ]);
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ota:${runtimeDevice.id}`,
+          ]);
+          const selected = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [runtimeDevice.id],
+          );
+          const sqlDevice = selected.rows?.[0]
+            ? rowToDevice(selected.rows[0])
+            : null;
+          const sqlOta = sanitizeDeviceOtaLifecycle(sqlDevice?.ota);
+          const workspaceMismatch = Boolean(
+            sqlDevice?.organizationId &&
+            runtimeDevice.organizationId &&
+            sqlDevice.organizationId !== runtimeDevice.organizationId,
+          );
+          if (!sqlDevice || workspaceMismatch || sqlOta.id) {
+            skipped += 1;
+            continue;
+          }
+          const safeOta = sanitizeDeviceOtaLifecycle(runtimeDevice.ota);
+          const otaStatus = normalizeDeviceOtaStatus(safeOta.status);
+          const updatedAt = safeOta.updatedAt || sqlDevice.updatedAt || nowIso();
+          const updated = await client.query(
+            `
+              UPDATE devices
+              SET ota = $2::jsonb,
+                  ota_status = $3,
+                  updated_at = $4
+              WHERE id = $1
+                AND (ota IS NULL OR ota = '{}'::jsonb)
+              RETURNING id
+            `,
+            [runtimeDevice.id, JSON.stringify(safeOta), otaStatus, updatedAt],
+          );
+          if (updated.rowCount === 1) backfilled += 1;
+          else skipped += 1;
+        }
+        return { scanned: runtimeDevices.length, backfilled, skipped };
+      });
+    },
+
     async list() {
       const sqlDevices = await withSql(async (pool) => {
         const result = await pool.query("SELECT * FROM devices ORDER BY updated_at DESC, created_at DESC");
@@ -10714,6 +14693,44 @@ function createRepositories(options) {
       return cloneRuntimeValue(
         getDb().devices.find((device) => device.id === deviceId) || null,
       );
+    },
+
+    async withAuthenticationFence(id, operation) {
+      const deviceId = String(id || "").trim();
+      if (!deviceId || typeof operation !== "function") {
+        throw repositoryError(
+          400,
+          "DEVICE_AUTH_FENCE_INVALID",
+          "A device id and authentication fence operation are required",
+        );
+      }
+      if (getPool()) {
+        return withSqlTransaction(async (client) => {
+          // Share the ownership lock with claim/assign/transfer/revoke and the
+          // credential lock with rotation. Registering the socket inside this
+          // fence means a later ownership mutation must observe and close it.
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ownership:${deviceId}`,
+          ]);
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-credential-rotation:${deviceId}`,
+          ]);
+          const currentResult = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [deviceId],
+          );
+          const currentDevice = currentResult.rows[0]
+            ? rowToDevice(currentResult.rows[0])
+            : null;
+          return operation(cloneRuntimeValue(currentDevice));
+        });
+      }
+      return runDeviceProvisionMutationExclusive(async () => {
+        const currentDevice = getDb().devices.find(
+          (candidate) => candidate.id === deviceId,
+        ) || null;
+        return operation(cloneRuntimeValue(currentDevice));
+      });
     },
 
     async save(device) {
@@ -10757,6 +14774,302 @@ function createRepositories(options) {
           syncArrayItem(runtimeDb.devices, canonicalDevice);
           await saveDb();
           return cloneRuntimeValue(canonicalDevice);
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      });
+    },
+
+    async refreshOtaDownloadAuthority(
+      deviceIdInput,
+      otaIdInput,
+      checkedAtInput = nowIso(),
+      options = {},
+    ) {
+      const deviceId = String(deviceIdInput || "").trim();
+      const otaId = String(otaIdInput || "").trim();
+      if (!deviceId || !otaId) {
+        throw repositoryError(
+          400,
+          "DEVICE_OTA_DOWNLOAD_AUTHORITY_INVALID",
+          "Canonical device and OTA ids are required for download authorization",
+        );
+      }
+
+      if (getPool()) {
+        const result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ownership:${deviceId}`,
+          ]);
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ota:${deviceId}`,
+          ]);
+          const deviceResult = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [deviceId],
+          );
+          const currentDevice = deviceResult.rows?.[0]
+            ? rowToDevice(deviceResult.rows[0])
+            : null;
+          if (currentDevice && inferDeviceOwnershipState(currentDevice) === "revoked") {
+            throw repositoryError(403, "DEVICE_REVOKED", "A revoked device cannot download firmware");
+          }
+          const currentOta = sanitizeDeviceOtaLifecycle(currentDevice?.ota);
+          if (!currentDevice || currentOta.id !== otaId || !currentOta.commandId) {
+            throw repositoryError(
+              409,
+              "DEVICE_OTA_LIFECYCLE_CHANGED",
+              "The active OTA lifecycle changed before download authorization",
+            );
+          }
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-command:${currentOta.commandId}`,
+          ]);
+          const commandResult = await client.query(
+            "SELECT * FROM device_commands WHERE device_id = $1 AND id = $2 FOR UPDATE",
+            [deviceId, currentOta.commandId],
+          );
+          const currentCommand = commandResult.rows?.[0]
+            ? rowToDeviceCommand(commandResult.rows[0])
+            : null;
+          const refreshed = refreshCanonicalOtaDownloadAuthority(
+            currentDevice,
+            currentCommand,
+            otaId,
+            checkedAtInput,
+            options,
+          );
+          if (refreshed.otaChanged) {
+            const updateResult = await client.query(
+              `
+                UPDATE devices
+                SET ota = $2::jsonb,
+                    ota_status = $3,
+                    updated_at = $4
+                WHERE id = $1
+                RETURNING *
+              `,
+              [
+                deviceId,
+                JSON.stringify(sanitizeDeviceOtaLifecycle(refreshed.device.ota)),
+                refreshed.device.otaStatus,
+                refreshed.device.updatedAt,
+              ],
+            );
+            if (updateResult.rowCount !== 1 || !updateResult.rows?.[0]) {
+              throw repositoryError(
+                409,
+                "DEVICE_OTA_PERSISTENCE_CONFLICT",
+                "The OTA download authority state could not be persisted exactly once",
+              );
+            }
+            refreshed.device = rowToDevice(updateResult.rows[0]);
+          }
+          if (refreshed.commandChanged) {
+            await queryUpsertDeviceCommand(client, refreshed.command);
+          }
+          return refreshed;
+        });
+
+        if (result.changed) {
+          const runtimeDb = getDb();
+          runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
+          runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+            ? runtimeDb.deviceCommands
+            : [];
+          syncArrayItem(runtimeDb.devices, result.device);
+          syncArrayItem(runtimeDb.deviceCommands, result.command);
+          try {
+            await saveDb();
+          } catch (error) {
+            onSqlError(
+              new Error(
+                `PostgreSQL OTA download authority committed but runtime mirror refresh failed: ${error.message}`,
+              ),
+            );
+          }
+        }
+        return cloneRuntimeValue(result);
+      }
+
+      return runDeviceProvisionMutationExclusive(async () => {
+        const runtimeDb = getDb();
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
+          runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+            ? runtimeDb.deviceCommands
+            : [];
+          const currentDevice = runtimeDb.devices.find((item) => item.id === deviceId) || null;
+          if (currentDevice && inferDeviceOwnershipState(currentDevice) === "revoked") {
+            throw repositoryError(403, "DEVICE_REVOKED", "A revoked device cannot download firmware");
+          }
+          const currentOta = sanitizeDeviceOtaLifecycle(currentDevice?.ota);
+          const currentCommand = runtimeDb.deviceCommands.find(
+            (item) => item.deviceId === deviceId && item.id === currentOta.commandId,
+          ) || null;
+          const refreshed = refreshCanonicalOtaDownloadAuthority(
+            currentDevice,
+            currentCommand,
+            otaId,
+            checkedAtInput,
+            options,
+          );
+          if (refreshed.changed) {
+            syncArrayItem(runtimeDb.devices, refreshed.device);
+            syncArrayItem(runtimeDb.deviceCommands, refreshed.command);
+            await saveDb();
+          }
+          return cloneRuntimeValue(refreshed);
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      });
+    },
+
+    async saveOtaLifecycle(deviceIdInput, otaInput, options = {}) {
+      const deviceId = String(deviceIdInput || "").trim();
+      const command = options.command ? cloneRuntimeValue(options.command) : null;
+      if (!deviceId) {
+        throw repositoryError(
+          400,
+          "DEVICE_OTA_LIFECYCLE_INVALID",
+          "A canonical device id is required for OTA persistence",
+        );
+      }
+      if (command && (command.deviceId !== deviceId || command.id !== otaInput?.commandId)) {
+        throw repositoryError(
+          409,
+          "DEVICE_OTA_COMMAND_MISMATCH",
+          "The OTA lifecycle and command must belong to the same device and command",
+        );
+      }
+
+      const syncRuntime = async (result) => {
+        const runtimeDb = getDb();
+        runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
+        syncArrayItem(runtimeDb.devices, result.device);
+        if (result.command) {
+          runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+            ? runtimeDb.deviceCommands
+            : [];
+          syncArrayItem(runtimeDb.deviceCommands, result.command);
+          runtimeDb.deviceCommands = runtimeDb.deviceCommands
+            .sort((left, right) =>
+              String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
+            .slice(0, 1000);
+        }
+        await saveDb();
+      };
+
+      if (getPool()) {
+        const result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ownership:${deviceId}`,
+          ]);
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ota:${deviceId}`,
+          ]);
+          const currentResult = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [deviceId],
+          );
+          const currentDevice = currentResult.rows[0]
+            ? rowToDevice(currentResult.rows[0])
+            : null;
+          if (currentDevice && inferDeviceOwnershipState(currentDevice) === "revoked") {
+            throw repositoryError(403, "DEVICE_REVOKED", "A revoked device cannot update OTA state");
+          }
+          const nextDevice = mergeDeviceOtaLifecycleUpdate(currentDevice, otaInput, options);
+          const updateResult = await client.query(
+            `
+              UPDATE devices
+              SET ota = $2::jsonb,
+                  ota_status = $3,
+                  updated_at = $4
+              WHERE id = $1
+              RETURNING *
+            `,
+            [
+              deviceId,
+              JSON.stringify(sanitizeDeviceOtaLifecycle(nextDevice.ota)),
+              nextDevice.otaStatus,
+              nextDevice.updatedAt,
+            ],
+          );
+          if (updateResult.rowCount !== 1 || !updateResult.rows?.[0]) {
+            throw repositoryError(
+              409,
+              "DEVICE_OTA_PERSISTENCE_CONFLICT",
+              "The OTA lifecycle could not be persisted exactly once",
+            );
+          }
+          let persistedCommand = command;
+          if (command) {
+            await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+              `device-command:${command.id}`,
+            ]);
+            const commandResult = await client.query(
+              "SELECT * FROM device_commands WHERE device_id = $1 AND id = $2 FOR UPDATE",
+              [deviceId, command.id],
+            );
+            persistedCommand = mergeCanonicalDeviceCommand(
+              commandResult.rows?.[0] ? rowToDeviceCommand(commandResult.rows[0]) : null,
+              command,
+            );
+            await queryUpsertDeviceCommand(client, persistedCommand);
+          }
+          return {
+            device: rowToDevice(updateResult.rows[0]),
+            command: persistedCommand,
+          };
+        });
+        try {
+          await syncRuntime(result);
+        } catch (error) {
+          onSqlError(
+            new Error(
+              `PostgreSQL OTA lifecycle committed but runtime mirror refresh failed: ${error.message}`,
+            ),
+          );
+        }
+        return cloneRuntimeValue(result);
+      }
+
+      return runDeviceProvisionMutationExclusive(async () => {
+        const runtimeDb = getDb();
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
+          const currentDevice = runtimeDb.devices.find((item) => item.id === deviceId) || null;
+          if (currentDevice && inferDeviceOwnershipState(currentDevice) === "revoked") {
+            throw repositoryError(403, "DEVICE_REVOKED", "A revoked device cannot update OTA state");
+          }
+          const nextDevice = mergeDeviceOtaLifecycleUpdate(currentDevice, otaInput, options);
+          syncArrayItem(runtimeDb.devices, nextDevice);
+          if (command) {
+            runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+              ? runtimeDb.deviceCommands
+              : [];
+            const currentCommand = runtimeDb.deviceCommands.find(
+              (item) => item.deviceId === deviceId && item.id === command.id,
+            ) || null;
+            const persistedCommand = mergeCanonicalDeviceCommand(currentCommand, command);
+            syncArrayItem(runtimeDb.deviceCommands, persistedCommand);
+            runtimeDb.deviceCommands = runtimeDb.deviceCommands
+              .sort((left, right) =>
+                String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
+              .slice(0, 1000);
+          }
+          await saveDb();
+          const persistedCommand = command
+            ? runtimeDb.deviceCommands.find(
+                (item) => item.deviceId === deviceId && item.id === command.id,
+              ) || null
+            : null;
+          return cloneRuntimeValue({ device: nextDevice, command: persistedCommand });
         } catch (error) {
           restoreRuntimeDb(runtimeDb, snapshot);
           throw error;
@@ -11019,9 +15332,49 @@ function createRepositories(options) {
           await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
             `device-provision:${device.id}`,
           ]);
-          const upsertResult = await queryUpsertDevice(client, device, {
+          const currentResult = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [device.id],
+          );
+          const currentDevice = currentResult.rows[0]
+            ? rowToDevice(currentResult.rows[0])
+            : null;
+          if (!currentDevice) {
+            throw repositoryError(
+              404,
+              "DEVICE_FACTORY_ENROLLMENT_REQUIRED",
+              "Device identity must exist before claim material can be provisioned",
+            );
+          }
+          normalizeDeviceSecretMaterial(currentDevice);
+          if (inferDeviceOwnershipState(currentDevice) !== "provisioned") {
+            throw repositoryError(
+              409,
+              "DEVICE_ALREADY_OWNED",
+              "Only an unclaimed factory-enrolled device can be provisioned",
+            );
+          }
+          if (!currentDevice.secretHash) {
+            throw repositoryError(
+              503,
+              "DEVICE_FACTORY_CREDENTIAL_UNAVAILABLE",
+              "Factory-enrolled credential verification material is unavailable",
+            );
+          }
+          if (device.secretHash && device.secretHash !== currentDevice.secretHash) {
+            throw repositoryError(
+              409,
+              "DEVICE_FACTORY_CREDENTIAL_MISMATCH",
+              "Claim provisioning cannot replace factory-enrolled credentials",
+            );
+          }
+          const provisionedDevice = {
+            ...currentDevice,
+            ...cloneRuntimeValue(device),
+            secretHash: currentDevice.secretHash,
+          };
+          const upsertResult = await queryUpsertDevice(client, provisionedDevice, {
             writeOwnership: true,
-            writeSecretHashIfMissing: true,
           });
           const canonicalDevice = upsertResult.rows?.[0]
             ? rowToDevice(upsertResult.rows[0])
@@ -11075,8 +15428,43 @@ function createRepositories(options) {
               auditLog: null,
             };
           }
+          const currentDevice = runtimeDb.devices.find((item) => item.id === device.id) || null;
+          if (!currentDevice) {
+            throw repositoryError(
+              404,
+              "DEVICE_FACTORY_ENROLLMENT_REQUIRED",
+              "Device identity must exist before claim material can be provisioned",
+            );
+          }
+          normalizeDeviceSecretMaterial(currentDevice);
+          if (inferDeviceOwnershipState(currentDevice) !== "provisioned") {
+            throw repositoryError(
+              409,
+              "DEVICE_ALREADY_OWNED",
+              "Only an unclaimed factory-enrolled device can be provisioned",
+            );
+          }
+          if (!currentDevice.secretHash) {
+            throw repositoryError(
+              503,
+              "DEVICE_FACTORY_CREDENTIAL_UNAVAILABLE",
+              "Factory-enrolled credential verification material is unavailable",
+            );
+          }
+          if (device.secretHash && device.secretHash !== currentDevice.secretHash) {
+            throw repositoryError(
+              409,
+              "DEVICE_FACTORY_CREDENTIAL_MISMATCH",
+              "Claim provisioning cannot replace factory-enrolled credentials",
+            );
+          }
+          const provisionedDevice = {
+            ...cloneRuntimeValue(currentDevice),
+            ...cloneRuntimeValue(device),
+            secretHash: currentDevice.secretHash,
+          };
           const result = {
-            device,
+            device: provisionedDevice,
             responseBody: safeResponseBody,
             responseStatus,
             resourceId: device.id,
@@ -11150,6 +15538,96 @@ function createRepositories(options) {
           }
         : null;
 
+      const expectedOrganizationId = String(
+        claimMutation?.organizationId || device.organizationId || "",
+      );
+      const expectedReplayOwnerUserId = String(
+        claimMutation?.claimedByUserId || device.ownerUserId || device.pairedUserId || "",
+      );
+      const assertCurrentPairingAuthority = (currentDevice) => {
+        if (!currentDevice) {
+          throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+        }
+        if (
+          inferDeviceOwnershipState(currentDevice) === "revoked" ||
+          currentDevice.revokedAt ||
+          currentDevice.status === "revoked"
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_CLAIM_REVOKED",
+            "A revoked device cannot consume a claim",
+          );
+        }
+        if (
+          !expectedOrganizationId ||
+          String(currentDevice.organizationId || "") !== expectedOrganizationId
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_CLAIM_WORKSPACE_CHANGED",
+            "The device workspace changed before the claim committed",
+          );
+        }
+      };
+      const assertCurrentPairingDevice = (currentDevice) => {
+        assertCurrentPairingAuthority(currentDevice);
+        if (inferDeviceOwnershipState(currentDevice) !== "provisioned") {
+          throw repositoryError(
+            409,
+            "DEVICE_CLAIM_STATE_INVALID",
+            "Only an unclaimed provisioned device can consume a claim",
+          );
+        }
+      };
+      const assertCurrentPairingReplay = (currentDevice) => {
+        assertCurrentPairingAuthority(currentDevice);
+        const currentOwnerUserId = String(
+          currentDevice.ownerUserId || currentDevice.pairedUserId || "",
+        );
+        const currentPairedUserId = String(
+          currentDevice.pairedUserId || currentDevice.ownerUserId || "",
+        );
+        if (
+          inferDeviceOwnershipState(currentDevice) !== "claimed" ||
+          !expectedReplayOwnerUserId ||
+          currentOwnerUserId !== expectedReplayOwnerUserId ||
+          currentPairedUserId !== expectedReplayOwnerUserId
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_CLAIM_REPLAY_STALE",
+            "The device authority changed after the original pairing result",
+          );
+        }
+      };
+      const buildCanonicalPairingDevice = (currentDevice) => {
+        assertCurrentPairingDevice(currentDevice);
+        const mutationAt = claimMutation?.at || device.updatedAt || nowIso();
+        const canonicalOwnership = applyDeviceOwnershipTransition(
+          currentDevice,
+          "claimed",
+          {
+            ownerUserId:
+              claimMutation?.claimedByUserId ||
+              device.ownerUserId ||
+              device.pairedUserId,
+            at: mutationAt,
+          },
+        );
+        const connected = Boolean(device.connected);
+        return {
+          ...cloneRuntimeValue(currentDevice),
+          ...canonicalOwnership,
+          connected,
+          status: connected ? "connected" : "available",
+          connectionMethod: String(
+            device.connectionMethod || currentDevice.connectionMethod || "",
+          ),
+          updatedAt: mutationAt,
+        };
+      };
+
       const syncRuntimePairing = (result) => {
         const runtimeDb = getDb();
         runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
@@ -11187,13 +15665,20 @@ function createRepositories(options) {
           const runtimeDb = getDb();
           const snapshot = snapshotRuntimeDb(runtimeDb);
           try {
+            const currentDevice = runtimeDb.devices.find(
+              (item) => item.id === device.id,
+            ) || null;
+            if (!currentDevice) {
+              throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+            }
             const existing = runtimeIdempotency ? findRuntimeIdempotency(runtimeIdempotency) : null;
             if (existing) {
               assertIdempotencyFingerprint(existing, runtimeIdempotency);
+              assertCurrentPairingReplay(currentDevice);
               existing.lastSeenAt = nowIso();
               await saveDb();
               return {
-                device: runtimeDb.devices.find((item) => item.id === device.id) || device,
+                device: cloneRuntimeValue(currentDevice),
                 responseBody: existing.responseResource || responseBody,
                 auditLog: null,
                 notification: null,
@@ -11202,6 +15687,7 @@ function createRepositories(options) {
                 responseStatus: Number(existing.responseStatus || responseStatus),
               };
             }
+            assertCurrentPairingDevice(currentDevice);
             let claimedRecord = null;
             if (claimMutation) {
               const claim = runtimeDb.deviceClaims.find(
@@ -11222,11 +15708,7 @@ function createRepositories(options) {
                 updatedAt: claimMutation.at,
               };
             }
-            const canonicalOwnership = applyDeviceOwnershipTransition(device, "claimed", {
-              ownerUserId: claimMutation?.claimedByUserId || device.ownerUserId || device.pairedUserId,
-              at: claimMutation?.at || device.updatedAt || nowIso(),
-            });
-            Object.assign(device, canonicalOwnership);
+            Object.assign(device, buildCanonicalPairingDevice(currentDevice));
             const result = {
               device,
               responseBody,
@@ -11248,8 +15730,18 @@ function createRepositories(options) {
 
       const transactionResult = await withSqlTransaction(async (client) => {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-          `device-pair:${device.organizationId}:${device.id}`,
+          `device-ownership:${device.id}`,
         ]);
+        const currentResult = await client.query(
+          "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+          [device.id],
+        );
+        const currentDevice = currentResult.rows[0]
+          ? rowToDevice(currentResult.rows[0])
+          : null;
+        if (!currentDevice) {
+          throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+        }
         if (runtimeIdempotency) {
           await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
             `${runtimeIdempotency.scope}:${runtimeIdempotency.operation}:${runtimeIdempotency.key}`,
@@ -11266,6 +15758,7 @@ function createRepositories(options) {
           const existing = existingResult.rows[0];
           if (existing) {
             assertIdempotencyFingerprint(existing, runtimeIdempotency);
+            assertCurrentPairingReplay(currentDevice);
             await client.query(
               `
                 UPDATE mutation_idempotency
@@ -11275,7 +15768,7 @@ function createRepositories(options) {
               [runtimeIdempotency.scope, runtimeIdempotency.operation, runtimeIdempotency.key],
             );
             return {
-              device,
+              device: currentDevice,
               responseBody: existing.response_json || responseBody,
               auditLog: null,
               notification: null,
@@ -11285,6 +15778,7 @@ function createRepositories(options) {
           }
         }
 
+        assertCurrentPairingDevice(currentDevice);
         let claimedRecord = null;
         if (claimMutation) {
           const claim = await loadDeviceClaimForUpdate(client, claimMutation);
@@ -11301,11 +15795,7 @@ function createRepositories(options) {
             at: claimMutation.at,
           });
         }
-        const canonicalOwnership = applyDeviceOwnershipTransition(device, "claimed", {
-          ownerUserId: claimMutation?.claimedByUserId || device.ownerUserId || device.pairedUserId,
-          at: claimMutation?.at || device.updatedAt || nowIso(),
-        });
-        Object.assign(device, canonicalOwnership);
+        Object.assign(device, buildCanonicalPairingDevice(currentDevice));
         const upsertResult = await queryUpsertDevice(client, device, {
           writeOwnership: true,
           writeSecretHashIfMissing: true,
@@ -11358,6 +15848,7 @@ function createRepositories(options) {
     async saveOwnershipMutationWithAudit(intentInput = {}, auditInputs = []) {
       const deviceId = String(intentInput.deviceId || "").trim();
       const actorUserId = String(intentInput.actorUserId || "").trim();
+      const idempotency = normalizeMutationIdempotency(intentInput.idempotency);
       if (!deviceId) {
         throw repositoryError(
           400,
@@ -11378,6 +15869,7 @@ function createRepositories(options) {
         actorUserId,
         at: String(intentInput.at || nowIso()),
       };
+      assertDeviceOwnershipIdempotencyAuthority(intent, idempotency);
       const revokeClaims = Boolean(intent.revokeOpenClaims);
       const claimOrganizationId = Object.prototype.hasOwnProperty.call(
         intent,
@@ -11389,6 +15881,9 @@ function createRepositories(options) {
           : "";
 
       const syncSqlResultToRuntime = async (result) => {
+        if (result.replayed) {
+          return;
+        }
         try {
           const runtimeDb = getDb();
           runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
@@ -11396,6 +15891,12 @@ function createRepositories(options) {
             ? runtimeDb.deviceClaims
             : [];
           syncArrayItem(runtimeDb.devices, result.device);
+          if (result.command) {
+            runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+              ? runtimeDb.deviceCommands
+              : [];
+            syncArrayItem(runtimeDb.deviceCommands, result.command);
+          }
           const revokedIds = new Set(result.revokedClaimIds || []);
           for (const claim of runtimeDb.deviceClaims) {
             if (revokedIds.has(claim.id)) {
@@ -11420,6 +15921,9 @@ function createRepositories(options) {
           await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
             `device-ownership:${deviceId}`,
           ]);
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ota:${deviceId}`,
+          ]);
           const existing = await client.query(
             "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
             [deviceId],
@@ -11428,9 +15932,54 @@ function createRepositories(options) {
           if (!currentDevice) {
             throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
           }
-          const nextDevice = assertDeviceOwnershipShape(
+          const replay = await findSqlMutationReplay(client, idempotency);
+          if (replay) {
+            assertDeviceOwnershipReplayCurrent(replay, currentDevice, intent);
+            await assertSqlDeviceOwnershipTargets(client, currentDevice, []);
+            await assertSqlDeviceOwnershipReplayAuthority(
+              client,
+              currentDevice,
+              intent,
+              auditInputs,
+            );
+            return {
+              device: cloneRuntimeValue(currentDevice),
+              auditLogs: [],
+              revokedClaimIds: [],
+              replayed: true,
+            };
+          }
+          let nextDevice = assertDeviceOwnershipShape(
             applyDeviceOwnershipIntent(currentDevice, intent),
           );
+          const currentOta = sanitizeDeviceOtaLifecycle(currentDevice.ota);
+          const invalidatesOta = Boolean(
+            ownershipAuthorityChanged(currentDevice, nextDevice) &&
+            currentOta.id &&
+            currentOta.commandId &&
+            !OTA_TERMINAL_STATUSES.has(normalizeDeviceOtaStatus(currentOta.status)),
+          );
+          let currentOtaCommand = null;
+          if (invalidatesOta) {
+            await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+              `device-command:${currentOta.commandId}`,
+            ]);
+            const commandResult = await client.query(
+              "SELECT * FROM device_commands WHERE device_id = $1 AND id = $2 FOR UPDATE",
+              [deviceId, currentOta.commandId],
+            );
+            currentOtaCommand = commandResult.rows?.[0]
+              ? rowToDeviceCommand(commandResult.rows[0])
+              : null;
+          }
+          const invalidation = invalidateActiveDeviceOtaForOwnershipChange(
+            currentDevice,
+            nextDevice,
+            currentOtaCommand,
+            intent.operation,
+            intent.at,
+          );
+          nextDevice = invalidation.device;
           normalizeDeviceSecretMaterial(nextDevice);
           const auditLogs = createDeviceOwnershipAuditLogs(
             auditInputs,
@@ -11445,7 +15994,13 @@ function createRepositories(options) {
             );
           }
           await assertSqlDeviceOwnershipTargets(client, nextDevice, auditLogs);
-          await queryUpsertDevice(client, nextDevice, { writeOwnership: true });
+          await queryUpsertDevice(client, nextDevice, {
+            writeOwnership: true,
+            writeOta: invalidatesOta,
+          });
+          if (invalidation.command) {
+            await queryUpsertDeviceCommand(client, invalidation.command);
+          }
           const revokedClaimIds = revokeClaims
             ? await revokeOpenDeviceClaims(client, {
                 deviceId,
@@ -11464,7 +16019,21 @@ function createRepositories(options) {
               );
             }
           }
-          return { device: nextDevice, auditLogs, revokedClaimIds };
+          await insertSqlMutationIdempotency(
+            client,
+            idempotency,
+            "device_ownership",
+            deviceId,
+            200,
+            { device: nextDevice },
+          );
+          return {
+            device: nextDevice,
+            command: invalidation.command,
+            auditLogs,
+            revokedClaimIds,
+            replayed: false,
+          };
         });
         await syncSqlResultToRuntime(result);
         return result;
@@ -11482,9 +16051,46 @@ function createRepositories(options) {
           if (!currentDevice) {
             throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
           }
-          const nextDevice = assertDeviceOwnershipShape(
+          const replay = idempotency
+            ? findRuntimeIdempotency(idempotency)
+            : null;
+          if (replay) {
+            assertIdempotencyFingerprint(replay, idempotency);
+            assertDeviceOwnershipReplayCurrent(replay, currentDevice, intent);
+            assertRuntimeDeviceOwnershipTargets(runtimeDb, currentDevice, []);
+            assertRuntimeDeviceOwnershipReplayAuthority(
+              runtimeDb,
+              currentDevice,
+              intent,
+              auditInputs,
+            );
+            return {
+              device: cloneRuntimeValue(currentDevice),
+              auditLogs: [],
+              revokedClaimIds: [],
+              replayed: true,
+            };
+          }
+          let nextDevice = assertDeviceOwnershipShape(
             applyDeviceOwnershipIntent(cloneRuntimeValue(currentDevice), intent),
           );
+          runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+            ? runtimeDb.deviceCommands
+            : [];
+          const currentOta = sanitizeDeviceOtaLifecycle(currentDevice.ota);
+          const currentOtaCommand = currentOta.commandId
+            ? runtimeDb.deviceCommands.find(
+                (item) => item.deviceId === deviceId && item.id === currentOta.commandId,
+              ) || null
+            : null;
+          const invalidation = invalidateActiveDeviceOtaForOwnershipChange(
+            currentDevice,
+            nextDevice,
+            currentOtaCommand,
+            intent.operation,
+            intent.at,
+          );
+          nextDevice = invalidation.device;
           normalizeDeviceSecretMaterial(nextDevice);
           const auditLogs = createDeviceOwnershipAuditLogs(
             auditInputs,
@@ -11500,6 +16106,9 @@ function createRepositories(options) {
           }
           assertRuntimeDeviceOwnershipTargets(runtimeDb, nextDevice, auditLogs);
           syncArrayItem(runtimeDb.devices, nextDevice);
+          if (invalidation.command) {
+            syncArrayItem(runtimeDb.deviceCommands, invalidation.command);
+          }
           const revokedClaimIds = [];
           if (revokeClaims) {
             for (const claim of runtimeDb.deviceClaims) {
@@ -11517,8 +16126,21 @@ function createRepositories(options) {
             }
           }
           for (const auditLog of auditLogs) syncRuntimeAuditLog(auditLog);
+          syncRuntimeMutationIdempotency(
+            idempotency,
+            "device_ownership",
+            deviceId,
+            200,
+            { device: cloneRuntimeValue(nextDevice) },
+          );
           await saveDb();
-          return { device: cloneRuntimeValue(nextDevice), auditLogs, revokedClaimIds };
+          return {
+            device: cloneRuntimeValue(nextDevice),
+            command: cloneRuntimeValue(invalidation.command),
+            auditLogs,
+            revokedClaimIds,
+            replayed: false,
+          };
         } catch (error) {
           restoreRuntimeDb(runtimeDb, snapshot);
           throw error;
@@ -11805,6 +16427,33 @@ function createRepositories(options) {
       await saveDb();
       return aiResult;
     },
+
+    async findByScanId(scanId) {
+      const id = String(scanId || "");
+      const sqlResult = await withSql(async (pool) => {
+        const result = await pool.query(
+          `
+            SELECT *
+            FROM ai_results
+            WHERE scan_id = $1
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+            LIMIT 1
+          `,
+          [id],
+        );
+        return result.rows[0] ? rowToAiResult(result.rows[0]) : null;
+      });
+      if (sqlResult) {
+        return syncArrayItem(getDb().aiResults, sqlResult);
+      }
+      return (getDb().aiResults || [])
+        .filter((result) => result.scanId === id)
+        .sort((left, right) => {
+          const rightTime = Date.parse(right.updatedAt || right.createdAt || "") || 0;
+          const leftTime = Date.parse(left.updatedAt || left.createdAt || "") || 0;
+          return rightTime - leftTime || String(right.id || "").localeCompare(String(left.id || ""));
+        })[0] || null;
+    },
   };
 
   const audioProcessing = {
@@ -11897,15 +16546,546 @@ function createRepositories(options) {
   };
 
   const deviceCommands = {
-    async save(command) {
-      const nextCommand = cloneRuntimeValue(command);
-      await upsertDeviceCommandSql(nextCommand);
+    async findAuthorizedReservation(idempotencyInput = null, expectedInput = {}) {
+      const idempotency = normalizeMutationIdempotency(idempotencyInput);
+      if (!idempotency) return null;
+      const expectedDeviceId = String(expectedInput.deviceId || "");
+      const expectedActorUserId = String(expectedInput.requestedByUserId || "");
+      const expectedOrganizationId = String(expectedInput.organizationId || "");
+      const expectedCommandType = String(expectedInput.commandType || "");
+      if (!expectedDeviceId || !expectedActorUserId) {
+        throw repositoryError(
+          400,
+          "DEVICE_COMMAND_REPLAY_AUTHORITY_REQUIRED",
+          "Device and actor authority are required for a command replay",
+        );
+      }
+
+      const validateReplay = (entry, command, device) => {
+        if (!entry) return null;
+        assertIdempotencyFingerprint(entry, idempotency);
+        const resourceType = String(entry.resource_type || entry.resourceType || "");
+        const resourceId = String(entry.resource_id || entry.resourceId || "");
+        if (
+          !device ||
+          inferDeviceOwnershipState(device) === "revoked" ||
+          (expectedOrganizationId && device.organizationId !== expectedOrganizationId) ||
+          resourceType !== "device_command_reservation" ||
+          !resourceId ||
+          !command ||
+          command.id !== resourceId ||
+          command.deviceId !== expectedDeviceId ||
+          command.requestedByUserId !== expectedActorUserId ||
+          (expectedCommandType && command.type !== expectedCommandType)
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_COMMAND_REPLAY_AUTHORITY_CHANGED",
+            "The device command replay no longer matches current device authority",
+          );
+        }
+        const responseResource = cloneRuntimeValue(
+          objectOf(entry.response_json || entry.responseResource),
+        );
+        if (command.type === "ota.update") {
+          const replayOta = sanitizeDeviceOtaLifecycle(responseResource.ota);
+          const currentOta = sanitizeDeviceOtaLifecycle(device.ota);
+          if (
+            !replayOta.id ||
+            currentOta.id !== replayOta.id ||
+            currentOta.commandId !== command.id
+          ) {
+            throw repositoryError(
+              409,
+              "DEVICE_OTA_REPLAY_STALE",
+              "The device OTA authority changed after the original command result",
+            );
+          }
+        }
+        return {
+          command: cloneRuntimeValue(command),
+          device: cloneRuntimeValue(device),
+          responseResource,
+          replayed: true,
+          responseStatus: Number(entry.response_status || entry.responseStatus || 202),
+        };
+      };
+
       if (getPool()) {
+        return withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ownership:${expectedDeviceId}`,
+          ]);
+          if (expectedCommandType === "ota.update") {
+            await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+              `device-ota:${expectedDeviceId}`,
+            ]);
+          }
+          const deviceResult = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [expectedDeviceId],
+          );
+          const device = deviceResult.rows?.[0]
+            ? rowToDevice(deviceResult.rows[0])
+            : null;
+          if (!device || inferDeviceOwnershipState(device) === "revoked") {
+            throw repositoryError(403, "DEVICE_REVOKED", "A revoked or missing device cannot replay commands");
+          }
+          const replay = await findSqlMutationReplay(client, idempotency);
+          if (!replay) return null;
+          const commandResult = await client.query(
+            "SELECT * FROM device_commands WHERE device_id = $1 AND id = $2 LIMIT 1",
+            [expectedDeviceId, replay.resource_id],
+          );
+          const command = commandResult.rows?.[0]
+            ? rowToDeviceCommand(commandResult.rows[0])
+            : null;
+          return validateReplay(replay, command, device);
+        });
+      }
+
+      return runDeviceProvisionMutationExclusive(async () => {
+        const device = (getDb().devices || []).find(
+          (item) => item.id === expectedDeviceId,
+        ) || null;
+        if (!device || inferDeviceOwnershipState(device) === "revoked") {
+          throw repositoryError(403, "DEVICE_REVOKED", "A revoked or missing device cannot replay commands");
+        }
+        const replay = findRuntimeIdempotency(idempotency);
+        if (!replay) return null;
+        const command = (getDb().deviceCommands || []).find(
+          (item) => item.deviceId === expectedDeviceId && item.id === replay.resourceId,
+        ) || null;
+        replay.lastSeenAt = nowIso();
+        await saveDb();
+        return validateReplay(replay, command, device);
+      });
+    },
+
+    async findReservation(idempotencyInput = null, expectedInput = {}) {
+      const idempotency = normalizeMutationIdempotency(idempotencyInput);
+      if (!idempotency) return null;
+      const expectedDeviceId = String(expectedInput.deviceId || "");
+      const expectedActorUserId = String(expectedInput.requestedByUserId || "");
+      const validate = (entry, command) => {
+        if (!entry) return null;
+        assertIdempotencyFingerprint(entry, idempotency);
+        const resourceType = String(entry.resource_type || entry.resourceType || "");
+        const resourceId = String(entry.resource_id || entry.resourceId || "");
+        if (
+          resourceType !== "device_command_reservation" ||
+          !resourceId ||
+          !command ||
+          command.id !== resourceId ||
+          (expectedDeviceId && command.deviceId !== expectedDeviceId) ||
+          (expectedActorUserId && command.requestedByUserId !== expectedActorUserId)
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_COMMAND_REPLAY_INVALID",
+            "The stored command reservation does not match this device mutation",
+          );
+        }
+        return {
+          command: cloneRuntimeValue(command),
+          responseResource: cloneRuntimeValue(
+            objectOf(entry.response_json || entry.responseResource),
+          ),
+          replayed: true,
+          responseStatus: Number(entry.response_status || entry.responseStatus || 202),
+        };
+      };
+
+      const pool = getPool();
+      if (pool) {
+        const result = await pool.query(
+          `
+            SELECT fingerprint, response_status, response_json, resource_type, resource_id
+            FROM mutation_idempotency
+            WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+            LIMIT 1
+          `,
+          [idempotency.scope, idempotency.operation, idempotency.key],
+        );
+        const entry = result.rows[0] || null;
+        if (!entry) return null;
+        assertIdempotencyFingerprint(entry, idempotency);
+        const commandResult = await pool.query(
+          "SELECT * FROM device_commands WHERE id = $1 LIMIT 1",
+          [entry.resource_id],
+        );
+        return validate(
+          entry,
+          commandResult.rows[0] ? rowToDeviceCommand(commandResult.rows[0]) : null,
+        );
+      }
+
+      const entry = findRuntimeIdempotency(idempotency);
+      if (!entry) return null;
+      const command = (getDb().deviceCommands || []).find(
+        (item) => item.id === entry.resourceId,
+      ) || null;
+      return validate(entry, command);
+    },
+
+    async reserve(
+      command,
+      idempotencyInput = null,
+      auditInput = {},
+      responseResourceInput = null,
+      deviceMutationInput = null,
+    ) {
+      const nextCommand = cloneRuntimeValue(command);
+      const idempotency = normalizeMutationIdempotency(idempotencyInput);
+      const otaInitialization = objectOf(deviceMutationInput).ota
+        ? sanitizeDeviceOtaLifecycle(objectOf(deviceMutationInput).ota)
+        : null;
+      if (!nextCommand?.id || !nextCommand.deviceId || !nextCommand.requestedByUserId) {
+        throw repositoryError(
+          400,
+          "DEVICE_COMMAND_RESERVATION_INVALID",
+          "A canonical command, device and requesting actor are required",
+        );
+      }
+      if (!idempotency) {
+        throw repositoryError(
+          400,
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "Idempotency-Key is required before reserving a device command",
+        );
+      }
+      if (
+        otaInitialization &&
+        (nextCommand.type !== "ota.update" || otaInitialization.commandId !== nextCommand.id)
+      ) {
+        throw repositoryError(
+          409,
+          "DEVICE_OTA_COMMAND_MISMATCH",
+          "Only the matching OTA command may initialize a device OTA lifecycle",
+        );
+      }
+      const auditLog = createAuditLog({
+        ...auditInput,
+        organizationId: auditInput.organizationId || nextCommand.organizationId || "",
+        resourceType: "device",
+        resourceId: nextCommand.deviceId,
+      });
+      if (auditLog.actorUserId !== nextCommand.requestedByUserId) {
+        throw repositoryError(
+          403,
+          "DEVICE_COMMAND_AUDIT_ACTOR_MISMATCH",
+          "The command audit actor must match the requesting actor",
+        );
+      }
+
+      const assertReplayCommand = (entry, currentCommand) => {
+        const resourceType = String(entry?.resource_type || entry?.resourceType || "");
+        const resourceId = String(entry?.resource_id || entry?.resourceId || "");
+        if (
+          resourceType !== "device_command_reservation" ||
+          !resourceId ||
+          !currentCommand ||
+          currentCommand.id !== resourceId ||
+          currentCommand.deviceId !== nextCommand.deviceId ||
+          currentCommand.requestedByUserId !== nextCommand.requestedByUserId
+        ) {
+          throw repositoryError(
+            409,
+            "DEVICE_COMMAND_REPLAY_INVALID",
+            "The stored command reservation does not match this device mutation",
+          );
+        }
+      };
+      const responseStatus = 202;
+      const responseResource = {
+        ...cloneRuntimeValue(objectOf(responseResourceInput)),
+        command: cloneRuntimeValue(nextCommand),
+      };
+
+      if (getPool()) {
+        const result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-ownership:${nextCommand.deviceId}`,
+          ]);
+          if (nextCommand.type === "ota.update") {
+            await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+              `device-ota:${nextCommand.deviceId}`,
+            ]);
+          }
+          const deviceResult = await client.query(
+            "SELECT * FROM devices WHERE id = $1 FOR UPDATE",
+            [nextCommand.deviceId],
+          );
+          const currentDevice = deviceResult.rows[0]
+            ? rowToDevice(deviceResult.rows[0])
+            : null;
+          if (!currentDevice) {
+            throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+          }
+          if (
+            currentDevice.organizationId &&
+            nextCommand.organizationId &&
+            currentDevice.organizationId !== nextCommand.organizationId
+          ) {
+            throw repositoryError(
+              403,
+              "DEVICE_COMMAND_WORKSPACE_MISMATCH",
+              "The command does not belong to the device workspace",
+            );
+          }
+          if (inferDeviceOwnershipState(currentDevice) === "revoked") {
+            throw repositoryError(
+              403,
+              "DEVICE_REVOKED",
+              "A revoked device cannot accept commands",
+            );
+          }
+          const replay = await findSqlMutationReplay(client, idempotency);
+          if (replay) {
+            const commandResult = await client.query(
+              "SELECT * FROM device_commands WHERE device_id = $1 AND id = $2 LIMIT 1",
+              [nextCommand.deviceId, replay.resource_id],
+            );
+            const currentCommand = commandResult.rows[0]
+              ? rowToDeviceCommand(commandResult.rows[0])
+              : null;
+            assertReplayCommand(replay, currentCommand);
+            if (currentCommand.type === "ota.update") {
+              const replayOta = sanitizeDeviceOtaLifecycle(
+                objectOf(replay.response_json).ota,
+              );
+              if (
+                !replayOta.id ||
+                currentDevice.ota?.id !== replayOta.id ||
+                currentDevice.ota?.commandId !== currentCommand.id
+              ) {
+                throw repositoryError(
+                  409,
+                  "DEVICE_OTA_REPLAY_STALE",
+                  "The device OTA authority changed after the original command result",
+                );
+              }
+            }
+            return {
+              command: currentCommand,
+              responseResource: cloneRuntimeValue(objectOf(replay.response_json)),
+              auditLog: null,
+              replayed: true,
+              responseStatus: Number(replay.response_status || responseStatus),
+            };
+          }
+          let persistedDevice = null;
+          if (otaInitialization) {
+            const nextDevice = mergeDeviceOtaLifecycleUpdate(currentDevice, otaInitialization, {
+              allowReplace: true,
+            });
+            const otaResult = await client.query(
+              `
+                UPDATE devices
+                SET ota = $2::jsonb,
+                    ota_status = $3,
+                    updated_at = $4
+                WHERE id = $1
+                RETURNING *
+              `,
+              [
+                nextCommand.deviceId,
+                JSON.stringify(nextDevice.ota),
+                nextDevice.otaStatus,
+                nextDevice.updatedAt,
+              ],
+            );
+            if (otaResult.rowCount !== 1 || !otaResult.rows?.[0]) {
+              throw repositoryError(
+                409,
+                "DEVICE_OTA_PERSISTENCE_CONFLICT",
+                "The OTA lifecycle could not be initialized exactly once",
+              );
+            }
+            persistedDevice = rowToDevice(otaResult.rows[0]);
+          }
+          await queryUpsertDeviceCommand(client, nextCommand);
+          const insertedAudit = await queryInsertAuditLog(client, auditLog);
+          if (insertedAudit.rowCount !== 1) {
+            throw repositoryError(
+              409,
+              "DEVICE_COMMAND_AUDIT_CONFLICT",
+              "The command audit record could not be inserted exactly once",
+            );
+          }
+          await insertSqlMutationIdempotency(
+            client,
+            idempotency,
+            "device_command_reservation",
+            nextCommand.id,
+            responseStatus,
+            responseResource,
+          );
+          return {
+            command: nextCommand,
+            responseResource,
+            auditLog,
+            replayed: false,
+            responseStatus,
+            device: persistedDevice,
+          };
+        });
         const runtimeDb = getDb();
         runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
           ? runtimeDb.deviceCommands
           : [];
-        syncArrayItem(runtimeDb.deviceCommands, nextCommand);
+        syncArrayItem(runtimeDb.deviceCommands, result.command);
+        if (result.device) {
+          runtimeDb.devices = Array.isArray(runtimeDb.devices) ? runtimeDb.devices : [];
+          syncArrayItem(runtimeDb.devices, result.device);
+        }
+        runtimeDb.deviceCommands = runtimeDb.deviceCommands
+          .sort((left, right) =>
+            String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
+          .slice(0, 1000);
+        if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+        syncRuntimeMutationIdempotency(
+          idempotency,
+          "device_command_reservation",
+          result.command.id,
+          result.responseStatus,
+          result.responseResource || { command: result.command },
+        );
+        try {
+          await saveDb();
+        } catch (error) {
+          onSqlError(
+            new Error(
+              `PostgreSQL device command reservation committed but runtime mirror refresh failed: ${error.message}`,
+            ),
+          );
+        }
+        return cloneRuntimeValue(result);
+      }
+
+      return runDeviceProvisionMutationExclusive(async () => {
+        const runtimeDb = getDb();
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+            ? runtimeDb.deviceCommands
+            : [];
+          const currentDevice = (runtimeDb.devices || []).find(
+            (item) => item.id === nextCommand.deviceId,
+          );
+          if (!currentDevice) {
+            throw repositoryError(404, "DEVICE_NOT_FOUND", "Device not found");
+          }
+          if (
+            currentDevice.organizationId &&
+            nextCommand.organizationId &&
+            currentDevice.organizationId !== nextCommand.organizationId
+          ) {
+            throw repositoryError(
+              403,
+              "DEVICE_COMMAND_WORKSPACE_MISMATCH",
+              "The command does not belong to the device workspace",
+            );
+          }
+          if (inferDeviceOwnershipState(currentDevice) === "revoked") {
+            throw repositoryError(
+              403,
+              "DEVICE_REVOKED",
+              "A revoked device cannot accept commands",
+            );
+          }
+          const replay = findRuntimeIdempotency(idempotency);
+          if (replay) {
+            assertIdempotencyFingerprint(replay, idempotency);
+            const currentCommand = runtimeDb.deviceCommands.find(
+              (item) => item.deviceId === nextCommand.deviceId && item.id === replay.resourceId,
+            ) || null;
+            assertReplayCommand(replay, currentCommand);
+            if (currentCommand.type === "ota.update") {
+              const replayOta = sanitizeDeviceOtaLifecycle(
+                objectOf(replay.responseResource).ota,
+              );
+              if (
+                !replayOta.id ||
+                currentDevice.ota?.id !== replayOta.id ||
+                currentDevice.ota?.commandId !== currentCommand.id
+              ) {
+                throw repositoryError(
+                  409,
+                  "DEVICE_OTA_REPLAY_STALE",
+                  "The device OTA authority changed after the original command result",
+                );
+              }
+            }
+            replay.lastSeenAt = nowIso();
+            await saveDb();
+            return {
+              command: cloneRuntimeValue(currentCommand),
+              responseResource: cloneRuntimeValue(objectOf(replay.responseResource)),
+              auditLog: null,
+              replayed: true,
+              responseStatus: Number(replay.responseStatus || responseStatus),
+            };
+          }
+          let persistedDevice = null;
+          if (otaInitialization) {
+            persistedDevice = mergeDeviceOtaLifecycleUpdate(currentDevice, otaInitialization, {
+              allowReplace: true,
+            });
+            syncArrayItem(runtimeDb.devices, persistedDevice);
+          }
+          syncArrayItem(runtimeDb.deviceCommands, nextCommand);
+          runtimeDb.deviceCommands = runtimeDb.deviceCommands
+            .sort((left, right) =>
+              String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
+            .slice(0, 1000);
+          syncRuntimeAuditLog(auditLog);
+          syncRuntimeMutationIdempotency(
+            idempotency,
+            "device_command_reservation",
+            nextCommand.id,
+            responseStatus,
+            responseResource,
+          );
+          await saveDb();
+          return {
+            command: cloneRuntimeValue(nextCommand),
+            responseResource: cloneRuntimeValue(responseResource),
+            auditLog: cloneRuntimeValue(auditLog),
+            replayed: false,
+            responseStatus,
+            device: cloneRuntimeValue(persistedDevice),
+          };
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      });
+    },
+
+    async save(command) {
+      const nextCommand = cloneRuntimeValue(command);
+      if (getPool()) {
+        const canonicalCommand = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `device-command:${nextCommand.id}`,
+          ]);
+          const currentResult = await client.query(
+            "SELECT * FROM device_commands WHERE device_id = $1 AND id = $2 FOR UPDATE",
+            [nextCommand.deviceId, nextCommand.id],
+          );
+          const persistedCommand = mergeCanonicalDeviceCommand(
+            currentResult.rows?.[0] ? rowToDeviceCommand(currentResult.rows[0]) : null,
+            nextCommand,
+          );
+          await queryUpsertDeviceCommand(client, persistedCommand);
+          return persistedCommand;
+        });
+        const runtimeDb = getDb();
+        runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
+          ? runtimeDb.deviceCommands
+          : [];
+        syncArrayItem(runtimeDb.deviceCommands, canonicalCommand);
         runtimeDb.deviceCommands = runtimeDb.deviceCommands
           .sort((left, right) =>
             String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
@@ -11919,7 +17099,7 @@ function createRepositories(options) {
             ),
           );
         }
-        return cloneRuntimeValue(nextCommand);
+        return cloneRuntimeValue(canonicalCommand);
       }
       return runDeviceProvisionMutationExclusive(async () => {
         const runtimeDb = getDb();
@@ -11928,13 +17108,17 @@ function createRepositories(options) {
           runtimeDb.deviceCommands = Array.isArray(runtimeDb.deviceCommands)
             ? runtimeDb.deviceCommands
             : [];
-          syncArrayItem(runtimeDb.deviceCommands, nextCommand);
+          const currentCommand = runtimeDb.deviceCommands.find(
+            (item) => item.deviceId === nextCommand.deviceId && item.id === nextCommand.id,
+          ) || null;
+          const canonicalCommand = mergeCanonicalDeviceCommand(currentCommand, nextCommand);
+          syncArrayItem(runtimeDb.deviceCommands, canonicalCommand);
           runtimeDb.deviceCommands = runtimeDb.deviceCommands
             .sort((left, right) =>
               String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))
             .slice(0, 1000);
           await saveDb();
-          return cloneRuntimeValue(nextCommand);
+          return cloneRuntimeValue(canonicalCommand);
         } catch (error) {
           restoreRuntimeDb(runtimeDb, snapshot);
           throw error;
@@ -12010,6 +17194,24 @@ function createRepositories(options) {
 
   const notificationDevices = {
     async register(input) {
+      const userId = String(input.userId || "");
+      const workspaceId = String(input.workspaceId || "");
+      const authSessionId = String(input.authSessionId || "");
+      const notificationProtocolVersion = Number(input.notificationProtocolVersion || 0);
+      if (!userId || !workspaceId || !authSessionId) {
+        throw repositoryError(
+          400,
+          "NOTIFICATION_DEVICE_BINDING_REQUIRED",
+          "Notification device registration requires user, workspace, and auth session bindings",
+        );
+      }
+      if (!Number.isInteger(notificationProtocolVersion) || notificationProtocolVersion < 2) {
+        throw repositoryError(
+          400,
+          "NOTIFICATION_PROTOCOL_UNSUPPORTED",
+          "Notification protocol version 2 or newer is required",
+        );
+      }
       const runtimeDb = getDb();
       runtimeDb.notificationDevices = Array.isArray(runtimeDb.notificationDevices)
         ? runtimeDb.notificationDevices
@@ -12026,9 +17228,13 @@ function createRepositories(options) {
         id: input.id || createId("ndev"),
         createdAt: nowIso(),
       };
-      item.userId = input.userId;
+      item.userId = userId;
+      item.workspaceId = workspaceId;
       item.platform = input.platform || "android";
       item.fcmToken = input.fcmToken;
+      item.authSessionId = authSessionId;
+      item.notificationProtocolVersion = notificationProtocolVersion;
+      item.appVersion = String(input.appVersion || "");
       item.enabled = input.enabled !== false;
       item.updatedAt = nowIso();
       runtimeDb.notificationDevices = runtimeDb.notificationDevices.filter(
@@ -12045,13 +17251,27 @@ function createRepositories(options) {
       return canonicalDevice;
     },
 
-    async listForUser(userId) {
+    async listForUser(userId, workspaceId, options = {}) {
       const id = String(userId || "");
-      if (!id) return [];
+      const scopedWorkspaceId = String(workspaceId || "");
+      const minimumProtocolVersion = Math.max(
+        2,
+        Number.isFinite(Number(options.minimumProtocolVersion))
+          ? Math.trunc(Number(options.minimumProtocolVersion))
+          : 2,
+      );
+      if (!id || !scopedWorkspaceId) return [];
       const sqlDevices = await withSql(async (pool) => {
         const result = await pool.query(
-          "SELECT * FROM notification_devices WHERE user_id = $1 AND enabled = true ORDER BY updated_at DESC",
-          [id]
+          `
+            SELECT * FROM notification_devices
+            WHERE user_id = $1
+              AND workspace_id = $2
+              AND notification_protocol_version >= $3
+              AND enabled = true
+            ORDER BY updated_at DESC
+          `,
+          [id, scopedWorkspaceId, minimumProtocolVersion],
         );
         return result.rows.map(rowToNotificationDevice);
       });
@@ -12061,12 +17281,20 @@ function createRepositories(options) {
         }
         return sqlDevices;
       }
-      return getDb().notificationDevices.filter((item) => item.userId === id && item.enabled !== false);
+      return getDb().notificationDevices.filter(
+        (item) =>
+          item.userId === id &&
+          item.workspaceId === scopedWorkspaceId &&
+          Number(item.notificationProtocolVersion || 0) >= minimumProtocolVersion &&
+          item.enabled !== false,
+      );
     },
 
-    async disableToken(userId, fcmToken) {
+    async disableToken(userId, fcmToken, binding = {}) {
       const id = String(userId || "");
       const token = String(fcmToken || "");
+      const workspaceId = String(binding.workspaceId || "");
+      const authSessionId = String(binding.authSessionId || "");
       if (!id || !token) return null;
       const runtimeDb = getDb();
       runtimeDb.notificationDevices = Array.isArray(runtimeDb.notificationDevices)
@@ -12079,9 +17307,11 @@ function createRepositories(options) {
               UPDATE notification_devices
               SET enabled = false, updated_at = now()
               WHERE user_id = $1 AND fcm_token = $2 AND enabled = true
+                AND ($3::text IS NULL OR workspace_id = $3)
+                AND ($4::text IS NULL OR auth_session_id = $4)
               RETURNING *
             `,
-            [id, token],
+            [id, token, optional(workspaceId), optional(authSessionId)],
           );
           return result.rows[0] ? rowToNotificationDevice(result.rows[0]) : null;
         });
@@ -12094,7 +17324,12 @@ function createRepositories(options) {
         return sqlDevice;
       }
       const device = runtimeDb.notificationDevices.find(
-        (item) => item.userId === id && item.fcmToken === token && item.enabled !== false,
+        (item) =>
+          item.userId === id &&
+          item.fcmToken === token &&
+          (!workspaceId || item.workspaceId === workspaceId) &&
+          (!authSessionId || item.authSessionId === authSessionId) &&
+          item.enabled !== false,
       );
       if (!device) return null;
       device.enabled = false;
@@ -12148,7 +17383,7 @@ function createRepositories(options) {
         await pool.query(
           `
             UPDATE two_factor_enrollments
-            SET consumed_at = now()
+            SET consumed_at = now(), pending_activation = NULL
             WHERE user_id = $1 AND consumed_at IS NULL AND expires_at <= now()
           `,
           [actorId],
@@ -12168,6 +17403,7 @@ function createRepositories(options) {
         for (const item of db.twoFactorEnrollments) {
           if (item.userId === actorId && !item.consumedAt && Date.parse(item.expiresAt || "") <= nowMs) {
             item.consumedAt = nowIso();
+            item.pendingActivation = null;
           }
         }
         if (enrollment) syncArrayItem(db.twoFactorEnrollments, enrollment);
@@ -12178,6 +17414,7 @@ function createRepositories(options) {
       for (const item of db.twoFactorEnrollments) {
         if (item.userId === actorId && !item.consumedAt && Date.parse(item.expiresAt || "") <= nowMs) {
           item.consumedAt = nowIso();
+          item.pendingActivation = null;
         }
       }
       return (
@@ -12187,20 +17424,76 @@ function createRepositories(options) {
       );
     },
 
-    async createEnrollment(record) {
+    async createEnrollment(record, input = {}) {
       const actorId = String(record?.userId || "");
-      if (!actorId || !record?.id || !record.secretCiphertext || !record.secretIv || !record.secretTag) {
+      const startIntent = objectOf(record?.startIntent);
+      const validStartHash = (value) => /^[A-Za-z0-9_-]{43}$/.test(String(value || ""));
+      if (
+        !actorId ||
+        !record?.id ||
+        !record.secretCiphertext ||
+        !record.secretIv ||
+        !record.secretTag ||
+        Number(startIntent.version) !== 1 ||
+        !validStartHash(startIntent.idempotencyKeyHash) ||
+        !validStartHash(startIntent.primaryBindingHash) ||
+        startIntent.method !== "app" ||
+        startIntent.superseded !== false
+      ) {
         throw repositoryError(400, "TWO_FACTOR_ENROLLMENT_INPUT_INVALID", "Enrollment data is incomplete");
       }
+      const candidate = cloneRuntimeValue({
+        ...record,
+        userId: actorId,
+        method: "app",
+        startIntent: {
+          version: 1,
+          idempotencyKeyHash: startIntent.idempotencyKeyHash,
+          primaryBindingHash: startIntent.primaryBindingHash,
+          method: "app",
+          superseded: false,
+        },
+      });
+      const { metadata: _unsafeAuditMetadata, ...auditContext } = objectOf(input.auditInput);
+      const sameStartIntent = (pending) =>
+        String(pending?.startIntent?.idempotencyKeyHash || "") ===
+        candidate.startIntent.idempotencyKeyHash;
+      const assertReplayScope = (pending) => {
+        if (
+          String(pending?.startIntent?.primaryBindingHash || "") !==
+          candidate.startIntent.primaryBindingHash
+        ) {
+          throw repositoryError(
+            409,
+            "TWO_FACTOR_ENROLLMENT_SCOPE_MISMATCH",
+            "Enrollment start belongs to a different primary session",
+          );
+        }
+        if (String(pending?.startIntent?.method || "") !== candidate.startIntent.method) {
+          throw repositoryError(
+            409,
+            "IDEMPOTENCY_KEY_REUSED",
+            "Enrollment start method changed for this idempotency key",
+          );
+        }
+      };
+      const createEnrollmentAudit = (action, resourceId, superseded) =>
+        createAuditLog({
+          ...auditContext,
+          actorUserId: actorId,
+          action,
+          resourceType: "two_factor_enrollment",
+          resourceId,
+          metadata: { method: "app", superseded: Boolean(superseded) },
+        });
       const pool = getPool();
-      let persisted = record;
       if (pool) {
-        persisted = await withSqlTransaction(async (client) => {
+        const result = await withSqlTransaction(async (client) => {
           await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`2fa-enrollment:${actorId}`]);
           await client.query(
             `
               UPDATE two_factor_enrollments
-              SET consumed_at = now()
+              SET consumed_at = now(), pending_activation = NULL
               WHERE user_id = $1 AND consumed_at IS NULL AND expires_at <= now()
             `,
             [actorId],
@@ -12212,72 +17505,185 @@ function createRepositories(options) {
           if (credentialResult.rowCount) {
             throw repositoryError(409, "TWO_FACTOR_ALREADY_ENABLED", "Two-factor authentication is already enabled");
           }
+          const auditLogs = [];
+          const replayResult = await client.query(
+            `
+              SELECT * FROM two_factor_enrollments
+              WHERE user_id = $1
+                AND start_intent->>'idempotencyKeyHash' = $2
+              ORDER BY created_at DESC
+              LIMIT 1 FOR UPDATE
+            `,
+            [actorId, candidate.startIntent.idempotencyKeyHash],
+          );
+          if (replayResult.rowCount) {
+            const replay = rowToTwoFactorEnrollment(replayResult.rows[0]);
+            assertReplayScope(replay);
+            return {
+              enrollment: replay,
+              replayed: true,
+              superseded: Boolean(replay.startIntent?.superseded),
+              auditLogs,
+            };
+          }
           const pendingResult = await client.query(
             `
-              SELECT id FROM two_factor_enrollments
+              SELECT * FROM two_factor_enrollments
               WHERE user_id = $1 AND consumed_at IS NULL AND expires_at > now()
-              LIMIT 1
+              LIMIT 1 FOR UPDATE
             `,
             [actorId],
           );
+          let superseded = false;
           if (pendingResult.rowCount) {
-            throw repositoryError(
-              409,
-              "TWO_FACTOR_ENROLLMENT_PENDING",
-              "A two-factor enrollment is already pending",
+            const pending = rowToTwoFactorEnrollment(pendingResult.rows[0]);
+            if (sameStartIntent(pending)) {
+              assertReplayScope(pending);
+              return {
+                enrollment: pending,
+                replayed: true,
+                superseded: Boolean(pending.startIntent?.superseded),
+                auditLogs,
+              };
+            }
+            superseded = true;
+            await client.query(
+              `
+                UPDATE two_factor_enrollments
+                SET consumed_at = now(), pending_activation = NULL,
+                    start_intent = jsonb_set(
+                      jsonb_set(
+                        COALESCE(start_intent, '{}'::jsonb),
+                        '{superseded}',
+                        'true'::jsonb,
+                        true
+                      ),
+                      '{invalidatedByEnrollmentId}',
+                      to_jsonb($3::text),
+                      true
+                    )
+                WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL
+              `,
+              [pending.id, actorId, candidate.id],
             );
+            const supersedeAudit = createEnrollmentAudit(
+              "account.2fa.enrollment.superseded",
+              pending.id,
+              true,
+            );
+            await queryInsertAuditLog(client, supersedeAudit);
+            auditLogs.push(supersedeAudit);
           }
+          candidate.startIntent.superseded = superseded;
           const inserted = await client.query(
             `
               INSERT INTO two_factor_enrollments (
                 id, user_id, method, secret_ciphertext, secret_iv, secret_tag, secret_version,
-                attempts, max_attempts, created_at, expires_at, consumed_at
+                attempts, max_attempts, created_at, expires_at, consumed_at, start_intent
               )
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULL)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULL, $12::jsonb)
               RETURNING *
             `,
             [
-              record.id,
+              candidate.id,
               actorId,
-              record.method || "app",
-              record.secretCiphertext,
-              record.secretIv,
-              record.secretTag,
-              Number(record.secretVersion || 1),
-              Number(record.attempts || 0),
-              Number(record.maxAttempts || 5),
-              record.createdAt,
-              record.expiresAt,
+              candidate.method,
+              candidate.secretCiphertext,
+              candidate.secretIv,
+              candidate.secretTag,
+              Number(candidate.secretVersion || 1),
+              Number(candidate.attempts || 0),
+              Number(candidate.maxAttempts || 5),
+              candidate.createdAt,
+              candidate.expiresAt,
+              JSON.stringify(candidate.startIntent),
             ],
           );
-          return rowToTwoFactorEnrollment(inserted.rows[0]);
-        });
-      } else {
-        const db = runtimeTwoFactorCollections();
-        const nowMs = Date.now();
-        for (const item of db.twoFactorEnrollments) {
-          if (item.userId === actorId && !item.consumedAt && Date.parse(item.expiresAt || "") <= nowMs) {
-            item.consumedAt = nowIso();
-          }
-        }
-        if (db.twoFactorCredentials.some((item) => item.userId === actorId && !item.disabledAt)) {
-          throw repositoryError(409, "TWO_FACTOR_ALREADY_ENABLED", "Two-factor authentication is already enabled");
-        }
-        if (
-          db.twoFactorEnrollments.some(
-            (item) => item.userId === actorId && !item.consumedAt && Date.parse(item.expiresAt || "") > nowMs,
-          )
-        ) {
-          throw repositoryError(
-            409,
-            "TWO_FACTOR_ENROLLMENT_PENDING",
-            "A two-factor enrollment is already pending",
+          const enrollment = rowToTwoFactorEnrollment(inserted.rows[0]);
+          const startAudit = createEnrollmentAudit(
+            "account.2fa.enrollment.started",
+            enrollment.id,
+            superseded,
           );
-        }
+          await queryInsertAuditLog(client, startAudit);
+          auditLogs.push(startAudit);
+          return { enrollment, replayed: false, superseded, auditLogs };
+        });
+        syncArrayItem(runtimeTwoFactorCollections().twoFactorEnrollments, result.enrollment);
+        for (const auditLog of result.auditLogs) syncRuntimeAuditLog(auditLog);
+        await saveDb();
+        return {
+          enrollment: result.enrollment,
+          replayed: result.replayed,
+          superseded: result.superseded,
+        };
       }
-      syncArrayItem(runtimeTwoFactorCollections().twoFactorEnrollments, persisted);
-      await saveDb();
-      return persisted;
+      return runTwoFactorUserExclusive(actorId, async () => {
+        const db = runtimeTwoFactorCollections();
+        const snapshot = cloneRuntimeValue(db);
+        try {
+          const nowMs = Date.now();
+          for (const item of db.twoFactorEnrollments) {
+            if (item.userId === actorId && !item.consumedAt && Date.parse(item.expiresAt || "") <= nowMs) {
+              item.consumedAt = nowIso();
+              item.pendingActivation = null;
+            }
+          }
+          if (db.twoFactorCredentials.some((item) => item.userId === actorId && !item.disabledAt)) {
+            throw repositoryError(409, "TWO_FACTOR_ALREADY_ENABLED", "Two-factor authentication is already enabled");
+          }
+          const replay = [...db.twoFactorEnrollments]
+            .reverse()
+            .find((item) => item.userId === actorId && sameStartIntent(item));
+          if (replay) {
+            assertReplayScope(replay);
+            await saveDb();
+            return {
+              enrollment: replay,
+              replayed: true,
+              superseded: Boolean(replay.startIntent?.superseded),
+            };
+          }
+          const pending = db.twoFactorEnrollments.find(
+            (item) =>
+              item.userId === actorId &&
+              !item.consumedAt &&
+              Date.parse(item.expiresAt || "") > nowMs,
+          );
+          if (pending && sameStartIntent(pending)) {
+            assertReplayScope(pending);
+            await saveDb();
+            return {
+              enrollment: pending,
+              replayed: true,
+              superseded: Boolean(pending.startIntent?.superseded),
+            };
+          }
+          const superseded = Boolean(pending);
+          if (pending) {
+            pending.consumedAt = nowIso();
+            pending.pendingActivation = null;
+            pending.startIntent = {
+              ...objectOf(pending.startIntent),
+              superseded: true,
+              invalidatedByEnrollmentId: candidate.id,
+            };
+            syncRuntimeAuditLog(
+              createEnrollmentAudit("account.2fa.enrollment.superseded", pending.id, true),
+            );
+          }
+          candidate.startIntent.superseded = superseded;
+          syncArrayItem(db.twoFactorEnrollments, candidate);
+          syncRuntimeAuditLog(
+            createEnrollmentAudit("account.2fa.enrollment.started", candidate.id, superseded),
+          );
+          await saveDb();
+          return { enrollment: candidate, replayed: false, superseded };
+        } catch (error) {
+          restoreRuntimeDb(db, snapshot);
+          throw error;
+        }
+      });
     },
 
     async getEnrollment(userId, enrollmentId) {
@@ -12297,6 +17703,35 @@ function createRepositories(options) {
       return (
         runtimeTwoFactorCollections().twoFactorEnrollments.find(
           (item) => item.id === id && item.userId === actorId,
+        ) || null
+      );
+    },
+
+    async getEnrollmentByRecoveryDelivery(userId, deliveryId) {
+      const actorId = String(userId || "");
+      const id = String(deliveryId || "");
+      if (!actorId || !id) return null;
+      const pool = getPool();
+      if (pool) {
+        const result = await pool.query(
+          `
+            SELECT * FROM two_factor_enrollments
+            WHERE user_id = $1
+              AND pending_activation->'delivery'->>'id' = $2
+            ORDER BY verified_at DESC NULLS LAST
+            LIMIT 1
+          `,
+          [actorId, id],
+        );
+        const enrollment = rowToTwoFactorEnrollment(result.rows[0]);
+        if (enrollment) syncArrayItem(runtimeTwoFactorCollections().twoFactorEnrollments, enrollment);
+        return enrollment;
+      }
+      return (
+        runtimeTwoFactorCollections().twoFactorEnrollments.find(
+          (item) =>
+            item.userId === actorId &&
+            String(item.pendingActivation?.delivery?.id || "") === id,
         ) || null
       );
     },
@@ -12335,6 +17770,144 @@ function createRepositories(options) {
       syncArrayItem(runtimeTwoFactorCollections().twoFactorEnrollments, enrollment);
       await saveDb();
       return enrollment;
+    },
+
+    async stageEnrollmentVerification(input = {}) {
+      const actorId = String(input.userId || "");
+      const enrollmentId = String(input.enrollmentId || "");
+      const pendingActivation = cloneRuntimeValue(input.pendingActivation);
+      const delivery = pendingActivation?.delivery;
+      if (
+        !actorId ||
+        !enrollmentId ||
+        pendingActivation?.userId !== actorId ||
+        pendingActivation?.enrollmentId !== enrollmentId ||
+        !pendingActivation?.credentialId ||
+        !pendingActivation?.recoverySalt ||
+        !Array.isArray(pendingActivation?.recoveryCodes) ||
+        !pendingActivation.recoveryAckTokenHash ||
+        !delivery?.id ||
+        !delivery?.operationHash ||
+        !delivery?.primaryBindingHash ||
+        !delivery?.acknowledgementKeyHash ||
+        !delivery?.recoveryAckTokenHash ||
+        !Number.isFinite(Date.parse(delivery.expiresAt || "")) ||
+        !Number.isFinite(Date.parse(pendingActivation.verifiedAt || ""))
+      ) {
+        throw repositoryError(
+          400,
+          "TWO_FACTOR_PENDING_ACTIVATION_INPUT_INVALID",
+          "Pending activation material is incomplete",
+        );
+      }
+      const matches = (candidate) =>
+        candidate &&
+        String(candidate.userId || "") === actorId &&
+        String(candidate.enrollmentId || "") === enrollmentId &&
+        String(candidate.credentialId || "") === String(pendingActivation.credentialId) &&
+        String(candidate.recoveryAckTokenHash || "") === String(pendingActivation.recoveryAckTokenHash) &&
+        String(candidate.delivery?.id || "") === String(delivery.id) &&
+        String(candidate.delivery?.operationHash || "") === String(delivery.operationHash) &&
+        String(candidate.delivery?.primaryBindingHash || "") === String(delivery.primaryBindingHash) &&
+        String(candidate.delivery?.acknowledgementKeyHash || "") === String(delivery.acknowledgementKeyHash);
+      const auditLog = createAuditLog({
+        ...(input.auditInput || {}),
+        action: "account.2fa.enrollment.verified",
+        actorUserId: actorId,
+        resourceType: "two_factor_enrollment",
+        resourceId: enrollmentId,
+      });
+      const pool = getPool();
+      let result;
+      if (pool) {
+        result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `2fa-enrollment:${enrollmentId}`,
+          ]);
+          const enrollmentResult = await client.query(
+            "SELECT * FROM two_factor_enrollments WHERE id = $1 AND user_id = $2 FOR UPDATE",
+            [enrollmentId, actorId],
+          );
+          const enrollment = rowToTwoFactorEnrollment(enrollmentResult.rows[0]);
+          if (!enrollment) {
+            throw repositoryError(404, "TWO_FACTOR_ENROLLMENT_NOT_FOUND", "Enrollment was not found");
+          }
+          if (enrollment.consumedAt) {
+            throw repositoryError(409, "TWO_FACTOR_ENROLLMENT_ALREADY_USED", "Enrollment was already consumed");
+          }
+          if (enrollment.pendingActivation) {
+            if (!matches(enrollment.pendingActivation)) {
+              throw repositoryError(409, "IDEMPOTENCY_KEY_REUSED", "Enrollment verification intent changed");
+            }
+            return { enrollment, pendingActivation: enrollment.pendingActivation, replayed: true };
+          }
+          if (Date.parse(enrollment.expiresAt || "") <= Date.now()) {
+            throw repositoryError(410, "TWO_FACTOR_ENROLLMENT_EXPIRED", "Enrollment has expired");
+          }
+          if (Number(enrollment.attempts || 0) >= Number(enrollment.maxAttempts || 5)) {
+            throw repositoryError(429, "TWO_FACTOR_ATTEMPTS_EXCEEDED", "Enrollment attempts were exhausted");
+          }
+          const updated = await client.query(
+            `
+              UPDATE two_factor_enrollments
+              SET pending_activation = $3::jsonb, verified_at = $4, expires_at = $5
+              WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL
+              RETURNING *
+            `,
+            [
+              enrollmentId,
+              actorId,
+              JSON.stringify(pendingActivation),
+              pendingActivation.verifiedAt,
+              delivery.expiresAt,
+            ],
+          );
+          await queryInsertAuditLog(client, auditLog);
+          return {
+            enrollment: rowToTwoFactorEnrollment(updated.rows[0]),
+            pendingActivation,
+            replayed: false,
+          };
+        });
+      } else {
+        result = await runTwoFactorUserExclusive(actorId, async () => {
+          const db = runtimeTwoFactorCollections();
+          const snapshot = cloneRuntimeValue(db);
+          try {
+            const enrollment = db.twoFactorEnrollments.find(
+              (item) => item.id === enrollmentId && item.userId === actorId,
+            );
+            if (!enrollment) {
+              throw repositoryError(404, "TWO_FACTOR_ENROLLMENT_NOT_FOUND", "Enrollment was not found");
+            }
+            if (enrollment.consumedAt) {
+              throw repositoryError(409, "TWO_FACTOR_ENROLLMENT_ALREADY_USED", "Enrollment was already consumed");
+            }
+            if (enrollment.pendingActivation) {
+              if (!matches(enrollment.pendingActivation)) {
+                throw repositoryError(409, "IDEMPOTENCY_KEY_REUSED", "Enrollment verification intent changed");
+              }
+              return { enrollment, pendingActivation: enrollment.pendingActivation, replayed: true };
+            }
+            if (Date.parse(enrollment.expiresAt || "") <= Date.now()) {
+              throw repositoryError(410, "TWO_FACTOR_ENROLLMENT_EXPIRED", "Enrollment has expired");
+            }
+            enrollment.pendingActivation = pendingActivation;
+            enrollment.verifiedAt = pendingActivation.verifiedAt;
+            enrollment.expiresAt = delivery.expiresAt;
+            syncRuntimeAuditLog(auditLog);
+            await saveDb();
+            return { enrollment, pendingActivation, replayed: false };
+          } catch (error) {
+            restoreRuntimeDb(db, snapshot);
+            throw error;
+          }
+        });
+      }
+      syncArrayItem(runtimeTwoFactorCollections().twoFactorEnrollments, result.enrollment);
+      if (pool && !result.replayed) syncRuntimeAuditLog(auditLog);
+      if (pool) await saveDb();
+      return { ...result, auditLog: result.replayed ? null : auditLog };
     },
 
     async confirmEnrollment(input = {}) {
@@ -12488,6 +18061,434 @@ function createRepositories(options) {
       syncRuntimeAuditLog(auditLog);
       await saveDb();
       return { credential, tokenRecord, auditLog };
+    },
+
+    async activateEnrollmentFromRecoveryAck(input = {}) {
+      const actorId = String(input.userId || "");
+      const enrollmentId = String(input.enrollmentId || "");
+      const deliveryId = String(input.deliveryId || "");
+      const operationHash = String(input.operationHash || "");
+      const primaryBindingHash = String(input.primaryBindingHash || "");
+      const acknowledgementKeyHash = String(input.acknowledgementKeyHash || "");
+      const recoveryAckTokenHash = String(input.recoveryAckTokenHash || "");
+      const tokenRecord = cloneRuntimeValue(input.tokenRecord);
+      if (
+        !actorId ||
+        !enrollmentId ||
+        !deliveryId ||
+        !operationHash ||
+        !primaryBindingHash ||
+        !acknowledgementKeyHash ||
+        !recoveryAckTokenHash ||
+        !tokenRecord?.id ||
+        tokenRecord.userId !== actorId ||
+        tokenRecord.primaryBindingHash !== primaryBindingHash ||
+        !tokenRecord.tokenHash
+      ) {
+        throw repositoryError(
+          400,
+          "TWO_FACTOR_DELIVERY_ACK_INPUT_INVALID",
+          "Recovery-code activation binding is incomplete",
+        );
+      }
+      const getDelivery = (record) =>
+        record?.delivery ||
+        (Array.isArray(record?.recoveryCodes) ? record.recoveryCodes[0]?.delivery || null : null);
+      const matches = (record) => {
+        const delivery = getDelivery(record);
+        return (
+          record &&
+          String(record.userId || "") === actorId &&
+          String(record.enrollmentId || record.id || "") === enrollmentId &&
+          String(delivery?.id || "") === deliveryId &&
+          String(delivery?.operationHash || "") === operationHash &&
+          String(delivery?.primaryBindingHash || "") === primaryBindingHash &&
+          String(delivery?.acknowledgementKeyHash || "") === acknowledgementKeyHash &&
+          String(delivery?.recoveryAckTokenHash || record.recoveryAckTokenHash || "") ===
+            recoveryAckTokenHash
+        );
+      };
+      const matchesTokenRecord = (record) =>
+        record &&
+        String(record.id || "") === String(tokenRecord.id) &&
+        String(record.userId || "") === actorId &&
+        String(record.tokenHash || "") === String(tokenRecord.tokenHash) &&
+        String(record.primaryBindingHash || "") === primaryBindingHash &&
+        String(record.expiresAt || "") === String(tokenRecord.expiresAt);
+      const auditLog = createAuditLog({
+        ...(input.auditInput || {}),
+        action: "account.2fa.enable",
+        actorUserId: actorId,
+        resourceType: "two_factor_recovery_delivery",
+        resourceId: deliveryId,
+      });
+      const activate = (enrollment, acknowledgedAt) => {
+        const pending = cloneRuntimeValue(enrollment?.pendingActivation);
+        if (!matches(pending)) {
+          throw repositoryError(
+            409,
+            "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH",
+            "Recovery-code delivery does not belong to this enrollment and primary session",
+          );
+        }
+        const delivery = getDelivery(pending);
+        if (Date.parse(delivery.expiresAt || "") <= Date.now()) {
+          return { expired: true, enrollment };
+        }
+        delivery.acknowledgedAt = acknowledgedAt;
+        if (Array.isArray(pending.recoveryCodes) && pending.recoveryCodes[0]?.delivery) {
+          pending.recoveryCodes[0].delivery.acknowledgedAt = acknowledgedAt;
+        }
+        const credential = {
+          id: pending.credentialId,
+          userId: actorId,
+          method: "app",
+          enrollmentId,
+          secretCiphertext: enrollment.secretCiphertext,
+          secretIv: enrollment.secretIv,
+          secretTag: enrollment.secretTag,
+          secretVersion: Number(enrollment.secretVersion || 1),
+          recoverySalt: pending.recoverySalt,
+          recoveryCodes: pending.recoveryCodes,
+          recoveryAckTokenHash,
+          lastUsedTimeStep: Number(pending.lastUsedTimeStep),
+          disableAttempts: 0,
+          disableLockedUntil: null,
+          enabledAt: acknowledgedAt,
+          updatedAt: acknowledgedAt,
+          disabledAt: null,
+          version: 1,
+        };
+        return { credential, delivery, pending, expired: false };
+      };
+      const pool = getPool();
+      let result;
+      if (pool) {
+        result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+            `2fa-recovery-delivery:${actorId}`,
+          ]);
+          const enrollmentResult = await client.query(
+            "SELECT * FROM two_factor_enrollments WHERE id = $1 AND user_id = $2 FOR UPDATE",
+            [enrollmentId, actorId],
+          );
+          const enrollment = rowToTwoFactorEnrollment(enrollmentResult.rows[0]);
+          if (!enrollment) {
+            throw repositoryError(404, "TWO_FACTOR_ENROLLMENT_NOT_FOUND", "Enrollment was not found");
+          }
+          if (enrollment.consumedAt) {
+            const credentialResult = await client.query(
+              "SELECT * FROM two_factor_credentials WHERE user_id = $1 AND disabled_at IS NULL FOR UPDATE",
+              [actorId],
+            );
+            const credential = rowToTwoFactorCredential(credentialResult.rows[0]);
+            const persistedTokenResult = await client.query(
+              "SELECT * FROM two_factor_tokens WHERE id = $1 AND user_id = $2 LIMIT 1",
+              [tokenRecord.id, actorId],
+            );
+            const persistedToken = rowToTwoFactorToken(persistedTokenResult.rows[0]);
+            if (!matches(credential) || !matchesTokenRecord(persistedToken)) {
+              throw repositoryError(409, "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH", "Recovery ACK replay changed");
+            }
+            return {
+              enrollment,
+              credential,
+              delivery: getDelivery(credential),
+              tokenRecord: persistedToken,
+              replayed: true,
+            };
+          }
+          const acknowledgedAt = nowIso();
+          const activated = activate(enrollment, acknowledgedAt);
+          if (activated.expired) {
+            const expired = await client.query(
+              `
+                UPDATE two_factor_enrollments
+                SET consumed_at = $3, pending_activation = NULL
+                WHERE id = $1 AND user_id = $2
+                RETURNING *
+              `,
+              [enrollmentId, actorId, acknowledgedAt],
+            );
+            return { expired: true, enrollment: rowToTwoFactorEnrollment(expired.rows[0]) };
+          }
+          const credential = activated.credential;
+          const insertedCredential = await client.query(
+            `
+              INSERT INTO two_factor_credentials (
+                user_id, method, enrollment_id, secret_ciphertext, secret_iv, secret_tag, secret_version,
+                recovery_salt, recovery_codes, last_used_time_step, enabled_at, updated_at, disabled_at, version
+              )
+              VALUES ($1, 'app', $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $10, NULL, 1)
+              ON CONFLICT (user_id) DO UPDATE SET
+                method = 'app', enrollment_id = EXCLUDED.enrollment_id,
+                secret_ciphertext = EXCLUDED.secret_ciphertext, secret_iv = EXCLUDED.secret_iv,
+                secret_tag = EXCLUDED.secret_tag, secret_version = EXCLUDED.secret_version,
+                recovery_salt = EXCLUDED.recovery_salt, recovery_codes = EXCLUDED.recovery_codes,
+                last_used_time_step = EXCLUDED.last_used_time_step, enabled_at = EXCLUDED.enabled_at,
+                disable_attempts = 0, disable_locked_until = NULL,
+                updated_at = EXCLUDED.updated_at, disabled_at = NULL, version = two_factor_credentials.version + 1
+              WHERE two_factor_credentials.disabled_at IS NOT NULL
+              RETURNING *
+            `,
+            [
+              actorId,
+              enrollmentId,
+              credential.secretCiphertext,
+              credential.secretIv,
+              credential.secretTag,
+              credential.secretVersion,
+              credential.recoverySalt,
+              JSON.stringify(credential.recoveryCodes),
+              credential.lastUsedTimeStep,
+              acknowledgedAt,
+            ],
+          );
+          if (!insertedCredential.rowCount) {
+            throw repositoryError(409, "TWO_FACTOR_ALREADY_ENABLED", "Two-factor authentication is already enabled");
+          }
+          await client.query(
+            `
+              INSERT INTO two_factor_tokens (
+                id, user_id, token_hash, primary_binding_hash, created_at, expires_at, last_used_at, revoked_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL)
+            `,
+            [
+              tokenRecord.id,
+              actorId,
+              tokenRecord.tokenHash,
+              tokenRecord.primaryBindingHash,
+              tokenRecord.createdAt,
+              tokenRecord.expiresAt,
+            ],
+          );
+          const consumed = await client.query(
+            `
+              UPDATE two_factor_enrollments
+              SET consumed_at = $3, pending_activation = NULL
+              WHERE id = $1 AND user_id = $2
+              RETURNING *
+            `,
+            [enrollmentId, actorId, acknowledgedAt],
+          );
+          await client.query(
+            `
+              UPDATE users
+              SET firebase_claims = jsonb_set(
+                COALESCE(firebase_claims, '{}'::jsonb),
+                '{profile}',
+                (
+                  COALESCE(firebase_claims->'profile', '{}'::jsonb)
+                    - 'twoFactorSecret'
+                    - 'twoFactorSecretPreview'
+                    - 'twoFactorRecoveryCodes'
+                ) || jsonb_build_object('twoFactorEnabled', true, 'twoFactorMethod', 'app'),
+                true
+              ), updated_at = now()
+              WHERE id = $1
+            `,
+            [actorId],
+          );
+          await queryInsertAuditLog(client, auditLog);
+          return {
+            enrollment: rowToTwoFactorEnrollment(consumed.rows[0]),
+            credential: rowToTwoFactorCredential(insertedCredential.rows[0]),
+            delivery: activated.delivery,
+            tokenRecord,
+            replayed: false,
+          };
+        });
+      } else {
+        result = await runTwoFactorUserExclusive(actorId, async () => {
+          const db = runtimeTwoFactorCollections();
+          const snapshot = cloneRuntimeValue(db);
+          try {
+            const enrollment = db.twoFactorEnrollments.find(
+              (item) => item.id === enrollmentId && item.userId === actorId,
+            );
+            if (!enrollment) {
+              throw repositoryError(404, "TWO_FACTOR_ENROLLMENT_NOT_FOUND", "Enrollment was not found");
+            }
+            if (enrollment.consumedAt) {
+              const credential = db.twoFactorCredentials.find(
+                (item) => item.userId === actorId && !item.disabledAt,
+              );
+              const persistedToken = db.twoFactorTokens.find(
+                (item) => item.id === tokenRecord.id && item.userId === actorId,
+              );
+              if (!matches(credential) || !matchesTokenRecord(persistedToken)) {
+                throw repositoryError(409, "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH", "Recovery ACK replay changed");
+              }
+              return {
+                enrollment,
+                credential,
+                delivery: getDelivery(credential),
+                tokenRecord: persistedToken,
+                replayed: true,
+              };
+            }
+            const acknowledgedAt = nowIso();
+            const activated = activate(enrollment, acknowledgedAt);
+            if (activated.expired) {
+              enrollment.consumedAt = acknowledgedAt;
+              enrollment.pendingActivation = null;
+              await saveDb();
+              return { expired: true, enrollment };
+            }
+            enrollment.consumedAt = acknowledgedAt;
+            enrollment.pendingActivation = null;
+            const credential = activated.credential;
+            db.twoFactorCredentials = db.twoFactorCredentials.filter((item) => item.userId !== actorId);
+            db.twoFactorCredentials.push(credential);
+            syncArrayItem(db.twoFactorTokens, tokenRecord);
+            const user = db.users.find((item) => item.id === actorId);
+            if (user) {
+              delete user.twoFactorSecret;
+              delete user.twoFactorSecretPreview;
+              delete user.twoFactorRecoveryCodes;
+              user.twoFactorEnabled = true;
+              user.twoFactorMethod = "app";
+              user.updatedAt = acknowledgedAt;
+            }
+            syncRuntimeAuditLog(auditLog);
+            await saveDb();
+            return {
+              enrollment,
+              credential,
+              delivery: activated.delivery,
+              tokenRecord,
+              replayed: false,
+            };
+          } catch (error) {
+            restoreRuntimeDb(db, snapshot);
+            throw error;
+          }
+        });
+      }
+      syncArrayItem(runtimeTwoFactorCollections().twoFactorEnrollments, result.enrollment);
+      if (result.expired) {
+        if (pool) await saveDb();
+        throw repositoryError(
+          410,
+          "TWO_FACTOR_DELIVERY_EXPIRED",
+          "Recovery-code delivery acknowledgement window has expired",
+        );
+      }
+      syncArrayItem(runtimeTwoFactorCollections().twoFactorCredentials, result.credential);
+      syncArrayItem(runtimeTwoFactorCollections().twoFactorTokens, result.tokenRecord);
+      if (pool && !result.replayed) syncRuntimeAuditLog(auditLog);
+      if (pool) await saveDb();
+      return { ...result, auditLog: result.replayed ? null : auditLog };
+    },
+
+    async acknowledgeRecoveryDelivery(input = {}) {
+      const actorId = String(input.userId || "");
+      const deliveryId = String(input.deliveryId || "");
+      const operationHash = String(input.operationHash || "");
+      const primaryBindingHash = String(input.primaryBindingHash || "");
+      const acknowledgementKeyHash = String(input.acknowledgementKeyHash || "");
+      if (!actorId || !deliveryId || !operationHash || !primaryBindingHash || !acknowledgementKeyHash) {
+        throw repositoryError(
+          400,
+          "TWO_FACTOR_DELIVERY_ACK_INPUT_INVALID",
+          "Recovery-code acknowledgement binding is incomplete",
+        );
+      }
+      const matchesDelivery = (delivery) =>
+        delivery &&
+        String(delivery.id || "") === deliveryId &&
+        String(delivery.operationHash || "") === operationHash &&
+        String(delivery.primaryBindingHash || "") === primaryBindingHash &&
+        String(delivery.acknowledgementKeyHash || "") === acknowledgementKeyHash;
+      const getDelivery = (credential) =>
+        Array.isArray(credential?.recoveryCodes) ? credential.recoveryCodes[0]?.delivery || null : null;
+      const acknowledge = (credential) => {
+        const delivery = getDelivery(credential);
+        if (!matchesDelivery(delivery)) {
+          throw repositoryError(
+            409,
+            "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH",
+            "Recovery-code delivery does not belong to this operation and primary session",
+          );
+        }
+        if (delivery.acknowledgedAt) {
+          return { credential, delivery, replayed: true };
+        }
+        if (Date.parse(delivery.expiresAt || "") <= Date.now()) {
+          throw repositoryError(
+            410,
+            "TWO_FACTOR_DELIVERY_EXPIRED",
+            "Recovery-code delivery acknowledgement window has expired",
+          );
+        }
+        const acknowledgedAt = nowIso();
+        delivery.acknowledgedAt = acknowledgedAt;
+        credential.updatedAt = acknowledgedAt;
+        credential.version = Number(credential.version || 1) + 1;
+        return { credential, delivery, replayed: false };
+      };
+      const auditLog = createAuditLog({
+        ...(input.auditInput || {}),
+        action: "account.2fa.recovery_codes.acknowledge",
+        actorUserId: actorId,
+        resourceType: "two_factor_recovery_delivery",
+        resourceId: deliveryId,
+      });
+      const pool = getPool();
+      let result;
+      if (pool) {
+        result = await withSqlTransaction(async (client) => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`2fa-recovery-delivery:${actorId}`]);
+          const credentialResult = await client.query(
+            "SELECT * FROM two_factor_credentials WHERE user_id = $1 AND disabled_at IS NULL FOR UPDATE",
+            [actorId],
+          );
+          const credential = rowToTwoFactorCredential(credentialResult.rows[0]);
+          if (!credential) {
+            throw repositoryError(404, "TWO_FACTOR_NOT_ENABLED", "Two-factor authentication is not enabled");
+          }
+          const acknowledged = acknowledge(credential);
+          if (acknowledged.replayed) return acknowledged;
+          const updated = await client.query(
+            `
+              UPDATE two_factor_credentials
+              SET recovery_codes = $2::jsonb, updated_at = $3, version = $4
+              WHERE user_id = $1 AND disabled_at IS NULL
+              RETURNING *
+            `,
+            [
+              actorId,
+              JSON.stringify(credential.recoveryCodes || []),
+              credential.updatedAt,
+              credential.version,
+            ],
+          );
+          await queryInsertAuditLog(client, auditLog);
+          return {
+            credential: rowToTwoFactorCredential(updated.rows[0]),
+            delivery: acknowledged.delivery,
+            replayed: false,
+          };
+        });
+      } else {
+        const db = runtimeTwoFactorCollections();
+        const credential = db.twoFactorCredentials.find(
+          (item) => item.userId === actorId && !item.disabledAt,
+        );
+        if (!credential) {
+          throw repositoryError(404, "TWO_FACTOR_NOT_ENABLED", "Two-factor authentication is not enabled");
+        }
+        result = acknowledge(credential);
+      }
+      syncArrayItem(runtimeTwoFactorCollections().twoFactorCredentials, result.credential);
+      if (!result.replayed) syncRuntimeAuditLog(auditLog);
+      await saveDb();
+      return {
+        credential: result.credential,
+        delivery: result.delivery,
+        replayed: result.replayed,
+        auditLog: result.replayed ? null : auditLog,
+      };
     },
 
     async createChallenge(record) {
@@ -13755,6 +19756,7 @@ function createRepositories(options) {
           pool.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1000"),
           pool.query("SELECT * FROM auth_sessions ORDER BY last_seen_at DESC LIMIT 500"),
         ]);
+        await repairLegacyPasswordRows(pool, userResult.rows);
         const hydratedState = {
           organizations: organizationResult.rows.map(rowToOrganization),
           servicePackages: servicePackageResult.rows.map(rowToServicePackage),
@@ -13839,6 +19841,12 @@ function createRepositories(options) {
       Object.assign(counts, storageMetadataCounts);
       const staffInvitationCounts = await staffInvitations.hydrate();
       Object.assign(counts, staffInvitationCounts);
+      const supportTicketCounts = await supportTickets.hydrate();
+      Object.assign(counts, supportTicketCounts);
+      const roleRequestDocumentCounts = await roleRequestDocuments.hydrate();
+      Object.assign(counts, roleRequestDocumentCounts);
+      const avatarMutationCounts = await avatarMutations.hydrate();
+      Object.assign(counts, avatarMutationCounts);
       const activeCredentials = new Map(
         (db.twoFactorCredentials || [])
           .filter((credential) => credential && !credential.disabledAt)
@@ -13862,6 +19870,9 @@ function createRepositories(options) {
     scanAudioUploads,
     storageMetadata,
     staffInvitations,
+    supportTickets,
+    roleRequestDocuments,
+    avatarMutations,
     workspaceLifecycle,
     authSessions,
     identityOperations,

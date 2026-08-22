@@ -186,9 +186,9 @@ export function ActivateDeviceDialog({
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 backdrop-blur-sm" />
+        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 motion-reduce:animate-none" />
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95"
+          className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95 motion-reduce:animate-none"
           onEscapeKeyDown={(event) => {
             if (isDismissBlocked()) event.preventDefault();
           }}
@@ -213,7 +213,7 @@ export function ActivateDeviceDialog({
             </div>
             <Dialog.Close
               disabled={isDismissBlocked()}
-              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               aria-label="Đóng hộp thoại ghép thiết bị"
             >
               <X className="h-5 w-5" />
@@ -319,7 +319,7 @@ export function ActivateDeviceDialog({
                     <button
                       type="button"
                       disabled={isDismissBlocked()}
-                      className="min-h-11 flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="min-h-11 flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                     >
                       Hủy
                     </button>
@@ -327,7 +327,7 @@ export function ActivateDeviceDialog({
                   <button
                     type="submit"
                     disabled={!deviceId || !claimCode || isDismissBlocked()}
-                    className="min-h-11 flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-11 flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {failureKind === "ambiguous"
                       ? "Thử lại cùng yêu cầu"
@@ -346,7 +346,7 @@ export function ActivateDeviceDialog({
                 aria-live="polite"
               >
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <Loader2 className="h-8 w-8 animate-spin text-primary motion-reduce:animate-none" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Đang xác minh yêu cầu ghép...</p>
@@ -376,7 +376,7 @@ export function ActivateDeviceDialog({
                 <button
                   type="button"
                   onClick={() => handleOpenChange(false)}
-                  className="min-h-11 rounded-md border border-border px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-h-11 rounded-md border border-border px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                 >
                   Đóng và theo dõi trạng thái
                 </button>
@@ -401,7 +401,7 @@ export function ActivateDeviceDialog({
                 <button
                   type="button"
                   onClick={() => handleOpenChange(false)}
-                  className="min-h-11 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-h-11 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                 >
                   Hoàn tất
                 </button>

@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/role-request-request.schema.json",
+  "title": "Shcare account-owned role request",
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/auth/role-request",
+    "requiredHeaders": [
+      "Idempotency-Key"
+    ]
+  },
+  "x-shcare-workspace-binding": {
+    "canonicalField": "organizationId",
+    "compatibilityAliases": [
+      "clinicId",
+      "clinic"
+    ],
+    "failClosed": true,
+    "description": "When organizationId is present it is authoritative, must resolve to that exact workspace, and must never fall back to a display name."
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "requestedRole"
+      ]
+    },
+    {
+      "required": [
+        "role"
+      ]
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "requestedRole",
+          "role"
+        ],
+        "properties": {
+          "requestedRole": {
+            "const": "doctor"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "role": {
+            "const": "doctor"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "requestedRole",
+          "role"
+        ],
+        "properties": {
+          "requestedRole": {
+            "const": "patient"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "role": {
+            "const": "patient"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "expectedUserId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Optional mutation precondition. When present it must equal the authenticated backend user before any write."
+    },
+    "expectedWorkspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Optional mutation precondition. When present it must equal the authenticated account's current workspace before any write."
+    },
+    "requestedRole": {
+      "type": "string",
+      "enum": [
+        "doctor",
+        "patient"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "doctor",
+        "patient"
+      ],
+      "deprecated": true,
+      "description": "Compatibility alias for requestedRole. When both fields are present they must match."
+    },
+    "accountType": {
+      "type": "string",
+      "enum": [
+        "doctor",
+        "solo_doctor",
+        "personal"
+      ]
+    },
+    "workspaceType": {
+      "type": "string",
+      "enum": [
+        "clinic",
+        "hospital",
+        "solo_practice",
+        "personal"
+      ]
+    },
+    "organizationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "clinicId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "deprecated": true
+    },
+    "clinic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "deprecated": true
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "fullName": {
+      "type": "string",
+      "maxLength": 160,
+      "deprecated": true
+    },
+    "phone": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "email": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "license": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "hospital": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "clinicName": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "department": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "specialty": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "registrationReason": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "workspaceName": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "address": {
+      "type": "string",
+      "maxLength": 240
+    }
+  }
+}

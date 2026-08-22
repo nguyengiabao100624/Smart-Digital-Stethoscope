@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/clinical-alert-list-response.schema.json",
+  "title": "Shcare clinical alert list response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "alerts"],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "alerts": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/clinicalAlert"
+      }
+    }
+  },
+  "$defs": {
+    "clinicalAlert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "organizationId",
+        "sourceType",
+        "sourceId",
+        "status",
+        "severity",
+        "title",
+        "message",
+        "version"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "sourceType": { "type": "string", "enum": ["device", "scan"] },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "dedupeKey": { "type": "string", "maxLength": 240 },
+        "occurrenceNumber": { "type": "integer", "minimum": 1 },
+        "previousAlertId": { "type": "string", "maxLength": 160 },
+        "occurredAt": { "type": "string", "maxLength": 64 },
+        "status": {
+          "type": "string",
+          "enum": ["open", "acknowledged", "resolved"]
+        },
+        "severity": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "patientId": { "type": "string", "maxLength": 120 },
+        "deviceId": { "type": "string", "maxLength": 120 },
+        "scanId": { "type": "string", "maxLength": 120 },
+        "acknowledgedByUserId": { "type": "string", "maxLength": 120 },
+        "acknowledgedAt": { "type": "string", "maxLength": 64 },
+        "acknowledgementNote": { "type": "string", "maxLength": 2000 },
+        "resolvedByUserId": { "type": "string", "maxLength": 120 },
+        "resolvedAt": { "type": "string", "maxLength": 64 },
+        "resolutionNote": { "type": "string", "maxLength": 2000 },
+        "version": { "type": "integer", "minimum": 1 },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      }
+    }
+  }
+}

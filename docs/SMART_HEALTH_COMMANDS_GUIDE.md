@@ -1,10 +1,77 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-07-23
+Last updated: 2026-08-15
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
 All commands are for Windows PowerShell unless noted.
+
+## 2026-08-15 current Phase 4 candidate gates (non-final)
+
+The governing plan is **“Kế hoạch tái thiết toàn diện Shcare Web, Portal,
+Platform Admin, Android và firmware”**. Phase 0–3 are complete and Phase 4 is
+active. Use direct local binaries; do not use `bunx tsc`.
+
+```powershell
+cd smart-health-web
+.\node_modules\.bin\vitest.cmd run --config vitest.auth.config.ts test/auth/avatar-api.test.ts test/auth/workspace-settings.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+.\node_modules\.bin\tsc.cmd --noEmit --pretty false
+.\node_modules\.bin\eslint.cmd . --max-warnings=0
+npm.cmd run build
+
+cd ..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:device-security
+npm.cmd run smoke:device-ownership
+npm.cmd run smoke:device-setup-security
+
+cd ..\..\packages\shcare-contracts
+npm.cmd test
+
+cd '..\..\smart-health-admin\thiết kế giao diện'
+npm.cmd run test:contracts
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME='C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleDebug --console=plain
+
+cd ..\smart-health-embedded\MSM261S4030H0
+node --test test\firmware_runtime_source_contract_test.js
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe test -e esp32-s3-devkitm-1 --without-uploading --without-testing
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
+$env:PLATFORMIO_UPLOAD_PORT='127.0.0.1'
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-ota
+Get-FileHash -Algorithm SHA256 .pio\build\esp32-s3-devkitm-1\firmware.bin
+Get-FileHash -Algorithm SHA256 .pio\build\esp32-s3-ota\firmware.bin
+```
+
+Current candidate proof: shared `44/44`; backend check plus device-security
+`42/42`; Web contracts `122/122`, claim `10/10`, device-route subset `8/8`;
+Admin `183/183`; Android `108` suites / `781` tests, devices `48/48`, main and
+AndroidTest compile, lint and assemble. Android APK SHA-256 is
+`F32C7C3A85E40A217ACC8AEEC2DDF6DD0DA6694FA69B53BC4AF94263DD6828FE`.
+Firmware source-contract and MCU compile-only (`0` executed) pass; normal and OTA
+images are each `1,104,640` bytes with SHA-256
+`CB2B0A8749697FEEB14F4720E64A0CF8629109CDF6377784B7DB7F6CB2BAA7B5` and
+`CA79DE814DAC8D6BB3A48EB87F80E6ADDF331C62009129C013C250F30A074801`.
+The independent four-blocker firmware re-review found no remaining software
+blocker in that scope. Native C++ execution is unavailable because `gcc/g++`
+and equivalent host compilers are absent; HIL/flash/serial/I2S/WSS/rollback/16 MB
+proof remains `DEFERRED — chờ phần cứng`.
+
+Do **not** close Phase 4: the cross-surface exit review reopened five P1 software
+blockers. Remediate and rerun the affected gates before any candidate closure:
+
+1. Generic Admin command must exclude specialized revoke/rotate/OTA/audio
+   lifecycle types.
+2. SQL pair must share the ownership lock and current row.
+3. Pair contract, Portal and Android must require the exact active workspace and
+   verify receipt/poll authority.
+4. Admin revoke must use a stable `Idempotency-Key`.
+5. Shared/OpenAPI must define command/revoke/rotate/OTA contracts.
 
 Project navigation entrypoint:
 
@@ -13,6 +80,50 @@ D:\Study\KLTN\docs\SMART_HEALTH_PROJECT_INDEX.md
 ```
 
 Use that file first for active source folders, handoff order, live URLs, cleanup rules, and focused smoke commands.
+
+Current quick gates after the Phase 2 closure:
+
+```powershell
+# Web source/local contract, UI and real local Core Web Vitals proof
+cd smart-health-web
+npm.cmd run test:contracts
+npm.cmd run test:auth
+node scripts/performanceSmokeTest.mjs --local-public
+
+# Android — use the project wrapper; never use a hanging bunx tsc substitute
+cd ..\smart-health-android
+$env:ANDROID_HOME='C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+The local performance mode does not read smoke credentials. Live Portal
+performance still requires the bounded provider URL/account fixture and must
+remain `BLOCKED` when unavailable.
+
+## Restart after quota exhaustion, compaction, or power-off
+
+Open this file first:
+
+```text
+docs\SMART_HEALTH_ACTIVE_CHECKPOINT.md
+```
+
+Then read only the newest context/ledger entries and inspect the targeted
+worktree diff:
+
+```powershell
+Get-Content .\docs\SMART_HEALTH_CONTEXT_NEW_CHAT.md -Tail 80
+Get-Content .\docs\SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md -Tail 80
+git status --short
+git diff --check
+```
+
+Do not rerun an entire closed slice merely to recover context. Run its smallest
+targeted drift test only when needed, and reopen the slice only if that test
+reproduces a current regression. Update the active checkpoint before a long
+gate or planned stop; replace it with the next active row only after the
+current row's proof has been appended to the canonical handoff/status set.
 
 ## KLTN thesis contract and evidence commands
 
@@ -1695,6 +1806,17 @@ Fast API smoke after logging in through Firebase Web Auth should show:
 
 After starting backend in Firebase production mode and web admin on `5174`, use the Firebase workspace-admin account to verify unlocked Account/Settings functions.
 
+> **Superseded operator contract (2026-07-29):** the bullets below are retained as
+> dated historical evidence only. Do not call legacy `POST /api/me/2fa`; the
+> backend now returns `410` because a complete enrollment plus OTP challenge is
+> required before 2FA can be marked enabled. Current Admin verification uses
+> `GET /api/me/2fa` for read-only status, `GET
+> /api/me/notification-preferences` for the self-owned snapshot, and
+> field-level `PATCH /api/me/notification-preferences` with `{ "key": …,
+> "enabled": … }` plus `Idempotency-Key`. Accept success only when the receipt
+> confirms the authenticated `userId`, `ownership.userId` and exact field, then
+> restore the original value during smoke cleanup.
+
 Backend/API expectations:
 
 - `GET /api/me` returns `role = workspace_admin` and `currentWorkspaceId = org_workspace_demo_hospital`.
@@ -2677,3 +2799,1427 @@ The Admin gate currently passes TypeScript, ESLint, `151/151` contracts, build a
 The Portal gates currently pass focused `8/8`, full Vitest `29` files/`105` tests, contracts `63/63`, TypeScript, ESLint, diff check and Firebase build. The isolated browser proof uses real server paging/filtering and export: 147 audit rows, 11 matches for `q=scan`, 11 downloaded CSV rows with SHA prefix `4e031d2e6faa`, then 149 ledger rows containing `export.create` and `export.download`; it also checks real Reports totals, desktop/mobile, light/dark/reduced-motion, cards, 44 px targets and deterministic cleanup. The complete route smoke now returns `ok: true`. Vite `7.3.6` plus patched compatible transitive overrides leave `bun audit` with no findings, and all Portal gates pass again after that lockfile change.
 
 OpenAPI must parse with `info.version: 0.4.0`. A green local gate is not proof that migration 043 ran on live PostgreSQL, that an authenticated preview/live client downloaded every format, or that any backend/Admin/Portal deployment occurred.
+
+## 2026-07-26 Android authority and adaptive-foundation gate
+
+Run from the active implementation worktree, never from the frozen Security Scan source tree:
+
+```powershell
+cd "C:\Users\baobe\Documents\Codex\2026-07-13\lam\work\shcare-rc2-impl-8e2\smart-health-android"
+$env:ANDROID_HOME = "C:\Users\baobe\AppData\Local\Android\Sdk"
+
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+```
+
+Current expected source/emulator evidence is `279/279` JVM unit tests across 43 suites and `25/25` connected tests on `Shcare_RC2_API35(AVD)` / Android 15. The debug APK is `24,841,196` bytes with SHA-256 `367D9A2E17AAF05839510196F8FB699165A5A0882F5518952E306EF5279D91A7`.
+
+The connected suite covers first-frame/retained-TTL authority gating and missing-runtime fail-closed behavior in addition to the existing startup/notification/device UI tests. These commands do not prove real Firebase/FCM because `google-services.json` is absent, do not replace TalkBack/manual or physical-device QA and do not provide firmware HIL or live deployment evidence.
+
+## 2026-07-27 Phase 2 adaptive and notification gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd "C:\Users\baobe\Documents\Codex\2026-07-13\lam\work\shcare-rc2-impl-8e2\packages\shcare-contracts"
+npm.cmd test
+
+cd "..\..\smart-health-embedded\web-monitor"
+npm.cmd ci --ignore-scripts
+npm.cmd audit
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:firebase-admin-compat
+npm.cmd run smoke:notification-push
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+
+cd "..\..\smart-health-android"
+$env:ANDROID_HOME = "C:\Users\baobe\AppData\Local\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+```
+
+Current expected proof is shared contracts `14/14`; backend audit `0`, Firebase Admin compatibility `4/4`, notification push `9/9` including backend-to-schema parity and the listed integrated gates; Android `304/304` unit in 48 suites, zero Fatal/Error lint, and `33/33` connected tests. Current APK SHA-256 is `DFCD7DF38E4C40C8D6A8ABC78C4E874885006FE3187E612236D13EF2ADC0BE18`.
+
+These commands prove local source/build/emulator behavior only. They do not prove candidate PostgreSQL migration 044, real FCM/provider delivery, production signing, manual TalkBack, a physical Android device, firmware HIL or deployment.
+
+## 2026-07-27 Phase 2 primary-screen light/dark semantic gate
+
+Run from `smart-health-android` in the active implementation worktree:
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+```
+
+Current expected proof after the five-screen semantic migration is `307/307` JVM tests across `49` suites, `35/35` connected tests on `Shcare_RC2_API35(AVD)` / Android 15, lint with `0` Fatal/Error (`40` warnings, `6` hints), APK size `24,849,877` bytes and SHA-256 `46E57E83EB500E379F34CF695C98C5FDFB4F00A8B6EC7223921E0C4BF168C25B`.
+
+`PrimaryScreenThemeContractTest` rejects light-only literals/legacy palette names in the five migrated screens. `PrimaryScreenThemeRuntimeTest` asserts actual light/dark Material and Shcare semantic roles on the API-35 emulator. These gates do not replace golden screenshots, manual TalkBack/font/IME/adaptive QA, real Firebase/FCM, a physical device or firmware HIL.
+
+## 2026-07-27 Phase 2 Android Auth and approval gate
+
+Run from `smart-health-android` in the active implementation worktree:
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+
+.\gradlew.bat :app:testDebugUnitTest `
+  --tests 'com.example.smart_health_android.ui.AuthRecoveryUiContractTest' `
+  --tests 'com.example.smart_health_android.navigation.ShcareMobileRouteContractTest' `
+  --tests 'com.example.smart_health_android.account.SmartHealthProfileApiTest' `
+  --console=plain
+
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+```
+
+Current expected proof is `315/315` JVM tests across `50` suites, `35/35` connected tests on `Shcare_RC2_API35(AVD)` / Android 15, lint with `0` Fatal/Error and `40` warnings, APK size `24,855,877` bytes and SHA-256 `061FB2B1419514A258957A2FF950DA13E23679131039372601A5B909E91304F1`.
+
+These commands cover source/build and existing emulator instrumentation. They do not prove real email/Firebase/FCM provider behavior, manual TalkBack/font/IME/golden behavior, a physical Android device, production signing, live PostgreSQL/backend, firmware HIL or deployment.
+
+## 2026-07-27 Phase 2 canonical device-settings gate
+
+Run from `smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+
+.\gradlew.bat :app:testDebugUnitTest `
+  --tests 'com.example.smart_health_android.devices.DevicePairingCanonicalSourceTest' `
+  --tests 'com.example.smart_health_android.devices.StethoscopeSettingsViewModelTest' `
+  --tests 'com.example.smart_health_android.ui.StethoscopeSettingsUiContractTest' `
+  --console=plain
+
+.\gradlew.bat :app:connectedDebugAndroidTest `
+  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.smart_health_android.ui.screens.StethoscopeSettingsScreenTest" `
+  --console=plain
+
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+```
+
+Current expected proof is `322/322` JVM tests across `53` suites, `37/37` connected API-35 tests, lint with `0` Fatal/Error and `39` warnings, APK size `24,757,443` bytes and SHA-256 `28225D36BAB539A032732DDE7B84C77DB52F784A9B9BAF3E29EBD88B6D4789A8`.
+
+These gates prove the canonical source path and covered emulator behavior only. They do not prove physical setup AP, WSS presence, firmware ACK/OTA, BLE/GATT, calibration, provider/live database, production signing or deployment.
+
+## 2026-07-27 Phase 2 Android Record/audio artifact gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:api-production
+npm.cmd run smoke:repositories
+npm.cmd run smoke:storage
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+```
+
+Current expected proof is shared contracts `16/16`; backend check/base/API-production/repository/storage/workspace/KLT plus OpenAPI parse; Android `339/339` JVM tests across `56` suites, `40/40` connected tests on `Shcare_RC2_API35(AVD)` / Android 15, lint with `0` Fatal/Error and `43` warnings, APK size `24,771,946` bytes and SHA-256 `993A65B641ED179EE3163EDF64BFBF90CAD04FE6519EAF0ADDF5F348F3403CC3`.
+
+These commands prove source/build/local/emulator behavior. They do not prove live PostgreSQL/S3/Firebase/FCM/provider delivery, production signing, physical-device/manual TalkBack/golden QA, firmware HIL or deployment.
+
+## 2026-07-27 Phase 2 Android storage/export gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:api-production
+npm.cmd run smoke:repositories
+npm.cmd run smoke:storage
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --console=plain
+.\gradlew.bat :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+Get-FileHash -Algorithm SHA256 ".\archive\legacy-compose\DeleteDataScreen.kt"
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+git -C .. diff --check
+```
+
+Also parse `smart-health-embedded\web-monitor\public\openapi.yaml` and require `/data/summary`, `StorageSummary`, plus canonical `workspaceId` in `ExportJob`.
+
+Current expected proof is shared contracts `18/18`; backend check/base/API-production/repository/storage/workspace/KLT plus OpenAPI parse; Android `356/356` JVM tests across `61` suites, `44/44` connected tests on `Shcare_RC2_API35(AVD)` / Android 15, lint with `0` Fatal/Error (`42` warnings, `1` hint), APK size `24,771,669` bytes and SHA-256 `28DF0BE4F51D4B1C937877C3812D4C06877A41A932017172BED100CBA88B8888`. The archived 7,731-byte platform-delete screen must remain outside source sets with SHA-256 `6E2E3E546F7EB35391764C2645B6C8EB4FA87AC00806373200F3AB6B51ABA792`.
+
+These commands prove source/build/local/emulator behavior, including a byte-for-byte `ContentResolver` document write. They do not prove live PostgreSQL/S3/provider export, production signing, a physical Android device/manual TalkBack/golden/IME flow, firmware HIL or deployment.
+
+## 2026-07-28 Phase 2 cross-surface notification-preferences gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:notification-preferences
+npm.cmd run smoke:notification-push
+npm.cmd run smoke:notification-campaigns
+npm.cmd run smoke:api-production
+npm.cmd run smoke:repositories
+npm.cmd run smoke:storage
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+npm.cmd audit --json
+
+cd ..\..\smart-health-web
+npm.cmd run lint
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run build
+
+cd ..\smart-health-android
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+
+git -C .. diff --check
+```
+
+Current proof is shared contracts `20/20`; focused backend preferences `18/18`, push `9/9` plus smoke and campaigns `8/8`; Web lint with zero findings, Auth/component `109/109`, contracts `63/63` and client/SSR build; Android `373/373` JVM across `64` suites, `46/46` connected tests, assemble and lint with `0` Fatal/Error (`42` warnings, `1` hint). Debug APK is `24,781,570` bytes with SHA-256 `78CBC616010EF6246B2B8F33CF4B3187475EB70B93215FC6BD8B0F15EB866DAB`.
+
+Backend `npm audit` is `0` vulnerabilities. The Web package currently has no lockfile, so `npm audit` returns `ENOLOCK`; do not convert that into a clean Web audit claim or create a lockfile without an intentional release decision. These gates do not prove live Firebase/FCM/email/PostgreSQL, physical-device/manual accessibility, production signing, firmware HIL or deployment.
+
+## 2026-07-29 Phase 2 native Patients/Alerts gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:clinical-workflow
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+
+.\gradlew.bat :app:testDebugUnitTest `
+  --tests "com.example.smart_health_android.clinical.patients.ClinicalPatientsViewModelTest" `
+  --tests "com.example.smart_health_android.clinical.alerts.ClinicalAlertsViewModelTest" `
+  --tests "com.example.smart_health_android.ui.ClinicalWorklistUiContractTest" `
+  --rerun-tasks --console=plain
+
+.\gradlew.bat :app:compileDebugAndroidTestKotlin --rerun-tasks --console=plain
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug `
+  --rerun-tasks --console=plain
+
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+adb devices -l
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+```
+
+Current fresh source/local proof is contracts `23/23`; clinical workflow `8/8`; backend check, workspace and repository smokes; Android `395/395` JVM tests across `68` suites, AndroidTest compilation, assemble and lint `0` Fatal/Error (`43` warnings, `1` hint). Debug APK is `23,779,001` bytes with SHA-256 `ED69FED5B831BA3480ABB4F9712ACFC77117D4FD7CCC5AA223045CA964D20347`.
+
+Do not report the final connected command as passed in the current environment: `Pixel_8_Pro_2` exposed `emulator-5554 offline`, no QEMU process and no `sys.boot_completed`. The new instrumentation tests are compile-proven only until a healthy emulator or physical device runs them. This gate also does not prove Firebase/FCM/provider delivery, live PostgreSQL, production signing, manual TalkBack/golden/IME/rotation, firmware HIL or deployment.
+
+## 2026-07-29 Phase 2 personal Notification Inbox gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:notification-inbox-browser
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:api-production
+npm.cmd run smoke:klt-contract
+
+cd ..\..\smart-health-web
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:notification-inbox-browser
+
+cd ..\smart-health-android
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug `
+  :app:compileDebugAndroidTestKotlin --rerun-tasks --console=plain
+Get-FileHash -Algorithm SHA256 ".\app\build\outputs\apk\debug\app-debug.apk"
+adb devices -l
+.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+
+git -C .. diff --check
+```
+
+Current source/local proof is contracts `25/25`; backend check/base/inbox/repository/workspace/API-production/KLT with inbox `8/8`; Portal Auth/component `117/117`, route contracts `63/63`, lint, build and local Chromium smoke `66` checks across 390 px light, 768 px system-dark and 1440 px dark; Android `407/407` JVM tests in `71` suites, AndroidTest compilation, assemble and lint with `0` Fatal/Error (`43` warnings, `1` hint). Debug APK is `23,826,433` bytes, SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`.
+
+Do not mark `connectedDebugAndroidTest` passed in the current environment: the ADB-offline AVD was stopped and no device is attached. This gate also does not prove live Firebase/FCM/PostgreSQL, production signing, physical/manual accessibility, firmware HIL or deployment. On interruption, resume from the latest handoff/ledger closure and rerun only the narrow gate needed to detect drift; do not rewrite a closed slice.
+
+## 2026-07-29 Phase 2 canonical Web primitive gate
+
+Run from `smart-health-web`:
+
+```powershell
+node --test test/contracts/canonical-ui-primitives.test.ts
+npm.cmd run test:contracts
+npm.cmd run test:auth
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+npm.cmd run smoke:notification-inbox-browser
+
+if (Test-Path -LiteralPath "src\app\components\ui") {
+  throw "Duplicate primitive tree returned"
+}
+
+git -C .. diff --check
+```
+
+Expected source/local evidence is contracts `64/64`, Auth/UI `117/117`, UI-foundation Chromium `123/123`, Notification Inbox Chromium `66/66`, lint and client/SSR build. The build emits client CSS `387.99 KB`, `60.44 KB` gzip. `src/app/components/ui` must not exist.
+
+Production Firebase build remains a separate environment gate:
+
+```powershell
+npm.cmd run build:firebase
+```
+
+The current process lacks `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID` and `VITE_FIREBASE_APP_ID`, so this command is currently `BLOCKED` at preflight. Do not supply placeholders or report a Firebase build/deploy pass.
+
+## 2026-07-29 Phase 2 Portal device-assignment gate
+
+Run from the active implementation worktree:
+
+```powershell
+cd smart-health-web
+npx.cmd vitest run --config vitest.auth.config.ts `
+  test/auth/device-assignment-api.test.ts `
+  test/auth/assign-device-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\packages\shcare-contracts
+node --test test/http-contract.test.mjs
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:device-ownership-repository
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+
+cd ..\..\..
+@'
+import yaml
+from pathlib import Path
+data = yaml.safe_load(
+    Path("smart-health-embedded/web-monitor/public/openapi.yaml").read_text(
+        encoding="utf-8"
+    )
+)
+print(f"OpenAPI parsed {len(data.get('paths', {}))} paths")
+'@ | python -
+git diff --check
+```
+
+Expected source/local evidence is focused Web `6/6`, ownership repository `36/36`, HTTP v1 contracts `19/19`, Web Auth/UI `123/123`, Web contracts `64/64`, lint, client/SSR build, Chromium `189` checks over four routes and three viewport/theme cases, backend check/base/repository/workspace/KLT and OpenAPI `69` paths. The current build emits CSS `380.47 KB`, `59.39 KB` gzip.
+
+Canonical `/api/v1/portal/devices/{deviceId}` must reject a missing `Idempotency-Key`. The legacy `/api/portal/devices/{deviceId}` alias may accept a missing key only during the compatibility window; key-bearing alias requests must retain canonical replay/conflict behavior. An earlier workspace smoke met one transient Windows `EBUSY`; only one bounded rerun is appropriate if that exact fixture-read condition recurs.
+
+This gate proves no Firebase production build, provider/live database, deployment, Android runtime/manual acceptance, physical device or firmware HIL. Resume after interruption from the latest handoff/ledger plus current diff and rerun only the narrow gate needed to detect drift.
+
+## Phase 2 Portal Billing Summary closure gate
+
+Run from the implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-web
+npx.cmd vitest run test/auth/billing-summary-api.test.ts test/auth/billing-summary-page.test.tsx --config vitest.auth.config.ts
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+
+cd ..\..\..
+git diff --check
+```
+
+Parse `smart-health-embedded/web-monitor/public/openapi.yaml` as UTF-8 YAML and assert `/portal/billing`, `BillingSummaryResponse`, the exact manual invoice policy and all internal component references. Current expected source/local evidence is focused Billing `6/6`, shared HTTP `20/20` (`27/27` total contracts), Web Auth/UI `129/129`, Web contracts `64/64`, lint/client+SSR build, Chromium `246` checks over five routes and three viewport/theme cases, backend check/base/repository/workspace/KLT and OpenAPI `70` paths. Current CSS is `380.79 KB`, `59.43 KB` gzip.
+
+This gate proves only source/build/local-browser behavior. It does not prove Firebase production, live provider/database, deploy, Android runtime/manual acceptance, physical device or firmware HIL. After quota loss, compaction or power-off, inspect the latest handoff/ledger and current diff first; rerun only the narrow gate needed for drift and never rebuild a closed slice without a reproduced regression.
+
+## Phase 2 Portal Dashboard closure gate
+
+Run from the implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-web
+npm.cmd run test:auth -- test/auth/dashboard-overview-api.test.ts test/auth/dashboard-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:overview-stats
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+
+cd ..\..\..
+git diff --check
+```
+
+Parse `smart-health-embedded/web-monitor/public/openapi.yaml` as UTF-8 YAML. Assert server base `/api/v1`, `/portal/overview`, required `OverviewResponse.workspaceId`, required `OverviewStats.devicesCount`, all internal component references and the documented `/api/portal/overview` compatibility alias. Current expected source/local evidence is focused Dashboard `7/7`, shared HTTP `21/21` (`28/28` total contracts), Web Auth/UI `136/136`, Web contracts `64/64`, lint/client+SSR build, Chromium `306` checks over six routes and three viewport/theme cases, backend overview `4/4` plus integrated gates and OpenAPI `70` paths/`345` references. Current CSS is `381.26 KB`, `59.50 KB` gzip.
+
+This gate proves only source/build/local-browser behavior. It does not prove Firebase production, live provider/database, deploy, Android runtime/manual acceptance, physical device or firmware HIL. On interruption, treat the latest handoff/ledger and current diff as the resume authority; use a narrow gate to detect drift and do not rebuild a closed slice without a reproduced regression.
+
+## Phase 2 Portal Onboarding closure gate
+
+Run from the implementation worktree:
+
+```powershell
+cd smart-health-web
+npm.cmd run test:auth -- test/auth/onboarding-checklist.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..
+git diff --check
+```
+
+Also scan `smart-health-web/src/app/pages/portal/OnboardingChecklist.tsx` for raw hex colors and `glass-panel`, `hero-gradient-text`, `brand-gradient-text`, `premium-button` or `premium-card`; the expected result is empty. Current evidence is focused Onboarding `4/4`, shared contracts `28/28`, Web Auth/UI `140/140`, Web route contracts `64/64`, lint/client+SSR build and Chromium `363` checks over seven routes × three viewport/theme cases. CSS is `381.21 KB`, `59.50 KB` gzip; the Onboarding client chunk is `11.94 KB`, `4.12 KB` gzip.
+
+This gate proves source/build/local-browser behavior only. It does not prove Firebase/live/provider/deploy, Android runtime/manual acceptance, physical device or firmware HIL. After interruption, resume from the latest handoff/ledger and current diff, not from an older chat excerpt.
+
+## Phase 2 Portal Help/support closure gate
+
+Run from the implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:support-tickets
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+npm.cmd test
+
+cd ..\..\..\smart-health-web
+npm.cmd run test:auth -- test/auth/support-ticket-api.test.ts test/auth/help-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..
+git diff --check
+```
+
+Parse `smart-health-embedded/web-monitor/public/openapi.yaml` as UTF-8 YAML and
+assert server base `/api/v1`, `/portal/support`, the closed create
+request/response schemas and every internal reference. Current expected
+source/local evidence is focused Help/API `7/7`, support repository `4/4`,
+shared HTTP `22/22` (`29/29` total contracts), Web Auth/UI `147/147`, Web route
+contracts `64/64`, lint/client+SSR build, Chromium `420` checks over eight
+routes × three viewport/theme cases, backend integrated gates and OpenAPI `71`
+paths / `353` internal references / none missing. Current CSS is `381.36 KB`,
+`59.52 KB` gzip; Help is `14.65 KB`, `5.03 KB` gzip.
+
+Also scan `smart-health-web/src/app/pages/portal/HelpPage.tsx` for raw hex
+colors, `glass-panel`, `brand-gradient-text`, `premium-button`,
+`premium-card`, invented hotline/email values and the unsupported `1–4 giờ`
+SLA; the expected result is empty.
+
+This gate proves source/build/local-browser behavior only. Do not run the live
+support mutation by default: a durable support ticket currently has no
+requester withdrawal/cleanup contract. `SMOKE_ALLOW_DURABLE_SUPPORT_TICKET=1`
+is an explicit opt-in that retains the provider ticket and reports cleanup as
+blocked; it is not cleanup proof. Firebase/deploy, Android runtime/manual,
+physical device and firmware HIL remain separate evidence classes. After an
+interruption, read the latest handoff/ledger and current diff, rerun only the
+narrow drift gate required and continue the first open Phase 2 row.
+
+## Phase 2 Portal workspace selection closure gate
+
+Run from the implementation worktree:
+
+```powershell
+cd packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:workspace-access
+
+cd ..\..\..\smart-health-web
+npx.cmd vitest run --config vitest.auth.config.ts test/auth/workspace-switch-api.test.ts test/auth/workspace-switcher-page.test.tsx test/auth/auth-context.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit --pretty false
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\smart-health-android
+$env:ANDROID_HOME='C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --tests "com.example.smart_health_android.account.WorkspaceSwitcherViewModelTest" --tests "com.example.smart_health_android.account.SmartHealthProfileApiTest"
+
+cd ..
+git diff --check
+```
+
+Also scan `smart-health-web/src/app/pages/portal/WorkspaceSwitcher.tsx` for raw
+hex colors, `glass-panel`, `brand-gradient-text`, `premium-button`,
+`premium-card`, glow and hover-lift transforms; the expected result is empty.
+Current source/local evidence is focused Web `10/10`, shared HTTP `23/23`
+(`30/30` total), Web Auth/UI `153/153`, route contracts `64/64`,
+TypeScript/lint/client+SSR build and Chromium `459` checks over nine routes ×
+three viewport/theme cases. CSS is `381.77 KB`, `59.59 KB` gzip; Workspace is
+`8.94 KB`, `3.34 KB` gzip. Backend check/workspace-access and the two focused
+Android workspace test classes are green.
+
+The SDK path above is a temporary shell variable for this host; do not commit
+it as `local.properties`. This gate does not prove Firebase/live/provider
+deployment, emulator/physical-device/manual TalkBack behavior or firmware HIL.
+After interruption, use the latest handoff/ledger/current diff and continue
+Workspace Settings rather than rebuilding this closed route.
+
+## Phase 2 Portal Workspace Settings narrow resume gate
+
+Use this gate only to verify drift after quota exhaustion, compaction or a
+power-off. It does not authorize rebuilding any prior closure:
+
+```powershell
+cd C:\Users\baobe\Documents\Codex\2026-07-13\lam\work\shcare-rc2-impl-8e2\smart-health-web
+npx.cmd vitest run --config vitest.auth.config.ts test/auth/workspace-settings.test.tsx
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..
+git diff --check
+```
+
+Also scan `smart-health-web/src/app/pages/portal/WorkspaceSettings.tsx` for raw
+hex colors, `glass-panel`, `brand-gradient-text`, `premium-button`,
+`premium-card`, glow and hover-lift transforms; the expected result is empty.
+Current source/local evidence is focused `12/12`, Web Auth/UI `157/157`, route
+contracts `64/64`, TypeScript/lint/client+SSR build and Chromium `525` checks
+over ten routes × three viewport/theme cases. CSS is `379.13 KB`, `59.20 KB`
+gzip; Workspace Settings is `50.32 KB`, `14.66 KB` gzip.
+
+This gate does not prove Firebase/live/provider deployment, Android
+emulator/physical-device/manual TalkBack behavior or firmware HIL. It also does
+not close the Phase 3 idempotency/transaction/audit work for legacy profile,
+workspace, avatar and password mutations.
+
+## Phase 2 Portal Patients list/detail checkpoint
+
+Run from the implementation worktree. This is a drift gate for the closed
+Patients list/detail slice, not permission to rebuild earlier work:
+
+```powershell
+cd smart-health-web
+
+node --test --experimental-strip-types test/contracts/patient-operations.test.ts test/contracts/patients-truthfulness.test.ts
+npm.cmd run test:auth -- --run test/auth/patient-pages.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run smoke:portal-ui-foundation
+npm.cmd run build
+
+cd ..
+git diff --check
+```
+
+Also scan `PatientsPage.tsx`, `PatientDetail.tsx` and `PatientImportPage.tsx`
+for raw hex colors, raw `<button>`, `glass-panel`, `brand-gradient-text`,
+`premium-button`, `premium-card`, cyber styling and `!important`; the expected
+result is empty. Confirm `smart-health-android/local.properties` remains absent.
+
+Current source/local evidence is focused Patient UI `6/6`, focused
+contract/static `12/12`, Web Auth/UI `160/160`, route contracts `66/66`,
+TypeScript/lint/client+SSR build and Chromium `624` checks over twelve routes ×
+three viewport/theme cases. CSS is `379.13 KB` raw / `59.20 KB` gzip; Patients
+is `11.98 KB` / `4.33 KB`, Patient Detail is `14.09 KB` / `4.87 KB`, and the
+patient form is `14.34 KB` / `4.10 KB`.
+
+This gate does not prove Firebase/live/provider deployment, Android
+emulator/physical-device/manual TalkBack behavior or firmware HIL. It preserves
+the already closed Patient CRUD and atomic Import backend contracts; the next
+Phase 2 item is the independent Portal Patient Import UI/browser acceptance.
+
+## 2026-07-29 Portal Patient Import UI/authority continuation gate
+
+Run from the implementation worktree:
+
+```powershell
+cd smart-health-web
+
+node --test --experimental-strip-types `
+  test/contracts/patient-import-operations.test.ts `
+  test/contracts/patients-truthfulness.test.ts
+npm.cmd run test:auth -- --run test/auth/patient-pages.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run smoke:portal-ui-foundation
+npm.cmd run build
+
+cd ..
+git diff --check
+```
+
+Also scan `PatientsPage.tsx`, `PatientDetail.tsx` and
+`PatientImportPage.tsx` for raw hex colors, raw `<button>`, `glass-panel`,
+`brand-gradient-text`, `premium-button`, `premium-card`, cyber styling,
+raw emerald/teal/amber status utilities and `!important`; the expected result
+is empty. Confirm `smart-health-android/local.properties` remains absent.
+
+Current source/local evidence is parser `5/5`, Patient UI `9/9`, focused
+contract/static `10/10`, Web Auth/UI `163/163`, route/contracts `68/68`,
+TypeScript/lint/client+SSR build and Chromium `702` checks over thirteen routes
+× three viewport/theme cases. CSS is `379.43 KB` raw / `59.30 KB` gzip and
+Patient Import is `30.17 KB` raw / `9.06 KB` gzip.
+
+This gate does not prove Firebase/live/provider deployment, Android
+emulator/physical-device/manual TalkBack behavior or firmware HIL. It preserves
+the already closed atomic backend import lifecycle. Appointments inventory is
+the next Phase 2 action after a restart; never rerun implementation merely
+because quota, compaction or a power-off interrupted the task.
+
+## 2026-07-29 Portal Appointments UI/authority continuation gate
+
+Run from the implementation worktree. This verifies drift in the closed
+Appointments slice; it does not authorize rebuilding it:
+
+```powershell
+cd smart-health-web
+
+node --test --experimental-strip-types `
+  test/contracts/appointment-operations.test.ts `
+  test/contracts/appointments-truthfulness.test.ts
+npm.cmd run test:auth -- --run test/auth/appointments-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run smoke:portal-ui-foundation
+npm.cmd run build
+
+cd ..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:appointment-contract
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME = "C:\Users\baobe\AppData\Local\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat testDebugUnitTest `
+  --tests "com.example.smart_health_android.appointments.*" `
+  assembleDebug --no-daemon
+
+cd ..
+git diff --check
+```
+
+Also scan `smart-health-web/src/app/pages/portal/AppointmentsPage.tsx` for raw
+hex colors, raw `<button>`, `glass-panel`, `brand-gradient-text`,
+`premium-button`, `premium-card`, cyber styling, raw emerald/teal/amber status
+utilities and `!important`; the expected result is empty. Confirm
+`smart-health-android/local.properties` remains absent.
+
+Current evidence is component `7/7`, focused contract/static `9/9`, Web
+Auth/UI `170/170`, Web contracts `73/73`, Chromium `807` checks over fourteen
+routes × three viewport/theme cases, backend appointment/workspace smoke and
+Android appointment `26/26` plus `assembleDebug`. CSS is `378.84 KB` raw /
+`59.25 KB` gzip; Appointments is `36.25 KB` raw / `9.94 KB` gzip.
+
+This gate proves source/build/local-browser and focused Android unit/build only.
+It does not prove Firebase/live/provider deployment, emulator/device/manual
+TalkBack behavior, physical hardware or firmware HIL. Resume with
+Review/Alerts/Live after a restart; never redo Appointments merely because
+quota, compaction or power-off interrupted the task.
+
+## 2026-07-29 Portal Review and Alerts authority/UI gate
+
+```powershell
+cd smart-health-web
+
+node --test --experimental-strip-types `
+  test/contracts/clinical-workflow-operations.test.ts `
+  test/contracts/route-contract.test.ts
+npm.cmd run test:auth -- --run `
+  test/auth/clinical-workflow-pages.test.tsx `
+  test/auth/workspace-phi-surfaces.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run smoke:portal-ui-foundation
+npm.cmd run build
+
+cd ..\packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:clinical-workflow
+npm.cmd run smoke:workspace-access
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME = "C:\Users\baobe\AppData\Local\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat testDebugUnitTest `
+  --tests "com.example.smart_health_android.clinical.*" `
+  --tests "com.example.smart_health_android.clinical.alerts.*" `
+  assembleDebug --no-daemon
+
+cd ..
+git diff --check
+```
+
+Also parse `smart-health-embedded\web-monitor\public\openapi.yaml` as UTF-8
+YAML and require the five canonical Review/Alerts paths, `info.version: 0.4.0`
+and zero unresolved internal references. Scan `ReviewQueuePage.tsx` and
+`AlertCenterPage.tsx` for `glass-panel`, `premium-button`,
+`brand-gradient-text`, `clinical-warning` and `clinical-success`; the expected
+result is empty.
+
+Current evidence is focused Web clinical/API/PHI `21/21`, Web Auth/UI
+`174/174`, Web contracts `77/77`, package contracts `31/31`, Chromium `939`
+checks over sixteen routes × three viewport/theme cases, backend
+check/clinical `8/8`/workspace-access, OpenAPI `76` paths / `394` references /
+none missing and Android clinical/alerts `20/20` plus `assembleDebug`. CSS is
+`378.63 KB` raw / `59.17 KB` gzip; Review is `10.33 KB` / `3.82 KB` gzip and
+Alerts is `11.84 KB` / `4.01 KB` gzip. The debug APK is `23,826,433` bytes,
+SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`.
+
+This gate proves source/build/local-browser and focused Android unit/build
+only. It does not prove Firebase/live/provider deployment, Android
+emulator/device/manual TalkBack, physical hardware or firmware HIL. Resume
+with Live Monitoring after an interruption; do not redo Review/Alerts merely
+because quota, compaction or power-off interrupted the task.
+
+## Portal Live Monitoring Phase 2 closure gate
+
+Run from the implementation worktree, not the frozen Security source:
+
+```powershell
+cd smart-health-web
+npx.cmd vitest run --config vitest.auth.config.ts test/auth/monitoring-api.test.ts test/auth/live-monitoring-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:clinical-workflow
+npm.cmd run smoke:device-security
+npm.cmd run smoke:audio-protocol
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME='C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT='C:\Users\baobe\AppData\Local\Android\Sdk'
+.\gradlew.bat testDebugUnitTest --tests "com.example.smart_health_android.scan.LiveAudioContractTest" assembleDebug --no-daemon
+
+cd ..
+git diff --check
+```
+
+Also parse `smart-health-embedded\web-monitor\public\openapi.yaml` as UTF-8
+YAML and require canonical `/portal/monitoring`, `info.version: 0.4.0`, `77`
+paths, `400` internal references and zero unresolved references. Scan
+`LiveMonitoring.tsx` for raw `<button>`, legacy glass/premium/gradient classes
+and raw color literals; the expected result is empty.
+
+Current evidence is focused Live API/UI `9/9`, Web Auth/UI `183/183`, Web
+contracts `81/81`, package contracts `32/32`, Chromium `987` checks over
+seventeen routes × three viewport/theme cases, backend check/workspace,
+clinical `8/8`, device-security `41/41`, audio-v2 `4/4`, and Android LiveAudio
+`13/13` plus `assembleDebug`. CSS is `378.63 KB` raw / `59.17 KB` gzip; Live
+is `17.50 KB` raw / `5.92 KB` gzip. The debug APK is `23,826,433` bytes,
+SHA-256 `6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`.
+
+This gate proves source/build/local-browser and focused Android unit/build
+only. It does not prove Firebase/live/provider deployment, Android
+emulator/device/manual TalkBack, physical authenticated audio or firmware
+HIL. Resume with Portal Devices/Consent after interruption; do not redo Live
+without a reproduced regression.
+
+## Portal Devices and Consent closure gate
+
+Run from the implementation worktree, never from the frozen Security source:
+
+```powershell
+cd smart-health-web
+node --test test/contracts/device-operations.test.ts test/contracts/consent-operations.test.ts
+npx.cmd vitest run --config vitest.auth.config.ts test/auth/device-list-api.test.ts test/auth/consent-api.test.ts test/auth/devices-page.test.tsx test/auth/consent-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npx.cmd tsc --noEmit
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:klt-contract
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:device-security
+npm.cmd run smoke:repositories
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME='C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat testDebugUnitTest --tests "com.example.smart_health_android.consent.ConsentViewModelTest" --tests "com.example.smart_health_android.consent.SmartHealthConsentApiTest" --tests "com.example.smart_health_android.devices.DeviceManagementViewModelTest" --tests "com.example.smart_health_android.devices.DevicePairingCanonicalSourceTest" --tests "com.example.smart_health_android.devices.DevicePairingViewModelTest" --tests "com.example.smart_health_android.devices.SmartHealthDeviceApiTest" --tests "com.example.smart_health_android.ui.DeviceHealthComposeContractTest" --tests "com.example.smart_health_android.scan.LiveAudioContractTest"
+.\gradlew.bat assembleDebug
+
+cd ..
+git diff --check
+```
+
+Also parse `smart-health-embedded\web-monitor\public\openapi.yaml` as UTF-8
+YAML. Require `/portal/devices`, `/share-targets`, both `/patients/{patientId}/shares`
+paths and their `/portal/patients/...` Path Item aliases, the four Device/Consent
+response schemas, `81` paths, `412` internal references and zero unresolved
+references.
+
+Current evidence is parser `7/7`, focused API `5/5`, focused page `17/17`, Web
+Auth/UI `195/195` across `49` files, Web contracts `88/88`, package contracts
+`33/33`, Chromium `1,128` checks across nineteen routes × three viewport/theme
+cases, backend check/KLT/workspace/repositories/device-security `41/41`, and
+Android focused `59/59` across eight suites plus `assembleDebug`. CSS is
+`379.82 KB` raw / `59.33 KB` gzip; Devices is `21.11 KB` / `6.72 KB`, Consent
+is `36.46 KB` / `10.01 KB`. The debug APK is `23,826,433` bytes, SHA-256
+`6AF72E75960018E43F074E7AC281C84CE7B6BFDD0378ACCD684B2B12BFEA0DA8`.
+
+This gate proves source/build/local-browser and focused Android unit/build
+only. It does not prove Firebase/live/provider/database deployment, Android
+runtime/manual TalkBack, physical provisioning/command ACK or firmware HIL.
+After interruption, resume with Portal Staff/Notifications UI-foundation
+integration and do not redo Devices/Consent without a reproduced regression.
+
+## Portal Staff and Notifications closure gate
+
+Run from the implementation worktree, never from the frozen Security source:
+
+```powershell
+cd smart-health-web
+node --test test/contracts/staff-operations.test.ts test/contracts/staff-invitation-operations.test.ts test/contracts/staff-page-truthfulness.test.ts
+npx.cmd vitest run --config vitest.auth.config.ts test/auth/staff-page.test.tsx test/auth/notification-inbox-api.test.ts test/auth/notification-inbox-page.test.tsx
+npm.cmd run test:contracts
+npm.cmd run test:auth
+npx.cmd tsc --noEmit -p tsconfig.json
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run smoke:notification-inbox
+npm.cmd run smoke:portal-ui-foundation
+
+cd ..\packages\shcare-contracts
+npm.cmd test
+
+cd ..\..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:staff-invitations
+npm.cmd run smoke:notification-inbox
+node --test scripts/notificationPushPayloadTest.js
+npm.cmd audit
+
+cd ..\..
+git diff --check
+```
+
+Also parse `smart-health-embedded\web-monitor\public\openapi.yaml` as UTF-8
+YAML and require canonical `PortalStaffResponse` references with no unresolved
+internal schema reference. Inspect the Staff response projection for an exact
+allowlist: password, Firebase claims, 2FA, sessions, tokens and secret-shaped
+fields must be absent.
+
+Current proof is focused Staff/Notifications `14/14`, Web Auth/UI `204/204`
+across `50` files, Web contracts `95/95`, package contracts `34/34`, TypeScript,
+ESLint and client/SSR build, notification browser `66` checks and unified
+Chromium `1,374` checks across the `21` routes currently registered in the Portal matrix × three viewport/theme
+cases. Backend check/workspace/staff `7/7`/inbox `8/8`/notification-contract,
+OpenAPI parse/references, backend audit `0` and `git diff --check` pass. CSS is
+`59.24 KB` gzip plus `1.38 KB` token CSS; fonts are about `82.57 KB`.
+
+This gate proves source/build/local-browser only. It does not prove
+Firebase/live database/provider deployment, real FCM/email delivery, Android
+emulator/device/manual TalkBack, physical-device behavior or firmware HIL.
+After interruption, keep Staff/Notifications closed and resume by comparing the
+remaining RouteContract aliases/details plus Public/Auth/Platform Admin and
+Android adaptive/runtime evidence.
+
+## Phase 2 Public Web UI foundation gate
+
+Run from `smart-health-web`:
+
+```powershell
+npx.cmd prettier --check src/web-styles/clinical-polish.css src/app/layouts/PublicLayout.tsx src/app/pages/public/*.tsx src/app/routes.tsx scripts/publicUiFoundationBrowserSmokeTest.mjs test/contracts/public-ui-foundation.test.ts test/contracts/public-motion-preference.test.ts
+npx.cmd tsc --noEmit -p tsconfig.json
+npx.cmd eslint src/app/layouts/PublicLayout.tsx src/app/pages/public src/app/routes.tsx scripts/publicUiFoundationBrowserSmokeTest.mjs test/contracts/public-ui-foundation.test.ts test/contracts/public-motion-preference.test.ts
+npm.cmd run test:contracts
+npm.cmd run smoke:public-ui-foundation
+npm.cmd run build
+```
+
+The canonical browser command reads `routeContracts` directly and covers all
+`22` Public entries at 360/390/768/1024/1440 in light/dark/system. The final
+checkpoint is `5,325/5,325` browser checks, `99/99` Web contracts and a passing
+client/SSR build. Main CSS is `63.87 KB` gzip, token CSS `1.38 KB` gzip and
+self-hosted fonts total about `82.57 KB`.
+
+This gate proves Public source/build/local-browser foundation only. It does not
+prove Contact submission, Firebase preview/live, provider delivery, field Web
+Vitals, Android runtime/manual accessibility, physical-device behavior or
+firmware HIL. Preserve the existing `signal-horizon.css` debt until dependent
+Auth/Portal migration is complete; do not add a fifth override layer or claim
+that all legacy `!important` rules have already been removed.
+
+After interruption, keep Public and every earlier ledger row closed unless a
+current gate reproduces a regression. Resume with Auth shell/RouteContract
+UI-state foundation under Phase 2 of the named master plan.
+
+## Phase 2 Auth UI/state foundation gate
+
+Run from `smart-health-web`:
+
+```powershell
+npx.cmd prettier --check src/app/layouts/AuthLayout.tsx src/app/pages/auth/*.tsx src/app/components/auth/AuthPrimitives.tsx src/app/contracts/route-contract.ts src/app/routes.tsx src/lib/firebase-client.ts scripts/authBrowserSmokeTest.mjs test/contracts/auth-ui-foundation.test.ts test/auth/reset-password-page.test.tsx test/auth/approval-pending-page.test.tsx test/auth/email-verification-page.test.tsx
+npx.cmd tsc --noEmit -p tsconfig.json
+npx.cmd eslint src/app/layouts/AuthLayout.tsx src/app/pages/auth src/app/components/auth/AuthPrimitives.tsx src/app/contracts/route-contract.ts src/app/routes.tsx src/lib/firebase-client.ts scripts/authBrowserSmokeTest.mjs test/contracts/auth-ui-foundation.test.ts test/auth/reset-password-page.test.tsx test/auth/approval-pending-page.test.tsx test/auth/email-verification-page.test.tsx
+npm.cmd run test:auth
+npm.cmd run test:contracts
+node scripts/authBrowserSmokeTest.mjs
+npm.cmd run build
+```
+
+The Auth browser command starts its own Vite server unless
+`SMART_HEALTH_WEB_URL` is explicitly supplied. It reads the canonical
+RouteContract and covers all `15` Auth entries at
+360/390/768/1024/1440 in light/dark/system. The closed checkpoint is
+`3,615/3,615` browser checks over `225` visits, `211/211` Auth/UI tests,
+`104/104` Web contracts and a passing client/SSR build. Main CSS is
+`63.89 KB` gzip, token CSS is `1.38 KB` gzip and fonts total about
+`82.57 KB`.
+
+This gate proves source/build/local-browser foundation. It does not prove a
+real Firebase action link, email-provider delivery, custom action-handler
+configuration, preview/live deployment, Android runtime/manual accessibility,
+physical-device behavior or firmware HIL.
+
+After interruption, keep Public/Auth and all earlier rows closed absent a
+reproduced regression. Resume with Platform Admin UI-foundation census, then
+the independent Android adaptive/runtime evidence, under Phase 2 of the named
+master plan.
+
+## Phase 2 Platform Admin UI-foundation gate
+
+Run from `smart-health-admin\thiết kế giao diện`:
+
+```powershell
+npm.cmd run test:contracts
+npm.cmd run lint
+npx.cmd tsc --noEmit
+npm.cmd run build
+npm.cmd run smoke:admin-ui-foundation
+```
+
+Critical cross-engine reruns can use the same self-starting harness:
+
+```powershell
+node scripts/adminUiFoundationBrowserSmokeTest.mjs --browser=firefox --route=admin-overview,admin-account,admin-devices,admin-clinics --viewport=phone,desktop --theme=dark
+node scripts/adminUiFoundationBrowserSmokeTest.mjs --browser=webkit --route=admin-overview,admin-account,admin-devices,admin-clinics --viewport=phone,desktop --theme=dark
+```
+
+The closed checkpoint is contracts `169/169`, Chromium `225` visits over
+fifteen Admin RouteContracts × five viewports × light/dark/system, and critical
+Firefox/WebKit mobile plus desktop journeys. Aggregate runtime evidence is
+`241` route checks, `19` Account mutation/cleanup checks, `19` drawer focus
+checks, `25` loading/error/retry/empty/403 checks and `5` real direct-route
+denials. The browser harness starts isolated backend/Vite processes and cleans
+up the notification-preference mutation.
+
+This gate proves source/build/local-browser behavior only. It does not prove
+Firebase preview/live promotion, provider/database runtime, production rollback,
+Android emulator/device behavior, physical hardware or firmware HIL.
+
+## Phase 2 Android Settings and bounded clinical-status checkpoint
+
+Run the backend and Web source gates from their own module roots:
+
+```powershell
+cd smart-health-embedded\web-monitor
+npm.cmd run smoke:clinical-dashboard-status
+npm.cmd run check
+npm.cmd run smoke:workspace-access
+
+cd ..\..\smart-health-web
+npm.cmd run test:contracts
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+`npm.cmd run build:firebase` additionally requires the six canonical
+`VITE_FIREBASE_*` variables. If they are absent, record the provider build as
+`BLOCKED`; do not fabricate values or treat the normal client/SSR build as live
+Firebase proof.
+
+Run the complete Android source/build gate from `smart-health-android`:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --rerun-tasks --console=plain --no-daemon
+```
+
+The current closed proof is `78` suites, `449/449` tests and APK SHA-256
+`D1611B9E51D4E7DBC39DFE4106D307C58641688040E8CC94BA90CB9A56456BDD`.
+Before claiming runtime proof, separately confirm `app\google-services.json`
+exists and `adb devices` lists the intended emulator/device. Both are absent at
+this checkpoint, so FCM/runtime/manual TalkBack/golden proof remains `BLOCKED`.
+
+## Phase 2 Patient Dashboard checkpoint
+
+Run the backend authority/contract gates from `smart-health-embedded\web-monitor`:
+
+```powershell
+npm.cmd run smoke:patient-dashboard
+npm.cmd run smoke:workspace-access
+npm.cmd run check
+npm.cmd test
+```
+
+Run the shared HTTP fixture/schema gate from `packages\shcare-contracts`:
+
+```powershell
+npm.cmd test
+```
+
+Run the Android focused and complete source/build gates from
+`smart-health-android` after setting the local SDK path:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --tests "*PatientDashboard*" --tests "*UiScreenApiBoundaryTest*" --tests "*SmartHealthScanRecordApiTest*" --rerun-tasks --console=plain --no-daemon
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --rerun-tasks --console=plain --no-daemon
+```
+
+Closed proof is backend Patient Dashboard `7/7`, workspace-access/check/test,
+contracts `35/35`, Android focused `32/32`, full unit `473/473`, compile,
+AndroidTest compile, assemble and lint. The APK is `24,001,564` bytes with
+SHA-256
+`BDD617D4E175892660720BD9944F0A6055B200DDE5A1FFD792BB1DD45ACC22AE`.
+
+Before claiming runtime evidence, verify both:
+
+```powershell
+Test-Path .\app\google-services.json
+adb devices
+```
+
+At this checkpoint the file is absent and the ADB target list is empty, so
+emulator/golden/manual TalkBack/FCM/live-provider/physical-device/hardware proof
+remains `BLOCKED`. The clinical `scanIsNormal` cleanup in Dashboard, Records and
+Record Detail belongs to Phase 5. Deep Security remains untouched at
+`running/preflight`.
+
+## Superseding Patient Dashboard authority/retry gate
+
+This gate belongs to **“Kế hoạch tái thiết toàn diện Shcare Web, Portal,
+Platform Admin, Android và firmware”**. Phase 0–1 are complete, **Phase 2 is in
+progress**, and Phase 3–8 are pending.
+
+Run from `smart-health-embedded\web-monitor`:
+
+```powershell
+npm.cmd run check
+npm.cmd run smoke:patient-dashboard
+npm.cmd run smoke:workspace-access
+npm.cmd test
+npm.cmd run smoke:repositories
+```
+
+Run shared contracts from `packages\shcare-contracts`:
+
+```powershell
+node --test
+```
+
+Run the exact Android authority/dashboard group, then the full gate, from
+`smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --tests "com.example.smart_health_android.account.FamilyProfilesViewModelTest" --tests "com.example.smart_health_android.navigation.MobileSessionAuthorityTest" --tests "com.example.smart_health_android.patientdashboard.PatientDashboardViewModelTest" --tests "com.example.smart_health_android.patientdashboard.SmartHealthPatientDashboardApiTest" --tests "com.example.smart_health_android.patientdashboard.PatientDashboardRouteAccessTest" --tests "com.example.smart_health_android.ui.PatientDashboardUiContractTest" --rerun-tasks --console=plain --no-daemon
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --rerun-tasks --console=plain --no-daemon
+```
+
+Fresh proof is backend Patient Dashboard `9/9`, workspace/check/full/repository
+smokes, shared contracts `35/35`, Android focused `62/62`, full unit `487/487`,
+compile/AndroidTest compile/assemble/lint, and APK `24,018,920` bytes with
+SHA-256
+`751A9CDACB18B18D19C8CE88116D24B664451495FDFF2AC68EBD5BD9CF311C20`.
+
+`GET /api/v1/patient/dashboard` is a pure read. Only accepted idempotent
+active-profile PATCH persists `activePatientId`. Before resuming after quota,
+compaction or power loss, read the latest handoff, execution ledger and current
+diff. Do not repeat a closed row unless a narrow gate reproduces a regression.
+Missing `google-services.json` and an empty ADB list keep runtime/provider/device
+proof `BLOCKED`; Deep Security remains untouched at `running/preflight`.
+
+## Phase 2 account password source/build/local gate
+
+This gate belongs to **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform
+Admin, Android và firmware”**. Phase 0–1 are complete, **Phase 2 is in
+progress**, and Phase 3–8 are pending.
+
+Run backend gates from `smart-health-embedded\web-monitor`:
+
+```powershell
+npm.cmd run smoke:firebase-admin-compat
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:repositories
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:klt-contract
+```
+
+Run shared contracts from `packages\shcare-contracts`:
+
+```powershell
+node --test
+```
+
+Run Web gates from `smart-health-web` using the package scripts recorded in its
+`package.json`; the closed result is Auth/UI `227/227`, contracts `105/105`,
+lint, client+SSR build and Portal UI-foundation browser `1,374/1,374`.
+
+Run Platform Admin from
+`smart-health-admin\thiết kế giao diện`; the closed result is contracts
+`175/175`, lint, client+SSR build and targeted desktop-dark `/account` browser
+acceptance. The complete Admin browser matrix did not finish inside this run,
+so do not cite it as fresh password-workflow evidence.
+
+Run the full Android gate from `smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --rerun-tasks --console=plain --no-daemon
+```
+
+Closed Android result is `86` suites / `518/518`, compile/AndroidTest
+compile/assemble/lint, with APK `24,066,508` bytes and SHA-256
+`5DC07A7E02A0F97FB62C80FBD1201EDBE5E3E2174F71F335FBCA053917DE9FD0`.
+
+Before any runtime claim, check:
+
+```powershell
+Test-Path .\app\google-services.json
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices
+```
+
+The file is currently absent and the device list is empty. Resume after quota,
+compaction or power-off from the newest handoff, execution ledger, current diff
+and proof. Do not repeat the password row without a reproduced regression.
+Deep Security remains separately untouched at `running/preflight`.
+
+## Registration/email-verification/role-request closure gate (2026-08-01)
+
+Do not use `bunx` for the Web TypeScript gate. From `smart-health-web`, run the installed compiler with an explicit timeout:
+
+```powershell
+.\node_modules\.bin\tsc.cmd --noEmit --pretty false
+```
+
+The verified run exits `0` in `13.72s`. A Codex `$bunx tsc --noEmit` card that remains visible without a live Bun/TypeScript process is stale UI and may be canceled safely.
+
+Backend/shared proof:
+
+```powershell
+cd ..\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:role-request-documents
+npm.cmd run smoke:workspace-access
+npm.cmd run smoke:repositories
+cd ..\..\packages\shcare-contracts
+npm.cmd test
+```
+
+Expected focused results are role-document `13/13` and shared contracts `38/38`. Do not run workspace-access concurrently against the same `.test-data` directory; a contended run is not final evidence.
+
+Android focused proof from `smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+.\gradlew.bat :app:testDebugUnitTest --tests '*SmartHealthAuthorityApiTest' --tests '*SessionTerminatorTest' --tests '*NotificationLogoutSourceContractTest' --tests '*EmailVerificationRepositoryTest' --tests '*DoctorApprovalOwnerGuardTest' --tests '*SmartHealthNotificationDeviceApiTest' --no-daemon --console=plain
+```
+
+Expected focused result is six suites / `40/40`; the full recorded result is 93 suites / `579/579`, both Kotlin compile gates, assemble and lint. APK SHA-256 is `C0230EB545E4BFA34D9EE68857CC0FE9C6C1C2217783F3874557F08E338FE7E6`. Runtime proof still requires `google-services.json` and an ADB target.
+
+## Doctor Approval and role-target closure gate (2026-08-02)
+
+This gate belongs to **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Phase 0–1 are complete, **Phase 2 remains in progress**, and Phase 3–8 remain pending. Doctor Approval is closed for source/build/local proof; the next row is **Android SignUp architecture-bound native foundation**.
+
+Never use `$bunx tsc --noEmit` for the Web gate. The stale card had no live process; the installed compiler passed in `9.36s`:
+
+```powershell
+cd smart-health-web
+.\node_modules\.bin\tsc.cmd --noEmit --pretty false
+```
+
+Backend/shared gates:
+
+```powershell
+cd smart-health-embedded\web-monitor
+npm.cmd run smoke:workspace-access
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:repositories
+cd ..\..\packages\shcare-contracts
+node --test test\http-contract.test.mjs
+```
+
+The shared result is `31/31`. Run the backend workspace smoke alone against its test-data directory.
+
+Android final gate:
+
+```powershell
+cd smart-health-android
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --rerun-tasks --console=plain
+.\gradlew.bat :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --console=plain
+Get-FileHash -Algorithm SHA256 .\app\build\outputs\apk\debug\app-debug.apk
+```
+
+Recorded proof is `95` suites / `611/611`, lint `0` errors (`43` warnings, `1` hint), APK `25,552,231` bytes and SHA-256 `84D99052B50E91282589F81DF94BDCC8BFF606CD410BC6E4CC84132364B216FA`. Runtime/provider/device proof remains `BLOCKED`: it still requires `app/google-services.json`, an attached ADB target and live PostgreSQL/provider credentials.
+
+## Gate đóng Android auth/session owner (2026-08-02)
+
+Gate này thuộc **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Phase 0–1 đã hoàn tất, **Phase 2 vẫn đang thực hiện**, Phase 3–8 còn pending.
+
+Chạy từ `smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --rerun-tasks --console=plain --no-daemon
+.\gradlew.bat :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --rerun-tasks --console=plain --no-daemon
+Get-FileHash -Algorithm SHA256 .\app\build\outputs\apk\debug\app-debug.apk
+Test-Path .\app\google-services.json
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices
+```
+
+Chạy diff gate từ root worktree:
+
+```powershell
+git diff --check -- smart-health-android
+```
+
+Bằng chứng đã ghi nhận: full unit `98` suites / `655` tests, failures `0`, errors `0`, skipped `0`; gate AndroidTest compile + assemble + lint `BUILD SUCCESSFUL` trong `4m43s` với `56` tasks; lint `43` warnings / `0` errors và `0` vấn đề auth/session trong phạm vi; diff check sạch. APK có kích thước `24,172,920` bytes, SHA-256 `CEB6BFC23995B361AD0BD23B24F4F836E0464BCB215105C8A6EDE8BACDAC5F69`.
+
+Review độc lập cuối cùng ghi nhận P0/P1/P2 đều không còn trong các đường được sửa. `google-services.json` hiện vắng mặt và ADB không có target, vì vậy Firebase/provider/navigation runtime vẫn `BLOCKED`. P2 partial SignUp abandonment/back vẫn mở. Gate tiếp theo là kiểm toán hoàn tất foundation Phase 2 trên Web foundation và Android native foundation; không chạy Dashboard/Live/Medical Records/New Scan/audio như thể đó là Phase 2.
+
+## Gate Phase 2 Web CSS A và Android adaptive shell
+
+Không dùng `bunx`. Chạy compiler đã cài trong project với timeout:
+
+```powershell
+cd smart-health-web
+npm.cmd run test:contracts
+.\node_modules\.bin\tsc.cmd --noEmit -p tsconfig.json --pretty false
+npm.cmd run build
+npm.cmd run lint
+npm.cmd run smoke:portal-ui-foundation
+npm.cmd run smoke:public-ui-foundation
+```
+
+Gate Android cần SDK theo phiên shell, không ghi `local.properties` dùng chung:
+
+```powershell
+cd smart-health-android
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:lintDebug --rerun-tasks
+```
+
+Baseline mới: Web contracts `112/112`, Chromium Portal `1,374` checks, Public `5,325` checks; Android `99` suites / `660/660`, lint `43` warnings / `0` errors; APK SHA-256 `AF2E8648AF12B2F360B1AE2FA7DEC59386C52872185D4605001BC353F800F66B`. Firefox/WebKit/visual/performance và device/manual accessibility vẫn phải ghi riêng, không suy ra từ build.
+
+## Phase 2 closure audit gate (2026-08-06)
+
+Không dùng `bunx`. TypeScript trực tiếp:
+
+```powershell
+cd smart-health-web
+.\node_modules\.bin\tsc.cmd --noEmit -p tsconfig.json --pretty false
+```
+
+Chạy UI foundation theo engine Playwright đã cài:
+
+```powershell
+$env:SHCARE_UI_SMOKE_BROWSER='firefox'
+$env:SHCARE_UI_SMOKE_CASE='phone-light'
+node scripts/portalUiFoundationBrowserSmokeTest.mjs
+
+$env:SHCARE_UI_SMOKE_BROWSER='webkit'
+$env:SHCARE_UI_SMOKE_CASE='desktop-dark'
+node scripts/portalUiFoundationBrowserSmokeTest.mjs
+
+$env:SHCARE_PUBLIC_UI_BROWSER='firefox'
+$env:SHCARE_PUBLIC_UI_ROUTE='public.home'
+$env:SHCARE_PUBLIC_UI_VIEWPORT='phone-compact'
+$env:SHCARE_PUBLIC_UI_THEME='light'
+node scripts/publicUiFoundationBrowserSmokeTest.mjs
+```
+
+Current audit proof: Web contracts `114/114`, Auth/component `288/288`, Portal Chromium `459`, Firefox `458`, WebKit `459`; Android focused `32/32` plus main/AndroidTest Kotlin compile. This proof does **not** close Phase 2 while known CSS/bundle/visual and Android resource/testTag/deep-link/golden/SignUp obligations remain. Firebase/ADB/provider/device proof remains `BLOCKED`.
+
+## 2026-08-15 Phase 4 software/source-build closure and Phase 5 handoff
+
+- Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 0–4 are closed at the software/source/build/local boundary; **Phase 5 is active**. This does not claim overall-plan PASS.
+- Backend OTA exit: `check` PASS; OTA/repository `24/24`; private HTTP download `8/8`; ownership/storage `67/67`. The final P1 is closed: the firmware GET refreshes the matching command under the canonical lock/CAS, atomically expires an unacknowledged command + OTA and revokes its grant after delivery TTL, while an acknowledged command retains the bounded execution TTL.
+- Earlier exclusive convergence gates remain recorded: bounded storage `3/3`, device security `71/71`, ownership parity `64/64`, repositories PASS and shared contracts `47/47`. A later `77/82` device-security run includes five intentional Phase 5 RED scan/audio tests; it is not a Phase 4 OTA regression and is not a global PASS.
+- Android Phase 4 proof: `109` suites / `793` tests, unit/assemble/lint PASS; debug APK SHA-256 `DCEEEC05251FAE3AD475F5C1F4B41CA6D43E9728AC68C961553E57F9BAF47B34`. Firebase runtime remains `BLOCKED` without `google-services.json`; ADB was empty.
+- Firmware Phase 4 proof: source contract and production/OTA build PASS; RAM `52,864 / 327,680`, flash `1,120,489 / 6,291,456`. Pre-Phase-5 binaries: production SHA-256 `3153F65239F9F7D9859DB2F4473AB5D879E907A4FC410E0E1CEDFE8EC0FBA582`, OTA SHA-256 `2E0BF2A5440FED1FEFEDCB1DA7C6E6531FF7925B011E61293508267C48AE119B`, each `1,120,848` bytes.
+- Native firmware test execution is `BLOCKED` by missing `gcc/g++`; physical flash/provision/audio/forced-rollback evidence is **`DEFERRED — chờ phần cứng`**. Build proof does not replace HIL.
+- Phase 5 resumes at audio v2 schema/runtime convergence, finalize-before-stop-ACK, `audio.failed → interrupted`, exact start/stop idempotency, restart recovery of `created` scans, and Android guided/live/record runtime boundaries. Deep Security remains separate and untouched at `running/preflight`.
+
+## 2026-08-22 Phase 6 continuation commands
+
+- Restart from **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)** under **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
+- Phase 5 is closed locally. Do not rerun its full gates unless Phase 6 changes a shared boundary or a focused regression fails.
+- Prefer direct local binaries for Web TypeScript/ESLint; do not use `bunx tsc`.
+- Phase 6 verification should start focused by domain (appointment, consent, alert, notification), then run affected aggregate backend/Web/Admin/Android gates before closure. ADB/provider/HIL evidence remains explicitly separate.
+
+## 2026-08-22 Phase 7 continuation commands
+
+- Restart from **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)** under **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
+- Phase 6 is closed locally. Do not rerun its aggregates unless Phase 7 changes a shared boundary or a focused regression fails.
+- Admin module path is `smart-health-admin/thiết kế giao diện` (not the parent folder). Run `npm.cmd run test:contracts`, `npm.cmd run lint`, and `npm.cmd run build` there.
+- For Android source verification, set session-only `ANDROID_HOME=C:\Users\baobe\AppData\Local\Android\Sdk`; do not commit a personal `local.properties`. Prefer `gradlew.bat testDebugUnitTest compileDebugAndroidTestKotlin assembleDebug lintDebug --console=plain`.
+- Phase 7 begins with literal/contract inspection for fake data, toast-only mutations, unsupported claims and missing backend receipts across Admin routes; run focused tests before aggregate gates.
+
+## 2026-08-22 Phase 8 continuation commands
+
+- Restart from **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)** under **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
+- Phase 7 is closed locally with shared `50/50`, Admin `185/185`, backend check/admin-list/workspace/repository gates and Admin lint/build. Do not rerun earlier aggregates unless the RC changes their boundary or a focused regression appears.
+- Use direct local package binaries and `npm.cmd`; never use `bunx tsc`. Build only from the canonical implementation worktree until an intentional candidate snapshot is recorded.
+- Phase 8 must record source identity, intentional file inventory, build/smoke results, artifact SHA-256, compatibility, deploy order and rollback. Provider/live, ADB and HIL rows stay blocked/deferred unless actually executed.
+
+### RC2 local demo
+
+```powershell
+npm.cmd --prefix smart-health-embedded/web-monitor run demo:stack
+```
+
+- Open Web/Portal at `http://127.0.0.1:8765` and Admin at `http://127.0.0.1:8766`; backend is `http://127.0.0.1:3765`.
+- Patient: `patient@example.com / 12345678`; Doctor: `doctor@example.com / 12345678`; Admin: `admin.demo@shcare.local / Shcare-Demo-2026!`.
+- Use Ctrl+C once after the demo. The launcher must stop every child, free `3765/3766/8765/8766`, and delete its isolated temporary data.
+- This local demo does not satisfy Firebase/provider/live/ADB/HIL promotion gates. See [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md).

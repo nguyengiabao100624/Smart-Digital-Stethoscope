@@ -6,7 +6,9 @@ import com.example.smart_health_android.data.DevicePairingPresence
 import com.example.smart_health_android.data.DevicePairingResponse
 import com.example.smart_health_android.data.DevicePairingState
 import com.example.smart_health_android.data.SmartDevice
+import com.example.smart_health_android.data.SmartHealthApiException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -29,6 +31,11 @@ import java.time.Instant
 class DevicePairingViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val now = Instant.parse("2026-07-18T00:00:00Z")
+    private val authority = DevicePairingAuthoritySnapshot.create(
+        userId = "user-1",
+        workspaceId = "workspace-1",
+        authorityEpoch = 1L,
+    )
 
     @Before
     fun setUp() {
@@ -54,7 +61,7 @@ class DevicePairingViewModelTest {
         assertEquals("QR", repository.lastConnectionMethod)
         assertEquals(0, repository.listCalls)
         assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
-        assertEquals(DeviceSetupCapability.SecureQrV1, viewModel.uiState.value.setupCapability)
+        assertEquals(DeviceSetupCapability.SecureSetupV1, viewModel.uiState.value.setupCapability)
         assertEquals("Shcare-9487FC14F3E6", viewModel.uiState.value.setupSsid)
         assertEquals("4hxulJ_mCLIz2XhP-KXh", viewModel.uiState.value.setupProofOfPossession)
     }
@@ -128,6 +135,55 @@ class DevicePairingViewModelTest {
         assertEquals(R.string.device_pairing_backend_error, viewModel.uiState.value.errorMessageRes)
         assertEquals("", viewModel.uiState.value.setupProofOfPossession)
         assertEquals(0, repository.listCalls)
+    }
+
+    @Test
+    fun lateClaimResponseAfterAuthorityEpochChangeIsQuarantined() = runTest(dispatcher) {
+        val claimGate = CompletableDeferred<Unit>()
+        val repository = FakeDeviceClaimRepository(
+            claimResult = SmartDevice(id = "dev_alpha", name = "Shcare Alpha"),
+            claimGate = claimGate,
+        )
+        var currentAuthority = authority
+        val viewModel = secureViewModel(
+            repository = repository,
+            currentAuthority = { currentAuthority },
+        )
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+        currentAuthority = DevicePairingAuthoritySnapshot.create(
+            userId = "user-1",
+            workspaceId = "workspace-1",
+            authorityEpoch = 2L,
+        )
+        claimGate.complete(Unit)
+        runCurrent()
+
+        assertEquals(DevicePairingStage.ClaimFailed, viewModel.uiState.value.stage)
+        assertEquals(DevicePairingFailureKind.Session, viewModel.uiState.value.failureKind)
+        assertEquals(R.string.device_pairing_session_expired, viewModel.uiState.value.errorMessageRes)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+        assertEquals(0, repository.listCalls)
+    }
+
+    @Test
+    fun pairingReceiptFromAnotherWorkspaceFailsClosed() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository(
+            claimResult = SmartDevice(
+                id = "dev_alpha",
+                name = "Other tenant device",
+                organizationId = "workspace-other",
+            ),
+        )
+        val viewModel = secureViewModel(repository)
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+
+        assertEquals(DevicePairingStage.ClaimFailed, viewModel.uiState.value.stage)
+        assertEquals(R.string.device_pairing_identity_mismatch, viewModel.uiState.value.errorMessageRes)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
     }
 
     @Test
@@ -209,32 +265,78 @@ class DevicePairingViewModelTest {
     }
 
     @Test
-    fun manualEntryIsClaimOnlyAndNeverExposesOrPretendsWifiSetup() = runTest(dispatcher) {
-        val offline = SmartDevice(id = "DEV_001", name = "Legacy device", online = false)
-        val online = offline.copy(online = true)
+    fun manualSetupPayloadClaimsThenRequiresTheSameSecureApFlow() = runTest(dispatcher) {
+        val offline = SmartDevice(id = "dev_alpha", name = "Shcare Alpha", online = false)
         val repository = FakeDeviceClaimRepository(
             claimResult = offline,
-            deviceSnapshots = ArrayDeque(listOf(listOf(online))),
         )
-        val viewModel = secureViewModel(repository, onlineRetryDelaysMillis = listOf(10_000L))
+        val viewModel = secureViewModel(repository)
 
-        viewModel.onAction(DevicePairingUiAction.DeviceIdChanged("DEV_001"))
-        viewModel.onAction(DevicePairingUiAction.ClaimCodeChanged("Claim_aB12"))
+        viewModel.onAction(DevicePairingUiAction.ManualDeviceIdChanged("dev_alpha"))
+        viewModel.onAction(DevicePairingUiAction.ManualClaimCodeChanged("Claim_aB12"))
+        viewModel.onAction(DevicePairingUiAction.ManualSetupSsidChanged("Shcare-9487FC14F3E6"))
+        viewModel.onAction(DevicePairingUiAction.ManualProofChanged("4hxulJ_mCLIz2XhP-KXh"))
         viewModel.onAction(DevicePairingUiAction.SubmitManual)
         runCurrent()
 
         assertEquals("Claim_aB12", repository.lastPayload?.claimCode)
         assertEquals("Manual", repository.lastConnectionMethod)
-        assertEquals(DevicePairingStage.AwaitingOnline, viewModel.uiState.value.stage)
-        assertEquals(DeviceSetupCapability.ClaimOnly, viewModel.uiState.value.setupCapability)
-        assertTrue(viewModel.uiState.value.isManualClaimOnly)
-        assertEquals("", viewModel.uiState.value.setupSsid)
-        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+        assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
+        assertEquals(DeviceSetupCapability.SecureSetupV1, viewModel.uiState.value.setupCapability)
+        assertEquals("", viewModel.uiState.value.manualDeviceId)
+        assertEquals("", viewModel.uiState.value.manualClaimCode)
+        assertEquals("", viewModel.uiState.value.manualSetupSsid)
+        assertEquals("", viewModel.uiState.value.manualProofOfPossession)
+        assertEquals("Shcare-9487FC14F3E6", viewModel.uiState.value.setupSsid)
+        assertEquals("4hxulJ_mCLIz2XhP-KXh", viewModel.uiState.value.setupProofOfPossession)
         assertEquals(0, repository.listCalls)
+    }
 
-        advanceTimeBy(10_000L)
+    @Test
+    fun manualFormReportsFieldErrorsBeforeAnyBackendMutation() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository()
+        val viewModel = secureViewModel(repository)
+
+        viewModel.onAction(DevicePairingUiAction.SubmitManual)
+
+        assertEquals(0, repository.claimCalls)
+        assertEquals(
+            setOf(
+                DeviceManualSetupField.DeviceId,
+                DeviceManualSetupField.ClaimCode,
+                DeviceManualSetupField.SetupSsid,
+                DeviceManualSetupField.ProofOfPossession,
+            ),
+            viewModel.uiState.value.manualFieldErrors,
+        )
+
+        viewModel.onAction(DevicePairingUiAction.ManualDeviceIdChanged("dev_alpha"))
+
+        assertFalse(DeviceManualSetupField.DeviceId in viewModel.uiState.value.manualFieldErrors)
+        assertTrue(DeviceManualSetupField.ClaimCode in viewModel.uiState.value.manualFieldErrors)
+    }
+
+    @Test
+    fun manualSetupMaterialExpiresLocallyAfterFifteenMinutes() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository(
+            claimResult = SmartDevice(id = "dev_alpha", online = false),
+        )
+        val viewModel = secureViewModel(repository)
+
+        viewModel.onAction(DevicePairingUiAction.ManualDeviceIdChanged("dev_alpha"))
+        viewModel.onAction(DevicePairingUiAction.ManualClaimCodeChanged("Claim_aB12"))
+        viewModel.onAction(DevicePairingUiAction.ManualSetupSsidChanged("Shcare-9487FC14F3E6"))
+        viewModel.onAction(DevicePairingUiAction.ManualProofChanged("4hxulJ_mCLIz2XhP-KXh"))
+        viewModel.onAction(DevicePairingUiAction.SubmitManual)
         runCurrent()
-        assertEquals(DevicePairingStage.Online, viewModel.uiState.value.stage)
+
+        assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
+        advanceTimeBy(15L * 60L * 1_000L)
+        runCurrent()
+
+        assertEquals(DevicePairingStage.Entry, viewModel.uiState.value.stage)
+        assertEquals(R.string.device_pairing_setup_expired, viewModel.uiState.value.errorMessageRes)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
     }
 
     @Test
@@ -304,6 +406,30 @@ class DevicePairingViewModelTest {
     }
 
     @Test
+    fun deniedClaimIsNotRetryableAndClearsOneTimeSetupMaterial() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository(
+            claimError = SmartHealthApiException(
+                statusCode = 403,
+                code = "DEVICE_CLAIM_CAPABILITY_REQUIRED",
+                requestId = "req-pair-denied",
+                message = "forbidden",
+            ),
+        )
+        val viewModel = secureViewModel(repository)
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+
+        assertEquals(DevicePairingStage.ClaimFailed, viewModel.uiState.value.stage)
+        assertEquals(R.string.device_pairing_permission_denied, viewModel.uiState.value.errorMessageRes)
+        assertEquals(DevicePairingFailureKind.Permission, viewModel.uiState.value.failureKind)
+        assertEquals("req-pair-denied", viewModel.uiState.value.requestId)
+        assertFalse(viewModel.uiState.value.canRetryClaim)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+        assertEquals("", viewModel.uiState.value.setupSsid)
+    }
+
+    @Test
     fun mismatchedClaimResponseFailsClosedAndClearsSetupProof() = runTest(dispatcher) {
         val repository = FakeDeviceClaimRepository(
             claimResult = SmartDevice(id = "dev-other", online = true),
@@ -363,12 +489,73 @@ class DevicePairingViewModelTest {
         assertEquals(R.string.device_pairing_presence_offline, viewModel.uiState.value.errorMessageRes)
     }
 
+    @Test
+    fun revokedSessionDuringOnlineConfirmationFailsClosedAndClearsSetupProof() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository(
+            claimResult = SmartDevice(id = "dev_alpha", online = false),
+            listError = SmartHealthApiException(
+                statusCode = 401,
+                code = "AUTH_SESSION_REVOKED",
+                requestId = "req-presence-session",
+                message = "session revoked",
+            ),
+        )
+        val viewModel = secureViewModel(repository, onlineRetryDelaysMillis = listOf(0L))
+
+        advanceToOnlineConfirmation(viewModel)
+
+        assertEquals(DevicePairingStage.ClaimFailed, viewModel.uiState.value.stage)
+        assertEquals(DevicePairingFailureKind.Session, viewModel.uiState.value.failureKind)
+        assertEquals(R.string.device_pairing_session_expired, viewModel.uiState.value.errorMessageRes)
+        assertEquals("req-presence-session", viewModel.uiState.value.requestId)
+        assertFalse(viewModel.uiState.value.canRetryOnline)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+        assertEquals("", viewModel.uiState.value.setupSsid)
+    }
+
+    @Test
+    fun revokedCapabilityDuringOnlineConfirmationFailsClosedAndClearsSetupProof() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository(
+            claimResult = SmartDevice(id = "dev_alpha", online = false),
+            listError = SmartHealthApiException(
+                statusCode = 403,
+                code = "DEVICE_CLAIM_CAPABILITY_REQUIRED",
+                requestId = "req-presence-permission",
+                message = "forbidden",
+            ),
+        )
+        val viewModel = secureViewModel(repository, onlineRetryDelaysMillis = listOf(0L))
+
+        advanceToOnlineConfirmation(viewModel)
+
+        assertEquals(DevicePairingStage.ClaimFailed, viewModel.uiState.value.stage)
+        assertEquals(DevicePairingFailureKind.Permission, viewModel.uiState.value.failureKind)
+        assertEquals(R.string.device_pairing_permission_denied, viewModel.uiState.value.errorMessageRes)
+        assertEquals("req-presence-permission", viewModel.uiState.value.requestId)
+        assertFalse(viewModel.uiState.value.canRetryOnline)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+        assertEquals("", viewModel.uiState.value.setupSsid)
+    }
+
+    private fun advanceToOnlineConfirmation(viewModel: DevicePairingViewModel) {
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAction(DevicePairingUiAction.WifiSettingsReturned)
+        viewModel.onAction(DevicePairingUiAction.PortalSetupConfirmed)
+        dispatcher.scheduler.runCurrent()
+    }
+
     private fun secureViewModel(
         repository: DeviceClaimRepository,
+        currentAuthority: () -> DevicePairingAuthoritySnapshot? = { authority },
         idempotencyKeyFactory: () -> String = { "pair-key-1" },
         onlineRetryDelaysMillis: List<Long> = listOf(0L),
     ) = DevicePairingViewModel(
         repository = repository,
+        expectedAuthority = authority,
+        currentAuthority = currentAuthority,
         idempotencyKeyFactory = idempotencyKeyFactory,
         onlineRetryDelaysMillis = onlineRetryDelaysMillis,
         nowMillis = { now.toEpochMilli() },
@@ -401,6 +588,9 @@ private class FakeDeviceClaimRepository(
     private val deviceSnapshots: ArrayDeque<List<SmartDevice>> = ArrayDeque(),
     private var claimFailuresRemaining: Int = 0,
     private var listFailuresRemaining: Int = 0,
+    private val claimError: Throwable? = null,
+    private val listError: Throwable? = null,
+    private val claimGate: CompletableDeferred<Unit>? = null,
 ) : DeviceClaimRepository {
     var claimCalls = 0
     var lastPayload: DeviceClaimPayload? = null
@@ -417,22 +607,29 @@ private class FakeDeviceClaimRepository(
         lastPayload = payload
         lastConnectionMethod = connectionMethod
         idempotencyKeys += idempotencyKey
+        claimGate?.await()
+        claimError?.let { throw it }
         if (claimFailuresRemaining > 0) {
             claimFailuresRemaining -= 1
             throw IOException("network unavailable")
         }
         return DevicePairingResponse(
-            device = claimResult,
+            device = claimResult.withDefaultWorkspace(),
             pairing = pairingState,
         )
     }
 
     override suspend fun listDevices(): List<SmartDevice> {
         listCalls += 1
+        listError?.let { throw it }
         if (listFailuresRemaining > 0) {
             listFailuresRemaining -= 1
             throw IOException("presence unavailable")
         }
-        return if (deviceSnapshots.isEmpty()) listOf(claimResult) else deviceSnapshots.removeFirst()
+        return (if (deviceSnapshots.isEmpty()) listOf(claimResult) else deviceSnapshots.removeFirst())
+            .map { device -> device.withDefaultWorkspace() }
     }
+
+    private fun SmartDevice.withDefaultWorkspace(): SmartDevice =
+        if (organizationId.isBlank()) copy(organizationId = "workspace-1") else this
 }

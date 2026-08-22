@@ -43,7 +43,7 @@ export function ConfirmActionDialog({
     tone === "success"
       ? "bg-success/10 text-success"
       : tone === "warning"
-        ? "bg-warning/10 text-[#B45309]"
+        ? "bg-warning/10 text-warning-foreground"
         : "bg-destructive/10 text-destructive";
   const buttonClass =
     tone === "success"

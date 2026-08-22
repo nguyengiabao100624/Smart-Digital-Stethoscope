@@ -1090,8 +1090,18 @@ private fun formatUptime(value: Long?): String {
     val hours = (totalMinutes % (24L * 60L)) / 60L
     val minutes = totalMinutes % 60L
     return when {
-        days > 0L -> stringResource(R.string.device_health_duration_days, days, hours)
-        hours > 0L -> stringResource(R.string.device_health_duration_hours, hours, minutes)
+        days > 0L -> pluralStringResource(
+            R.plurals.device_health_duration_days,
+            days.toInt(),
+            days,
+            hours,
+        )
+        hours > 0L -> pluralStringResource(
+            R.plurals.device_health_duration_hours,
+            hours.toInt(),
+            hours,
+            minutes,
+        )
         else -> stringResource(R.string.device_health_duration_minutes, minutes)
     }
 }

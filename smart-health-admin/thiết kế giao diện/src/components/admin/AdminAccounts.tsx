@@ -316,6 +316,7 @@ export function AdminAccounts() {
               <p>{confirmTask.description}</p>
               <input
                 type="password"
+                aria-label="Mật khẩu tạm thời"
                 value={resetPassword}
                 onChange={(event) => {
                   resetPasswordRef.current = event.target.value;
@@ -381,6 +382,7 @@ export function AdminAccounts() {
           <label className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
+              aria-label="Tìm tài khoản admin"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Tìm theo tên, email, số điện thoại, workspace..."
@@ -388,6 +390,7 @@ export function AdminAccounts() {
             />
           </label>
           <select
+            aria-label="Lọc theo vai trò"
             value={roleFilter}
             onChange={(event) => setRoleFilter(event.target.value)}
             className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
@@ -398,6 +401,7 @@ export function AdminAccounts() {
             <option value="workspace_owner">Chủ sở hữu bệnh viện</option>
           </select>
           <select
+            aria-label="Lọc theo trạng thái"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
             className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
@@ -424,7 +428,7 @@ export function AdminAccounts() {
               Chưa có tài khoản admin phù hợp bộ lọc.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" tabIndex={0} aria-label="Bảng tài khoản admin">
               <table className="w-full min-w-[780px] text-sm">
                 <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
@@ -477,7 +481,7 @@ export function AdminAccounts() {
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`rounded-md px-2 py-1 text-xs font-semibold ${locked ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}
+                            className={`rounded-md px-2 py-1 text-xs font-semibold ${locked ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success-foreground"}`}
                           >
                             {statusLabels[account.accountStatus || "active"] ||
                               account.accountStatus}
@@ -494,6 +498,7 @@ export function AdminAccounts() {
                               onClick={() => askResetPassword(account)}
                               className="rounded-md border border-border p-2 text-muted-foreground hover:text-foreground"
                               title="Đặt lại mật khẩu"
+                              aria-label={`Đặt lại mật khẩu ${account.name || account.email}`}
                             >
                               <KeyRound className="h-4 w-4" />
                             </button>
@@ -502,6 +507,7 @@ export function AdminAccounts() {
                               onClick={() => askLockToggle(account)}
                               className="rounded-md border border-border p-2 text-muted-foreground hover:text-foreground"
                               title={locked ? "Mở khóa" : "Khóa"}
+                              aria-label={`${locked ? "Mở khóa" : "Khóa"} ${account.name || account.email}`}
                             >
                               {locked ? (
                                 <Unlock className="h-4 w-4" />
@@ -514,6 +520,7 @@ export function AdminAccounts() {
                               onClick={() => askDelete(account)}
                               className="rounded-md border border-destructive/20 p-2 text-destructive hover:bg-destructive/10"
                               title="Xóa tài khoản"
+                              aria-label={`Xóa ${account.name || account.email}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -552,6 +559,7 @@ export function AdminAccounts() {
                   Email
                 </label>
                 <input
+                  aria-label="Email tài khoản"
                   value={selectedAccount.email || ""}
                   readOnly
                   className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
@@ -565,6 +573,7 @@ export function AdminAccounts() {
                   Họ tên
                 </label>
                 <input
+                  aria-label="Họ tên"
                   value={draft.name}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, name: event.target.value }))
@@ -577,6 +586,7 @@ export function AdminAccounts() {
                   Chức vụ
                 </label>
                 <input
+                  aria-label="Chức vụ"
                   value={draft.title}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, title: event.target.value }))
@@ -589,6 +599,7 @@ export function AdminAccounts() {
                   Số điện thoại
                 </label>
                 <input
+                  aria-label="Số điện thoại"
                   value={draft.phone}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, phone: event.target.value }))
@@ -601,6 +612,7 @@ export function AdminAccounts() {
                   Vai trò
                 </label>
                 <select
+                  aria-label="Vai trò"
                   value={draft.role}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, role: normalizeRole(event.target.value) }))
@@ -618,6 +630,7 @@ export function AdminAccounts() {
                     Workspace/Bệnh viện
                   </label>
                   <select
+                    aria-label="Workspace hoặc bệnh viện"
                     value={draft.organizationId}
                     onChange={(event) =>
                       setDraft((current) => ({ ...current, organizationId: event.target.value }))
@@ -638,6 +651,7 @@ export function AdminAccounts() {
                   Trạng thái
                 </label>
                 <select
+                  aria-label="Trạng thái tài khoản"
                   value={draft.accountStatus}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, accountStatus: event.target.value }))

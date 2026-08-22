@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Link, Outlet, useLocation, useNavigate } from "@/components/admin/router-shim";
 import {
@@ -52,6 +52,8 @@ import {
   NOTIFICATION_SYNC_EVENT,
 } from "@/lib/notification-events";
 import { AdminAccessProvider } from "./AdminAccessContext";
+import { AdminCommandPalette, type AdminCommandItem } from "./AdminCommandPalette";
+import { ShcareBrand } from "./ShcareBrand";
 import { ThemeToggle } from "./ThemeToggle";
 import { userHasAnyCapability } from "./admin-access-context";
 import {
@@ -187,7 +189,7 @@ function formatNotificationTime(value?: string | null) {
 function mapNotification(notification: SmartHealthNotification): NotificationItem {
   return {
     id: notification.id,
-    title: notification.title || "Thông báo Smart Health",
+    title: notification.title || "Thông báo Shcare",
     message: notification.message || "Backend chưa có nội dung chi tiết.",
     time: formatNotificationTime(notification.createdAt || notification.updatedAt),
     type: notification.type || "info",
@@ -258,8 +260,8 @@ function SurfaceAccessPanel({
   onSignOut: () => void;
 }) {
   const targetUrl = getSurfaceAccessTargetUrl();
-  const targetLabel = IS_PORTAL_SURFACE ? "Smart Health Admin" : "Shcare Web Portal";
-  const currentLabel = IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Smart Health Admin";
+  const targetLabel = IS_PORTAL_SURFACE ? "Shcare Platform Admin" : "Shcare Web Portal";
+  const currentLabel = IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Shcare Platform Admin";
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 text-sm">
       <div className="w-full max-w-lg rounded-xl border border-border bg-card p-8 text-center shadow-sm">
@@ -274,7 +276,7 @@ function SurfaceAccessPanel({
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <a
             href={targetUrl}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Mở {targetLabel}
           </a>
@@ -388,10 +390,20 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
+  const mobileDrawerRef = useRef<HTMLElement | null>(null);
+  const pendingNotificationIdsRef = useRef<Set<string>>(new Set());
+  const confirmedReadNotificationIdsRef = useRef<Set<string>>(new Set());
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine,
+  );
   const [topNotifications, setTopNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [pendingNotificationIds, setPendingNotificationIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [topNotificationError, setTopNotificationError] = useState("");
   const [sidebarBadges, setSidebarBadges] = useState<Record<string, number>>({});
   const [notificationDetail, setNotificationDetail] = useState<NotificationItem | null>(null);
   const [notificationDetailOpen, setNotificationDetailOpen] = useState(false);
@@ -416,6 +428,87 @@ export function Layout() {
     return userHasAnyCapability(currentUser, activeAccessRule.requiredCapabilities);
   }, [activeAccessRule, currentUser]);
   const firstAllowedPath = visibleMenuItems[0]?.path || "/";
+  const commandItems = useMemo<AdminCommandItem[]>(
+    () => [
+      ...visibleMenuItems,
+      ...(currentUser && userHasAnyCapability(currentUser, ["account.manage"])
+        ? [
+            {
+              id: `${WEB_SURFACE}.account`,
+              path: "/account",
+              label: "Thiết lập tài khoản",
+              icon: Settings,
+            },
+          ]
+        : []),
+    ],
+    [currentUser, visibleMenuItems],
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleCommandShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handleCommandShortcut);
+    return () => window.removeEventListener("keydown", handleCommandShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousActiveElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusFirstControl = window.requestAnimationFrame(() => {
+      mobileDrawerRef.current?.querySelector<HTMLElement>("button, a[href]")?.focus();
+    });
+    const handleDrawerKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(
+        mobileDrawerRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter((element) => element.getClientRects().length > 0);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleDrawerKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFirstControl);
+      window.removeEventListener("keydown", handleDrawerKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousActiveElement?.focus();
+    };
+  }, [mobileOpen]);
 
   const refreshEventBadges = useCallback(async () => {
     const [notificationsResult, overviewResult, devicesResult] = await Promise.allSettled([
@@ -430,10 +523,20 @@ export function Layout() {
     const nextBadges: Record<string, number> = {};
 
     if (notificationsResult.status === "fulfilled") {
-      const mapped = notificationsResult.value.notifications.map(mapNotification);
+      const mapped = notificationsResult.value.notifications.map(mapNotification).map((item) => {
+        const notificationId = String(item.id);
+        if (item.isRead) {
+          confirmedReadNotificationIdsRef.current.add(notificationId);
+          return item;
+        }
+        return confirmedReadNotificationIdsRef.current.has(notificationId)
+          ? { ...item, isRead: true }
+          : item;
+      });
       const unreadCount = mapped.filter((item) => !item.isRead).length;
       setTopNotifications(mapped.slice(0, 5));
       setUnreadNotificationCount(unreadCount);
+      setTopNotificationError("");
       nextBadges["/notifications"] = unreadCount;
     }
 
@@ -574,7 +677,7 @@ export function Layout() {
     : currentUser?.workspace?.name ||
       currentUser?.currentMembership?.workspaceName ||
       currentUser?.hospital ||
-      "Smart Health";
+      "Shcare";
   const workspaceType =
     currentUser?.workspace?.workspaceType ||
     currentUser?.workspace?.type ||
@@ -590,10 +693,9 @@ export function Layout() {
     : workspaceTypeLabels[workspaceType] || portalMode;
   const accessMode = getAccessMode(currentUser);
   const sidebarAccessLabel = isPlatformAdmin ? "Quản trị hệ thống" : accessMode.label;
-  const brandLabel = IS_PORTAL_SURFACE ? "Shcare Portal" : "Smart Health";
   const searchPlaceholder = IS_PORTAL_SURFACE
-    ? "Tìm bệnh nhân, thiết bị, lượt đo, bác sĩ..."
-    : "Tìm workspace, tài khoản, thiết bị, UID...";
+    ? "Đi tới màn hình Portal..."
+    : "Đi tới màn hình quản trị...";
 
   const handleLogout = useCallback(async () => {
     setAccessCheckComplete(false);
@@ -620,29 +722,54 @@ export function Layout() {
     navigate("/login");
   }, [navigate]);
 
-  const openTopNotification = (item: NotificationItem) => {
+  const openTopNotification = async (item: NotificationItem) => {
+    setTopNotificationError("");
     setNotificationDetail(item);
     setNotificationDetailOpen(true);
-    if (!item.isRead) {
+    const notificationId = String(item.id);
+    if (
+      item.isRead ||
+      confirmedReadNotificationIdsRef.current.has(notificationId) ||
+      pendingNotificationIdsRef.current.has(notificationId)
+    ) {
+      return;
+    }
+
+    pendingNotificationIdsRef.current.add(notificationId);
+    setPendingNotificationIds(new Set(pendingNotificationIdsRef.current));
+    try {
+      await smartHealthApi.markNotificationRead(notificationId);
+      const isFirstConfirmation = !confirmedReadNotificationIdsRef.current.has(notificationId);
+      confirmedReadNotificationIdsRef.current.add(notificationId);
       setTopNotifications((prev) =>
-        prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)),
+        prev.map((notification) =>
+          String(notification.id) === notificationId
+            ? { ...notification, isRead: true }
+            : notification,
+        ),
       );
-      setUnreadNotificationCount((count) => Math.max(0, count - 1));
-      setSidebarBadges((prev) => ({
-        ...prev,
-        "/notifications": Math.max(0, (prev["/notifications"] || 0) - 1),
-      }));
-      smartHealthApi
-        .markNotificationRead(String(item.id))
-        .then(() => dispatchNotificationSync())
-        .catch(() => undefined);
+      if (isFirstConfirmation) {
+        setUnreadNotificationCount((count) => Math.max(0, count - 1));
+        setSidebarBadges((prev) => ({
+          ...prev,
+          "/notifications": Math.max(0, (prev["/notifications"] || 0) - 1),
+        }));
+      }
+      dispatchNotificationSync();
+    } catch {
+      setTopNotificationError(
+        "Chưa thể xác nhận đã đọc với máy chủ. Thông báo vẫn được giữ là chưa đọc.",
+      );
+    } finally {
+      pendingNotificationIdsRef.current.delete(notificationId);
+      setPendingNotificationIds(new Set(pendingNotificationIdsRef.current));
     }
   };
 
   // Auto close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
-    setMobileSearchOpen(false);
+    setCommandOpen(false);
   }, [location.pathname]);
 
   const handleBlockedSignOut = async () => {
@@ -682,15 +809,16 @@ export function Layout() {
   return (
     <AdminAccessProvider currentUser={currentUser} accessCheckComplete={accessCheckComplete}>
       <div className="min-h-screen bg-background flex text-sm">
+        <a
+          href="#admin-main-content"
+          className="sr-only fixed left-4 top-4 z-[100] inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-primary px-4 py-3 font-semibold text-primary-foreground shadow-lg focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        >
+          Bỏ qua điều hướng
+        </a>
         {/* Desktop sidebar (>= lg) */}
         <aside className="hidden lg:flex w-64 bg-sidebar border-r border-sidebar-border flex-col fixed inset-y-0 left-0 z-20">
           <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
-            <div className="flex items-center gap-3 text-primary font-bold text-lg">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <Stethoscope className="w-5 h-5" />
-              </span>
-              <span>{brandLabel}</span>
-            </div>
+            <ShcareBrand />
           </div>
           <div className="flex-1 py-4 overflow-y-auto">
             <SidebarNav
@@ -719,7 +847,7 @@ export function Layout() {
         {/* Tablet sidebar rail (md → lg) */}
         <aside className="hidden md:flex lg:hidden w-16 bg-sidebar border-r border-sidebar-border flex-col fixed inset-y-0 left-0 z-20">
           <div className="h-16 flex items-center justify-center border-b border-sidebar-border">
-            <Stethoscope className="w-6 h-6 text-primary" />
+            <ShcareBrand compact />
           </div>
           <div className="flex-1 py-4 overflow-y-auto">
             <SidebarNav
@@ -737,26 +865,32 @@ export function Layout() {
             <>
               <motion.div
                 key="backdrop"
-                initial={{ opacity: 0 }}
+                aria-hidden="true"
+                initial={shouldReduceMotion ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
+                transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
                 onClick={() => setMobileOpen(false)}
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden"
+                className="fixed inset-0 bg-black/50 z-30 md:hidden"
               />
               <motion.aside
+                ref={mobileDrawerRef}
                 key="drawer"
-                initial={{ x: "-100%" }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Điều hướng quản trị"
+                initial={shouldReduceMotion ? false : { x: "-100%" }}
                 animate={{ x: 0 }}
-                exit={{ x: "-100%" }}
-                transition={{ type: "tween", duration: 0.25, ease: "easeOut" }}
+                exit={shouldReduceMotion ? { x: 0 } : { x: "-100%" }}
+                transition={{
+                  type: "tween",
+                  duration: shouldReduceMotion ? 0 : 0.24,
+                  ease: "easeOut",
+                }}
                 className="fixed inset-y-0 left-0 z-40 w-64 max-w-[80vw] bg-sidebar border-r border-sidebar-border flex flex-col md:hidden"
               >
                 <div className="h-16 flex items-center justify-between px-5 border-b border-sidebar-border">
-                  <div className="flex items-center gap-2 text-primary font-bold text-lg">
-                    <Stethoscope className="w-6 h-6" />
-                    <span>{brandLabel}</span>
-                  </div>
+                  <ShcareBrand />
                   <button
                     onClick={() => setMobileOpen(false)}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent"
@@ -792,31 +926,40 @@ export function Layout() {
               >
                 <Menu className="w-5 h-5" />
               </button>
+              <ShcareBrand compact className="md:hidden" />
 
               {/* Desktop / tablet search */}
-              <div className="hidden md:flex items-center w-full max-w-md lg:max-w-lg relative">
-                <Search className="w-4 h-4 absolute left-3 text-muted-foreground" />
-                <input
+              <div className="hidden w-full max-w-md items-center md:flex lg:max-w-lg">
+                <button
                   id="admin-global-search"
-                  name="admin-global-search"
-                  type="text"
-                  placeholder={searchPlaceholder}
-                  className="min-h-11 w-full rounded-md border-transparent bg-input-background py-2 pl-9 pr-4 text-sm outline-none transition-all focus:border-ring focus:ring-1 focus:ring-ring"
-                />
+                  type="button"
+                  aria-keyshortcuts="Control+K Meta+K"
+                  onClick={() => setCommandOpen(true)}
+                  className="flex min-h-11 w-full items-center gap-3 rounded-md border border-transparent bg-input-background px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{searchPlaceholder}</span>
+                  <kbd className="hidden rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline">
+                    Ctrl K
+                  </kbd>
+                </button>
               </div>
 
               {/* Mobile search icon */}
               <button
-                onClick={() => setMobileSearchOpen((v) => !v)}
+                id="admin-mobile-search"
+                type="button"
+                aria-keyshortcuts="Control+K Meta+K"
+                onClick={() => setCommandOpen(true)}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
-                aria-label="Tìm kiếm"
+                aria-label="Mở bảng lệnh"
               >
                 <Search className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex items-center gap-2 md:gap-4 lg:gap-6 shrink-0">
-              <div className="hidden sm:flex min-w-0 max-w-[260px] flex-col items-end text-right text-sm">
+              <div className="hidden min-w-0 max-w-[260px] flex-col items-end text-right text-sm xl:flex">
                 <div
                   className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold ${accessMode.toneClass}`}
                 >
@@ -874,6 +1017,9 @@ export function Layout() {
                       ) : (
                         <div className="divide-y divide-border">
                           {topNotifications.map((item) => {
+                            const isNotificationPending = pendingNotificationIds.has(
+                              String(item.id),
+                            );
                             const tone = getNotificationTone(item.type);
                             const Icon =
                               tone === "warning" || tone === "error"
@@ -893,7 +1039,9 @@ export function Layout() {
                               <button
                                 key={item.id}
                                 type="button"
-                                onClick={() => openTopNotification(item)}
+                                onClick={() => void openTopNotification(item)}
+                                disabled={isNotificationPending}
+                                aria-busy={isNotificationPending || undefined}
                                 className={`block w-full p-4 text-left transition-colors hover:bg-muted/30 ${!item.isRead ? "bg-primary/5" : ""}`}
                               >
                                 <div className="flex gap-3">
@@ -926,6 +1074,14 @@ export function Layout() {
                         </div>
                       )}
                     </div>
+                    {topNotificationError ? (
+                      <p
+                        role="alert"
+                        className="border-t border-destructive/20 bg-destructive/10 px-4 py-3 text-xs leading-5 text-destructive"
+                      >
+                        {topNotificationError}
+                      </p>
+                    ) : null}
                     <div className="p-3 border-t border-border text-center">
                       <Link
                         to="/notifications"
@@ -948,7 +1104,7 @@ export function Layout() {
                     <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-semibold text-primary">
                       {adminInitial}
                     </span>
-                    <div className="text-left hidden lg:block">
+                    <div className="hidden text-left xl:block">
                       <div className="text-sm font-medium leading-none mb-1">{adminName}</div>
                       <div className="text-xs text-muted-foreground">
                         {adminEmail || "Chưa có email"}
@@ -994,33 +1150,21 @@ export function Layout() {
             </div>
           </header>
 
-          {/* Mobile search expandable */}
-          <AnimatePresence>
-            {mobileSearchOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="md:hidden border-b border-border bg-card overflow-hidden"
-              >
-                <div className="p-3 relative">
-                  <Search className="w-4 h-4 absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    id="admin-mobile-search"
-                    name="admin-mobile-search"
-                    autoFocus
-                    type="text"
-                    placeholder="Tìm kiếm..."
-                    className="min-h-11 w-full rounded-md bg-input-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {!isOnline ? (
+            <div
+              role="status"
+              data-testid="admin-offline-banner"
+              className="border-b border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground md:px-6 lg:px-8"
+            >
+              <strong>Đang ngoại tuyến.</strong>{" "}
+              <span className="text-muted-foreground">
+                Dữ liệu đang hiển thị có thể đã cũ; thao tác chỉ hoàn tất sau khi máy chủ xác nhận.
+              </span>
+            </div>
+          ) : null}
 
           {/* Page Content */}
-          <main className="flex-1 p-4 md:p-6 lg:p-8 min-w-0">
+          <main id="admin-main-content" tabIndex={-1} className="min-w-0 flex-1 p-4 md:p-6 lg:p-8">
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
@@ -1046,6 +1190,16 @@ export function Layout() {
           notification={notificationDetail}
           open={notificationDetailOpen}
           onOpenChange={setNotificationDetailOpen}
+          readAcknowledgementError={topNotificationError}
+        />
+        <AdminCommandPalette
+          open={commandOpen}
+          items={commandItems}
+          onOpenChange={setCommandOpen}
+          onNavigate={(path) => {
+            setCommandOpen(false);
+            navigate(path);
+          }}
         />
       </div>
     </AdminAccessProvider>

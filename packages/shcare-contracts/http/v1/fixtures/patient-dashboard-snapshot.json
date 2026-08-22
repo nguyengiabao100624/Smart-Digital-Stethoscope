@@ -1,0 +1,38 @@
+{
+  "protocolVersion": 1,
+  "generatedAt": "2026-07-29T12:00:00.000Z",
+  "userId": "patient-user-1",
+  "workspaceId": "workspace-home-1",
+  "activePatientId": "patient-child-1",
+  "patient": {
+    "id": "patient-child-1",
+    "patientCode": "SHC-CHILD-1",
+    "name": "Bé An",
+    "profileType": "dependent",
+    "relationship": "child",
+    "ownerUserId": "patient-user-1",
+    "organizationId": "workspace-home-1"
+  },
+  "sections": {
+    "scans": "ready",
+    "device": "ready"
+  },
+  "recentScans": [
+    {
+      "id": "scan-1",
+      "patientId": "patient-child-1",
+      "organizationId": "workspace-home-1",
+      "status": "completed",
+      "mode": "heart"
+    }
+  ],
+  "device": {
+    "id": "device-1",
+    "name": "Ống nghe tại nhà",
+    "organizationId": "workspace-home-1",
+    "ownerUserId": "patient-user-1",
+    "assignedPatientId": "patient-child-1",
+    "battery": 0,
+    "online": true
+  }
+}

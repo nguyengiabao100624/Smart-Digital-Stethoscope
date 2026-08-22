@@ -2,19 +2,26 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
-  AlertCircle,
   BarChart2,
   Download,
   FileHeart,
-  RotateCcw,
   Stethoscope,
   Users,
 } from "lucide-react";
 
 import { PortalExportDialog } from "../../components/PortalExportDialog";
-import { PortalLoading } from "../../components/PortalState";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Button } from "../../../components/ui/button";
+import { DataTableShell } from "../../../components/ui/data-table-shell";
+import { PageHeader } from "../../../components/ui/page-header";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../../../components/ui/state-surface";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "../../../components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -23,7 +30,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../components/ui/table";
+} from "../../../components/ui/table";
 import { useAuth } from "../../context/AuthContext";
 import { smartHealthApi, type Scan } from "../../../lib/smart-health-api";
 
@@ -49,57 +56,18 @@ function statusLabel(status?: string) {
   return status || "Chưa xác định";
 }
 
-function statusClass(status?: string) {
+function statusTone(status?: string): StatusTone {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "completed") {
-    return "border-emerald-600/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200";
+    return "success";
   }
   if (normalized === "failed" || normalized === "interrupted") {
-    return "border-destructive/25 bg-destructive/10 text-destructive";
+    return "danger";
   }
   if (["processing", "uploading", "queued", "recording"].includes(normalized)) {
-    return "border-primary/25 bg-primary/10 text-primary";
+    return "info";
   }
-  return "border-border bg-muted text-muted-foreground";
-}
-
-function ReportLoadError({
-  error,
-  retry,
-}: {
-  error: unknown;
-  retry: () => void;
-}) {
-  return (
-    <section
-      className="rounded-xl border border-destructive/25 bg-destructive/5 p-5"
-      role="alert"
-    >
-      <div className="flex items-start gap-3">
-        <AlertCircle
-          aria-hidden="true"
-          className="mt-0.5 size-5 shrink-0 text-destructive"
-        />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base font-semibold">Chưa thể tải báo cáo</h2>
-          <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">
-            {error instanceof Error
-              ? error.message
-              : "Backend chưa trả về dữ liệu báo cáo workspace."}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4 h-11"
-            onClick={retry}
-          >
-            <RotateCcw aria-hidden="true" />
-            Thử lại
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
+  return "neutral";
 }
 
 function MobileScanCard({ scan }: { scan: Scan }) {
@@ -114,9 +82,9 @@ function MobileScanCard({ scan }: { scan: Scan }) {
             {formatDate(scan.createdAt)}
           </p>
         </div>
-        <Badge variant="outline" className={statusClass(scan.status)}>
+        <StatusBadge tone={statusTone(scan.status)}>
           {statusLabel(scan.status)}
-        </Badge>
+        </StatusBadge>
       </div>
       <dl className="grid gap-2 text-sm">
         <div className="flex justify-between gap-4">
@@ -160,11 +128,16 @@ export default function ReportsPage() {
   );
 
   if (query.isLoading) {
-    return <PortalLoading label="Đang tải báo cáo workspace..." />;
+    return <LoadingState label="Đang tải báo cáo workspace..." rows={4} />;
   }
   if (query.error || !query.data) {
     return (
-      <ReportLoadError error={query.error} retry={() => query.refetch()} />
+      <ErrorState
+        title="Chưa thể tải báo cáo"
+        error={query.error}
+        description="Backend chưa trả về dữ liệu báo cáo workspace."
+        retry={() => void query.refetch()}
+      />
     );
   }
 
@@ -194,38 +167,35 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6" data-testid="portal-reports-page">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-primary">
-            <BarChart2 aria-hidden="true" className="size-5" />
-            <span className="text-sm font-semibold">Tổng hợp workspace</span>
-          </div>
-          <h1 className="mt-1 text-2xl font-bold tracking-[-0.02em] text-foreground">
-            Báo cáo vận hành
-          </h1>
-          <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">
+      <PageHeader
+        kicker="Tổng hợp workspace"
+        icon={<BarChart2 aria-hidden="true" className="size-5" />}
+        title="Báo cáo vận hành"
+        description={
+          <>
             Số liệu thật từ{" "}
             {user?.currentWorkspace.name || "workspace hiện tại"}, giới hạn theo
             quyền và phạm vi dữ liệu của tài khoản.
-          </p>
-        </div>
-
-        {canExport ? (
-          <Button
-            id="portal-report-export"
-            type="button"
-            className="h-11 shrink-0"
-            onClick={() => setExportOpen(true)}
-          >
-            <Download aria-hidden="true" />
-            Xuất dữ liệu
-          </Button>
-        ) : (
-          <p className="max-w-xs rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-            Bạn có thể xem báo cáo nhưng chưa có quyền xuất dữ liệu.
-          </p>
-        )}
-      </header>
+          </>
+        }
+        actions={
+          canExport ? (
+            <Button
+              id="portal-report-export"
+              type="button"
+              className="min-h-11"
+              onClick={() => setExportOpen(true)}
+            >
+              <Download aria-hidden="true" />
+              Xuất dữ liệu
+            </Button>
+          ) : (
+            <p className="max-w-xs rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+              Bạn có thể xem báo cáo nhưng chưa có quyền xuất dữ liệu.
+            </p>
+          )
+        }
+      />
 
       <section
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
@@ -259,21 +229,19 @@ export default function ReportsPage() {
         </div>
 
         {latestScans.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <Activity
-              aria-hidden="true"
-              className="mx-auto size-8 text-muted-foreground"
-            />
-            <h3 className="mt-3 text-base font-semibold">Chưa có lượt đo</h3>
-            <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
-              Backend chưa ghi nhận lượt đo nào trong phạm vi tài khoản hiện
-              tại.
-            </p>
-          </div>
+          <EmptyState
+            className="rounded-none border-0 shadow-none"
+            title="Chưa có lượt đo"
+            description="Backend chưa ghi nhận lượt đo nào trong phạm vi tài khoản hiện tại."
+            icon={<Activity aria-hidden="true" className="size-5" />}
+          />
         ) : (
           <>
-            <div className="hidden md:block">
-              <Table>
+            <DataTableShell
+              label="Hai mươi lượt đo gần nhất trong phạm vi báo cáo workspace"
+              className="hidden rounded-none border-0 shadow-none md:block"
+            >
+              <Table className="min-w-[48rem]">
                 <TableCaption className="sr-only">
                   Hai mươi lượt đo gần nhất trong phạm vi báo cáo workspace
                 </TableCaption>
@@ -300,12 +268,9 @@ export default function ReportsPage() {
                         {scan.deviceId || "—"}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={statusClass(scan.status)}
-                        >
+                        <StatusBadge tone={statusTone(scan.status)}>
                           {statusLabel(scan.status)}
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {scan.aiLabel || "—"}
@@ -317,7 +282,7 @@ export default function ReportsPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </DataTableShell>
             <div className="divide-y md:hidden">
               {latestScans.map((scan) => (
                 <MobileScanCard key={scan.id} scan={scan} />

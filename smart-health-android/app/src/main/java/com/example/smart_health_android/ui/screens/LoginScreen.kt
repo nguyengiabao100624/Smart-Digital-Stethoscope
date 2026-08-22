@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.R
+import com.example.smart_health_android.data.AuthUser
+import com.example.smart_health_android.data.FirebaseOwnerBinding
 import com.example.smart_health_android.data.formatIso
 import com.example.smart_health_android.security.LoginAccountMode
 import com.example.smart_health_android.security.LoginAction
@@ -79,9 +81,9 @@ import com.example.smart_health_android.ui.theme.ShcareTheme
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
-    onLoginSuccess: (isDoctorMode: Boolean) -> Unit,
-    onDoctorApprovalPending: () -> Unit,
-    onNavigateToVerifyEmail: (accountType: String) -> Unit,
+    onLoginSuccess: (user: AuthUser, firebaseOwner: FirebaseOwnerBinding) -> Unit,
+    onDoctorApprovalPending: (firebaseOwner: FirebaseOwnerBinding) -> Unit,
+    onNavigateToVerifyEmail: (accountType: String, firebaseOwner: FirebaseOwnerBinding) -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToForgotPassword: () -> Unit,
 ) {
@@ -94,9 +96,12 @@ fun LoginScreen(
     LaunchedEffect(loginViewModel) {
         loginViewModel.effects.collect { effect ->
             when (effect) {
-                is LoginEffect.Authenticated -> onLoginSuccess(effect.isDoctorAccount)
-                LoginEffect.DoctorApprovalPending -> onDoctorApprovalPending()
-                is LoginEffect.VerifyEmail -> onNavigateToVerifyEmail(effect.accountType)
+                is LoginEffect.Authenticated ->
+                    onLoginSuccess(effect.user, effect.firebaseOwner)
+                is LoginEffect.DoctorApprovalPending ->
+                    onDoctorApprovalPending(effect.firebaseOwner)
+                is LoginEffect.VerifyEmail ->
+                    onNavigateToVerifyEmail(effect.accountType, effect.firebaseOwner)
             }
         }
     }

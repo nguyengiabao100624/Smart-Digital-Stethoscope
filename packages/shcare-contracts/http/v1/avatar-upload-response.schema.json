@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/avatar-upload-response.schema.json",
+  "title": "Account avatar upload receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/me/avatar",
+    "requiredHeaders": ["Idempotency-Key", "X-File-Name", "Content-Type"],
+    "requestContentTypes": ["image/jpeg", "image/png", "image/webp"],
+    "maxBytes": 2097152,
+    "contentDigest": "sha256"
+  },
+  "x-shcare-owner-binding": {
+    "source": "authenticated-backend-user",
+    "idempotencyScope": "userId",
+    "crossAccountOutcome": 403
+  },
+  "required": ["avatar", "cleanup", "operationId", "replayed"],
+  "properties": {
+    "avatar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileId",
+        "ownerUserId",
+        "name",
+        "contentType",
+        "byteSize",
+        "sha256",
+        "downloadUrl",
+        "uploadedAt"
+      ],
+      "properties": {
+        "fileId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "ownerUserId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "contentType": {
+          "type": "string",
+          "enum": ["image/jpeg", "image/png", "image/webp"]
+        },
+        "byteSize": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "downloadUrl": { "type": "string", "const": "/api/v1/me/avatar" },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "cleanup": { "$ref": "#/$defs/cleanup" },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "replayed": { "type": "boolean" }
+  },
+  "$defs": {
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "previousFileId"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["not_required", "pending", "completed", "dead_letter"]
+        },
+        "previousFileId": { "type": "string", "maxLength": 160 }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/avatar-delete-request.schema.json",
+  "title": "Account avatar delete request",
+  "type": "object",
+  "additionalProperties": false,
+  "x-shcare-http": {
+    "method": "DELETE",
+    "path": "/v1/me/avatar",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "required": ["expectedAvatarFileId"],
+  "properties": {
+    "expectedAvatarFileId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "description": "Optimistic precondition for the exact avatar that may be removed."
+    }
+  }
+}

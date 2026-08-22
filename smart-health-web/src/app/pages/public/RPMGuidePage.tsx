@@ -107,24 +107,18 @@ export default function RPMGuidePage() {
     <div>
       {/* Hero */}
       <section className="relative overflow-hidden pt-14 pb-10 md:pt-20 md:pb-14">
-        <div className="absolute inset-0 medical-grid opacity-40" />
-        <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-[40rem] h-[40rem] rounded-full blur-3xl pointer-events-none"
-          style={{
-            background: "radial-gradient(circle, rgba(0,255,209,0.18) 0%, transparent 70%)",
-          }}
-        />
         <div className="max-w-4xl mx-auto px-6 text-center relative">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/8 border border-white/10 text-xs text-[#8aa5ba] mb-5">
-            <BookOpen size={14} className="text-[#00FFD1]" />
+          <div className="shc-public-eyebrow mb-5">
+            <BookOpen size={14} />
             Tài nguyên · Kiến thức RPM
           </div>
-          <h1 className="brand-gradient-text mb-5 text-3xl md:text-5xl">
+          <h1 className="shc-public-heading mb-5 text-3xl md:text-5xl">
             Kiến thức RPM: Theo dõi bệnh nhân từ xa
           </h1>
-          <p className="text-[#8aa5ba] text-base md:text-lg max-w-2xl mx-auto">
-            Tổng quan dành cho bác sĩ và phòng khám về Remote Patient Monitoring — từ khái niệm,
-            quy trình triển khai đến quyền truy cập và cách bảo vệ dữ liệu bệnh nhân.
+          <p className="text-muted-foreground text-base md:text-lg max-w-2xl mx-auto">
+            Tổng quan dành cho bác sĩ và phòng khám về Remote Patient Monitoring
+            — từ khái niệm, quy trình triển khai đến quyền truy cập và cách bảo
+            vệ dữ liệu bệnh nhân.
           </p>
         </div>
       </section>
@@ -132,18 +126,25 @@ export default function RPMGuidePage() {
       {/* What is RPM */}
       <section className="py-10 md:py-14">
         <div className="max-w-4xl mx-auto px-6">
-          <h2 className="brand-gradient-text mb-4 text-2xl md:text-3xl">RPM là gì?</h2>
-          <p className="text-[#8aa5ba] leading-relaxed mb-4">
-            <strong className="text-[#eefbff]">RPM (Remote Patient Monitoring)</strong> — Theo dõi
-            bệnh nhân từ xa — là một mô hình thu thập chỉ số hoặc lượt đo ngoài cơ sở khám và chuyển
-            tới đội ngũ chăm sóc theo lịch hoặc sự kiện đã thống nhất. Dữ liệu bổ sung ngữ cảnh giữa
-            các lần hẹn; tần suất review và hành động tiếp theo do cơ sở chuyên môn quy định.
+          <h2 className="shc-public-heading mb-4 text-2xl md:text-3xl">
+            RPM là gì?
+          </h2>
+          <p className="text-muted-foreground leading-relaxed mb-4">
+            <strong className="text-foreground">
+              RPM (Remote Patient Monitoring)
+            </strong>{" "}
+            — Theo dõi bệnh nhân từ xa — là một mô hình thu thập chỉ số hoặc
+            lượt đo ngoài cơ sở khám và chuyển tới đội ngũ chăm sóc theo lịch
+            hoặc sự kiện đã thống nhất. Dữ liệu bổ sung ngữ cảnh giữa các lần
+            hẹn; tần suất review và hành động tiếp theo do cơ sở chuyên môn quy
+            định.
           </p>
-          <p className="text-[#8aa5ba] leading-relaxed">
+          <p className="text-muted-foreground leading-relaxed">
             Tại Shcare, RPM được xây dựng quanh chiếc{" "}
-            <strong className="text-[#eefbff]">ống nghe thông minh</strong> — thiết bị thu tín hiệu
-            âm tim, âm phổi để đồng bộ với cổng thông tin bác sĩ/phòng khám và app cho bệnh nhân.
-            Hệ thống hiện kiểm tra chất lượng tín hiệu; nhận định lâm sàng do người có chuyên môn thực hiện.
+            <strong className="text-foreground">ống nghe thông minh</strong> —
+            thiết bị thu tín hiệu âm tim, âm phổi để đồng bộ với cổng thông tin
+            bác sĩ/phòng khám và app cho bệnh nhân. Hệ thống hiện kiểm tra chất
+            lượng tín hiệu; nhận định lâm sàng do người có chuyên môn thực hiện.
           </p>
         </div>
       </section>
@@ -151,37 +152,37 @@ export default function RPMGuidePage() {
       {/* Benefits */}
       <section className="py-10 md:py-14">
         <div className="max-w-5xl mx-auto px-6">
-          <h2 className="brand-gradient-text mb-8 text-2xl md:text-3xl">Lợi ích của RPM</h2>
+          <h2 className="shc-public-heading mb-8 text-2xl md:text-3xl">
+            Lợi ích của RPM
+          </h2>
           <div className="grid md:grid-cols-3 gap-4">
             {[
               {
                 icon: HeartPulse,
-                color: "#00FFD1",
                 title: "Hỗ trợ theo dõi giữa các lần hẹn",
                 desc: "Dữ liệu lượt đo giúp đội ngũ chăm sóc có thêm thông tin để sắp xếp ưu tiên review theo quy trình của cơ sở.",
               },
               {
                 icon: Users,
-                color: "#4AA4E0",
                 title: "Mở rộng khả năng chăm sóc",
                 desc: "Workspace tập trung lượt đo, cảnh báo theo quy tắc và trạng thái review để giảm thao tác rời rạc.",
               },
               {
                 icon: BarChart3,
-                color: "#7257E8",
                 title: "Dữ liệu theo phiên đo",
                 desc: "Lịch sử lượt đo giúp người có chuyên môn xem lại diễn tiến; Shcare không thay thế quyết định lâm sàng.",
               },
             ].map((b) => (
-              <div key={b.title} className="glass-panel rounded-2xl p-6">
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-                  style={{ background: `${b.color}15`, border: `1px solid ${b.color}30` }}
-                >
-                  <b.icon size={22} style={{ color: b.color }} />
+              <div key={b.title} className="shc-public-card p-6">
+                <div className="shc-public-icon mb-4">
+                  <b.icon size={22} />
                 </div>
-                <h3 className="text-[#eefbff] font-semibold mb-2">{b.title}</h3>
-                <p className="text-[#8aa5ba] text-sm leading-relaxed">{b.desc}</p>
+                <h3 className="text-foreground font-semibold mb-2">
+                  {b.title}
+                </h3>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {b.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -191,7 +192,7 @@ export default function RPMGuidePage() {
       {/* Workflow */}
       <section className="py-10 md:py-14">
         <div className="max-w-4xl mx-auto px-6">
-          <h2 className="brand-gradient-text mb-8 text-2xl md:text-3xl">
+          <h2 className="shc-public-heading mb-8 text-2xl md:text-3xl">
             Quy trình RPM với Shcare
           </h2>
           <div className="space-y-4">
@@ -222,11 +223,18 @@ export default function RPMGuidePage() {
                 desc: "Bác sĩ xem hồ sơ, ghi chú và chọn hành động phù hợp. Export chỉ khả dụng theo quyền và định dạng backend hỗ trợ.",
               },
             ].map((s) => (
-              <div key={s.step} className="glass-panel rounded-2xl p-5 flex gap-5 items-start">
-                <div className="text-2xl font-bold brand-gradient-text shrink-0">{s.step}</div>
+              <div
+                key={s.step}
+                className="shc-public-card p-5 flex gap-5 items-start"
+              >
+                <div className="shc-public-step shrink-0">{s.step}</div>
                 <div>
-                  <h3 className="text-[#eefbff] font-semibold mb-1">{s.title}</h3>
-                  <p className="text-[#8aa5ba] text-sm leading-relaxed">{s.desc}</p>
+                  <h3 className="text-foreground font-semibold mb-1">
+                    {s.title}
+                  </h3>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {s.desc}
+                  </p>
                 </div>
               </div>
             ))}
@@ -237,7 +245,9 @@ export default function RPMGuidePage() {
       {/* Use cases */}
       <section className="py-10 md:py-14">
         <div className="max-w-5xl mx-auto px-6">
-          <h2 className="brand-gradient-text mb-8 text-2xl md:text-3xl">Bệnh lý phù hợp với RPM</h2>
+          <h2 className="shc-public-heading mb-8 text-2xl md:text-3xl">
+            Bệnh lý phù hợp với RPM
+          </h2>
           <div className="grid md:grid-cols-2 gap-4">
             {[
               {
@@ -261,13 +271,20 @@ export default function RPMGuidePage() {
                 desc: "Người sống một mình hoặc đa bệnh — gia đình và bác sĩ cùng theo dõi từ xa.",
               },
             ].map((u) => (
-              <div key={u.title} className="glass-panel rounded-2xl p-6 flex gap-4 items-start">
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-[#00FFD1]/12 border border-[#00FFD1]/25">
-                  <u.icon size={20} className="text-[#00FFD1]" />
+              <div
+                key={u.title}
+                className="shc-public-card p-6 flex gap-4 items-start"
+              >
+                <div className="shc-public-icon shrink-0">
+                  <u.icon size={20} />
                 </div>
                 <div>
-                  <h3 className="text-[#eefbff] font-semibold mb-1">{u.title}</h3>
-                  <p className="text-[#8aa5ba] text-sm leading-relaxed">{u.desc}</p>
+                  <h3 className="text-foreground font-semibold mb-1">
+                    {u.title}
+                  </h3>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {u.desc}
+                  </p>
                 </div>
               </div>
             ))}
@@ -278,12 +295,13 @@ export default function RPMGuidePage() {
       {/* Security */}
       <section className="py-10 md:py-14">
         <div className="max-w-4xl mx-auto px-6">
-          <h2 className="brand-gradient-text mb-4 text-2xl md:text-3xl">
+          <h2 className="shc-public-heading mb-4 text-2xl md:text-3xl">
             Bảo mật & tuân thủ trong RPM
           </h2>
-          <p className="text-[#8aa5ba] leading-relaxed mb-6">
-            Dữ liệu sức khỏe cần được bảo vệ theo cấu hình và chính sách của từng cơ sở. Shcare cung
-            cấp các cơ chế kỹ thuật sau, không tự tuyên bố chứng nhận hoặc mức tuân thủ pháp lý:
+          <p className="text-muted-foreground leading-relaxed mb-6">
+            Dữ liệu sức khỏe cần được bảo vệ theo cấu hình và chính sách của
+            từng cơ sở. Shcare cung cấp các cơ chế kỹ thuật sau, không tự tuyên
+            bố chứng nhận hoặc mức tuân thủ pháp lý:
           </p>
           <div className="grid md:grid-cols-2 gap-3">
             {[
@@ -292,14 +310,23 @@ export default function RPMGuidePage() {
               "Phân quyền theo vai trò (RBAC) và audit cho các hành động được hỗ trợ",
               "Hỗ trợ phân quyền, audit và chính sách bảo vệ dữ liệu cá nhân",
             ].map((s) => (
-              <div key={s} className="flex items-start gap-3 glass-panel rounded-xl p-4">
-                <ShieldCheck size={18} className="text-[#00FFD1] mt-0.5 shrink-0" />
-                <span className="text-sm text-[#eefbff]">{s}</span>
+              <div
+                key={s}
+                className="flex items-start gap-3 shc-public-card p-4"
+              >
+                <ShieldCheck
+                  size={18}
+                  className="text-primary mt-0.5 shrink-0"
+                />
+                <span className="text-sm text-foreground">{s}</span>
               </div>
             ))}
           </div>
           <div className="mt-6">
-            <Link to="/bao-mat" className="text-[#00FFD1] text-sm hover:underline">
+            <Link
+              to="/bao-mat"
+              className="text-primary text-sm hover:underline"
+            >
               Xem chi tiết về bảo mật →
             </Link>
           </div>
@@ -309,7 +336,7 @@ export default function RPMGuidePage() {
       {/* FAQ */}
       <section className="py-10 md:py-14">
         <div className="max-w-3xl mx-auto px-6">
-          <h2 className="brand-gradient-text mb-6 text-2xl md:text-3xl">
+          <h2 className="shc-public-heading mb-6 text-2xl md:text-3xl">
             Câu hỏi thường gặp về RPM
           </h2>
           <div className="space-y-2">
@@ -318,25 +345,25 @@ export default function RPMGuidePage() {
               return (
                 <div
                   key={i}
-                  className={`glass-panel rounded-2xl overflow-hidden ${isOpen ? "border-[#00FFD1]/20" : ""}`}
+                  className={`shc-public-card overflow-hidden ${isOpen ? "is-open" : ""}`}
                 >
                   <button
                     className="w-full flex items-center justify-between px-5 py-4 text-left"
                     onClick={() => setOpen(isOpen ? null : i)}
                   >
                     <span
-                      className={`text-sm font-medium ${isOpen ? "text-[#00FFD1]" : "text-[#eefbff]"}`}
+                      className={`text-sm font-medium ${isOpen ? "text-primary" : "text-foreground"}`}
                     >
                       {f.q}
                     </span>
                     <ChevronDown
                       size={16}
-                      className="text-[#8aa5ba] shrink-0 transition-transform"
+                      className="text-muted-foreground shrink-0 transition-transform"
                       style={{ transform: isOpen ? "rotate(180deg)" : "none" }}
                     />
                   </button>
                   {isOpen && (
-                    <div className="px-5 pb-4 pt-3 border-t border-white/10 text-sm text-[#8aa5ba] leading-relaxed">
+                    <div className="px-5 pb-4 pt-3 border-t border-border text-sm text-muted-foreground leading-relaxed">
                       {f.a}
                     </div>
                   )}
@@ -350,28 +377,26 @@ export default function RPMGuidePage() {
       {/* CTA */}
       <section className="py-12 md:py-16">
         <div className="max-w-3xl mx-auto px-6 text-center">
-          <div className="glass-panel rounded-3xl p-8 md:p-12">
-            <Workflow size={32} className="text-[#00FFD1] mx-auto mb-4" />
-            <h2 className="brand-gradient-text mb-3 text-2xl md:text-3xl">
+          <div className="shc-public-card p-8 md:p-12">
+            <Workflow size={32} className="text-primary mx-auto mb-4" />
+            <h2 className="shc-public-heading mb-3 text-2xl md:text-3xl">
               Sẵn sàng triển khai RPM?
             </h2>
-            <p className="text-[#8aa5ba] mb-7 max-w-xl mx-auto">
-              Đội ngũ Shcare sẽ cùng cơ sở xác định phạm vi, điều kiện thiết bị, quyền truy cập và
-              tiêu chí nghiệm thu trước khi chốt lịch triển khai.
+            <p className="text-muted-foreground mb-7 max-w-xl mx-auto">
+              Đội ngũ Shcare sẽ cùng cơ sở xác định phạm vi, điều kiện thiết bị,
+              quyền truy cập và tiêu chí nghiệm thu trước khi chốt lịch triển
+              khai.
             </p>
             <div className="flex flex-wrap justify-center gap-3">
-              <Link to="/lien-he" className="premium-button">
+              <Link to="/lien-he" className="shc-button shc-button-primary">
                 Liên hệ tư vấn
               </Link>
-              <Link
-                to="/bang-gia"
-                className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/8 text-sm font-medium text-[#eefbff] hover:border-[#00FFD1]/30 transition-all"
-              >
+              <Link to="/bang-gia" className="shc-button shc-button-secondary">
                 Xem bảng giá
               </Link>
               <Link
                 to="/tai-nguyen/faq"
-                className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/8 text-sm font-medium text-[#eefbff] hover:border-[#00FFD1]/30 transition-all"
+                className="shc-button shc-button-secondary"
               >
                 Tất cả FAQ
               </Link>

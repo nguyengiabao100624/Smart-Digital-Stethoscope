@@ -1,208 +1,395 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.FirebaseAuthService
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.security.ForgotPasswordError
+import com.example.smart_health_android.security.ForgotPasswordUiAction
+import com.example.smart_health_android.security.ForgotPasswordUiEffect
+import com.example.smart_health_android.security.ForgotPasswordUiState
+import com.example.smart_health_android.security.ForgotPasswordViewModel
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ForgotPasswordScreen(onNavigateToLogin: () -> Unit) {
-    var email by remember { mutableStateOf("") }
-    var sent by remember { mutableStateOf(false) }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+fun ForgotPasswordScreen(
+    onNavigateToLogin: () -> Unit,
+    providedViewModel: ForgotPasswordViewModel? = null,
+) {
+    val forgotPasswordViewModel = providedViewModel ?: viewModel()
+    val state by forgotPasswordViewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(sent) {
-        if (sent) {
-            delay(3000)
-            onNavigateToLogin()
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-            .padding(24.dp)
-    ) {
-        // Back Button
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier.clickable(onClick = onNavigateToLogin).padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.ArrowBack, contentDescription = null, tint = PrimaryBlue)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Quay lại", color = PrimaryBlue, fontWeight = FontWeight.Medium)
-            }
-        }
-
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            Crossfade(targetState = sent) { isSent ->
-                if (!isSent) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .background(PrimaryBlue.copy(alpha = 0.1f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Quên mật khẩu?", color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Nhập email đăng nhập để Firebase gửi liên kết đặt lại mật khẩu",
-                            color = TextSecondary,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text("Địa chỉ Email", color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = email,
-                                onValueChange = { email = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("email@example.com", color = TextSecondary.copy(alpha = 0.5f)) },
-                                leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TextSecondary) },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = PrimaryBlue,
-                                    unfocusedBorderColor = Border,
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                ),
-                                singleLine = true
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        errorMessage?.let { message ->
-                            Text(
-                                text = message,
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 13.sp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 12.dp)
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                val login = email.trim()
-                                if (login.isBlank()) {
-                                    errorMessage = "Vui lòng nhập email đăng nhập"
-                                    return@Button
-                                }
-
-                                isSubmitting = true
-                                errorMessage = null
-                                coroutineScope.launch {
-                                    try {
-                                        FirebaseAuthService.sendPasswordResetEmail(login)
-                                        sent = true
-                                    } catch (error: Exception) {
-                                        errorMessage = error.message ?: "Không thể gửi email đặt lại mật khẩu"
-                                    } finally {
-                                        isSubmitting = false
-                                    }
-                                }
-                            },
-                            enabled = !isSubmitting,
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            if (isSubmitting) {
-                                CircularProgressIndicator(
-                                    color = Color.White,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Gửi hướng dẫn", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                            Text("Nhớ mật khẩu? ", color = TextSecondary, fontSize = 14.sp)
-                            Text(
-                                "Đăng nhập ngay",
-                                color = PrimaryBlue,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.clickable(onClick = onNavigateToLogin)
-                            )
-                        }
-                    }
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .background(SuccessGreen.copy(alpha = 0.1f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(40.dp))
-                        }
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text("Đã gửi email!", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            "Vui lòng kiểm tra hộp thư của bạn tại\n${email}",
-                            color = PrimaryBlue,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text("Đang chuyển hướng về trang đăng nhập...", color = TextSecondary, fontSize = 14.sp)
-                    }
+    LaunchedEffect(forgotPasswordViewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            forgotPasswordViewModel.effects.collect { effect ->
+                when (effect) {
+                    ForgotPasswordUiEffect.NavigateToLogin -> onNavigateToLogin()
                 }
             }
         }
+    }
+    BackHandler {
+        forgotPasswordViewModel.onAction(ForgotPasswordUiAction.NavigateToLogin)
+    }
+    ForgotPasswordContent(
+        state = state,
+        onAction = forgotPasswordViewModel::onAction,
+    )
+}
 
-        Text(
-            "Smart Health\nXác thực qua Firebase",
-            color = TextSecondary,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-        )
+@Composable
+internal fun ForgotPasswordContent(
+    state: ForgotPasswordUiState,
+    onAction: (ForgotPasswordUiAction) -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    val spacing = ShcareTheme.spacing
+    val navigateToLogin = {
+        onAction(ForgotPasswordUiAction.NavigateToLogin)
+    }
+    val submit = {
+        focusManager.clearFocus()
+        onAction(ForgotPasswordUiAction.Submit)
+    }
+
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { contentPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .navigationBarsPadding()
+                .imePadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 480.dp),
+                contentPadding = PaddingValues(
+                    horizontal = spacing.extraLarge,
+                    vertical = spacing.large,
+                ),
+                verticalArrangement = Arrangement.spacedBy(spacing.extraLarge),
+            ) {
+                item {
+                    TextButton(
+                        onClick = navigateToLogin,
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.shcare_action_back),
+                        )
+                        Spacer(modifier = Modifier.width(spacing.small))
+                        Text(stringResource(R.string.forgot_password_back))
+                    }
+                }
+
+                item {
+                    Crossfade(
+                        targetState = state.sentEmail.isNotBlank(),
+                        label = "forgot-password-state",
+                    ) { isSent ->
+                        if (isSent) {
+                            PasswordResetSent(
+                                email = state.sentEmail,
+                                onNavigateToLogin = navigateToLogin,
+                            )
+                        } else {
+                            PasswordResetRequest(
+                                state = state,
+                                onEmailChange = {
+                                    onAction(ForgotPasswordUiAction.EmailChanged(it))
+                                },
+                                onSubmit = submit,
+                                onNavigateToLogin = navigateToLogin,
+                                onMoveFocus = {
+                                    focusManager.moveFocus(FocusDirection.Down)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Text(
+                        text = stringResource(R.string.forgot_password_brand_intro),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
     }
 }
+
+@Composable
+private fun PasswordResetRequest(
+    state: ForgotPasswordUiState,
+    onEmailChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onNavigateToLogin: () -> Unit,
+    onMoveFocus: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Surface(
+            modifier = Modifier.size(64.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Email,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.forgot_password_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            text = stringResource(R.string.forgot_password_description),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+
+        OutlinedTextField(
+            value = state.email,
+            onValueChange = onEmailChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("forgot-password.email"),
+            label = { Text(stringResource(R.string.forgot_password_email_label)) },
+            placeholder = { Text(stringResource(R.string.forgot_password_email_placeholder)) },
+            leadingIcon = {
+                Icon(Icons.Default.Email, contentDescription = null)
+            },
+            shape = RoundedCornerShape(12.dp),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Send,
+            ),
+            keyboardActions = KeyboardActions(
+                onNext = { onMoveFocus() },
+                onSend = { onSubmit() },
+                onDone = { onSubmit() },
+            ),
+            singleLine = true,
+            enabled = !state.isSubmitting,
+            isError = state.emailError != null,
+            supportingText = state.emailError?.message()?.let { message ->
+                {
+                    Text(
+                        text = message,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Assertive
+                        },
+                    )
+                }
+            },
+        )
+
+        state.requestError?.message()?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { liveRegion = LiveRegionMode.Assertive },
+            )
+        }
+
+        Button(
+            onClick = onSubmit,
+            enabled = !state.isSubmitting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .testTag("forgot-password.submit"),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            if (state.isSubmitting) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(spacing.small))
+                Text(
+                    text = stringResource(R.string.forgot_password_sending),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(spacing.small))
+                Text(
+                    text = stringResource(R.string.forgot_password_send),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = stringResource(R.string.forgot_password_remembered),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(
+                onClick = onNavigateToLogin,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text(stringResource(R.string.forgot_password_login_now))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordResetSent(
+    email: String,
+    onNavigateToLogin: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+            },
+    ) {
+        Surface(
+            modifier = Modifier.size(80.dp),
+            shape = CircleShape,
+            color = semanticColors.successContainer,
+            contentColor = semanticColors.onSuccessContainer,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.forgot_password_sent_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            text = stringResource(R.string.forgot_password_sent_message, email),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Button(
+            onClick = onNavigateToLogin,
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 48.dp),
+        ) {
+            Text(stringResource(R.string.forgot_password_back_to_login))
+        }
+    }
+}
+
+@Composable
+private fun ForgotPasswordError.message(): String = stringResource(
+    when (this) {
+        ForgotPasswordError.InvalidEmail -> R.string.forgot_password_error_invalid_email
+        ForgotPasswordError.Offline -> R.string.forgot_password_error_offline
+        ForgotPasswordError.RateLimited -> R.string.forgot_password_error_rate_limited
+        ForgotPasswordError.SessionChanged -> R.string.forgot_password_error_session_changed
+        ForgotPasswordError.ServiceUnavailable -> R.string.forgot_password_error_service_unavailable
+        ForgotPasswordError.Unconfirmed -> R.string.forgot_password_error_unconfirmed
+        ForgotPasswordError.Unknown -> R.string.forgot_password_error_unknown
+    },
+)

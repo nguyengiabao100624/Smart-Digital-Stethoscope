@@ -1,5 +1,6 @@
 {
   "protocolVersion": 2,
+  "frameEncoding": "shcare_audio_v2",
   "magicAscii": "SHC2",
   "byteOrder": "big-endian",
   "fixedHeaderBytes": 30,
@@ -7,6 +8,18 @@
   "payloadEncoding": "pcm_s16le",
   "sampleRate": 16000,
   "maximumSampleCount": 1024,
+  "identityBinding": {
+    "authenticatedSocketField": "deviceId",
+    "sessionMetadataFields": [
+      "workspaceId",
+      "patientId",
+      "deviceId",
+      "scanId",
+      "sessionId"
+    ],
+    "wireFields": ["sessionId", "scanId"],
+    "allBindingsRequired": true
+  },
   "fields": [
     { "name": "magic", "offset": 0, "bytes": 4, "type": "ascii" },
     { "name": "protocolVersion", "offset": 4, "bytes": 1, "type": "uint8" },

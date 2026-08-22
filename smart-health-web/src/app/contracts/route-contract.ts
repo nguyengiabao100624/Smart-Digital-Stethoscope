@@ -40,7 +40,7 @@ export interface RouteContract {
 }
 
 const PUBLIC_STATES = ["loading", "error", "retry", "not_found"] as const;
-const AUTH_STATES = ["loading", "error", "retry"] as const;
+const AUTH_STATES = ["loading", "offline", "error", "retry"] as const;
 const PORTAL_STATES = [
   "loading",
   "empty",
@@ -87,6 +87,18 @@ const SCAN_CAPABILITIES = [
   "platform.scans.manage",
   "personal.scans.manage",
 ] as const;
+const REVIEW_CAPABILITIES = [
+  "workspace.review.view",
+  "workspace.review.manage",
+  "platform.review.view",
+  "platform.review.manage",
+] as const;
+const ALERT_CAPABILITIES = [
+  "workspace.alerts.view",
+  "workspace.alerts.manage",
+  "platform.alerts.view",
+  "platform.alerts.manage",
+] as const;
 const DEVICE_CAPABILITIES = [
   "workspace.devices.view",
   "workspace.devices.manage",
@@ -98,11 +110,15 @@ const DEVICE_MANAGE_CAPABILITIES = [
   "workspace.devices.manage",
   "platform.devices.manage",
 ] as const;
-const LIVE_CAPABILITIES = [
-  "workspace.devices.view",
+const DEVICE_CLAIM_CAPABILITIES = [
   "workspace.devices.manage",
+  "platform.devices.manage",
+  "personal.devices.manage",
+] as const;
+const LIVE_CAPABILITIES = [
+  "workspace.dashboard.view",
+  "workspace.devices.view",
   "workspace.scans.view",
-  "workspace.scans.manage",
 ] as const;
 const CONSENT_CAPABILITIES = [
   "platform.patients.manage",
@@ -601,7 +617,7 @@ export const routeContracts = [
     path: "/portal/records/review",
     surface: "portal",
     title: "Hàng đợi duyệt",
-    requiredCapabilities: SCAN_CAPABILITIES,
+    requiredCapabilities: REVIEW_CAPABILITIES,
     nav: null,
     stateCoverage: PORTAL_MUTATION_STATES,
     smokeId: "portal-records-review",
@@ -641,7 +657,7 @@ export const routeContracts = [
     path: "/portal/devices/claim",
     surface: "portal",
     title: "Ghép thiết bị",
-    requiredCapabilities: DEVICE_CAPABILITIES,
+    requiredCapabilities: DEVICE_CLAIM_CAPABILITIES,
     nav: null,
     stateCoverage: PORTAL_MUTATION_STATES,
     smokeId: "portal-devices-claim",
@@ -711,11 +727,7 @@ export const routeContracts = [
     path: "/portal/alerts",
     surface: "portal",
     title: "Cảnh báo",
-    requiredCapabilities: [
-      "workspace.dashboard.view",
-      "workspace.devices.view",
-      "workspace.scans.view",
-    ],
+    requiredCapabilities: ALERT_CAPABILITIES,
     nav: portalNav("Cảnh báo", "primary", 100, "alert"),
     stateCoverage: PORTAL_MUTATION_STATES,
     smokeId: "portal-alerts",

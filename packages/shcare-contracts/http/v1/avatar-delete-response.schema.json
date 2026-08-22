@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/avatar-delete-response.schema.json",
+  "title": "Account avatar delete receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "x-shcare-owner-binding": {
+    "source": "authenticated-backend-user",
+    "idempotencyScope": "userId",
+    "crossAccountOutcome": 403
+  },
+  "required": ["deleted", "avatar", "cleanup", "operationId", "replayed"],
+  "properties": {
+    "deleted": { "type": "boolean", "const": true },
+    "avatar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileId", "ownerUserId", "deletedAt"],
+      "properties": {
+        "fileId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "ownerUserId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "previousFileId"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["not_required", "pending", "completed", "dead_letter"]
+        },
+        "previousFileId": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "replayed": { "type": "boolean" }
+  }
+}

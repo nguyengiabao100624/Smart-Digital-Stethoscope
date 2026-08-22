@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-command-status-response.schema.json",
+  "title": "Shcare device command lifecycle status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["command"],
+  "properties": {
+    "command": { "$ref": "device-operation-common.schema.json#/$defs/command" }
+  },
+  "x-shcare-http": {
+    "method": "GET",
+    "path": "/v1/devices/{deviceId}/commands/{commandId}"
+  },
+  "x-shcare-terminal-states": ["applied", "failed", "expired"]
+}

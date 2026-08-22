@@ -16,6 +16,7 @@
     "smoke:admin-mutation": "node scripts/adminMutationSmokeTest.mjs",
     "smoke:clinics-browser": "node scripts/adminClinicsBrowserSmokeTest.mjs",
     "smoke:admin-operations-browser": "node scripts/adminClinicsBrowserSmokeTest.mjs",
+    "smoke:admin-ui-foundation": "node scripts/adminUiFoundationBrowserSmokeTest.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "preview:prod": "vite preview --host 0.0.0.0",

@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-inbox-mutation-response.schema.json",
+  "title": "Shcare personal notification inbox mutation response",
+  "description": "Backend-confirmed, idempotent receipt for read, read-all or delete. The response always includes the canonical post-mutation inbox snapshot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "userId",
+    "workspaceId",
+    "action",
+    "notification",
+    "notifications",
+    "affectedIds",
+    "deletedId",
+    "updatedAt",
+    "replayed"
+  ],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "action": {
+      "enum": [
+        "read",
+        "read_all",
+        "delete"
+      ]
+    },
+    "notification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/notification"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "notifications": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/notification"
+      }
+    },
+    "affectedIds": {
+      "type": "array",
+      "maxItems": 200,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      }
+    },
+    "deletedId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 160
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "notification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "userId",
+        "workspaceId",
+        "organizationId",
+        "type",
+        "title",
+        "message",
+        "campaignId",
+        "audienceType",
+        "audienceRole",
+        "requestedChannels",
+        "inAppStatus",
+        "emailStatus",
+        "pushStatus",
+        "read",
+        "readAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "campaignId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "audienceType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "audienceRole": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "requestedChannels": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "in_app",
+              "email",
+              "push"
+            ]
+          }
+        },
+        "inAppStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "emailStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "pushStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "readAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

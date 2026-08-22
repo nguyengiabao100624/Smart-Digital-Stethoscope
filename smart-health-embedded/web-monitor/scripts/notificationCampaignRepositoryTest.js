@@ -119,12 +119,21 @@ function createSqlFixture() {
             : [],
         };
       }
-      if (/SELECT id, role, account_status FROM users/i.test(normalized)) {
+      if (/SELECT id, role, account_status, firebase_claims FROM users/i.test(normalized)) {
         const user = users.get(params[0]);
         return {
           rowCount: user ? 1 : 0,
           rows: user
-            ? [{ id: user.id, role: user.role, account_status: user.accountStatus }]
+            ? [{
+                id: user.id,
+                role: user.role,
+                account_status: user.accountStatus,
+                firebase_claims: {
+                  profile: {
+                    notificationPreferences: structuredClone(user.notificationPreferences || {}),
+                  },
+                },
+              }]
             : [],
         };
       }
@@ -137,10 +146,66 @@ function createSqlFixture() {
             : [],
         };
       }
+      if (/SELECT \* FROM notifications WHERE id = \$1/i.test(normalized)) {
+        const notification = state.notifications.get(params[0]);
+        return {
+          rowCount: notification ? 1 : 0,
+          rows: notification ? [structuredClone(notification)] : [],
+        };
+      }
+      if (/UPDATE notifications SET delivery_status/i.test(normalized)) {
+        const notification = state.notifications.get(params[0]);
+        if (!notification) return { rowCount: 0, rows: [] };
+        Object.assign(notification, {
+          delivery_status: params[1],
+          sent_at: params[2],
+          failed_at: params[3],
+          retry_count: params[4],
+          error_message: params[5],
+          email_status: params[6],
+          email_error_message: params[7],
+          push_status: params[8],
+          push_sent_at: params[9],
+          push_failed_at: params[10],
+          push_error_message: params[11],
+          push_attempts: JSON.parse(params[12]),
+          updated_at: "2026-07-23T08:02:00.000Z",
+          emailStatus: params[6],
+          pushStatus: params[8],
+        });
+        return { rowCount: 1, rows: [structuredClone(notification)] };
+      }
       if (/INSERT INTO notifications/i.test(normalized)) {
         assert.equal(params.length, 26);
         state.notifications.set(params[0], {
           id: params[0],
+          user_id: params[1],
+          organization_id: params[2],
+          type: params[3],
+          title: params[4],
+          message: params[5],
+          channel: params[6],
+          delivery_status: params[7],
+          sent_at: params[8],
+          failed_at: params[9],
+          retry_count: params[10],
+          error_message: params[11],
+          push_status: params[12],
+          push_sent_at: params[13],
+          push_failed_at: params[14],
+          push_error_message: params[15],
+          push_attempts: JSON.parse(params[16]),
+          metadata: JSON.parse(params[17]),
+          read_at: params[18],
+          campaign_id: params[19],
+          audience_type: params[20],
+          audience_role: params[21],
+          requested_channels: JSON.parse(params[22]),
+          in_app_status: params[23],
+          email_status: params[24],
+          email_error_message: params[25],
+          created_at: "2026-07-23T08:00:00.000Z",
+          updated_at: "2026-07-23T08:00:00.000Z",
           campaignId: params[19],
           audienceType: params[20],
           requestedChannels: JSON.parse(params[22]),
@@ -255,6 +320,99 @@ test("JSON save failure rolls campaign, audit and idempotency state back togethe
   assert.deepEqual(db.idempotencyKeys, []);
 });
 
+test("campaign recomputes global and category opt-outs from canonical recipient accounts", async () => {
+  const { db, repositories } = createFixture();
+  db.users.find((user) => user.id === "usr_doctor").notificationPreferences = {
+    enabled: false,
+    appointments: true,
+  };
+  db.users.find((user) => user.id === "usr_nurse").notificationPreferences = {
+    enabled: true,
+    appointments: false,
+  };
+
+  const result = await repositories.notifications.createCampaignWithAudit(
+    campaignInput({
+      type: "appointment_scheduled",
+      metadata: { preferenceKey: "appointments" },
+      recipients: [
+        {
+          userId: "usr_doctor",
+          inAppStatus: "ready",
+          emailStatus: "ready",
+          pushStatus: "ready",
+        },
+        {
+          userId: "usr_nurse",
+          inAppStatus: "ready",
+          emailStatus: "ready",
+          pushStatus: "ready",
+        },
+      ],
+    }),
+    {},
+    { ...idempotency(), key: "canonical-preference-key", fingerprint: "canonical-preference" },
+  );
+
+  assert.equal(result.campaign.status, "unavailable");
+  assert.deepEqual(result.campaign.channelSummary.in_app, { skipped: 2 });
+  assert.deepEqual(result.campaign.channelSummary.email, { skipped: 2 });
+  assert.deepEqual(result.campaign.channelSummary.push, { skipped: 2 });
+  assert.ok(
+    result.notifications.every(
+      (notification) =>
+        notification.inAppStatus === "skipped" &&
+        notification.emailStatus === "skipped" &&
+        notification.pushStatus === "skipped",
+    ),
+  );
+  assert.equal(
+    result.notifications.find((notification) => notification.userId === "usr_doctor").pushErrorMessage,
+    "NOTIFICATION_PREFERENCES_DISABLED",
+  );
+  assert.equal(
+    result.notifications.find((notification) => notification.userId === "usr_nurse").pushErrorMessage,
+    "NOTIFICATION_PREFERENCE_DISABLED",
+  );
+  assert.equal(db.auditLogs[0].metadata.channelSummary.in_app.skipped, 2);
+});
+
+test("delivery status can record a fail-closed outcome after membership revoke without retargeting content", async () => {
+  const { db, repositories } = createFixture();
+  const campaign = await repositories.notifications.createCampaignWithAudit(
+    campaignInput({ recipients: [{ userId: "usr_doctor", emailStatus: "ready", pushStatus: "ready" }] }),
+    {},
+    { ...idempotency(), key: "delivery-status-campaign", fingerprint: "delivery-status-campaign" },
+  );
+  const notification = campaign.notifications[0];
+  const originalTitle = notification.title;
+  db.memberships = db.memberships.filter(
+    (membership) =>
+      !(membership.userId === "usr_doctor" && membership.organizationId === "org_alpha"),
+  );
+
+  const updated = await repositories.notifications.updateDeliveryStatus({
+    ...notification,
+    title: "must-not-overwrite-content",
+    emailStatus: "skipped",
+    emailErrorMessage: "NOTIFICATION_EMAIL_WORKSPACE_ACCESS_REVOKED",
+  });
+
+  assert.equal(updated.title, originalTitle);
+  assert.equal(updated.emailStatus, "skipped");
+  assert.equal(updated.emailErrorMessage, "NOTIFICATION_EMAIL_WORKSPACE_ACCESS_REVOKED");
+  await assert.rejects(
+    repositories.notifications.updateDeliveryStatus({
+      ...updated,
+      userId: "usr_nurse",
+      pushStatus: "sent",
+    }),
+    (error) => error.code === "NOTIFICATION_DELIVERY_BINDING_MISMATCH",
+  );
+  assert.equal(db.notifications[0].userId, "usr_doctor");
+  assert.equal(db.notifications[0].pushStatus, "ready");
+});
+
 test("PostgreSQL campaign path commits notifications, audit and replay ledger in one transaction", async () => {
   const { state, repositories } = createSqlFixture();
   const first = await repositories.notifications.createCampaignWithAudit(
@@ -285,4 +443,36 @@ test("PostgreSQL campaign path commits notifications, audit and replay ledger in
   assert.equal(state.notifications.size, 2);
   assert.equal(state.audits.size, 1);
   assert.equal(state.idempotency.size, 1);
+});
+
+test("PostgreSQL delivery status update preserves immutable notification binding and content", async () => {
+  const { state, repositories } = createSqlFixture();
+  const campaign = await repositories.notifications.createCampaignWithAudit(
+    campaignInput({ recipients: [{ userId: "usr_doctor", emailStatus: "ready", pushStatus: "ready" }] }),
+    {},
+    { ...idempotency(), key: "sql-delivery-campaign", fingerprint: "sql-delivery-campaign" },
+  );
+  const notification = campaign.notifications[0];
+  const updated = await repositories.notifications.updateDeliveryStatus({
+    ...notification,
+    title: "must-not-overwrite-sql-content",
+    pushStatus: "partial",
+    pushErrorMessage: "one device remains unavailable",
+    pushAttempts: [{ id: "attempt_sql", status: "sent" }],
+  });
+
+  assert.equal(updated.title, notification.title);
+  assert.equal(updated.userId, "usr_doctor");
+  assert.equal(updated.organizationId, "org_alpha");
+  assert.equal(updated.pushStatus, "partial");
+  assert.equal(updated.pushAttempts.length, 1);
+  assert.equal(state.notifications.get(notification.id).title, notification.title);
+  await assert.rejects(
+    repositories.notifications.updateDeliveryStatus({
+      ...updated,
+      organizationId: "org_beta",
+      pushStatus: "sent",
+    }),
+    (error) => error.code === "NOTIFICATION_DELIVERY_BINDING_MISMATCH",
+  );
 });

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/patient-share-mutation-response.schema.json",
+  "title": "Shcare patient data-access mutation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generatedAt",
+    "workspaceId",
+    "patientId",
+    "share",
+    "replayed"
+  ],
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "patientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "share": {
+      "$ref": "patient-share-ledger-response.schema.json#/$defs/patientShare"
+    },
+    "replayed": {
+      "type": "boolean"
+    },
+    "revoked": {
+      "const": true
+    }
+  }
+}

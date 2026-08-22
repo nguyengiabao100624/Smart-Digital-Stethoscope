@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/patient-mutation-authority.schema.json",
+  "title": "Shcare personal patient mutation authority",
+  "description": "Authority pinned by the client before dispatching a personal or family patient mutation. These values travel in the three X-Shcare-Expected-* headers; they are never accepted from the JSON body.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "expectedUserId",
+    "expectedWorkspaceId",
+    "expectedAuthSessionId"
+  ],
+  "properties": {
+    "expectedUserId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "expectedWorkspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "expectedAuthSessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    }
+  },
+  "x-shcare-header-binding": {
+    "expectedUserId": "X-Shcare-Expected-User-Id",
+    "expectedWorkspaceId": "X-Shcare-Expected-Workspace-Id",
+    "expectedAuthSessionId": "X-Shcare-Expected-Auth-Session-Id"
+  },
+  "x-shcare-client-local-guard": "authSessionEpoch"
+}

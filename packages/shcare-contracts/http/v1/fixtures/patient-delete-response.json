@@ -1,0 +1,8 @@
+{
+  "userId": "usr_patient",
+  "workspaceId": "org_personal_patient",
+  "patientId": "pat_family_01",
+  "intent": "delete",
+  "deleted": true,
+  "replayed": false
+}

@@ -1,4 +1,9 @@
-import { useRef, useState, type FormEvent } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -33,6 +38,10 @@ import {
 import { Skeleton } from "../../../components/ui/skeleton";
 import { Textarea } from "../../../components/ui/textarea";
 import {
+  parseClinicalReviewListResponse,
+  parseClinicalReviewMutationResponse,
+} from "../../../lib/clinical-workflow-operations";
+import {
   resolveClinicalWorkflowIntent,
   type ClinicalWorkflowIntent,
 } from "../../../lib/clinical-workflow-intent";
@@ -52,6 +61,18 @@ const DECISION_LABELS: Record<ReviewDecision, string> = {
   follow_up_required: "Cần theo dõi thêm",
 };
 
+type ClinicalWorkflowAuthority = {
+  workspaceId: string;
+  epoch: number;
+};
+
+class ClinicalWorkflowSupersededError extends Error {
+  constructor() {
+    super("Thao tác thuộc workspace trước đã được hủy.");
+    this.name = "ClinicalWorkflowSupersededError";
+  }
+}
+
 function formatDate(value?: string) {
   if (!value) return "Chưa có thời điểm";
   const date = new Date(value);
@@ -70,6 +91,24 @@ export default function ReviewQueuePage() {
   const { user } = useAuth();
   const workspaceId = user?.currentWorkspace.id || "";
   const [status, setStatus] = useState<"pending" | "reviewed">("pending");
+  const activeWorkspaceRef = useRef(workspaceId);
+  const operationEpochRef = useRef(0);
+
+  useLayoutEffect(() => {
+    if (activeWorkspaceRef.current === workspaceId) return;
+    activeWorkspaceRef.current = workspaceId;
+    operationEpochRef.current += 1;
+    setStatus("pending");
+  }, [workspaceId]);
+
+  const captureAuthority = (): ClinicalWorkflowAuthority => ({
+    workspaceId: activeWorkspaceRef.current,
+    epoch: operationEpochRef.current,
+  });
+  const isAuthorityCurrent = (authority: ClinicalWorkflowAuthority) =>
+    authority.workspaceId === activeWorkspaceRef.current &&
+    authority.epoch === operationEpochRef.current;
+
   const queryKey = portalWorkspaceQueryKey(
     workspaceId,
     "clinical-review-queue",
@@ -77,7 +116,11 @@ export default function ReviewQueuePage() {
   );
   const query = useQuery({
     queryKey,
-    queryFn: () => smartHealthApi.listReviewQueue({ status, limit: 50 }),
+    queryFn: async () =>
+      parseClinicalReviewListResponse(
+        await smartHealthApi.listReviewQueue({ status, limit: 50 }),
+        workspaceId,
+      ),
     enabled: Boolean(workspaceId),
     retry: false,
   });
@@ -85,7 +128,11 @@ export default function ReviewQueuePage() {
   const canManage = canManageReviews(user?.capabilities || []);
 
   return (
-    <div className="space-y-5">
+    <div
+      className="space-y-5"
+      data-testid="portal-review-queue-page"
+      data-workspace-id={workspaceId}
+    >
       <header className="clinical-page-header flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="clinical-page-title flex items-center gap-2 text-foreground">
@@ -142,11 +189,13 @@ export default function ReviewQueuePage() {
         <div className="grid gap-4 xl:grid-cols-2">
           {reviews.map((review) => (
             <ReviewCard
-              key={`${review.id}:${review.version}`}
+              key={`${workspaceId}:${review.id}:${review.version}`}
               review={review}
+              workspaceId={workspaceId}
               canManage={canManage}
               refresh={() => query.refetch()}
-              queryKey={queryKey}
+              captureAuthority={captureAuthority}
+              isAuthorityCurrent={isAuthorityCurrent}
             />
           ))}
         </div>
@@ -157,14 +206,18 @@ export default function ReviewQueuePage() {
 
 function ReviewCard({
   review,
+  workspaceId,
   canManage,
   refresh,
-  queryKey,
+  captureAuthority,
+  isAuthorityCurrent,
 }: {
   review: ClinicalReview;
+  workspaceId: string;
   canManage: boolean;
   refresh: () => Promise<unknown>;
-  queryKey: readonly unknown[];
+  captureAuthority: () => ClinicalWorkflowAuthority;
+  isAuthorityCurrent: (authority: ClinicalWorkflowAuthority) => boolean;
 }) {
   const queryClient = useQueryClient();
   const [decision, setDecision] = useState<ReviewDecision>("accepted");
@@ -178,20 +231,42 @@ function ReviewCard({
       note: string;
       expectedVersion: number;
       idempotencyKey: string;
-    }) => smartHealthApi.decideReview(review.scanId, input),
-    onSuccess: async () => {
+      authority: ClinicalWorkflowAuthority;
+    }) =>
+      smartHealthApi.decideReview(review.scanId, input).then((response) => {
+        const result = parseClinicalReviewMutationResponse(response, {
+          workspaceId: input.authority.workspaceId,
+          scanId: review.scanId,
+          decision: input.decision,
+          note: input.note,
+          previousVersion: input.expectedVersion,
+        });
+        if (!isAuthorityCurrent(input.authority)) {
+          throw new ClinicalWorkflowSupersededError();
+        }
+        return { ...result, authority: input.authority };
+      }),
+    onSuccess: async (result) => {
+      if (!isAuthorityCurrent(result.authority)) return;
       intentRef.current = null;
       toast.success("Backend đã ghi nhận quyết định duyệt");
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: portalWorkspaceQueryKey(
+          result.authority.workspaceId,
+          "clinical-review-queue",
+        ),
+      });
     },
-    onError: async (error: ApiError) => {
-      if (error.status === 409) {
+    onError: async (error: ApiError | Error) => {
+      if (error instanceof ClinicalWorkflowSupersededError) return;
+      if ("status" in error && error.status === 409) {
         intentRef.current = null;
         toast.error("Lượt đo đã thay đổi. Dữ liệu mới đang được tải lại.");
         await refresh();
       }
     },
   });
+  const mutationError = mutation.error as ApiError | Error | null;
 
   const resetIntent = () => {
     intentRef.current = null;
@@ -213,13 +288,24 @@ function ReviewCard({
       note: trimmedNote,
       expectedVersion: review.version,
     };
+    const authority = captureAuthority();
+    if (
+      authority.workspaceId !== workspaceId ||
+      !isAuthorityCurrent(authority)
+    ) {
+      return;
+    }
     const intent = resolveClinicalWorkflowIntent(
       intentRef.current,
-      `review-${review.scanId}`,
+      `review-${authority.workspaceId}-${review.scanId}`,
       payload,
     );
     intentRef.current = intent;
-    mutation.mutate({ ...payload, idempotencyKey: intent.idempotencyKey });
+    mutation.mutate({
+      ...payload,
+      idempotencyKey: intent.idempotencyKey,
+      authority,
+    });
   };
 
   return (
@@ -227,7 +313,12 @@ function ReviewCard({
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle id={`review-${review.id}-heading`} className="break-all">
+            <CardTitle
+              id={`review-${review.id}-heading`}
+              role="heading"
+              aria-level={2}
+              className="break-all"
+            >
               Lượt đo {review.scanId}
             </CardTitle>
             <CardDescription className="mt-1">
@@ -238,8 +329,8 @@ function ReviewCard({
             variant="outline"
             className={
               reviewed
-                ? "border-[var(--clinical-success)] text-[var(--clinical-success)]"
-                : "border-[var(--clinical-warning)] text-[var(--clinical-warning)]"
+                ? "border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]"
+                : "border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]"
             }
           >
             {reviewed ? (
@@ -250,19 +341,15 @@ function ReviewCard({
             {reviewed ? "Đã duyệt" : "Đang chờ"}
           </Badge>
         </div>
-        <dl className="grid grid-cols-2 gap-3 rounded-lg bg-muted/30 p-3 text-sm">
-          <div>
-            <dt className="text-xs text-muted-foreground">Bệnh nhân</dt>
-            <dd className="mt-1 break-all font-medium text-foreground">
-              {review.patientId || "Chưa xác định"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Thiết bị</dt>
-            <dd className="mt-1 break-all font-mono text-xs text-foreground">
-              {review.deviceId || "Chưa xác định"}
-            </dd>
-          </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-muted/30 p-3 text-sm">
+          <dt className="text-xs text-muted-foreground">Bệnh nhân</dt>
+          <dt className="text-xs text-muted-foreground">Thiết bị</dt>
+          <dd className="break-all font-medium text-foreground">
+            {review.patientId || "Chưa xác định"}
+          </dd>
+          <dd className="break-all font-mono text-xs text-foreground">
+            {review.deviceId || "Chưa xác định"}
+          </dd>
         </dl>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -323,11 +410,12 @@ function ReviewCard({
                 </p>
               ) : null}
             </div>
-            {mutation.error ? (
+            {mutationError &&
+            !(mutationError instanceof ClinicalWorkflowSupersededError) ? (
               <p role="alert" className="text-sm text-destructive">
-                {mutation.error.status === 409
+                {"status" in mutationError && mutationError.status === 409
                   ? "Dữ liệu đã thay đổi; vui lòng kiểm tra bản mới trước khi gửi lại."
-                  : mutation.error.message}
+                  : mutationError.message}
               </p>
             ) : null}
             <Button
@@ -343,7 +431,12 @@ function ReviewCard({
               )}
               {mutation.isPending
                 ? "Đang ghi nhận..."
-                : mutation.isError && mutation.error.status !== 409
+                : mutation.isError &&
+                    !(
+                      mutationError &&
+                      "status" in mutationError &&
+                      mutationError.status === 409
+                    )
                   ? "Thử gửi lại"
                   : "Ghi nhận quyết định"}
             </Button>

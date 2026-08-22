@@ -12,6 +12,23 @@ const DEVICE_COMMAND_TYPES = new Set([
   "audio.session.stop",
 ]);
 
+// The generic Platform Admin endpoint is intentionally narrower than the
+// device wire protocol. Commands with ownership, credential, OTA, or clinical
+// session side effects must go through their audited specialized workflows.
+const GENERIC_SAFE_DEVICE_COMMAND_TYPES = new Set([
+  "restart",
+  "wifi.status",
+  "device.lock",
+]);
+
+const SPECIALIZED_DEVICE_COMMAND_ROUTES = new Map([
+  ["device.revoke", "/v1/devices/{deviceId}/revoke"],
+  ["device.rotate_secret", "/v1/devices/{deviceId}/rotate-secret"],
+  ["ota.update", "/v1/devices/{deviceId}/ota"],
+  ["audio.session.start", "/v1/scans/start"],
+  ["audio.session.stop", "/v1/scans/{scanId}/stop"],
+]);
+
 const DEVICE_COMMAND_STATES = new Set([
   "accepted",
   "queued",
@@ -33,6 +50,8 @@ const DEVICE_REPORTED_STATES = new Set([
 
 const TERMINAL_DEVICE_COMMAND_STATES = new Set(["applied", "failed", "expired"]);
 
+const OTA_EXECUTION_STATES = new Set(["acknowledged", "applying"]);
+
 const ALLOWED_TRANSITIONS = new Map([
   ["accepted", new Set(["queued", "delivered", "acknowledged", "failed", "expired"])],
   ["queued", new Set(["delivered", "acknowledged", "failed", "expired"])],
@@ -53,6 +72,14 @@ function lifecycleError(code, message) {
 
 function isSupportedDeviceCommandType(value) {
   return DEVICE_COMMAND_TYPES.has(readBoundedString(value, 80));
+}
+
+function isGenericSafeDeviceCommandType(value) {
+  return GENERIC_SAFE_DEVICE_COMMAND_TYPES.has(readBoundedString(value, 80));
+}
+
+function getSpecializedDeviceCommandRoute(value) {
+  return SPECIALIZED_DEVICE_COMMAND_ROUTES.get(readBoundedString(value, 80)) || "";
 }
 
 function createDeviceCommandEnvelope({
@@ -99,7 +126,18 @@ function createDeviceCommandRecord({
   requestedByUserId = "",
   idempotencyKey = "",
   requestFingerprint = "",
+  executionExpiresAt = "",
 }) {
+  const executionDeadline = executionExpiresAt ? new Date(executionExpiresAt) : null;
+  if (
+    executionDeadline &&
+    (!Number.isFinite(executionDeadline.getTime()) || executionDeadline <= new Date(envelope.expiresAt))
+  ) {
+    throw lifecycleError(
+      "DEVICE_COMMAND_EXECUTION_TIME_INVALID",
+      "Command execution expiry must be later than its delivery expiry",
+    );
+  }
   return {
     protocolVersion: DEVICE_COMMAND_PROTOCOL_VERSION,
     id: envelope.id,
@@ -115,6 +153,7 @@ function createDeviceCommandRecord({
     requestFingerprint: readBoundedString(requestFingerprint, 128),
     issuedAt: envelope.issuedAt,
     expiresAt: envelope.expiresAt,
+    ...(executionDeadline ? { executionExpiresAt: executionDeadline.toISOString() } : {}),
     acceptedAt: envelope.issuedAt,
     createdAt: envelope.issuedAt,
     updatedAt: envelope.issuedAt,
@@ -168,12 +207,23 @@ function applyDeviceCommandDelivery(record, delivery, at = new Date()) {
   });
 }
 
+function isOtaExecutionInProgress(record) {
+  return record?.type === "ota.update" && OTA_EXECUTION_STATES.has(record?.state);
+}
+
+function getDeviceCommandExpiry(record) {
+  const deadline = isOtaExecutionInProgress(record)
+    ? record.executionExpiresAt
+    : record.expiresAt;
+  return new Date(deadline || record.expiresAt);
+}
+
 function expireDeviceCommandIfOverdue(record, at = new Date()) {
   if (TERMINAL_DEVICE_COMMAND_STATES.has(record.state)) {
     return { command: record, changed: false };
   }
   const timestamp = new Date(at);
-  const expiresAt = new Date(record.expiresAt);
+  const expiresAt = getDeviceCommandExpiry(record);
   if (!Number.isFinite(timestamp.getTime()) || !Number.isFinite(expiresAt.getTime())) {
     throw lifecycleError("DEVICE_COMMAND_TIME_INVALID", "Command expiry timestamp is invalid");
   }
@@ -182,8 +232,10 @@ function expireDeviceCommandIfOverdue(record, at = new Date()) {
   }
   return transitionDeviceCommand(record, "expired", {
     at: timestamp,
-    code: "COMMAND_EXPIRED",
-    detail: "Device did not report a terminal result before command expiry",
+    code: isOtaExecutionInProgress(record) ? "OTA_EXECUTION_EXPIRED" : "COMMAND_EXPIRED",
+    detail: isOtaExecutionInProgress(record)
+      ? "OTA did not provide a terminal boot-health result before its execution deadline"
+      : "Device did not report a terminal result before command expiry",
   });
 }
 
@@ -205,11 +257,17 @@ function applyDeviceReportedCommandStatus(record, status, deviceId, at = new Dat
   if (!DEVICE_REPORTED_STATES.has(state) || !code) {
     throw lifecycleError("DEVICE_COMMAND_STATUS_INVALID", "Device command status state and code are required");
   }
-  if (Date.parse(record.expiresAt) <= new Date(at).getTime() && !TERMINAL_DEVICE_COMMAND_STATES.has(record.state)) {
+  if (
+    getDeviceCommandExpiry(record).getTime() <= new Date(at).getTime() &&
+    !TERMINAL_DEVICE_COMMAND_STATES.has(record.state)
+  ) {
+    const executionInProgress = isOtaExecutionInProgress(record);
     return transitionDeviceCommand(record, "expired", {
       at,
-      code: "COMMAND_EXPIRED",
-      detail: "Device status arrived after command expiry",
+      code: executionInProgress ? "OTA_EXECUTION_EXPIRED" : "COMMAND_EXPIRED",
+      detail: executionInProgress
+        ? "OTA progress arrived after its terminal execution deadline"
+        : "Device status arrived after command expiry",
     });
   }
   return transitionDeviceCommand(record, state, {
@@ -221,6 +279,13 @@ function applyDeviceReportedCommandStatus(record, status, deviceId, at = new Dat
 
 function publicDeviceCommand(record) {
   if (!record) return null;
+  const delivery = record.delivery && typeof record.delivery === "object"
+    ? {
+        websocket: Boolean(record.delivery.websocket),
+        mqtt: Boolean(record.delivery.mqtt),
+        delivered: Boolean(record.delivery.delivered),
+      }
+    : { websocket: false, mqtt: false, delivered: false };
   return {
     protocolVersion: record.protocolVersion,
     id: record.id,
@@ -235,6 +300,7 @@ function publicDeviceCommand(record) {
     requestedByUserId: record.requestedByUserId || "",
     issuedAt: record.issuedAt,
     expiresAt: record.expiresAt,
+    ...(record.executionExpiresAt ? { executionExpiresAt: record.executionExpiresAt } : {}),
     acceptedAt: record.acceptedAt || "",
     queuedAt: record.queuedAt || "",
     deliveredAt: record.deliveredAt || "",
@@ -243,7 +309,7 @@ function publicDeviceCommand(record) {
     appliedAt: record.appliedAt || "",
     failedAt: record.failedAt || "",
     expiredAt: record.expiredAt || "",
-    delivery: record.delivery || { websocket: false, mqtt: false, delivered: false },
+    delivery,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -253,12 +319,18 @@ module.exports = {
   DEVICE_COMMAND_PROTOCOL_VERSION,
   DEVICE_COMMAND_STATES,
   DEVICE_COMMAND_TYPES,
+  GENERIC_SAFE_DEVICE_COMMAND_TYPES,
+  SPECIALIZED_DEVICE_COMMAND_ROUTES,
   TERMINAL_DEVICE_COMMAND_STATES,
   applyDeviceCommandDelivery,
   applyDeviceReportedCommandStatus,
   createDeviceCommandEnvelope,
   createDeviceCommandRecord,
   expireDeviceCommandIfOverdue,
+  getSpecializedDeviceCommandRoute,
+  isGenericSafeDeviceCommandType,
+  isOtaExecutionInProgress,
+  getDeviceCommandExpiry,
   isSupportedDeviceCommandType,
   publicDeviceCommand,
   transitionDeviceCommand,

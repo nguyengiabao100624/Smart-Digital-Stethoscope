@@ -283,8 +283,8 @@ export function CreatePackageDialog({
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 motion-reduce:animate-none" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95 motion-reduce:animate-none">
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -299,7 +299,7 @@ export function CreatePackageDialog({
                 </Dialog.Description>
               </div>
             </div>
-            <Dialog.Close className="text-muted-foreground transition-colors hover:text-foreground">
+            <Dialog.Close className="text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none">
               <X className="h-5 w-5" />
             </Dialog.Close>
           </div>
@@ -485,7 +485,7 @@ export function CreatePackageDialog({
                 {featureOptions.map((feature) => (
                   <label
                     key={feature.id}
-                    className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-3 transition-colors hover:bg-muted/50"
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 motion-reduce:transition-none"
                   >
                     <input
                       type="checkbox"
@@ -504,7 +504,7 @@ export function CreatePackageDialog({
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                  className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted motion-reduce:transition-none"
                 >
                   Hủy
                 </button>
@@ -512,9 +512,11 @@ export function CreatePackageDialog({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 motion-reduce:transition-none disabled:opacity-60"
               >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSubmitting && (
+                  <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                )}
                 {isEditing ? "Lưu thay đổi" : "Tạo gói dịch vụ"}
               </button>
             </div>

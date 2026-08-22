@@ -87,6 +87,39 @@ test("uses backend capabilities for direct URLs and navigation", () => {
     viewerNavigation.some((route) => route.id === "portal.staff"),
     false,
   );
+
+  assert.equal(
+    canAccessRoute(["workspace.review.view"], "/portal/records/review"),
+    true,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.scans.view"], "/portal/records/review"),
+    false,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.alerts.view"], "/portal/alerts"),
+    true,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.devices.view"], "/portal/alerts"),
+    false,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.dashboard.view"], "/portal/live"),
+    true,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.devices.view"], "/portal/live"),
+    true,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.scans.view"], "/portal/live"),
+    true,
+  );
+  assert.equal(
+    canAccessRoute(["workspace.devices.manage"], "/portal/live"),
+    false,
+  );
 });
 
 test("exposes canonical absolute and nested-router paths", () => {

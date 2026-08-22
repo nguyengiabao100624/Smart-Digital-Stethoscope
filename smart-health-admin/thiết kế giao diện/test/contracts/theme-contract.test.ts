@@ -106,5 +106,5 @@ test("local browser QA can load shared fonts and reduced motion removes choreogr
   assert.match(layout, /initial=\{shouldReduceMotion \? false/);
   assert.match(designSystem, /useReducedMotion\(\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(styles, /\.float-soft,[\s\S]*?animation: none/);
+  assert.doesNotMatch(styles, /health-pulse|float-soft|scan-sheen/);
 });

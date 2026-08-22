@@ -1,4 +1,4 @@
-import type { Patient } from "./smart-health-api";
+import type { Patient, Scan } from "./smart-health-api";
 
 export type PatientEmergencyContact = {
   name: string;
@@ -118,12 +118,33 @@ export function parseCanonicalPatient(value: unknown): Patient {
   };
 }
 
-export function parsePatientListResponse(response: unknown) {
+function requirePatientWorkspace(
+  patient: Patient,
+  expectedWorkspaceId?: string,
+) {
+  if (!expectedWorkspaceId) return patient;
+  if (patient.organizationId !== expectedWorkspaceId) {
+    throw new Error(
+      `Hồ sơ bệnh nhân ${patient.id} không thuộc workspace hiện tại.`,
+    );
+  }
+  return patient;
+}
+
+export function parsePatientListResponse(
+  response: unknown,
+  expectedWorkspaceId?: string,
+) {
   const value = recordOf(response).patients;
   if (!Array.isArray(value)) {
     throw new Error("Phản hồi bệnh nhân thiếu danh sách canonical.");
   }
-  const patients = value.map(parseCanonicalPatient);
+  const patients = value.map((item) =>
+    requirePatientWorkspace(
+      parseCanonicalPatient(item),
+      expectedWorkspaceId,
+    ),
+  );
   const ids = new Set<string>();
   for (const patient of patients) {
     if (ids.has(patient.id))
@@ -133,8 +154,59 @@ export function parsePatientListResponse(response: unknown) {
   return patients;
 }
 
-export function parsePatientDetailResponse(response: unknown) {
-  return parseCanonicalPatient(recordOf(response).patient);
+export function parsePatientDetailResponse(
+  response: unknown,
+  expectedWorkspaceId?: string,
+) {
+  return requirePatientWorkspace(
+    parseCanonicalPatient(recordOf(response).patient),
+    expectedWorkspaceId,
+  );
+}
+
+export function parsePatientScanHistoryResponse(
+  response: unknown,
+  expectedWorkspaceId: string,
+  expectedPatientId: string,
+) {
+  const value = recordOf(response).scans;
+  if (!Array.isArray(value)) {
+    throw new Error("Phản hồi nguồn lượt đo thiếu danh sách canonical.");
+  }
+
+  const ids = new Set<string>();
+  const scans = value.map((item) => {
+    const record = recordOf(item);
+    const id =
+      typeof record.id === "string" && record.id.trim()
+        ? record.id.trim()
+        : "";
+    const organizationId =
+      typeof record.organizationId === "string"
+        ? record.organizationId.trim()
+        : "";
+    const patientId =
+      typeof record.patientId === "string" ? record.patientId.trim() : "";
+
+    if (
+      !id ||
+      !organizationId ||
+      !patientId ||
+      organizationId !== expectedWorkspaceId ||
+      patientId !== expectedPatientId
+    ) {
+      throw new Error(
+        "Phản hồi nguồn lượt đo không thuộc workspace và bệnh nhân hiện tại.",
+      );
+    }
+    if (ids.has(id)) {
+      throw new Error(`Phản hồi nguồn lượt đo bị trùng ID ${id}.`);
+    }
+    ids.add(id);
+    return item as Scan;
+  });
+
+  return { scans };
 }
 
 function normalizeIntent(intent: PatientMutationIntent) {

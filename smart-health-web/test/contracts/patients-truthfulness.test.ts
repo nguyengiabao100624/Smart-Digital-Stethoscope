@@ -45,7 +45,7 @@ test("patient operations never treat patientCode as the backend resource id", as
   assert.match(list, /to=\{`\/portal\/patients\/\$\{patient\.id\}`\}/);
   assert.match(
     detail,
-    /deletePatient\(\s*patient\.id,\s*attempt\.idempotencyKey,?\s*\)/,
+    /deletePatient\(\s*patient\.id,\s*attempt\.idempotencyKey,\s*authority,?\s*\)/,
   );
   assert.match(detail, /parsePatientDeleteOutcome\(response, patient\.id\)/);
   assert.doesNotMatch(list, /patient\.patientCode\s*\|\|\s*patient\.id/);
@@ -72,11 +72,18 @@ test("forms cover structured fields, idempotency, offline and unsaved states", a
   }
   assert.match(list, /resolvePatientOperationAttempt/);
   assert.match(detail, /resolvePatientOperationAttempt/);
+  assert.match(list, /beforeunload/);
   assert.match(detail, /beforeunload/);
   assert.match(list, /Đang ngoại tuyến/);
   assert.match(detail, /Đang ngoại tuyến/);
   assert.match(api, /"Idempotency-Key"/);
+  assert.match(list, /resolvePatientMutationAuthority/);
+  assert.match(detail, /resolvePatientMutationAuthority/);
+  assert.match(api, /X-Shcare-Expected-User-Id/);
+  assert.match(api, /X-Shcare-Expected-Workspace-Id/);
+  assert.match(api, /X-Shcare-Expected-Auth-Session-Id/);
   assert.doesNotMatch(detail, /window\.confirm/);
+  assert.doesNotMatch(detail, /<button\b/);
 });
 
 test("missing scan summary is not converted to a fabricated zero", async () => {
@@ -97,6 +104,19 @@ test("patient CSV import is a server-validated atomic workflow, not sequential c
   assert.match(source, /beforeunload/);
   assert.match(source, /PAGE_SIZE\s*=\s*50/);
   assert.match(source, /navigator\.onLine/);
+  assert.match(source, /workspaceId:\s*operationWorkspaceId/);
+  assert.match(
+    source,
+    /queryKey:\s*\[\s*"portal",\s*"workspace",\s*operationWorkspaceId,\s*"patients"/,
+  );
+  assert.match(source, /const isBusy = isValidating \|\| isRefreshing \|\| isCommitting/);
+  assert.match(source, /if \(!batch \|\| inFlightRef\.current\) return/);
+  assert.match(source, /<TableCaption className="sr-only">/);
+  assert.match(source, /focus-within:ring-2/);
+  assert.match(source, /<h1[\s\S]*Import bệnh nhân/);
   assert.doesNotMatch(source, /createPatient\s*\(/);
-  assert.doesNotMatch(source, /glass-panel|premium-button|hero-gradient-text|parseLine/);
+  assert.doesNotMatch(
+    source,
+    /glass-panel|premium-button|hero-gradient-text|parseLine|text-emerald|text-teal|text-amber|bg-emerald|bg-teal|bg-amber/,
+  );
 });

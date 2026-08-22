@@ -7,8 +7,7 @@ const EXACT_ERROR_MESSAGES: Record<string, string> = {
   "Missing bearer token": "Thiếu token đăng nhập. Vui lòng đăng nhập lại.",
   "Invalid or expired session":
     "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.",
-  "Internal server error":
-    "Backend Smart Health đang gặp lỗi nội bộ. Vui lòng kiểm tra log backend.",
+  "Internal server error": "Backend Shcare đang gặp lỗi nội bộ. Vui lòng kiểm tra log backend.",
   "Request body is too large": "Dữ liệu gửi lên quá lớn.",
   "Request body must be valid JSON": "Dữ liệu gửi lên không đúng định dạng JSON.",
   "Auth route not found": "Không tìm thấy API xác thực trên backend.",
@@ -83,7 +82,7 @@ const PARTIAL_ERROR_MESSAGES: Array<[string, string]> = [
   ],
   [
     "failed to fetch",
-    "Không thể kết nối backend Smart Health. Vui lòng kiểm tra backend đang chạy và cấu hình CORS.",
+    "Không thể kết nối backend Shcare. Vui lòng kiểm tra backend đang chạy và cấu hình CORS.",
   ],
   ["networkerror", "Không thể kết nối hệ thống. Vui lòng kiểm tra mạng hoặc backend."],
   ["load failed", "Không thể tải dữ liệu từ hệ thống. Vui lòng thử lại."],
@@ -99,7 +98,7 @@ const PARTIAL_ERROR_MESSAGES: Array<[string, string]> = [
   ["401", "Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn."],
   ["403", "Tài khoản chưa có quyền thực hiện thao tác này."],
   ["404", "Không tìm thấy API hoặc dữ liệu được yêu cầu."],
-  ["500", "Backend Smart Health đang gặp lỗi nội bộ. Vui lòng kiểm tra log backend."],
+  ["500", "Backend Shcare đang gặp lỗi nội bộ. Vui lòng kiểm tra log backend."],
 ];
 
 function getRawMessage(error: unknown) {

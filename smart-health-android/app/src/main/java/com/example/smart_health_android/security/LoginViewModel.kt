@@ -4,18 +4,20 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.smart_health_android.data.AuthSessionAuthority
 import com.example.smart_health_android.data.AuthUser
-import com.example.smart_health_android.data.FirebaseAuthService
+import com.example.smart_health_android.data.FirebaseOwnerBinding
 import com.example.smart_health_android.data.PendingRegistration
-import com.example.smart_health_android.data.PendingRegistrationStore
 import com.example.smart_health_android.data.SmartHealthApiException
-import com.example.smart_health_android.data.SmartHealthPushRegistrar
-import com.example.smart_health_android.data.SmartHealthRepository
+import com.example.smart_health_android.data.canonicalWorkspaceId
+import com.example.smart_health_android.data.normalizePendingRegistrationEmail
+import com.example.smart_health_android.data.ownerBinding
 import com.example.smart_health_android.data.TwoFactorChallenge
 import com.example.smart_health_android.data.toVietnameseMessage
 import com.example.smart_health_android.data.twoFactorChallengeOrNull
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -57,15 +59,36 @@ sealed interface LoginAction {
 }
 
 sealed interface LoginEffect {
-    data class Authenticated(val isDoctorAccount: Boolean) : LoginEffect
-    data object DoctorApprovalPending : LoginEffect
-    data class VerifyEmail(val accountType: String) : LoginEffect
+    data class Authenticated(
+        val user: AuthUser,
+        val firebaseOwner: FirebaseOwnerBinding,
+    ) : LoginEffect
+
+    data class DoctorApprovalPending(
+        val firebaseOwner: FirebaseOwnerBinding,
+    ) : LoginEffect
+
+    data class VerifyEmail(
+        val accountType: String,
+        val firebaseOwner: FirebaseOwnerBinding,
+    ) : LoginEffect
 }
 
 sealed interface LoginResult {
-    data class Authenticated(val isDoctorAccount: Boolean) : LoginResult
-    data object DoctorApprovalPending : LoginResult
-    data class VerifyEmail(val accountType: String) : LoginResult
+    data class Authenticated(
+        val user: AuthUser,
+        val firebaseOwner: FirebaseOwnerBinding,
+    ) : LoginResult
+
+    data class DoctorApprovalPending(
+        val firebaseOwner: FirebaseOwnerBinding,
+    ) : LoginResult
+
+    data class VerifyEmail(
+        val accountType: String,
+        val firebaseOwner: FirebaseOwnerBinding,
+    ) : LoginResult
+
     data class TwoFactorRequired(val challenge: TwoFactorChallenge) : LoginResult
 }
 
@@ -84,59 +107,112 @@ interface LoginRepository {
     fun cancelAuthentication()
 }
 
-private data class PendingLogin(
+internal data class PendingLogin(
     val mode: LoginAccountMode,
     val idToken: String,
     val registration: PendingRegistration?,
+    val firebaseOwner: FirebaseOwnerBinding,
+    val authenticationStartEpoch: Long,
+    val backendAuthority: AuthSessionAuthority? = null,
 )
 
-class ProductionLoginRepository(
-    context: Context,
+class ProductionLoginRepository internal constructor(
+    private val firebaseSession: LoginFirebaseSession,
+    private val backendSession: LoginBackendSession,
+    private val registrationCheckpoint: LoginRegistrationCheckpoint,
+    private val pushRegistration: LoginPushRegistration,
+    private val intentionalTeardown: IntentionalLoginTeardown,
 ) : LoginRepository {
-    private val applicationContext = context.applicationContext
     private var pendingLogin: PendingLogin? = null
+
+    constructor(context: Context) : this(
+        firebaseSession = ProductionLoginFirebaseSession,
+        backendSession = ProductionLoginBackendSession,
+        registrationCheckpoint = ProductionLoginRegistrationCheckpoint(context),
+        pushRegistration = ProductionLoginPushRegistration,
+        intentionalTeardown = ProductionIntentionalLoginTeardown,
+    )
 
     override suspend fun signIn(
         mode: LoginAccountMode,
         email: String,
         password: String,
     ): LoginResult {
-        cancelAuthentication()
-        val registration = withContext(Dispatchers.IO) {
-            PendingRegistrationStore.load(applicationContext)
-        }
-            ?.takeIf { it.matchesLoginEmail(email) }
-        FirebaseAuthService.signIn(email, password)
-        if (!FirebaseAuthService.reloadCurrentUser()) {
+        prepareForNewLogin()
+        val authenticationStartEpoch = backendSession.currentAuthSessionEpoch()
+        val signInReceipt = firebaseSession.signIn(email, password)
+        val firebaseOwner = signInReceipt.ownerBinding()
+        requireLoginFirebaseOwner(firebaseOwner)
+        val registration = registrationCheckpoint.loadForOwner(firebaseOwner)
+        requireLoginFirebaseOwner(firebaseOwner)
+        val pending = PendingLogin(
+            mode = mode,
+            idToken = signInReceipt.idToken,
+            registration = registration,
+            firebaseOwner = firebaseOwner,
+            authenticationStartEpoch = authenticationStartEpoch,
+        )
+        requireLoginFirebaseOwner(pending)
+        val verified = firebaseSession.reloadCurrentUser(pending.firebaseOwner)
+        requireLoginFirebaseOwner(pending)
+        if (!verified) {
             val accountType = registration?.accountType ?: mode.accountType
             if (registration == null) {
-                withContext(Dispatchers.IO) {
-                    PendingRegistrationStore.save(
-                        applicationContext,
-                        PendingRegistration(
-                            accountType = accountType,
-                            name = "",
-                            email = email,
-                            phone = "",
-                        ),
-                    )
-                }
+                registrationCheckpoint.saveForOwner(
+                    registration = PendingRegistration(
+                        accountType = accountType,
+                        name = "",
+                        email = firebaseOwner.email,
+                        phone = "",
+                    ),
+                    owner = pending.firebaseOwner,
+                )
+                requireLoginFirebaseOwner(pending)
             }
-            SmartHealthRepository.api.setAuthToken(null)
-            return LoginResult.VerifyEmail(accountType)
+            return LoginResult.VerifyEmail(accountType, pending.firebaseOwner)
         }
 
-        val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
-        val pending = PendingLogin(mode, idToken, registration)
-        val user = try {
-            SmartHealthRepository.api.authenticateFirebase(idToken).user
+        val idToken = pending.idToken.takeIf(String::isNotBlank)
+            ?: error("Firebase không trả về token thuộc phiên vừa đăng nhập.")
+        requireLoginFirebaseOwner(pending)
+        val authResult = try {
+            backendSession.authenticateFirebase(
+                idToken = idToken,
+                expectedAuthSessionEpoch = pending.authenticationStartEpoch,
+            )
         } catch (error: SmartHealthApiException) {
-            val challenge = error.twoFactorChallengeOrNull() ?: throw error
-            pendingLogin = pending
+            val ownedPending = pending.copy(
+                backendAuthority =
+                    backendSession.currentAuthSessionAuthorityFor(idToken),
+            )
+            val challenge = error.twoFactorChallengeOrNull()
+            if (challenge == null) {
+                cleanupFailedAuthentication(ownedPending)
+                throw error
+            }
+            pendingLogin = ownedPending
             return LoginResult.TwoFactorRequired(challenge)
+        } catch (error: CancellationException) {
+            val ownedPending = pending.copy(
+                backendAuthority =
+                    backendSession.currentAuthSessionAuthorityFor(idToken),
+            )
+            withContext(NonCancellable) {
+                cleanupFailedAuthentication(ownedPending)
+            }
+            throw error
+        } catch (error: Exception) {
+            val ownedPending = pending.copy(
+                backendAuthority =
+                    backendSession.currentAuthSessionAuthorityFor(idToken),
+            )
+            cleanupFailedAuthentication(ownedPending)
+            throw error
         }
 
-        return finishOrCancel(pending, user)
+        val authorizedPending = pending.copy(backendAuthority = authResult.authority)
+        requireLoginFirebaseOwner(authorizedPending)
+        return finishOrCancel(authorizedPending, authResult.user)
     }
 
     override suspend fun completeTwoFactor(
@@ -145,17 +221,45 @@ class ProductionLoginRepository(
     ): LoginResult {
         val pending = pendingLogin
             ?: error("Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.")
-        val confirmation = SmartHealthRepository.api.completeTwoFactorChallenge(challengeId, code)
-        val user = confirmation.user
-            ?: SmartHealthRepository.api.authenticateFirebase(pending.idToken).user
+        requireLoginFirebaseOwner(pending)
+        val confirmation = backendSession.completeTwoFactorChallenge(
+            challengeId = challengeId,
+            code = code,
+            expectedAuthSessionEpoch =
+                pending.backendAuthority?.epoch ?: pending.authenticationStartEpoch,
+        )
+        val confirmationBearer = confirmation.token.ifBlank { pending.idToken }
+        var completedPending = pending.copy(
+            backendAuthority =
+                backendSession.currentAuthSessionAuthorityFor(confirmationBearer)
+                    ?: pending.backendAuthority,
+        )
+        requireLoginFirebaseOwner(completedPending)
+        val user = confirmation.user ?: backendSession
+            .authenticateFirebase(
+                idToken = pending.idToken,
+                expectedAuthSessionEpoch =
+                    completedPending.backendAuthority?.epoch
+                        ?: completedPending.authenticationStartEpoch,
+            )
+            .also { result ->
+                completedPending = completedPending.copy(backendAuthority = result.authority)
+            }
+            .user
+        requireLoginFirebaseOwner(completedPending)
         pendingLogin = null
-        return finishOrCancel(pending, user)
+        return finishOrCancel(completedPending, user)
     }
 
     override fun cancelAuthentication() {
+        val pending = pendingLogin ?: return
         pendingLogin = null
-        SmartHealthRepository.api.setAuthToken(null)
-        FirebaseAuthService.signOut()
+        cleanupFailedAuthentication(pending)
+    }
+
+    private fun prepareForNewLogin() {
+        pendingLogin = null
+        intentionalTeardown.prepareForNewLogin()
     }
 
     private suspend fun finishOrCancel(
@@ -164,8 +268,13 @@ class ProductionLoginRepository(
     ): LoginResult {
         return try {
             finishAuthentication(pending, initialUser)
+        } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                cleanupFailedAuthentication(pending)
+            }
+            throw error
         } catch (error: Exception) {
-            cancelAuthentication()
+            cleanupFailedAuthentication(pending)
             throw error
         }
     }
@@ -174,6 +283,8 @@ class ProductionLoginRepository(
         pending: PendingLogin,
         initialUser: AuthUser,
     ): LoginResult {
+        requireLoginFirebaseOwner(pending)
+        requireLoginBackendOwner(initialUser, pending)
         var user = initialUser
         val doctorRegistration = pending.registration?.takeIf { it.hasDoctorRequestPayload() }
         if (
@@ -184,25 +295,34 @@ class ProductionLoginRepository(
             doctorRegistration != null
         ) {
             user = try {
-                SmartHealthRepository.api.requestRole(
-                    requestedRole = "doctor",
-                    name = doctorRegistration.name,
-                    phone = doctorRegistration.phone,
-                    license = doctorRegistration.license,
-                    hospital = doctorRegistration.hospital,
-                    department = doctorRegistration.department,
-                    organizationId = doctorRegistration.organizationId,
-                    reason = doctorRegistration.reason,
-                    accountType = doctorRegistration.accountType,
-                    workspaceType = doctorRegistration.workspaceTypeForRoleRequest(),
+                val updated = backendSession.requestRole(
+                    registration = doctorRegistration,
+                    expectedAuthSessionEpoch =
+                        checkNotNull(pending.backendAuthority).epoch,
                 )
+                requireLoginFirebaseOwner(pending)
+                requireLoginBackendOwner(updated, pending)
+                updated
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                val refreshedUser = runCatching {
-                    SmartHealthRepository.api.authenticateFirebase(pending.idToken).user
-                }.getOrNull()
+                val refreshedUser = try {
+                    backendSession.authenticateFirebase(
+                        idToken = pending.idToken,
+                        expectedAuthSessionEpoch =
+                            pending.backendAuthority?.epoch
+                                ?: pending.authenticationStartEpoch,
+                    ).user
+                } catch (refreshCancellation: CancellationException) {
+                    throw refreshCancellation
+                } catch (_: Throwable) {
+                    null
+                }
+                requireLoginFirebaseOwner(pending)
+                refreshedUser?.let { requireLoginBackendOwner(it, pending) }
                 if (refreshedUser?.isPendingDoctorApproval() == true) {
-                    PendingRegistrationStore.clear(applicationContext)
-                    return LoginResult.DoctorApprovalPending
+                    clearPendingRegistration(pending)
+                    return LoginResult.DoctorApprovalPending(pending.firebaseOwner)
                 }
                 throw IllegalStateException(
                     error.toVietnameseMessage(
@@ -212,13 +332,13 @@ class ProductionLoginRepository(
                 )
             }
             if (user.isPendingDoctorApproval() || user.isClinicalAccount()) {
-                PendingRegistrationStore.clear(applicationContext)
+                clearPendingRegistration(pending)
             }
         }
 
         val isDoctorAccount = user.isClinicalAccount()
         if (pending.mode == LoginAccountMode.Doctor && user.isPendingDoctorApproval()) {
-            return LoginResult.DoctorApprovalPending
+            return LoginResult.DoctorApprovalPending(pending.firebaseOwner)
         }
         if (pending.mode == LoginAccountMode.Doctor && user.isRejectedDoctorRequest()) {
             error("Yêu cầu đăng ký bác sĩ đã bị từ chối. Vui lòng liên hệ quản trị viên hoặc gửi hồ sơ mới.")
@@ -233,8 +353,65 @@ class ProductionLoginRepository(
             error("Hãy chọn chế độ bác sĩ cho tài khoản này.")
         }
 
-        runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
-        return LoginResult.Authenticated(isDoctorAccount)
+        try {
+            pushRegistration.register(
+                userId = user.id,
+                workspaceId = user.canonicalWorkspaceId(),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            // Push registration retries independently and cannot manufacture login success.
+        }
+        requireLoginFirebaseOwner(pending)
+        return LoginResult.Authenticated(user, pending.firebaseOwner)
+    }
+
+    private fun requireLoginFirebaseOwner(pending: PendingLogin) {
+        requireLoginFirebaseOwner(
+            expectedOwner = pending.firebaseOwner,
+            backendAuthority = pending.backendAuthority,
+        )
+    }
+
+    private fun requireLoginFirebaseOwner(
+        expectedOwner: FirebaseOwnerBinding,
+        backendAuthority: AuthSessionAuthority? = null,
+    ) {
+        if (!firebaseSession.isCurrentOwner(expectedOwner)) {
+            backendAuthority?.let(backendSession::clearAuthTokenIfCurrent)
+            error("Phiên Firebase đã thay đổi trong lúc đăng nhập.")
+        }
+    }
+
+    private fun requireLoginBackendOwner(
+        user: AuthUser,
+        pending: PendingLogin,
+    ) {
+        if (
+            user.firebaseUid != pending.firebaseOwner.firebaseUserId ||
+            normalizePendingRegistrationEmail(user.email) !=
+            pending.firebaseOwner.email ||
+            !user.verifiedEmail ||
+            !user.accountStatus.equals("active", ignoreCase = true) ||
+            !user.deletedAt.isNullOrBlank()
+        ) {
+            pending.backendAuthority?.let(backendSession::clearAuthTokenIfCurrent)
+            error("Máy chủ trả về phiên không thuộc tài khoản Firebase hiện tại.")
+        }
+    }
+
+    private fun cleanupFailedAuthentication(pending: PendingLogin) {
+        firebaseSession.signOutIfCurrentOwner(pending.firebaseOwner)
+        pending.backendAuthority?.let(backendSession::clearAuthTokenIfCurrent)
+    }
+
+    private suspend fun clearPendingRegistration(pending: PendingLogin) {
+        val cleared = registrationCheckpoint.clearForOwner(pending.firebaseOwner)
+        requireLoginFirebaseOwner(pending)
+        check(cleared) {
+            "Không thể dọn checkpoint đăng ký của tài khoản hiện tại."
+        }
     }
 }
 
@@ -272,9 +449,11 @@ class LoginViewModel(
         }
         _uiState.update { it.copy(isLoading = true, errorMessage = "") }
         viewModelScope.launch {
-            runCatching { repository.signIn(state.mode, email, state.password) }
-                .onSuccess(::handleResult)
-                .onFailure { error ->
+            try {
+                handleResult(repository.signIn(state.mode, email, state.password))
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -297,10 +476,11 @@ class LoginViewModel(
         ) return
         _uiState.update { it.copy(isLoading = true, errorMessage = "") }
         viewModelScope.launch {
-            runCatching {
-                repository.completeTwoFactor(state.challengeId, state.otp)
-            }.onSuccess(::handleResult)
-                .onFailure { error ->
+            try {
+                handleResult(repository.completeTwoFactor(state.challengeId, state.otp))
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -335,10 +515,14 @@ class LoginViewModel(
                 }
             }
             is LoginResult.Authenticated -> finishWithEffect(
-                LoginEffect.Authenticated(result.isDoctorAccount),
+                LoginEffect.Authenticated(result.user, result.firebaseOwner),
             )
-            LoginResult.DoctorApprovalPending -> finishWithEffect(LoginEffect.DoctorApprovalPending)
-            is LoginResult.VerifyEmail -> finishWithEffect(LoginEffect.VerifyEmail(result.accountType))
+            is LoginResult.DoctorApprovalPending -> finishWithEffect(
+                LoginEffect.DoctorApprovalPending(result.firebaseOwner),
+            )
+            is LoginResult.VerifyEmail -> finishWithEffect(
+                LoginEffect.VerifyEmail(result.accountType, result.firebaseOwner),
+            )
         }
     }
 
@@ -411,9 +595,6 @@ private fun PendingRegistration.isDoctorRegistration(): Boolean =
 
 private fun PendingRegistration.hasDoctorRequestPayload(): Boolean =
     isDoctorRegistration() && name.isNotBlank()
-
-private fun PendingRegistration.workspaceTypeForRoleRequest(): String =
-    if (accountType == "solo_doctor") "solo_practice" else "clinic"
 
 private fun AuthUser.isClinicalAccount(): Boolean =
     role in setOf("doctor", "admin", "workspace_admin", "workspace_owner", "nurse", "technician")

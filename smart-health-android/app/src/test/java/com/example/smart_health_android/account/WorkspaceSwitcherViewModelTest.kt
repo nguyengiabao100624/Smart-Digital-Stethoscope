@@ -6,6 +6,8 @@ import com.example.smart_health_android.data.WorkspaceMembership
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -84,6 +86,7 @@ class WorkspaceSwitcherViewModelTest {
         )
         val viewModel = WorkspaceSwitcherViewModel(repository) { "workspace_switch_key" }
         advanceUntilIdle()
+        val effect = async { viewModel.effects.first() }
 
         viewModel.onAction(WorkspaceSwitcherAction.Switch("workspace_2"))
         assertEquals("workspace_1", viewModel.uiState.value.currentWorkspaceId)
@@ -92,6 +95,13 @@ class WorkspaceSwitcherViewModelTest {
         assertEquals(1, repository.switchCalls)
         assertEquals(listOf("workspace_switch_key"), repository.switchKeys)
         assertEquals("workspace_2", viewModel.uiState.value.currentWorkspaceId)
+        assertEquals(
+            WorkspaceSwitcherEffect.WorkspaceConfirmed(
+                user = repository.switchedUser,
+                workspaceId = "workspace_2",
+            ),
+            effect.await(),
+        )
         assertEquals("Cơ sở 2", viewModel.uiState.value.confirmationMessage)
     }
 
@@ -143,18 +153,79 @@ class WorkspaceSwitcherViewModelTest {
         assertEquals(listOf("stable_workspace_key", "stable_workspace_key"), repository.switchKeys)
         assertEquals("workspace_2", viewModel.uiState.value.currentWorkspaceId)
     }
+
+    @Test
+    fun `response loss after backend commit reconciles me before confirming workspace`() =
+        runTest(dispatcher) {
+            val repository = FakeWorkspaceRepository(
+                currentUser = user("workspace_1"),
+                switchedUser = user("workspace_2"),
+                reconciliationUser = user("workspace_2"),
+                failuresRemaining = 1,
+            )
+            val viewModel = WorkspaceSwitcherViewModel(repository) { "stable_workspace_key" }
+            advanceUntilIdle()
+            val effect = async { viewModel.effects.first() }
+
+            viewModel.onAction(WorkspaceSwitcherAction.Switch("workspace_2"))
+            advanceUntilIdle()
+
+            assertEquals(1, repository.switchCalls)
+            assertEquals(2, repository.getCurrentUserCalls)
+            assertEquals("workspace_2", viewModel.uiState.value.currentWorkspaceId)
+            assertEquals(
+                WorkspaceSwitcherEffect.WorkspaceConfirmed(
+                    user = repository.reconciliationUser,
+                    workspaceId = "workspace_2",
+                ),
+                effect.await(),
+            )
+        }
+
+    @Test
+    fun `ambiguous switch without me reconciliation requires fail closed reauthorization`() =
+        runTest(dispatcher) {
+            val repository = FakeWorkspaceRepository(
+                currentUser = user("workspace_1"),
+                failuresRemaining = 1,
+                reconciliationFailure = IOException("response lost"),
+            )
+            val viewModel = WorkspaceSwitcherViewModel(repository)
+            advanceUntilIdle()
+            val effect = async { viewModel.effects.first() }
+
+            viewModel.onAction(WorkspaceSwitcherAction.Switch("workspace_2"))
+            advanceUntilIdle()
+
+            assertEquals("workspace_1", viewModel.uiState.value.currentWorkspaceId)
+            assertEquals(
+                WorkspaceSwitcherEffect.ReauthorizationRequired("workspace_2"),
+                effect.await(),
+            )
+        }
 }
 
 private class FakeWorkspaceRepository(
     private val currentUser: AuthUser,
-    private val switchedUser: AuthUser = currentUser,
+    val switchedUser: AuthUser = currentUser,
+    val reconciliationUser: AuthUser = currentUser,
     private var failuresRemaining: Int = 0,
     var loadFailure: Throwable? = null,
+    private val reconciliationFailure: Throwable? = null,
 ) : WorkspaceSwitcherRepository {
     var switchCalls = 0
+    var getCurrentUserCalls = 0
     val switchKeys = mutableListOf<String>()
 
-    override suspend fun getCurrentUser(): AuthUser = loadFailure?.let { throw it } ?: currentUser
+    override suspend fun getCurrentUser(): AuthUser {
+        loadFailure?.let { throw it }
+        getCurrentUserCalls += 1
+        if (getCurrentUserCalls > 1) {
+            reconciliationFailure?.let { throw it }
+            return reconciliationUser
+        }
+        return currentUser
+    }
 
     override suspend fun switchWorkspace(workspaceId: String, idempotencyKey: String): AuthUser {
         switchCalls += 1

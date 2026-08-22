@@ -1,0 +1,11 @@
+{
+  "ticket": {
+    "id": "support_ticket_20260729_a1b2c3d4",
+    "workspaceId": "workspace_shcare_clinic",
+    "requesterUserId": "user_workspace_admin",
+    "type": "device_connection",
+    "status": "open",
+    "createdAt": "2026-07-29T04:00:00.000Z"
+  },
+  "replayed": false
+}

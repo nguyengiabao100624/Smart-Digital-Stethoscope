@@ -19,9 +19,11 @@ import { toast } from "sonner";
 import { CreatePackageDialog } from "./dialogs/CreatePackageDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { AnimatedCard, PageHeader, StatusBadge } from "./design-system";
+import { PaginationFooter } from "./PaginationFooter";
+import { ADMIN_TABLE_PAGE_SIZE } from "./pagination-utils";
 import {
   smartHealthApi,
-  type SmartHealthClinic,
+  type SmartHealthListPagination,
   type SmartHealthServicePackage,
 } from "@/lib/smart-health-api";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
@@ -96,14 +98,27 @@ export function Packages() {
   const { hasAnyCapability } = useAdminAccess();
   const canManagePackages = hasAnyCapability(PACKAGE_MANAGE_CAPABILITIES);
   const [packages, setPackages] = useState<SmartHealthServicePackage[]>([]);
-  const [workspaces, setWorkspaces] = useState<SmartHealthClinic[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<SmartHealthServicePackage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [packageError, setPackageError] = useState("");
-  const [workspaceError, setWorkspaceError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<SmartHealthListPagination>({
+    totalCount: 0,
+    page: 1,
+    limit: ADMIN_TABLE_PAGE_SIZE,
+    pageCount: 0,
+  });
+  const [packageSummary, setPackageSummary] = useState({
+    total: 0,
+    active: 0,
+    archived: 0,
+    assignedWorkspaceCount: 0,
+    assignedByPackage: {} as Record<string, number>,
+  });
+  const deferredSearchTerm = React.useDeferredValue(searchTerm.trim());
   const [archiveAction, setArchiveAction] = useState<SmartHealthServicePackage | null>(null);
   const [archiveError, setArchiveError] = useState("");
   const [isArchiving, setIsArchiving] = useState(false);
@@ -111,63 +126,58 @@ export function Packages() {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [packageResult, workspaceResult] = await Promise.allSettled([
-      smartHealthApi.listPackages(),
-      smartHealthApi.listClinics(),
-    ]);
-    if (packageResult.status === "fulfilled") {
-      setPackages(packageResult.value.packages);
+    try {
+      const result = await smartHealthApi.listPackages({
+        q: deferredSearchTerm || undefined,
+        page,
+        limit: ADMIN_TABLE_PAGE_SIZE,
+        sort: "updatedAt:desc",
+        status: statusFilter === "all" ? undefined : statusFilter,
+      });
+      setPackages(result.packages);
+      const nextPagination = result.pagination || {
+        totalCount: result.packages.length,
+        page,
+        limit: ADMIN_TABLE_PAGE_SIZE,
+        pageCount: result.packages.length > 0 ? 1 : 0,
+      };
+      setPagination(nextPagination);
+      if (page > Math.max(1, nextPagination.pageCount)) {
+        setPage(Math.max(1, nextPagination.pageCount));
+      }
+      setPackageSummary({
+        total: result.summary?.total ?? result.packages.length,
+        active:
+          result.summary?.active ??
+          result.packages.filter((item) => item.status !== "archived").length,
+        archived:
+          result.summary?.archived ??
+          result.packages.filter((item) => item.status === "archived").length,
+        assignedWorkspaceCount: result.summary?.assignedWorkspaceCount ?? 0,
+        assignedByPackage: result.summary?.assignedByPackage ?? {},
+      });
       setPackageError("");
-    } else {
+    } catch (error) {
       setPackages([]);
-      setPackageError(
-        toVietnameseErrorMessage(packageResult.reason, "Không thể tải gói dịch vụ từ backend."),
-      );
+      setPackageError(toVietnameseErrorMessage(error, "Không thể tải gói dịch vụ từ backend."));
+    } finally {
+      setIsLoading(false);
     }
-    if (workspaceResult.status === "fulfilled") {
-      setWorkspaces(workspaceResult.value.clinics);
-      setWorkspaceError("");
-    } else {
-      setWorkspaces([]);
-      setWorkspaceError(
-        toVietnameseErrorMessage(
-          workspaceResult.reason,
-          "Không thể tải số workspace đang sử dụng gói.",
-        ),
-      );
-    }
-    setIsLoading(false);
-  }, []);
+  }, [deferredSearchTerm, page, statusFilter]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  const assignedCountByPackage = useMemo(() => {
-    return workspaces.reduce<Record<string, number>>((acc, workspace) => {
-      if (workspace.packageId) acc[workspace.packageId] = (acc[workspace.packageId] || 0) + 1;
-      return acc;
-    }, {});
-  }, [workspaces]);
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearchTerm, statusFilter]);
 
-  const filteredPackages = useMemo(() => {
-    const query = searchTerm.trim().toLocaleLowerCase("vi-VN");
-    return packages.filter((pkg) => {
-      const status = pkg.status === "archived" ? "archived" : "active";
-      if (statusFilter !== "all" && status !== statusFilter) return false;
-      if (!query) return true;
-      return [pkg.name, pkg.id, pkg.type, pkg.segment]
-        .filter(Boolean)
-        .some((value) => String(value).toLocaleLowerCase("vi-VN").includes(query));
-    });
-  }, [packages, searchTerm, statusFilter]);
-
-  const activePackageCount = packages.filter((pkg) => pkg.status !== "archived").length;
-  const archivedPackageCount = packages.length - activePackageCount;
-  const assignedWorkspaceCount = Object.values(assignedCountByPackage).reduce(
-    (sum, count) => sum + count,
-    0,
+  const assignedCountByPackage = useMemo(
+    () => packageSummary.assignedByPackage,
+    [packageSummary.assignedByPackage],
   );
+  const assignedWorkspaceCount = packageSummary.assignedWorkspaceCount;
 
   const handleEdit = (pkg: SmartHealthServicePackage) => {
     if (!canManagePackages) {
@@ -214,11 +224,7 @@ export function Packages() {
     }
   };
 
-  const archiveAssignedCount = archiveAction
-    ? workspaceError
-      ? null
-      : assignedCountByPackage[archiveAction.id] || 0
-    : 0;
+  const archiveAssignedCount = archiveAction ? assignedCountByPackage[archiveAction.id] || 0 : 0;
 
   return (
     <div className="flex h-full flex-col space-y-6">
@@ -262,32 +268,22 @@ export function Packages() {
         </div>
       ) : null}
 
-      {workspaceError && !packageError ? (
-        <div
-          role="status"
-          className="rounded-lg border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-warning-foreground"
-        >
-          <p className="font-semibold">Dữ liệu gán workspace đang tạm thiếu</p>
-          <p className="mt-1">{workspaceError} Danh mục gói vẫn có thể xem và chỉnh sửa.</p>
-        </div>
-      ) : null}
-
       {!packageError ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <PackageMetric
             icon={<PackageIcon className="h-5 w-5" />}
             label="Gói đang hoạt động"
-            value={activePackageCount}
+            value={packageSummary.active}
           />
           <PackageMetric
             icon={<Archive className="h-5 w-5" />}
             label="Gói đã lưu trữ"
-            value={archivedPackageCount}
+            value={packageSummary.archived}
           />
           <PackageMetric
             icon={<CreditCard className="h-5 w-5" />}
             label="Workspace có gán gói"
-            value={workspaceError ? "Chưa xác định" : assignedWorkspaceCount}
+            value={assignedWorkspaceCount}
           />
         </div>
       ) : null}
@@ -327,7 +323,7 @@ export function Packages() {
           <Loader2 className="h-4 w-4 animate-spin" />
           Đang tải gói dịch vụ...
         </AnimatedCard>
-      ) : packageError ? null : packages.length === 0 ? (
+      ) : packageError ? null : packageSummary.total === 0 ? (
         <AnimatedCard className="flex flex-col items-center justify-center px-6 py-14 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <PackageIcon className="h-6 w-6" />
@@ -337,7 +333,7 @@ export function Packages() {
             Tạo gói đầu tiên để hiển thị quota và billing summary cho workspace.
           </p>
         </AnimatedCard>
-      ) : filteredPackages.length === 0 ? (
+      ) : packages.length === 0 ? (
         <AnimatedCard className="px-6 py-12 text-center">
           <h2 className="font-semibold text-foreground">Không có gói phù hợp</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -346,7 +342,7 @@ export function Packages() {
         </AnimatedCard>
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {filteredPackages.map((pkg, index) => {
+          {packages.map((pkg, index) => {
             const Icon = packageIcon(pkg);
             const assignedCount = assignedCountByPackage[pkg.id] || 0;
             const isArchived = pkg.status === "archived";
@@ -368,7 +364,7 @@ export function Packages() {
                   <div className="text-right">
                     <div className="text-xs text-muted-foreground">Đang dùng</div>
                     <div className="text-lg font-semibold text-foreground">
-                      {workspaceError ? "—" : `${assignedCount} WS`}
+                      {`${assignedCount} WS`}
                     </div>
                   </div>
                 </div>
@@ -430,6 +426,16 @@ export function Packages() {
         </div>
       )}
 
+      {!packageError && !isLoading && packageSummary.total > 0 ? (
+        <PaginationFooter
+          page={page}
+          pageSize={pagination.limit}
+          totalItems={pagination.totalCount}
+          itemLabel="gĂ³i dá»‹ch vá»¥"
+          onPageChange={setPage}
+        />
+      ) : null}
+
       <CreatePackageDialog
         open={canManagePackages && createDialogOpen}
         onOpenChange={(open) => {
@@ -450,12 +456,7 @@ export function Packages() {
           archiveAction ? (
             <span>
               Gói <strong>{archiveAction.name}</strong> sẽ không còn khả dụng cho lần gán mới.
-              {archiveAssignedCount === null ? (
-                <>
-                  <br />
-                  Chưa tải được số workspace đang dùng; backend sẽ kiểm tra lại trước khi lưu.
-                </>
-              ) : archiveAssignedCount > 0 ? (
+              {archiveAssignedCount > 0 ? (
                 <>
                   <br />
                   Đang có {archiveAssignedCount} workspace dùng gói này. Hãy chuyển các workspace

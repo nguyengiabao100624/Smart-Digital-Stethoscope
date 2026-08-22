@@ -2,6 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Doctors } from "@/components/admin/Doctors";
 
 export const Route = createFileRoute("/_admin/doctors")({
-  head: () => ({ meta: [{ title: "Bác sĩ — Smart Health" }] }),
+  head: () => ({ meta: [{ title: "Bác sĩ — Shcare" }] }),
   component: Doctors,
 });

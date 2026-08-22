@@ -1,0 +1,14 @@
+{
+  "protocolVersion": 1,
+  "frameEncoding": "raw_pcm_s16le",
+  "payloadEncoding": "pcm_s16le",
+  "byteOrder": "little-endian",
+  "headerBytes": 0,
+  "sampleRate": 16000,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "compatibilityOnly": true,
+  "receiverFeatureFlagRequired": true,
+  "newFirmwareEmissionAllowed": false,
+  "identitySource": "authenticated_socket_and_server_session"
+}

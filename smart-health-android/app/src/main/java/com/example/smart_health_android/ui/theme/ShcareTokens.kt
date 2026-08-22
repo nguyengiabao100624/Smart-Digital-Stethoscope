@@ -12,6 +12,9 @@ import androidx.compose.ui.unit.dp
 
 @Immutable
 data class ShcareSemanticColors(
+    val brandHeaderStart: Color,
+    val brandHeaderEnd: Color,
+    val onBrandHeader: Color,
     val success: Color,
     val onSuccess: Color,
     val successContainer: Color,
@@ -58,6 +61,9 @@ val ShcareShapes = Shapes(
 )
 
 internal val ShcareLightSemanticColors = ShcareSemanticColors(
+    brandHeaderStart = Color(0xFF0A5E91),
+    brandHeaderEnd = Color(0xFF087F75),
+    onBrandHeader = Color.White,
     success = Color(0xFF256B45),
     onSuccess = Color.White,
     successContainer = Color(0xFFA9F3C2),
@@ -77,6 +83,9 @@ internal val ShcareLightSemanticColors = ShcareSemanticColors(
 )
 
 internal val ShcareDarkSemanticColors = ShcareSemanticColors(
+    brandHeaderStart = Color(0xFF164C6C),
+    brandHeaderEnd = Color(0xFF0B5C52),
+    onBrandHeader = Color(0xFFF0F7FB),
     success = Color(0xFF8DD5A5),
     onSuccess = Color(0xFF00391D),
     successContainer = Color(0xFF07522D),

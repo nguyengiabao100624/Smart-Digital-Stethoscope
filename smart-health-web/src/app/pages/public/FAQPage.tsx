@@ -87,14 +87,6 @@ const faqGroups = [
   },
 ];
 
-const groupColors: Record<string, string> = {
-  "Bác sĩ": "#00FFD1",
-  "Phòng khám": "#4AA4E0",
-  "Bệnh nhân": "#7257E8",
-  "Thiết bị": "#F59E0B",
-  "Tài khoản": "#8aa5ba",
-};
-
 export default function FAQPage() {
   useSEO({
     title: "Tài nguyên & Câu hỏi thường gặp | Shcare",
@@ -117,7 +109,9 @@ export default function FAQPage() {
   const [openItems, setOpenItems] = useState<string[]>([]);
 
   const toggle = (key: string) =>
-    setOpenItems((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+    setOpenItems((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
 
   const filtered = faqGroups
     .map((g) => ({
@@ -134,36 +128,24 @@ export default function FAQPage() {
   return (
     <div>
       <section className="relative overflow-hidden pt-14 pb-8 md:pt-16 md:pb-10">
-        <div className="absolute inset-0 medical-grid opacity-40" />
-        <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full blur-3xl pointer-events-none"
-          style={{
-            background: "radial-gradient(circle, rgba(114,87,232,0.2) 0%, transparent 70%)",
-          }}
-        />
         <div className="max-w-3xl mx-auto px-6 text-center relative">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 bg-[#7257E8]/15 border border-[#7257E8]/30"
-            style={{ boxShadow: "0 0 25px rgba(114,87,232,0.3)" }}
-          >
-            <HelpCircle
-              size={32}
-              className="text-[#00FFD1]"
-              style={{ filter: "drop-shadow(0 0 8px rgba(0,255,209,0.7))" }}
-            />
+          <div className="shc-public-icon shc-public-icon-lg mx-auto mb-6">
+            <HelpCircle size={30} />
           </div>
-          <h1 className="brand-gradient-text mb-4">Tài nguyên & Câu hỏi thường gặp</h1>
-          <p className="text-[#8aa5ba] text-lg mb-8">
+          <h1 className="shc-public-heading mb-4">
+            Tài nguyên & Câu hỏi thường gặp
+          </h1>
+          <p className="text-muted-foreground text-lg mb-8">
             Tìm câu trả lời nhanh cho các thắc mắc về Shcare.
           </p>
-          <div className="flex items-center gap-2 max-w-md mx-auto px-4 h-12 rounded-xl border border-white/10 bg-white/8">
-            <Search size={16} className="text-[#8aa5ba]" />
+          <div className="shc-public-search max-w-md mx-auto">
+            <Search size={16} className="text-muted-foreground" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Tìm kiếm câu hỏi..."
-              className="flex-1 bg-transparent outline-none text-sm text-[#eefbff] placeholder:text-white/55"
+              className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
             />
           </div>
         </div>
@@ -172,15 +154,14 @@ export default function FAQPage() {
       <section className="pt-4 pb-10 md:pt-6 md:pb-12">
         <div className="max-w-3xl mx-auto px-6">
           {filtered.length === 0 ? (
-            <div className="text-center py-14 text-[#8aa5ba]">Không tìm thấy câu hỏi phù hợp.</div>
+            <div className="text-center py-14 text-muted-foreground">
+              Không tìm thấy câu hỏi phù hợp.
+            </div>
           ) : (
             <div className="space-y-8">
               {filtered.map((group) => (
                 <div key={group.group}>
-                  <h2
-                    className="text-lg font-semibold mb-4"
-                    style={{ color: groupColors[group.group] || "#00FFD1" }}
-                  >
+                  <h2 className="text-lg font-semibold mb-4 text-primary">
                     {group.group}
                   </h2>
                   <div className="space-y-2">
@@ -190,25 +171,27 @@ export default function FAQPage() {
                       return (
                         <div
                           key={key}
-                          className={`glass-panel rounded-2xl overflow-hidden transition-all ${open ? "border-[#00FFD1]/20" : ""}`}
+                          className={`shc-public-card overflow-hidden ${open ? "is-open" : ""}`}
                         >
                           <button
                             className="flex items-center justify-between w-full px-5 py-4 text-left"
                             onClick={() => toggle(key)}
                           >
                             <span
-                              className={`text-sm font-medium ${open ? "text-[#00FFD1]" : "text-[#eefbff]"}`}
+                              className={`text-sm font-medium ${open ? "text-primary" : "text-foreground"}`}
                             >
                               {item.q}
                             </span>
                             <ChevronDown
                               size={16}
-                              className="text-[#8aa5ba] flex-shrink-0 transition-transform"
-                              style={{ transform: open ? "rotate(180deg)" : "none" }}
+                              className="text-muted-foreground flex-shrink-0 transition-transform"
+                              style={{
+                                transform: open ? "rotate(180deg)" : "none",
+                              }}
                             />
                           </button>
                           {open && (
-                            <div className="px-5 pb-4 text-sm text-[#8aa5ba] leading-relaxed border-t border-white/10 pt-3">
+                            <div className="px-5 pb-4 text-sm text-muted-foreground leading-relaxed border-t border-border pt-3">
                               {item.a}
                             </div>
                           )}
@@ -225,20 +208,20 @@ export default function FAQPage() {
 
       <section className="pt-6 pb-12 md:pt-8 md:pb-14">
         <div className="max-w-2xl mx-auto px-6 text-center">
-          <h2 className="brand-gradient-text mb-3">Không tìm thấy câu trả lời?</h2>
-          <p className="text-[#8aa5ba] mb-8">
-            Liên hệ đội ngũ hỗ trợ Shcare để được giải đáp theo phạm vi triển khai.
+          <h2 className="shc-public-heading mb-3">
+            Không tìm thấy câu trả lời?
+          </h2>
+          <p className="text-muted-foreground mb-8">
+            Liên hệ đội ngũ hỗ trợ Shcare để được giải đáp theo phạm vi triển
+            khai.
           </p>
           <div className="flex justify-center gap-3">
-            <Link to="/lien-he" className="premium-button">
+            <Link to="/lien-he" className="shc-button shc-button-primary">
               Liên hệ hỗ trợ
             </Link>
-            <a
-              href="tel:18001234"
-              className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/8 text-sm font-medium text-[#eefbff] hover:border-[#00FFD1]/30 transition-all"
-            >
-              Gọi 1800 1234
-            </a>
+            <Link to="/bao-mat" className="shc-button shc-button-secondary">
+              Xem chính sách bảo mật
+            </Link>
           </div>
         </div>
       </section>

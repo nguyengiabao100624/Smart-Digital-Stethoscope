@@ -1,7 +1,7 @@
 {
   "type": "audio.session",
   "protocolVersion": 2,
-  "frameEncoding": "raw_pcm_s16le",
+  "frameEncoding": "shcare_audio_v2",
   "workspaceId": "workspace-fixture-001",
   "patientId": "patient-fixture-001",
   "deviceId": "smarthealth-fixture-001",

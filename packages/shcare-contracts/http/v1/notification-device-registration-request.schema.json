@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-device-registration-request.schema.json",
+  "title": "Shcare notification device registration request",
+  "description": "POST /api/v1/notifications/register-device body. The backend derives userId, workspaceId and authSessionId from the authenticated primary session; clients must not submit those authority fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fcmToken",
+    "platform",
+    "enabled",
+    "notificationProtocolVersion",
+    "appVersion"
+  ],
+  "properties": {
+    "fcmToken": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 4096
+    },
+    "platform": {
+      "const": "android"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "notificationProtocolVersion": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "appVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    }
+  }
+}

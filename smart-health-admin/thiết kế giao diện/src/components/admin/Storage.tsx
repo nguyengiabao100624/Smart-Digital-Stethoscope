@@ -51,11 +51,12 @@ import { ExportReportDialog } from "./dialogs/ExportReportDialog";
 import { FileDetailDialog, type StorageFile } from "./dialogs/FileDetailDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PaginationFooter } from "./PaginationFooter";
-import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
+import { ADMIN_TABLE_PAGE_SIZE } from "./pagination-utils";
 import {
   smartHealthApi,
   type SmartHealthChartSlice,
   type SmartHealthClinicUsage,
+  type SmartHealthListPagination,
   type SmartHealthStorageActivity,
   type SmartHealthStorageBucket,
 } from "@/lib/smart-health-api";
@@ -100,40 +101,40 @@ const TYPE_ICON: Record<string, IconComponent> = {
 
 const BUCKET_STYLES: Record<
   string,
-  { label: string; icon: IconComponent; gradient: string; soft: string; accent: string }
+  { label: string; icon: IconComponent; background: string; soft: string; accent: string }
 > = {
   "medical-images": {
     label: "Hình ảnh y khoa",
     icon: ImageIcon,
-    gradient: "linear-gradient(135deg, #0B5C9A 0%, #0EA5E9 100%)",
+    background: "#2457D6",
     soft: "rgba(14, 165, 233, 0.10)",
     accent: "#0B5C9A",
   },
   "heart-audio": {
     label: "Âm thanh tim/phổi",
     icon: AudioLines,
-    gradient: "linear-gradient(135deg, #00A896 0%, #10B981 100%)",
+    background: "#087F75",
     soft: "rgba(0, 168, 150, 0.10)",
     accent: "#00A896",
   },
   "patient-reports": {
     label: "Báo cáo bệnh nhân",
     icon: FileText,
-    gradient: "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)",
+    background: "#A15C00",
     soft: "rgba(245, 158, 11, 0.12)",
     accent: "#B45309",
   },
   "device-firmware": {
     label: "Firmware thiết bị",
     icon: Shield,
-    gradient: "linear-gradient(135deg, #334155 0%, #0B5C9A 100%)",
+    background: "#334155",
     soft: "rgba(15, 23, 42, 0.08)",
     accent: "#334155",
   },
   avatars: {
     label: "Ảnh đại diện",
     icon: ImageIcon,
-    gradient: "linear-gradient(135deg, #EF4444 0%, #F97316 100%)",
+    background: "#B4233A",
     soft: "rgba(239, 68, 68, 0.10)",
     accent: "#EF4444",
   },
@@ -144,7 +145,7 @@ function getBucketStyle(bucketId: string) {
     BUCKET_STYLES[bucketId] || {
       label: "Kho dữ liệu",
       icon: Database,
-      gradient: "linear-gradient(135deg, #0B5C9A 0%, #00A896 100%)",
+      background: "#2457D6",
       soft: "rgba(11, 92, 154, 0.10)",
       accent: "#0B5C9A",
     }
@@ -169,44 +170,44 @@ const ICON_STYLES: Record<string, { label: string; icon: IconComponent }> = {
   database: { label: "Dữ liệu", icon: Database },
 };
 
-const COLOR_STYLES: Record<string, { gradient: string; soft: string; accent: string }> = {
+const COLOR_STYLES: Record<string, { background: string; soft: string; accent: string }> = {
   blue: {
-    gradient: "linear-gradient(135deg, #0B5C9A 0%, #0EA5E9 100%)",
+    background: "#2457D6",
     soft: "rgba(14, 165, 233, 0.10)",
     accent: "#0B5C9A",
   },
   emerald: {
-    gradient: "linear-gradient(135deg, #00A896 0%, #10B981 100%)",
+    background: "#087F75",
     soft: "rgba(0, 168, 150, 0.10)",
     accent: "#00A896",
   },
   amber: {
-    gradient: "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)",
+    background: "#A15C00",
     soft: "rgba(245, 158, 11, 0.12)",
     accent: "#B45309",
   },
   rose: {
-    gradient: "linear-gradient(135deg, #EF4444 0%, #F97316 100%)",
+    background: "#B4233A",
     soft: "rgba(239, 68, 68, 0.10)",
     accent: "#EF4444",
   },
   violet: {
-    gradient: "linear-gradient(135deg, #7C3AED 0%, #0B5C9A 100%)",
+    background: "#6D4AFF",
     soft: "rgba(124, 58, 237, 0.10)",
     accent: "#7C3AED",
   },
   slate: {
-    gradient: "linear-gradient(135deg, #334155 0%, #0B5C9A 100%)",
+    background: "#334155",
     soft: "rgba(15, 23, 42, 0.08)",
     accent: "#334155",
   },
   teal: {
-    gradient: "linear-gradient(135deg, #0F766E 0%, #00A896 100%)",
+    background: "#087F75",
     soft: "rgba(15, 118, 110, 0.10)",
     accent: "#0F766E",
   },
   cyan: {
-    gradient: "linear-gradient(135deg, #0EA5E9 0%, #00A896 100%)",
+    background: "#2563A6",
     soft: "rgba(14, 165, 233, 0.10)",
     accent: "#0EA5E9",
   },
@@ -219,7 +220,7 @@ function getBucketStyleForBucket(bucket: SmartHealthStorageBucket) {
   return {
     label: bucket.name || iconStyle?.label || base.label,
     icon: iconStyle?.icon || base.icon,
-    gradient: colorStyle?.gradient || base.gradient,
+    background: colorStyle?.background || base.background,
     soft: colorStyle?.soft || base.soft,
     accent: colorStyle?.accent || base.accent,
   };
@@ -251,6 +252,13 @@ export function Storage() {
   const [bucketFilter, setBucketFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<SmartHealthListPagination>({
+    totalCount: 0,
+    page: 1,
+    limit: ADMIN_TABLE_PAGE_SIZE,
+    pageCount: 0,
+  });
+  const deferredSearch = React.useDeferredValue(search.trim());
   const [isLoading, setIsLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [filesError, setFilesError] = useState<string | null>(null);
@@ -276,47 +284,68 @@ export function Storage() {
     storageOperationKeysRef.current.delete(`${operation}:${target}`);
   };
 
-  const loadStorage = React.useCallback(async (showLoading = true) => {
-    const requestId = ++loadRequestIdRef.current;
-    if (showLoading) {
-      setIsLoading(true);
-    }
-    const [statsResult, filesResult] = await Promise.allSettled([
-      smartHealthApi.getStorageStats(),
-      smartHealthApi.listStorageFiles(),
-    ]);
-    if (requestId !== loadRequestIdRef.current) return;
-
-    if (statsResult.status === "fulfilled") {
-      try {
-        setStatsData(parseStorageStatsResponse(statsResult.value));
-        setStatsError(null);
-      } catch (error) {
-        setStatsError(toVietnameseErrorMessage(error, "Dữ liệu thống kê lưu trữ không hợp lệ."));
+  const loadStorage = React.useCallback(
+    async (showLoading = true) => {
+      const requestId = ++loadRequestIdRef.current;
+      if (showLoading) {
+        setIsLoading(true);
       }
-    } else {
-      setStatsError(
-        toVietnameseErrorMessage(statsResult.reason, "Không thể tải thống kê lưu trữ."),
-      );
-    }
+      const [statsResult, filesResult] = await Promise.allSettled([
+        smartHealthApi.getStorageStats(),
+        smartHealthApi.listStorageFiles({
+          q: deferredSearch || undefined,
+          bucket: bucketFilter === "all" ? undefined : bucketFilter,
+          type: typeFilter === "all" ? undefined : typeFilter,
+          page,
+          limit: ADMIN_TABLE_PAGE_SIZE,
+          sort: "createdAt:desc",
+        }),
+      ]);
+      if (requestId !== loadRequestIdRef.current) return;
 
-    if (filesResult.status === "fulfilled") {
-      try {
-        setFilesData(parseStorageFilesResponse(filesResult.value).files);
-        setFilesError(null);
-      } catch (error) {
-        setFilesError(toVietnameseErrorMessage(error, "Danh sách tệp lưu trữ không hợp lệ."));
+      if (statsResult.status === "fulfilled") {
+        try {
+          setStatsData(parseStorageStatsResponse(statsResult.value));
+          setStatsError(null);
+        } catch (error) {
+          setStatsError(toVietnameseErrorMessage(error, "Dữ liệu thống kê lưu trữ không hợp lệ."));
+        }
+      } else {
+        setStatsError(
+          toVietnameseErrorMessage(statsResult.reason, "Không thể tải thống kê lưu trữ."),
+        );
       }
-    } else {
-      setFilesError(
-        toVietnameseErrorMessage(filesResult.reason, "Không thể tải danh sách tệp lưu trữ."),
-      );
-    }
 
-    if (showLoading) {
-      setIsLoading(false);
-    }
-  }, []);
+      if (filesResult.status === "fulfilled") {
+        try {
+          const nextFiles = parseStorageFilesResponse(filesResult.value).files;
+          const nextPagination = filesResult.value.pagination || {
+            totalCount: nextFiles.length,
+            page,
+            limit: ADMIN_TABLE_PAGE_SIZE,
+            pageCount: nextFiles.length > 0 ? 1 : 0,
+          };
+          setFilesData(nextFiles);
+          setPagination(nextPagination);
+          if (page > Math.max(1, nextPagination.pageCount)) {
+            setPage(Math.max(1, nextPagination.pageCount));
+          }
+          setFilesError(null);
+        } catch (error) {
+          setFilesError(toVietnameseErrorMessage(error, "Danh sách tệp lưu trữ không hợp lệ."));
+        }
+      } else {
+        setFilesError(
+          toVietnameseErrorMessage(filesResult.reason, "Không thể tải danh sách tệp lưu trữ."),
+        );
+      }
+
+      if (showLoading) {
+        setIsLoading(false);
+      }
+    },
+    [bucketFilter, deferredSearch, page, typeFilter],
+  );
 
   React.useEffect(() => {
     void loadStorage();
@@ -467,23 +496,9 @@ export function Storage() {
   const confirmedFiles = useMemo(() => filesData ?? [], [filesData]);
   const canUploadStorage = canManageStorage && Boolean(statsData) && buckets.length > 0;
 
-  const filteredFiles = useMemo(() => {
-    return confirmedFiles.filter((f) => {
-      if (bucketFilter !== "all" && f.bucket !== bucketFilter) return false;
-      if (typeFilter !== "all" && f.type !== typeFilter) return false;
-      if (search && !f.name.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  }, [bucketFilter, confirmedFiles, search, typeFilter]);
-
   React.useEffect(() => {
     setPage(1);
-  }, [bucketFilter, search, typeFilter, confirmedFiles.length]);
-
-  const pagedFiles = useMemo(
-    () => paginateItems(filteredFiles, page, ADMIN_TABLE_PAGE_SIZE),
-    [filteredFiles, page],
-  );
+  }, [bucketFilter, deferredSearch, typeFilter]);
 
   if (isLoading) {
     return (
@@ -817,7 +832,7 @@ export function Storage() {
                       <div className="flex items-start justify-between mb-3">
                         <div
                           className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm ring-1 ring-white/50"
-                          style={{ background: bucketStyle.gradient }}
+                          style={{ background: bucketStyle.background }}
                         >
                           <BucketIcon className="w-5 h-5" />
                         </div>
@@ -978,7 +993,7 @@ export function Storage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {pagedFiles.map((f) => {
+                  {confirmedFiles.map((f) => {
                     const Icon = TYPE_ICON[f.type] || FileIcon;
                     return (
                       <tr key={f.id} className="hover:bg-muted/30 transition-colors">
@@ -1052,7 +1067,7 @@ export function Storage() {
                       </tr>
                     );
                   })}
-                  {filteredFiles.length === 0 && (
+                  {confirmedFiles.length === 0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -1068,8 +1083,8 @@ export function Storage() {
 
             <PaginationFooter
               page={page}
-              totalItems={filteredFiles.length}
-              sourceTotalItems={confirmedFiles.length}
+              pageSize={pagination.limit}
+              totalItems={pagination.totalCount}
               itemLabel="tệp"
               onPageChange={setPage}
             />

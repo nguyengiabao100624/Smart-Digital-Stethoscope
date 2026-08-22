@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -43,6 +43,10 @@ import { Label } from "../../../components/ui/label";
 import { RadioGroup, RadioGroupItem } from "../../../components/ui/radio-group";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { useAuth } from "../../context/AuthContext";
+import {
+  parsePatientListResponse,
+  parsePatientScanHistoryResponse,
+} from "../../../lib/patient-operations";
 import {
   smartHealthApi,
   type ApiError,
@@ -157,28 +161,28 @@ function statusLabel(status?: PatientShareStatus) {
 
 function statusClass(status?: PatientShareStatus) {
   if (status === "active") {
-    return "border-[var(--clinical-success)]/30 bg-[var(--clinical-success)]/10 text-[var(--clinical-success)]";
+    return "border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]";
   }
   if (status === "revoked") {
-    return "border-destructive/30 bg-destructive/10 text-destructive";
+    return "border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]";
   }
   if (status === "expired") {
-    return "border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/10 text-[var(--clinical-warning)]";
+    return "border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]";
   }
-  return "border-border bg-muted text-muted-foreground";
+  return "border-[var(--status-neutral-border)] bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]";
 }
 
 function authorityClass(authorityType?: PatientShareAuthorityType) {
   if (authorityType === "patient_consent") {
-    return "border-primary/30 bg-primary/10 text-primary";
+    return "border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]";
   }
   if (authorityType === "clinician_access_grant") {
-    return "border-[var(--clinical-success)]/30 bg-[var(--clinical-success)]/10 text-[var(--clinical-success)]";
+    return "border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]";
   }
   if (authorityType === "administrative_assignment") {
-    return "border-[var(--clinical-info)]/30 bg-[var(--clinical-info)]/10 text-[var(--clinical-info)]";
+    return "border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]";
   }
-  return "border-border bg-muted text-muted-foreground";
+  return "border-[var(--status-neutral-border)] bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]";
 }
 
 function scopeLabel(scope?: string, scanCount = 0) {
@@ -224,6 +228,12 @@ export default function InvitationsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const workspaceId = user?.currentWorkspace.id || "";
+  const activeWorkspaceRef = useRef(workspaceId);
+  const previousWorkspaceRef = useRef(workspaceId);
+  const operationEpochRef = useRef(0);
+  const workspaceChanging =
+    Boolean(previousWorkspaceRef.current) &&
+    previousWorkspaceRef.current !== workspaceId;
   const capabilities = user?.capabilities || [];
   const canManageSharing = capabilities.some((capability) =>
     SHARING_MANAGE_CAPABILITIES.includes(capability),
@@ -257,33 +267,71 @@ export default function InvitationsPage() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    activeWorkspaceRef.current = workspaceId;
+    if (previousWorkspaceRef.current === workspaceId) return;
+    operationEpochRef.current += 1;
+    previousWorkspaceRef.current = workspaceId;
+    setPatientId("");
+    setTargetType("doctor");
+    setTargetId("");
+    setScope("patient_profile");
+    setExpiresAt("");
+    setSelectedScanIds([]);
+    setCreateIntentKey(createShareIntentKey("create"));
+    setCreateError("");
+    setRevokeIntent(null);
+    setRevokeError("");
+  }, [workspaceId]);
+
   const patientsQuery = useQuery({
     queryKey: ["portal", "patients", workspaceId, "share-access"],
-    queryFn: () => smartHealthApi.listPatients(),
-    enabled: Boolean(workspaceId && canManageSharing),
+    queryFn: async () => ({
+      patients: parsePatientListResponse(
+        await smartHealthApi.listPatients(),
+        workspaceId,
+      ),
+    }),
+    enabled: Boolean(
+      workspaceId && canManageSharing && !workspaceChanging,
+    ),
     retry: false,
   });
   const targetsQuery = useQuery({
     queryKey: ["portal", "share-targets", workspaceId],
-    queryFn: () => smartHealthApi.shareTargets(),
-    enabled: Boolean(workspaceId && canManageSharing),
+    queryFn: () => smartHealthApi.shareTargets(workspaceId),
+    enabled: Boolean(
+      workspaceId && canManageSharing && !workspaceChanging,
+    ),
     retry: false,
   });
   const scansQuery = useQuery({
     queryKey: ["portal", "share-scans", workspaceId, patientId],
-    queryFn: () => smartHealthApi.listScans({ patientId, limit: 100 }),
+    queryFn: async () =>
+      parsePatientScanHistoryResponse(
+        await smartHealthApi.listScans({ patientId, limit: 100 }),
+        workspaceId,
+        patientId,
+      ),
     enabled: Boolean(
       workspaceId &&
       patientId &&
       scope === "selected_scans" &&
-      canManageSharing,
+      canManageSharing &&
+      !workspaceChanging,
     ),
     retry: false,
   });
   const sharesQuery = useQuery({
     queryKey: ["portal", "patient-shares", workspaceId, patientId],
-    queryFn: () => smartHealthApi.listPatientShares(patientId),
-    enabled: Boolean(workspaceId && patientId && canManageSharing),
+    queryFn: () =>
+      smartHealthApi.listPatientShares(patientId, workspaceId),
+    enabled: Boolean(
+      workspaceId &&
+        patientId &&
+        canManageSharing &&
+        !workspaceChanging,
+    ),
     retry: false,
   });
 
@@ -309,17 +357,27 @@ export default function InvitationsPage() {
       selectedPatientId,
       payload,
       idempotencyKey,
+      operationWorkspaceId,
     }: {
       selectedPatientId: string;
       payload: CreatePatientSharePayload;
       idempotencyKey: string;
+      operationWorkspaceId: string;
+      operationEpoch: number;
     }) =>
       smartHealthApi.createPatientShare(
         selectedPatientId,
         payload,
         idempotencyKey,
+        operationWorkspaceId,
       ),
     onSuccess: async (payload, variables) => {
+      if (
+        activeWorkspaceRef.current !== variables.operationWorkspaceId ||
+        operationEpochRef.current !== variables.operationEpoch
+      ) {
+        return;
+      }
       if (
         !hasCanonicalPatientShareContract(
           payload.share,
@@ -338,7 +396,7 @@ export default function InvitationsPage() {
         queryKey: [
           "portal",
           "patient-shares",
-          workspaceId,
+          variables.operationWorkspaceId,
           variables.selectedPatientId,
         ],
       });
@@ -349,10 +407,17 @@ export default function InvitationsPage() {
       setCreateError("");
       setCreateIntentKey(createShareIntentKey("create"));
     },
-    onError: (error) =>
+    onError: (error, variables) => {
+      if (
+        activeWorkspaceRef.current !== variables.operationWorkspaceId ||
+        operationEpochRef.current !== variables.operationEpoch
+      ) {
+        return;
+      }
       setCreateError(
         errorMessage(error, "Không thể cấp quyền truy cập dữ liệu."),
-      ),
+      );
+    },
   });
 
   const revokeMutation = useMutation({
@@ -360,12 +425,27 @@ export default function InvitationsPage() {
       share,
       patientId: selectedPatientId,
       key,
+      operationWorkspaceId,
     }: {
       share: PatientShare;
       patientId: string;
       key: string;
-    }) => smartHealthApi.revokePatientShare(selectedPatientId, share.id, key),
+      operationWorkspaceId: string;
+      operationEpoch: number;
+    }) =>
+      smartHealthApi.revokePatientShare(
+        selectedPatientId,
+        share.id,
+        key,
+        operationWorkspaceId,
+      ),
     onSuccess: async (payload, variables) => {
+      if (
+        activeWorkspaceRef.current !== variables.operationWorkspaceId ||
+        operationEpochRef.current !== variables.operationEpoch
+      ) {
+        return;
+      }
       if (
         !payload.revoked ||
         !hasCanonicalPatientShareContract(
@@ -386,7 +466,7 @@ export default function InvitationsPage() {
         queryKey: [
           "portal",
           "patient-shares",
-          workspaceId,
+          variables.operationWorkspaceId,
           variables.patientId,
         ],
       });
@@ -394,10 +474,17 @@ export default function InvitationsPage() {
       setRevokeIntent(null);
       setRevokeError("");
     },
-    onError: (error) =>
+    onError: (error, variables) => {
+      if (
+        activeWorkspaceRef.current !== variables.operationWorkspaceId ||
+        operationEpochRef.current !== variables.operationEpoch
+      ) {
+        return;
+      }
       setRevokeError(
         errorMessage(error, "Không thể thu hồi quyền truy cập dữ liệu."),
-      ),
+      );
+    },
   });
 
   const submitShare = () => {
@@ -445,6 +532,8 @@ export default function InvitationsPage() {
       selectedPatientId: patientId,
       payload,
       idempotencyKey: createIntentKey,
+      operationWorkspaceId: workspaceId,
+      operationEpoch: operationEpochRef.current,
     });
   };
 
@@ -452,12 +541,15 @@ export default function InvitationsPage() {
     return <PermissionState />;
   }
 
-  if (patientsQuery.isLoading) {
+  if (patientsQuery.isLoading || workspaceChanging) {
     return <ConsentLoading />;
   }
 
-  if (patientsQuery.error) {
-    if (isPermissionError(patientsQuery.error)) return <PermissionState />;
+  if (isPermissionError(patientsQuery.error)) {
+    return <PermissionState />;
+  }
+
+  if (patientsQuery.error && !patientsQuery.data) {
     return (
       <ConsentError
         error={patientsQuery.error}
@@ -467,15 +559,25 @@ export default function InvitationsPage() {
   }
 
   const patients = patientsQuery.data?.patients || [];
+  const patientsRefreshError = patientsQuery.data
+    ? patientsQuery.error
+    : null;
+  const targetsRefreshError = targetsQuery.data ? targetsQuery.error : null;
+  const sharesRefreshError = sharesQuery.data ? sharesQuery.error : null;
+  const canMutateLedger = online && !sharesRefreshError;
 
   return (
-    <div className="space-y-6">
-      <header className="clinical-page-header flex flex-wrap items-start justify-between gap-4">
+    <div
+      className="space-y-6"
+      data-testid="portal-consent"
+      data-workspace-id={workspaceId}
+    >
+      <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             Kiểm soát dữ liệu sức khỏe
           </p>
-          <h1 className="clinical-page-title mt-2 flex items-center gap-2 text-foreground">
+          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
             <ShieldCheck aria-hidden="true" size={24} />
             Quyền truy cập dữ liệu
           </h1>
@@ -501,6 +603,13 @@ export default function InvitationsPage() {
 
       {!online ? (
         <OfflineState hasCachedData={Boolean(patients.length)} />
+      ) : null}
+
+      {patientsRefreshError ? (
+        <ConsentRefreshWarning
+          title="Không thể làm mới danh sách hồ sơ"
+          retry={() => void patientsQuery.refetch()}
+        />
       ) : null}
 
       <section
@@ -658,21 +767,27 @@ export default function InvitationsPage() {
             </fieldset>
           </div>
 
+          {targetsRefreshError ? (
+            <ConsentRefreshWarning
+              compact
+              title="Không thể làm mới danh sách người nhận"
+              retry={() => void targetsQuery.refetch()}
+            />
+          ) : null}
+
           {targetsQuery.isLoading ? (
             <div className="space-y-2" aria-label="Đang tải người nhận">
               <Skeleton className="h-4 w-32" />
               <Skeleton className="h-11 w-full" />
             </div>
-          ) : targetsQuery.error ? (
-            isPermissionError(targetsQuery.error) ? (
-              <InlinePermissionState />
-            ) : (
-              <ConsentError
-                compact
-                error={targetsQuery.error}
-                retry={() => void targetsQuery.refetch()}
-              />
-            )
+          ) : isPermissionError(targetsQuery.error) ? (
+            <InlinePermissionState />
+          ) : targetsQuery.error && !targetsQuery.data ? (
+            <ConsentError
+              compact
+              error={targetsQuery.error}
+              retry={() => void targetsQuery.refetch()}
+            />
           ) : (
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="space-y-2">
@@ -919,6 +1034,14 @@ export default function InvitationsPage() {
           ) : null}
         </div>
 
+        {sharesRefreshError ? (
+          <ConsentRefreshWarning
+            compact
+            title="Không thể làm mới sổ quyền truy cập"
+            retry={() => void sharesQuery.refetch()}
+          />
+        ) : null}
+
         {!patientId ? (
           <ConsentEmpty
             icon={FileCheck2}
@@ -927,15 +1050,13 @@ export default function InvitationsPage() {
           />
         ) : sharesQuery.isLoading ? (
           <ShareLedgerLoading />
-        ) : sharesQuery.error ? (
-          isPermissionError(sharesQuery.error) ? (
-            <PermissionState compact />
-          ) : (
-            <ConsentError
-              error={sharesQuery.error}
-              retry={() => void sharesQuery.refetch()}
-            />
-          )
+        ) : isPermissionError(sharesQuery.error) ? (
+          <PermissionState compact />
+        ) : sharesQuery.error && !sharesQuery.data ? (
+          <ConsentError
+            error={sharesQuery.error}
+            retry={() => void sharesQuery.refetch()}
+          />
         ) : invalidShareContract ? (
           <ConsentError
             error={new Error(
@@ -956,7 +1077,7 @@ export default function InvitationsPage() {
                 <MobileShareCard
                   key={share.id}
                   share={share}
-                  online={online}
+                  online={canMutateLedger}
                   revokePending={revokeMutation.isPending}
                   onRevoke={() => {
                     setRevokeError("");
@@ -1076,7 +1197,10 @@ export default function InvitationsPage() {
                                 variant="outline"
                                 size="sm"
                                 className="min-h-11 text-destructive hover:text-destructive"
-                                disabled={!online || revokeMutation.isPending}
+                                disabled={
+                                  !canMutateLedger ||
+                                  revokeMutation.isPending
+                                }
                                 onClick={() => {
                                   setRevokeError("");
                                   setRevokeIntent({
@@ -1149,11 +1273,21 @@ export default function InvitationsPage() {
             </AlertDialogCancel>
             <AlertDialogAction
               data-share-revoke-confirm
-              disabled={!online || revokeMutation.isPending || !revokeIntent}
+              disabled={
+                !canMutateLedger ||
+                revokeMutation.isPending ||
+                !revokeIntent
+              }
               className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={(event) => {
                 event.preventDefault();
-                if (revokeIntent) revokeMutation.mutate(revokeIntent);
+                if (revokeIntent) {
+                  revokeMutation.mutate({
+                    ...revokeIntent,
+                    operationWorkspaceId: workspaceId,
+                    operationEpoch: operationEpochRef.current,
+                  });
+                }
               }}
             >
               {revokeMutation.isPending ? (
@@ -1386,6 +1520,48 @@ function InlinePermissionState() {
         </p>
       </div>
     </div>
+  );
+}
+
+function ConsentRefreshWarning({
+  title,
+  retry,
+  compact = false,
+}: {
+  title: string;
+  retry: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <Card
+      className="border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/5 shadow-sm"
+      role="status"
+    >
+      <CardContent
+        className={`flex flex-wrap items-center gap-3 ${compact ? "p-4" : "p-5"}`}
+      >
+        <AlertCircle
+          aria-hidden="true"
+          className="shrink-0 text-[var(--clinical-warning)]"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">{title}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Dữ liệu đang hiển thị là snapshot đã tải và có thể đã cũ. Các
+            mutation liên quan được khóa cho đến khi backend xác nhận lại.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11"
+          onClick={retry}
+        >
+          <RefreshCw aria-hidden="true" />
+          Thử lại
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

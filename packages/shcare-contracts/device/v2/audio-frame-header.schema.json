@@ -6,9 +6,9 @@
   "additionalProperties": false,
   "required": [
     "protocolVersion",
-    "workspaceId",
-    "patientId",
-    "deviceId",
+    "frameEncoding",
+    "headerLength",
+    "payloadLength",
     "scanId",
     "sessionId",
     "sequence",
@@ -20,13 +20,22 @@
   ],
   "properties": {
     "protocolVersion": { "const": 2 },
-    "workspaceId": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "patientId": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "deviceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "frameEncoding": { "const": "shcare_audio_v2" },
+    "headerLength": { "type": "integer", "minimum": 32, "maximum": 310 },
+    "payloadLength": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 2048,
+      "multipleOf": 2
+    },
     "scanId": { "type": "string", "minLength": 1, "maxLength": 120 },
     "sessionId": { "type": "string", "minLength": 1, "maxLength": 160 },
     "sequence": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
-    "timestampMs": { "type": "integer", "minimum": 0 },
+    "timestampMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "sampleRate": { "const": 16000 },
     "sampleCount": { "type": "integer", "minimum": 1, "maximum": 1024 },
     "encoding": { "const": "pcm_s16le" },

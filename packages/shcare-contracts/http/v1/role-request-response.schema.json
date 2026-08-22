@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/role-request-response.schema.json",
+  "title": "Shcare role request lifecycle receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "user",
+    "roleRequest",
+    "operationId",
+    "replayed"
+  ],
+  "properties": {
+    "user": {
+      "$ref": "#/$defs/user"
+    },
+    "roleRequest": {
+      "$ref": "#/$defs/roleRequest"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "user": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "role",
+        "requestedRole",
+        "roleRequestStatus",
+        "roleRequestedAt",
+        "accountStatus",
+        "organizationId",
+        "accountType",
+        "workspaceType"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 180
+        },
+        "verifiedEmail": {
+          "type": "boolean"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "patient",
+            "doctor",
+            "admin"
+          ]
+        },
+        "requestedRole": {
+          "type": "string",
+          "enum": [
+            "doctor",
+            "patient"
+          ]
+        },
+        "roleRequestStatus": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved"
+          ]
+        },
+        "roleRequestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "accountStatus": {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "hospital": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "registrationReason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "accountType": {
+          "type": "string",
+          "enum": [
+            "doctor",
+            "solo_doctor",
+            "personal"
+          ]
+        },
+        "workspaceType": {
+          "type": "string",
+          "enum": [
+            "clinic",
+            "hospital",
+            "solo_practice",
+            "personal"
+          ]
+        }
+      }
+    },
+    "roleRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestedRole",
+        "status",
+        "requestedAt"
+      ],
+      "properties": {
+        "requestedRole": {
+          "type": "string",
+          "enum": [
+            "doctor",
+            "patient"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved"
+          ]
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

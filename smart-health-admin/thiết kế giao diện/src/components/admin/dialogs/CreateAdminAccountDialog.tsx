@@ -173,8 +173,8 @@ export function CreateAdminAccountDialog({
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[92vh] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 motion-reduce:animate-none" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[92vh] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95 motion-reduce:animate-none">
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -189,14 +189,14 @@ export function CreateAdminAccountDialog({
                 </Dialog.Description>
               </div>
             </div>
-            <Dialog.Close className="text-muted-foreground transition-colors hover:text-foreground">
+            <Dialog.Close className="text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none">
               <X className="h-5 w-5" />
             </Dialog.Close>
           </div>
 
           {createdUser ? (
             <div className="space-y-5 p-6">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-success-foreground">
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0" />
                   <div>
@@ -216,11 +216,11 @@ export function CreateAdminAccountDialog({
                 />
                 <InfoCard
                   label="Workspace"
-                  value={createdUser.workspace?.name || createdUser.hospital || "Smart Health"}
+                  value={createdUser.workspace?.name || createdUser.hospital || "Shcare"}
                 />
                 <InfoCard label="Firebase UID" value={createdUser.firebaseUid || ""} />
               </div>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning-foreground">
                 Mật khẩu tạm thời không được lưu trong backend. Hãy gửi mật khẩu cho người dùng qua
                 kênh riêng và yêu cầu đổi mật khẩu sau khi đăng nhập.
               </div>
@@ -231,14 +231,14 @@ export function CreateAdminAccountDialog({
                     setFormData(emptyForm);
                     setCreatedUser(null);
                   }}
-                  className="rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                  className="rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted motion-reduce:transition-none"
                 >
                   Tạo thêm tài khoản
                 </button>
                 <Dialog.Close asChild>
                   <button
                     type="button"
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 motion-reduce:transition-none"
                   >
                     Hoàn tất
                   </button>
@@ -255,7 +255,7 @@ export function CreateAdminAccountDialog({
                       key={option.value}
                       type="button"
                       onClick={() => handleRoleChange(option.value)}
-                      className={`rounded-lg border p-4 text-left transition-colors ${
+                      className={`rounded-lg border p-4 text-left transition-colors motion-reduce:transition-none ${
                         formData.role === option.value
                           ? "border-primary bg-primary/5 text-foreground"
                           : "border-border bg-background hover:border-primary/40"
@@ -378,7 +378,7 @@ export function CreateAdminAccountDialog({
                 <Dialog.Close asChild>
                   <button
                     type="button"
-                    className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                    className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted motion-reduce:transition-none"
                   >
                     Hủy
                   </button>
@@ -386,9 +386,11 @@ export function CreateAdminAccountDialog({
                 <button
                   type="submit"
                   disabled={isSubmitting || isLoadingClinics}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 motion-reduce:transition-none disabled:opacity-60"
                 >
-                  {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {isSubmitting && (
+                    <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                  )}
                   Tạo tài khoản admin
                 </button>
               </div>

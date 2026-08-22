@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/avatar-cleanup-status.schema.json",
+  "title": "Owner and workspace-scoped avatar cleanup status",
+  "type": "object",
+  "additionalProperties": false,
+  "x-shcare-http": {
+    "method": "GET",
+    "path": "/v1/me/avatar/cleanup"
+  },
+  "x-shcare-owner-binding": {
+    "source": "authenticated-backend-user",
+    "workspaceSource": "canonical-membership",
+    "crossAccountOutcome": 403,
+    "crossWorkspaceOutcome": 403
+  },
+  "required": [
+    "userId",
+    "workspaceId",
+    "status",
+    "operationId",
+    "action",
+    "previousFileId",
+    "attempts",
+    "lastErrorCode",
+    "updatedAt",
+    "manualSupportRequired"
+  ],
+  "properties": {
+    "userId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "workspaceId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "status": {
+      "type": "string",
+      "enum": ["not_required", "pending", "completed", "dead_letter"]
+    },
+    "operationId": { "type": "string", "maxLength": 160 },
+    "action": {
+      "type": "string",
+      "enum": ["none", "upload", "delete", "orphan_upload"]
+    },
+    "previousFileId": { "type": "string", "maxLength": 160 },
+    "attempts": { "type": "integer", "minimum": 0, "maximum": 50 },
+    "lastErrorCode": { "type": "string", "maxLength": 120 },
+    "updatedAt": {
+      "oneOf": [
+        { "type": "string", "const": "" },
+        { "type": "string", "format": "date-time" }
+      ]
+    },
+    "manualSupportRequired": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "dead_letter" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "manualSupportRequired": { "const": true },
+          "operationId": { "minLength": 1 },
+          "lastErrorCode": { "minLength": 1 },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "else": {
+        "properties": { "manualSupportRequired": { "const": false } }
+      }
+    }
+  ]
+}

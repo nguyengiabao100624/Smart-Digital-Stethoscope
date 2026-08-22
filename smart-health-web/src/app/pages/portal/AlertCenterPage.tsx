@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -33,6 +33,10 @@ import {
 import { Skeleton } from "../../../components/ui/skeleton";
 import { Textarea } from "../../../components/ui/textarea";
 import {
+  parseClinicalAlertListResponse,
+  parseClinicalAlertMutationResponse,
+} from "../../../lib/clinical-workflow-operations";
+import {
   resolveClinicalWorkflowIntent,
   type ClinicalWorkflowIntent,
 } from "../../../lib/clinical-workflow-intent";
@@ -51,6 +55,17 @@ import { useAuth } from "../../context/AuthContext";
 
 type AlertFilter = "all" | ClinicalAlertStatus;
 type AlertAction = ClinicalAlertAction;
+type ClinicalWorkflowAuthority = {
+  workspaceId: string;
+  epoch: number;
+};
+
+class ClinicalWorkflowSupersededError extends Error {
+  constructor() {
+    super("Thao tác thuộc workspace trước đã được hủy.");
+    this.name = "ClinicalWorkflowSupersededError";
+  }
+}
 
 const STATUS_LABELS: Record<ClinicalAlertStatus, string> = {
   open: "Đang mở",
@@ -74,24 +89,52 @@ function canManageAlerts(capabilities: string[]) {
 
 function alertStatusClass(status: ClinicalAlertStatus) {
   if (status === "resolved") {
-    return "border-[var(--clinical-success)] text-[var(--clinical-success)]";
+    return "border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]";
   }
-  if (status === "acknowledged") return "border-primary text-primary";
-  return "border-[var(--clinical-warning)] text-[var(--clinical-warning)]";
+  if (status === "acknowledged") {
+    return "border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]";
+  }
+  return "border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]";
 }
 
 function severityClass(severity?: string) {
-  if (severity === "critical") return "border-destructive text-destructive";
-  if (severity === "warning") {
-    return "border-[var(--clinical-warning)] text-[var(--clinical-warning)]";
+  if (severity === "critical") {
+    return "border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]";
   }
-  return "border-border text-muted-foreground";
+  if (severity === "warning") {
+    return "border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]";
+  }
+  return "border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]";
+}
+
+function severityLabel(severity?: string) {
+  if (severity === "critical") return "Khẩn cấp";
+  if (severity === "warning") return "Cần chú ý";
+  if (severity === "info") return "Thông tin";
+  return severity || "Không xác định";
 }
 
 export default function AlertCenterPage() {
   const { user } = useAuth();
   const workspaceId = user?.currentWorkspace.id || "";
   const [status, setStatus] = useState<AlertFilter>("open");
+  const activeWorkspaceRef = useRef(workspaceId);
+  const operationEpochRef = useRef(0);
+
+  useLayoutEffect(() => {
+    if (activeWorkspaceRef.current === workspaceId) return;
+    activeWorkspaceRef.current = workspaceId;
+    operationEpochRef.current += 1;
+    setStatus("open");
+  }, [workspaceId]);
+
+  const captureAuthority = (): ClinicalWorkflowAuthority => ({
+    workspaceId: activeWorkspaceRef.current,
+    epoch: operationEpochRef.current,
+  });
+  const isAuthorityCurrent = (authority: ClinicalWorkflowAuthority) =>
+    authority.workspaceId === activeWorkspaceRef.current &&
+    authority.epoch === operationEpochRef.current;
   const queryKey = portalWorkspaceQueryKey(
     workspaceId,
     "clinical-alert-ledger",
@@ -99,11 +142,14 @@ export default function AlertCenterPage() {
   );
   const query = useQuery({
     queryKey,
-    queryFn: () =>
-      smartHealthApi.listClinicalAlerts({
-        status: status === "all" ? "" : status,
-        limit: 50,
-      }),
+    queryFn: async () =>
+      parseClinicalAlertListResponse(
+        await smartHealthApi.listClinicalAlerts({
+          status: status === "all" ? "" : status,
+          limit: 50,
+        }),
+        workspaceId,
+      ),
     enabled: Boolean(workspaceId),
     retry: false,
     refetchInterval: 30_000,
@@ -113,7 +159,11 @@ export default function AlertCenterPage() {
   const canManage = canManageAlerts(user?.capabilities || []);
 
   return (
-    <div className="space-y-5">
+    <div
+      className="space-y-5"
+      data-testid="portal-alert-center-page"
+      data-workspace-id={workspaceId}
+    >
       <header className="clinical-page-header flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="clinical-page-title flex items-center gap-2 text-foreground">
@@ -163,11 +213,13 @@ export default function AlertCenterPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           {alerts.map((alert) => (
             <AlertCard
-              key={`${alert.id}:${alert.version}`}
+              key={`${workspaceId}:${alert.id}:${alert.version}`}
               alert={alert}
+              workspaceId={workspaceId}
               canManage={canManage}
               refresh={() => query.refetch()}
-              queryKey={queryKey}
+              captureAuthority={captureAuthority}
+              isAuthorityCurrent={isAuthorityCurrent}
             />
           ))}
         </div>
@@ -178,14 +230,18 @@ export default function AlertCenterPage() {
 
 function AlertCard({
   alert,
+  workspaceId,
   canManage,
   refresh,
-  queryKey,
+  captureAuthority,
+  isAuthorityCurrent,
 }: {
   alert: ClinicalAlert;
+  workspaceId: string;
   canManage: boolean;
   refresh: () => Promise<unknown>;
-  queryKey: readonly unknown[];
+  captureAuthority: () => ClinicalWorkflowAuthority;
+  isAuthorityCurrent: (authority: ClinicalWorkflowAuthority) => boolean;
 }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
@@ -197,28 +253,50 @@ function AlertCard({
       note: string;
       expectedVersion: number;
       idempotencyKey: string;
+      authority: ClinicalWorkflowAuthority;
     }) => {
       const payload = {
         note: input.note,
         expectedVersion: input.expectedVersion,
         idempotencyKey: input.idempotencyKey,
       };
-      return input.action === "acknowledge"
+      const request = input.action === "acknowledge"
         ? smartHealthApi.acknowledgeClinicalAlert(alert.id, payload)
         : smartHealthApi.resolveClinicalAlert(alert.id, payload);
+      return request.then((response) => {
+        const result = parseClinicalAlertMutationResponse(response, {
+          workspaceId: input.authority.workspaceId,
+          alertId: alert.id,
+          expectedStatus:
+            input.action === "acknowledge" ? "acknowledged" : "resolved",
+          previousVersion: input.expectedVersion,
+          note: input.note,
+        });
+        if (!isAuthorityCurrent(input.authority)) {
+          throw new ClinicalWorkflowSupersededError();
+        }
+        return { ...result, authority: input.authority };
+      });
     },
     onSuccess: async (result, input) => {
+      if (!isAuthorityCurrent(result.authority)) return;
       intentRef.current = null;
       toast.success(
         input.action === "acknowledge"
           ? "Backend đã ghi nhận tiếp nhận cảnh báo"
           : "Backend đã ghi nhận xử lý cảnh báo",
       );
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: portalWorkspaceQueryKey(
+          result.authority.workspaceId,
+          "clinical-alert-ledger",
+        ),
+      });
       return result;
     },
-    onError: async (error: ApiError) => {
-      if (error.status === 409) {
+    onError: async (error: ApiError | Error) => {
+      if (error instanceof ClinicalWorkflowSupersededError) return;
+      if ("status" in error && error.status === 409) {
         intentRef.current = null;
         toast.error("Cảnh báo đã thay đổi. Dữ liệu mới đang được tải lại.");
         await refresh();
@@ -246,13 +324,24 @@ function AlertCard({
       note: trimmedNote,
       expectedVersion: alert.version,
     };
+    const authority = captureAuthority();
+    if (
+      authority.workspaceId !== workspaceId ||
+      !isAuthorityCurrent(authority)
+    ) {
+      return;
+    }
     const intent = resolveClinicalWorkflowIntent(
       intentRef.current,
-      `alert-${action}-${alert.id}`,
+      `alert-${authority.workspaceId}-${action}-${alert.id}`,
       payload,
     );
     intentRef.current = intent;
-    mutation.mutate({ ...payload, idempotencyKey: intent.idempotencyKey });
+    mutation.mutate({
+      ...payload,
+      idempotencyKey: intent.idempotencyKey,
+      authority,
+    });
   };
 
   const canAcknowledge = canManage && alert.status === "open";
@@ -263,7 +352,11 @@ function AlertCard({
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle id={`alert-${alert.id}-heading`}>
+            <CardTitle
+              id={`alert-${alert.id}-heading`}
+              role="heading"
+              aria-level={2}
+            >
               {alert.title || "Cảnh báo"}
             </CardTitle>
             <CardDescription className="mt-1">
@@ -272,7 +365,7 @@ function AlertCard({
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline" className={severityClass(alert.severity)}>
-              {alert.severity || "warning"}
+              {severityLabel(alert.severity)}
             </Badge>
             <Badge variant="outline" className={alertStatusClass(alert.status)}>
               {alert.status === "resolved" ? (
@@ -289,17 +382,13 @@ function AlertCard({
         {alert.message ? (
           <p className="text-sm leading-6 text-muted-foreground">{alert.message}</p>
         ) : null}
-        <dl className="grid grid-cols-2 gap-3 rounded-lg bg-muted/30 p-3 text-sm">
-          <div>
-            <dt className="text-xs text-muted-foreground">Nguồn</dt>
-            <dd className="mt-1 break-all font-medium text-foreground">
-              {alert.sourceType || "Không xác định"}: {alert.sourceId || "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Phiên bản</dt>
-            <dd className="mt-1 font-mono text-foreground">{alert.version}</dd>
-          </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-muted/30 p-3 text-sm">
+          <dt className="text-xs text-muted-foreground">Nguồn</dt>
+          <dt className="text-xs text-muted-foreground">Phiên bản</dt>
+          <dd className="break-all font-medium text-foreground">
+            {alert.sourceType || "Không xác định"}: {alert.sourceId || "—"}
+          </dd>
+          <dd className="font-mono text-foreground">{alert.version}</dd>
         </dl>
 
         {alert.acknowledgedAt ? (
@@ -315,7 +404,7 @@ function AlertCard({
         ) : null}
 
         {alert.resolvedAt ? (
-          <div className="rounded-lg border border-[var(--clinical-success)]/30 bg-muted/20 p-3 text-sm">
+          <div className="rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-bg)] p-3 text-sm">
             <p className="font-medium text-foreground">Đã xử lý</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {alert.resolvedByUserId || "Không xác định"} · {formatDate(alert.resolvedAt)}
@@ -351,7 +440,8 @@ function AlertCard({
                 </p>
               ) : null}
             </div>
-            {mutationError ? (
+            {mutationError &&
+            !(mutationError instanceof ClinicalWorkflowSupersededError) ? (
               <p role="alert" className="text-sm text-destructive">
                 {mutationError.status === 409
                   ? "Dữ liệu đã thay đổi; vui lòng kiểm tra bản mới trước khi gửi lại."
@@ -366,6 +456,12 @@ function AlertCard({
                   className="min-h-11 flex-1"
                   disabled={mutation.isPending}
                   onClick={() => submit("acknowledge")}
+                  aria-busy={
+                    mutation.isPending &&
+                    mutation.variables?.action === "acknowledge"
+                      ? true
+                      : undefined
+                  }
                 >
                   {mutation.isPending && mutation.variables?.action === "acknowledge" ? (
                     <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
@@ -381,6 +477,12 @@ function AlertCard({
                   className="min-h-11 flex-1"
                   disabled={mutation.isPending}
                   onClick={() => submit("resolve")}
+                  aria-busy={
+                    mutation.isPending &&
+                    mutation.variables?.action === "resolve"
+                      ? true
+                      : undefined
+                  }
                 >
                   {mutation.isPending && mutation.variables?.action === "resolve" ? (
                     <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />

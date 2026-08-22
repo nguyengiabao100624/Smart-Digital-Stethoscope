@@ -1,0 +1,18 @@
+{
+  "protocolVersion": 1,
+  "id": "cmd_ota_alpha_001",
+  "type": "ota.update",
+  "issuedAt": "2026-08-15T04:20:00.000Z",
+  "expiresAt": "2026-08-15T04:25:00.000Z",
+  "payload": {
+    "url": "https://api.shcare.vn/api/v1/devices/dev_factory_alpha/ota/cmd_ota_alpha_001/firmware",
+    "downloadAuthorization": "mBBYnrRoKnk3Ho3eJfW8Rgv3dMp9fmcNRgYaO7i2L5E",
+    "firmwareVersion": "1.0.0",
+    "checksum": "ca79de814dac8d6bb3a48eb87f80e6addf331c62009129c013c250f30a074801",
+    "signature": "xHtQeQbnMHmNjjhXnJYjXVJVNTeyKKwpRBHaUAOhxXbkQO3y3YuPTnpLDgBND6gJ3WvbLeMiJwMvXtAGUnnv_A",
+    "hardwareTarget": "MSM261S4030H0",
+    "partitionTarget": "app",
+    "minimumProtocolVersion": 1
+  },
+  "correlationId": "corr_ota_alpha_001"
+}

@@ -1,10 +1,14 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
+  getFirebaseIdTokenErrorCode,
   getFirebaseAdmin,
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,
+  verifyFirebaseIdToken,
 } = require("../src/firebaseAuth");
 
 test("Firebase numeric auth_time becomes a stable canonical session binding", () => {
@@ -25,6 +29,119 @@ test("Firebase Admin v14 modular adapter exposes the auth and messaging services
   assert.equal(typeof services.auth().listUsers, "function");
   assert.equal(typeof services.messaging, "function");
   assert.equal(typeof services.messaging().send, "function");
+});
+
+test("Firebase token verification always checks revocation", async () => {
+  const checks = [];
+  const admin = {
+    auth: () => ({
+      verifyIdToken: async (token, checkRevoked) => {
+        checks.push({ token, checkRevoked });
+        return { uid: "firebase-user", auth_time: 1783987200 };
+      },
+    }),
+  };
+
+  await verifyFirebaseIdToken("regular-token", {}, { admin });
+
+  assert.deepEqual(checks, [
+    { token: "regular-token", checkRevoked: true },
+  ]);
+});
+
+test("Firebase token failures expose stable recovery codes without weakening verification", () => {
+  assert.equal(
+    getFirebaseIdTokenErrorCode({ code: "auth/id-token-revoked" }),
+    "FIREBASE_ID_TOKEN_REVOKED",
+  );
+  assert.equal(
+    getFirebaseIdTokenErrorCode({ code: "auth/id-token-expired" }),
+    "FIREBASE_ID_TOKEN_EXPIRED",
+  );
+  assert.equal(
+    getFirebaseIdTokenErrorCode({ code: "auth/argument-error" }),
+    "INVALID_FIREBASE_TOKEN",
+  );
+  assert.equal(getFirebaseIdTokenErrorCode({}), "INVALID_FIREBASE_TOKEN");
+});
+
+test("locked Firebase accounts are denied before an auth session can be created or touched", () => {
+  const serverSource = fs.readFileSync(
+    path.join(__dirname, "..", "server.js"),
+    "utf8",
+  );
+  const firebaseAuthStart = serverSource.indexOf(
+    'req.authSource = "firebase";',
+  );
+  const firebaseAuthEnd = serverSource.indexOf(
+    "await prepareTwoFactorAccess(req, req.authUser);",
+    firebaseAuthStart,
+  );
+  assert.ok(firebaseAuthStart >= 0 && firebaseAuthEnd > firebaseAuthStart);
+  const firebaseAuthFlow = serverSource.slice(firebaseAuthStart, firebaseAuthEnd);
+  const activeCheck = firebaseAuthFlow.indexOf(
+    "assertUserAccountActive(req.authUser);",
+  );
+  const sessionWrite = firebaseAuthFlow.indexOf(
+    "req.authSession = await rememberAuthSession",
+  );
+  assert.ok(activeCheck >= 0, "Firebase authentication must check canonical account state");
+  assert.ok(sessionWrite > activeCheck, "the active-account check must precede every session write");
+});
+
+test("Firebase password changes use one provider mutation and rely on automatic token revocation", () => {
+  const serverSource = fs.readFileSync(
+    path.join(__dirname, "..", "server.js"),
+    "utf8",
+  );
+  assert.match(
+    serverSource,
+    /verifyFirebaseIdToken\(token,\s*process\.env\)[\s\S]+?catch\s*\(err\)[\s\S]+?getFirebaseIdTokenErrorCode\(err\)/,
+  );
+  const selfServiceStart = serverSource.indexOf(
+    'segments[2] === "password" && method === "POST"',
+  );
+  const selfServiceEnd = serverSource.indexOf(
+    'segments[2] === "2fa" && method === "POST"',
+    selfServiceStart,
+  );
+  const selfServiceRoute = serverSource.slice(
+    selfServiceStart,
+    selfServiceEnd,
+  );
+  assert.ok(selfServiceStart >= 0 && selfServiceEnd > selfServiceStart);
+  assert.match(selfServiceRoute, /updateFirebaseLinkedAccount[\s\S]+password:\s*nextPassword/);
+  assert.doesNotMatch(selfServiceRoute, /revokeRefreshTokens/);
+  const sagaStart = selfServiceRoute.indexOf(
+    "const saga = await runIdentityProviderSaga",
+  );
+  assert.ok(sagaStart > 0);
+  assert.doesNotMatch(
+    selfServiceRoute.slice(0, sagaStart),
+    /FIREBASE_RECENT_LOGIN_REQUIRED|assertDemoAuthAllowed/,
+    "completed receipts must be discovered before provider-specific mutation gates",
+  );
+  assert.match(
+    selfServiceRoute.slice(sagaStart),
+    /beforeBegin:[\s\S]+authenticatedFirebaseUid[\s\S]+createFirebasePasswordProof\(\{[\s\S]+authenticatedFirebaseUid[\s\S]+firebasePasswordProof\.consume\(canonicalUser\)/,
+  );
+  assert.match(
+    serverSource,
+    /isFirebaseProviderMutationConfirmed\(targetUser,\s*result,\s*operation\)/,
+    "provider confirmation must receive the operation so password changes cannot reuse delete semantics",
+  );
+
+  const adminStart = serverSource.indexOf(
+    'segments[4] === "reset-password" && method === "POST"',
+  );
+  const adminEnd = serverSource.indexOf(
+    '["lock", "unlock"].includes(segments[4])',
+    adminStart,
+  );
+  const adminRoute = serverSource.slice(adminStart, adminEnd);
+  assert.ok(adminStart >= 0 && adminEnd > adminStart);
+  assert.match(adminRoute, /\.auth\(\)\.updateUser\([^,]+,\s*\{\s*password:/);
+  assert.doesNotMatch(adminRoute, /revokeRefreshTokens/);
 });
 
 test("linked Firebase identities never treat a skipped provider mutation as confirmed", () => {
@@ -49,6 +166,27 @@ test("linked Firebase identities never treat a skipped provider mutation as conf
   assert.equal(
     isFirebaseProviderMutationConfirmed(linkedUser, { providerSucceeded: false, updated: true }),
     false,
+  );
+});
+
+test("password changes require a confirmed provider update and never accept a concurrently missing Firebase user", () => {
+  const linkedUser = { id: "usr_linked", firebaseUid: "firebase-linked" };
+
+  assert.equal(
+    isFirebaseProviderMutationConfirmed(
+      linkedUser,
+      { updated: false, firebaseAlreadyMissing: true },
+      "reset_password",
+    ),
+    false,
+  );
+  assert.equal(
+    isFirebaseProviderMutationConfirmed(
+      linkedUser,
+      { updated: true },
+      "reset_password",
+    ),
+    true,
   );
 });
 

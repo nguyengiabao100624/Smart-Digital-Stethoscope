@@ -1,0 +1,33 @@
+{
+  "appointment": {
+    "id": "appt_01",
+    "organizationId": "workspace-a",
+    "patientId": "patient-a",
+    "doctorUserId": "doctor-a",
+    "type": "follow_up",
+    "status": "confirmed",
+    "startsAt": "2026-08-24T02:00:00.000Z",
+    "endsAt": "2026-08-24T02:30:00.000Z",
+    "location": "Phòng 203",
+    "channel": "clinic",
+    "reason": "Tái khám",
+    "notes": "",
+    "cancellationReason": "",
+    "cancelledAt": "",
+    "completedAt": "",
+    "createdAt": "2026-08-22T08:00:00.000Z",
+    "updatedAt": "2026-08-22T08:00:00.000Z",
+    "patient": {
+      "id": "patient-a",
+      "patientCode": "BN-001",
+      "name": "Nguyễn An",
+      "organizationId": "workspace-a"
+    },
+    "doctor": {
+      "id": "doctor-a",
+      "name": "BS. Trần Bình",
+      "email": "doctor@example.test",
+      "specialty": "Tim mạch"
+    }
+  }
+}

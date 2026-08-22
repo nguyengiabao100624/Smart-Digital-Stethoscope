@@ -96,6 +96,7 @@ const DEVICE_TELEMETRY_STRING_FIELDS = new Set([
   "lastCommandState",
   "lastCommandCode",
   "otaStatus",
+  "otaBootOutcome",
 ]);
 
 function sanitizeDeviceTelemetry(value) {
@@ -133,6 +134,10 @@ function sanitizeDeviceCredentialRotation(value) {
   const nextSecretHash = String(value.nextSecretHash || "");
   if (!value.id || !DEVICE_ROTATION_STATES.has(state)) return {};
   const sanitized = {
+    protocolVersion:
+      Number.isInteger(Number(value.protocolVersion)) && Number(value.protocolVersion) > 0
+        ? Number(value.protocolVersion)
+        : 1,
     id: String(value.id).slice(0, 128),
     state,
     nextSecretHash: /^sha256:[a-f0-9]{64}$/i.test(nextSecretHash)
@@ -266,6 +271,65 @@ function getPendingRotationVerificationKey(device, nowMs = Date.now()) {
   return match ? Buffer.from(match[1], "hex") : null;
 }
 
+function createDeviceCredentialBinding(verificationKey) {
+  if (!Buffer.isBuffer(verificationKey) || verificationKey.length !== 32) return "";
+  return crypto
+    .createHash("sha256")
+    .update(DEVICE_AUTH_DOMAIN, "utf8")
+    .update(Buffer.from([0]))
+    .update(verificationKey)
+    .digest("base64url");
+}
+
+function deviceAuthenticationFenceError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function assertDeviceAuthenticationFence(currentDevice, authResult, nowMs = Date.now()) {
+  if (
+    !currentDevice ||
+    currentDevice.revokedAt ||
+    String(currentDevice.status || "").toLowerCase() === "revoked"
+  ) {
+    throw deviceAuthenticationFenceError(
+      "DEVICE_AUTH_AUTHORITY_CHANGED",
+      "Device authority changed before the authenticated session was registered",
+    );
+  }
+  const authenticatedOrganizationId = String(authResult?.device?.organizationId || "");
+  const currentOrganizationId = String(currentDevice.organizationId || "");
+  if (!authenticatedOrganizationId || currentOrganizationId !== authenticatedOrganizationId) {
+    throw deviceAuthenticationFenceError(
+      "DEVICE_AUTH_AUTHORITY_CHANGED",
+      "Device workspace changed before the authenticated session was registered",
+    );
+  }
+
+  const suppliedBinding = String(authResult?.credentialBinding || "");
+  const candidateBindings = [
+    createDeviceCredentialBinding(getDeviceVerificationKey(currentDevice)),
+    createDeviceCredentialBinding(getPendingRotationVerificationKey(currentDevice, nowMs)),
+  ].filter(Boolean);
+  const suppliedBuffer = Buffer.from(suppliedBinding, "utf8");
+  const matchesCurrentCredential = candidateBindings.some((binding) => {
+    const candidateBuffer = Buffer.from(binding, "utf8");
+    return (
+      suppliedBuffer.length === candidateBuffer.length &&
+      suppliedBuffer.length > 0 &&
+      crypto.timingSafeEqual(suppliedBuffer, candidateBuffer)
+    );
+  });
+  if (!matchesCurrentCredential) {
+    throw deviceAuthenticationFenceError(
+      "DEVICE_AUTH_CREDENTIAL_CHANGED",
+      "Device credential changed before the authenticated session was registered",
+    );
+  }
+  return currentDevice;
+}
+
 function createDeviceAuthenticator(options = {}) {
   if (typeof options.findDeviceById !== "function") {
     throw new TypeError("findDeviceById is required");
@@ -347,6 +411,7 @@ function createDeviceAuthenticator(options = {}) {
       sessionId,
       credentialSlot,
       rotationId: candidateMatches ? String(device.credentialRotation?.id || "") : "",
+      credentialBinding: createDeviceCredentialBinding(matchedKey),
       rotationWrapKey: deriveDeviceRotationWrapKey(matchedKey, {
         challengeId: challenge.challengeId,
         nonce: challenge.nonce,
@@ -370,6 +435,8 @@ module.exports = {
   canonicalDeviceSecretHash,
   canonicalDeviceAuthBytes,
   containsSensitiveDeviceCredential,
+  assertDeviceAuthenticationFence,
+  createDeviceCredentialBinding,
   createDeviceAuthenticator,
   deriveDeviceRotationWrapKey,
   getDeviceVerificationKey,

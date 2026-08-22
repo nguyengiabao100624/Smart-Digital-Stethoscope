@@ -18,6 +18,9 @@ let primarySessionToken;
 let secondFactorToken;
 let recoveryCodes;
 let enrollmentOtp;
+let enrollmentIdempotencyKey;
+let recoveryDeliveryId;
+let recoveryAckToken;
 let challengedPrimaryToken;
 let challengedSecondFactorToken;
 
@@ -112,14 +115,18 @@ async function requestJson(pathname, options = {}) {
   return { response, body: text ? JSON.parse(text) : {} };
 }
 
-async function login() {
+async function loginAs(email = "alpha-2fa@test.local") {
   const result = await requestJson("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "alpha-2fa@test.local", password: "12345678" }),
+    body: JSON.stringify({ email, password: "12345678" }),
   });
   assert.equal(result.response.status, 200, JSON.stringify(result.body));
   return result.body.token;
+}
+
+async function login() {
+  return loginAs();
 }
 
 function readPersistedDb() {
@@ -214,51 +221,275 @@ test("legacy fake enable endpoint fails explicitly and never enables the account
   assert.equal(result.body.error.details.enrollPath, "/api/v1/me/2fa/enroll");
 });
 
-test("app enrollment returns the TOTP bootstrap secret once without enabling or persisting plaintext", async () => {
+test("enrollment start requires a header key, binds exact replay to one primary session, and permits a new-session restart", async () => {
   const token = await login();
-  primarySessionToken = token;
-  const result = await requestJson("/api/v1/me/2fa/enroll", {
+  const bodyOnly = await requestJson("/api/v1/me/2fa/enroll", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      method: "app",
+      idempotencyKey: "body-key-must-not-authorize-enrollment-start",
+    }),
+  });
+  assert.equal(bodyOnly.response.status, 400, JSON.stringify(bodyOnly.body));
+  assert.equal(bodyOnly.body.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+
+  const firstStartKey = "two-factor-start-alpha-first-stable-key";
+  const result = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": firstStartKey,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ method: "app" }),
   });
   assert.equal(result.response.status, 201, JSON.stringify(result.body));
-  assert.deepEqual(result.body.twoFactor, { enabled: false, method: "" });
+  assert.equal(result.body.userId, "usr_alpha");
+  assert.deepEqual(result.body.twoFactor, { enabled: false, method: "", enrollmentPending: true });
   assert.equal(result.body.enrollment.method, "app");
   assert.match(result.body.enrollment.id, /^2fa_enroll_/);
   assert.match(result.body.enrollment.manualKey, /^[A-Z2-7]+$/);
   assert.match(result.body.enrollment.otpauthUri, /^otpauth:\/\/totp\//);
   assert.equal(Date.parse(result.body.enrollment.expiresAt) > Date.now(), true);
+  assert.equal(result.body.replayed, false);
+  assert.equal(result.body.superseded, false);
 
   const persistedText = fs.readFileSync(path.join(dataDir, "db.json"), "utf8");
   assert.equal(persistedText.includes(result.body.enrollment.manualKey), false);
   assert.equal(persistedText.includes(result.body.enrollment.otpauthUri), false);
+  assert.equal(persistedText.includes(firstStartKey), false);
   const persisted = readPersistedDb();
+  const enrollmentPersistence = JSON.stringify({
+    enrollments: persisted.twoFactorEnrollments,
+    audits: persisted.auditLogs,
+  });
+  assert.equal(enrollmentPersistence.includes(token), false);
   assert.equal(persisted.users.find((item) => item.id === "usr_alpha").twoFactorEnabled, false);
   assert.equal(persisted.twoFactorEnrollments.length, 1);
   assert.equal(Boolean(persisted.twoFactorEnrollments[0].secretCiphertext), true);
 
   const duplicate = await requestJson("/api/v1/me/2fa/enroll", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": firstStartKey,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ method: "app" }),
   });
-  assert.equal(duplicate.response.status, 409, JSON.stringify(duplicate.body));
-  assert.equal(duplicate.body.error.code, "TWO_FACTOR_ENROLLMENT_PENDING");
-  assert.equal(JSON.stringify(duplicate.body).includes(result.body.enrollment.manualKey), false);
-  enrollmentBootstrap = result.body.enrollment;
+  assert.equal(duplicate.response.status, 201, JSON.stringify(duplicate.body));
+  assert.equal(duplicate.body.replayed, true);
+  assert.equal(duplicate.body.enrollment.id, result.body.enrollment.id);
+  assert.equal(duplicate.body.enrollment.manualKey, result.body.enrollment.manualKey);
+
+  const replacementSessionToken = await login();
+  const crossSessionReplay = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${replacementSessionToken}`,
+      "Idempotency-Key": firstStartKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(crossSessionReplay.response.status, 409, JSON.stringify(crossSessionReplay.body));
+  assert.equal(crossSessionReplay.body.error.code, "TWO_FACTOR_ENROLLMENT_SCOPE_MISMATCH");
+
+  const { generate } = await import("otplib");
+  const crossSessionOtp = await generate({
+    secret: result.body.enrollment.manualKey,
+    epoch: Math.floor(Date.now() / 1000) - 30,
+  });
+  const crossSessionVerify = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${replacementSessionToken}`,
+      "Idempotency-Key": "cross-session-old-enrollment-verify-key",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      enrollmentId: result.body.enrollment.id,
+      otp: crossSessionOtp,
+    }),
+  });
+  assert.equal(crossSessionVerify.response.status, 409, JSON.stringify(crossSessionVerify.body));
+  assert.equal(crossSessionVerify.body.error.code, "TWO_FACTOR_ENROLLMENT_SCOPE_MISMATCH");
+
+  const restartKey = "two-factor-start-alpha-new-session-restart-key";
+  const restarted = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${replacementSessionToken}`,
+      "Idempotency-Key": restartKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(restarted.response.status, 201, JSON.stringify(restarted.body));
+  assert.equal(restarted.body.replayed, false);
+  assert.equal(restarted.body.superseded, true);
+  assert.notEqual(restarted.body.enrollment.id, result.body.enrollment.id);
+
+  const historicalReplay = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": firstStartKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(historicalReplay.response.status, 201, JSON.stringify(historicalReplay.body));
+  assert.equal(historicalReplay.body.replayed, true);
+  assert.equal(historicalReplay.body.superseded, true);
+  assert.equal(historicalReplay.body.enrollment.id, result.body.enrollment.id);
+  assert.equal(historicalReplay.body.enrollment.manualKey, result.body.enrollment.manualKey);
+
+  const historicalCrossSessionReplay = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${replacementSessionToken}`,
+      "Idempotency-Key": firstStartKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(
+    historicalCrossSessionReplay.response.status,
+    409,
+    JSON.stringify(historicalCrossSessionReplay.body),
+  );
+  assert.equal(
+    historicalCrossSessionReplay.body.error.code,
+    "TWO_FACTOR_ENROLLMENT_SCOPE_MISMATCH",
+  );
+
+  const oldVerify = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": "old-superseded-enrollment-verify-key",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enrollmentId: result.body.enrollment.id, otp: "000000" }),
+  });
+  assert.equal(oldVerify.response.status, 410, JSON.stringify(oldVerify.body));
+  assert.equal(oldVerify.body.error.code, "TWO_FACTOR_ENROLLMENT_ALREADY_USED");
+  primarySessionToken = replacementSessionToken;
+  enrollmentBootstrap = restarted.body.enrollment;
 });
 
-test("valid TOTP verification atomically enables 2FA and returns recovery codes only once", async () => {
+test("a different start key supersedes recovery-ACK-pending and denies every old verify or ACK", async () => {
+  const { generate } = await import("otplib");
+  const betaToken = await loginAs("beta-2fa@test.local");
+  const startKey = "two-factor-start-beta-ack-pending-key";
+  const started = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaToken}`,
+      "Idempotency-Key": startKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(started.response.status, 201, JSON.stringify(started.body));
+  const otp = await generate({
+    secret: started.body.enrollment.manualKey,
+    epoch: Math.floor(Date.now() / 1000) - 30,
+  });
+  const verifyKey = "two-factor-verify-beta-ack-pending-key";
+  const verified = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaToken}`,
+      "Idempotency-Key": verifyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enrollmentId: started.body.enrollment.id, otp }),
+  });
+  assert.equal(verified.response.status, 200, JSON.stringify(verified.body));
+
+  const exactStartReplay = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaToken}`,
+      "Idempotency-Key": startKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(exactStartReplay.response.status, 201, JSON.stringify(exactStartReplay.body));
+  assert.equal(exactStartReplay.body.replayed, true);
+  assert.equal(exactStartReplay.body.enrollment.id, started.body.enrollment.id);
+
+  const restarted = await requestJson("/api/v1/me/2fa/enroll", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaToken}`,
+      "Idempotency-Key": "two-factor-start-beta-superseding-key",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method: "app" }),
+  });
+  assert.equal(restarted.response.status, 201, JSON.stringify(restarted.body));
+  assert.equal(restarted.body.superseded, true);
+  assert.notEqual(restarted.body.enrollment.id, started.body.enrollment.id);
+
+  const oldVerify = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaToken}`,
+      "Idempotency-Key": verifyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enrollmentId: started.body.enrollment.id, otp }),
+  });
+  assert.equal(oldVerify.response.status, 410, JSON.stringify(oldVerify.body));
+  assert.equal(oldVerify.body.error.code, "TWO_FACTOR_ENROLLMENT_ALREADY_USED");
+
+  const oldAck = await requestJson("/api/v1/me/2fa/recovery-codes/ack", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaToken}`,
+      "Idempotency-Key": verifyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      deliveryId: verified.body.recoveryDelivery.id,
+      recoveryAckToken: verified.body.recoveryAckToken,
+    }),
+  });
+  assert.equal(oldAck.response.status, 409, JSON.stringify(oldAck.body));
+  assert.equal(oldAck.body.error.code, "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH");
+});
+
+test("valid TOTP verification stays pending until exact recovery ACK atomically enables 2FA", async () => {
   const { generate } = await import("otplib");
   const otp = await generate({
     secret: enrollmentBootstrap.manualKey,
     epoch: Math.floor(Date.now() / 1000) - 30,
   });
   enrollmentOtp = otp;
-  const invalid = await requestJson("/api/v1/me/2fa/verify", {
+  const missingIdempotencyKey = await requestJson("/api/v1/me/2fa/verify", {
     method: "POST",
     headers: { Authorization: `Bearer ${primarySessionToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      enrollmentId: enrollmentBootstrap.id,
+      otp,
+      idempotencyKey: "body-idempotency-key-must-not-be-authoritative",
+    }),
+  });
+  assert.equal(missingIdempotencyKey.response.status, 400, JSON.stringify(missingIdempotencyKey.body));
+  assert.equal(missingIdempotencyKey.body.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+
+  const invalid = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${primarySessionToken}`,
+      "Idempotency-Key": "two-factor-invalid-code-intent",
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ enrollmentId: enrollmentBootstrap.id, otp: "000000" }),
   });
   assert.equal(invalid.response.status, 401, JSON.stringify(invalid.body));
@@ -266,43 +497,237 @@ test("valid TOTP verification atomically enables 2FA and returns recovery codes 
   assert.equal(readPersistedDb().users.find((item) => item.id === "usr_alpha").twoFactorEnabled, false);
   assert.equal(readPersistedDb().auditLogs.some((item) => item.action === "account.2fa.enable"), false);
 
-  const verified = await requestJson("/api/v1/me/2fa/verify", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${primarySessionToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ enrollmentId: enrollmentBootstrap.id, otp }),
-  });
+  enrollmentIdempotencyKey = "two-factor-enrollment-stable-response-loss-intent";
+  const verifyRequest = () => requestJson("/api/v1/me/2fa/verify", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${primarySessionToken}`,
+        "Idempotency-Key": enrollmentIdempotencyKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enrollmentId: enrollmentBootstrap.id, otp }),
+    });
+  const concurrentVerification = await Promise.all([verifyRequest(), verifyRequest()]);
+  assert.deepEqual(
+    concurrentVerification.map((result) => result.response.status),
+    [200, 200],
+    JSON.stringify(concurrentVerification.map((result) => result.body)),
+  );
+  assert.deepEqual(
+    concurrentVerification.map((result) => result.body.replayed).sort(),
+    [false, true],
+  );
+  const verified = concurrentVerification.find((result) => !result.body.replayed);
+  assert.ok(verified);
   assert.equal(verified.response.status, 200, JSON.stringify(verified.body));
-  assert.deepEqual(verified.body.twoFactor, { enabled: true, method: "app" });
+  assert.equal(verified.body.userId, "usr_alpha");
+  assert.equal(verified.body.enrollmentId, enrollmentBootstrap.id);
+  assert.deepEqual(verified.body.twoFactor, { enabled: false, method: "", enrollmentPending: true });
   assert.equal(Array.isArray(verified.body.recoveryCodes), true);
   assert.equal(verified.body.recoveryCodes.length, 8);
   assert.equal(new Set(verified.body.recoveryCodes).size, 8);
-  assert.match(verified.body.twoFactorToken, /^[A-Za-z0-9_-]+$/);
-  assert.equal(Date.parse(verified.body.tokenExpiresAt) > Date.now(), true);
-  secondFactorToken = verified.body.twoFactorToken;
+  assert.match(verified.body.recoveryAckToken, /^[A-Za-z0-9_-]+$/);
+  assert.equal(Object.hasOwn(verified.body, "twoFactorToken"), false);
+  assert.deepEqual(verified.body.recoveryDelivery, {
+    id: verified.body.recoveryDelivery.id,
+    expiresAt: verified.body.recoveryDelivery.expiresAt,
+    acknowledged: false,
+  });
+  assert.match(verified.body.recoveryDelivery.id, /^2fa_delivery_[A-Za-z0-9_-]+$/);
+  assert.equal(Date.parse(verified.body.recoveryDelivery.expiresAt) > Date.now(), true);
+  assert.equal(verified.body.replayed, false);
   recoveryCodes = verified.body.recoveryCodes;
+  recoveryDeliveryId = verified.body.recoveryDelivery.id;
+  recoveryAckToken = verified.body.recoveryAckToken;
 
   const persistedText = fs.readFileSync(path.join(dataDir, "db.json"), "utf8");
   assert.equal(persistedText.includes(enrollmentBootstrap.manualKey), false);
   assert.equal(recoveryCodes.some((code) => persistedText.includes(code)), false);
-  assert.equal(persistedText.includes(secondFactorToken), false);
+  assert.equal(persistedText.includes(recoveryAckToken), false);
+  assert.equal(persistedText.includes(enrollmentIdempotencyKey), false);
   const persisted = readPersistedDb();
-  assert.equal(persisted.users.find((item) => item.id === "usr_alpha").twoFactorEnabled, true);
-  assert.equal(persisted.twoFactorCredentials.length, 1);
-  assert.equal(persisted.twoFactorCredentials[0].recoveryCodes.every((item) => item.hash && !item.code), true);
-  assert.equal(persisted.auditLogs.filter((item) => item.action === "account.2fa.enable").length, 1);
+  assert.equal(persisted.users.find((item) => item.id === "usr_alpha").twoFactorEnabled, false);
+  assert.equal(persisted.twoFactorCredentials.length, 0);
+  assert.equal(persisted.twoFactorTokens.length, 0);
+  const activeEnrollment = persisted.twoFactorEnrollments.find(
+    (item) => item.id === enrollmentBootstrap.id,
+  );
+  assert.equal(
+    activeEnrollment.pendingActivation.recoveryCodes.every((item) => item.hash && !item.code),
+    true,
+  );
+  assert.equal(persisted.auditLogs.filter((item) => item.action === "account.2fa.enable").length, 0);
+
+  const pendingStatus = await requestJson("/api/v1/me/2fa", {
+    headers: { Authorization: `Bearer ${primarySessionToken}` },
+  });
+  assert.deepEqual(pendingStatus.body.twoFactor, {
+    enabled: false,
+    method: "",
+    enrollmentPending: true,
+  });
+  const pendingProtectedAccess = await requestJson("/api/v1/me", {
+    headers: { Authorization: `Bearer ${primarySessionToken}` },
+  });
+  assert.equal(pendingProtectedAccess.response.status, 200, JSON.stringify(pendingProtectedAccess.body));
+  assert.equal(pendingProtectedAccess.body.user.twoFactorEnabled, false);
+  assert.equal(pendingProtectedAccess.body.user.firebaseClaims.profile.twoFactorEnabled, false);
+  assert.equal(pendingProtectedAccess.body.user.firebaseClaims.profile.twoFactorMethod, "");
 
   const replay = await requestJson("/api/v1/me/2fa/verify", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${primarySessionToken}`,
-      "x-shcare-2fa-token": secondFactorToken,
+      "Idempotency-Key": enrollmentIdempotencyKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ enrollmentId: enrollmentBootstrap.id, otp }),
   });
-  assert.equal(replay.response.status, 409, JSON.stringify(replay.body));
-  assert.equal(replay.body.error.code, "TWO_FACTOR_ENROLLMENT_ALREADY_USED");
-  assert.equal(JSON.stringify(replay.body).includes(recoveryCodes[0]), false);
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.replayed, true);
+  assert.deepEqual(replay.body.recoveryCodes, recoveryCodes);
+  assert.equal(replay.body.recoveryAckToken, recoveryAckToken);
+  assert.deepEqual(replay.body.recoveryDelivery, verified.body.recoveryDelivery);
+  assert.equal(readPersistedDb().auditLogs.filter((item) => item.action === "account.2fa.enable").length, 0);
+
+  const collision = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${primarySessionToken}`,
+      "Idempotency-Key": "two-factor-enrollment-different-intent",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enrollmentId: enrollmentBootstrap.id, otp }),
+  });
+  assert.equal(collision.response.status, 409, JSON.stringify(collision.body));
+  assert.equal(collision.body.error.code, "IDEMPOTENCY_KEY_REUSED");
+  assert.equal(JSON.stringify(collision.body).includes(recoveryCodes[0]), false);
+
+  const wrongAcknowledgementKey = await requestJson("/api/v1/me/2fa/recovery-codes/ack", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${primarySessionToken}`,
+      "Idempotency-Key": "two-factor-enrollment-wrong-ack-key",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ deliveryId: recoveryDeliveryId, recoveryAckToken }),
+  });
+  assert.equal(wrongAcknowledgementKey.response.status, 409, JSON.stringify(wrongAcknowledgementKey.body));
+  assert.equal(wrongAcknowledgementKey.body.error.code, "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH");
+
+  const wrongAcknowledgementToken = await requestJson("/api/v1/me/2fa/recovery-codes/ack", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${primarySessionToken}`,
+      "Idempotency-Key": enrollmentIdempotencyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      deliveryId: recoveryDeliveryId,
+      recoveryAckToken: "wrong-recovery-ack-token-0123456789abcdef",
+    }),
+  });
+  assert.equal(wrongAcknowledgementToken.response.status, 409, JSON.stringify(wrongAcknowledgementToken.body));
+  assert.equal(wrongAcknowledgementToken.body.error.code, "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH");
+
+  const betaLogin = await requestJson("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "beta-2fa@test.local", password: "12345678" }),
+  });
+  assert.equal(betaLogin.response.status, 200, JSON.stringify(betaLogin.body));
+  const crossAccountAcknowledgement = await requestJson("/api/v1/me/2fa/recovery-codes/ack", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaLogin.body.token}`,
+      "Idempotency-Key": enrollmentIdempotencyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ deliveryId: recoveryDeliveryId, recoveryAckToken }),
+  });
+  assert.equal(crossAccountAcknowledgement.response.status, 409, JSON.stringify(crossAccountAcknowledgement.body));
+  assert.equal(crossAccountAcknowledgement.body.error.code, "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH");
+  assert.equal(JSON.stringify(crossAccountAcknowledgement.body).includes(recoveryCodes[0]), false);
+
+  const acknowledgementRequest = () => requestJson("/api/v1/me/2fa/recovery-codes/ack", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${primarySessionToken}`,
+        "Idempotency-Key": enrollmentIdempotencyKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ deliveryId: recoveryDeliveryId, recoveryAckToken }),
+    });
+  const concurrentAcknowledgements = await Promise.all([
+    acknowledgementRequest(),
+    acknowledgementRequest(),
+  ]);
+  assert.deepEqual(
+    concurrentAcknowledgements.map((result) => result.response.status),
+    [200, 200],
+    JSON.stringify(concurrentAcknowledgements.map((result) => result.body)),
+  );
+  assert.deepEqual(
+    concurrentAcknowledgements.map((result) => result.body.replayed).sort(),
+    [false, true],
+  );
+  const acknowledged = concurrentAcknowledgements.find((result) => !result.body.replayed);
+  assert.ok(acknowledged);
+  assert.equal(acknowledged.response.status, 200, JSON.stringify(acknowledged.body));
+  assert.equal(acknowledged.body.userId, "usr_alpha");
+  assert.equal(acknowledged.body.enrollmentId, enrollmentBootstrap.id);
+  assert.equal(acknowledged.body.recoveryDelivery.id, recoveryDeliveryId);
+  assert.equal(acknowledged.body.recoveryDelivery.acknowledged, true);
+  assert.ok(Date.parse(acknowledged.body.recoveryDelivery.acknowledgedAt));
+  assert.equal(acknowledged.body.replayed, false);
+  assert.match(acknowledged.body.twoFactorToken, /^[A-Za-z0-9_-]+$/);
+  assert.equal(Date.parse(acknowledged.body.tokenExpiresAt) > Date.now(), true);
+  secondFactorToken = acknowledged.body.twoFactorToken;
+  assert.equal(JSON.stringify(acknowledged.body).includes(recoveryCodes[0]), false);
+  const activatedDb = readPersistedDb();
+  assert.equal(activatedDb.users.find((item) => item.id === "usr_alpha").twoFactorEnabled, true);
+  assert.equal(activatedDb.twoFactorCredentials.length, 1);
+  assert.equal(activatedDb.twoFactorTokens.length, 1);
+  assert.equal(
+    activatedDb.twoFactorEnrollments.find((item) => item.id === enrollmentBootstrap.id).pendingActivation,
+    null,
+  );
+  assert.equal(activatedDb.auditLogs.filter((item) => item.action === "account.2fa.enable").length, 1);
+
+  const acknowledgementReplay = await requestJson("/api/v1/me/2fa/recovery-codes/ack", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${primarySessionToken}`,
+      "Idempotency-Key": enrollmentIdempotencyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ deliveryId: recoveryDeliveryId, recoveryAckToken }),
+  });
+  assert.equal(acknowledgementReplay.response.status, 200, JSON.stringify(acknowledgementReplay.body));
+  assert.equal(acknowledgementReplay.body.replayed, true);
+  assert.equal(acknowledgementReplay.body.twoFactorToken, secondFactorToken);
+  assert.equal(
+    readPersistedDb().auditLogs.filter(
+      (item) => item.action === "account.2fa.enable",
+    ).length,
+    1,
+  );
+
+  const replayAfterAcknowledgement = await requestJson("/api/v1/me/2fa/verify", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${primarySessionToken}`,
+      "Idempotency-Key": enrollmentIdempotencyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enrollmentId: enrollmentBootstrap.id, otp }),
+  });
+  assert.equal(replayAfterAcknowledgement.response.status, 410, JSON.stringify(replayAfterAcknowledgement.body));
+  assert.equal(
+    replayAfterAcknowledgement.body.error.code,
+    "TWO_FACTOR_ENROLLMENT_ALREADY_USED",
+  );
+  assert.equal(JSON.stringify(replayAfterAcknowledgement.body).includes(recoveryCodes[0]), false);
 });
 
 test("enabled accounts cannot use a protected API without a bound second-factor token", async () => {
@@ -562,6 +987,7 @@ test("SMS enrollment is explicitly unavailable and never falls back to a fake su
     headers: {
       Authorization: `Bearer ${challengedPrimaryToken}`,
       "x-shcare-2fa-token": challengedSecondFactorToken,
+      "Idempotency-Key": "two-factor-sms-unavailable-intent",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ method: "sms" }),
@@ -628,7 +1054,7 @@ test("disable requires a current factor, revokes 2FA tokens, and audits only the
     body: JSON.stringify({ recoveryCode: recoveryCodes[3] }),
   });
   assert.equal(disabled.response.status, 200, JSON.stringify(disabled.body));
-  assert.deepEqual(disabled.body.twoFactor, { enabled: false, method: "" });
+  assert.deepEqual(disabled.body.twoFactor, { enabled: false, method: "", enrollmentPending: false });
   const persisted = readPersistedDb();
   assert.equal(persisted.users.find((item) => item.id === "usr_alpha").twoFactorEnabled, false);
   assert.equal(persisted.twoFactorCredentials.every((item) => item.userId !== "usr_alpha" || item.disabledAt), true);

@@ -1,0 +1,39 @@
+{
+  "generatedAt": "2026-07-29T02:00:01.000Z",
+  "workspaceId": "workspace-a",
+  "patientId": "patient-a",
+  "share": {
+    "id": "share-a",
+    "patientId": "patient-a",
+    "doctorUserId": "doctor-a",
+    "scope": "patient_profile",
+    "scanIds": [],
+    "accessLevel": "read",
+    "purpose": "",
+    "consentedAt": "",
+    "active": true,
+    "authorityType": "clinician_access_grant",
+    "status": "active",
+    "recipient": {
+      "id": "doctor-a",
+      "type": "doctor",
+      "name": "BS An",
+      "workspaceId": "workspace-a"
+    },
+    "grantedByActor": {
+      "id": "admin-a",
+      "name": "Quản trị viên",
+      "role": "workspace_admin"
+    },
+    "revokedByActor": null,
+    "audit": {
+      "grantedByUserId": "admin-a",
+      "grantedAt": "2026-07-29T02:00:00.000Z",
+      "revokedByUserId": "",
+      "revokedAt": ""
+    },
+    "createdAt": "2026-07-29T02:00:00.000Z",
+    "updatedAt": "2026-07-29T02:00:00.000Z"
+  },
+  "replayed": false
+}

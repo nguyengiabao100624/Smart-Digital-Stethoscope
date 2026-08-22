@@ -187,6 +187,32 @@ function buildProductionReadiness(env = process.env) {
     setup: "Tạo Firebase project, bật Authentication, tạo service account JSON và cấu hình env trên backend.",
   });
 
+  const firebaseAuthEnabled = readBool(env.FIREBASE_AUTH_ENABLED);
+  const firebasePasswordVerifierReady = Boolean(
+    readString(env.FIREBASE_WEB_API_KEY),
+  );
+  createItem(items, {
+    id: "firebase.password_verifier",
+    group: "identity",
+    label: "Firebase current-password verifier",
+    status: firebaseAuthEnabled
+      ? statusFromBoolean(firebasePasswordVerifierReady, true)
+      : "pass",
+    required: firebaseAuthEnabled,
+    detail: firebaseAuthEnabled
+      ? firebasePasswordVerifierReady
+        ? "Identity Toolkit verifier key is configured for current-password verification."
+        : "FIREBASE_WEB_API_KEY is missing; Firebase password changes fail closed."
+      : "Firebase Auth is disabled, so the verifier is not used.",
+    env: [
+      "FIREBASE_WEB_API_KEY",
+      "FIREBASE_PASSWORD_VERIFY_TIMEOUT_MS",
+      "FIREBASE_PASSWORD_PROOF_TTL_MS",
+    ],
+    setup:
+      "Store the Firebase Web API key in the backend secret manager; never log or render the key.",
+  });
+
   createItem(items, {
     id: "backend.public_https",
     group: "network",
@@ -308,6 +334,27 @@ function buildProductionReadiness(env = process.env) {
       : "Chưa có PHI_ENCRYPTION_KEY; dữ liệu nhạy cảm có thể không được mã hóa.",
     env: ["PHI_ENCRYPTION_KEY"],
     setup: "Tạo secret 32 byte hoặc chuỗi hex 64 ký tự và lưu trong secret manager của hosting.",
+  });
+
+  const passwordFingerprintKey =
+    readString(env.PASSWORD_IDEMPOTENCY_HMAC_KEY) ||
+    readString(env.PHI_ENCRYPTION_KEY);
+  createItem(items, {
+    id: "security.password_idempotency_hmac",
+    group: "security",
+    label: "HMAC cho idempotency đổi mật khẩu",
+    status: statusFromBoolean(
+      Buffer.byteLength(passwordFingerprintKey, "utf8") >= 32,
+      true,
+    ),
+    required: true,
+    detail: readString(env.PASSWORD_IDEMPOTENCY_HMAC_KEY)
+      ? "PASSWORD_IDEMPOTENCY_HMAC_KEY đã cấu hình."
+      : passwordFingerprintKey
+        ? "Dùng khóa dẫn xuất có domain separation từ PHI_ENCRYPTION_KEY."
+        : "Chưa có khóa HMAC; endpoint đổi/đặt lại mật khẩu sẽ fail closed.",
+    env: ["PASSWORD_IDEMPOTENCY_HMAC_KEY", "PHI_ENCRYPTION_KEY"],
+    setup: "Tạo secret riêng tối thiểu 32 byte hoặc cấu hình PHI_ENCRYPTION_KEY đủ mạnh trong secret manager.",
   });
 
   createItem(items, {

@@ -1,0 +1,19 @@
+{
+  "storage": {
+    "autoSync": false,
+    "cloudBackup": false,
+    "localUsedMb": 0,
+    "localTotalMb": 0,
+    "cloudUsedMb": 1,
+    "cloudTotalMb": 0,
+    "cacheMb": 0,
+    "scanCount": 3,
+    "patientCount": 2,
+    "audioFileCount": 1,
+    "audioUsedMb": 1,
+    "cloudUsedBytes": 524288,
+    "audioUsedBytes": 524288,
+    "storageFileCount": 1,
+    "updatedAt": "2026-07-27T07:00:00.000Z"
+  }
+}

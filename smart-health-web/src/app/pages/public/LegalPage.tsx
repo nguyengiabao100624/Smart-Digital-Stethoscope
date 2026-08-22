@@ -86,31 +86,33 @@ export default function LegalPage() {
   return (
     <div>
       <section className="py-16 relative overflow-hidden">
-        <div className="absolute inset-0 medical-grid opacity-30" />
         <div className="max-w-3xl mx-auto px-6 text-center relative">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-[#0B5C9A]/15 border border-[#0B5C9A]/30"
-            style={{ boxShadow: "0 0 20px rgba(11,92,154,0.3)" }}
-          >
-            <FileText size={24} className="text-[#00FFD1]" />
+          <div className="shc-public-icon shc-public-icon-lg mx-auto mb-4">
+            <FileText size={24} />
           </div>
-          <h1 className="brand-gradient-text mb-2">Pháp lý & Điều khoản</h1>
-          <p className="text-[#8aa5ba] text-sm">Cập nhật lần cuối: Tháng 6, 2026</p>
+          <h1 className="shc-public-heading mb-2">Pháp lý & Điều khoản</h1>
+          <p className="text-muted-foreground text-sm">
+            Cập nhật lần cuối: Tháng 6, 2026
+          </p>
         </div>
       </section>
 
       <section className="py-12">
         <div className="max-w-3xl mx-auto px-6 space-y-8">
           {sections.map((section) => (
-            <div key={section.title} className="glass-panel rounded-2xl p-6">
-              <h2 className="text-lg font-bold text-[#00FFD1] mb-4 pb-3 border-b border-white/10">
+            <div key={section.title} className="shc-public-card p-6">
+              <h2 className="text-lg font-bold text-primary mb-4 pb-3 border-b border-border">
                 {section.title}
               </h2>
               <div className="space-y-5">
                 {section.content.map((item) => (
                   <div key={item.heading}>
-                    <h3 className="text-sm font-semibold text-[#eefbff] mb-2">{item.heading}</h3>
-                    <p className="text-sm text-[#8aa5ba] leading-relaxed">{item.body}</p>
+                    <h3 className="text-sm font-semibold text-foreground mb-2">
+                      {item.heading}
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {item.body}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -119,12 +121,14 @@ export default function LegalPage() {
         </div>
       </section>
 
-      <section className="py-10 border-t border-white/10">
+      <section className="py-10 border-t border-border">
         <div className="max-w-3xl mx-auto px-6 text-center">
-          <p className="text-[#8aa5ba] text-sm mb-2">Câu hỏi về pháp lý hoặc quyền riêng tư?</p>
+          <p className="text-muted-foreground text-sm mb-2">
+            Câu hỏi về pháp lý hoặc quyền riêng tư?
+          </p>
           <a
             href="mailto:legal@smarthealth.vn"
-            className="text-[#00FFD1] text-sm font-medium hover:underline"
+            className="text-primary text-sm font-medium hover:underline"
           >
             legal@smarthealth.vn
           </a>

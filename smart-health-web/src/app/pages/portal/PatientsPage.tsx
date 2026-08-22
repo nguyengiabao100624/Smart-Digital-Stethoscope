@@ -104,6 +104,8 @@ export default function PatientsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const workspaceId = user?.currentWorkspace.id || "";
+  const requiresPersonalMutationAuthority =
+    user?.role === "patient" || user?.raw?.role === "patient";
   const canManage = Boolean(
     user?.capabilities?.some((capability) =>
       MANAGE_CAPABILITIES.includes(capability),
@@ -136,9 +138,12 @@ export default function PatientsPage() {
   }, []);
 
   const patientsQuery = useQuery({
-    queryKey: ["portal", "patients", workspaceId, search],
+    queryKey: ["portal", "workspace", workspaceId, "patients", search],
     queryFn: async () =>
-      parsePatientListResponse(await smartHealthApi.listPatients(search)),
+      parsePatientListResponse(
+        await smartHealthApi.listPatients(search),
+        workspaceId,
+      ),
     enabled: Boolean(workspaceId),
     retry: false,
   });
@@ -148,6 +153,13 @@ export default function PatientsPage() {
   const formDirty =
     createOpen &&
     patientIntentFingerprint(formIntent) !== initialFingerprintRef.current;
+
+  useEffect(() => {
+    if (!formDirty) return undefined;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [formDirty]);
 
   const openCreate = () => {
     const next = { ...EMPTY_PATIENT_FORM };
@@ -215,9 +227,16 @@ export default function PatientsPage() {
     setIsSubmitting(true);
     setSubmitError("");
     try {
+      const authority = requiresPersonalMutationAuthority
+        ? await smartHealthApi.resolvePatientMutationAuthority(
+            user?.id || "",
+            workspaceId,
+          )
+        : undefined;
       const response = await smartHealthApi.createPatient(
         patientPayloadFromIntent(intent),
         attempt.idempotencyKey,
+        authority,
       );
       const outcome = parsePatientMutationOutcome(response, intent);
       toast.success("Đã tạo hồ sơ bệnh nhân", {
@@ -226,7 +245,9 @@ export default function PatientsPage() {
       initialFingerprintRef.current = patientIntentFingerprint(intent);
       attemptRef.current = null;
       closeCreate();
-      await queryClient.invalidateQueries({ queryKey: ["portal", "patients"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["portal", "workspace", workspaceId, "patients"],
+      });
     } catch (error) {
       const apiError = error as ApiError;
       if (apiError.fieldErrors) setFieldErrors(apiError.fieldErrors);
@@ -311,7 +332,10 @@ export default function PatientsPage() {
                   className="transition-colors hover:bg-muted/30"
                 >
                   <td className="px-4 py-4">
-                    <p className="font-semibold text-foreground">
+                    <p
+                      className="font-semibold text-foreground"
+                      data-testid={`patient-name-${patient.id}`}
+                    >
                       {patient.name || "Chưa có tên"}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -369,7 +393,10 @@ export default function PatientsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">
+                    <CardTitle
+                      className="text-base"
+                      data-testid={`patient-name-${patient.id}`}
+                    >
                       {patient.name || "Chưa có tên"}
                     </CardTitle>
                     <CardDescription className="mt-1">
@@ -410,7 +437,7 @@ export default function PatientsPage() {
   }, [patients, patientsQuery, search]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="portal-patients-page">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary">

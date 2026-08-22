@@ -1,4 +1,11 @@
-import { useRef, useState, type ElementType, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ElementType,
+  type FormEvent,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -14,6 +21,7 @@ import {
   Stethoscope,
   UserRoundCog,
   Users,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -70,6 +78,7 @@ import {
   parsePortalStaffInvitationList,
   parsePortalStaffInvitationOutcome,
 } from "../../../lib/staff-invitation-operations";
+import { parsePortalStaffLedger } from "../../../lib/staff-operations";
 
 type InvitationForm = {
   name: string;
@@ -158,13 +167,14 @@ function deliveryLabel(delivery?: StaffInvitationDelivery) {
 }
 
 function roleLabel(value?: string) {
+  if (value === "workspace_owner") return "Chủ sở hữu workspace";
   return ROLE_LABELS[value as StaffInvitationRole] || value || "Chưa xác định";
 }
 
 function invitationStatus(invitation: StaffInvitation) {
   if (invitation.status === "accepted") {
     return (
-      <Badge className="border-success/25 bg-success/10 text-success">
+      <Badge className="border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]">
         Đã chấp nhận
       </Badge>
     );
@@ -174,13 +184,13 @@ function invitationStatus(invitation: StaffInvitation) {
   }
   if (invitation.status === "expired") {
     return (
-      <Badge className="border-warning/25 bg-warning/10 text-warning">
+      <Badge className="border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]">
         Đã hết hạn
       </Badge>
     );
   }
   return (
-    <Badge className="border-warning/25 bg-warning/10 text-warning">
+    <Badge className="border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]">
       Đang chờ
     </Badge>
   );
@@ -190,14 +200,14 @@ function membershipStatus(member: ApiUser) {
   const status = member.workspaceMembership?.status;
   if (status === "active") {
     return (
-      <Badge className="border-success/25 bg-success/10 text-success">
+      <Badge className="border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]">
         Đang hoạt động
       </Badge>
     );
   }
   if (status === "suspended") {
     return (
-      <Badge className="border-warning/25 bg-warning/10 text-warning">
+      <Badge className="border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]">
         Tạm ngưng
       </Badge>
     );
@@ -207,6 +217,21 @@ function membershipStatus(member: ApiUser) {
   return <Badge variant="outline">Chưa xác định</Badge>;
 }
 
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
+function isPermissionError(error: unknown) {
+  return (error as ApiError | undefined)?.status === 403;
+}
+
+class StaffOperationSupersededError extends Error {
+  constructor() {
+    super("Workspace đã thay đổi; phản hồi nhân sự cũ đã bị bỏ qua.");
+    this.name = "StaffOperationSupersededError";
+  }
+}
+
 export default function StaffPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -214,8 +239,15 @@ export default function StaffPage() {
   const canManage = Boolean(
     user?.capabilities.includes("workspace.staff.manage"),
   );
+  const activeWorkspaceRef = useRef(workspaceId);
+  const operationEpochRef = useRef(0);
+  const [settledWorkspaceId, setSettledWorkspaceId] =
+    useState(workspaceId);
+  const workspaceChanging = settledWorkspaceId !== workspaceId;
+  const [online, setOnline] = useState(() => !isOffline());
   const [inviteOpen, setInviteOpen] = useState(false);
   const [form, setForm] = useState<InvitationForm>(EMPTY_FORM);
+  const [discardInviteOpen, setDiscardInviteOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [manualAcceptance, setManualAcceptance] =
@@ -231,35 +263,106 @@ export default function StaffPage() {
   } | null>(null);
   const actionAttemptsRef = useRef(new Map<string, string>());
   const inFlightRef = useRef(false);
+  const inviteDirty = Boolean(
+    inviteOpen &&
+      !manualAcceptance &&
+      JSON.stringify(form) !== JSON.stringify(EMPTY_FORM),
+  );
+
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    activeWorkspaceRef.current = workspaceId;
+    if (settledWorkspaceId === workspaceId) return;
+    operationEpochRef.current += 1;
+    attemptRef.current = null;
+    actionAttemptsRef.current.clear();
+    inFlightRef.current = false;
+    setInviteOpen(false);
+    setForm(EMPTY_FORM);
+    setDiscardInviteOpen(false);
+    setIsSubmitting(false);
+    setSubmitError("");
+    setManualAcceptance(null);
+    setActionError("");
+    setActionId("");
+    setConfirmation(null);
+    setIsConfirming(false);
+    setConfirmationError("");
+    setSettledWorkspaceId(workspaceId);
+  }, [settledWorkspaceId, workspaceId]);
+
+  useEffect(() => {
+    const protectDraft = (event: BeforeUnloadEvent) => {
+      if (!inviteDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protectDraft);
+    return () => window.removeEventListener("beforeunload", protectDraft);
+  }, [inviteDirty]);
 
   const staffQuery = useQuery({
-    queryKey: ["portal", "staff", workspaceId],
-    queryFn: smartHealthApi.listStaff,
-    enabled: canManage && Boolean(workspaceId),
+    queryKey: ["portal", "workspace", workspaceId, "staff"],
+    queryFn: async () =>
+      parsePortalStaffLedger(await smartHealthApi.listStaff(), workspaceId),
+    enabled: Boolean(
+      canManage && workspaceId && online && !workspaceChanging,
+    ),
+    retry: false,
   });
   const invitationsQuery = useQuery({
-    queryKey: ["portal", "staff-invitations", workspaceId],
+    queryKey: ["portal", "workspace", workspaceId, "staff-invitations"],
     queryFn: async () =>
       parsePortalStaffInvitationList(
         await smartHealthApi.listStaffInvitations({
           organizationId: workspaceId,
         }),
+        workspaceId,
       ),
-    enabled: canManage && Boolean(workspaceId),
+    enabled: Boolean(
+      canManage && workspaceId && online && !workspaceChanging,
+    ),
+    retry: false,
   });
 
   const staff = staffQuery.data?.staff || [];
   const invitations = invitationsQuery.data || [];
 
-  const refreshStaff = async () => {
+  const refreshStaff = async (operationWorkspaceId = workspaceId) => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: ["portal", "staff", workspaceId],
+        queryKey: ["portal", "workspace", operationWorkspaceId, "staff"],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["portal", "staff-invitations", workspaceId],
+        queryKey: [
+          "portal",
+          "workspace",
+          operationWorkspaceId,
+          "staff-invitations",
+        ],
       }),
     ]);
+  };
+
+  const assertCurrentOperation = (
+    operationWorkspaceId: string,
+    operationEpoch: number,
+  ) => {
+    if (
+      activeWorkspaceRef.current !== operationWorkspaceId ||
+      operationEpochRef.current !== operationEpoch
+    ) {
+      throw new StaffOperationSupersededError();
+    }
   };
 
   const resetInvite = () => {
@@ -271,16 +374,35 @@ export default function StaffPage() {
 
   const handleInviteOpenChange = (nextOpen: boolean) => {
     if (isSubmitting) return;
+    if (!nextOpen && inviteDirty) {
+      setDiscardInviteOpen(true);
+      return;
+    }
     if (!nextOpen) resetInvite();
     setInviteOpen(nextOpen);
   };
 
+  const discardInviteDraft = () => {
+    resetInvite();
+    setDiscardInviteOpen(false);
+    setInviteOpen(false);
+  };
+
   const submitInvitation = async (event: FormEvent) => {
     event.preventDefault();
-    if (inFlightRef.current || !workspaceId) return;
+    if (inFlightRef.current || !workspaceId || !online) {
+      if (!online) {
+        setSubmitError(
+          "Thiết bị đang ngoại tuyến. Kết nối mạng rồi gửi lại cùng bản nháp.",
+        );
+      }
+      return;
+    }
+    const operationWorkspaceId = workspaceId;
+    const operationEpoch = operationEpochRef.current;
     setSubmitError("");
     const payload = {
-      organizationId: workspaceId,
+      organizationId: operationWorkspaceId,
       email: form.email.trim().toLowerCase(),
       role: form.role,
       name: form.name.trim(),
@@ -294,7 +416,10 @@ export default function StaffPage() {
     const idempotencyKey =
       attemptRef.current?.fingerprint === fingerprint
         ? attemptRef.current.idempotencyKey
-        : createPortalStaffIdempotencyKey("invite-create", workspaceId);
+        : createPortalStaffIdempotencyKey(
+            "invite-create",
+            operationWorkspaceId,
+          );
     attemptRef.current = { fingerprint, idempotencyKey };
     inFlightRef.current = true;
     setIsSubmitting(true);
@@ -303,6 +428,7 @@ export default function StaffPage() {
         await smartHealthApi.createStaffInvitation(payload, idempotencyKey),
         payload,
       );
+      assertCurrentOperation(operationWorkspaceId, operationEpoch);
       attemptRef.current = null;
       if (outcome.acceptanceUrl) {
         setManualAcceptance({
@@ -319,7 +445,7 @@ export default function StaffPage() {
           delivery: outcome.delivery,
         });
       }
-      await refreshStaff();
+      void refreshStaff(operationWorkspaceId);
       if (outcome.delivery.email === "sent") {
         toast.success("Provider đã xác nhận gửi lời mời.");
       } else {
@@ -328,14 +454,28 @@ export default function StaffPage() {
         );
       }
     } catch (error) {
+      if (error instanceof StaffOperationSupersededError) return;
       setSubmitError(errorMessage(error, "Không thể tạo lời mời nhân sự."));
     } finally {
-      inFlightRef.current = false;
-      setIsSubmitting(false);
+      if (
+        activeWorkspaceRef.current === operationWorkspaceId &&
+        operationEpochRef.current === operationEpoch
+      ) {
+        inFlightRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   };
 
   const resendInvitation = async (invitation: StaffInvitation) => {
+    if (!online) {
+      setActionError(
+        "Thiết bị đang ngoại tuyến. Kết nối mạng trước khi gửi lại lời mời.",
+      );
+      return;
+    }
+    const operationWorkspaceId = workspaceId;
+    const operationEpoch = operationEpochRef.current;
     const operationId = `resend:${invitation.id}`;
     const idempotencyKey =
       actionAttemptsRef.current.get(operationId) ||
@@ -355,6 +495,7 @@ export default function StaffPage() {
           role: invitation.role,
         },
       );
+      assertCurrentOperation(operationWorkspaceId, operationEpoch);
       actionAttemptsRef.current.delete(operationId);
       setManualAcceptance({
         invitationId: invitation.id,
@@ -362,7 +503,7 @@ export default function StaffPage() {
         url: outcome.acceptanceUrl || "",
         delivery: outcome.delivery,
       });
-      await refreshStaff();
+      void refreshStaff(operationWorkspaceId);
       if (outcome.delivery.email === "sent") {
         toast.success("Provider đã xác nhận gửi lại lời mời.");
       } else {
@@ -371,13 +512,21 @@ export default function StaffPage() {
         );
       }
     } catch (error) {
+      if (error instanceof StaffOperationSupersededError) return;
       setActionError(errorMessage(error, "Không thể gửi lại lời mời."));
     } finally {
-      setActionId("");
+      if (
+        activeWorkspaceRef.current === operationWorkspaceId &&
+        operationEpochRef.current === operationEpoch
+      ) {
+        setActionId("");
+      }
     }
   };
 
   const confirmInvitationRevoke = (invitation: StaffInvitation) => {
+    const operationWorkspaceId = workspaceId;
+    const operationEpoch = operationEpochRef.current;
     const operationId = `revoke-invitation:${invitation.id}`;
     const idempotencyKey =
       actionAttemptsRef.current.get(operationId) ||
@@ -390,16 +539,27 @@ export default function StaffPage() {
       confirmLabel: "Thu hồi lời mời",
       tone: "danger",
       run: async () => {
+        if (!online) {
+          throw new Error(
+            "Thiết bị đang ngoại tuyến. Kết nối mạng trước khi thu hồi lời mời.",
+          );
+        }
         const response = await smartHealthApi.revokeStaffInvitation(
           invitation.id,
           "Thu hồi bởi quản trị viên workspace",
           idempotencyKey,
         );
-        assertPortalStaffInvitationStatus(response, invitation.id, "revoked");
+        assertCurrentOperation(operationWorkspaceId, operationEpoch);
+        assertPortalStaffInvitationStatus(
+          response,
+          invitation.id,
+          "revoked",
+          operationWorkspaceId,
+        );
         actionAttemptsRef.current.delete(operationId);
         if (manualAcceptance?.invitationId === invitation.id)
           setManualAcceptance(null);
-        await refreshStaff();
+        void refreshStaff(operationWorkspaceId);
         toast.success("Backend đã xác nhận thu hồi lời mời.");
       },
     });
@@ -409,6 +569,8 @@ export default function StaffPage() {
     member: ApiUser,
     action: WorkspaceMembershipAction,
   ) => {
+    const operationWorkspaceId = workspaceId;
+    const operationEpoch = operationEpochRef.current;
     const operationId = `${action}-member:${member.id}`;
     const idempotencyKey =
       actionAttemptsRef.current.get(operationId) ||
@@ -438,6 +600,11 @@ export default function StaffPage() {
     setConfirmation({
       ...copy,
       run: async () => {
+        if (!online) {
+          throw new Error(
+            "Thiết bị đang ngoại tuyến. Kết nối mạng trước khi đổi membership.",
+          );
+        }
         const response =
           action === "suspend"
             ? await smartHealthApi.suspendStaffMember(member.id, idempotencyKey)
@@ -450,9 +617,15 @@ export default function StaffPage() {
                   member.id,
                   idempotencyKey,
                 );
-        assertMembershipLifecycleOutcome(response, member.id, action);
+        assertCurrentOperation(operationWorkspaceId, operationEpoch);
+        assertMembershipLifecycleOutcome(
+          response,
+          member.id,
+          action,
+          operationWorkspaceId,
+        );
         actionAttemptsRef.current.delete(operationId);
-        await refreshStaff();
+        void refreshStaff(operationWorkspaceId);
         toast.success(
           action === "suspend"
             ? "Backend đã xác nhận tạm ngưng membership."
@@ -466,17 +639,26 @@ export default function StaffPage() {
 
   const runConfirmation = async () => {
     if (!confirmation || isConfirming) return;
+    const operationWorkspaceId = workspaceId;
+    const operationEpoch = operationEpochRef.current;
     setIsConfirming(true);
     setConfirmationError("");
     try {
       await confirmation.run();
+      assertCurrentOperation(operationWorkspaceId, operationEpoch);
       setConfirmation(null);
     } catch (error) {
+      if (error instanceof StaffOperationSupersededError) return;
       setConfirmationError(
         errorMessage(error, "Không thể hoàn tất thao tác nhân sự."),
       );
     } finally {
-      setIsConfirming(false);
+      if (
+        activeWorkspaceRef.current === operationWorkspaceId &&
+        operationEpochRef.current === operationEpoch
+      ) {
+        setIsConfirming(false);
+      }
     }
   };
 
@@ -490,24 +672,53 @@ export default function StaffPage() {
     }
   };
 
+  const permissionError = [staffQuery.error, invitationsQuery.error].find(
+    isPermissionError,
+  ) as (ApiError & { requestId?: string }) | undefined;
+  const hasStaffSnapshot = staffQuery.data !== undefined;
+  const hasInvitationSnapshot = invitationsQuery.data !== undefined;
+  const hasStaleSnapshot =
+    Boolean(staffQuery.error && hasStaffSnapshot) ||
+    Boolean(invitationsQuery.error && hasInvitationSnapshot);
+  const canMutate =
+    canManage &&
+    Boolean(workspaceId) &&
+    online &&
+    !workspaceChanging &&
+    !permissionError;
+
   if (!canManage) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Không có quyền quản lý nhân sự</CardTitle>
-          <CardDescription>
-            Tài khoản cần capability `workspace.staff.manage` để mở bề mặt này.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <div
+        className="space-y-5"
+        data-testid="portal-staff"
+        data-workspace-id={workspaceId}
+      >
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Bác sĩ và nhân sự
+        </h1>
+        <Card role="alert" className="border-destructive/30">
+          <CardHeader>
+            <CardTitle>Không có quyền quản lý nhân sự</CardTitle>
+            <CardDescription>
+              Tài khoản cần capability `workspace.staff.manage` để mở bề mặt
+              này.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div
+      className="space-y-6"
+      data-testid="portal-staff"
+      data-workspace-id={workspaceId}
+    >
+      <header className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-primary">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
             <Users className="h-4 w-4" /> Workspace ·{" "}
             {user?.currentWorkspace.name || "Chưa xác định"}
           </div>
@@ -524,25 +735,77 @@ export default function StaffPage() {
             setManualAcceptance(null);
             setInviteOpen(true);
           }}
-          disabled={!workspaceId}
+          disabled={!canMutate}
           className="min-h-11 gap-2"
         >
           <Plus className="h-4 w-4" /> Mời nhân sự
         </Button>
-      </div>
+      </header>
 
       {!workspaceId && (
         <div
           role="alert"
-          className="flex items-start gap-2 rounded-xl border border-warning/25 bg-warning/10 p-4 text-sm text-warning"
+          className="flex items-start gap-2 rounded-xl border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--status-warning-fg)]"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> Hãy chọn một
           workspace hợp lệ trước khi mời hoặc quản lý nhân sự.
         </div>
       )}
 
+      {!online && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-start gap-3 rounded-xl border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--status-warning-fg)]"
+        >
+          <WifiOff aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+          <span>
+            Thiết bị đang ngoại tuyến. Dữ liệu đã xác nhận gần nhất vẫn được
+            hiển thị nhưng mọi thao tác nhân sự đã bị khóa.
+          </span>
+        </div>
+      )}
+
+      {hasStaleSnapshot && !permissionError ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] p-4 text-sm text-[var(--status-warning-fg)]"
+        >
+          <AlertCircle aria-hidden="true" className="size-5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            Chưa thể làm mới. Shcare đang giữ snapshot nhân sự đã xác nhận gần
+            nhất.
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={!online}
+            onClick={() => void refreshStaff()}
+          >
+            Thử lại
+          </Button>
+        </div>
+      ) : null}
+
+      {permissionError ? (
+        <Card role="alert" className="border-destructive/30">
+          <CardHeader>
+            <CardTitle>Không có quyền xem nhân sự workspace</CardTitle>
+            <CardDescription>
+              Backend đã từ chối truy cập. Không có dữ liệu nhân sự nào được
+              hiển thị.
+              {permissionError.requestId
+                ? ` Mã yêu cầu: ${permissionError.requestId}.`
+                : ""}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
+
       {manualAcceptance && (
-        <Card className="border-warning/30 bg-warning/5">
+        <Card className="border-[var(--status-warning-border)] bg-[var(--status-warning-bg)]">
           <CardHeader>
             <CardTitle className="text-base">
               Liên kết chấp nhận một lần
@@ -591,27 +854,32 @@ export default function StaffPage() {
       )}
 
       <Tabs defaultValue="members" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="members">Thành viên ({staff.length})</TabsTrigger>
-          <TabsTrigger value="invitations">
+        <TabsList className="h-auto min-h-11 p-0">
+          <TabsTrigger value="members" className="min-h-11">
+            Thành viên ({staff.length})
+          </TabsTrigger>
+          <TabsTrigger value="invitations" className="min-h-11">
             Lời mời ({invitations.length})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="members" className="space-y-4">
-          {staffQuery.isLoading ? (
+          {!online && !hasStaffSnapshot ? (
+            <OfflineState label="Chưa có snapshot thành viên cho workspace này." />
+          ) : staffQuery.isLoading ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {[0, 1, 2].map((item) => (
                 <Skeleton key={item} className="h-48 rounded-xl" />
               ))}
             </div>
-          ) : staffQuery.error ? (
+          ) : staffQuery.error && !hasStaffSnapshot ? (
             <RetryState
               message={errorMessage(
                 staffQuery.error,
                 "Không thể tải thành viên workspace.",
               )}
               onRetry={() => void staffQuery.refetch()}
+              disabled={!online || Boolean(permissionError)}
             />
           ) : staff.length === 0 ? (
             <EmptyState
@@ -682,6 +950,8 @@ export default function StaffPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              className="min-h-11"
+                              disabled={!canMutate}
                               onClick={() =>
                                 confirmMembershipAction(member, "reactivate")
                               }
@@ -692,6 +962,8 @@ export default function StaffPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              className="min-h-11"
+                              disabled={!canMutate}
                               onClick={() =>
                                 confirmMembershipAction(member, "suspend")
                               }
@@ -702,7 +974,8 @@ export default function StaffPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-destructive hover:text-destructive"
+                            className="min-h-11 text-destructive hover:text-destructive"
+                            disabled={!canMutate}
                             onClick={() =>
                               confirmMembershipAction(member, "revoke")
                             }
@@ -720,19 +993,22 @@ export default function StaffPage() {
         </TabsContent>
 
         <TabsContent value="invitations" className="space-y-4">
-          {invitationsQuery.isLoading ? (
+          {!online && !hasInvitationSnapshot ? (
+            <OfflineState label="Chưa có snapshot lời mời cho workspace này." />
+          ) : invitationsQuery.isLoading ? (
             <div className="space-y-3">
               {[0, 1, 2].map((item) => (
                 <Skeleton key={item} className="h-24 rounded-xl" />
               ))}
             </div>
-          ) : invitationsQuery.error ? (
+          ) : invitationsQuery.error && !hasInvitationSnapshot ? (
             <RetryState
               message={errorMessage(
                 invitationsQuery.error,
                 "Không thể tải danh sách lời mời.",
               )}
               onRetry={() => void invitationsQuery.refetch()}
+              disabled={!online || Boolean(permissionError)}
             />
           ) : invitations.length === 0 ? (
             <EmptyState
@@ -770,9 +1046,9 @@ export default function StaffPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={Boolean(actionId)}
+                            disabled={Boolean(actionId) || !canMutate}
                             onClick={() => void resendInvitation(invitation)}
-                            className="gap-2"
+                            className="min-h-11 gap-2"
                           >
                             {actionId === `resend:${invitation.id}` ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -784,8 +1060,8 @@ export default function StaffPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={Boolean(actionId)}
-                            className="text-destructive hover:text-destructive"
+                            disabled={Boolean(actionId) || !canMutate}
+                            className="min-h-11 text-destructive hover:text-destructive"
                             onClick={() => confirmInvitationRevoke(invitation)}
                           >
                             <Ban className="mr-2 h-4 w-4" /> Thu hồi
@@ -814,8 +1090,8 @@ export default function StaffPage() {
 
           {manualAcceptance && inviteOpen ? (
             <div className="space-y-4">
-              <div className="flex items-start gap-3 rounded-xl border border-success/25 bg-success/10 p-4">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" />
+              <div className="flex items-start gap-3 rounded-xl border border-[var(--status-success-border)] bg-[var(--status-success-bg)] p-4">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[var(--status-success-fg)]" />
                 <div>
                   <h3 className="font-semibold">Lời mời đã được tạo</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -840,7 +1116,7 @@ export default function StaffPage() {
                       type="button"
                       variant="outline"
                       onClick={copyAcceptanceUrl}
-                      className="gap-2"
+                      className="min-h-11 gap-2"
                     >
                       <Clipboard className="h-4 w-4" /> Sao chép
                     </Button>
@@ -860,6 +1136,7 @@ export default function StaffPage() {
                 <Button
                   type="button"
                   onClick={() => handleInviteOpenChange(false)}
+                  className="min-h-11"
                 >
                   Đóng
                 </Button>
@@ -876,6 +1153,7 @@ export default function StaffPage() {
                   <Label htmlFor="staff-name">Họ và tên</Label>
                   <Input
                     id="staff-name"
+                    name="name"
                     required
                     autoComplete="name"
                     value={form.name}
@@ -888,6 +1166,7 @@ export default function StaffPage() {
                   <Label htmlFor="staff-email">Email</Label>
                   <Input
                     id="staff-email"
+                    name="email"
                     required
                     type="email"
                     autoComplete="email"
@@ -901,6 +1180,7 @@ export default function StaffPage() {
                   <Label htmlFor="staff-phone">Số điện thoại</Label>
                   <Input
                     id="staff-phone"
+                    name="phone"
                     type="tel"
                     autoComplete="tel"
                     value={form.phone}
@@ -913,6 +1193,7 @@ export default function StaffPage() {
                   <Label htmlFor="staff-role">Vai trò</Label>
                   <select
                     id="staff-role"
+                    name="role"
                     value={form.role}
                     onChange={(event) =>
                       setForm({
@@ -936,6 +1217,7 @@ export default function StaffPage() {
                       <Label htmlFor="staff-specialty">Chuyên khoa</Label>
                       <Input
                         id="staff-specialty"
+                        name="specialty"
                         value={form.specialty}
                         onChange={(event) =>
                           setForm({ ...form, specialty: event.target.value })
@@ -948,6 +1230,7 @@ export default function StaffPage() {
                       </Label>
                       <Input
                         id="staff-license"
+                        name="license"
                         value={form.license}
                         onChange={(event) =>
                           setForm({ ...form, license: event.target.value })
@@ -972,13 +1255,14 @@ export default function StaffPage() {
                   variant="outline"
                   disabled={isSubmitting}
                   onClick={() => handleInviteOpenChange(false)}
+                  className="min-h-11"
                 >
                   Hủy
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || !workspaceId}
-                  className="gap-2"
+                  disabled={isSubmitting || !canMutate}
+                  className="min-h-11 gap-2"
                 >
                   {isSubmitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -994,6 +1278,37 @@ export default function StaffPage() {
       </Dialog>
 
       <AlertDialog
+        open={discardInviteOpen}
+        onOpenChange={(open) => {
+          if (!open) setDiscardInviteOpen(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bỏ bản nháp lời mời?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Thông tin nhân sự chưa được gửi tới backend sẽ bị xóa khỏi biểu
+              mẫu này.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-11">
+              Tiếp tục chỉnh sửa
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                discardInviteDraft();
+              }}
+            >
+              Bỏ bản nháp
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
         open={Boolean(confirmation)}
         onOpenChange={(open) => {
           if (!open && !isConfirming) {
@@ -1006,9 +1321,9 @@ export default function StaffPage() {
           <AlertDialogHeader>
             <div className="mb-2 flex items-center gap-2 text-foreground">
               {confirmation?.tone === "success" ? (
-                <ShieldCheck className="h-5 w-5 text-success" />
+                <ShieldCheck className="h-5 w-5 text-[var(--status-success-fg)]" />
               ) : (
-                <AlertCircle className="h-5 w-5 text-warning" />
+                <AlertCircle className="h-5 w-5 text-[var(--status-warning-fg)]" />
               )}
               <AlertDialogTitle>{confirmation?.title}</AlertDialogTitle>
             </div>
@@ -1025,17 +1340,22 @@ export default function StaffPage() {
             </div>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isConfirming}>Hủy</AlertDialogCancel>
-            <AlertDialogAction
+            <AlertDialogCancel
               disabled={isConfirming}
+              className="min-h-11"
+            >
+              Hủy
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isConfirming || !online}
               onClick={(event) => {
                 event.preventDefault();
                 void runConfirmation();
               }}
               className={
                 confirmation?.tone === "success"
-                  ? "bg-success text-white hover:bg-success/90"
-                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  ? "min-h-11"
+                  : "min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               }
             >
               {isConfirming && (
@@ -1053,9 +1373,11 @@ export default function StaffPage() {
 function RetryState({
   message,
   onRetry,
+  disabled = false,
 }: {
   message: string;
   onRetry: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Card className="border-destructive/25">
@@ -1067,10 +1389,24 @@ function RetryState({
           type="button"
           variant="outline"
           onClick={onRetry}
-          className="gap-2"
+          disabled={disabled}
+          className="min-h-11 gap-2"
         >
           <RefreshCw className="h-4 w-4" /> Tải lại
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OfflineState({ label }: { label: string }) {
+  return (
+    <Card className="border-[var(--status-warning-border)] bg-[var(--status-warning-bg)]">
+      <CardContent className="flex items-start gap-3 p-5 text-sm text-[var(--status-warning-fg)]">
+        <WifiOff aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+        <span>
+          {label} Kết nối mạng để tải dữ liệu đã xác nhận từ backend.
+        </span>
       </CardContent>
     </Card>
   );

@@ -248,8 +248,8 @@ export function UploadFileDialog({
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-in fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 animate-in fade-in motion-reduce:animate-none" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95 motion-reduce:animate-none">
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card p-5 sm:p-6">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -342,7 +342,7 @@ export function UploadFileDialog({
                 onClick={() => {
                   if (!submitting && !hasCompletedAttempt) inputRef.current?.click();
                 }}
-                className={`rounded-xl border-2 border-dashed p-7 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`rounded-xl border-2 border-dashed p-7 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none ${
                   !selectedBucket || submitting || hasCompletedAttempt
                     ? "cursor-not-allowed border-border bg-muted/30 opacity-60"
                     : dragOver

@@ -1,6 +1,7 @@
 package com.example.smart_health_android.devices
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.smart_health_android.R
 import com.example.smart_health_android.data.DevicePairingOutcome
@@ -18,8 +19,41 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.time.Instant
 import java.util.UUID
+
+@ConsistentCopyVisibility
+data class DevicePairingAuthoritySnapshot private constructor(
+    val userId: String,
+    val workspaceId: String,
+    val authorityEpoch: Long,
+) {
+    companion object {
+        fun create(
+            userId: String,
+            workspaceId: String,
+            authorityEpoch: Long,
+        ): DevicePairingAuthoritySnapshot {
+            val normalizedUserId = userId.trim()
+            val normalizedWorkspaceId = workspaceId.trim()
+            require(normalizedUserId.isNotBlank()) {
+                "Device pairing authority requires a backend user id."
+            }
+            require(normalizedWorkspaceId.isNotBlank()) {
+                "Device pairing authority requires an active workspace id."
+            }
+            require(authorityEpoch >= 0L) {
+                "Device pairing authority epoch cannot be negative."
+            }
+            return DevicePairingAuthoritySnapshot(
+                userId = normalizedUserId,
+                workspaceId = normalizedWorkspaceId,
+                authorityEpoch = authorityEpoch,
+            )
+        }
+    }
+}
 
 enum class DevicePairingStage {
     Entry,
@@ -34,36 +68,50 @@ enum class DevicePairingStage {
 }
 
 enum class DeviceSetupCapability {
-    ClaimOnly,
-    SecureQrV1,
+    None,
+    SecureSetupV1,
+}
+
+enum class DevicePairingFailureKind {
+    None,
+    Offline,
+    Permission,
+    Session,
+    Invalid,
+    Conflict,
+    Expired,
+    Backend,
 }
 
 data class DevicePairingUiState(
     val stage: DevicePairingStage = DevicePairingStage.Entry,
     val manualDeviceId: String = "",
     val manualClaimCode: String = "",
+    val manualSetupSsid: String = "",
+    val manualProofOfPossession: String = "",
+    val manualFieldErrors: Set<DeviceManualSetupField> = emptySet(),
     val claimedDeviceId: String = "",
     val claimedDeviceName: String = "",
     val idempotencyKey: String = "",
-    val setupCapability: DeviceSetupCapability = DeviceSetupCapability.ClaimOnly,
+    val setupCapability: DeviceSetupCapability = DeviceSetupCapability.None,
     val setupSsid: String = "",
     val setupProofOfPossession: String = "",
     val setupExpiresAtEpochMillis: Long? = null,
     val isBusy: Boolean = false,
     val canRetryClaim: Boolean = false,
     val canRetryOnline: Boolean = false,
+    val failureKind: DevicePairingFailureKind = DevicePairingFailureKind.None,
     val errorMessage: String = "",
     val errorMessageRes: Int? = null,
     val requestId: String = "",
-) {
-    val isManualClaimOnly: Boolean
-        get() = setupCapability == DeviceSetupCapability.ClaimOnly
-}
+)
 
 sealed interface DevicePairingUiAction {
     data class QrScanned(val rawValue: String) : DevicePairingUiAction
-    data class DeviceIdChanged(val value: String) : DevicePairingUiAction
-    data class ClaimCodeChanged(val value: String) : DevicePairingUiAction
+    data class ManualDeviceIdChanged(val value: String) : DevicePairingUiAction
+    data class ManualClaimCodeChanged(val value: String) : DevicePairingUiAction
+    data class ManualSetupSsidChanged(val value: String) : DevicePairingUiAction
+    data class ManualProofChanged(val value: String) : DevicePairingUiAction
     data object SubmitManual : DevicePairingUiAction
     data object RetryClaim : DevicePairingUiAction
     data object OpenWifiSettings : DevicePairingUiAction
@@ -94,7 +142,9 @@ interface DeviceClaimRepository {
     suspend fun listDevices(): List<SmartDevice>
 }
 
-class ApiDeviceClaimRepository : DeviceClaimRepository {
+class ApiDeviceClaimRepository(
+    private val expectedWorkspaceId: String,
+) : DeviceClaimRepository {
     override suspend fun claimDevice(
         payload: DeviceClaimPayload,
         connectionMethod: String,
@@ -103,6 +153,7 @@ class ApiDeviceClaimRepository : DeviceClaimRepository {
         deviceId = payload.deviceId,
         claimCode = payload.claimCode,
         connectionMethod = connectionMethod,
+        organizationId = expectedWorkspaceId,
         idempotencyKey = idempotencyKey,
     )
 
@@ -110,7 +161,9 @@ class ApiDeviceClaimRepository : DeviceClaimRepository {
 }
 
 class DevicePairingViewModel(
-    private val repository: DeviceClaimRepository = ApiDeviceClaimRepository(),
+    private val repository: DeviceClaimRepository,
+    private val expectedAuthority: DevicePairingAuthoritySnapshot?,
+    private val currentAuthority: () -> DevicePairingAuthoritySnapshot?,
     private val idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
     private val onlineRetryDelaysMillis: List<Long> = listOf(0L, 1_000L, 2_000L, 4_000L, 8_000L, 15_000L),
     private val nowMillis: () -> Long = System::currentTimeMillis,
@@ -138,8 +191,22 @@ class DevicePairingViewModel(
     fun onAction(action: DevicePairingUiAction) {
         when (action) {
             is DevicePairingUiAction.QrScanned -> submitQr(action.rawValue)
-            is DevicePairingUiAction.DeviceIdChanged -> updateManual(deviceId = action.value)
-            is DevicePairingUiAction.ClaimCodeChanged -> updateManual(claimCode = action.value)
+            is DevicePairingUiAction.ManualDeviceIdChanged -> updateManual(
+                editedField = DeviceManualSetupField.DeviceId,
+                deviceId = action.value,
+            )
+            is DevicePairingUiAction.ManualClaimCodeChanged -> updateManual(
+                editedField = DeviceManualSetupField.ClaimCode,
+                claimCode = action.value,
+            )
+            is DevicePairingUiAction.ManualSetupSsidChanged -> updateManual(
+                editedField = DeviceManualSetupField.SetupSsid,
+                setupSsid = action.value,
+            )
+            is DevicePairingUiAction.ManualProofChanged -> updateManual(
+                editedField = DeviceManualSetupField.ProofOfPossession,
+                proofOfPossession = action.value,
+            )
             DevicePairingUiAction.SubmitManual -> submitManual()
             DevicePairingUiAction.RetryClaim -> retryClaim()
             DevicePairingUiAction.OpenWifiSettings -> openWifiSettings()
@@ -156,15 +223,23 @@ class DevicePairingViewModel(
         }
     }
 
-    private fun updateManual(deviceId: String? = null, claimCode: String? = null) {
-        if (_uiState.value.isBusy) return
+    private fun updateManual(
+        editedField: DeviceManualSetupField,
+        deviceId: String? = null,
+        claimCode: String? = null,
+        setupSsid: String? = null,
+        proofOfPossession: String? = null,
+    ) {
+        val current = _uiState.value
+        if (current.isBusy) return
         cancelSensitiveWork()
-        _uiState.update { current ->
-            DevicePairingUiState(
-                manualDeviceId = deviceId ?: current.manualDeviceId,
-                manualClaimCode = claimCode ?: current.manualClaimCode,
-            )
-        }
+        _uiState.value = DevicePairingUiState(
+            manualDeviceId = deviceId ?: current.manualDeviceId,
+            manualClaimCode = claimCode ?: current.manualClaimCode,
+            manualSetupSsid = setupSsid ?: current.manualSetupSsid,
+            manualProofOfPossession = proofOfPossession ?: current.manualProofOfPossession,
+            manualFieldErrors = current.manualFieldErrors - editedField,
+        )
     }
 
     private fun submitQr(rawValue: String) {
@@ -190,9 +265,30 @@ class DevicePairingViewModel(
     private fun submitManual() {
         val state = _uiState.value
         if (state.isBusy) return
-        val payload = DeviceClaimPayloadParser.fromManualEntry(
+        val fieldErrors = DeviceClaimPayloadParser.validateManualSetupFields(
             deviceId = state.manualDeviceId,
             claimCode = state.manualClaimCode,
+            setupSsid = state.manualSetupSsid,
+            proofOfPossession = state.manualProofOfPossession,
+        )
+        if (fieldErrors.isNotEmpty()) {
+            _uiState.update {
+                it.copy(
+                    stage = DevicePairingStage.Entry,
+                    manualFieldErrors = fieldErrors,
+                    errorMessage = "",
+                    errorMessageRes = R.string.device_pairing_invalid_manual,
+                    requestId = "",
+                )
+            }
+            return
+        }
+        val payload = DeviceClaimPayloadParser.fromManualSetupFields(
+            deviceId = state.manualDeviceId,
+            claimCode = state.manualClaimCode,
+            setupSsid = state.manualSetupSsid,
+            proofOfPossession = state.manualProofOfPossession,
+            now = Instant.ofEpochMilli(nowMillis()),
         )
         if (payload == null) {
             _uiState.update {
@@ -210,6 +306,21 @@ class DevicePairingViewModel(
 
     private fun claim(payload: DeviceClaimPayload, connectionMethod: String) {
         if (_uiState.value.isBusy) return
+        if (!hasCurrentAuthority()) {
+            denyStaleAuthority()
+            return
+        }
+        if (!payload.supportsSecureSetup) {
+            _uiState.update {
+                it.copy(
+                    stage = DevicePairingStage.Entry,
+                    errorMessage = "",
+                    errorMessageRes = R.string.device_pairing_invalid_manual,
+                    requestId = "",
+                )
+            }
+            return
+        }
         claimJob?.cancel()
         pollingJob?.cancel()
         operationGeneration += 1
@@ -221,20 +332,22 @@ class DevicePairingViewModel(
         _uiState.update {
             it.copy(
                 stage = DevicePairingStage.Claiming,
+                manualDeviceId = "",
+                manualClaimCode = "",
+                manualSetupSsid = "",
+                manualProofOfPossession = "",
+                manualFieldErrors = emptySet(),
                 claimedDeviceId = payload.deviceId,
                 claimedDeviceName = "",
                 idempotencyKey = idempotencyKey,
-                setupCapability = if (payload.supportsSecureSetup) {
-                    DeviceSetupCapability.SecureQrV1
-                } else {
-                    DeviceSetupCapability.ClaimOnly
-                },
+                setupCapability = DeviceSetupCapability.SecureSetupV1,
                 setupSsid = setupAp?.ssid.orEmpty(),
                 setupProofOfPossession = setupAp?.proofOfPossession.orEmpty(),
-                setupExpiresAtEpochMillis = payload.claimExpiresAt?.toEpochMilli(),
+                setupExpiresAtEpochMillis = payload.setupExpiresAt?.toEpochMilli(),
                 isBusy = true,
                 canRetryClaim = false,
                 canRetryOnline = false,
+                failureKind = DevicePairingFailureKind.None,
                 errorMessage = "",
                 errorMessageRes = null,
                 requestId = "",
@@ -247,14 +360,22 @@ class DevicePairingViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                if (generation == operationGeneration) publishClaimFailure(error)
+                if (generation == operationGeneration) {
+                    if (hasCurrentAuthority()) publishClaimFailure(error) else denyStaleAuthority()
+                }
                 return@launch
             }
             if (generation != operationGeneration) return@launch
+            if (!hasCurrentAuthority()) {
+                denyStaleAuthority()
+                return@launch
+            }
             val device = response.device
             pendingClaim = null
-            _uiState.update { it.copy(manualClaimCode = "") }
-            if (device.id != payload.deviceId) {
+            if (
+                device.id != payload.deviceId ||
+                device.organizationId != expectedAuthority?.workspaceId
+            ) {
                 clearSetupMaterial()
                 _uiState.update {
                     it.copy(
@@ -291,17 +412,12 @@ class DevicePairingViewModel(
             _uiState.update {
                 it.copy(
                     claimedDeviceName = device.name,
-                    stage = if (payload.supportsSecureSetup) {
-                        DevicePairingStage.SetupReady
-                    } else {
-                        DevicePairingStage.AwaitingOnline
-                    },
-                    isBusy = !payload.supportsSecureSetup,
+                    stage = DevicePairingStage.SetupReady,
+                    isBusy = false,
                     canRetryClaim = false,
                     canRetryOnline = false,
                 )
             }
-            if (!payload.supportsSecureSetup) startOnlinePolling(payload.deviceId)
         }
     }
 
@@ -316,7 +432,7 @@ class DevicePairingViewModel(
         val state = _uiState.value
         if (
             state.stage !in setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance) ||
-            state.setupCapability != DeviceSetupCapability.SecureQrV1 ||
+            state.setupCapability != DeviceSetupCapability.SecureSetupV1 ||
             state.setupSsid.isBlank() ||
             state.setupProofOfPossession.isBlank()
         ) return
@@ -442,15 +558,29 @@ class DevicePairingViewModel(
         for (retryDelay in onlineRetryDelaysMillis) {
             delay(retryDelay)
             if (generation != operationGeneration) return
+            if (!hasCurrentAuthority()) {
+                denyStaleAuthority()
+                return
+            }
             val devices = try {
                 repository.listDevices().also { lastFailure = null }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
+                if (!hasCurrentAuthority()) {
+                    denyStaleAuthority()
+                    return
+                }
                 lastFailure = error
                 continue
             }
-            val device = devices.firstOrNull { it.id == deviceId }
+            if (!hasCurrentAuthority()) {
+                denyStaleAuthority()
+                return
+            }
+            val device = devices.firstOrNull {
+                it.id == deviceId && it.organizationId == expectedAuthority?.workspaceId
+            }
             if (device?.isAuthenticatedOnline() == true) {
                 confirmOnline(device)
                 return
@@ -458,7 +588,7 @@ class DevicePairingViewModel(
         }
         if (generation != operationGeneration) return
         if (lastFailure != null) {
-            publishOfflineFailure(lastFailure)
+            publishPresenceFailure(lastFailure)
             return
         }
         _uiState.update {
@@ -474,7 +604,7 @@ class DevicePairingViewModel(
 
     private fun scheduleSetupExpiry(payload: DeviceClaimPayload, generation: Long) {
         expiryJob?.cancel()
-        val expiresAt = payload.claimExpiresAt?.toEpochMilli() ?: return
+        val expiresAt = payload.setupExpiresAt?.toEpochMilli() ?: return
         val delayMillis = (expiresAt - nowMillis()).coerceAtLeast(0L)
         expiryJob = viewModelScope.launch {
             delay(delayMillis)
@@ -491,22 +621,83 @@ class DevicePairingViewModel(
         reset(errorMessageRes = R.string.device_pairing_setup_expired)
     }
 
-    private fun publishOfflineFailure(error: Throwable) {
+    private fun publishPresenceFailure(error: Throwable) {
         val apiError = error as? SmartHealthApiException
+        val policy = classifyPresenceFailure(error)
+        if (!policy.retryable) {
+            pendingClaim = null
+            clearSetupMaterial()
+        }
         _uiState.update {
             it.copy(
-                stage = DevicePairingStage.Offline,
+                stage = if (policy.retryable) {
+                    DevicePairingStage.Offline
+                } else {
+                    DevicePairingStage.ClaimFailed
+                },
                 isBusy = false,
                 canRetryClaim = false,
-                canRetryOnline = true,
+                canRetryOnline = policy.retryable,
+                failureKind = policy.kind,
                 errorMessage = "",
-                errorMessageRes = R.string.device_pairing_presence_offline,
+                errorMessageRes = policy.messageRes,
                 requestId = apiError?.requestId.orEmpty(),
             )
         }
     }
 
+    private fun classifyPresenceFailure(error: Throwable): ClaimFailurePolicy {
+        val apiError = error as? SmartHealthApiException
+        if (apiError != null) {
+            return when {
+                apiError.statusCode == 401 || apiError.code in SessionAuthorityErrorCodes ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_session_expired,
+                        kind = DevicePairingFailureKind.Session,
+                    )
+
+                apiError.statusCode == 403 || apiError.code in WorkspaceAuthorityErrorCodes ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_permission_denied,
+                        kind = DevicePairingFailureKind.Permission,
+                    )
+
+                apiError.statusCode in setOf(408, 429) || apiError.statusCode >= 500 ->
+                    ClaimFailurePolicy(
+                        retryable = true,
+                        messageRes = R.string.device_pairing_presence_offline,
+                        kind = DevicePairingFailureKind.Backend,
+                    )
+
+                else -> ClaimFailurePolicy(
+                    retryable = false,
+                    messageRes = R.string.device_pairing_backend_error,
+                    kind = DevicePairingFailureKind.Backend,
+                )
+            }
+        }
+        return if (error is IOException) {
+            ClaimFailurePolicy(
+                retryable = true,
+                messageRes = R.string.device_pairing_presence_offline,
+                kind = DevicePairingFailureKind.Offline,
+            )
+        } else {
+            ClaimFailurePolicy(
+                retryable = false,
+                messageRes = R.string.device_pairing_backend_error,
+                kind = DevicePairingFailureKind.Backend,
+            )
+        }
+    }
+
     private suspend fun confirmOnline(device: SmartDevice) {
+        if (!hasCurrentAuthority() || device.organizationId != expectedAuthority?.workspaceId) {
+            denyStaleAuthority()
+            return
+        }
         val deviceName = device.name.ifBlank { device.id }
         clearSetupMaterial()
         pendingClaim = null
@@ -526,15 +717,89 @@ class DevicePairingViewModel(
 
     private fun publishClaimFailure(error: Throwable) {
         val apiError = error as? SmartHealthApiException
+        val policy = classifyClaimFailure(error)
+        if (!policy.retryable) {
+            pendingClaim = null
+            clearSetupMaterial()
+        }
         _uiState.update {
             it.copy(
                 stage = DevicePairingStage.ClaimFailed,
                 isBusy = false,
-                canRetryClaim = pendingClaim != null,
+                canRetryClaim = policy.retryable && pendingClaim != null,
                 canRetryOnline = false,
                 errorMessage = "",
-                errorMessageRes = R.string.device_pairing_backend_error,
+                errorMessageRes = policy.messageRes,
+                failureKind = policy.kind,
                 requestId = apiError?.requestId.orEmpty(),
+            )
+        }
+    }
+
+    private fun classifyClaimFailure(error: Throwable): ClaimFailurePolicy {
+        val apiError = error as? SmartHealthApiException
+        if (apiError != null) {
+            return when {
+                apiError.statusCode == 401 || apiError.code in SessionAuthorityErrorCodes ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_session_expired,
+                        kind = DevicePairingFailureKind.Session,
+                    )
+
+                apiError.statusCode == 403 || apiError.code in WorkspaceAuthorityErrorCodes ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_permission_denied,
+                        kind = DevicePairingFailureKind.Permission,
+                    )
+
+                apiError.statusCode == 404 || apiError.code == "DEVICE_NOT_PROVISIONED" ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_not_provisioned,
+                        kind = DevicePairingFailureKind.Invalid,
+                    )
+
+                apiError.statusCode == 409 ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_claim_conflict,
+                        kind = DevicePairingFailureKind.Conflict,
+                    )
+
+                apiError.statusCode == 410 || apiError.code in ExpiredClaimErrorCodes ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_claim_expired,
+                        kind = DevicePairingFailureKind.Expired,
+                    )
+
+                apiError.statusCode in 400..499 && apiError.statusCode !in setOf(408, 429) ->
+                    ClaimFailurePolicy(
+                        retryable = false,
+                        messageRes = R.string.device_pairing_invalid_manual,
+                        kind = DevicePairingFailureKind.Invalid,
+                    )
+
+                else -> ClaimFailurePolicy(
+                    retryable = true,
+                    messageRes = R.string.device_pairing_backend_error,
+                    kind = DevicePairingFailureKind.Backend,
+                )
+            }
+        }
+        return if (error is IOException) {
+            ClaimFailurePolicy(
+                retryable = true,
+                messageRes = R.string.device_pairing_claim_offline,
+                kind = DevicePairingFailureKind.Offline,
+            )
+        } else {
+            ClaimFailurePolicy(
+                retryable = false,
+                messageRes = R.string.device_pairing_backend_error,
+                kind = DevicePairingFailureKind.Backend,
             )
         }
     }
@@ -549,6 +814,18 @@ class DevicePairingViewModel(
                 setupExpiresAtEpochMillis = null,
             )
         }
+    }
+
+    private fun hasCurrentAuthority(): Boolean =
+        expectedAuthority != null && currentAuthority() == expectedAuthority
+
+    private fun denyStaleAuthority() {
+        cancelSensitiveWork()
+        _uiState.value = DevicePairingUiState(
+            stage = DevicePairingStage.ClaimFailed,
+            failureKind = DevicePairingFailureKind.Session,
+            errorMessageRes = R.string.device_pairing_session_expired,
+        )
     }
 
     private fun cancelSensitiveWork() {
@@ -575,8 +852,49 @@ class DevicePairingViewModel(
 
     private companion object {
         const val SetupPortalUrl = "http://192.168.4.1"
+        val SessionAuthorityErrorCodes = setOf(
+            "AUTH_SESSION_REPLACED",
+            "AUTH_SESSION_REVOKED",
+            "AUTH_SESSION_REQUIRED",
+            "AUTH_SESSION_CHANGED",
+            "AUTH_SESSION_BINDING_MISSING",
+            "ACCOUNT_LOCKED",
+            "ACCOUNT_NOT_FOUND",
+        )
+        val WorkspaceAuthorityErrorCodes = setOf(
+            "WORKSPACE_MEMBERSHIP_REQUIRED",
+            "WORKSPACE_ARCHIVED",
+        )
+        val ExpiredClaimErrorCodes = setOf(
+            "DEVICE_CLAIM_EXPIRED",
+            "DEVICE_CLAIM_REVOKED",
+        )
     }
 }
+
+class DevicePairingViewModelFactory(
+    private val expectedAuthority: DevicePairingAuthoritySnapshot?,
+    private val currentAuthority: () -> DevicePairingAuthoritySnapshot?,
+    private val repository: DeviceClaimRepository = ApiDeviceClaimRepository(
+        expectedAuthority?.workspaceId.orEmpty(),
+    ),
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        require(modelClass.isAssignableFrom(DevicePairingViewModel::class.java))
+        return DevicePairingViewModel(
+            repository = repository,
+            expectedAuthority = expectedAuthority,
+            currentAuthority = currentAuthority,
+        ) as T
+    }
+}
+
+private data class ClaimFailurePolicy(
+    val retryable: Boolean,
+    val messageRes: Int,
+    val kind: DevicePairingFailureKind,
+)
 
 private fun SmartDevice.isAuthenticatedOnline(): Boolean = online
 

@@ -41,6 +41,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,10 +50,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,27 +66,28 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.R
-import com.example.smart_health_android.appointments.AppointmentRoute
 import androidx.compose.ui.draw.drawBehind
 import com.example.smart_health_android.data.BackendStatus
 import com.example.smart_health_android.data.Scan
-import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.scanIsNormal
 import com.example.smart_health_android.data.scanLabel
 import com.example.smart_health_android.data.scanSummary
-import com.example.smart_health_android.ui.theme.Background
-import com.example.smart_health_android.ui.theme.Border
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.PrimaryTeal
+import com.example.smart_health_android.doctor.DoctorDashboardLoadState
+import com.example.smart_health_android.doctor.DoctorDashboardUiAction
+import com.example.smart_health_android.doctor.DoctorDashboardViewModel
+import com.example.smart_health_android.doctor.DoctorDashboardViewModelFactory
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 import com.example.smart_health_android.ui.theme.SmarthealthandroidTheme
-import com.example.smart_health_android.ui.theme.SuccessGreen
-import com.example.smart_health_android.ui.theme.Surface
-import com.example.smart_health_android.ui.theme.TextPrimary
-import com.example.smart_health_android.ui.theme.TextSecondary
-import com.example.smart_health_android.ui.theme.WarningYellow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun DashboardScreen(
@@ -103,86 +101,65 @@ fun DashboardScreen(
     onNavigateToAppointments: () -> Unit,
     onNavigateToRecordDetail: (String) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var backendStatus by remember { mutableStateOf(BackendStatus()) }
-    var scans by remember { mutableStateOf<List<Scan>>(emptyList()) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    var stoppingScanId by remember { mutableStateOf<String?>(null) }
-    var displayName by remember { mutableStateOf("Bác sĩ") }
-    var workspaceName by remember { mutableStateOf("") }
-    var workspaceMeta by remember { mutableStateOf("") }
-    var canViewAppointments by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
+    val dashboardViewModel: DoctorDashboardViewModel = viewModel(
+        factory = DoctorDashboardViewModelFactory(),
+    )
+    val state by dashboardViewModel.uiState.collectAsStateWithLifecycle()
 
-    suspend fun refreshDashboard() {
-        runCatching {
-            backendStatus = SmartHealthRepository.api.getStatus()
-            scans = SmartHealthRepository.api.listScans(limit = 5)
-            loadError = null
-        }.onFailure {
-            loadError = it.message ?: "Không kết nối được máy chủ"
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        runCatching {
-            val currentUser = SmartHealthRepository.api.getMe()
-            displayName = currentUser.name.ifBlank { currentUser.email.ifBlank { "Bác sĩ" } }
-            workspaceName = currentUser.currentWorkspace?.name
-                .orEmpty()
-                .ifBlank { currentUser.clinicName }
-                .ifBlank { currentUser.organizationId }
-            workspaceMeta = listOf(
-                workspaceTypeLabel(currentUser.workspaceType),
-                roleLabel(currentUser.role)
-            ).filter { it.isNotBlank() }.joinToString(" • ")
-            canViewAppointments = AppointmentRoute.List.canOpen(currentUser.capabilities.toSet())
-        }
+    LaunchedEffect(dashboardViewModel) {
         while (true) {
-            refreshDashboard()
             delay(4000)
+            dashboardViewModel.onAction(DoctorDashboardUiAction.Refresh)
         }
     }
 
-    fun stopScan(scan: Scan) {
-        if (stoppingScanId != null) return
-        coroutineScope.launch {
-            stoppingScanId = scan.id
-            runCatching {
-                SmartHealthRepository.api.stopScan(scan.id)
-                refreshDashboard()
-            }.onFailure {
-                loadError = it.message ?: "Không dừng được lượt ghi"
+    if (state.loadState != DoctorDashboardLoadState.Content) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            val retry = { dashboardViewModel.onAction(DoctorDashboardUiAction.Refresh) }
+            when (state.loadState) {
+                DoctorDashboardLoadState.Loading -> ShcareLoadingState(
+                    message = "Đang tải bảng điều khiển…",
+                )
+                DoctorDashboardLoadState.PermissionDenied -> ShcarePermissionState(
+                    title = "Không có quyền xem bảng điều khiển",
+                    message = state.errorMessage,
+                    actionLabel = "Kiểm tra lại quyền",
+                    onRequestPermission = retry,
+                )
+                DoctorDashboardLoadState.Offline -> ShcareOfflineState(
+                    message = state.errorMessage,
+                    onRetry = retry,
+                )
+                else -> ShcareErrorState(
+                    message = state.errorMessage,
+                    onRetry = retry,
+                )
             }
-            stoppingScanId = null
         }
+        return
     }
-
-    val filteredScans = remember(scans, searchQuery) {
-        val query = searchQuery.trim().lowercase()
-        if (query.isBlank()) {
-            scans.take(3)
-        } else {
-            scans.filter { scan ->
-                listOf(scan.id, scan.patientName, scan.patientCode, scan.mode)
-                    .any { it.lowercase().contains(query) }
-            }.take(5)
-        }
-    }
+    val semanticColors = ShcareTheme.colors
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background),
+            .background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = 28.dp)
     ) {
         item {
             DoctorDashboardHeader(
-                displayName = displayName,
-                workspaceName = workspaceName,
-                workspaceMeta = workspaceMeta,
-                searchQuery = searchQuery,
-                onSearchQueryChange = { searchQuery = it },
+                displayName = state.displayName,
+                workspaceName = state.workspaceName,
+                workspaceMeta = state.workspaceMeta,
+                searchQuery = state.searchQuery,
+                onSearchQueryChange = {
+                    dashboardViewModel.onAction(DoctorDashboardUiAction.SearchChanged(it))
+                },
                 onNavigateToSettings = onNavigateToSettings,
                 onNavigateToNotifications = onNavigateToNotifications
             )
@@ -195,16 +172,16 @@ fun DashboardScreen(
                     .offset(y = (-28).dp)
             ) {
                 DeviceStatusCard(
-                    status = backendStatus,
-                    error = loadError,
+                    status = state.backendStatus,
+                    error = state.errorMessage.ifBlank { null },
                     onClick = onNavigateToBluetooth
                 )
 
                 Spacer(modifier = Modifier.height(22.dp))
 
                 Text(
-                    text = "Tác vụ nhanh",
-                    color = TextPrimary,
+                    text = stringResource(R.string.doctor_dashboard_quick_actions),
+                    color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -217,40 +194,40 @@ fun DashboardScreen(
                     QuickActionTile(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.SsidChart,
-                        label = "Đo ngay",
-                        background = PrimaryBlue,
-                        contentColor = Color.White,
+                        label = stringResource(R.string.doctor_dashboard_measure_now),
+                        background = semanticColors.brandHeaderStart,
+                        contentColor = semanticColors.onBrandHeader,
                         onClick = onNavigateToMonitoring
                     )
                     QuickActionTile(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.Description,
-                        label = "Hồ sơ",
-                        background = Color.White,
-                        contentColor = PrimaryBlue,
-                        borderColor = PrimaryBlue,
+                        label = stringResource(R.string.doctor_dashboard_records),
+                        background = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        borderColor = MaterialTheme.colorScheme.primary,
                         onClick = onNavigateToRecords
                     )
                     QuickActionTile(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.ChatBubbleOutline,
                         label = stringResource(R.string.ai_assistant_short_label),
-                        background = PrimaryTeal,
-                        contentColor = Color.White,
+                        background = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
                         onClick = onNavigateToAssistant
                     )
                     QuickActionTile(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.Add,
-                        label = "Đo mới",
-                        background = Color.White,
-                        contentColor = PrimaryBlue,
+                        label = stringResource(R.string.doctor_dashboard_new_scan),
+                        background = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary,
                         dashed = true,
                         onClick = onNavigateToNewScan
                     )
                 }
 
-                if (canViewAppointments) {
+                if (state.canViewAppointments) {
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedButton(
                         onClick = onNavigateToAppointments,
@@ -272,33 +249,35 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Kết quả gần đây",
-                        color = TextPrimary,
+                        text = stringResource(R.string.doctor_dashboard_recent_results),
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Xem tất cả",
-                        color = PrimaryBlue,
+                        text = stringResource(R.string.doctor_dashboard_view_all),
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.clickable(onClick = onNavigateToRecords)
                     )
                 }
 
-                if (filteredScans.isEmpty()) {
+                if (state.filteredScans.isEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    EmptyRecentScans(loadError = loadError)
+                    EmptyRecentScans(loadError = state.errorMessage.ifBlank { null })
                 }
             }
         }
 
-        items(filteredScans, key = { it.id }) { scan ->
+        items(state.filteredScans, key = { it.id }) { scan ->
             RecentScanCard(
                 scan = scan,
                 onClick = { onNavigateToRecordDetail(scan.id) },
-                onStopRecording = { stopScan(scan) },
-                isStopping = stoppingScanId == scan.id
+                onStopRecording = {
+                    dashboardViewModel.onAction(DoctorDashboardUiAction.StopScan(scan.id))
+                },
+                isStopping = state.stoppingScanId == scan.id
             )
         }
     }
@@ -314,11 +293,19 @@ private fun DoctorDashboardHeader(
     onNavigateToSettings: () -> Unit,
     onNavigateToNotifications: () -> Unit
 ) {
+    val semanticColors = ShcareTheme.colors
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-            .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        semanticColors.brandHeaderStart,
+                        semanticColors.brandHeaderEnd,
+                    ),
+                ),
+            )
             .statusBarsPadding()
             .padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 64.dp)
     ) {
@@ -330,14 +317,15 @@ private fun DoctorDashboardHeader(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Chào mừng trở lại,",
-                        color = Color.White.copy(alpha = 0.82f),
+                        text = stringResource(R.string.doctor_dashboard_welcome),
+                        color = semanticColors.onBrandHeader.copy(alpha = 0.82f),
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = displayName,
-                        color = Color.White,
+                        modifier = Modifier.semantics { heading() },
+                        color = semanticColors.onBrandHeader,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -347,7 +335,7 @@ private fun DoctorDashboardHeader(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = listOf(workspaceName, workspaceMeta).filter { it.isNotBlank() }.joinToString(" • "),
-                            color = Color.White.copy(alpha = 0.78f),
+                            color = semanticColors.onBrandHeader.copy(alpha = 0.78f),
                             fontSize = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -355,8 +343,16 @@ private fun DoctorDashboardHeader(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HeaderIconButton(icon = Icons.Default.Settings, onClick = onNavigateToSettings)
-                    HeaderIconButton(icon = Icons.Default.Notifications, onClick = onNavigateToNotifications)
+                    HeaderIconButton(
+                        icon = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.shcare_action_settings),
+                        onClick = onNavigateToSettings,
+                    )
+                    HeaderIconButton(
+                        icon = Icons.Default.Notifications,
+                        contentDescription = stringResource(R.string.shcare_action_notifications),
+                        onClick = onNavigateToNotifications,
+                    )
                 }
             }
 
@@ -367,8 +363,8 @@ private fun DoctorDashboardHeader(
                 onValueChange = onSearchQueryChange,
                 placeholder = {
                     Text(
-                        text = "Tìm kiếm bệnh nhân...",
-                        color = Color.White.copy(alpha = 0.65f),
+                        text = stringResource(R.string.doctor_dashboard_patient_search_hint),
+                        color = semanticColors.onBrandHeader.copy(alpha = 0.68f),
                         fontSize = 14.sp
                     )
                 },
@@ -376,21 +372,25 @@ private fun DoctorDashboardHeader(
                     Icon(
                         Icons.Default.Search,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f)
+                        tint = semanticColors.onBrandHeader.copy(alpha = 0.7f)
                     )
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
-                    .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(14.dp)),
+                    .border(
+                        1.dp,
+                        semanticColors.onBrandHeader.copy(alpha = 0.28f),
+                        RoundedCornerShape(14.dp),
+                    ),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White.copy(alpha = 0.18f),
-                    unfocusedContainerColor = Color.White.copy(alpha = 0.18f),
+                    focusedContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.18f),
+                    unfocusedContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.14f),
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color.White
+                    focusedTextColor = semanticColors.onBrandHeader,
+                    unfocusedTextColor = semanticColors.onBrandHeader,
+                    cursorColor = semanticColors.onBrandHeader
                 ),
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp)
@@ -424,15 +424,20 @@ private fun roleLabel(role: String): String {
 }
 
 @Composable
-private fun HeaderIconButton(icon: ImageVector, onClick: () -> Unit) {
+private fun HeaderIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    val semanticColors = ShcareTheme.colors
     IconButton(
         onClick = onClick,
         modifier = Modifier
-            .size(46.dp)
-            .background(Color.White.copy(alpha = 0.18f), CircleShape)
-            .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
+            .size(48.dp)
+            .background(semanticColors.onBrandHeader.copy(alpha = 0.14f), CircleShape)
+            .border(1.dp, semanticColors.onBrandHeader.copy(alpha = 0.28f), CircleShape)
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White)
+        Icon(icon, contentDescription = contentDescription, tint = semanticColors.onBrandHeader)
     }
 }
 
@@ -442,8 +447,23 @@ private fun DeviceStatusCard(
     error: String?,
     onClick: () -> Unit
 ) {
+    val semanticColors = ShcareTheme.colors
     val connected = status.espCount > 0
-    val statusColor = if (connected) SuccessGreen else WarningYellow
+    val statusColor = when {
+        error != null -> MaterialTheme.colorScheme.error
+        connected -> semanticColors.success
+        else -> semanticColors.offline
+    }
+    val statusContainerColor = when {
+        error != null -> MaterialTheme.colorScheme.errorContainer
+        connected -> semanticColors.successContainer
+        else -> semanticColors.offlineContainer
+    }
+    val statusContentColor = when {
+        error != null -> MaterialTheme.colorScheme.onErrorContainer
+        connected -> semanticColors.onSuccessContainer
+        else -> semanticColors.onOfflineContainer
+    }
     val statusText = when {
         error != null -> "Không kết nối máy chủ"
         connected -> "Đã nhận tín hiệu ESP32"
@@ -454,10 +474,10 @@ private fun DeviceStatusCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Border)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -465,23 +485,23 @@ private fun DeviceStatusCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(statusColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(statusContainerColor, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.MonitorHeart,
                         contentDescription = null,
-                        tint = statusColor,
+                        tint = statusContentColor,
                         modifier = Modifier.size(23.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Trạng thái thiết bị",
-                        color = TextSecondary,
+                        text = stringResource(R.string.doctor_dashboard_device_status),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -499,7 +519,7 @@ private fun DeviceStatusCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     StatusPill(icon = Icons.Default.MonitorHeart, text = "${status.espCount}")
-                    Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Wifi, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -509,21 +529,30 @@ private fun DeviceStatusCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .background(Border, CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(if (connected) 1f else 0.18f)
                         .height(6.dp)
-                        .background(Brush.horizontalGradient(listOf(statusColor, PrimaryTeal)), CircleShape)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(statusColor, MaterialTheme.colorScheme.secondary),
+                            ),
+                            CircleShape,
+                        )
                 )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Máy chủ: ${status.sampleRate} Hz • UDP ${status.udpPort}",
-                color = TextSecondary,
+                text = stringResource(
+                    R.string.doctor_dashboard_server_status,
+                    status.sampleRate,
+                    status.udpPort,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -535,13 +564,13 @@ private fun DeviceStatusCard(
 private fun StatusPill(icon: ImageVector, text: String) {
     Row(
         modifier = Modifier
-            .background(Surface, CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
             .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
         Spacer(modifier = Modifier.width(4.dp))
-        Text(text = text, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -557,10 +586,11 @@ private fun QuickActionTile(
     dashed: Boolean = false
 ) {
     val shape = RoundedCornerShape(14.dp)
+    val dashedBorderColor = MaterialTheme.colorScheme.primary
     val borderModifier = when {
         dashed -> Modifier.drawBehind {
             drawRoundRect(
-                color = PrimaryBlue,
+                color = dashedBorderColor,
                 style = Stroke(
                     width = 1.5.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
@@ -600,17 +630,28 @@ private fun QuickActionTile(
 @Composable
 private fun EmptyRecentScans(loadError: String?) {
     val message = loadError ?: "Chưa có lượt đo nào. Bấm Đo mới để tạo hồ sơ đầu tiên."
+    val hasError = loadError != null
+    val containerColor = if (hasError) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (hasError) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(14.dp))
-            .border(1.dp, Border, RoundedCornerShape(14.dp))
+            .background(containerColor, RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.Warning, contentDescription = null, tint = WarningYellow, modifier = Modifier.size(20.dp))
+        Icon(Icons.Default.Warning, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.width(10.dp))
-        Text(text = message, color = TextSecondary, fontSize = 14.sp, lineHeight = 19.sp)
+        Text(text = message, color = contentColor, fontSize = 14.sp, lineHeight = 19.sp)
     }
 }
 
@@ -621,12 +662,18 @@ private fun RecentScanCard(
     onStopRecording: () -> Unit,
     isStopping: Boolean
 ) {
+    val semanticColors = ShcareTheme.colors
     val normal = scanIsNormal(scan)
     val isRecording = scan.isRecording
-    val badgeColor = when {
-        isRecording -> PrimaryBlue
-        normal -> SuccessGreen
-        else -> WarningYellow
+    val badgeContainerColor = when {
+        isRecording -> MaterialTheme.colorScheme.primaryContainer
+        normal -> semanticColors.successContainer
+        else -> semanticColors.warningContainer
+    }
+    val badgeContentColor = when {
+        isRecording -> MaterialTheme.colorScheme.onPrimaryContainer
+        normal -> semanticColors.onSuccessContainer
+        else -> semanticColors.onWarningContainer
     }
 
     Card(
@@ -636,9 +683,9 @@ private fun RecentScanCard(
             .offset(y = (-16).dp)
             .padding(bottom = 12.dp)
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Border)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -649,7 +696,7 @@ private fun RecentScanCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = scan.id,
-                        color = TextSecondary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -658,7 +705,7 @@ private fun RecentScanCard(
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = scan.patientName,
-                        color = TextPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -668,11 +715,11 @@ private fun RecentScanCard(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = scanLabel(scan),
-                    color = badgeColor,
+                    color = badgeContentColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
-                        .background(badgeColor.copy(alpha = 0.1f), CircleShape)
+                        .background(badgeContainerColor, CircleShape)
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 )
             }
@@ -684,14 +731,24 @@ private fun RecentScanCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Đo ${if (scan.isHeart) "tim" else "phổi"}",
-                    color = TextSecondary,
+                    text = stringResource(
+                        if (scan.isHeart) {
+                            R.string.doctor_dashboard_scan_heart
+                        } else {
+                            R.string.doctor_dashboard_scan_lung
+                        },
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "${scan.formattedDate()} • ${scan.formattedTime()}",
-                    color = TextSecondary,
+                    text = stringResource(
+                        R.string.doctor_dashboard_scan_time,
+                        scan.formattedDate(),
+                        scan.formattedTime(),
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -702,21 +759,21 @@ private fun RecentScanCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Surface, RoundedCornerShape(12.dp))
-                    .border(1.dp, Border, RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
                     .padding(12.dp)
             ) {
                 Column {
                     Text(
                         text = stringResource(R.string.ai_assistant_result_label),
-                        color = TextSecondary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = scanSummary(scan),
-                        color = TextPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 14.sp,
                         lineHeight = 19.sp,
                         maxLines = 3,
@@ -731,7 +788,7 @@ private fun RecentScanCard(
                     onClick = onStopRecording,
                     enabled = !isStopping,
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = PrimaryBlue
+                        contentColor = MaterialTheme.colorScheme.primary
                     ),
                     modifier = Modifier.align(Alignment.End)
                 ) {
@@ -739,7 +796,7 @@ private fun RecentScanCard(
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
-                            color = PrimaryBlue
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }

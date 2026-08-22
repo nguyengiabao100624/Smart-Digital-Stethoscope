@@ -244,6 +244,12 @@ async function verifyWorkspaceSwitcherSurface(page) {
     return cards.map((card) => ({
       id: card.getAttribute("data-workspace-card") || "",
       active: card.getAttribute("data-workspace-active") === "true",
+      operational:
+        card.getAttribute("data-workspace-operational") === "true",
+      metrics:
+        card.querySelector("[data-workspace-metrics]")?.getAttribute(
+          "data-workspace-metrics",
+        ) || "available",
       patientCount:
         card
           .querySelector("[data-workspace-patient-count]")
@@ -262,6 +268,7 @@ async function verifyWorkspaceSwitcherSurface(page) {
     throw new Error("workspace switcher: no workspace cards rendered");
   }
   for (const card of result) {
+    if (!card.operational || card.metrics === "unavailable") continue;
     for (const field of ["patientCount", "deviceOnline", "alertCount"]) {
       if (!/^\d+$/.test(String(card[field]))) {
         throw new Error(
@@ -270,11 +277,22 @@ async function verifyWorkspaceSwitcherSurface(page) {
       }
     }
   }
+  const activeCards = result.filter((card) => card.active);
+  if (
+    activeCards.length !== 1 ||
+    !activeCards[0].operational
+  ) {
+    throw new Error(
+      `workspace switcher: expected one operational active workspace, received ${JSON.stringify(
+        activeCards,
+      )}`,
+    );
+  }
   return {
     label: "workspace switcher summary",
     path: new URL(page.url()).pathname,
     cards: result.length,
-    activeCards: result.filter((card) => card.active).length,
+    activeCards: activeCards.length,
   };
 }
 

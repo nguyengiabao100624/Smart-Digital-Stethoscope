@@ -30,6 +30,14 @@ const WORKSPACE_PATCH_FIELDS = Object.freeze([
   "requestMetadata",
 ]);
 
+const WORKSPACE_SETTINGS_FIELDS = Object.freeze([
+  "name",
+  "address",
+  "phone",
+  "email",
+  "website",
+]);
+
 function contractError(statusCode, code, message, details = undefined) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -164,6 +172,108 @@ function normalizeExpectedVersion(value) {
   return version;
 }
 
+function normalizeWorkspaceSettingsUpdate(payload = {}, options = {}) {
+  const source = objectOf(payload);
+  const allowedFields = new Set([...WORKSPACE_SETTINGS_FIELDS, "expectedVersion"]);
+  const unsupportedFields = Object.keys(source).filter((field) => !allowedFields.has(field));
+  if (unsupportedFields.length > 0) {
+    throw contractError(
+      400,
+      "WORKSPACE_SETTINGS_FIELDS_UNSUPPORTED",
+      "Workspace settings contains unsupported fields",
+      { unsupportedFields: unsupportedFields.sort() },
+    );
+  }
+  if (options.requireComplete) {
+    const missingFields = [...WORKSPACE_SETTINGS_FIELDS, "expectedVersion"].filter(
+      (field) => !Object.prototype.hasOwnProperty.call(source, field),
+    );
+    if (missingFields.length > 0) {
+      throw contractError(
+        400,
+        "WORKSPACE_SETTINGS_FIELDS_REQUIRED",
+        "Canonical workspace settings requires the complete versioned payload",
+        { missingFields },
+      );
+    }
+  }
+
+  const limits = {
+    name: 160,
+    address: 240,
+    phone: 40,
+    email: 160,
+    website: 240,
+  };
+  const patch = {};
+  for (const field of WORKSPACE_SETTINGS_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) continue;
+    if (typeof source[field] !== "string") {
+      throw contractError(
+        400,
+        "WORKSPACE_SETTINGS_FIELD_INVALID",
+        `Workspace settings field ${field} must be a string`,
+        { field },
+      );
+    }
+    const value = source[field].trim();
+    if (value.length > limits[field]) {
+      throw contractError(
+        400,
+        "WORKSPACE_SETTINGS_FIELD_TOO_LONG",
+        `Workspace settings field ${field} is too long`,
+        { field, maxLength: limits[field] },
+      );
+    }
+    patch[field] = field === "email" ? value.toLowerCase() : value;
+  }
+  if (!patch.name && (options.requireComplete || Object.prototype.hasOwnProperty.call(source, "name"))) {
+    throw contractError(400, "WORKSPACE_NAME_REQUIRED", "Workspace name is required");
+  }
+  if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) {
+    throw contractError(
+      400,
+      "WORKSPACE_EMAIL_INVALID",
+      "Workspace email is invalid",
+      { field: "email" },
+    );
+  }
+  if (patch.website) {
+    let website;
+    try {
+      website = new URL(patch.website);
+    } catch {
+      throw contractError(
+        400,
+        "WORKSPACE_WEBSITE_INVALID",
+        "Workspace website must be a valid HTTP or HTTPS URL",
+        { field: "website" },
+      );
+    }
+    if (!['http:', 'https:'].includes(website.protocol)) {
+      throw contractError(
+        400,
+        "WORKSPACE_WEBSITE_INVALID",
+        "Workspace website must be a valid HTTP or HTTPS URL",
+        { field: "website" },
+      );
+    }
+  }
+  if (Object.keys(patch).length === 0) {
+    throw contractError(
+      400,
+      "WORKSPACE_PATCH_EMPTY",
+      "At least one workspace settings field is required",
+    );
+  }
+  const expectedVersion = normalizeExpectedVersion(
+    Object.prototype.hasOwnProperty.call(source, "expectedVersion")
+      ? source.expectedVersion
+      : options.fallbackExpectedVersion,
+  );
+  return { expectedVersion, patch };
+}
+
 function assertWorkspaceTransition(fromValue, toValue) {
   const from = normalizeWorkspaceStatus(fromValue);
   const to = normalizeWorkspaceStatus(toValue);
@@ -207,12 +317,14 @@ function publicWorkspaceLifecycle(workspace) {
 
 module.exports = {
   WORKSPACE_PATCH_FIELDS,
+  WORKSPACE_SETTINGS_FIELDS,
   WORKSPACE_STATUSES,
   WORKSPACE_TRANSITIONS,
   assertWorkspaceTransition,
   normalizeExpectedVersion,
   normalizeWorkspaceCreate,
   normalizeWorkspacePatch,
+  normalizeWorkspaceSettingsUpdate,
   normalizeWorkspaceStatus,
   normalizeWorkspaceType,
   publicWorkspaceLifecycle,

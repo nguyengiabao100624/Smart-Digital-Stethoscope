@@ -26,7 +26,6 @@ import {
   serializeProvisionQrPayload,
   type DeviceProvisionArtifact,
 } from "@/lib/device-provisioning";
-import { getDeviceSecretValidationError } from "@/lib/device-secret";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { useAdminAccess } from "../useAdminAccess";
 
@@ -39,8 +38,6 @@ type DeviceFormData = {
   model: string;
   serialNumber: string;
   purchaseDate: string;
-  deviceSecret: string;
-  confirmDeviceSecret: string;
 };
 
 interface AddDeviceDialogProps {
@@ -58,8 +55,6 @@ const emptyForm: DeviceFormData = {
   model: "",
   serialNumber: "",
   purchaseDate: "",
-  deviceSecret: "",
-  confirmDeviceSecret: "",
 };
 
 function createProvisionIdempotencyKey() {
@@ -84,7 +79,6 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
   const [provisionArtifact, setProvisionArtifact] = useState<DeviceProvisionArtifact | null>(null);
   const [artifactClock, setArtifactClock] = useState(() => Date.now());
   const [copiedField, setCopiedField] = useState<"device" | "claim" | "payload" | "">("");
-  const [secretError, setSecretError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const submitInFlightRef = useRef<boolean>(false);
   const provisionIdempotencyKeyRef = useRef<string | null>(null);
@@ -146,16 +140,6 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
     e.preventDefault();
     if (submitInFlightRef.current) return;
 
-    const validationError = getDeviceSecretValidationError(formData.deviceSecret);
-    if (validationError) {
-      setSecretError(validationError);
-      return;
-    }
-    if (formData.deviceSecret !== formData.confirmDeviceSecret) {
-      setSecretError("Hai giá trị secret thiết bị không khớp.");
-      return;
-    }
-    setSecretError("");
     setSubmitError("");
     submitInFlightRef.current = true;
     setIsSubmitting(true);
@@ -171,7 +155,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
       try {
         response = await smartHealthApi.createDeviceProvision(
           {
-            deviceId: formData.deviceId || undefined,
+            deviceId: formData.deviceId,
             name: formData.deviceName,
             type: formData.deviceType,
             manufacturer: formData.manufacturer || undefined,
@@ -179,7 +163,6 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
             serialNumber: formData.serialNumber || undefined,
             purchaseDate: formData.purchaseDate || undefined,
             organizationId: isPlatformAdmin ? formData.clinic || undefined : undefined,
-            deviceSecret: formData.deviceSecret,
           },
           provisionIdempotencyKey,
         );
@@ -208,13 +191,8 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
 
       setProvisionArtifact(artifact);
       setArtifactClock(Date.now());
-      setFormData((current) => ({
-        ...current,
-        deviceSecret: "",
-        confirmDeviceSecret: "",
-      }));
       provisionIdempotencyKeyRef.current = null;
-      toast.success("Đã đăng ký thiết bị", {
+      toast.success("Đã tạo QR claim", {
         description: "Tải hoặc bàn giao QR setup trước khi đóng hộp thoại.",
       });
 
@@ -243,7 +221,6 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
       setFormData(emptyForm);
       setProvisionArtifact(null);
       setCopiedField("");
-      setSecretError("");
       setSubmitError("");
     }
   };
@@ -255,7 +232,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
   return (
     <Dialog.Root open={open} onOpenChange={closeAndReset}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 backdrop-blur-sm motion-reduce:animate-none" />
+        <Dialog.Overlay className="fixed inset-0 z-50 animate-in fade-in bg-black/50 motion-reduce:animate-none" />
         <Dialog.Content
           aria-busy={isDismissBlocked()}
           onEscapeKeyDown={(event) => {
@@ -284,7 +261,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
             <Dialog.Close
               disabled={isDismissBlocked()}
               aria-label="Đóng hộp thoại thêm thiết bị"
-              className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
             >
               <X className="h-5 w-5" />
             </Dialog.Close>
@@ -348,7 +325,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                                 "Device ID",
                               )
                             }
-                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                           >
                             {copiedField === "device" ? (
                               <Check className="h-4 w-4 text-success" />
@@ -375,7 +352,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                                 "claim code",
                               )
                             }
-                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {copiedField === "claim" ? (
                               <Check className="h-4 w-4 text-success" />
@@ -425,7 +402,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                             "payload QR",
                           )
                         }
-                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {copiedField === "payload" ? (
                           <Check className="h-4 w-4 text-success" />
@@ -438,7 +415,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                         type="button"
                         disabled={artifactStatus === "expired"}
                         onClick={downloadProvisionQr}
-                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Download className="h-4 w-4" />
                         Tải QR SVG
@@ -483,13 +460,19 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
             <section className="space-y-4">
               <h3 className="font-medium text-foreground">Thông tin thiết bị</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field id="deviceId" label="Device ID" icon={<Hash className="h-4 w-4" />}>
+                <Field
+                  id="deviceId"
+                  label="Device ID đã nạp tại factory"
+                  required
+                  icon={<Hash className="h-4 w-4" />}
+                >
                   <input
                     id="deviceId"
                     name="deviceId"
+                    required
                     value={formData.deviceId}
                     onChange={(e) => updateFormData({ ...formData, deviceId: e.target.value })}
-                    placeholder="Tự sinh nếu bỏ trống"
+                    placeholder="Quét hoặc nhập đúng ID trên nhãn thiết bị"
                     className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
@@ -537,57 +520,12 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               </div>
             </section>
 
-            <section className="space-y-4 border-t border-border pt-4">
-              <div>
-                <h3 className="font-medium text-foreground">Credential thiết bị</h3>
-                <p id="device-secret-help" className="mt-1 text-sm text-muted-foreground">
-                  Nhập đúng secret 32–95 byte đã được nạp an toàn vào firmware. Backend chỉ lưu giá
-                  trị băm; secret không nằm trong QR và không được hiển thị lại sau khi gửi.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field id="deviceSecret" label="Secret thiết bị" required>
-                  <input
-                    id="deviceSecret"
-                    name="deviceSecret"
-                    required
-                    type="password"
-                    autoComplete="new-password"
-                    spellCheck={false}
-                    aria-describedby="device-secret-help device-secret-error"
-                    aria-invalid={Boolean(secretError)}
-                    value={formData.deviceSecret}
-                    onChange={(event) => {
-                      setSecretError("");
-                      updateFormData({ ...formData, deviceSecret: event.target.value });
-                    }}
-                    className="h-11 w-full rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-                  />
-                </Field>
-                <Field id="confirmDeviceSecret" label="Nhập lại secret" required>
-                  <input
-                    id="confirmDeviceSecret"
-                    name="confirmDeviceSecret"
-                    required
-                    type="password"
-                    autoComplete="new-password"
-                    spellCheck={false}
-                    aria-describedby="device-secret-error"
-                    aria-invalid={Boolean(secretError)}
-                    value={formData.confirmDeviceSecret}
-                    onChange={(event) => {
-                      setSecretError("");
-                      updateFormData({ ...formData, confirmDeviceSecret: event.target.value });
-                    }}
-                    className="h-11 w-full rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-                  />
-                </Field>
-              </div>
-              {secretError ? (
-                <p id="device-secret-error" role="alert" className="text-sm text-destructive">
-                  {secretError}
-                </p>
-              ) : null}
+            <section className="space-y-2 border-t border-border pt-4">
+              <h3 className="font-medium text-foreground">Credential thiết bị</h3>
+              <p className="text-sm text-muted-foreground">
+                Credential phải được nạp bằng quy trình factory bảo mật trước khi tạo QR claim.
+                Admin không nhập, xem hoặc gửi raw device secret qua trình duyệt.
+              </p>
             </section>
 
             <section className="space-y-4 border-t border-border pt-4">
@@ -599,7 +537,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                     name="manufacturer"
                     value={formData.manufacturer}
                     onChange={(e) => updateFormData({ ...formData, manufacturer: e.target.value })}
-                    placeholder="VD: Smart Health"
+                    placeholder="VD: Shcare"
                     className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </Field>
@@ -651,7 +589,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                 <button
                   type="button"
                   disabled={isDismissBlocked()}
-                  className="min-h-11 flex-1 rounded-md border border-border px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-h-11 flex-1 rounded-md border border-border px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                 >
                   Đóng
                 </button>
@@ -659,9 +597,11 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               <button
                 type="submit"
                 disabled={isDismissBlocked()}
-                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:opacity-60"
               >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSubmitting && (
+                  <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                )}
                 Tạo claim code
               </button>
             </div>

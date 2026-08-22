@@ -1,5 +1,6 @@
 package com.example.smart_health_android.notifications
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -14,28 +15,86 @@ class NotificationLogoutSourceContractTest {
     private val navigationSource = projectFile(
         "src/main/java/com/example/smart_health_android/navigation/AppNavGraph.kt",
     ).readText()
+    private val startupSource = projectFile(
+        "src/main/java/com/example/smart_health_android/startup/SplashViewModel.kt",
+    ).readText()
+    private val terminatorSource = projectFile(
+        "src/main/java/com/example/smart_health_android/security/SessionTerminator.kt",
+    ).readText()
+    private val messagingServiceSource = projectFile(
+        "src/main/java/com/example/smart_health_android/data/SmartHealthFirebaseMessagingService.kt",
+    ).readText()
+    private val notificationCenterSource = projectFile(
+        "src/main/java/com/example/smart_health_android/notifications/SmartHealthNotificationCenter.kt",
+    ).readText()
+    private val verificationSource = projectFile(
+        "src/main/java/com/example/smart_health_android/ui/screens/ContactVerificationScreens.kt",
+    ).readText()
 
     @Test
     fun exposesAuthenticatedTokenUnregisterContract() {
         assertTrue(apiSource.contains("suspend fun unregisterNotificationDevice"))
         assertTrue(apiSource.contains("notifications/unregister-device"))
         assertTrue(registrarSource.contains("suspend fun unregisterCurrentToken"))
+        assertTrue(registrarSource.contains("suspend fun invalidateLocalToken"))
+        assertTrue(registrarSource.contains("deleteToken().await()"))
+        assertTrue(registrarSource.contains("markLocalInvalidationPending"))
+        assertTrue(registrarSource.contains("retryPendingInvalidation"))
+        assertTrue(registrarSource.contains("invalidationRetry.retryIfPending()"))
+        assertTrue(registrarSource.contains("notificationProtocolVersion = NOTIFICATION_PROTOCOL_VERSION"))
     }
 
     @Test
-    fun logoutUnregistersPushBeforeClearingAuthentication() {
-        val logoutStart = navigationSource.indexOf("val performLogout")
-        val unregister = navigationSource.indexOf(
-            "SmartHealthPushRegistrar.unregisterCurrentToken()",
-            startIndex = logoutStart,
+    fun normalAndForcedLogoutUseTheSameSessionTerminator() {
+        assertTrue(
+            navigationSource.contains(
+                "SmartHealthSessionTerminator.terminateIfCurrentFirebaseOwner(",
+            ),
         )
-        val firebaseSignOut = navigationSource.indexOf("FirebaseAuthService.signOut()", unregister)
-        val clearBackendToken = navigationSource.indexOf("setAuthToken(null)", unregister)
+        assertFalse(navigationSource.contains("SmartHealthSessionTerminator.terminate()"))
+        assertTrue(
+            startupSource.contains(
+                "SmartHealthSessionTerminator.terminateIfCurrentFirebaseOwner(owner)",
+            ),
+        )
+        assertTrue(terminatorSource.contains("SmartHealthPushRegistrar.unregisterCurrentToken(it)"))
+        assertTrue(terminatorSource.contains("SmartHealthRepository.api.logout(it)"))
+        assertTrue(
+            terminatorSource.contains(
+                "SmartHealthNotificationSession.deactivateAndClearPostedNotifications",
+            ),
+        )
+        assertTrue(terminatorSource.contains("SmartHealthNotificationCenter.clearAllPostedNotifications()"))
+        assertTrue(terminatorSource.contains("SmartHealthPushRegistrar.markLocalInvalidationPending()"))
+        assertTrue(terminatorSource.contains("SmartHealthPushRegistrar.scheduleLocalTokenInvalidation()"))
+        assertTrue(terminatorSource.contains("SmartHealthRepository.api.clearAuthTokenIfCurrent(it)"))
+        assertTrue(terminatorSource.contains("FirebaseAuthService.signOutIfCurrentOwner(it)"))
+        assertTrue(terminatorSource.contains("hasReplacementAuthority(authority)"))
+    }
 
-        assertTrue(logoutStart >= 0)
-        assertTrue(unregister > logoutStart)
-        assertTrue(firebaseSignOut > unregister)
-        assertTrue(clearBackendToken > unregister)
+    @Test
+    fun notificationDisplayIsBoundToTheAuthenticatedAccount() {
+        assertTrue(messagingServiceSource.contains("SmartHealthNotificationCenter.showForegroundMessage"))
+        assertTrue(notificationCenterSource.contains("SmartHealthNotificationSession.withAuthorizedDelivery"))
+        assertTrue(notificationCenterSource.contains("FirebaseAuthService::currentUserIdOrNull"))
+        assertTrue(notificationCenterSource.contains("payload[\"userId\"]"))
+    }
+
+    @Test
+    fun navigationAbandonmentUsesTheSameFailClosedLocalNotificationTeardown() {
+        assertTrue(
+            navigationSource.contains(
+                "SmartHealthSessionTerminator.terminateLocallyForAccountReplacement()",
+            ),
+        )
+        assertTrue(
+            terminatorSource.contains(
+                "SmartHealthNotificationSession.deactivateAndClearPostedNotifications",
+            ),
+        )
+        assertTrue(terminatorSource.contains("SmartHealthNotificationCenter.clearAllPostedNotifications()"))
+        assertTrue(terminatorSource.contains("SmartHealthPushRegistrar.markLocalInvalidationPending()"))
+        assertTrue(verificationSource.contains("BackHandler(onBack = onNavigateBack)"))
     }
 
     private fun projectFile(relativePath: String): File {

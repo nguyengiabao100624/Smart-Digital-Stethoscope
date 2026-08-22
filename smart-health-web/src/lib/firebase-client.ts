@@ -1,5 +1,6 @@
 import { initializeApp, getApps, type FirebaseOptions } from "firebase/app";
 import {
+  confirmPasswordReset,
   createUserWithEmailAndPassword,
   EmailAuthProvider,
   getAuth,
@@ -8,7 +9,7 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
-  updatePassword,
+  verifyPasswordResetCode,
   type User,
 } from "firebase/auth";
 
@@ -108,15 +109,31 @@ export async function createFirebaseAccount(email: string, password: string) {
 }
 
 export const signOutFirebase = () => signOut(auth());
+export const getCurrentFirebaseUid = () => auth().currentUser?.uid || null;
+
+export async function signOutFirebaseIfUidMatches(expectedUid: string) {
+  const currentAuth = auth();
+  if (!expectedUid || currentAuth.currentUser?.uid !== expectedUid) {
+    return false;
+  }
+  await signOut(currentAuth);
+  return true;
+}
+
 export const sendFirebasePasswordReset = (email: string) =>
   sendPasswordResetEmail(auth(), email.trim(), {
     url: `${window.location.origin}/login`,
   });
 
-export async function changeFirebasePassword(
-  currentPassword: string,
+export const verifyFirebasePasswordResetCode = (actionCode: string) =>
+  verifyPasswordResetCode(auth(), actionCode);
+
+export const confirmFirebasePasswordReset = (
+  actionCode: string,
   newPassword: string,
-) {
+) => confirmPasswordReset(auth(), actionCode, newPassword);
+
+export async function reauthenticateFirebasePassword(currentPassword: string) {
   const user = auth().currentUser;
   if (!user || !user.email) {
     throw new Error("Không tìm thấy phiên Firebase. Vui lòng đăng nhập lại.");
@@ -128,8 +145,10 @@ export async function changeFirebasePassword(
       currentPassword,
     );
     await reauthenticateWithCredential(user, credential);
-    await updatePassword(user, newPassword);
-    return user.getIdToken(true);
+    return {
+      idToken: await user.getIdToken(true),
+      uid: user.uid,
+    };
   } catch (error) {
     throw new Error(firebaseAuthErrorMessage(error));
   }

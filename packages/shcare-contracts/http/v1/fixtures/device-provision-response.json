@@ -1,0 +1,35 @@
+{
+  "device": {
+    "id": "dev_factory_alpha",
+    "organizationId": "org_alpha",
+    "name": "Shcare Clinic Unit 01",
+    "type": "stethoscope",
+    "manufacturer": "Shcare",
+    "model": "MSM261S4030H0",
+    "serialNumber": "SC-2026-0001",
+    "purchaseDate": "2026-08-15",
+    "ownershipState": "provisioned",
+    "status": "unclaimed",
+    "connected": false,
+    "online": false,
+    "createdAt": "2026-08-15T03:00:00.000Z",
+    "updatedAt": "2026-08-15T03:00:00.000Z"
+  },
+  "claim": {
+    "deviceId": "dev_factory_alpha",
+    "claimCode": "AB12CD34EF56",
+    "expiresAt": "2026-08-16T03:00:00.000Z",
+    "qrPayload": {
+      "type": "shcare.device.setup",
+      "protocolVersion": 1,
+      "deviceId": "dev_factory_alpha",
+      "claimCode": "AB12CD34EF56",
+      "claimExpiresAt": "2026-08-16T03:00:00.000Z",
+      "setupAp": {
+        "ssid": "Shcare-A1B2C3D4E5F6",
+        "security": "WPA2_PSK",
+        "proofOfPossession": "4hxulJ_mCLIz2XhP-KXh"
+      }
+    }
+  }
+}

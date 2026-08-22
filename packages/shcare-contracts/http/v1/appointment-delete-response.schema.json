@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/appointment-delete-response.schema.json",
+  "title": "Shcare appointment soft-delete receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deleted", "appointmentId", "workspaceId", "deletedAt", "replayed"],
+  "properties": {
+    "deleted": { "const": true },
+    "appointmentId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "workspaceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "deletedAt": { "type": "string", "format": "date-time" },
+    "replayed": { "type": "boolean" }
+  },
+  "x-shcare-http": {
+    "method": "DELETE",
+    "path": "/portal/appointments/{appointmentId}",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-delete": { "mode": "soft", "auditRequired": true }
+}

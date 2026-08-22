@@ -162,6 +162,33 @@ test("JSON workspace lifecycle is versioned, idempotent, searchable and audit at
   };
   const updated = await repository.update(updateInput);
   assert.equal(updated.responseBody.workspace.version, 2);
+  const updateReplay = await repository.update(updateInput);
+  assert.equal(updateReplay.replayed, true);
+  assert.equal(
+    updateReplay.responseBody.operationId,
+    updated.responseBody.operationId,
+    "an ambiguous workspace settings retry must replay the original operation receipt",
+  );
+  assert.equal(
+    db.auditLogs.filter(
+      (entry) =>
+        entry.action === "workspace.update" &&
+        entry.resourceId === "org_gamma",
+    ).length,
+    1,
+    "an exact retry must not append a second workspace audit row",
+  );
+  await assert.rejects(
+    repository.update({
+      ...updateInput,
+      payload: { name: "Payload collision" },
+      idempotency: {
+        ...updateInput.idempotency,
+        fingerprint: "update-gamma-collision-v2",
+      },
+    }),
+    (error) => error.code === "IDEMPOTENCY_KEY_REUSED",
+  );
   await assert.rejects(
     repository.update({
       ...updateInput,

@@ -1,0 +1,22 @@
+{
+  "device": {
+    "id": "dev_factory_alpha",
+    "organizationId": "org_alpha",
+    "ownerUserId": "usr_patient_alpha",
+    "pairedUserId": "usr_patient_alpha",
+    "name": "Shcare Clinic Unit 01",
+    "type": "stethoscope",
+    "ownershipState": "claimed",
+    "status": "available",
+    "connected": false,
+    "online": false,
+    "connectionMethod": "Manual",
+    "updatedAt": "2026-08-15T03:05:00.000Z"
+  },
+  "pairing": {
+    "outcome": "accepted",
+    "presence": "awaiting_online",
+    "onlineConfirmed": false,
+    "authenticatedTransport": null
+  }
+}

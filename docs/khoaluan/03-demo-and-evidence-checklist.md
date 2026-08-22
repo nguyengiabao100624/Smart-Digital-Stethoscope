@@ -1,6 +1,6 @@
 # Smart Health KLTN Demo And Evidence Checklist
 
-Last updated: 2026-07-10
+Last updated: 2026-08-22
 
 Use this checklist to produce report-ready evidence without overstating what was actually verified.
 
@@ -36,27 +36,49 @@ The expected KLTN demo flow is:
 
 ## Focused Commands
 
+Run every command below from the canonical repository root. Do not use old
+`D:\Study\...` paths and do not use `bunx tsc`.
+
+Interactive local demo (isolated JSON data, local demo auth only):
+
+```powershell
+npm.cmd --prefix smart-health-embedded/web-monitor run demo:stack
+```
+
+When all three readiness checks pass, the launcher prints:
+
+- Public Web / Portal: `http://127.0.0.1:8765`
+- Platform Admin: `http://127.0.0.1:8766/login`
+- Backend health: `http://127.0.0.1:3765/api/v1/health`
+- Patient: `patient@example.com` / `12345678`
+- Doctor: `doctor@example.com` / `12345678`
+- Admin: `admin.demo@shcare.local` / `Shcare-Demo-2026!`
+
+Press `Ctrl+C` after the demo. The launcher stops its child processes and
+deletes its temporary data. If one of the demo ports is intentionally changed,
+set `SHCARE_DEMO_BACKEND_PORT`, `SHCARE_DEMO_AUDIO_PORT`,
+`SHCARE_DEMO_WEB_PORT` or `SHCARE_DEMO_ADMIN_PORT` only for that terminal
+session. This launcher never enables demo authentication in a production
+build or live deployment.
+
 Backend contract smoke:
 
 ```powershell
-cd D:\Study\KLTN\smart-health-embedded\web-monitor
-npm.cmd run smoke:klt-contract
+npm.cmd --prefix smart-health-embedded/web-monitor run smoke:klt-contract
 ```
 
 Backend local checks:
 
 ```powershell
-cd D:\Study\KLTN\smart-health-embedded\web-monitor
-npm.cmd run check
-npm.cmd run smoke:workspace-access
-npm.cmd test
+npm.cmd --prefix smart-health-embedded/web-monitor run check
+npm.cmd --prefix smart-health-embedded/web-monitor run smoke:workspace-access
+npm.cmd --prefix smart-health-embedded/web-monitor test
 ```
 
 Firmware source build:
 
 ```powershell
-cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
-C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
+& C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run --project-dir smart-health-embedded/MSM261S4030H0
 ```
 
 Firmware physical device probe:
@@ -68,30 +90,28 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe device list
 Android source/build checks:
 
 ```powershell
-cd D:\Study\KLTN\smart-health-android
-.\gradlew.bat :app:compileDebugKotlin
-.\gradlew.bat :app:assembleDebug
-.\gradlew.bat :app:testDebugUnitTest
+Push-Location smart-health-android
+.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug --console=plain
+Pop-Location
 ```
 
 Shcare Portal checks:
 
 ```powershell
-cd D:\Study\KLTN\smart-health-web
-bunx tsc --noEmit --pretty false
-bun run lint
-bun run build
-bun run smoke:portal-browser
-bun run smoke:portal-mutation
+& .\smart-health-web\node_modules\.bin\tsc.cmd --noEmit --pretty false -p smart-health-web/tsconfig.json
+npm.cmd --prefix smart-health-web run lint
+npm.cmd --prefix smart-health-web run build
+npm.cmd --prefix smart-health-web run smoke:portal-browser
+npm.cmd --prefix smart-health-web run smoke:portal-mutation
 ```
 
 Web Admin checks:
 
 ```powershell
-cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
-npm.cmd run lint
-npm.cmd run build:firebase:admin
-npm.cmd run smoke:admin-mutation
+npm.cmd --prefix "smart-health-admin/thiết kế giao diện" run test:contracts
+npm.cmd --prefix "smart-health-admin/thiết kế giao diện" run lint
+npm.cmd --prefix "smart-health-admin/thiết kế giao diện" run build
+npm.cmd --prefix "smart-health-admin/thiết kế giao diện" run smoke:admin-mutation
 ```
 
 ## Evidence Naming

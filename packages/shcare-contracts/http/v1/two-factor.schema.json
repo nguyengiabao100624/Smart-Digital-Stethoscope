@@ -6,6 +6,7 @@
     { "$ref": "#/$defs/statusResponse" },
     { "$ref": "#/$defs/enrollmentResponse" },
     { "$ref": "#/$defs/verifiedResponse" },
+    { "$ref": "#/$defs/recoveryAcknowledgedResponse" },
     { "$ref": "#/$defs/challengeRequiredError" },
     { "$ref": "#/$defs/challengeResponse" },
     { "$ref": "#/$defs/disabledResponse" }
@@ -32,6 +33,26 @@
         "enrollmentPending": { "type": "boolean" }
       }
     },
+    "twoFactorPendingState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "method", "enrollmentPending"],
+      "properties": {
+        "enabled": { "const": false },
+        "method": { "const": "" },
+        "enrollmentPending": { "const": true }
+      }
+    },
+    "twoFactorEnabledState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "method", "enrollmentPending"],
+      "properties": {
+        "enabled": { "const": true },
+        "method": { "const": "app" },
+        "enrollmentPending": { "const": false }
+      }
+    },
     "enrollment": {
       "type": "object",
       "additionalProperties": false,
@@ -56,27 +77,68 @@
     "enrollmentResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["twoFactor", "enrollment"],
+      "required": ["userId", "twoFactor", "enrollment", "replayed", "superseded"],
       "properties": {
-        "twoFactor": { "$ref": "#/$defs/twoFactorState" },
-        "enrollment": { "$ref": "#/$defs/enrollment" }
+        "userId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "twoFactor": { "$ref": "#/$defs/twoFactorPendingState" },
+        "enrollment": { "$ref": "#/$defs/enrollment" },
+        "replayed": { "type": "boolean" },
+        "superseded": { "type": "boolean" }
       }
     },
     "verifiedResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["twoFactor", "recoveryCodes", "twoFactorToken", "tokenExpiresAt"],
+      "required": ["userId", "enrollmentId", "twoFactor", "recoveryCodes", "recoveryDelivery", "recoveryAckToken", "replayed"],
       "properties": {
-        "twoFactor": { "$ref": "#/$defs/twoFactorState" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "enrollmentId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "twoFactor": { "$ref": "#/$defs/twoFactorPendingState" },
         "recoveryCodes": {
           "type": "array",
           "minItems": 8,
-          "maxItems": 16,
+          "maxItems": 8,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 8, "maxLength": 64 }
+          "items": { "type": "string", "pattern": "^[A-F0-9]{6}-[A-F0-9]{6}$" }
         },
-        "twoFactorToken": { "type": "string", "minLength": 32, "maxLength": 1024 },
-        "tokenExpiresAt": { "type": "string", "format": "date-time" }
+        "recoveryDelivery": { "$ref": "#/$defs/recoveryDeliveryPending" },
+        "recoveryAckToken": { "type": "string", "minLength": 32, "maxLength": 1024, "pattern": "^[A-Za-z0-9_-]+$" },
+        "replayed": { "type": "boolean" }
+      }
+    },
+    "recoveryDeliveryPending": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expiresAt", "acknowledged"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "acknowledged": { "const": false }
+      }
+    },
+    "recoveryDeliveryAcknowledged": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expiresAt", "acknowledged", "acknowledgedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "acknowledged": { "const": true },
+        "acknowledgedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "recoveryAcknowledgedResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "enrollmentId", "twoFactor", "recoveryDelivery", "twoFactorToken", "tokenExpiresAt", "replayed"],
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "enrollmentId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "twoFactor": { "$ref": "#/$defs/twoFactorEnabledState" },
+        "recoveryDelivery": { "$ref": "#/$defs/recoveryDeliveryAcknowledged" },
+        "twoFactorToken": { "type": "string", "minLength": 32, "maxLength": 1024, "pattern": "^[A-Za-z0-9_-]+$" },
+        "tokenExpiresAt": { "type": "string", "format": "date-time" },
+        "replayed": { "type": "boolean" }
       }
     },
     "challengeRequiredError": {

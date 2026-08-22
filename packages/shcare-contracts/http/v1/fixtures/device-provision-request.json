@@ -1,0 +1,10 @@
+{
+  "deviceId": "dev_factory_alpha",
+  "organizationId": "org_alpha",
+  "name": "Shcare Clinic Unit 01",
+  "type": "stethoscope",
+  "manufacturer": "Shcare",
+  "model": "MSM261S4030H0",
+  "serialNumber": "SC-2026-0001",
+  "purchaseDate": "2026-08-15"
+}

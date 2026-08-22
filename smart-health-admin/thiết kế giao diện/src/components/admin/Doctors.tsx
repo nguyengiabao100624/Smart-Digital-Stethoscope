@@ -1,5 +1,4 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useRef } from "react";
 import {
   Search,
@@ -30,11 +29,12 @@ import * as Popover from "@radix-ui/react-popover";
 import { AddDoctorDialog } from "./dialogs/AddDoctorDialog";
 import { PageHeader, StatusBadge } from "./design-system";
 import { PaginationFooter } from "./PaginationFooter";
-import { ADMIN_TABLE_PAGE_SIZE, paginateItems } from "./pagination-utils";
+import { ADMIN_TABLE_PAGE_SIZE } from "./pagination-utils";
 import {
   smartHealthApi,
   type SmartHealthAuthUser,
   type SmartHealthFirebaseReconciliation,
+  type SmartHealthListPagination,
   type SmartHealthStaffInvitation,
   type SmartHealthStaffInvitationDelivery,
 } from "@/lib/smart-health-api";
@@ -49,6 +49,12 @@ import {
   parseStaffInvitationOutcome,
 } from "@/lib/staff-operations";
 import { CapabilityGate } from "./AdminAccessContext";
+import {
+  DetailDrawer,
+  DetailDrawerClose,
+  DetailDrawerDescription,
+  DetailDrawerTitle,
+} from "./DetailDrawer";
 import { useAdminAccess } from "./useAdminAccess";
 import { PLATFORM_USER_MANAGE_CAPABILITIES, STAFF_MANAGE_CAPABILITIES } from "./action-permissions";
 
@@ -94,7 +100,7 @@ function toDoctor(user: SmartHealthAuthUser): Doctor {
     patientsCount: user.patientsCount ?? null,
     measurementsCount: user.measurementsCount ?? null,
     joinDate: formatDate(user.roleApprovedAt || user.updatedAt || user.createdAt),
-    avatarColor: "bg-blue-100 text-blue-600",
+    avatarColor: "bg-primary/10 text-primary",
   };
 }
 
@@ -153,6 +159,15 @@ export function Doctors() {
     delivery: SmartHealthStaffInvitationDelivery;
   } | null>(null);
   const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<SmartHealthListPagination>({
+    totalCount: 0,
+    page: 1,
+    limit: ADMIN_TABLE_PAGE_SIZE,
+    pageCount: 0,
+  });
+  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([]);
+  const [clinicOptions, setClinicOptions] = useState<string[]>([]);
+  const deferredSearchTerm = React.useDeferredValue(searchTerm.trim());
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState("");
   const invitationAttemptRef = useRef(new Map<string, string>());
@@ -179,19 +194,44 @@ export function Doctors() {
     }
   };
 
-  const loadDoctors = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const response = await smartHealthApi.listApprovedDoctors();
-      setDoctors(response.doctors.map(toDoctor));
-      setLoadError("");
-    } catch (error) {
-      setDoctors([]);
-      setLoadError(toVietnameseErrorMessage(error, "Không thể tải danh sách bác sĩ đã duyệt."));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const loadDoctors = useCallback(
+    async (signal?: AbortSignal) => {
+      setIsLoading(true);
+      try {
+        const response = await smartHealthApi.listApprovedDoctors({
+          q: deferredSearchTerm || undefined,
+          page,
+          limit: ADMIN_TABLE_PAGE_SIZE,
+          sort: "roleApprovedAt:desc",
+          status: filterStatus === "all" ? undefined : filterStatus,
+          specialty: filterSpecialty === "all" ? undefined : filterSpecialty,
+          clinic: filterClinic === "all" ? undefined : filterClinic,
+          signal,
+        });
+        setDoctors(response.doctors.map(toDoctor));
+        const nextPagination = response.pagination || {
+          totalCount: response.doctors.length,
+          page,
+          limit: ADMIN_TABLE_PAGE_SIZE,
+          pageCount: response.doctors.length > 0 ? 1 : 0,
+        };
+        setPagination(nextPagination);
+        if (page > Math.max(1, nextPagination.pageCount)) {
+          setPage(Math.max(1, nextPagination.pageCount));
+        }
+        setSpecialtyOptions(response.facets?.specialties || []);
+        setClinicOptions(response.facets?.clinics || []);
+        setLoadError("");
+      } catch (error) {
+        if (signal?.aborted) return;
+        setDoctors([]);
+        setLoadError(toVietnameseErrorMessage(error, "Không thể tải danh sách bác sĩ đã duyệt."));
+      } finally {
+        if (!signal?.aborted) setIsLoading(false);
+      }
+    },
+    [deferredSearchTerm, filterClinic, filterSpecialty, filterStatus, page],
+  );
 
   const loadInvitations = useCallback(async () => {
     setIsInvitationsLoading(true);
@@ -314,9 +354,14 @@ export function Doctors() {
   };
 
   useEffect(() => {
-    void loadDoctors();
+    const controller = new AbortController();
+    void loadDoctors(controller.signal);
+    return () => controller.abort();
+  }, [loadDoctors]);
+
+  useEffect(() => {
     void loadInvitations();
-  }, [loadDoctors, loadInvitations]);
+  }, [loadInvitations]);
 
   const handleResendInvitation = async (invitation: SmartHealthStaffInvitation) => {
     const attemptId = `resend:${invitation.id}`;
@@ -394,44 +439,11 @@ export function Doctors() {
     }
   };
 
-  const specialtyOptions = useMemo(
-    () =>
-      [...new Set(doctors.map((doctor) => doctor.specialty).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b, "vi"),
-      ),
-    [doctors],
-  );
-  const clinicOptions = useMemo(
-    () =>
-      [...new Set(doctors.map((doctor) => doctor.clinic).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b, "vi"),
-      ),
-    [doctors],
-  );
-
-  const filteredDoctors = useMemo(() => {
-    const keyword = searchTerm.trim().toLowerCase();
-    return doctors.filter((doc) => {
-      const matchesSearch =
-        !keyword ||
-        doc.name.toLowerCase().includes(keyword) ||
-        doc.email.toLowerCase().includes(keyword) ||
-        doc.phone.toLowerCase().includes(keyword);
-      const matchesStatus = filterStatus === "all" || doc.status === filterStatus;
-      const matchesSpecialty = filterSpecialty === "all" || doc.specialty === filterSpecialty;
-      const matchesClinic = filterClinic === "all" || doc.clinic === filterClinic;
-      return matchesSearch && matchesStatus && matchesSpecialty && matchesClinic;
-    });
-  }, [doctors, filterClinic, filterSpecialty, filterStatus, searchTerm]);
-
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, filterSpecialty, filterClinic, filterStatus, doctors.length]);
+  }, [deferredSearchTerm, filterSpecialty, filterClinic, filterStatus]);
 
-  const pagedDoctors = useMemo(
-    () => paginateItems(filteredDoctors, page, ADMIN_TABLE_PAGE_SIZE),
-    [filteredDoctors, page],
-  );
+  const hasDoctors = useMemo(() => doctors.length > 0, [doctors.length]);
 
   return (
     <div className="space-y-6 h-full flex flex-col relative">
@@ -465,7 +477,7 @@ export function Doctors() {
       />
 
       {loadError && (
-        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
+        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
           Chưa tải được danh sách bác sĩ đã duyệt từ backend. Trang không dùng dữ liệu mẫu để tránh
           hiển thị sai: {loadError}
         </div>
@@ -490,10 +502,10 @@ export function Doctors() {
               <span className="rounded-full border border-border bg-muted/40 px-3 py-1.5">
                 Backend liên kết: {reconciliation.backendLinkedAccountCount}
               </span>
-              <span className="rounded-full border border-warning/25 bg-warning/10 px-3 py-1.5 text-[#B45309]">
+              <span className="rounded-full border border-warning/25 bg-warning/10 px-3 py-1.5 text-warning-foreground">
                 Thiếu trên Firebase: {reconciliation.missingProviderAccountCount}
               </span>
-              <span className="rounded-full border border-warning/25 bg-warning/10 px-3 py-1.5 text-[#B45309]">
+              <span className="rounded-full border border-warning/25 bg-warning/10 px-3 py-1.5 text-warning-foreground">
                 Thiếu trên backend: {reconciliation.missingBackendAccountCount}
               </span>
             </div>
@@ -529,7 +541,7 @@ export function Doctors() {
         {(invitationLoadError || invitationActionError) && (
           <div
             role="alert"
-            className="m-4 rounded-lg border border-warning/25 bg-warning/10 p-3 text-sm text-[#B45309]"
+            className="m-4 rounded-lg border border-warning/25 bg-warning/10 p-3 text-sm text-warning-foreground"
           >
             {invitationActionError || invitationLoadError}
           </div>
@@ -574,7 +586,7 @@ export function Doctors() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" tabIndex={0} aria-label="Bảng lời mời bác sĩ">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
@@ -763,7 +775,7 @@ export function Doctors() {
           </Popover.Root>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" tabIndex={0} aria-label="Bảng tài khoản bác sĩ">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
@@ -776,7 +788,7 @@ export function Doctors() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {pagedDoctors.map((doc) => (
+              {doctors.map((doc) => (
                 <tr key={doc.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
@@ -847,7 +859,7 @@ export function Doctors() {
                         Đã khóa
                       </span>
                     ) : (
-                      <span className="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-2.5 py-1 text-xs font-medium text-[#B45309]">
+                      <span className="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning-foreground">
                         Chưa xác định
                       </span>
                     )}
@@ -855,7 +867,10 @@ export function Doctors() {
                   <td className="px-5 py-4 text-right">
                     <DropdownMenu.Root>
                       <DropdownMenu.Trigger asChild>
-                        <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors outline-none">
+                        <button
+                          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors outline-none"
+                          aria-label={`Mở thao tác cho ${doc.name}`}
+                        >
                           <MoreVertical className="w-4 h-4" />
                         </button>
                       </DropdownMenu.Trigger>
@@ -906,7 +921,7 @@ export function Doctors() {
                   </td>
                 </tr>
               )}
-              {!isLoading && filteredDoctors.length === 0 && (
+              {!isLoading && !hasDoctors && (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">
                     Không tìm thấy bác sĩ phù hợp.
@@ -919,8 +934,8 @@ export function Doctors() {
 
         <PaginationFooter
           page={page}
-          totalItems={filteredDoctors.length}
-          sourceTotalItems={doctors.length}
+          pageSize={pagination.limit}
+          totalItems={pagination.totalCount}
           itemLabel="bác sĩ"
           onPageChange={setPage}
         />
@@ -933,119 +948,108 @@ export function Doctors() {
         lockedOrganizationId={canManagePlatformUsers ? undefined : currentWorkspaceId || null}
       />
 
-      <AnimatePresence>
+      <DetailDrawer
+        open={Boolean(selectedDoctor)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedDoctor(null);
+        }}
+        title={selectedDoctor ? `Chi tiết bác sĩ ${selectedDoctor.name}` : "Chi tiết bác sĩ"}
+        className="max-w-[480px]"
+      >
         {selectedDoctor && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedDoctor(null)}
-              className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[1px]"
-            />
-            <motion.aside
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 320, damping: 34 }}
-              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-border bg-card shadow-2xl"
-            >
-              <div className="flex items-start justify-between gap-4 border-b border-border p-5">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`flex h-12 w-12 items-center justify-center rounded-full font-bold ${selectedDoctor.avatarColor}`}
-                  >
-                    {selectedDoctor.name.split(" ").pop()?.charAt(0)}
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-semibold text-foreground">{selectedDoctor.name}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">{selectedDoctor.email}</p>
-                    <div className="mt-2">
-                      {selectedDoctor.status === "active" ? (
-                        <StatusBadge label="Tài khoản hoạt động" tone="success" />
-                      ) : selectedDoctor.status === "inactive" ? (
-                        <StatusBadge label="Tạm khóa" tone="error" />
-                      ) : (
-                        <StatusBadge label="Chưa xác định" tone="warning" />
-                      )}
-                    </div>
+            <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-full font-bold ${selectedDoctor.avatarColor}`}
+                >
+                  {selectedDoctor.name.split(" ").pop()?.charAt(0)}
+                </div>
+                <div>
+                  <DetailDrawerTitle>{selectedDoctor.name}</DetailDrawerTitle>
+                  <DetailDrawerDescription className="mt-1">
+                    {selectedDoctor.email}
+                  </DetailDrawerDescription>
+                  <div className="mt-2">
+                    {selectedDoctor.status === "active" ? (
+                      <StatusBadge label="Tài khoản hoạt động" tone="success" />
+                    ) : selectedDoctor.status === "inactive" ? (
+                      <StatusBadge label="Tạm khóa" tone="error" />
+                    ) : (
+                      <StatusBadge label="Chưa xác định" tone="warning" />
+                    )}
                   </div>
                 </div>
+              </div>
+              <DetailDrawerClose label="Đóng chi tiết bác sĩ" className="rounded-full" />
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+              <section className="grid grid-cols-2 gap-3">
+                <DoctorMetric
+                  label="Bệnh nhân"
+                  value={formatOptionalMetric(selectedDoctor.patientsCount)}
+                />
+                <DoctorMetric
+                  label="Lượt đo"
+                  value={formatOptionalMetric(selectedDoctor.measurementsCount)}
+                />
+                <DoctorMetric label="Vai trò" value="Bác sĩ" />
+                <DoctorMetric label="Ngày duyệt" value={selectedDoctor.joinDate} />
+              </section>
+
+              <section className="rounded-xl border border-border p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">
+                  Thông tin quyền truy cập
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <DoctorInfo
+                    icon={Stethoscope}
+                    label="Chuyên khoa"
+                    value={selectedDoctor.specialty || "Chưa cung cấp"}
+                  />
+                  <DoctorInfo
+                    icon={Building2}
+                    label="Phòng khám"
+                    value={selectedDoctor.clinic || "Chưa xác định"}
+                  />
+                  <DoctorInfo
+                    icon={ShieldCheck}
+                    label="Phạm vi dữ liệu"
+                    value="Theo membership và quyền do backend cấp"
+                  />
+                </div>
+              </section>
+            </div>
+
+            <CapabilityGate capabilities={PLATFORM_USER_MANAGE_CAPABILITIES}>
+              <div className="grid grid-cols-1 gap-2 border-t border-border bg-muted/30 p-5 sm:grid-cols-2">
+                {selectedDoctor.status === "inactive" ? (
+                  <button
+                    onClick={() => handleUnlock(selectedDoctor)}
+                    className="rounded-md bg-success/10 px-3 py-2 text-sm font-medium text-success hover:bg-success/20 transition-colors"
+                  >
+                    Mở khóa tài khoản
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleLock(selectedDoctor)}
+                    className="rounded-md bg-warning/10 px-3 py-2 text-sm font-medium text-warning-foreground hover:bg-warning/15"
+                  >
+                    Khóa tài khoản
+                  </button>
+                )}
                 <button
-                  onClick={() => setSelectedDoctor(null)}
-                  className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => handleDelete(selectedDoctor)}
+                  className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/15"
                 >
-                  <X className="h-5 w-5" />
+                  Xóa dữ liệu
                 </button>
               </div>
-
-              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-                <section className="grid grid-cols-2 gap-3">
-                  <DoctorMetric
-                    label="Bệnh nhân"
-                    value={formatOptionalMetric(selectedDoctor.patientsCount)}
-                  />
-                  <DoctorMetric
-                    label="Lượt đo"
-                    value={formatOptionalMetric(selectedDoctor.measurementsCount)}
-                  />
-                  <DoctorMetric label="Vai trò" value="Bác sĩ" />
-                  <DoctorMetric label="Ngày duyệt" value={selectedDoctor.joinDate} />
-                </section>
-
-                <section className="rounded-xl border border-border p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-foreground">
-                    Thông tin quyền truy cập
-                  </h3>
-                  <div className="space-y-3 text-sm">
-                    <DoctorInfo
-                      icon={Stethoscope}
-                      label="Chuyên khoa"
-                      value={selectedDoctor.specialty || "Chưa cung cấp"}
-                    />
-                    <DoctorInfo
-                      icon={Building2}
-                      label="Phòng khám"
-                      value={selectedDoctor.clinic || "Chưa xác định"}
-                    />
-                    <DoctorInfo
-                      icon={ShieldCheck}
-                      label="Phạm vi dữ liệu"
-                      value="Theo membership và quyền do backend cấp"
-                    />
-                  </div>
-                </section>
-              </div>
-
-              <CapabilityGate capabilities={PLATFORM_USER_MANAGE_CAPABILITIES}>
-                <div className="grid grid-cols-1 gap-2 border-t border-border bg-muted/30 p-5 sm:grid-cols-2">
-                  {selectedDoctor.status === "inactive" ? (
-                    <button
-                      onClick={() => handleUnlock(selectedDoctor)}
-                      className="rounded-md bg-success/10 px-3 py-2 text-sm font-medium text-success hover:bg-success/20 transition-colors"
-                    >
-                      Mở khóa tài khoản
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleLock(selectedDoctor)}
-                      className="rounded-md bg-warning/10 px-3 py-2 text-sm font-medium text-[#B45309] hover:bg-warning/15"
-                    >
-                      Khóa tài khoản
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDelete(selectedDoctor)}
-                    className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/15"
-                  >
-                    Xóa dữ liệu
-                  </button>
-                </div>
-              </CapabilityGate>
-            </motion.aside>
+            </CapabilityGate>
           </>
         )}
-      </AnimatePresence>
+      </DetailDrawer>
 
       <Dialog.Root
         open={!!confirmAction}

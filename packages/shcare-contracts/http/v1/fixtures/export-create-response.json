@@ -1,0 +1,30 @@
+{
+  "export": {
+    "id": "export_contract_001",
+    "organizationId": "workspace_contract_001",
+    "workspaceId": "workspace_contract_001",
+    "createdByUserId": "user_contract_001",
+    "format": "pdf",
+    "dataset": "clinical_bundle",
+    "scopeKind": "personal",
+    "filters": {
+      "startDate": "2026-07-01",
+      "endDate": "2026-07-27"
+    },
+    "rendererVersion": "shcare.export-artifact.v1",
+    "status": "ready",
+    "includeAudio": true,
+    "includeReports": true,
+    "includeHistory": true,
+    "startDate": "2026-07-01",
+    "endDate": "2026-07-27",
+    "recordCount": 4,
+    "downloadUrl": "/api/v1/exports/download/export_contract_001",
+    "artifactByteSize": 4096,
+    "artifactSha256": "89c1e520f52f915c34c57ea1b14c35c18244ed655609bd322effc478f283f61e",
+    "createdAt": "2026-07-27T07:05:00.000Z",
+    "updatedAt": "2026-07-27T07:05:00.000Z",
+    "downloadedAt": ""
+  },
+  "replayed": false
+}

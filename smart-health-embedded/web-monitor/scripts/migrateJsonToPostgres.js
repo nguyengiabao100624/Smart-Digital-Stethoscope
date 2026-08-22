@@ -6,6 +6,10 @@ const {
   sanitizeDeviceCredentialRotation,
   sanitizeDeviceTelemetry,
 } = require("../src/deviceSessionSecurity");
+const {
+  normalizeDeviceOtaStatus,
+  sanitizeDeviceOtaLifecycle,
+} = require("../src/deviceOtaLifecycle");
 const { inferDeviceOwnershipState } = require("../src/deviceOwnershipLifecycle");
 const { SIGNAL_QUALITY_ANALYZER_VERSION } = require("../src/aiRuntime");
 const {
@@ -25,8 +29,12 @@ const {
   normalizeStaffInvitationDelivery,
   resolveStaffInvitationStatus,
 } = require("../src/staffInvitationContract");
+const {
+  normalizeSupportTicketRecord,
+} = require("../src/supportTicketContract");
 const { PATIENT_IMPORT_MAX_BYTES } = require("../src/patientImportContract");
 const { sanitizeAuditMetadata } = require("../src/auditLogContract");
+const { normalizePasswordHash } = require("../src/passwordHash");
 const {
   EXPORT_ARTIFACT_RENDERER_VERSION,
   EXPORT_SCOPE_KINDS,
@@ -58,6 +66,24 @@ function identityImportError(code, message, details = {}) {
 
 function canonicalId(value) {
   return String(value || "").trim();
+}
+
+function isRoleRequestDocumentObjectKeyScoped(
+  objectKey,
+  organizationId,
+  userId,
+) {
+  const key = canonicalId(objectKey);
+  const expectedPrefix = `org/${canonicalId(organizationId)}/doctor-documents/${canonicalId(userId)}/`;
+  return (
+    Boolean(key) &&
+    Boolean(canonicalId(organizationId)) &&
+    Boolean(canonicalId(userId)) &&
+    key.startsWith(expectedPrefix) &&
+    key.length > expectedPrefix.length &&
+    !key.includes("..") &&
+    !key.includes("\\")
+  );
 }
 
 const ALLOWED_MEMBERSHIP_ROLES = new Set([
@@ -243,6 +269,8 @@ function validateAndNormalizeImportGraph(db) {
   const users = Array.isArray(db.users) ? db.users : [];
   const memberships = Array.isArray(db.memberships) ? db.memberships : [];
   const staffInvitations = Array.isArray(db.staffInvitations) ? db.staffInvitations : [];
+  const supportTickets = Array.isArray(db.supportTickets) ? db.supportTickets : [];
+  const roleRequestDocuments = collectRoleRequestDocuments(db);
   const patients = Array.isArray(db.patients) ? db.patients : [];
   const patientImportBatches = Array.isArray(db.patientImportBatches) ? db.patientImportBatches : [];
   const devices = Array.isArray(db.devices) ? db.devices : [];
@@ -272,9 +300,105 @@ function validateAndNormalizeImportGraph(db) {
   indexById(storageFiles, "storage_file");
   indexById(memberships, "membership");
   indexById(staffInvitations, "staff_invitation");
+  indexById(supportTickets, "support_ticket");
+  indexById(roleRequestDocuments, "role_request_document");
   indexById(db.doctorPatientAccess, "patient_share");
   indexById(db.audioFiles, "audio_file");
   indexById(db.aiResults, "ai_result");
+
+  const roleRequestDocumentCountByUser = new Map();
+  for (const document of roleRequestDocuments) {
+    const documentId = canonicalId(document.id);
+    const userId = canonicalId(document.userId);
+    const organizationId = canonicalId(document.organizationId);
+    const documentCount =
+      (roleRequestDocumentCountByUser.get(userId) || 0) + 1;
+    roleRequestDocumentCountByUser.set(userId, documentCount);
+    if (documentCount > 10) {
+      addIssue(
+        "IMPORT_ROLE_REQUEST_DOCUMENT_LIMIT_EXCEEDED",
+        "role_request_document",
+        documentId,
+        "userId",
+        userId,
+        `Account ${userId} has more than 10 role request documents`,
+      );
+    }
+    requireReference(
+      usersById,
+      "role_request_document",
+      documentId,
+      "userId",
+      userId,
+      "user",
+      true,
+    );
+    requireReference(
+      organizationsById,
+      "role_request_document",
+      documentId,
+      "organizationId",
+      organizationId,
+      "organization",
+      true,
+    );
+    const owner = usersById.get(userId) || null;
+    if (
+      owner &&
+      canonicalId(owner.organizationId) !== organizationId
+    ) {
+      addIssue(
+        "IMPORT_ROLE_REQUEST_DOCUMENT_WORKSPACE_MISMATCH",
+        "role_request_document",
+        documentId,
+        "organizationId",
+        organizationId,
+        `Role request document ${documentId} does not match its owner's canonical workspace`,
+      );
+    }
+    const objectKey = canonicalId(document.objectKey);
+    if (
+      objectKey &&
+      userId &&
+      organizationId &&
+      !isRoleRequestDocumentObjectKeyScoped(
+        objectKey,
+        organizationId,
+        userId,
+      )
+    ) {
+      addIssue(
+        "IMPORT_ROLE_REQUEST_DOCUMENT_OBJECT_SCOPE_MISMATCH",
+        "role_request_document",
+        documentId,
+        "objectKey",
+        objectKey,
+        `Role request document ${documentId} points outside its account workspace object prefix`,
+      );
+    }
+    if (
+      !canonicalId(document.name) ||
+      !["application/pdf", "image/jpeg", "image/png"].includes(
+        canonicalId(document.contentType).toLowerCase(),
+      ) ||
+      !Number.isInteger(Number(document.byteSize)) ||
+      Number(document.byteSize) < 1 ||
+      Number(document.byteSize) > 10 * 1024 * 1024 ||
+      !/^[a-f0-9]{64}$/.test(canonicalId(document.sha256).toLowerCase()) ||
+      !objectKey ||
+      !canonicalId(document.storageProvider) ||
+      !toIso(document.uploadedAt)
+    ) {
+      addIssue(
+        "IMPORT_ROLE_REQUEST_DOCUMENT_INVALID",
+        "role_request_document",
+        documentId,
+        "document",
+        "",
+        `Role request document ${documentId} is incomplete or predates the SHA-256 contract`,
+      );
+    }
+  }
 
   const pendingInvitationPrincipals = new Set();
   const invitationTokenHashes = new Set();
@@ -402,6 +526,71 @@ function validateAndNormalizeImportGraph(db) {
         error.code || "IMPORT_STAFF_INVITATION_INVALID",
         "staff_invitation",
         invitation?.id,
+        "contract",
+        "",
+        error.message,
+      );
+    }
+  }
+
+  for (const ticket of supportTickets) {
+    try {
+      const normalized = normalizeSupportTicketRecord(ticket);
+      const status = canonicalId(ticket.status || "open").toLowerCase();
+      if (!["open", "acknowledged", "resolved"].includes(status)) {
+        throw identityImportError(
+          "IMPORT_SUPPORT_TICKET_STATUS_INVALID",
+          `Support ticket ${canonicalId(ticket.id)} has unsupported status ${status}`,
+        );
+      }
+      const createdAt = toIso(ticket.createdAt);
+      const updatedAt = toIso(ticket.updatedAt || ticket.createdAt);
+      const version = Number(ticket.version || 1);
+      if (!createdAt || !updatedAt || !Number.isInteger(version) || version < 1) {
+        throw identityImportError(
+          "IMPORT_SUPPORT_TICKET_METADATA_INVALID",
+          `Support ticket ${canonicalId(ticket.id)} has invalid timestamps or version`,
+        );
+      }
+      Object.assign(ticket, normalized, {
+        status,
+        createdAt,
+        updatedAt,
+        version,
+      });
+      requireReference(
+        organizationsById,
+        "support_ticket",
+        ticket.id,
+        "workspaceId",
+        ticket.workspaceId,
+        "organization",
+        true,
+      );
+      requireReference(
+        usersById,
+        "support_ticket",
+        ticket.id,
+        "requesterUserId",
+        ticket.requesterUserId,
+        "user",
+        true,
+      );
+      for (const field of ["acknowledgedByUserId", "resolvedByUserId"]) {
+        requireReference(
+          usersById,
+          "support_ticket",
+          ticket.id,
+          field,
+          ticket[field],
+          "user",
+        );
+      }
+    } catch (error) {
+      addIssue(
+        error.code || "IMPORT_SUPPORT_TICKET_INVALID",
+        "support_ticket",
+        ticket?.id,
         "contract",
         "",
         error.message,
@@ -2790,7 +2979,9 @@ async function upsertUser(client, user) {
       valueOrNull(desiredIdentity.phone),
       desiredIdentity.role,
       user.name || user.email || user.id,
-      valueOrNull(user.passwordHash),
+      valueOrNull(
+        normalizePasswordHash(user.passwordHash || user.password || ""),
+      ),
       valueOrNull(user.license),
       valueOrNull(user.hospital),
       valueOrNull(user.department),
@@ -3514,6 +3705,12 @@ async function upsertDevice(client, device) {
   const desiredCredentialRotation = Object.keys(normalizedCredentialRotation).length > 0
     ? JSON.stringify(normalizedCredentialRotation)
     : null;
+  const normalizedOta = sanitizeDeviceOtaLifecycle(device.ota);
+  const desiredOtaStatus = normalizeDeviceOtaStatus(device.otaStatus || normalizedOta.status);
+  if (desiredOtaStatus) normalizedOta.status = desiredOtaStatus;
+  const desiredOta = Object.keys(normalizedOta).length > 0
+    ? JSON.stringify(normalizedOta)
+    : null;
   const secretMaterial = typeof device.secret === "string"
     ? device.secret
     : (typeof device.secretHash === "string" ? device.secretHash : "");
@@ -3523,7 +3720,8 @@ async function upsertDevice(client, device) {
     `
       SELECT id, organization_id, paired_user_id, ownership_state, owner_user_id,
              assigned_patient_id, revoked_by_user_id, secret_hash, revoked_at,
-             manufacturer, model, serial_number, purchase_date, telemetry, credential_rotation
+             manufacturer, model, serial_number, purchase_date, telemetry, credential_rotation,
+             ota, ota_status
       FROM devices
       WHERE id = $1
       FOR UPDATE
@@ -3577,8 +3775,12 @@ async function upsertDevice(client, device) {
       || (desiredPurchaseDate !== null && existingPurchaseDate !== desiredPurchaseDate);
     const telemetryNeedsUpdate = desiredTelemetry !== null;
     const credentialRotationNeedsUpdate = desiredCredentialRotation !== null;
+    const otaLifecycleNeedsUpdate = desiredOta !== null;
     const shouldRevoke = Boolean(desiredRevokedAt && !existing.revoked_at);
-    if (metadataNeedsUpdate || telemetryNeedsUpdate || credentialRotationNeedsUpdate || shouldRevoke) {
+    if (
+      metadataNeedsUpdate || telemetryNeedsUpdate || credentialRotationNeedsUpdate ||
+      otaLifecycleNeedsUpdate || shouldRevoke
+    ) {
       const updated = await client.query(
         `
           UPDATE devices
@@ -3593,9 +3795,15 @@ async function upsertDevice(client, device) {
               status = CASE WHEN $6::timestamptz IS NULL THEN status ELSE 'revoked' END,
               telemetry = COALESCE($7::jsonb, telemetry),
               credential_rotation = COALESCE($8::jsonb, credential_rotation),
+              ota = COALESCE($10::jsonb, ota),
+              ota_status = CASE
+                WHEN $10::jsonb IS NULL THEN ota_status
+                ELSE COALESCE(NULLIF($11, ''), ota_status)
+              END,
               updated_at = now()
           WHERE id = $1
-          RETURNING id, revoked_at, manufacturer, model, serial_number, purchase_date, telemetry, credential_rotation
+          RETURNING id, revoked_at, manufacturer, model, serial_number, purchase_date,
+                    telemetry, credential_rotation, ota, ota_status
         `,
         [
           device.id,
@@ -3607,6 +3815,8 @@ async function upsertDevice(client, device) {
           desiredTelemetry,
           desiredCredentialRotation,
           valueOrNull(desiredRevokedByUserId),
+          desiredOta,
+          desiredOtaStatus,
         ],
       );
       if (updated.rowCount === 0) {
@@ -3629,12 +3839,14 @@ async function upsertDevice(client, device) {
         id, organization_id, paired_user_id, ownership_state, owner_user_id,
         assigned_patient_id, revoked_by_user_id, name, type, status, signal, battery, connected,
         connection_method, secret_hash, firmware_version, manufacturer, model, serial_number, purchase_date,
-        last_seen_at, revoked_at, created_at, updated_at, telemetry, credential_rotation
+        last_seen_at, revoked_at, created_at, updated_at, telemetry, credential_rotation,
+        ota, ota_status
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
         $14, $15, $16, $17, $18, $19, $20::date, $21, $22,
-        COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now()), $25::jsonb, $26::jsonb
+        COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now()), $25::jsonb, $26::jsonb,
+        $27::jsonb, $28
       )
       ON CONFLICT (id) DO NOTHING
       RETURNING id
@@ -3666,6 +3878,8 @@ async function upsertDevice(client, device) {
       toIso(device.updatedAt),
       JSON.stringify(normalizedTelemetry),
       JSON.stringify(normalizedCredentialRotation),
+      JSON.stringify(normalizedOta),
+      desiredOtaStatus,
     ]
   );
   if (inserted.rowCount > 0) return { state: "inserted", ...inserted };
@@ -4587,7 +4801,7 @@ async function upsertDeviceCommand(client, command) {
         id, device_id, organization_id, requested_by_user_id,
         protocol_version, command_type, correlation_id, state, code, detail,
         delivery, idempotency_key, request_fingerprint,
-        issued_at, expires_at, accepted_at, queued_at, delivered_at,
+        issued_at, expires_at, execution_expires_at, accepted_at, queued_at, delivered_at,
         acknowledged_at, applying_at, applied_at, failed_at, expired_at,
         created_at, updated_at
       )
@@ -4597,7 +4811,8 @@ async function upsertDeviceCommand(client, command) {
         $14::timestamptz, $15::timestamptz, $16::timestamptz,
         $17::timestamptz, $18::timestamptz, $19::timestamptz,
         $20::timestamptz, $21::timestamptz, $22::timestamptz,
-        $23::timestamptz, $24::timestamptz, $25::timestamptz
+        $23::timestamptz, $24::timestamptz, $25::timestamptz,
+        $26::timestamptz
       )
       ON CONFLICT (id) DO NOTHING
       RETURNING id
@@ -4618,6 +4833,7 @@ async function upsertDeviceCommand(client, command) {
       valueOrNull(command.requestFingerprint),
       toIso(command.issuedAt),
       toIso(command.expiresAt),
+      toIso(command.executionExpiresAt),
       toIso(command.acceptedAt || command.issuedAt),
       toIso(command.queuedAt),
       toIso(command.deliveredAt),
@@ -5097,6 +5313,209 @@ async function insertStaffInvitation(client, sourceInvitation) {
   return { state: "inserted", ...inserted };
 }
 
+async function insertSupportTicket(client, sourceTicket) {
+  const normalized = normalizeSupportTicketRecord(sourceTicket);
+  const ticket = {
+    id: canonicalId(sourceTicket.id),
+    ...normalized,
+    status: canonicalId(sourceTicket.status || "open").toLowerCase(),
+    acknowledgedAt: toIso(sourceTicket.acknowledgedAt),
+    acknowledgedByUserId: canonicalId(sourceTicket.acknowledgedByUserId),
+    resolvedAt: toIso(sourceTicket.resolvedAt),
+    resolvedByUserId: canonicalId(sourceTicket.resolvedByUserId),
+    resolutionNote: canonicalId(sourceTicket.resolutionNote),
+    version: Number(sourceTicket.version || 1),
+    createdAt: toIso(sourceTicket.createdAt),
+    updatedAt: toIso(sourceTicket.updatedAt || sourceTicket.createdAt),
+  };
+  const existing = await client.query(
+    `
+      SELECT id, organization_id, requester_user_id, type
+      FROM support_tickets
+      WHERE id = $1
+      FOR UPDATE
+    `,
+    [ticket.id],
+  );
+  if (existing.rows[0]) {
+    const row = existing.rows[0];
+    const mismatchFields = [];
+    if (canonicalId(row.organization_id) !== ticket.workspaceId) mismatchFields.push("workspaceId");
+    if (canonicalId(row.requester_user_id) !== ticket.requesterUserId) mismatchFields.push("requesterUserId");
+    if (canonicalId(row.type) !== ticket.type) mismatchFields.push("type");
+    if (mismatchFields.length > 0) {
+      throw identityImportError(
+        "IMPORT_SUPPORT_TICKET_CANONICAL_CONFLICT",
+        `Support ticket ${ticket.id} conflicts with canonical ticket identity`,
+        { ticketId: ticket.id, mismatchFields },
+      );
+    }
+    return { state: "preserved", rowCount: 0, rows: existing.rows };
+  }
+  const inserted = await client.query(
+    `
+      INSERT INTO support_tickets (
+        id, organization_id, requester_user_id, type, description, status,
+        acknowledged_at, acknowledged_by_user_id, resolved_at,
+        resolved_by_user_id, resolution_note, version, created_at, updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7::timestamptz, NULLIF($8, ''), $9::timestamptz,
+        NULLIF($10, ''), $11, $12,
+        COALESCE($13::timestamptz, now()), COALESCE($14::timestamptz, now())
+      )
+      RETURNING id
+    `,
+    [
+      ticket.id,
+      ticket.workspaceId,
+      ticket.requesterUserId,
+      ticket.type,
+      ticket.description,
+      ticket.status,
+      ticket.acknowledgedAt,
+      ticket.acknowledgedByUserId,
+      ticket.resolvedAt,
+      ticket.resolvedByUserId,
+      ticket.resolutionNote,
+      ticket.version,
+      ticket.createdAt,
+      ticket.updatedAt,
+    ],
+  );
+  return { state: "inserted", ...inserted };
+}
+
+function collectRoleRequestDocuments(db) {
+  const documents = new Map();
+  for (const source of db.roleRequestDocuments || []) {
+    if (canonicalId(source?.id)) documents.set(canonicalId(source.id), source);
+  }
+  for (const user of db.users || []) {
+    for (const source of user.roleRequestDocuments || []) {
+      const id = canonicalId(source?.id);
+      if (!id) continue;
+      documents.set(id, {
+        ...source,
+        userId: canonicalId(source.userId || user.id),
+        organizationId: canonicalId(
+          source.organizationId || user.organizationId,
+        ),
+      });
+    }
+  }
+  return [...documents.values()];
+}
+
+async function insertRoleRequestDocument(client, sourceDocument) {
+  const document = {
+    id: canonicalId(sourceDocument.id),
+    userId: canonicalId(sourceDocument.userId),
+    organizationId: canonicalId(sourceDocument.organizationId),
+    name: canonicalId(sourceDocument.name),
+    contentType: canonicalId(sourceDocument.contentType).toLowerCase(),
+    byteSize: Number(sourceDocument.byteSize || 0),
+    sha256: canonicalId(sourceDocument.sha256).toLowerCase(),
+    objectKey: canonicalId(sourceDocument.objectKey),
+    storageProvider: canonicalId(sourceDocument.storageProvider),
+    uploadedAt: toIso(sourceDocument.uploadedAt),
+  };
+  if (
+    document.objectKey &&
+    document.organizationId &&
+    document.userId &&
+    !isRoleRequestDocumentObjectKeyScoped(
+      document.objectKey,
+      document.organizationId,
+      document.userId,
+    )
+  ) {
+    throw identityImportError(
+      "IMPORT_ROLE_REQUEST_DOCUMENT_OBJECT_SCOPE_MISMATCH",
+      `Role request document ${document.id || "<missing>"} points outside its account workspace object prefix`,
+      {
+        documentId: document.id || "",
+        organizationId: document.organizationId,
+        userId: document.userId,
+      },
+    );
+  }
+  if (
+    !document.id ||
+    !document.userId ||
+    !document.organizationId ||
+    !document.name ||
+    !["application/pdf", "image/jpeg", "image/png"].includes(
+      document.contentType,
+    ) ||
+    !Number.isInteger(document.byteSize) ||
+    document.byteSize < 1 ||
+    document.byteSize > 10 * 1024 * 1024 ||
+    !/^[a-f0-9]{64}$/.test(document.sha256) ||
+    !document.objectKey ||
+    !document.storageProvider ||
+    !document.uploadedAt
+  ) {
+    throw identityImportError(
+      "IMPORT_ROLE_REQUEST_DOCUMENT_INVALID",
+      `Role request document ${document.id || "<missing>"} is incomplete or predates the SHA-256 contract`,
+      { documentId: document.id || "" },
+    );
+  }
+  const existing = await client.query(
+    `
+      SELECT id, user_id, organization_id, sha256, object_key
+      FROM role_request_documents
+      WHERE id = $1
+      FOR UPDATE
+    `,
+    [document.id],
+  );
+  if (existing.rows[0]) {
+    const row = existing.rows[0];
+    const mismatchFields = [];
+    if (canonicalId(row.user_id) !== document.userId) mismatchFields.push("userId");
+    if (canonicalId(row.organization_id) !== document.organizationId) mismatchFields.push("organizationId");
+    if (canonicalId(row.sha256) !== document.sha256) mismatchFields.push("sha256");
+    if (canonicalId(row.object_key) !== document.objectKey) mismatchFields.push("objectKey");
+    if (mismatchFields.length > 0) {
+      throw identityImportError(
+        "IMPORT_ROLE_REQUEST_DOCUMENT_CANONICAL_CONFLICT",
+        `Role request document ${document.id} conflicts with canonical identity`,
+        { documentId: document.id, mismatchFields },
+      );
+    }
+    return { state: "preserved", rowCount: 0, rows: existing.rows };
+  }
+  const inserted = await client.query(
+    `
+      INSERT INTO role_request_documents (
+        id, user_id, organization_id, name, content_type, byte_size,
+        sha256, object_key, storage_provider, uploaded_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10::timestamptz
+      )
+      RETURNING id
+    `,
+    [
+      document.id,
+      document.userId,
+      document.organizationId,
+      document.name,
+      document.contentType,
+      document.byteSize,
+      document.sha256,
+      document.objectKey,
+      document.storageProvider,
+      document.uploadedAt,
+    ],
+  );
+  return { state: "inserted", ...inserted };
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -5129,6 +5548,8 @@ async function main() {
       users: createImportCounter(),
       memberships: createImportCounter(),
       staffInvitations: createImportCounter(),
+      supportTickets: createImportCounter(),
+      roleRequestDocuments: createImportCounter(),
       patients: createImportCounter(),
       patientImportBatches: createImportCounter(),
       patientShares: createImportCounter(),
@@ -5171,6 +5592,20 @@ async function main() {
         recordImportOutcome(
           counters.staffInvitations,
           await insertStaffInvitation(client, invitation),
+        );
+      }
+
+      for (const ticket of db.supportTickets || []) {
+        recordImportOutcome(
+          counters.supportTickets,
+          await insertSupportTicket(client, ticket),
+        );
+      }
+
+      for (const document of collectRoleRequestDocuments(db)) {
+        recordImportOutcome(
+          counters.roleRequestDocuments,
+          await insertRoleRequestDocument(client, document),
         );
       }
 
@@ -5311,6 +5746,7 @@ module.exports = {
   insertExportJob,
   insertPatientImportBatch,
   insertStaffInvitation,
+  isRoleRequestDocumentObjectKeyScoped,
   normalizeLegacyPatientIdentityGraph,
   recordImportOutcome,
   runMigrations,

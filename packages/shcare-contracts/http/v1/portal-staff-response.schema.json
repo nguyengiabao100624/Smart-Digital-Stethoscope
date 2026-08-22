@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/portal-staff-response.schema.json",
+  "title": "Shcare Portal staff ledger response",
+  "description": "A bounded, sanitized staff ledger for one authenticated workspace. Account credentials, Firebase claims, sessions and invitation tokens are never part of this response.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "generatedAt", "staff", "doctors"],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "staff": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/staffMember"
+      }
+    },
+    "doctors": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/staffMember"
+      }
+    }
+  },
+  "$defs": {
+    "staffMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "name",
+        "title",
+        "email",
+        "phone",
+        "avatarUrl",
+        "license",
+        "hospital",
+        "department",
+        "specialty",
+        "accountStatus",
+        "roleRequestStatus",
+        "verifiedEmail",
+        "workspaceMembership"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 320
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "hospital": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "accountStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "roleRequestStatus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "verifiedEmail": {
+          "type": "boolean"
+        },
+        "workspaceMembership": {
+          "$ref": "#/$defs/workspaceMembership"
+        }
+      }
+    },
+    "workspaceMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "userId",
+        "organizationId",
+        "workspaceId",
+        "role",
+        "status",
+        "operational",
+        "suspendedAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "enum": [
+            "workspace_owner",
+            "workspace_admin",
+            "doctor",
+            "nurse",
+            "technician",
+            "billing",
+            "viewer"
+          ]
+        },
+        "status": {
+          "enum": ["active", "suspended", "revoked"]
+        },
+        "operational": {
+          "type": "boolean"
+        },
+        "suspendedAt": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    }
+  }
+}

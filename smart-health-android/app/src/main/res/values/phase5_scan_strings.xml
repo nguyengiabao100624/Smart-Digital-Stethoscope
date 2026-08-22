@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="new_scan_title">Lượt đo có hướng dẫn</string>
+    <string name="new_scan_subtitle">Chọn đúng hồ sơ, thiết bị và vị trí trước khi gửi yêu cầu bắt đầu.</string>
+    <string name="new_scan_profiles_heading">Hồ sơ được đo</string>
+    <string name="new_scan_profile_fallback">Hồ sơ sức khỏe</string>
+    <string name="new_scan_profile_selected">Đã chọn hồ sơ %1$s</string>
+    <string name="new_scan_profile_not_selected">Chưa chọn hồ sơ %1$s</string>
+    <string name="new_scan_no_profile_title">Chưa có hồ sơ để đo</string>
+    <string name="new_scan_no_profile_message">Tạo hồ sơ phụ thuộc bên dưới rồi kiểm tra lại thông tin trước khi đo.</string>
+    <string name="new_scan_add_profile_heading">Thêm hồ sơ phụ thuộc</string>
+    <string name="new_scan_profile_name_label">Họ và tên</string>
+    <string name="new_scan_profile_name_error">Nhập họ và tên.</string>
+    <string name="new_scan_relationship_label">Quan hệ với bạn</string>
+    <string name="new_scan_relationship_hint">Ví dụ: con, ba, mẹ</string>
+    <string name="new_scan_relationship_error">Nhập mối quan hệ.</string>
+    <string name="new_scan_create_profile">Thêm hồ sơ</string>
+    <string name="new_scan_creating_profile">Đang thêm hồ sơ…</string>
+
+    <string name="new_scan_device_heading">Ống nghe sẵn sàng</string>
+    <string name="new_scan_device_description">Chỉ thiết bị trực tuyến, chưa bị thu hồi và phù hợp với hồ sơ đã chọn mới có thể bắt đầu đo.</string>
+    <string name="new_scan_no_device_title">Chưa có ống nghe phù hợp</string>
+    <string name="new_scan_no_device_message">Ghép ống nghe hoặc đưa thiết bị về trạng thái trực tuyến rồi tải lại.</string>
+    <string name="new_scan_device_online">Trực tuyến</string>
+    <string name="new_scan_device_offline">Ngoại tuyến</string>
+    <string name="new_scan_device_revoked">Đã thu hồi</string>
+    <string name="new_scan_device_other_profile">Đang gán cho hồ sơ khác</string>
+    <string name="new_scan_device_other_workspace">Không thuộc workspace của hồ sơ</string>
+    <string name="new_scan_device_selected">Đã chọn</string>
+    <string name="new_scan_device_not_selectable">Không thể chọn</string>
+
+    <string name="new_scan_type_heading">Loại lượt đo</string>
+    <string name="new_scan_type_heart">Tim</string>
+    <string name="new_scan_type_lung">Phổi</string>
+    <string name="new_scan_type_heart_description">Nghe tại các ổ van tim chuẩn.</string>
+    <string name="new_scan_type_lung_description">Nghe đối xứng các vùng phổi và so sánh tín hiệu.</string>
+    <string name="new_scan_type_selected">Đã chọn loại lượt đo %1$s</string>
+    <string name="new_scan_type_not_selected">Chưa chọn loại lượt đo %1$s</string>
+
+    <string name="new_scan_body_site_heading">Vị trí đặt đầu nghe</string>
+    <string name="new_scan_body_site_description">Chọn một vị trí. Đây là vị trí cơ thể, không phải ngày đo.</string>
+    <string name="new_scan_site_aortic">Ổ van động mạch chủ</string>
+    <string name="new_scan_site_aortic_guide">Khoang liên sườn 2, sát bờ phải xương ức.</string>
+    <string name="new_scan_site_pulmonic">Ổ van động mạch phổi</string>
+    <string name="new_scan_site_pulmonic_guide">Khoang liên sườn 2, sát bờ trái xương ức.</string>
+    <string name="new_scan_site_tricuspid">Ổ van ba lá</string>
+    <string name="new_scan_site_tricuspid_guide">Bờ trái dưới xương ức, khoảng liên sườn 4–5.</string>
+    <string name="new_scan_site_mitral">Ổ van hai lá</string>
+    <string name="new_scan_site_mitral_guide">Mỏm tim, khoảng liên sườn 5 trên đường trung đòn trái.</string>
+    <string name="new_scan_site_right_upper_anterior">Phổi phải phía trước, vùng trên</string>
+    <string name="new_scan_site_right_upper_anterior_guide">Đặt phía trên ngực phải, tránh xương đòn.</string>
+    <string name="new_scan_site_left_upper_anterior">Phổi trái phía trước, vùng trên</string>
+    <string name="new_scan_site_left_upper_anterior_guide">Đặt phía trên ngực trái, tránh vùng tim.</string>
+    <string name="new_scan_site_right_lower_posterior">Phổi phải phía sau, vùng dưới</string>
+    <string name="new_scan_site_right_lower_posterior_guide">Đặt dưới xương bả vai phải, tránh cột sống.</string>
+    <string name="new_scan_site_left_lower_posterior">Phổi trái phía sau, vùng dưới</string>
+    <string name="new_scan_site_left_lower_posterior_guide">Đặt dưới xương bả vai trái, tránh cột sống.</string>
+    <string name="new_scan_site_selected">Đã chọn vị trí %1$s</string>
+    <string name="new_scan_site_not_selected">Chưa chọn vị trí %1$s</string>
+
+    <string name="new_scan_readiness_heading">Kiểm tra trước khi đo</string>
+    <string name="new_scan_readiness_description">Xác nhận đủ ba điều kiện để giảm nhiễu và tránh phải đo lại.</string>
+    <string name="new_scan_readiness_quiet">Không gian yên tĩnh, hạn chế tiếng nói và chuyển động</string>
+    <string name="new_scan_readiness_skin">Đầu nghe tiếp xúc trực tiếp với da, không đặt qua quần áo</string>
+    <string name="new_scan_readiness_patient">Người được đo đang ngồi hoặc nằm yên và thở tự nhiên</string>
+
+    <string name="new_scan_notes_heading">Ghi chú lâm sàng</string>
+    <string name="new_scan_notes_label">Triệu chứng hoặc bối cảnh cần lưu ý</string>
+    <string name="new_scan_notes_optional">Không bắt buộc</string>
+    <string name="new_scan_notes_count">%1$d/4000 ký tự</string>
+
+    <string name="new_scan_start">Gửi yêu cầu bắt đầu</string>
+    <string name="new_scan_starting">Đang gửi yêu cầu…</string>
+    <string name="new_scan_start_hint">Backend tiếp nhận trước; màn theo dõi sẽ chờ thiết bị xác nhận và tín hiệu thật.</string>
+    <string name="new_scan_loading">Đang tải hồ sơ và thiết bị…</string>
+    <string name="new_scan_retry">Tải lại</string>
+    <string name="new_scan_permission_title">Không có quyền tạo lượt đo</string>
+    <string name="new_scan_permission_message">Phiên hoặc quyền trong workspace đã thay đổi. Tải lại để xác thực trước khi tiếp tục.</string>
+    <string name="new_scan_error_title">Không tải được dữ liệu lượt đo</string>
+    <string name="new_scan_error_message">Không thể xác minh hồ sơ và thiết bị từ backend.</string>
+    <string name="new_scan_validation_error">Chọn hồ sơ, thiết bị trực tuyến, vị trí đo và xác nhận đủ danh sách chuẩn bị.</string>
+    <string name="new_scan_offline_error">Không thể xác minh trạng thái mới nhất. Kiểm tra kết nối mạng rồi thử lại.</string>
+    <string name="new_scan_device_offline_error">Ống nghe đã ngoại tuyến hoặc không còn phù hợp với hồ sơ. Hãy chọn lại sau khi thiết bị trực tuyến.</string>
+    <string name="new_scan_invalid_receipt_error">Phản hồi bắt đầu không khớp hồ sơ, thiết bị hoặc vị trí đã chọn. Ứng dụng chưa mở màn theo dõi.</string>
+    <string name="new_scan_backend_error">Backend chưa xác nhận yêu cầu bắt đầu. Kiểm tra lại trước khi thử tiếp.</string>
+    <string name="new_scan_request_id">Mã yêu cầu: %1$s</string>
+    <string name="new_scan_dismiss_error">Đóng thông báo</string>
+</resources>

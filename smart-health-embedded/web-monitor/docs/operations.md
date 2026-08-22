@@ -56,3 +56,4 @@ Current metrics include request totals, error totals, active recording flag and 
 - `OBJECT_STORAGE_PROVIDER=s3`: enables S3-compatible object storage and presigned URLs.
 - `MQTT_URL`: enables MQTT control plane for device telemetry/events/OTA command publish.
 - `PHI_ENCRYPTION_KEY`: enables AES-256-GCM envelopes for protected export metadata.
+- `PASSWORD_IDEMPOTENCY_HMAC_KEY`: optional dedicated 32-byte secret for password-change replay fingerprints; when absent, the backend derives a domain-separated key from `PHI_ENCRYPTION_KEY`.

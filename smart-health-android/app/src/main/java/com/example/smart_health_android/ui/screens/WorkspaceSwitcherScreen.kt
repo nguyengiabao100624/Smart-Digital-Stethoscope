@@ -1,5 +1,6 @@
 package com.example.smart_health_android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,8 +55,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.R
 import com.example.smart_health_android.account.WorkspaceLoadState
 import com.example.smart_health_android.account.WorkspaceSwitcherAction
+import com.example.smart_health_android.account.WorkspaceSwitcherEffect
 import com.example.smart_health_android.account.WorkspaceSwitcherUiState
 import com.example.smart_health_android.account.WorkspaceSwitcherViewModel
+import com.example.smart_health_android.data.AuthUser
 import com.example.smart_health_android.data.WorkspaceSummary
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
@@ -67,15 +71,35 @@ import com.example.smart_health_android.ui.theme.ShcareTheme
 @Composable
 fun WorkspaceSwitcherScreen(
     onNavigateBack: () -> Unit,
+    onWorkspaceConfirmed: (user: AuthUser, workspaceId: String) -> Unit,
+    onReauthorizationRequired: () -> Unit,
     workspaceViewModel: WorkspaceSwitcherViewModel = viewModel(),
 ) {
     val state by workspaceViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(workspaceViewModel) {
+        workspaceViewModel.effects.collect { effect ->
+            when (effect) {
+                is WorkspaceSwitcherEffect.WorkspaceConfirmed -> {
+                    onWorkspaceConfirmed(effect.user, effect.workspaceId)
+                }
+                is WorkspaceSwitcherEffect.ReauthorizationRequired -> {
+                    onReauthorizationRequired()
+                }
+            }
+        }
+    }
+    BackHandler(enabled = state.switchingWorkspaceId.isNotBlank()) {
+        // Keep the previous workspace off-screen until the backend result is reconciled.
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.workspace_switcher_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        enabled = state.switchingWorkspaceId.isBlank(),
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.workspace_switcher_back),
@@ -272,7 +296,11 @@ private fun WorkspaceCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${workspaceTypeLabel(workspace)} • ${workspaceRoleLabel(workspace.role)}",
+                        text = stringResource(
+                            R.string.workspace_switcher_type_role,
+                            workspaceTypeLabel(workspace),
+                            workspaceRoleLabel(workspace.role),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

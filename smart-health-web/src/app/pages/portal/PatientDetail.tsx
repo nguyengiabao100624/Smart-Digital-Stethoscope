@@ -47,6 +47,7 @@ import {
   parsePatientDeleteOutcome,
   parsePatientDetailResponse,
   parsePatientMutationOutcome,
+  parsePatientScanHistoryResponse,
   patientIntentFingerprint,
   resolvePatientOperationAttempt,
   type PatientOperationAttempt,
@@ -105,6 +106,9 @@ export default function PatientDetail() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const client = useQueryClient();
+  const workspaceId = user?.currentWorkspace.id || "";
+  const requiresPersonalMutationAuthority =
+    user?.role === "patient" || user?.raw?.role === "patient";
   const canManage = Boolean(
     user?.capabilities?.some((capability) =>
       MANAGE_CAPABILITIES.includes(capability),
@@ -131,16 +135,31 @@ export default function PatientDetail() {
   const inFlightRef = useRef(false);
 
   const patientQuery = useQuery({
-    queryKey: ["portal", "patient", id],
+    queryKey: ["portal", "workspace", workspaceId, "patient", id],
     queryFn: async () =>
-      parsePatientDetailResponse(await smartHealthApi.getPatient(id)),
-    enabled: Boolean(id),
+      parsePatientDetailResponse(
+        await smartHealthApi.getPatient(id),
+        workspaceId,
+      ),
+    enabled: Boolean(id && workspaceId),
     retry: false,
   });
   const scansQuery = useQuery({
-    queryKey: ["portal", "scans", "patient", id],
-    queryFn: () => smartHealthApi.listScans({ patientId: id, limit: 100 }),
-    enabled: Boolean(id),
+    queryKey: [
+      "portal",
+      "workspace",
+      workspaceId,
+      "scans",
+      "patient",
+      id,
+    ],
+    queryFn: async () =>
+      parsePatientScanHistoryResponse(
+        await smartHealthApi.listScans({ patientId: id, limit: 100 }),
+        workspaceId,
+        id,
+      ),
+    enabled: Boolean(id && workspaceId),
     retry: false,
   });
 
@@ -224,18 +243,30 @@ export default function PatientDetail() {
     setIsSaving(true);
     setSaveError("");
     try {
+      const authority = requiresPersonalMutationAuthority
+        ? await smartHealthApi.resolvePatientMutationAuthority(
+            user?.id || "",
+            workspaceId,
+          )
+        : undefined;
       const response = await smartHealthApi.updatePatient(
         patientQuery.data.id,
         patientPayloadFromIntent(intent),
         attempt.idempotencyKey,
+        authority,
       );
       const outcome = parsePatientMutationOutcome(response, intent);
       initialFingerprintRef.current = patientIntentFingerprint(intent);
       initializedRecordRef.current = `${outcome.patient.id}:${outcome.patient.updatedAt || "unknown"}`;
       saveAttemptRef.current = null;
       setExternalUpdate(false);
-      client.setQueryData(["portal", "patient", id], outcome.patient);
-      await client.invalidateQueries({ queryKey: ["portal", "patients"] });
+      client.setQueryData(
+        ["portal", "workspace", workspaceId, "patient", id],
+        outcome.patient,
+      );
+      await client.invalidateQueries({
+        queryKey: ["portal", "workspace", workspaceId, "patients"],
+      });
       toast.success("Đã cập nhật hồ sơ", {
         description: "Backend đã xác nhận đúng ID và nội dung vừa lưu.",
       });
@@ -267,14 +298,23 @@ export default function PatientDetail() {
     setIsDeleting(true);
     setDeleteError("");
     try {
+      const authority = requiresPersonalMutationAuthority
+        ? await smartHealthApi.resolvePatientMutationAuthority(
+            user?.id || "",
+            workspaceId,
+          )
+        : undefined;
       const response = await smartHealthApi.deletePatient(
         patient.id,
         attempt.idempotencyKey,
+        authority,
       );
       parsePatientDeleteOutcome(response, patient.id);
       deleteAttemptRef.current = null;
       initialFingerprintRef.current = "";
-      await client.invalidateQueries({ queryKey: ["portal", "patients"] });
+      await client.invalidateQueries({
+        queryKey: ["portal", "workspace", workspaceId, "patients"],
+      });
       toast.success("Đã xóa hồ sơ bệnh nhân", {
         description:
           "Backend đã xác nhận soft-delete và ghi nhận đúng ID hồ sơ.",
@@ -331,17 +371,18 @@ export default function PatientDetail() {
 
   const patient = patientQuery.data;
   return (
-    <div className="space-y-6">
-      <button
+    <div className="space-y-6" data-testid="portal-patient-detail-page">
+      <Button
         type="button"
+        variant="ghost"
         onClick={() =>
           dirty ? setLeaveOpen(true) : navigate("/portal/patients")
         }
-        className="inline-flex min-h-11 items-center gap-2 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="min-h-11 px-2 text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
         Danh sách bệnh nhân
-      </button>
+      </Button>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>

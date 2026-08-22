@@ -53,7 +53,7 @@ async function main() {
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login: "patient@example.com", password: "12345678", role: "patient" }),
+      body: JSON.stringify({ login: "doctor@example.com", password: "12345678", role: "doctor" }),
     });
     assert.equal(loginResponse.status, 200);
     const login = await loginResponse.json();
@@ -62,7 +62,11 @@ async function main() {
     const createResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({ patientName: "Smoke Patient", mode: "heart" }),
+      body: JSON.stringify({
+        patientName: "Smoke Patient",
+        mode: "heart",
+        deviceId: "esp32-stethoscope",
+      }),
     });
     assert.equal(createResponse.status, 201);
     const created = await createResponse.json();
@@ -162,6 +166,29 @@ async function main() {
       headers: auth,
     });
     assert.equal(urlResponse.status, 200);
+    const audioAccess = await urlResponse.json();
+    assert.equal(audioAccess.contentType, "audio/wav");
+    assert.equal(audioAccess.fileName, `${created.scan.id}.wav`);
+    assert.equal(typeof audioAccess.url, "string");
+    assert.ok(audioAccess.url);
+
+    const waveformResponse = await fetch(
+      `http://127.0.0.1:${port}/api/v1/scans/${created.scan.id}/waveform`,
+      { headers: auth },
+    );
+    assert.equal(waveformResponse.status, 200);
+    const waveformPayload = await waveformResponse.json();
+    assert.equal(waveformPayload.waveform.scanId, created.scan.id);
+    assert.equal(waveformPayload.waveform.sampleRate, 16000);
+    assert.ok(Array.isArray(waveformPayload.waveform.points));
+    assert.ok(waveformPayload.waveform.points.length > 0);
+    assert.ok(waveformPayload.waveform.points.length <= 256);
+    assert.equal(
+      waveformPayload.waveform.points.every(
+        (point) => Number.isFinite(point) && point >= 0 && point <= 1,
+      ),
+      true,
+    );
     console.log("api production smoke test passed");
   } finally {
     child.kill();

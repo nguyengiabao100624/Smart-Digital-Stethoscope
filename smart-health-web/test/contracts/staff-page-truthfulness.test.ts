@@ -7,6 +7,10 @@ const pagePath = new URL(
   import.meta.url,
 );
 const apiPath = new URL("../../src/lib/smart-health-api.ts", import.meta.url);
+const notificationsPagePath = new URL(
+  "../../src/app/pages/portal/NotificationsPage.tsx",
+  import.meta.url,
+);
 
 test("Portal staff page uses native brand primitives instead of demo CSS", async () => {
   const source = await readFile(pagePath, "utf8");
@@ -68,4 +72,35 @@ test("Portal staff membership mutations are exact, retry-safe, and capability sc
   assert.match(source, /reactivateStaffMember/);
   assert.match(source, /revokeStaffMember/);
   assert.match(apiSource, /"Idempotency-Key": idempotencyKey/);
+});
+
+test("Portal staff authority and draft state fail closed across workspace, offline, and navigation changes", async () => {
+  const source = await readFile(pagePath, "utf8");
+
+  assert.match(source, /parsePortalStaffLedger/);
+  assert.match(source, /operationEpochRef/);
+  assert.match(source, /settledWorkspaceId/);
+  assert.match(source, /beforeunload/);
+  assert.match(source, /navigator\.onLine/);
+  assert.match(source, /data-testid="portal-staff"/);
+  assert.doesNotMatch(
+    source,
+    /clinical-page-|border-success|bg-success|text-success|border-warning|bg-warning|text-warning/,
+  );
+});
+
+test("Portal notification inbox binds reads and receipts to the active user and workspace", async () => {
+  const source = await readFile(notificationsPagePath, "utf8");
+
+  assert.match(source, /notifications\.view/);
+  assert.match(source, /assertInboxAuthority/);
+  assert.match(source, /operationEpochRef/);
+  assert.match(source, /settledAuthorityKey/);
+  assert.match(source, /NotificationOperationSupersededError/);
+  assert.match(source, /navigator\.onLine/);
+  assert.match(source, /data-testid="portal-notifications"/);
+  assert.doesNotMatch(
+    source,
+    /clinical-page-|glass-panel|premium-button|brand-gradient-text|border-warning|bg-warning|text-warning/,
+  );
 });

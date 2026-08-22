@@ -1,8 +1,8 @@
 {
   "protocolVersion": 2,
-  "workspaceId": "workspace-fixture-001",
-  "patientId": "patient-fixture-001",
-  "deviceId": "smarthealth-fixture-001",
+  "frameEncoding": "shcare_audio_v2",
+  "headerLength": 71,
+  "payloadLength": 256,
   "scanId": "scan-fixture-001",
   "sessionId": "audio-session-fixture-001",
   "sequence": 42,

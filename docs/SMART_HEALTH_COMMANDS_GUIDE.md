@@ -4223,3 +4223,24 @@ npm.cmd --prefix smart-health-embedded/web-monitor run demo:stack
 - Patient: `patient@example.com / 12345678`; Doctor: `doctor@example.com / 12345678`; Admin: `admin.demo@shcare.local / Shcare-Demo-2026!`.
 - Use Ctrl+C once after the demo. The launcher must stop every child, free `3765/3766/8765/8766`, and delete its isolated temporary data.
 - This local demo does not satisfy Firebase/provider/live/ADB/HIL promotion gates. See [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md).
+
+## 2026-08-23 Phase 8 release-source and preview commands
+
+- Use product-source revision `c1933d979db69ae8bc105489d1accdec9bfd0fe5`. `smoke:identity-migrations` is now self-contained; a missing ignored `data/db.json` is no longer a valid release environment requirement.
+- Fresh source gates use direct local binaries only. Do not run `bunx tsc`.
+
+```powershell
+cd smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:identity-migrations
+
+cd ..\..\..\smart-health-web
+.\node_modules\.bin\tsc.cmd --noEmit --pretty false
+npm.cmd run lint
+npm.cmd run test:contracts
+npm.cmd run build
+```
+
+- Canonical Firebase targets are Web `webapp -> shcare` and Admin `admin -> shcare-admin`. Bind the retained external `.env.production` only in the current process or through `SHCARE_WEB_ENV_FILE`; never copy or print it. Build with `build:firebase` and `build:firebase:admin`, then deploy distinct preview channels `rc2-web` and `rc2-admin` with pinned `firebase-tools@15.28.1`.
+- Preview creation is safe before production promotion, but authenticated preview smoke requires the exact preview origins in backend CORS. Do not clone preview to `live` until backup, migrations, rollback and cleanup gates are green.

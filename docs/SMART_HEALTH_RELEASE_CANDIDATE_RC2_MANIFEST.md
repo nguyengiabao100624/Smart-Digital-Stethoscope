@@ -4,9 +4,9 @@ Release label: `Shcare 1.0.0-rc.2`
 
 Baseline revision: `fdeb1f8783827c6493534b9083858ccc113ee8da`
 
-Verified product-source revision: `7fd905ff91208bab0d855b1ae2d15bdb5a32c3ad`
+Verified product-source revision: `c1933d979db69ae8bc105489d1accdec9bfd0fe5`
 
-Prepared: `2026-08-22` (`Asia/Saigon`)
+Prepared: `2026-08-23` (`Asia/Saigon`)
 
 Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal,
 Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
@@ -205,6 +205,29 @@ The candidate is **local-demo ready**, not production-ready. Phase 8 and the
 overall plan remain open until all required non-deferred release gates pass.
 Hardware-only HIL may remain deferred under the user's locked rule, but no
 software/provider/live gate is silently waived.
+
+## 2026-08-23 release-source gate refresh
+
+- A clean-clone regression was reproduced in `smoke:identity-migrations`: the
+  smoke read ignored runtime state from `data/db.json` and failed with
+  `ENOENT`. Revision `c1933d979db69ae8bc105489d1accdec9bfd0fe5`
+  replaces that dependency with a committed synthetic fixture containing no
+  production identity or PHI. Focused identity smoke and the aggregate backend
+  check/test gates pass after the fix.
+- Fresh secret-free RC2 gates pass for backend check/base, KLT, API production,
+  workspace, repositories, identity migration, notification push, support,
+  role-request documents, 2FA, device security, appointment, avatar and the
+  non-strict production-readiness report; shared contracts pass `50/50`.
+- Web direct TypeScript, lint, contracts and build pass. Platform Admin lint,
+  contracts and build pass. Android unit/compile/AndroidTest compile/lint/debug
+  APK exits `0`. Firmware source contract plus production and OTA builds pass.
+- Git push dry-run for branch `release/shcare-v1.0.0-rc.2-local-demo` succeeds.
+  This proves Git remote authorization only; it is not a deploy or PR.
+- The retained Firebase configuration can build preview artifacts without
+  copying secrets into the worktree. Authenticated preview smoke still requires
+  the exact preview origins in backend CORS. Backend main promotion remains
+  blocked until migrations `044` through `054`, Render start mode and rollback
+  behavior are verified.
 
 ## Deploy and rollback order
 

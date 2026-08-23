@@ -2398,3 +2398,11 @@ Still required before production promotion:
 - Physical ESP32-S3 target/partition, flash/serial/I2S, authenticated WSS, command ACK and forced-failure OTA rollback remain **`DEFERRED — chờ phần cứng`**.
 
 Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md). The overall plan must remain open until the required non-deferred rows above are green.
+
+## 2026-08-23 superseding Phase 8 backlog
+
+- CLOSED: final secret-free source gates at product revision `c1933d979db69ae8bc105489d1accdec9bfd0fe5`, including the clean-clone identity migration smoke regression, backend/domain gates, Web/Admin builds, Android debug gates and firmware production/OTA builds.
+- READY: push `release/shcare-v1.0.0-rc.2-local-demo`; build Web target `webapp` and Admin target `admin` from retained external production env; deploy separate seven-day Firebase preview channels.
+- BLOCKED before authenticated preview proof: add the exact generated preview origins to backend CORS. Do not use Admin `deploy:firebase:portal`, which collides with the canonical Web target.
+- BLOCKED before `main`/backend/live promotion: verify Render uses `npm start`/`scripts/start.js` rather than Docker `node server.js`, prove migrations `044–054` and rollback/locking, verify current S3/provider behavior, create live-channel backups and complete cleanup-safe mutation smokes.
+- BLOCKED: Android production signing/current FCM-device-TalkBack proof, OTA artifact signing/canary and Deep Security completion. `DEFERRED — chờ phần cứng`: physical ESP32-S3 HIL only.

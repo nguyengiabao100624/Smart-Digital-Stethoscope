@@ -2749,3 +2749,9 @@ KLTN report artifacts generated from this evidence set:
 - Phase 7 is GREEN: the five high-volume Admin surfaces use tenant-authorized backend query/pagination, full-ledger summaries and strict error handling; Overview, Notifications, Audit, Export, Settings and manual Billing retain their existing truthfulness/receipt contracts.
 - Evidence: shared contracts `50/50`; backend check, admin-list `3/3`, workspace and repository smokes; Admin contracts `185/185`, lint and Vite client+SSR build; clean whitespace diff check.
 - Provider/live deployment, Firebase/ADB runtime and physical firmware HIL remain separate evidence rows and cannot be inferred from source/build success.
+
+## 2026-08-23 current status — Phase 8 release-source gate green
+
+- Verified product-source revision is `c1933d979db69ae8bc105489d1accdec9bfd0fe5`. The only source change after the earlier RC2 proof is a self-contained synthetic identity-migration fixture and its smoke-test binding; it fixes a reproduced clean-clone `ENOENT` without changing runtime behavior.
+- Fresh backend, shared contract, Web, Admin, Android debug and firmware production/OTA gates pass. Git remote push authorization passes in dry-run.
+- Phase 8 remains active. Next is RC2 branch push and Firebase preview creation. Production backend/main promotion stays gated by migrations `044–054`, Render start-mode confirmation, CORS, rollback and live cleanup proof; Android signing/provider/security gates remain open and hardware HIL remains deferred.

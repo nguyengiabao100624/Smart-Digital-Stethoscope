@@ -21,4 +21,4 @@ RUN mkdir -p /data/audio /data/tmp
 
 EXPOSE 3000 3001/udp
 
-CMD ["node", "server.js"]
+CMD ["npm", "start"]

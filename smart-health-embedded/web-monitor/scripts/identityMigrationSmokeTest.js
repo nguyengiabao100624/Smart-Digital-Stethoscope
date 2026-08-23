@@ -3195,14 +3195,17 @@ async function main() {
   );
   assert.match(importerSource, /Migration JSON -> PostgreSQL đã đối soát:/);
 
-  const bundledDb = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "db.json"), "utf8"));
-  assert.doesNotThrow(() => normalizeLegacyPatientIdentityGraph(bundledDb));
-  const remediatedBundledPatient = bundledDb.patients.find(
-    (patient) => patient.id === "pat_20260523210428_eb7affd2",
+  const legacyFixture = JSON.parse(fs.readFileSync(
+    path.join(__dirname, "fixtures", "identity-migration-legacy-db.json"),
+    "utf8",
+  ));
+  assert.doesNotThrow(() => normalizeLegacyPatientIdentityGraph(legacyFixture));
+  const remediatedFixturePatient = legacyFixture.patients.find(
+    (patient) => patient.id === "patient_legacy_fixture",
   );
-  assert.equal(remediatedBundledPatient.organizationId, "vn_hospital_quan_y_175");
-  assert.equal(remediatedBundledPatient.ownerUserId, "usr_20260526062020_05a18dfc");
-  assert.equal(remediatedBundledPatient.accountUserId, "usr_20260526062020_05a18dfc");
+  assert.equal(remediatedFixturePatient.organizationId, "org_legacy_fixture");
+  assert.equal(remediatedFixturePatient.ownerUserId, "user_legacy_fixture");
+  assert.equal(remediatedFixturePatient.accountUserId, "user_legacy_fixture");
   console.log("Identity migration/import smoke passed");
 }
 

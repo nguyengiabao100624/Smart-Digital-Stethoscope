@@ -1,0 +1,26 @@
+{
+  "organizations": [
+    {
+      "id": "org_legacy_fixture",
+      "name": "Legacy Fixture Clinic",
+      "type": "clinic"
+    }
+  ],
+  "users": [
+    {
+      "id": "user_legacy_fixture",
+      "role": "patient",
+      "patientId": "patient_legacy_fixture",
+      "organizationId": "org_legacy_fixture"
+    }
+  ],
+  "patients": [
+    {
+      "id": "patient_legacy_fixture",
+      "organizationId": "org_legacy_fixture",
+      "ownerUserId": "",
+      "accountUserId": "",
+      "profileType": "patient"
+    }
+  ]
+}

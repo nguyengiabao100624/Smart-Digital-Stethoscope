@@ -12,9 +12,12 @@ Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal,
 Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
 
 This manifest binds the Phase 8 local demo/release-candidate evidence to one
-intentional product-source commit. It does not claim Firebase preview,
-production deployment, provider delivery, Android production signing/runtime,
-or physical firmware proof.
+intentional product-source commit. It does not claim that this RC2 revision has
+been promoted, that current provider delivery has been re-proven, that Android
+has production signing/current runtime proof, or that firmware has physical
+proof. Earlier Firebase/Render/Supabase setup and deployment evidence remains
+valid historical evidence and must not be reclassified as "never configured"
+only because a clean worktree or its current shell omits ignored secrets.
 
 ## Candidate scope
 
@@ -129,8 +132,11 @@ Demo accounts:
   AndroidTest Kotlin compile, debug assemble and lint: PASS.
 - Debug APK: `26,948,657` bytes; SHA-256
   `BABAAA7BFB7289E33A7BF84A4289282A450C9908A3834E762A11938F0D18F7C7`.
-- This is debug/source-build proof. `google-services.json`, an ADB target,
-  production signing and manual TalkBack/device proof are absent.
+- This is debug/source-build proof. The ignored production
+  `google-services.json` exists in the retained project checkout but is not
+  present in this clean RC2 worktree; ADB currently has no online target.
+  Historical emulator install/launch evidence exists, while current RC2 FCM,
+  production signing and manual TalkBack/physical-device proof remain absent.
 
 ### Firmware
 
@@ -145,6 +151,36 @@ OTA upload was not attempted because no target/IP exists. PlatformIO reports an
 8 MB board definition while the intended partition design is 16 MB; only
 physical flash/partition inspection can close that discrepancy.
 
+## Configuration recovery audit
+
+Read-only recovery audit on `2026-08-23` corrected the scope of the original
+promotion blockers without copying or committing secrets:
+
+- The retained project checkout has ignored Web/Admin production env files,
+  structurally valid Firebase Admin service accounts and a structurally valid
+  Android `google-services.json` whose package matches the app. A read-only
+  Firebase Auth request succeeded from the RC2 source using the retained local
+  service-account path.
+- Firebase Hosting is configured for the Web and Platform Admin targets. Both
+  deployed sites returned HTTP `200` during this audit, and earlier deployment
+  IDs and mutation-smoke evidence remain recorded in the handoff documents.
+- Supabase PostgreSQL and S3-compatible Storage have implementation and prior
+  setup/live-smoke evidence. This does not prove that migrations through `054`
+  or the current RC2 storage flows have run against the live environment.
+- The current RC2 process does not have the production database, storage,
+  provider or Firebase env values loaded. Both known Render backend health URLs
+  returned HTTP `200`, but both expose only the older four-metric payload and
+  omit the RC2 `smart_health_legacy_*` metrics added in `71e2903d`; the live
+  backend is therefore healthy but old, while current live-database state
+  remains unverified rather than being reported as never configured.
+- Android debug signing and historical emulator runtime are proven. A
+  production release signing configuration/keystore was not found; the prior
+  release artifact is explicitly unsigned. Real current FCM delivery, current
+  emulator/device runtime and manual accessibility proof remain open.
+- Firebase email-link generation has prior proof, but Brevo/SMTP inbox delivery
+  and the AI provider have no current credential/live proof and remain separate
+  provider gates.
+
 ## Promotion gates
 
 | Gate | RC2 status |
@@ -156,11 +192,12 @@ physical flash/partition inspection can close that discrepancy.
 | Firefox/WebKit RC2 critical journeys | `PASS`: Public `16 + 16`; Portal `463 + 463` checks across 21 routes/engine |
 | Local production-preview performance budgets | `PASS`: LCP 400ms, INP 56ms, CLS 0.00039, JS 200,809 bytes |
 | Field Web Vitals on preview/live traffic | `OPEN`; requires deployed traffic and is not inferred from local lab proof |
-| Candidate PostgreSQL migration/locking/rollback | `BLOCKED`; PostgreSQL is not configured |
-| Firebase Admin/service account and public HTTPS backend | `BLOCKED`; credentials/URL are absent |
-| S3/object storage, PHI/HMAC keys, provider credentials, CORS and Redis | `BLOCKED`; production-readiness inputs are absent |
+| Candidate PostgreSQL migration/locking/rollback | `BLOCKED for RC2 live proof`; Supabase/PostgreSQL was configured and previously exercised, but the RC2 shell lacks `DATABASE_URL` and migrations through `054` are not live-verified |
+| Firebase Admin/service account and public HTTPS backend | `PARTIAL/BLOCKED for RC2 promotion`; retained Firebase Admin credential works read-only and Web/Admin plus both Render health URLs are HTTP 200, but the RC2 shell is not bound to the secret env and Render metrics prove the backend is still the older revision |
+| S3/object storage and PHI/HMAC keys | `BLOCKED for current RC2 proof`; Supabase S3-compatible Storage has prior setup evidence, but current production credentials and signed upload/download/expiry behavior were not re-verified |
+| Email/push/AI providers, CORS and Redis | `MIXED/BLOCKED`; prior Firebase email-link and adapter smoke evidence is retained, while current device delivery, Brevo/SMTP inbox delivery, AI credentials and remaining production inputs are unproven |
 | OTA signing key/artifact URL and canary infrastructure | `BLOCKED` |
-| Android Firebase/FCM, ADB/emulator/device and production signing | `BLOCKED` |
+| Android Firebase/FCM, ADB/emulator/device and production signing | `MIXED/BLOCKED`; Firebase code and retained local config plus historical emulator runtime exist; RC2 lacks the ignored config, no target is online now, current FCM is unproven and production signing is genuinely absent |
 | Physical ESP32-S3 flash, serial, I2S, WSS, command ACK and OTA rollback | `DEFERRED — chờ phần cứng` |
 | Deep Security Scan | Separate durable scan remains `running/preflight`; not represented as complete here |
 
@@ -171,9 +208,11 @@ software/provider/live gate is silently waived.
 
 ## Deploy and rollback order
 
-1. Provision production secrets/providers and a disposable candidate
-   PostgreSQL/S3 environment; apply and verify additive migrations through
-   `054` with rollback evidence.
+1. Recover and inject the existing ignored/secret-managed Firebase, Render and
+   Supabase configuration into the RC2 release environment without committing
+   it. Provision only providers that are genuinely missing; apply and verify
+   additive migrations through `054` with rollback evidence against a safe
+   candidate PostgreSQL/S3 environment.
 2. Deploy the backward-compatible backend first; run read-only and one
    tenant-scoped, idempotent mutation smoke with cleanup.
 3. Deploy Platform Admin preview; verify direct-URL capability denial and one

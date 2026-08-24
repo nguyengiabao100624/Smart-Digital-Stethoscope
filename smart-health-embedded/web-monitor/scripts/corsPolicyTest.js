@@ -88,6 +88,7 @@ test("HTTP preflight echoes only the exact RC origin", async (context) => {
       AUTH_MODE: "demo",
       ALLOW_DEMO_AUTH: "true",
       CORS_ORIGIN: "https://shcare-admin.web.app",
+      SMART_HEALTH_RELEASE_ID: "shcare-cors-integration-test",
     },
     stdio: "ignore",
     windowsHide: true,
@@ -97,6 +98,13 @@ test("HTTP preflight echoes only the exact RC origin", async (context) => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
   await waitForHealth(`http://127.0.0.1:${port}/api/health`);
+
+  const health = await fetch(`http://127.0.0.1:${port}/api/health`);
+  const healthBody = await health.json();
+  assert.deepEqual(healthBody.release, {
+    id: "shcare-cors-integration-test",
+    commit: "",
+  });
 
   const allowed = await fetch(`http://127.0.0.1:${port}/api/v1/health`, {
     method: "OPTIONS",

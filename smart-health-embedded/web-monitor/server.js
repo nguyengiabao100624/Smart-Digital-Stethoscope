@@ -7,6 +7,7 @@ const path = require("node:path");
 const nodemailer = require("nodemailer");
 const { createDataStore, resolveBackendFromEnv } = require("./src/dataStore");
 const { resolveCorsOrigin } = require("./src/corsPolicy");
+const { buildReleaseIdentity } = require("./src/releaseIdentity");
 const {
   getFirebaseIdTokenErrorCode,
   getFirebaseAdmin,
@@ -22705,6 +22706,7 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, {
       ok: true,
       service: "smart-health-backend",
+      release: buildReleaseIdentity(process.env),
       status: publicHealthStatus,
       now: publicHealthStatus.updatedAt,
     });

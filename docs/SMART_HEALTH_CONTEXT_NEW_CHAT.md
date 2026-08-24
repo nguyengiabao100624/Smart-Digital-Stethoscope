@@ -1764,6 +1764,13 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - ESP32-S3 is online at current checkpoint COM9. Captive-portal HIL passes and both physical mic slots are active. The board remains `wss=0` until the user enters target Wi-Fi through App/Web; never recover the password from Windows or expose `setup-access.json` as a user workflow.
 - Resume from candidate commit freeze, then complete target-Wi-Fi → authenticated WSS → command ACK → audio-v2 → durable scan, exact-preview CORS/backend migration/provider proof and signed OTA rollback/canary. Do not promote live or mark G3/G4 complete before those gates are truthful.
 
+## 2026-08-25 superseding handoff — G3 preview proof complete
+
+- Continue only **[“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**. Status remains G0–G2 complete, G3 in progress, G4 pending.
+- Product binary commit `6c6d79f67c6d03e464545d37bf50bd31a57312e2` is deployed only to preview `https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app`; branch tip `b09461428818da90e34ad05641e16a329df92a03` is test-only. Preview Home/Forgot Password proof is `102/102` across three themes.
+- Final Web gates: Auth `390/390`, contracts `138/138`, TypeScript, lint, Firebase build, LCP `532ms`, CLS `0.05434283907750343`, INP upper bound `16ms`, JS `248011` bytes and CSS `64921` bytes. Do not redo this Web row without a reproduced regression.
+- ADB Xiaomi, COM9 and local HIL health are online. Next action is exact-preview CORS/backend migration/provider inspection followed by user-entered Wi-Fi and authenticated ESP WSS/ACK/audio-v2/durable-scan proof. No live promotion has occurred.
+
 ### 2026-08-24 runtime continuation
 
 - Xiaomi is awake again. Focused original-style UI runtime tests pass `4/4`; integrated Firebase Auth emulator → backend lifecycle/workspace → real patient Dashboard passes `1/1` with explicit LAN build properties.

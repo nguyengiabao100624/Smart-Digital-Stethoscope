@@ -319,3 +319,11 @@ not require firmware rollback while the compatibility verdict remains green.
 - Current Android debug APK is `26,957,689` bytes, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`; it installed and launched on the attached Xiaomi target. Current runtime aggregate is `83` executions, `0` fail, `3` skipped, with two notification cases blocked by MIUI policy.
 - Physical ESP captive-portal HIL passes and both mic slots are active. Authenticated WSS/ACK/audio-v2/durable scan remains open because the target Wi-Fi credential must be entered by the user through the App or captive Web; current serial state is `wss=0`.
 - Compatibility verdict remains additive for UI and provisioning contracts. G3 is not yet PASS, G4 has not started, and no new production promotion is recorded.
+
+## 2026-08-25 superseding Web preview candidate
+
+- Product binary/source commit is `6c6d79f67c6d03e464545d37bf50bd31a57312e2`; `b09461428818da90e34ad05641e16a329df92a03` changes only a matching source-contract assertion and does not alter the deployed binary.
+- Candidate preview: [rc2-web-6c6d79f6](https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app). The uploaded artifact passes `102/102` focused Chromium checks for Home and Forgot Password across `light|dark|system` at 390px. No production Hosting promotion occurred.
+- Final clean gates are Auth `390/390`, Web contracts `138/138`, TypeScript, lint and Firebase build. Public performance remains inside budget: LCP `532ms`, CLS `0.05434283907750343`, INP upper bound `16ms`, transfer `398360` bytes, JavaScript `248011` bytes and CSS `64921` bytes.
+- Final Web artifact hashes: `dist-firebase/index.html` SHA-256 `E40941D7EEA90A3D121161E7942860B350E82D14216761008389668A9F1AC32D`; `assets/index-DUYZleE1.css` SHA-256 `A5AF7BAE74AC2AD8BD92E9BC3D1FD62832DB40B23C49D89CA670D2C3C713986F`.
+- Preview QA reproduced and fixed a production-minifier CSS ordering issue that left the Forgot Password card blurred. The final rule keeps both WebKit and standard `backdrop-filter` disabled. The public smoke now waits for the rendered shell rather than impossible `networkidle` while Firebase streams the hero MP4.

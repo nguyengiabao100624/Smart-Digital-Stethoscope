@@ -871,3 +871,9 @@ recorded contract invalid.
 - The production-default debug APK was installed and launched on Xiaomi; SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Existing current device aggregate remains `83` executions / `0` fail / `3` skipped, with two notification cases blocked by MIUI policy.
 - Physical captive-portal HIL is green after a controlled reset. Serial confirms both mic slots, but the device remains `wss=0` until the user enters the target-network password through App/Web. Never extract that password from Windows or expose the internal HIL JSON.
 - G3 remains active. Next: freeze the intentional candidate commit, complete user-entered Wi-Fi and authenticated WSS/ACK/audio-v2/durable-scan proof, then close exact-preview CORS/backend migration/provider and signed OTA gates. G4 remains pending; no live promotion is authorized by this checkpoint.
+
+## 2026-08-25 active checkpoint — G3 Web preview green
+
+- Superseding product binary/source is `6c6d79f67c6d03e464545d37bf50bd31a57312e2`; current branch tip `b09461428818da90e34ad05641e16a329df92a03` is test-only. Preview is `https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app`; live remains unchanged.
+- Uploaded-preview proof is `102/102` for Home/Forgot Password × `light|dark|system` at 390px. Aggregate source proof is Auth `390/390`, contracts `138/138`, TypeScript, lint and Firebase build. Latest public metrics: LCP `532ms`, CLS `0.05434283907750343`, INP upper bound `16ms`, JS `248011` bytes and CSS `64921` bytes.
+- Xiaomi ADB, ESP COM9 and bounded HIL backend remain online. Continue with exact-preview CORS/backend migration/provider proof and user-entered target Wi-Fi → authenticated WSS/ACK/audio-v2/durable scan. G3 remains in progress; G4 is pending.

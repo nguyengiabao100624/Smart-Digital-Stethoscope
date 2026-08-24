@@ -116,3 +116,9 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Xiaomi đã online, APK debug production-default được cài/mở thành công, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Bằng chứng aggregate hiện hành là `83` execution, `0` fail, `3` skip; hai notification proof vẫn bị chính sách MIUI chặn, không tính PASS giả.
 - ESP32-S3 CH343 hiện ở COM9. Captive-portal HIL pass HTML/session binding/invalid-session denial/Wi-Fi restore; serial xác nhận hai mic hoạt động nhưng `wss=0` vì target Wi-Fi chưa được người dùng nhập qua App/Web.
 - G3 vẫn `in progress`. Trước G4 phải hoàn tất target-Wi-Fi → authenticated WSS → ACK → audio-v2 → durable scan; exact-preview CORS/backend migrations/provider; và các gate signing/OTA hoặc ghi blocker không thể phát hành. G4 chưa bắt đầu và chưa có live promotion mới.
+
+### 2026-08-25 — G3 Web preview gate
+
+- Product binary/source đã khóa tại `6c6d79f67c6d03e464545d37bf50bd31a57312e2`; commit `b09461428818da90e34ad05641e16a329df92a03` chỉ cập nhật test. Preview riêng `https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app`, chưa promote live.
+- Preview Home và Quên mật khẩu pass `102/102` kiểm tra ở mobile với `light|dark|system`. Aggregate Web pass Auth `390/390`, contracts `138/138`, TypeScript, lint, Firebase build và performance budget.
+- G3 tiếp tục ở backend/provider/CORS và authenticated ESP HIL; G4 vẫn pending.

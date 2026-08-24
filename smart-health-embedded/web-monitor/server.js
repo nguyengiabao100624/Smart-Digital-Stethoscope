@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const nodemailer = require("nodemailer");
 const { createDataStore, resolveBackendFromEnv } = require("./src/dataStore");
+const { resolveCorsOrigin } = require("./src/corsPolicy");
 const {
   getFirebaseIdTokenErrorCode,
   getFirebaseAdmin,
@@ -9210,31 +9211,12 @@ function httpError(statusCode, message, code, details) {
   return err;
 }
 
-function getConfiguredCorsOrigins() {
-  const raw = readString(process.env.CORS_ORIGIN, 2000) || "*";
-  if (raw === "*") return ["*"];
-  return raw
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
-function resolveCorsOrigin(req) {
-  const configured = getConfiguredCorsOrigins();
-  if (!configured.length || configured.includes("*")) {
-    return "*";
-  }
-  const requestOrigin = req && typeof req.headers.origin === "string" ? req.headers.origin.trim() : "";
-  if (requestOrigin && configured.includes(requestOrigin)) {
-    return requestOrigin;
-  }
-  return configured[0];
-}
-
 function setCommonHeaders(res, req = res.__smartHealthRequest) {
-  const corsOrigin = resolveCorsOrigin(req);
-  res.setHeader("Access-Control-Allow-Origin", corsOrigin);
-  if (corsOrigin !== "*") {
+  const corsOrigin = resolveCorsOrigin(req?.headers || {});
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+  }
+  if (corsOrigin && corsOrigin !== "*") {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");

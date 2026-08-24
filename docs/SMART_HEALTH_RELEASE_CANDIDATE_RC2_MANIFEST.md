@@ -333,3 +333,10 @@ not require firmware rollback while the compatibility verdict remains green.
 - Backend source candidate `4727e183d85e8368203d2f0bcd1ba9f6154105ca` authorizes only the exact Shcare Web/Admin live origins and the two current RC preview origins. A configured production origin is unioned with these first-party origins; an unrecognized origin receives no ACAO header.
 - Source proof: CORS unit/integration `4/4`, backend check/base test, KLT, workspace access, repositories, release-security `4/4` and device-security `82/82` PASS. The branch is pushed; Render/live has not been promoted, so the previously observed live CORS response remains the rollback baseline rather than release proof.
 - `scripts/start.js` applies unapplied SQL migrations transactionally whenever `DATABASE_URL` is present. Migration `055_phi_encrypted_payloads.sql` is additive, but provider credentials and production database execution are not bound to this shell and must be verified in the G4 backend lane before promotion.
+
+## 2026-08-25 release identity and signed-OTA addendum
+
+- Backend `6aa43f8f` exposes bounded `release.id` and the actual 12-character Render/source commit on both health aliases. `SMOKE_EXPECTED_RELEASE_ID` and `SMOKE_EXPECTED_COMMIT` make a stale or wrong backend deployment fail closed.
+- Firmware `f13cc781` pins the public Shcare RSA-3072 OTA trust anchor. The private key is not in Git and the backend signing implementation produced a signature verified by the matching public key. Public-key fingerprint SHA-256: `0B1A7DA75C0F87710CDBD578D3E164E2A12670BF436ACC70C5B640726690E32B`.
+- Wired/production artifact: `1,131,392` bytes, SHA-256 `06167CEFBC405C102B741363BEC6FF21BF1CB91B0A9E08B85B1EAD61203495DD`. OTA-environment artifact: `1,131,392` bytes, SHA-256 `F6F1D0A3AD38982C96897A3759A396DBA3C7EDED17A0797EA73F68431F536381`. The wired image was flashed and verified on COM9.
+- This closes key generation/pinning and build/flash only. It does not claim signed OTA canary, boot-health confirmation or forced rollback until the ESP completes target-Wi-Fi/WSS HIL and the backend secret is bound in the release environment.

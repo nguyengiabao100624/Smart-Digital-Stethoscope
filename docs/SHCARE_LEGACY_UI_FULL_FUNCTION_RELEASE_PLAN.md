@@ -128,3 +128,8 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Backend CORS source đã đóng tại `4727e183d85e8368203d2f0bcd1ba9f6154105ca`: exact live/preview origin được echo, unknown origin không có ACAO; test policy + HTTP `4/4`, backend aggregate và device security `82/82` PASS. Live backend chưa deploy nên chưa tính live PASS.
 - ESP32-S3 COM9 đã reset và setup AP được xác nhận đang phát. Target Wi-Fi vẫn chờ người dùng nhập qua App/Web; G3 chỉ hoàn tất sau authenticated WSS, command ACK, audio-v2, durable scan, migration/provider và signed OTA/rollback proof.
 - G4 vẫn pending; không promote production trước các gate trên.
+
+### 2026-08-25 — G3 release marker và signed-OTA foundation
+
+- Backend đã có release ID + actual commit marker và smoke fail-closed khi deploy sai candidate. Firmware đã pin public trust anchor RSA-3072, build production/OTA PASS và production image mới đã nạp/verify qua COM9.
+- Đây chưa phải OTA runtime PASS: target Wi-Fi/WSS, command/audio HIL, boot-health và forced rollback vẫn phải chạy thật. G3 tiếp tục; G4 vẫn pending.

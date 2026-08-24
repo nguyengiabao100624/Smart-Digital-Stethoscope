@@ -885,3 +885,10 @@ recorded contract invalid.
 - Bằng chứng mới: CORS unit + HTTP preflight `4/4`, backend check/test, KLT, workspace-access, repositories, release-security `4/4` và device-security `82/82` đều PASS. Nhánh RC đã push; live backend chưa deploy nên live CORS chưa được tính PASS.
 - ESP32-S3 vẫn ở COM9. Setup AP đã được reset có kiểm soát và xác nhận đang phát; QR chỉ chứa thông tin setup AP. Thiết bị vẫn offline cho tới khi người dùng nhập target Wi-Fi qua App/Web. Ngay khi presence chuyển online phải chạy WSS auth → `wifi.status` ACK → audio-v2 → durable scan HIL.
 - Trước khi sang G4 vẫn phải có HIL thật, migration/provider/runtime readiness và OTA signing/rollback proof. Không push `main`, promote Hosting hoặc báo production hoàn tất từ checkpoint này.
+
+## 2026-08-25 active checkpoint — G3 release identity và OTA trust anchor
+
+- Backend commit `6aa43f8f` thêm health release identity lấy từ release ID và commit thật của Render; public deployment smoke có thể fail nếu release ID/commit thiếu hoặc lệch. Unit `4/4`, CORS HTTP `4/4`, check/base/release-security đều PASS.
+- Firmware commit `f13cc781` pin public trust anchor RSA-3072; private signing key nằm ngoài repository trong vùng local ACL-restricted và chữ ký thử được xác minh bằng đúng public key. Bốn source/golden contract PASS; production và OTA build PASS.
+- Production firmware mới `1,131,392` byte, SHA-256 `06167CEFBC405C102B741363BEC6FF21BF1CB91B0A9E08B85B1EAD61203495DD`; OTA-environment artifact SHA-256 `F6F1D0A3AD38982C96897A3759A396DBA3C7EDED17A0797EA73F68431F536381`. Production image đã nạp và verify qua COM9; setup AP hoạt động lại sau reset.
+- G3 vẫn đang thực hiện: user-entered target Wi-Fi, authenticated WSS/ACK/audio-v2/durable scan và forced-failure OTA rollback chưa có bằng chứng; backend live/provider/migration cũng chưa deploy. G4 vẫn pending.

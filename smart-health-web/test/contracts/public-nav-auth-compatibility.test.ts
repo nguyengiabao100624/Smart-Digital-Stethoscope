@@ -104,7 +104,7 @@ test("keeps original Auth actions readable and reachable on mobile", () => {
   );
   assert.match(
     polishSource,
-    /data-shcare-auth-visual="live-legacy"[\s\S]*?\.shc-auth-preview-card\s*\{[^}]*backdrop-filter:\s*none;[^}]*-webkit-backdrop-filter:\s*none;/,
+    /data-shcare-auth-visual="live-legacy"[\s\S]*?\.shc-auth-preview-card\s*\{[^}]*-webkit-backdrop-filter:\s*none;[^}]*backdrop-filter:\s*none;/,
   );
 });
 

@@ -67,6 +67,116 @@ class DevicePairingViewModelTest {
     }
 
     @Test
+    fun currentPhoneWifiIsPrefilledAfterTheDeviceClaim() = runTest(dispatcher) {
+        val provisioner = FakeDeviceWifiProvisioner(
+            currentWifiSsid = DeviceCurrentWifiSsid.Available("Home WiFi"),
+        )
+        val viewModel = secureViewModel(
+            repository = FakeDeviceClaimRepository(),
+            provisioner = provisioner,
+        )
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+
+        assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
+        assertEquals("Home WiFi", viewModel.uiState.value.targetWifiSsid)
+        assertEquals(
+            DeviceCurrentWifiSsidState.Detected,
+            viewModel.uiState.value.currentWifiSsidState,
+        )
+    }
+
+    @Test
+    fun currentWifiPermissionIsRequestedThenTheSsidIsPrefilled() = runTest(dispatcher) {
+        val permissions = listOf("android.permission.ACCESS_FINE_LOCATION")
+        val provisioner = FakeDeviceWifiProvisioner(
+            currentWifiSsid = DeviceCurrentWifiSsid.PermissionRequired(permissions),
+        )
+        val viewModel = secureViewModel(
+            repository = FakeDeviceClaimRepository(),
+            provisioner = provisioner,
+        )
+        val permissionEffect = async { viewModel.effects.first() }
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+
+        assertEquals(
+            DevicePairingUiEffect.RequestCurrentWifiSsidPermissions(permissions),
+            permissionEffect.await(),
+        )
+        assertEquals(
+            DeviceCurrentWifiSsidState.PermissionRequired,
+            viewModel.uiState.value.currentWifiSsidState,
+        )
+
+        provisioner.currentWifiSsid = DeviceCurrentWifiSsid.Available("Home WiFi")
+        viewModel.onAction(DevicePairingUiAction.CurrentWifiSsidPermissionResult(granted = true))
+        runCurrent()
+
+        assertEquals("Home WiFi", viewModel.uiState.value.targetWifiSsid)
+        assertEquals(
+            DeviceCurrentWifiSsidState.Detected,
+            viewModel.uiState.value.currentWifiSsidState,
+        )
+    }
+
+    @Test
+    fun delayedCurrentWifiResultNeverOverwritesAnSsidEditedByTheUser() = runTest(dispatcher) {
+        val permissions = listOf("android.permission.ACCESS_FINE_LOCATION")
+        val provisioner = FakeDeviceWifiProvisioner(
+            currentWifiSsid = DeviceCurrentWifiSsid.PermissionRequired(permissions),
+        )
+        val viewModel = secureViewModel(
+            repository = FakeDeviceClaimRepository(),
+            provisioner = provisioner,
+        )
+        val permissionEffect = async { viewModel.effects.first() }
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+        permissionEffect.await()
+        viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged("Wi-Fi nhập tay"))
+        provisioner.currentWifiSsid = DeviceCurrentWifiSsid.Available("Home WiFi")
+        viewModel.onAction(DevicePairingUiAction.CurrentWifiSsidPermissionResult(granted = true))
+        runCurrent()
+
+        assertEquals("Wi-Fi nhập tay", viewModel.uiState.value.targetWifiSsid)
+        assertEquals(
+            DeviceCurrentWifiSsidState.Manual,
+            viewModel.uiState.value.currentWifiSsidState,
+        )
+    }
+
+    @Test
+    fun deniedCurrentWifiPermissionFallsBackToManualEntryWithoutBlockingPairing() =
+        runTest(dispatcher) {
+            val permissions = listOf("android.permission.ACCESS_FINE_LOCATION")
+            val provisioner = FakeDeviceWifiProvisioner(
+                currentWifiSsid = DeviceCurrentWifiSsid.PermissionRequired(permissions),
+            )
+            val viewModel = secureViewModel(
+                repository = FakeDeviceClaimRepository(),
+                provisioner = provisioner,
+            )
+            val permissionEffect = async { viewModel.effects.first() }
+
+            viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+            runCurrent()
+            permissionEffect.await()
+            viewModel.onAction(DevicePairingUiAction.CurrentWifiSsidPermissionResult(granted = false))
+
+            assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
+            assertEquals("", viewModel.uiState.value.targetWifiSsid)
+            assertEquals(
+                DeviceCurrentWifiSsidState.Unavailable,
+                viewModel.uiState.value.currentWifiSsidState,
+            )
+            assertEquals(null, viewModel.uiState.value.errorMessageRes)
+        }
+
+    @Test
     fun qrResultWaitsForTransientForegroundReauthorizationBeforeClaiming() =
         runTest(dispatcher) {
             val repository = FakeDeviceClaimRepository(
@@ -751,12 +861,15 @@ class DevicePairingViewModelTest {
 private class FakeDeviceWifiProvisioner(
     private val availability: DeviceWifiProvisioningAvailability =
         DeviceWifiProvisioningAvailability.Available,
+    var currentWifiSsid: DeviceCurrentWifiSsid = DeviceCurrentWifiSsid.Unavailable,
 ) : DeviceWifiProvisioner {
     var calls = 0
     var lastRequest: DeviceWifiProvisioningRequest? = null
 
     override fun availability(): DeviceWifiProvisioningAvailability =
         availability
+
+    override fun currentWifiSsid(): DeviceCurrentWifiSsid = currentWifiSsid
 
     override suspend fun provision(request: DeviceWifiProvisioningRequest) {
         calls += 1

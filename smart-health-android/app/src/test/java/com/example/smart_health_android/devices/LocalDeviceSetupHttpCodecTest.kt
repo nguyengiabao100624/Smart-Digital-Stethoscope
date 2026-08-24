@@ -1,6 +1,7 @@
 package com.example.smart_health_android.devices
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -97,6 +98,15 @@ class LocalDeviceSetupHttpCodecTest {
             setOf(DeviceTargetWifiField.Password),
             validateTargetWifiCredentials("Home", "short"),
         )
+    }
+
+    @Test
+    fun currentWifiSsidNormalizationRemovesFrameworkQuotesAndRejectsRedactedValues() {
+        assertEquals("Home WiFi", normalizeCurrentWifiSsid("\"Home WiFi\""))
+        assertEquals("Phòng khám", normalizeCurrentWifiSsid("Phòng khám"))
+        assertNull(normalizeCurrentWifiSsid(null))
+        assertNull(normalizeCurrentWifiSsid("<unknown ssid>"))
+        assertNull(normalizeCurrentWifiSsid("\"\""))
     }
 
     private fun jsonResponse(status: Int, body: String): ByteArray = (

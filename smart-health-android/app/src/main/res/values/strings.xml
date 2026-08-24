@@ -198,6 +198,10 @@
     <string name="device_pairing_target_wifi_heading">Wi-Fi dành cho thiết bị</string>
     <string name="device_pairing_target_wifi_ssid">Tên Wi-Fi</string>
     <string name="device_pairing_target_wifi_ssid_hint">Ví dụ: WiFi gia đình</string>
+    <string name="device_pairing_current_wifi_detected">Đã lấy từ Wi-Fi điện thoại đang kết nối. Bạn có thể sửa nếu cần.</string>
+    <string name="device_pairing_current_wifi_manual">Đang dùng tên Wi-Fi bạn nhập.</string>
+    <string name="device_pairing_current_wifi_unavailable">Không đọc được Wi-Fi hiện tại. Bạn vẫn có thể nhập tên mạng bên trên.</string>
+    <string name="device_pairing_use_current_wifi">Lấy lại Wi-Fi hiện tại</string>
     <string name="device_pairing_target_wifi_password">Mật khẩu Wi-Fi</string>
     <string name="device_pairing_target_wifi_password_hint">Để trống nếu mạng không có mật khẩu</string>
     <string name="device_pairing_target_wifi_help">Mật khẩu chỉ nằm trong bộ nhớ trong lúc thiết lập, được gửi thẳng đến ESP qua AP WPA2 và bị xóa khi hoàn tất hoặc hủy.</string>

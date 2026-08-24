@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,6 +54,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -86,6 +88,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.net.toUri
 import com.example.smart_health_android.R
 import com.example.smart_health_android.devices.DeviceManualSetupField
+import com.example.smart_health_android.devices.DeviceCurrentWifiSsidState
 import com.example.smart_health_android.devices.DevicePairingFailureKind
 import com.example.smart_health_android.devices.DevicePairingStage
 import com.example.smart_health_android.devices.DevicePairingUiAction
@@ -144,6 +147,15 @@ fun DevicePairingScreen(
             ),
         )
     }
+    val currentWifiSsidPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        viewModel.onAction(
+            DevicePairingUiAction.CurrentWifiSsidPermissionResult(
+                granted = grants.isNotEmpty() && grants.values.all { it },
+            ),
+        )
+    }
 
     BackHandler {
         viewModel.onAction(DevicePairingUiAction.Cancel)
@@ -172,6 +184,10 @@ fun DevicePairingScreen(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.effects.collectLatest { effect ->
                 when (effect) {
+                    is DevicePairingUiEffect.RequestCurrentWifiSsidPermissions -> {
+                        currentWifiSsidPermissionLauncher.launch(effect.permissions.toTypedArray())
+                    }
+
                     is DevicePairingUiEffect.RequestNearbyWifiPermissions -> {
                         nearbyWifiPermissionLauncher.launch(effect.permissions.toTypedArray())
                     }
@@ -320,6 +336,9 @@ fun DevicePairingScreen(
                     onStartLocalProvisioning = {
                         viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
                     },
+                    onUseCurrentWifiSsid = {
+                        viewModel.onAction(DevicePairingUiAction.UseCurrentWifiSsid)
+                    },
                     onOpenWifiSettings = {
                         viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
                     },
@@ -352,6 +371,9 @@ fun DevicePairingScreen(
                     },
                     onStartLocalProvisioning = {
                         viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
+                    },
+                    onUseCurrentWifiSsid = {
+                        viewModel.onAction(DevicePairingUiAction.UseCurrentWifiSsid)
                     },
                     onOpenWifiSettings = {
                         viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
@@ -672,6 +694,7 @@ private fun DevicePairingSetupContent(
     onTargetSsidChanged: (String) -> Unit,
     onTargetPasswordChanged: (String) -> Unit,
     onStartLocalProvisioning: () -> Unit,
+    onUseCurrentWifiSsid: () -> Unit,
     onOpenWifiSettings: () -> Unit,
     onOpenPortal: () -> Unit,
     onConfirmPortal: () -> Unit,
@@ -749,6 +772,57 @@ private fun DevicePairingSetupContent(
                         .fillMaxWidth()
                         .testTag("device_pairing.target_wifi_ssid"),
                 )
+                if (state.currentWifiSsidState != DeviceCurrentWifiSsidState.Idle) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Wifi,
+                            contentDescription = null,
+                            tint = if (
+                                state.currentWifiSsidState == DeviceCurrentWifiSsidState.Detected
+                            ) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = stringResource(
+                                when (state.currentWifiSsidState) {
+                                    DeviceCurrentWifiSsidState.Detected ->
+                                        R.string.device_pairing_current_wifi_detected
+                                    DeviceCurrentWifiSsidState.Manual ->
+                                        R.string.device_pairing_current_wifi_manual
+                                    DeviceCurrentWifiSsidState.PermissionRequired,
+                                    DeviceCurrentWifiSsidState.Unavailable,
+                                    -> R.string.device_pairing_current_wifi_unavailable
+                                    DeviceCurrentWifiSsidState.Idle ->
+                                        R.string.device_pairing_current_wifi_unavailable
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (
+                    state.currentWifiSsidState in setOf(
+                        DeviceCurrentWifiSsidState.PermissionRequired,
+                        DeviceCurrentWifiSsidState.Unavailable,
+                    )
+                ) {
+                    TextButton(
+                        onClick = onUseCurrentWifiSsid,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("device_pairing.use_current_wifi"),
+                    ) {
+                        Text(stringResource(R.string.device_pairing_use_current_wifi))
+                    }
+                }
                 OutlinedTextField(
                     value = state.targetWifiPassword,
                     onValueChange = onTargetPasswordChanged,

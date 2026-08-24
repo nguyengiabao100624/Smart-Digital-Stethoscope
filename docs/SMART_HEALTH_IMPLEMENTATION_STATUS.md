@@ -2790,3 +2790,10 @@ KLTN report artifacts generated from this evidence set:
 - Xiaomi ADB is online; the current debug APK was installed/launched and hashes to `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Current aggregate runtime proof remains `83` executions, `0` failures and `3` skips; two notification cases remain MIUI-policy blocked.
 - ESP32-S3 is online on COM9. Captive-portal HIL passes and both mic slots are active, but authenticated WSS is not yet connected because target Wi-Fi must be entered by the user through App/Web.
 - Status remains G0–G2 complete, G3 in progress, G4 pending. Production deployment must not start until the release candidate, authenticated device flow and backend/provider/migration gates are truthful and reproducible.
+
+## 2026-08-25 G3 current-Wi-Fi prefill status
+
+- CLOSED source/build: Android current-network SSID detection, API-level permission handling, redacted/unknown SSID normalization, automatic prefill, manual fallback, user-edit protection and a 48dp retry affordance. The production flow remains QR/code claim → App Wi-Fi form → temporary ESP AP → backend-confirmed online; the captive IP page is fallback only.
+- Evidence: `118` JVM suites / `849/849`, AndroidTest compile, assemble and lint PASS; integrated-demo APK SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF` is installed on Xiaomi.
+- PHYSICAL PARTIAL: COM9 application firmware is running, setup AP equals the QR metadata and both mic slots report activity. MIUI forbids permission grants from ADB/UiAutomation, so the normal in-App location approval, physical QR scan and password entry remain required before the gated SSID HIL and authenticated WSS/ACK/audio-v2 chain can pass.
+- G3 remains in progress; this checkpoint is not G3 completion and does not start G4.

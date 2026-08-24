@@ -74,6 +74,14 @@ enum class DeviceSetupCapability {
     SecureSetupV1,
 }
 
+enum class DeviceCurrentWifiSsidState {
+    Idle,
+    Detected,
+    PermissionRequired,
+    Manual,
+    Unavailable,
+}
+
 enum class DevicePairingFailureKind {
     None,
     Offline,
@@ -101,6 +109,7 @@ data class DevicePairingUiState(
     val setupExpiresAtEpochMillis: Long? = null,
     val targetWifiSsid: String = "",
     val targetWifiPassword: String = "",
+    val currentWifiSsidState: DeviceCurrentWifiSsidState = DeviceCurrentWifiSsidState.Idle,
     val targetWifiFieldErrors: Set<DeviceTargetWifiField> = emptySet(),
     val isBusy: Boolean = false,
     val canRetryClaim: Boolean = false,
@@ -121,6 +130,8 @@ sealed interface DevicePairingUiAction {
     data object RetryClaim : DevicePairingUiAction
     data class TargetWifiSsidChanged(val value: String) : DevicePairingUiAction
     data class TargetWifiPasswordChanged(val value: String) : DevicePairingUiAction
+    data object UseCurrentWifiSsid : DevicePairingUiAction
+    data class CurrentWifiSsidPermissionResult(val granted: Boolean) : DevicePairingUiAction
     data object StartLocalProvisioning : DevicePairingUiAction
     data class NearbyWifiPermissionResult(val granted: Boolean) : DevicePairingUiAction
     data object OpenWifiSettings : DevicePairingUiAction
@@ -136,6 +147,7 @@ sealed interface DevicePairingUiAction {
 }
 
 sealed interface DevicePairingUiEffect {
+    data class RequestCurrentWifiSsidPermissions(val permissions: List<String>) : DevicePairingUiEffect
     data class RequestNearbyWifiPermissions(val permissions: List<String>) : DevicePairingUiEffect
     data object OpenSystemWifiSettings : DevicePairingUiEffect
     data class OpenExternalSetupPortal(val url: String) : DevicePairingUiEffect
@@ -201,6 +213,7 @@ class DevicePairingViewModel(
     private var isScreenActive = true
     private var resumePollingOnStart = false
     private var wifiOriginStage = DevicePairingStage.SetupReady
+    private var targetWifiSsidEdited = false
 
     fun onAction(action: DevicePairingUiAction) {
         when (action) {
@@ -231,6 +244,17 @@ class DevicePairingViewModel(
                 field = DeviceTargetWifiField.Password,
                 password = action.value,
             )
+            DevicePairingUiAction.UseCurrentWifiSsid -> {
+                targetWifiSsidEdited = false
+                refreshCurrentWifiSsid(requestPermission = true)
+            }
+            is DevicePairingUiAction.CurrentWifiSsidPermissionResult -> {
+                if (action.granted) {
+                    refreshCurrentWifiSsid(requestPermission = false)
+                } else {
+                    markCurrentWifiUnavailable()
+                }
+            }
             DevicePairingUiAction.StartLocalProvisioning -> startLocalProvisioning()
             is DevicePairingUiAction.NearbyWifiPermissionResult -> {
                 if (action.granted) startLocalProvisioning() else publishProvisioningPermissionDenied()
@@ -476,6 +500,7 @@ class DevicePairingViewModel(
 
     private fun acceptClaimForSetup(device: SmartDevice) {
         pendingClaim = null
+        targetWifiSsidEdited = false
         _uiState.update {
             it.copy(
                 claimedDeviceName = device.name,
@@ -487,8 +512,10 @@ class DevicePairingViewModel(
                 errorMessage = "",
                 errorMessageRes = null,
                 requestId = "",
+                currentWifiSsidState = DeviceCurrentWifiSsidState.Idle,
             )
         }
+        refreshCurrentWifiSsid(requestPermission = true)
     }
 
     private fun retryClaim() {
@@ -508,14 +535,81 @@ class DevicePairingViewModel(
             state.isBusy ||
             state.stage !in setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance)
         ) return
+        if (field == DeviceTargetWifiField.Ssid) {
+            targetWifiSsidEdited = true
+        }
         _uiState.update {
             it.copy(
                 targetWifiSsid = ssid ?: it.targetWifiSsid,
                 targetWifiPassword = password ?: it.targetWifiPassword,
+                currentWifiSsidState = if (field == DeviceTargetWifiField.Ssid) {
+                    DeviceCurrentWifiSsidState.Manual
+                } else {
+                    it.currentWifiSsidState
+                },
                 targetWifiFieldErrors = it.targetWifiFieldErrors - field,
                 errorMessage = "",
                 errorMessageRes = null,
                 requestId = "",
+            )
+        }
+    }
+
+    private fun refreshCurrentWifiSsid(requestPermission: Boolean) {
+        val state = _uiState.value
+        if (
+            state.isBusy ||
+            state.stage !in setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance) ||
+            expectedAuthority == null ||
+            hasDifferentCurrentAuthority()
+        ) return
+
+        when (val currentWifi = provisioner.currentWifiSsid()) {
+            is DeviceCurrentWifiSsid.Available -> {
+                _uiState.update {
+                    if (targetWifiSsidEdited) {
+                        it.copy(currentWifiSsidState = DeviceCurrentWifiSsidState.Manual)
+                    } else {
+                        it.copy(
+                            targetWifiSsid = currentWifi.value,
+                            currentWifiSsidState = DeviceCurrentWifiSsidState.Detected,
+                            targetWifiFieldErrors = it.targetWifiFieldErrors - DeviceTargetWifiField.Ssid,
+                        )
+                    }
+                }
+            }
+
+            is DeviceCurrentWifiSsid.PermissionRequired -> {
+                _uiState.update {
+                    it.copy(currentWifiSsidState = DeviceCurrentWifiSsidState.PermissionRequired)
+                }
+                if (requestPermission) {
+                    viewModelScope.launch {
+                        _effects.send(
+                            DevicePairingUiEffect.RequestCurrentWifiSsidPermissions(
+                                currentWifi.permissions,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            DeviceCurrentWifiSsid.Unavailable -> markCurrentWifiUnavailable()
+        }
+    }
+
+    private fun markCurrentWifiUnavailable() {
+        val state = _uiState.value
+        if (
+            state.stage !in setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance)
+        ) return
+        _uiState.update {
+            it.copy(
+                currentWifiSsidState = if (targetWifiSsidEdited) {
+                    DeviceCurrentWifiSsidState.Manual
+                } else {
+                    DeviceCurrentWifiSsidState.Unavailable
+                },
             )
         }
     }
@@ -1074,6 +1168,7 @@ class DevicePairingViewModel(
 
     private fun reset(errorMessageRes: Int? = null) {
         cancelSensitiveWork()
+        targetWifiSsidEdited = false
         _uiState.value = DevicePairingUiState(errorMessageRes = errorMessageRes)
     }
 

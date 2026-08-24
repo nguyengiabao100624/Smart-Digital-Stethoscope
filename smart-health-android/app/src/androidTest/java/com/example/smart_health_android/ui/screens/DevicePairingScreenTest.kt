@@ -60,6 +60,9 @@ class DevicePairingScreenTest {
 
         composeRule.onNodeWithTag("device_pairing.setup_ready").assertIsDisplayed()
         composeRule.onNodeWithTag("device_pairing.provision_in_app").assertIsDisplayed()
+        composeRule.onNodeWithTag("device_pairing.use_current_wifi")
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
         composeRule.onAllNodesWithText("Shcare-9487FC14F3E6").assertCountEquals(0)
         composeRule.onAllNodesWithText("4hxulJ_mCLIz2XhP-KXh").assertCountEquals(0)
         composeRule.onNodeWithTag("device_pairing.toggle_manual_fallback")

@@ -2438,3 +2438,10 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - OPEN: user-entered target Wi-Fi followed by authenticated device presence, command ACK, audio-v2 and durable completed scan. Current serial state is `wss=0`; do not infer an online device from captive-portal success.
 - OPEN: two MIUI-blocked notification instrumentation cases, exact-preview backend CORS, additive migration/provider readiness, production signing and forced-failure signed OTA rollback/canary.
 - G3 cannot PASS and G4 cannot promote while these release gates are open. A provider/hardware limitation may be recorded as `BLOCKED`, but it is not a production PASS.
+
+## 2026-08-25 G3 current-Wi-Fi and physical retry backlog
+
+- CLOSED: current phone SSID prefill, fine-location permission request at the provisioning step, unknown/redacted fallback, manual override protection, focused regression tests, full Android unit/build/lint gates and installation on Xiaomi.
+- CLOSED: physical ESP reset/re-detection; application firmware exposes the setup AP whose SSID exactly matches the current QR, and both I2S slots are active.
+- OPEN USER/OS INTERACTION: approve the App's location prompt, scan the QR and enter the Wi-Fi password on-device. MIUI denies shell/UiAutomation permission and input injection, so these actions cannot be truthfully automated from ADB.
+- OPEN AFTER JOIN: run the gated physical SSID test, authenticated WSS presence, command ACK, audio-v2 source binding, durable scan and signed OTA success/forced rollback. G3 and G4 status is unchanged.

@@ -3,10 +3,13 @@ package com.example.smart_health_android.devices
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiInfo
+import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -36,14 +39,23 @@ sealed interface DeviceWifiProvisioningAvailability {
     data object Unsupported : DeviceWifiProvisioningAvailability
 }
 
+sealed interface DeviceCurrentWifiSsid {
+    data class Available(val value: String) : DeviceCurrentWifiSsid
+    data class PermissionRequired(val permissions: List<String>) : DeviceCurrentWifiSsid
+    data object Unavailable : DeviceCurrentWifiSsid
+}
+
 interface DeviceWifiProvisioner {
     fun availability(): DeviceWifiProvisioningAvailability
+    fun currentWifiSsid(): DeviceCurrentWifiSsid
     suspend fun provision(request: DeviceWifiProvisioningRequest)
 }
 
 object UnsupportedDeviceWifiProvisioner : DeviceWifiProvisioner {
     override fun availability(): DeviceWifiProvisioningAvailability =
         DeviceWifiProvisioningAvailability.Unsupported
+
+    override fun currentWifiSsid(): DeviceCurrentWifiSsid = DeviceCurrentWifiSsid.Unavailable
 
     override suspend fun provision(request: DeviceWifiProvisioningRequest) {
         throw UnsupportedOperationException("In-app Wi-Fi provisioning is unavailable")
@@ -53,6 +65,8 @@ object UnsupportedDeviceWifiProvisioner : DeviceWifiProvisioner {
 class AndroidDeviceWifiProvisioner(context: Context) : DeviceWifiProvisioner {
     private val applicationContext = context.applicationContext
     private val connectivityManager = applicationContext.getSystemService(ConnectivityManager::class.java)
+    private val wifiManager = applicationContext.getSystemService(WifiManager::class.java)
+    private val locationManager = applicationContext.getSystemService(LocationManager::class.java)
 
     override fun availability(): DeviceWifiProvisioningAvailability {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || connectivityManager == null) {
@@ -77,6 +91,57 @@ class AndroidDeviceWifiProvisioner(context: Context) : DeviceWifiProvisioner {
             DeviceWifiProvisioningAvailability.PermissionRequired(permissions)
         }
     }
+
+    override fun currentWifiSsid(): DeviceCurrentWifiSsid {
+        val permissions = listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (
+            permissions.any { permission ->
+                ContextCompat.checkSelfPermission(applicationContext, permission) !=
+                    PackageManager.PERMISSION_GRANTED
+            }
+        ) {
+            return DeviceCurrentWifiSsid.PermissionRequired(permissions)
+        }
+        if (!isLocationEnabled()) {
+            return DeviceCurrentWifiSsid.Unavailable
+        }
+
+        val rawSsid = runCatching { currentWifiInfo()?.ssid }.getOrNull()
+        return normalizeCurrentWifiSsid(rawSsid)
+            ?.let(DeviceCurrentWifiSsid::Available)
+            ?: DeviceCurrentWifiSsid.Unavailable
+    }
+
+    @Suppress("DEPRECATION")
+    private fun currentWifiInfo(): WifiInfo? {
+        val activeWifiInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            currentWifiInfoApi29()
+        } else {
+            null
+        }
+        return activeWifiInfo ?: wifiManager?.connectionInfo
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun currentWifiInfoApi29(): WifiInfo? = connectivityManager
+            ?.activeNetwork
+            ?.let(connectivityManager::getNetworkCapabilities)
+            ?.takeIf { capabilities ->
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            }
+            ?.transportInfo as? WifiInfo
+
+    @Suppress("DEPRECATION")
+    private fun isLocationEnabled(): Boolean = locationManager?.let { manager ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            manager.isLocationEnabled
+        } else {
+            runCatching {
+                manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                    manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            }.getOrDefault(false)
+        }
+    } ?: false
 
     override suspend fun provision(request: DeviceWifiProvisioningRequest) {
         if (availability() != DeviceWifiProvisioningAvailability.Available) {
@@ -224,3 +289,23 @@ fun validateTargetWifiCredentials(ssid: String, password: String): Set<DeviceTar
             add(DeviceTargetWifiField.Password)
         }
     }
+
+fun normalizeCurrentWifiSsid(rawSsid: String?): String? {
+    val trimmed = rawSsid?.trim().orEmpty()
+    val unquoted = if (trimmed.length >= 2 && trimmed.first() == '"' && trimmed.last() == '"') {
+        trimmed.substring(1, trimmed.lastIndex)
+    } else {
+        trimmed
+    }
+    if (
+        unquoted.isBlank() ||
+        unquoted.equals(WifiManager.UNKNOWN_SSID, ignoreCase = true) ||
+        unquoted.equals("<unknown ssid>", ignoreCase = true)
+    ) {
+        return null
+    }
+    val byteLength = unquoted.toByteArray(Charsets.UTF_8).size
+    return unquoted.takeIf { ssid ->
+        byteLength in 1..32 && ssid.none { it == '\n' || it == '\r' || it.code == 0 }
+    }
+}

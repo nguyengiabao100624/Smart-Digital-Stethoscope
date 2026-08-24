@@ -4307,3 +4307,20 @@ The Unity command temporarily flashes a test runner. Always restore the intended
 - A Xiaomi target and CH343 ESP32-S3 are currently detectable. Re-detect ADB and COM instead of hardcoding the Android device identity; COM9 is the current verified ESP port only for this checkpoint.
 - The debug APK installed and launched on Xiaomi has SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. The physical captive portal passes session binding and invalid-session rejection; serial shows both microphone slots active.
 - Full authenticated HIL still requires the user to enter the target Wi-Fi password in the App or captive Web portal. Never extract or print the saved Windows password. After the ESP joins Wi-Fi, run `npm.cmd --prefix smart-health-embedded/web-monitor run hil:device:smoke` against the bounded local HIL backend and require authenticated online presence, command ACK, audio-v2 and durable scan completion.
+
+## 2026-08-25 G3 current-Wi-Fi prefill and Xiaomi HIL
+
+Build the LAN-integrated App without committing machine-local properties:
+
+```powershell
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleDebug `
+  '-PSMART_HEALTH_BASE_URL=http://<LAN-IP>:3765' `
+  '-PSHCARE_FIREBASE_AUTH_EMULATOR_HOST=<LAN-IP>' `
+  '-PSHCARE_FIREBASE_AUTH_EMULATOR_PORT=9099'
+```
+
+The gated `CurrentWifiSsidHilTest` runs only after the user approves location from the App pairing screen. MIUI blocks `pm grant` and `UiAutomation.grantRuntimePermission`; do not weaken the device policy or report a skipped test as PASS. Run with `-e shcareWifiHil true` and the exact test class through `AndroidJUnitRunner` after installing both debug APKs.
+
+Before retrying the QR, reset/read COM only long enough to confirm the application firmware, setup AP and both I2S slots. Compare only the QR `setupAp.ssid` with the serial/WLAN SSID; never print the proof-of-possession, claim code or target-network password. Once the App returns HTTP `202` and the ESP joins Wi-Fi, run `npm.cmd --prefix smart-health-embedded/web-monitor run hil:device:smoke` and require WSS, ACK, audio-v2 and durable-scan evidence.

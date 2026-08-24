@@ -2,6 +2,7 @@ package com.example.smart_health_android.devices
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewModelScope
 import com.example.smart_health_android.R
 import com.example.smart_health_android.data.DevicePairingOutcome
@@ -60,6 +61,7 @@ enum class DevicePairingStage {
     Claiming,
     ClaimFailed,
     SetupReady,
+    Provisioning,
     OpeningWifi,
     PortalGuidance,
     AwaitingOnline,
@@ -97,6 +99,9 @@ data class DevicePairingUiState(
     val setupSsid: String = "",
     val setupProofOfPossession: String = "",
     val setupExpiresAtEpochMillis: Long? = null,
+    val targetWifiSsid: String = "",
+    val targetWifiPassword: String = "",
+    val targetWifiFieldErrors: Set<DeviceTargetWifiField> = emptySet(),
     val isBusy: Boolean = false,
     val canRetryClaim: Boolean = false,
     val canRetryOnline: Boolean = false,
@@ -114,6 +119,10 @@ sealed interface DevicePairingUiAction {
     data class ManualProofChanged(val value: String) : DevicePairingUiAction
     data object SubmitManual : DevicePairingUiAction
     data object RetryClaim : DevicePairingUiAction
+    data class TargetWifiSsidChanged(val value: String) : DevicePairingUiAction
+    data class TargetWifiPasswordChanged(val value: String) : DevicePairingUiAction
+    data object StartLocalProvisioning : DevicePairingUiAction
+    data class NearbyWifiPermissionResult(val granted: Boolean) : DevicePairingUiAction
     data object OpenWifiSettings : DevicePairingUiAction
     data object WifiSettingsLaunchFailed : DevicePairingUiAction
     data object WifiSettingsReturned : DevicePairingUiAction
@@ -127,6 +136,7 @@ sealed interface DevicePairingUiAction {
 }
 
 sealed interface DevicePairingUiEffect {
+    data class RequestNearbyWifiPermissions(val permissions: List<String>) : DevicePairingUiEffect
     data object OpenSystemWifiSettings : DevicePairingUiEffect
     data class OpenExternalSetupPortal(val url: String) : DevicePairingUiEffect
     data class DeviceOnlineConfirmed(val deviceName: String) : DevicePairingUiEffect
@@ -162,6 +172,7 @@ class ApiDeviceClaimRepository(
 
 class DevicePairingViewModel(
     private val repository: DeviceClaimRepository,
+    private val provisioner: DeviceWifiProvisioner = UnsupportedDeviceWifiProvisioner,
     private val expectedAuthority: DevicePairingAuthoritySnapshot?,
     private val currentAuthority: () -> DevicePairingAuthoritySnapshot?,
     private val idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
@@ -182,6 +193,7 @@ class DevicePairingViewModel(
     private var pendingClaim: PendingClaim? = null
     private var claimJob: Job? = null
     private var pollingJob: Job? = null
+    private var provisioningJob: Job? = null
     private var expiryJob: Job? = null
     private var operationGeneration = 0L
     private var isScreenActive = true
@@ -209,6 +221,18 @@ class DevicePairingViewModel(
             )
             DevicePairingUiAction.SubmitManual -> submitManual()
             DevicePairingUiAction.RetryClaim -> retryClaim()
+            is DevicePairingUiAction.TargetWifiSsidChanged -> updateTargetWifi(
+                field = DeviceTargetWifiField.Ssid,
+                ssid = action.value,
+            )
+            is DevicePairingUiAction.TargetWifiPasswordChanged -> updateTargetWifi(
+                field = DeviceTargetWifiField.Password,
+                password = action.value,
+            )
+            DevicePairingUiAction.StartLocalProvisioning -> startLocalProvisioning()
+            is DevicePairingUiAction.NearbyWifiPermissionResult -> {
+                if (action.granted) startLocalProvisioning() else publishProvisioningPermissionDenied()
+            }
             DevicePairingUiAction.OpenWifiSettings -> openWifiSettings()
             DevicePairingUiAction.WifiSettingsLaunchFailed -> wifiSettingsLaunchFailed()
             DevicePairingUiAction.WifiSettingsReturned -> wifiSettingsReturned()
@@ -426,6 +450,141 @@ class DevicePairingViewModel(
         val pending = pendingClaim ?: return
         if (state.isBusy || state.stage != DevicePairingStage.ClaimFailed) return
         claim(pending.payload, pending.connectionMethod)
+    }
+
+    private fun updateTargetWifi(
+        field: DeviceTargetWifiField,
+        ssid: String? = null,
+        password: String? = null,
+    ) {
+        val state = _uiState.value
+        if (
+            state.isBusy ||
+            state.stage !in setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance)
+        ) return
+        _uiState.update {
+            it.copy(
+                targetWifiSsid = ssid ?: it.targetWifiSsid,
+                targetWifiPassword = password ?: it.targetWifiPassword,
+                targetWifiFieldErrors = it.targetWifiFieldErrors - field,
+                errorMessage = "",
+                errorMessageRes = null,
+                requestId = "",
+            )
+        }
+    }
+
+    private fun startLocalProvisioning() {
+        val state = _uiState.value
+        if (
+            state.isBusy ||
+            state.stage !in setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance) ||
+            state.claimedDeviceId.isBlank() ||
+            state.setupSsid.isBlank() ||
+            state.setupProofOfPossession.isBlank()
+        ) return
+        if (!hasCurrentAuthority()) {
+            denyStaleAuthority()
+            return
+        }
+        if (hasSetupExpired(state)) {
+            expireSetup()
+            return
+        }
+        val fieldErrors = validateTargetWifiCredentials(
+            ssid = state.targetWifiSsid,
+            password = state.targetWifiPassword,
+        )
+        if (fieldErrors.isNotEmpty()) {
+            _uiState.update {
+                it.copy(
+                    targetWifiFieldErrors = fieldErrors,
+                    errorMessage = "",
+                    errorMessageRes = R.string.device_pairing_target_wifi_invalid,
+                )
+            }
+            return
+        }
+        when (val availability = provisioner.availability()) {
+            DeviceWifiProvisioningAvailability.Available -> beginLocalProvisioning(state)
+            is DeviceWifiProvisioningAvailability.PermissionRequired -> {
+                viewModelScope.launch {
+                    _effects.send(
+                        DevicePairingUiEffect.RequestNearbyWifiPermissions(availability.permissions),
+                    )
+                }
+            }
+            DeviceWifiProvisioningAvailability.Unsupported -> openWifiSettings()
+        }
+    }
+
+    private fun beginLocalProvisioning(state: DevicePairingUiState) {
+        val request = DeviceWifiProvisioningRequest(
+            deviceId = state.claimedDeviceId,
+            setupSsid = state.setupSsid,
+            setupPassphrase = state.setupProofOfPossession,
+            targetSsid = state.targetWifiSsid.trim(),
+            targetPassword = state.targetWifiPassword,
+        )
+        provisioningJob?.cancel()
+        val generation = operationGeneration
+        _uiState.update {
+            it.copy(
+                stage = DevicePairingStage.Provisioning,
+                isBusy = true,
+                targetWifiFieldErrors = emptySet(),
+                errorMessage = "",
+                errorMessageRes = null,
+                requestId = "",
+            )
+        }
+        provisioningJob = viewModelScope.launch {
+            try {
+                provisioner.provision(request)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                if (generation == operationGeneration && hasCurrentAuthority()) {
+                    _uiState.update {
+                        it.copy(
+                            stage = DevicePairingStage.SetupReady,
+                            isBusy = false,
+                            errorMessageRes = R.string.device_pairing_local_provision_failed,
+                        )
+                    }
+                }
+                return@launch
+            }
+            if (generation != operationGeneration) return@launch
+            if (!hasCurrentAuthority()) {
+                denyStaleAuthority()
+                return@launch
+            }
+            provisioningJob = null
+            clearSetupMaterial()
+            _uiState.update {
+                it.copy(
+                    stage = DevicePairingStage.AwaitingOnline,
+                    targetWifiPassword = "",
+                    isBusy = true,
+                    canRetryOnline = false,
+                )
+            }
+            startOnlinePolling(request.deviceId)
+        }
+    }
+
+    private fun publishProvisioningPermissionDenied() {
+        if (
+            _uiState.value.stage !in
+            setOf(DevicePairingStage.SetupReady, DevicePairingStage.PortalGuidance)
+        ) return
+        _uiState.update {
+            it.copy(
+                failureKind = DevicePairingFailureKind.Permission,
+                errorMessageRes = R.string.device_pairing_nearby_wifi_permission_denied,
+            )
+        }
     }
 
     private fun openWifiSettings() {
@@ -812,6 +971,7 @@ class DevicePairingViewModel(
                 setupSsid = "",
                 setupProofOfPossession = "",
                 setupExpiresAtEpochMillis = null,
+                targetWifiPassword = "",
             )
         }
     }
@@ -834,6 +994,8 @@ class DevicePairingViewModel(
         claimJob = null
         pollingJob?.cancel()
         pollingJob = null
+        provisioningJob?.cancel()
+        provisioningJob = null
         expiryJob?.cancel()
         expiryJob = null
         pendingClaim = null
@@ -878,12 +1040,31 @@ class DevicePairingViewModelFactory(
     private val repository: DeviceClaimRepository = ApiDeviceClaimRepository(
         expectedAuthority?.workspaceId.orEmpty(),
     ),
+    private val provisioner: DeviceWifiProvisioner? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return createViewModel(modelClass, provisioner ?: UnsupportedDeviceWifiProvisioner)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+        val application = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
+        val resolvedProvisioner = provisioner
+            ?: application?.let(::AndroidDeviceWifiProvisioner)
+            ?: UnsupportedDeviceWifiProvisioner
+        return createViewModel(modelClass, resolvedProvisioner)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : ViewModel> createViewModel(
+        modelClass: Class<T>,
+        resolvedProvisioner: DeviceWifiProvisioner,
+    ): T {
         require(modelClass.isAssignableFrom(DevicePairingViewModel::class.java))
         return DevicePairingViewModel(
             repository = repository,
+            provisioner = resolvedProvisioner,
             expectedAuthority = expectedAuthority,
             currentAuthority = currentAuthority,
         ) as T

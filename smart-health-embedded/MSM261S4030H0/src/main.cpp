@@ -394,6 +394,7 @@ bool erasePendingOtaReceipt();
 void loadPendingOtaReceipt();
 void replayPendingOtaTerminalEvent();
 String buildWifiConfigProof(const String &ssid, const String &password);
+String jsonEscape(String value);
 void setupAudioUdp();
 void startStationServices();
 void captureI2sFrame();
@@ -1634,22 +1635,20 @@ bool persistTerminalCommand(const shcare::CommandEnvelope &command,
 
 String buildSetupPage(const char *message) {
   String page =
-      F("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+      F("<!doctype html><html lang=\"vi\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<title>Smart Health WiFi Recovery</title><style>"
-        "body{margin:0;font-family:Arial,sans-serif;background:#f7f9fc;color:#172033}"
-        ".wrap{max-width:520px;margin:0 auto;padding:28px 18px}"
-        ".panel{background:#fff;border:1px solid #dde5ef;border-radius:12px;padding:22px;box-shadow:0 12px 35px rgba(16,24,40,.08)}"
-        ".grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}"
-        ".kv{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:13px}"
-        "h1{font-size:24px;margin:0 0 8px}p{line-height:1.5;color:#58677c}"
-        "label{display:block;font-weight:700;margin:16px 0 6px}"
-        "input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #c9d4e2;border-radius:8px;font-size:16px}"
-        "button{display:block;box-sizing:border-box;width:100%;margin-top:20px;padding:13px 16px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-size:16px;font-weight:700}"
-        ".msg{padding:10px 12px;background:#fff3cd;border:1px solid #ffe08a;border-radius:8px;color:#7a4b00}"
-        ".hint{font-size:13px;color:#6b7788}</style></head><body><main class=\"wrap\"><section class=\"panel\">"
-        "<h1>Smart Health WiFi Recovery</h1>"
-        "<p>This local page only reconnects the device to WiFi. Firmware update, backend settings, device secret and ownership are managed from the main Smart Health Web Admin.</p>");
+        "<title>Shcare - Kết nối Wi-Fi</title><style>"
+        ":root{color-scheme:light dark;--bg:#f4f8fb;--surface:#fff;--text:#102a43;--muted:#52677a;--border:#d8e3ea;--primary:#2457d6;--focus:#087f75;--soft:#eef4f8}"
+        "*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text)}"
+        ".wrap{max-width:560px;margin:0 auto;padding:24px 16px 40px}"
+        ".brand{font-size:15px;font-weight:700;color:var(--primary);margin:0 0 14px}.panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px}"
+        ".grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:20px 0}.kv{background:var(--soft);border-radius:9px;padding:11px;font-size:13px;overflow-wrap:anywhere}"
+        "h1{font-size:26px;line-height:1.2;margin:0 0 10px;letter-spacing:-.02em}p{line-height:1.55;color:var(--muted)}label{display:block;font-weight:650;margin:18px 0 7px}"
+        "input{width:100%;min-height:48px;padding:11px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-size:16px}input:focus-visible,button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}"
+        "button{display:block;width:100%;min-height:48px;margin-top:22px;padding:12px 16px;border:0;border-radius:9px;background:var(--primary);color:#fff;font-size:16px;font-weight:700}.msg{padding:11px 12px;background:#fff5db;border:1px solid #e6b85c;border-radius:9px;color:#6f4300}.hint{font-size:13px;color:var(--muted)}"
+        "@media(max-width:420px){.grid{grid-template-columns:1fr}.panel{padding:20px}}@media(prefers-color-scheme:dark){:root{--bg:#071722;--surface:#0d2533;--text:#edf6fb;--muted:#b5c8d3;--border:#294554;--primary:#7fa4ff;--focus:#55c8bb;--soft:#132f3e}.msg{background:#3b2d11;border-color:#8b6824;color:#ffe3a4}button{background:#5f82e5;color:#fff}}</style></head><body><main class=\"wrap\"><p class=\"brand\">Shcare - Smart Health Care</p><section class=\"panel\">"
+        "<h1>Kết nối thiết bị với Wi-Fi</h1>"
+        "<p>Trang cục bộ này chỉ gửi Wi-Fi cho thiết bị Shcare. Trang không thể thay đổi quyền sở hữu, khóa thiết bị, máy chủ hoặc chính sách cập nhật.</p>");
 
   if (message != NULL && strlen(message) > 0) {
     page += F("<div class=\"msg\">");
@@ -1657,26 +1656,26 @@ String buildSetupPage(const char *message) {
     page += F("</div>");
   }
 
-  page += F("<div class=\"grid\"><div class=\"kv\"><b>Mode</b><br>");
-  page += setupPortalActive ? "WiFi recovery AP" : "WiFi station";
-  page += F("</div><div class=\"kv\"><b>IP</b><br>");
+  page += F("<div class=\"grid\"><div class=\"kv\"><b>Chế độ</b><br>");
+  page += setupPortalActive ? "Thiết lập Wi-Fi" : "Đã kết nối Wi-Fi";
+  page += F("</div><div class=\"kv\"><b>Địa chỉ cục bộ</b><br>");
   page += WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString()
                                         : setupPortalIp.toString();
-  page += F("</div><div class=\"kv\"><b>Device ID</b><br>");
+  page += F("</div><div class=\"kv\"><b>Mã thiết bị</b><br>");
   page += htmlEscape(deviceId);
-  page += F("</div><div class=\"kv\"><b>Cloud</b><br>");
-  page += cloudConnected ? "Connected" : "Waiting for Internet";
+  page += F("</div><div class=\"kv\"><b>Shcare Cloud</b><br>");
+  page += cloudConnected ? "Đã kết nối" : "Đang chờ mạng";
   page += F("</div></div>");
 
   page += F("<form method=\"post\" action=\"/save\"><input type=\"hidden\" name=\"csrf\" value=\"");
   page += htmlEscape(setupPortalCsrfToken.c_str());
   page += F("\">"
-            "<label for=\"ssid\">WiFi SSID</label><input id=\"ssid\" name=\"ssid\" required value=\"");
+            "<label for=\"ssid\">Tên Wi-Fi</label><input id=\"ssid\" name=\"ssid\" required autocomplete=\"off\" value=\"");
   page += htmlEscape(wifiSsid);
-  page += F("\"><label for=\"pass\">WiFi password</label><input id=\"pass\" name=\"pass\" type=\"password\" autocomplete=\"new-password\" value=\"\">"
-            "<div class=\"hint\">The saved WiFi password is never displayed. Enter it again to reconnect, or leave blank only for an open network. This page cannot change OTA, backend URL, device secret or admin rights.</div>");
-  page += F("<button type=\"submit\">Save and restart</button></form>"
-            "<p class=\"hint\">After saving, the device restarts and connects to the selected WiFi. When Internet is available it reconnects to the main Web Admin through the backend cloud.</p>"
+  page += F("\"><label for=\"pass\">Mật khẩu Wi-Fi</label><input id=\"pass\" name=\"pass\" type=\"password\" autocomplete=\"new-password\" value=\"\">"
+            "<div class=\"hint\">Mật khẩu đã lưu không bao giờ được hiển thị lại. Để trống chỉ khi Wi-Fi không có mật khẩu.</div>");
+  page += F("<button type=\"submit\">Lưu và kết nối</button></form>"
+            "<p class=\"hint\">Thiết bị sẽ khởi động lại, kết nối Wi-Fi vừa nhập và chỉ báo hoàn tất trong App sau khi đăng nhập Shcare Cloud thành công.</p>"
             "</section></main></body></html>");
 
   return page;
@@ -1699,6 +1698,33 @@ void sendSetupHtml(int status, const String &body) {
   setupServer.send(status, "text/html", body);
 }
 
+void sendSetupJson(int status, const String &body) {
+  sendSetupSecurityHeaders();
+  setupServer.send(status, "application/json", body);
+}
+
+void sendSetupApiError(int status, const char *code, const char *message) {
+  String body = "{\"code\":\"";
+  body += jsonEscape(code == NULL ? "SETUP_ERROR" : code);
+  body += "\",\"message\":\"";
+  body += jsonEscape(message == NULL ? "Setup request failed." : message);
+  body += "\"}";
+  sendSetupJson(status, body);
+}
+
+bool persistSetupWifi(const String &ssid, const String &pass) {
+  const String previousSsid = wifiSsid;
+  const String previousPassword = wifiPass;
+  copyConfigValue(wifiSsid, sizeof(wifiSsid), ssid);
+  copyConfigValue(wifiPass, sizeof(wifiPass), pass, false);
+  if (saveRuntimeConfig()) {
+    return true;
+  }
+  copyConfigValue(wifiSsid, sizeof(wifiSsid), previousSsid);
+  copyConfigValue(wifiPass, sizeof(wifiPass), previousPassword, false);
+  return false;
+}
+
 void handleSetupRoot() {
   sendSetupHtml(200, buildSetupPage(setupPortalReason.c_str()));
 }
@@ -1708,7 +1734,7 @@ void handleSetupSave() {
           static_cast<std::uint32_t>(millis()),
           static_cast<std::uint32_t>(setupPortalStartedAtMs),
           static_cast<std::uint32_t>(SETUP_PORTAL_TTL_MS))) {
-    sendSetupHtml(410, buildSetupPage("This recovery session has expired."));
+    sendSetupHtml(410, buildSetupPage("Phiên thiết lập đã hết hạn. Hãy mở lại chế độ ghép thiết bị rồi thử lại."));
     return;
   }
 
@@ -1716,7 +1742,7 @@ void handleSetupSave() {
   if (!shcare::validSetupPortalCsrf(
           std::string(setupPortalCsrfToken.c_str()),
           std::string(providedCsrf.c_str()))) {
-    sendSetupHtml(403, buildSetupPage("Invalid recovery session token."));
+    sendSetupHtml(403, buildSetupPage("Phiên thiết lập không hợp lệ. Hãy kết nối lại với thiết bị."));
     return;
   }
 
@@ -1730,27 +1756,121 @@ void handleSetupSave() {
     sendSetupHtml(
         400,
         buildSetupPage(
-            "WiFi requires a 1-32 byte SSID and either an open network or an 8-63 character WPA passphrase."));
+            "Tên Wi-Fi phải dài 1-32 byte. Mật khẩu WPA phải dài 8-63 ký tự hoặc để trống với mạng mở."));
     return;
   }
 
-  const String previousSsid = wifiSsid;
-  const String previousPassword = wifiPass;
-  copyConfigValue(wifiSsid, sizeof(wifiSsid), ssid);
-  copyConfigValue(wifiPass, sizeof(wifiPass), pass, false);
-  if (!saveRuntimeConfig()) {
-    copyConfigValue(wifiSsid, sizeof(wifiSsid), previousSsid);
-    copyConfigValue(wifiPass, sizeof(wifiPass), previousPassword, false);
+  if (!persistSetupWifi(ssid, pass)) {
     sendSetupHtml(
-        500, buildSetupPage("WiFi configuration could not be stored."));
+        500, buildSetupPage("Không thể lưu cấu hình Wi-Fi. Vui lòng thử lại."));
     return;
   }
 
   sendSetupHtml(
       200,
-      F("<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<body style=\"font-family:Arial,sans-serif;padding:24px\"><h1>Saved</h1>"
-        "<p>Smart Health device is restarting with the new configuration.</p></body>"));
+      F("<!doctype html><html lang=\"vi\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>Shcare - Đã nhận Wi-Fi</title><style>:root{color-scheme:light dark;--bg:#f4f8fb;--surface:#fff;--text:#102a43;--muted:#52677a;--border:#d8e3ea;--success:#18794e}"
+        "*{box-sizing:border-box}body{margin:0;padding:24px 16px;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}.panel{max-width:520px;margin:0 auto;padding:24px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}"
+        ".brand{font-size:15px;font-weight:700;color:#2457d6}.status{color:var(--success)}p{line-height:1.55;color:var(--muted)}@media(prefers-color-scheme:dark){:root{--bg:#071722;--surface:#0d2533;--text:#edf6fb;--muted:#b5c8d3;--border:#294554;--success:#66d3a3}.brand{color:#7fa4ff}}</style></head>"
+        "<body><main class=\"panel\"><p class=\"brand\">Shcare - Smart Health Care</p><h1 class=\"status\">Đã nhận thông tin Wi-Fi</h1>"
+        "<p>Thiết bị đang khởi động lại và kết nối mạng. Hãy quay lại ứng dụng Shcare; ứng dụng chỉ báo hoàn tất sau khi thiết bị đăng nhập Shcare Cloud thành công.</p></main></body></html>"));
+  delay(1200);
+  ESP.restart();
+}
+
+void handleSetupSessionJson() {
+  if (!setupPortalActive) {
+    sendSetupApiError(403, "SETUP_PORTAL_INACTIVE",
+                      "The local setup portal is not active.");
+    return;
+  }
+  const std::uint32_t nowMs = static_cast<std::uint32_t>(millis());
+  const std::uint32_t startedAtMs =
+      static_cast<std::uint32_t>(setupPortalStartedAtMs);
+  if (shcare::setupPortalExpired(
+          nowMs, startedAtMs,
+          static_cast<std::uint32_t>(SETUP_PORTAL_TTL_MS))) {
+    sendSetupApiError(410, "SETUP_SESSION_EXPIRED",
+                      "The local setup session has expired.");
+    return;
+  }
+  const std::uint32_t elapsedMs = nowMs - startedAtMs;
+  const std::uint32_t remainingMs =
+      elapsedMs >= SETUP_PORTAL_TTL_MS ? 0 : SETUP_PORTAL_TTL_MS - elapsedMs;
+  const std::uint32_t expiresInSeconds =
+      std::max<std::uint32_t>(1U, remainingMs / 1000U);
+  String body = "{\"protocolVersion\":1,\"deviceId\":\"";
+  body += jsonEscape(deviceId);
+  body += "\",\"csrfToken\":\"";
+  body += jsonEscape(setupPortalCsrfToken.c_str());
+  body += "\",\"expiresInSeconds\":";
+  body += String(expiresInSeconds);
+  body += "}";
+  sendSetupJson(200, body);
+}
+
+void handleSetupWifiJson() {
+  if (!setupPortalActive) {
+    sendSetupApiError(403, "SETUP_PORTAL_INACTIVE",
+                      "The local setup portal is not active.");
+    return;
+  }
+  if (shcare::setupPortalExpired(
+          static_cast<std::uint32_t>(millis()),
+          static_cast<std::uint32_t>(setupPortalStartedAtMs),
+          static_cast<std::uint32_t>(SETUP_PORTAL_TTL_MS))) {
+    sendSetupApiError(410, "SETUP_SESSION_EXPIRED",
+                      "The local setup session has expired.");
+    return;
+  }
+
+  String rawBody = setupServer.arg("plain");
+  auto parsed = shcare::parseSetupWifiProvisioningRequest(
+      std::string(rawBody.c_str()), std::string(deviceId),
+      std::string(setupPortalCsrfToken.c_str()));
+  for (size_t index = 0; index < rawBody.length(); ++index) {
+    rawBody.setCharAt(index, '\0');
+  }
+  rawBody = "";
+
+  if (!parsed.ok()) {
+    const auto code = parsed.code;
+    if (code == shcare::SetupWifiProvisioningParseCode::InvalidSession) {
+      sendSetupApiError(403, "SETUP_SESSION_INVALID",
+                        "The local setup session is invalid.");
+    } else if (code ==
+               shcare::SetupWifiProvisioningParseCode::PayloadTooLarge) {
+      sendSetupApiError(413, "SETUP_PAYLOAD_TOO_LARGE",
+                        "The local setup payload is too large.");
+    } else {
+      sendSetupApiError(400, "SETUP_PAYLOAD_INVALID",
+                        "The local WiFi setup payload is invalid.");
+    }
+    return;
+  }
+
+  String ssid(parsed.request.ssid.c_str());
+  String pass(parsed.request.password.c_str());
+  std::fill(parsed.request.password.begin(), parsed.request.password.end(),
+            '\0');
+  parsed.request.password.clear();
+  if (!persistSetupWifi(ssid, pass)) {
+    for (size_t index = 0; index < pass.length(); ++index) {
+      pass.setCharAt(index, '\0');
+    }
+    sendSetupApiError(500, "SETUP_STORAGE_FAILED",
+                      "The WiFi configuration could not be stored.");
+    return;
+  }
+  for (size_t index = 0; index < pass.length(); ++index) {
+    pass.setCharAt(index, '\0');
+  }
+  pass = "";
+
+  String response = "{\"protocolVersion\":1,\"accepted\":true,\"deviceId\":\"";
+  response += jsonEscape(deviceId);
+  response += "\",\"nextState\":\"restarting\"}";
+  sendSetupJson(202, response);
   delay(1200);
   ESP.restart();
 }
@@ -1805,6 +1925,9 @@ void startConfigWebServer(const bool portalMode, const char *reason) {
   setupServer.on("/", HTTP_GET, handleSetupRoot);
   setupServer.on("/save", HTTP_POST, handleSetupSave);
   setupServer.on("/status", HTTP_GET, handleStatusJson);
+  setupServer.on("/api/v1/setup/session", HTTP_GET,
+                 handleSetupSessionJson);
+  setupServer.on("/api/v1/setup/wifi", HTTP_POST, handleSetupWifiJson);
   setupServer.onNotFound(handleConfigNotFound);
   setupServer.begin();
   configServerStarted = true;

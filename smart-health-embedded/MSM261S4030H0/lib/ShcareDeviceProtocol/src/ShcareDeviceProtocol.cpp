@@ -23,6 +23,7 @@ constexpr std::size_t kMaxCommandJournalBytes = 4096;
 constexpr std::size_t kMaxCommandResultBytes = 192;
 constexpr std::size_t kMaxPendingReconnectBytes = 768;
 constexpr std::size_t kMaxPendingOtaReceiptBytes = 768;
+constexpr std::size_t kMaxSetupWifiRequestBytes = 768;
 constexpr std::size_t kMaxWifiSsidBytes = 63;
 constexpr std::size_t kMinAuthBindingBytes = 16;
 constexpr std::size_t kMaxAuthBindingBytes = 160;
@@ -626,6 +627,59 @@ bool validWifiCredentials(const std::string &ssid,
                      [](const unsigned char character) {
                        return character >= 0x20 && character <= 0x7e;
                      });
+}
+
+SetupWifiProvisioningParseResult parseSetupWifiProvisioningRequest(
+    const std::string &json, const std::string &expectedDeviceId,
+    const std::string &expectedCsrfToken) {
+  SetupWifiProvisioningParseResult result;
+  if (json.empty() || json.size() > kMaxSetupWifiRequestBytes) {
+    result.code = SetupWifiProvisioningParseCode::PayloadTooLarge;
+    return result;
+  }
+
+  JsonDocument document;
+  if (deserializeJson(document, json) || !document.is<JsonObject>()) {
+    result.code = SetupWifiProvisioningParseCode::MalformedJson;
+    return result;
+  }
+
+  const JsonObject object = document.as<JsonObject>();
+  if (!object["protocolVersion"].is<int>() ||
+      object["protocolVersion"].as<int>() != 1) {
+    result.code = SetupWifiProvisioningParseCode::UnsupportedProtocol;
+    return result;
+  }
+  if (!object["deviceId"].is<const char *>() ||
+      !object["csrfToken"].is<const char *>() ||
+      !object["ssid"].is<const char *>() ||
+      !object["password"].is<const char *>()) {
+    result.code = SetupWifiProvisioningParseCode::MalformedJson;
+    return result;
+  }
+
+  const std::string deviceId = object["deviceId"].as<const char *>();
+  const std::string providedCsrf = object["csrfToken"].as<const char *>();
+  const std::string ssid = object["ssid"].as<const char *>();
+  const std::string password = object["password"].as<const char *>();
+  if (!validCanonicalDeviceId(expectedDeviceId) || deviceId != expectedDeviceId) {
+    result.code = SetupWifiProvisioningParseCode::DeviceMismatch;
+    return result;
+  }
+  if (!validSetupPortalCsrf(expectedCsrfToken, providedCsrf)) {
+    result.code = SetupWifiProvisioningParseCode::InvalidSession;
+    return result;
+  }
+  if (!validWifiCredentials(ssid, password)) {
+    result.code = SetupWifiProvisioningParseCode::InvalidCredentials;
+    return result;
+  }
+
+  result.code = SetupWifiProvisioningParseCode::Ok;
+  result.request.deviceId = deviceId;
+  result.request.ssid = ssid;
+  result.request.password = password;
+  return result;
 }
 
 bool otaBootHealthReady(const OtaBootHealthInput &input) {

@@ -301,6 +301,18 @@ void test_wifi_credentials_enforce_esp32_and_wpa_bounds() {
       shcare::validWifiCredentials("Clinic\nWiFi", "12345678"));
 }
 
+void test_setup_wifi_json_request_is_bound_to_device_session_and_protocol() {
+  const auto result = shcare::parseSetupWifiProvisioningRequest(
+      R"json({"protocolVersion":1,"deviceId":"dev_alpha","csrfToken":"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF","ssid":"Clinic WiFi","password":"12345678"})json",
+      "dev_alpha",
+      "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
+
+  TEST_ASSERT_EQUAL(shcare::SetupWifiProvisioningParseCode::Ok, result.code);
+  TEST_ASSERT_EQUAL_STRING("dev_alpha", result.request.deviceId.c_str());
+  TEST_ASSERT_EQUAL_STRING("Clinic WiFi", result.request.ssid.c_str());
+  TEST_ASSERT_EQUAL_STRING("12345678", result.request.password.c_str());
+}
+
 void test_setup_access_point_accepts_only_canonical_device_ids() {
   TEST_ASSERT_TRUE(shcare::validCanonicalDeviceId("dev_alpha"));
   TEST_ASSERT_TRUE(shcare::validCanonicalDeviceId("A-b_9"));
@@ -1478,6 +1490,7 @@ void runTests() {
   RUN_TEST(test_setup_portal_requires_factory_state_or_physical_gesture);
   RUN_TEST(test_setup_portal_expiry_is_bounded_and_wrap_safe);
   RUN_TEST(test_setup_portal_csrf_requires_exact_non_empty_token);
+  RUN_TEST(test_setup_wifi_json_request_is_bound_to_device_session_and_protocol);
   RUN_TEST(test_wifi_credentials_enforce_esp32_and_wpa_bounds);
   RUN_TEST(test_setup_access_point_accepts_only_canonical_device_ids);
   RUN_TEST(test_setup_access_point_matches_shared_golden_vector);

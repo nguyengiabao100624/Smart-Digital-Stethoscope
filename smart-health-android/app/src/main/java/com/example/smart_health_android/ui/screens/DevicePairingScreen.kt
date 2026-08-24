@@ -7,6 +7,8 @@ import android.content.Intent
 import android.os.PersistableBundle
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,6 +92,7 @@ import com.example.smart_health_android.devices.DevicePairingUiState
 import com.example.smart_health_android.devices.DevicePairingAuthoritySnapshot
 import com.example.smart_health_android.devices.DevicePairingViewModel
 import com.example.smart_health_android.devices.DevicePairingViewModelFactory
+import com.example.smart_health_android.devices.DeviceTargetWifiField
 import com.example.smart_health_android.ui.components.ShcareErrorState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
@@ -129,6 +132,15 @@ fun DevicePairingScreen(
     val setupPortalError = stringResource(R.string.device_pairing_portal_open_error)
     val copiedMessage = stringResource(R.string.device_pairing_copied)
     val scanner = rememberDeviceScanner()
+    val nearbyWifiPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        viewModel.onAction(
+            DevicePairingUiAction.NearbyWifiPermissionResult(
+                granted = grants.isNotEmpty() && grants.values.all { it },
+            ),
+        )
+    }
 
     BackHandler {
         viewModel.onAction(DevicePairingUiAction.Cancel)
@@ -157,6 +169,10 @@ fun DevicePairingScreen(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.effects.collectLatest { effect ->
                 when (effect) {
+                    is DevicePairingUiEffect.RequestNearbyWifiPermissions -> {
+                        nearbyWifiPermissionLauncher.launch(effect.permissions.toTypedArray())
+                    }
+
                     DevicePairingUiEffect.OpenSystemWifiSettings -> {
                         runCatching {
                             context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
@@ -300,6 +316,15 @@ fun DevicePairingScreen(
                 DevicePairingStage.SetupReady -> DevicePairingSetupContent(
                     state = state,
                     isPortalStep = false,
+                    onTargetSsidChanged = {
+                        viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged(it))
+                    },
+                    onTargetPasswordChanged = {
+                        viewModel.onAction(DevicePairingUiAction.TargetWifiPasswordChanged(it))
+                    },
+                    onStartLocalProvisioning = {
+                        viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
+                    },
                     onOpenWifiSettings = {
                         viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
                     },
@@ -316,9 +341,23 @@ fun DevicePairingScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
 
+                DevicePairingStage.Provisioning -> ShcareLoadingState(
+                    message = stringResource(R.string.device_pairing_provisioning_in_app),
+                    modifier = Modifier.fillMaxSize(),
+                )
+
                 DevicePairingStage.PortalGuidance -> DevicePairingSetupContent(
                     state = state,
                     isPortalStep = true,
+                    onTargetSsidChanged = {
+                        viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged(it))
+                    },
+                    onTargetPasswordChanged = {
+                        viewModel.onAction(DevicePairingUiAction.TargetWifiPasswordChanged(it))
+                    },
+                    onStartLocalProvisioning = {
+                        viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
+                    },
                     onOpenWifiSettings = {
                         viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
                     },
@@ -635,12 +674,16 @@ private fun DevicePairingEntryContent(
 private fun DevicePairingSetupContent(
     state: DevicePairingUiState,
     isPortalStep: Boolean,
+    onTargetSsidChanged: (String) -> Unit,
+    onTargetPasswordChanged: (String) -> Unit,
+    onStartLocalProvisioning: () -> Unit,
     onOpenWifiSettings: () -> Unit,
     onOpenPortal: () -> Unit,
     onConfirmPortal: () -> Unit,
     onCopy: (label: String, value: String) -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
+    var showTargetPassword by rememberSaveable(state.claimedDeviceId) { mutableStateOf(false) }
     val ssidLabel = stringResource(R.string.device_pairing_setup_ssid)
     val passwordLabel = stringResource(R.string.device_pairing_setup_password)
     LazyColumn(
@@ -689,6 +732,91 @@ private fun DevicePairingSetupContent(
         }
 
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
+                Text(
+                    text = stringResource(R.string.device_pairing_target_wifi_heading),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                OutlinedTextField(
+                    value = state.targetWifiSsid,
+                    onValueChange = onTargetSsidChanged,
+                    label = { Text(stringResource(R.string.device_pairing_target_wifi_ssid)) },
+                    placeholder = {
+                        Text(stringResource(R.string.device_pairing_target_wifi_ssid_hint))
+                    },
+                    singleLine = true,
+                    isError = DeviceTargetWifiField.Ssid in state.targetWifiFieldErrors,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("device_pairing.target_wifi_ssid"),
+                )
+                OutlinedTextField(
+                    value = state.targetWifiPassword,
+                    onValueChange = onTargetPasswordChanged,
+                    label = { Text(stringResource(R.string.device_pairing_target_wifi_password)) },
+                    placeholder = {
+                        Text(stringResource(R.string.device_pairing_target_wifi_password_hint))
+                    },
+                    singleLine = true,
+                    isError = DeviceTargetWifiField.Password in state.targetWifiFieldErrors,
+                    visualTransformation = if (showTargetPassword) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showTargetPassword = !showTargetPassword }) {
+                            Icon(
+                                imageVector = if (showTargetPassword) {
+                                    Icons.Default.VisibilityOff
+                                } else {
+                                    Icons.Default.Visibility
+                                },
+                                contentDescription = stringResource(
+                                    if (showTargetPassword) {
+                                        R.string.device_pairing_hide_setup_proof
+                                    } else {
+                                        R.string.device_pairing_show_setup_proof
+                                    },
+                                ),
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { onStartLocalProvisioning() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("device_pairing.target_wifi_password"),
+                )
+                Text(
+                    text = stringResource(R.string.device_pairing_target_wifi_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onStartLocalProvisioning,
+                    enabled = !state.isBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("device_pairing.provision_in_app"),
+                ) {
+                    Icon(Icons.Default.Router, contentDescription = null)
+                    Spacer(Modifier.size(spacing.small))
+                    Text(stringResource(R.string.device_pairing_connect_in_app))
+                }
+                val errorMessage = state.resolveErrorMessage()
+                if (errorMessage.isNotBlank()) {
+                    DevicePairingInlineError(state, errorMessage)
+                }
+            }
+        }
+
+        item {
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -727,7 +855,7 @@ private fun DevicePairingSetupContent(
 
         if (!isPortalStep) {
             item {
-                Button(
+                OutlinedButton(
                     onClick = onOpenWifiSettings,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -736,7 +864,7 @@ private fun DevicePairingSetupContent(
                 ) {
                     Icon(Icons.Default.Router, contentDescription = null)
                     Spacer(Modifier.size(spacing.small))
-                    Text(stringResource(R.string.device_pairing_open_wifi_settings))
+                    Text(stringResource(R.string.device_pairing_browser_fallback))
                 }
             }
         } else {

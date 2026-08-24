@@ -80,8 +80,8 @@ fun ClinicalAlertsScreen(
     expectedWorkspaceId: String,
     canManage: Boolean,
     onOpenWorkspaceSwitcher: () -> Unit,
-    onNavigateToReviews: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onNavigateToReviews: () -> Unit = {},
     providedViewModel: ClinicalAlertsViewModel? = null,
 ) {
     if (expectedWorkspaceId.isBlank() && providedViewModel == null) {
@@ -139,8 +139,8 @@ fun ClinicalAlertsContent(
     state: ClinicalAlertsUiState,
     onAction: (ClinicalAlertsUiAction) -> Unit,
     onOpenWorkspaceSwitcher: () -> Unit,
-    onNavigateToReviews: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onNavigateToReviews: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     Scaffold(

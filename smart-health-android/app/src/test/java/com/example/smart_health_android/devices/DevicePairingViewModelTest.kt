@@ -67,6 +67,88 @@ class DevicePairingViewModelTest {
     }
 
     @Test
+    fun inAppProvisioningSendsWifiToEspThenWaitsForAuthenticatedOnlinePresence() =
+        runTest(dispatcher) {
+            val offline = SmartDevice(id = "dev_alpha", name = "Shcare Alpha", online = false)
+            val online = offline.copy(online = true)
+            val repository = FakeDeviceClaimRepository(
+                claimResult = offline,
+                deviceSnapshots = ArrayDeque(listOf(listOf(online))),
+            )
+            val provisioner = FakeDeviceWifiProvisioner()
+            val viewModel = secureViewModel(
+                repository = repository,
+                provisioner = provisioner,
+                onlineRetryDelaysMillis = listOf(0L),
+            )
+            val onlineEffect = async { viewModel.effects.first() }
+
+            viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+            runCurrent()
+            viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged("Home WiFi"))
+            viewModel.onAction(DevicePairingUiAction.TargetWifiPasswordChanged("home-pass-123"))
+            viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
+            runCurrent()
+
+            assertEquals(1, provisioner.calls)
+            assertEquals("dev_alpha", provisioner.lastRequest?.deviceId)
+            assertEquals("Shcare-9487FC14F3E6", provisioner.lastRequest?.setupSsid)
+            assertEquals("4hxulJ_mCLIz2XhP-KXh", provisioner.lastRequest?.setupPassphrase)
+            assertEquals("Home WiFi", provisioner.lastRequest?.targetSsid)
+            assertEquals("home-pass-123", provisioner.lastRequest?.targetPassword)
+            assertEquals(1, repository.listCalls)
+            assertEquals(DevicePairingStage.Online, viewModel.uiState.value.stage)
+            assertEquals("", viewModel.uiState.value.targetWifiPassword)
+            assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+            assertEquals(
+                DevicePairingUiEffect.DeviceOnlineConfirmed("Shcare Alpha"),
+                onlineEffect.await(),
+            )
+        }
+
+    @Test
+    fun deniedNearbyWifiPermissionIsReportedAfterReturningFromBrowserFallback() =
+        runTest(dispatcher) {
+            val repository = FakeDeviceClaimRepository(
+                claimResult = SmartDevice(id = "dev_alpha", name = "Shcare Alpha", online = false),
+            )
+            val permissions = listOf("android.permission.NEARBY_WIFI_DEVICES")
+            val provisioner = FakeDeviceWifiProvisioner(
+                availability = DeviceWifiProvisioningAvailability.PermissionRequired(permissions),
+            )
+            val viewModel = secureViewModel(repository, provisioner = provisioner)
+
+            viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+            runCurrent()
+            val settingsEffect = async { viewModel.effects.first() }
+            viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
+            runCurrent()
+            assertEquals(DevicePairingUiEffect.OpenSystemWifiSettings, settingsEffect.await())
+            viewModel.onAction(DevicePairingUiAction.WifiSettingsReturned)
+            assertEquals(DevicePairingStage.PortalGuidance, viewModel.uiState.value.stage)
+
+            viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged("Home WiFi"))
+            viewModel.onAction(DevicePairingUiAction.TargetWifiPasswordChanged("home-pass-123"))
+            val permissionEffect = async { viewModel.effects.first() }
+            viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
+            runCurrent()
+            assertEquals(
+                DevicePairingUiEffect.RequestNearbyWifiPermissions(permissions),
+                permissionEffect.await(),
+            )
+
+            viewModel.onAction(DevicePairingUiAction.NearbyWifiPermissionResult(false))
+
+            assertEquals(DevicePairingStage.PortalGuidance, viewModel.uiState.value.stage)
+            assertEquals(DevicePairingFailureKind.Permission, viewModel.uiState.value.failureKind)
+            assertEquals(
+                R.string.device_pairing_nearby_wifi_permission_denied,
+                viewModel.uiState.value.errorMessageRes,
+            )
+            assertEquals(0, provisioner.calls)
+        }
+
+    @Test
     fun acceptedPairingNeverInfersOnlineFromTheDeviceFlag() = runTest(dispatcher) {
         val repository = FakeDeviceClaimRepository(
             claimResult = SmartDevice(
@@ -549,11 +631,13 @@ class DevicePairingViewModelTest {
 
     private fun secureViewModel(
         repository: DeviceClaimRepository,
+        provisioner: DeviceWifiProvisioner = UnsupportedDeviceWifiProvisioner,
         currentAuthority: () -> DevicePairingAuthoritySnapshot? = { authority },
         idempotencyKeyFactory: () -> String = { "pair-key-1" },
         onlineRetryDelaysMillis: List<Long> = listOf(0L),
     ) = DevicePairingViewModel(
         repository = repository,
+        provisioner = provisioner,
         expectedAuthority = authority,
         currentAuthority = currentAuthority,
         idempotencyKeyFactory = idempotencyKeyFactory,
@@ -576,6 +660,22 @@ class DevicePairingViewModelTest {
           }
         }
         """.trimIndent()
+}
+
+private class FakeDeviceWifiProvisioner(
+    private val availability: DeviceWifiProvisioningAvailability =
+        DeviceWifiProvisioningAvailability.Available,
+) : DeviceWifiProvisioner {
+    var calls = 0
+    var lastRequest: DeviceWifiProvisioningRequest? = null
+
+    override fun availability(): DeviceWifiProvisioningAvailability =
+        availability
+
+    override suspend fun provision(request: DeviceWifiProvisioningRequest) {
+        calls += 1
+        lastRequest = request
+    }
 }
 
 private class FakeDeviceClaimRepository(

@@ -83,6 +83,34 @@ bool validSetupPortalCsrf(const std::string &expectedToken,
 bool validWifiCredentials(const std::string &ssid,
                           const std::string &password);
 
+enum class SetupWifiProvisioningParseCode {
+  Ok,
+  PayloadTooLarge,
+  MalformedJson,
+  UnsupportedProtocol,
+  DeviceMismatch,
+  InvalidSession,
+  InvalidCredentials,
+};
+
+struct SetupWifiProvisioningRequest {
+  std::string deviceId;
+  std::string ssid;
+  std::string password;
+};
+
+struct SetupWifiProvisioningParseResult {
+  SetupWifiProvisioningParseCode code =
+      SetupWifiProvisioningParseCode::MalformedJson;
+  SetupWifiProvisioningRequest request;
+
+  bool ok() const { return code == SetupWifiProvisioningParseCode::Ok; }
+};
+
+SetupWifiProvisioningParseResult parseSetupWifiProvisioningRequest(
+    const std::string &json, const std::string &expectedDeviceId,
+    const std::string &expectedCsrfToken);
+
 constexpr std::size_t kSetupSecretHashBytes = 32;
 
 enum class SetupAccessPointCode {

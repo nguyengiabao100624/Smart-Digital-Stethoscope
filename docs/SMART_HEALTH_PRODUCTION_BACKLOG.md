@@ -2422,3 +2422,11 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - OPEN G3: run browser smoke after the security diff; verify production env/provider/database migration readiness without exposing secrets; freeze the candidate SHA, hashes and compatibility manifest.
 - BLOCKED runtime proof only: Android instrumentation while no ADB target is online; native PlatformIO tests while host GCC is missing; secure production device WSS/command/OTA until credential, CA and signed OTA provisioning is available. These do not permit a fake G3/G4 PASS.
 - G4 remains pending until G3 candidate proof is reproducible. No production promotion is recorded yet.
+
+## 2026-08-24 G3 Wi-Fi provisioning backlog correction
+
+- CLOSED: Android QR/setup-AP provisioning source, nearby-Wi-Fi permission matrix, device-bound local HTTP codec, ESP session/CSRF JSON endpoints, responsive captive Web UI, Android `838/838`, zero-issue lint, physical ESP `54/54` tests and captive-portal HIL.
+- CLOSED: the board was returned from Unity test firmware to the application HIL firmware; serial confirms setup portal port `80`, AP readiness and both physical mic slots.
+- BLOCKED runtime: attach an Android target and run the system Wi-Fi chooser plus full App claim → provision → authenticated-online journey. Do not replace this with an emulator that cannot join the physical ESP AP.
+- WAITING FOR USER-ENTERED NETWORK MATERIAL: run one successful target-Wi-Fi POST from App or captive Web using a password entered by the user. Never read/export the saved Windows Wi-Fi password and never expose internal HIL JSON as setup instructions.
+- G3 remains open for the prior exact-preview CORS, production provider/migration, secure device WSS/ACK and signed OTA rollback gates. G4 remains pending.

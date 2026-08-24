@@ -4280,3 +4280,22 @@ Only bounded aggregate RMS/peak/window evidence may be retained; do not save raw
 - Re-detect hardware before flash: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe device list`.
 - Build firmware without assuming flash size: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1` from `smart-health-embedded/MSM261S4030H0`.
 - Native PlatformIO tests require host `gcc/g++`; absence of that compiler is an environment blocker and must not be misreported as an ESP32 build failure.
+
+## 2026-08-24 G3 Wi-Fi provisioning verification
+
+Android source/build gate from `smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+Physical firmware unit gate and production build from `smart-health-embedded\MSM261S4030H0`:
+
+```powershell
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe test -e esp32-s3-development --upload-port COM9 --test-port COM9 --monitor-rts 0 --monitor-dtr 0
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
+```
+
+The Unity command temporarily flashes a test runner. Always restore the intended application firmware afterward. The internal captive-portal HIL command is `npm.cmd --prefix smart-health-embedded/web-monitor run hil:device:setup-portal`; it temporarily changes the PC Wi-Fi and restores the original profile in `finally`. It must be run only while the local HIL runtime and setup AP are active. Neither this command nor `setup-access.json` is a user setup flow; users configure Wi-Fi through the Shcare App or the captive Web portal.

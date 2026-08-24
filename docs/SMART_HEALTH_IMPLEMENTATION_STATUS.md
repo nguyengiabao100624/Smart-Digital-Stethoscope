@@ -2776,3 +2776,10 @@ KLTN report artifacts generated from this evidence set:
 - Preview Auth production CSS passes light/dark/system mobile verification after revision `927b171132d834acfe6a52bb7f3ab7e6e6d7189a` removed the surviving legacy backdrop blur. Recovery-button contrast is WCAG AA, horizontal overflow is zero and the checked routes emit no console errors.
 - Admin Storage remains capability/direct-URL protected and is present in the candidate; anonymous preview access correctly redirects to login. Authenticated preview data/mutation proof is blocked by the old backend CORS response, not by a missing Storage UI route.
 - Overall state remains G0–G2 complete, G3 in progress, G4 pending under `SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md`.
+
+## 2026-08-24 G3 Android/ESP Wi-Fi provisioning status
+
+- CLOSED source/build/unit/HIL: native Android setup-AP selection and local HTTP provisioning, version-correct Android 10–12/13+ permission handling, bounded response codec, device/session/CSRF binding, ESP JSON endpoint and Vietnamese captive portal. User-visible setup does not require editing firmware flags or JSON.
+- Evidence at commit `6a28fe2b431ffae5bb9d62d26d712136359f3bd9`: Android `838/838`, lint `No issues found`, debug APK SHA-256 `3807D1274398E52A11D9AB5F7754BE4AF9758C9AE8E03B3DD0C46BCDE369E1A7`; physical ESP Unity `54/54`; production firmware `1,130,768` bytes / SHA-256 `5B61DDAD78613DEB6A1EB4ECFF1C2035C791666838057D5EC71AFC01551EC828`.
+- Physical Web HIL passes page rendering, device-bound session and invalid-session denial, then restores the host Wi-Fi. The HIL application firmware is back on COM9; final serial proof shows the setup server/AP and both microphone slots.
+- BLOCKED runtime-only: no Android target is attached, so the system Wi-Fi chooser and complete App claim/provision/presence journey are not runtime-proven. A valid target-network password must be entered by the user in App/Web before the success POST. G3 remains open for this and existing backend CORS/provider/WSS/ACK/OTA release gates.

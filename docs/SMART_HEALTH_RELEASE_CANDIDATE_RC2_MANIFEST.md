@@ -301,3 +301,11 @@ not require firmware rollback while the compatibility verdict remains green.
 - Production-minified CSS initially retained a legacy mobile Auth blur. The source rule now explicitly disables both standard and WebKit backdrop filters. The deployed Web preview passes `/quen-mat-khau` at 360 px in `light`, `dark` and `system`: no overflow or console error, `backdrop-filter: none`, and button contrast `6.16:1` light / `5.40:1` dark.
 - Admin preview `/storage` resolves through the protected route to `/login` for an anonymous actor, returns HTTP `200`, uses dark/system theme without horizontal overflow and emits no console error. Source contract tests continue to prove that `platform.storage.manage` exposes the Storage menu/direct URL while unauthorized users are denied.
 - Both exact preview origins currently receive `Access-Control-Allow-Origin: https://shcare-admin.web.app` from the old live backend. This is a reproduced G3 blocker for authenticated preview API smoke. Do not promote Hosting or backend until the production CORS list is updated atomically with the backend release and migrations/secret readiness is proven.
+
+## 2026-08-24 Android/ESP Wi-Fi provisioning candidate addendum
+
+- Source checkpoint: `6a28fe2b431ffae5bb9d62d26d712136359f3bd9`.
+- Android debug APK: `26,953,969` bytes; SHA-256 `3807D1274398E52A11D9AB5F7754BE4AF9758C9AE8E03B3DD0C46BCDE369E1A7`; `838/838` unit tests and zero lint issues.
+- Production firmware: `1,130,768` bytes; SHA-256 `5B61DDAD78613DEB6A1EB4ECFF1C2035C791666838057D5EC71AFC01551EC828`; physical ESP unit test `54/54`.
+- Compatibility verdict: additive local setup protocol v1. Existing browser `/save` remains; Android adds `/api/v1/setup/session` and `/api/v1/setup/wifi`. UI reports ESP acceptance only after HTTP `202` and reports final success only after authenticated backend presence.
+- Captive Web HIL passes on the physical board. Android physical runtime remains `BLOCKED` without an ADB target; real target-network success waits for user-entered Wi-Fi material. This addendum does not close G3 or authorize live promotion.

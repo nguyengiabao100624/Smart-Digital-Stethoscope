@@ -1,7 +1,7 @@
 # Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare
 
 Trạng thái: **ACTIVE v4 — người dùng xác nhận `2026-08-23`**
-Ngày cập nhật: `2026-08-23`
+Ngày cập nhật: `2026-08-25`
 
 ## 1. Nguyên tắc chính
 
@@ -162,3 +162,8 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Android đã bổ sung đúng UX yêu cầu: sau QR/mã và claim thật, App đọc SSID điện thoại đang dùng, xin quyền đúng lúc, tự điền một lần, không ghi đè tên mạng người dùng đã sửa và vẫn cho nhập tay nếu Android che SSID/từ chối quyền. Không có mật khẩu nào được ghi vào source, lệnh, log hoặc tài liệu.
 - Gate mới PASS: `118` JVM suite / `849/849`, AndroidTest compile, assemble và lint; APK integrated-demo SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF` đã cài trên Xiaomi.
 - ESP trên COM9 đã được reset về application firmware; setup AP đang phát và SSID trùng chính xác QR, hai slot mic có dữ liệu. MIUI cấm ADB/UiAutomation cấp quyền và bơm thao tác, nên còn đúng bước người dùng duyệt quyền, quét QR và nhập mật khẩu trên máy; sau đó phải chạy WSS/ACK/audio-v2/durable scan/OTA rollback. G3 vẫn `in progress`, G4 vẫn pending.
+### 2026-08-25 — G3 Xiaomi SSID và loading-flash correction
+
+- Đã tái hiện trên Xiaomi: quyền ứng dụng có nhưng Location services tắt làm Android che SSID. App nay có trạng thái/copy/action riêng để mở Location settings và tự đọc lại khi quay về, không còn thông báo chung gây hiểu nhầm.
+- Đã tìm đúng nguồn loading chớp tắt: protected route tự chạy reauthorization toàn màn hình mỗi 30 giây. Timer giữa cùng một route đã bỏ; foreground, route entry, account/workspace/session change và backend denial vẫn fail-closed.
+- Source/build gate PASS `850/850`, AndroidTest compile, lint, assemble; APK integrated SHA-256 `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B` đã cài. Runtime UI/SSID vẫn chưa PASS vì Xiaomi secure-locked và MIUI chặn shell bật Location/cấp quyền. G3 vẫn `in progress`; G4 vẫn pending.

@@ -1,6 +1,6 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-08-15
+Last updated: 2026-08-25
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
 
@@ -2797,3 +2797,9 @@ KLTN report artifacts generated from this evidence set:
 - Evidence: `118` JVM suites / `849/849`, AndroidTest compile, assemble and lint PASS; integrated-demo APK SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF` is installed on Xiaomi.
 - PHYSICAL PARTIAL: COM9 application firmware is running, setup AP equals the QR metadata and both mic slots report activity. MIUI forbids permission grants from ADB/UiAutomation, so the normal in-App location approval, physical QR scan and password entry remain required before the gated SSID HIL and authenticated WSS/ACK/audio-v2 chain can pass.
 - G3 remains in progress; this checkpoint is not G3 completion and does not start G4.
+## 2026-08-25 — Android current-Wi-Fi recovery và loading flash
+
+- `REAL/source+build`: `AndroidDeviceWifiProvisioner` trả trạng thái riêng khi Location services tắt; Device Pairing có copy/action native phù hợp và tự refresh sau khi trở lại foreground.
+- `REAL/source+build`: protected route không còn tự dựng full-screen reauthorization sau mỗi TTL khi người dùng đứng yên trên cùng màn. Foreground, route-entry, session/workspace epoch và backend rejection vẫn fail-closed như trước.
+- `PASS`: 118 JVM suites, 850 tests, AndroidTest compile, lint, assemble; LAN-integrated APK đã cài lên Xiaomi, hash `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B`.
+- `BLOCKED/runtime`: Xiaomi đang khóa; MIUI từ chối ADB/UiAutomation bật Location/cấp runtime permission. Không coi Compose run mất hierarchy hoặc SSID HIL bị skip là PASS. G3 tiếp tục sau một lần người dùng mở khóa/bật quyền trên thiết bị.

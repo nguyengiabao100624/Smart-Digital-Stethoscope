@@ -1,6 +1,6 @@
 # Shcare rebuild execution ledger
 
-Updated: 2026-08-15
+Updated: 2026-08-25
 
 This ledger turns the accepted Shcare Web, Portal, Platform Admin, Android, backend and MSM261S4030H0 firmware plan into verifiable slices. It is an execution record, not a completion claim.
 
@@ -951,3 +951,10 @@ Any unavailable emulator, board, credential or provider is recorded as `BLOCKED`
 - Regression proof is `118` suites / `849/849`, AndroidTest compile, integrated-demo assemble and lint PASS. APK `26,959,593` bytes / SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF` is installed on the attached Xiaomi.
 - Physical diagnosis: the earlier `WifiNetworkSpecifier.onUnavailable` was captured while no matching AP was visible. COM9 reset now proves application firmware, exact QR/AP SSID parity, local setup service and non-zero activity from both I2S slots. MIUI denies ADB shell and UiAutomation permission/input injection; the gated current-SSID device test is intentionally not counted as PASS until the user approves the normal App permission.
 - Resume with physical QR scan and on-device password entry, then require authenticated WSS presence, command ACK, audio-v2, durable scan and signed OTA rollback. G3 remains active and G4 pending.
+## 2026-08-25 — G3 Xiaomi SSID/loading checkpoint
+
+- Scope: chỉ sửa regression Android Device Pairing và periodic route loading; không mở lại G0–G2.
+- Root cause proof: Xiaomi có Wi-Fi đang kết nối nhưng Location services OFF nên platform redacts SSID; `AuthorizedMobileRoute` có TTL timer 30 giây dựng full-screen reauthorization.
+- Implemented: `LocationDisabled` + native Location settings recovery + refresh-on-return; bỏ timer giữa cùng route, giữ các gate fail-closed ở foreground/route/session/workspace/backend.
+- Gate: JVM `118` suites / `850/850`, AndroidTest compile, lint, assemble PASS; APK `26,961,117` bytes, SHA-256 `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B`, installed Xiaomi.
+- Open: secure-unlock Xiaomi → approve Location in App → runtime Compose/SSID HIL → QR provisioning → WSS/ACK/audio-v2/durable scan/OTA rollback. No secret persisted or logged.

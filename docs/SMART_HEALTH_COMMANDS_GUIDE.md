@@ -1,6 +1,6 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-15
+Last updated: 2026-08-25
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
@@ -4324,3 +4324,17 @@ $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 The gated `CurrentWifiSsidHilTest` runs only after the user approves location from the App pairing screen. MIUI blocks `pm grant` and `UiAutomation.grantRuntimePermission`; do not weaken the device policy or report a skipped test as PASS. Run with `-e shcareWifiHil true` and the exact test class through `AndroidJUnitRunner` after installing both debug APKs.
 
 Before retrying the QR, reset/read COM only long enough to confirm the application firmware, setup AP and both I2S slots. Compare only the QR `setupAp.ssid` with the serial/WLAN SSID; never print the proof-of-possession, claim code or target-network password. Once the App returns HTTP `202` and the ESP joins Wi-Fi, run `npm.cmd --prefix smart-health-embedded/web-monitor run hil:device:smoke` and require WSS, ACK, audio-v2 and durable-scan evidence.
+## 2026-08-25 G3 Xiaomi SSID/loading continuation
+
+Build LAN-integrated candidate (không commit `local.properties`):
+
+```powershell
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleDebug `
+  '-PSMART_HEALTH_BASE_URL=http://<LAN-IP>:3765' `
+  '-PSHCARE_FIREBASE_AUTH_EMULATOR_HOST=<LAN-IP>' `
+  '-PSHCARE_FIREBASE_AUTH_EMULATOR_PORT=9099' --no-daemon --console=plain
+```
+
+Expected current checkpoint: `118` suites / `850/850`; AndroidTest compile, lint and assemble PASS. Run `CurrentWifiSsidHilTest` only after the phone is unlocked, Location services is ON and the App owns Fine Location. MIUI on this Xiaomi denies shell/UiAutomation permission and Location mutation; do not retry with weaker device security and do not count an assumption skip as PASS. Never put the target Wi-Fi password in a command, environment variable, source, report or log.

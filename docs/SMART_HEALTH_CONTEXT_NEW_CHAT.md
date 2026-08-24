@@ -1,6 +1,6 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-08-15
+Last updated: 2026-08-25
 
 For an interrupted task, read `SMART_HEALTH_ACTIVE_CHECKPOINT.md` first, then
 this file. This document summarizes the durable project state, decisions,
@@ -1797,3 +1797,10 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - Fresh proof is `118` JVM suites / `849/849`, AndroidTest compilation, integrated-demo assemble and lint PASS. The installed APK is `26,959,593` bytes with SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF`.
 - Xiaomi/MIUI blocks shell and UiAutomation runtime-permission grants, so the user must approve the normal in-App location prompt. This is an operating-system interaction requirement, not a source PASS. The gated physical SSID HIL must be rerun after that approval.
 - COM9 was re-detected and the ESP was reset into the application firmware. Serial and WLAN discovery confirm the setup AP is active and its SSID exactly matches the canonical QR; both I2S slots emit samples. The earlier Android `onUnavailable` happened before the AP was active. Resume with one physical QR scan and password entry, then run authenticated WSS → command ACK → audio-v2 → durable scan and OTA/rollback proof. G3 remains active; G4 remains pending.
+## 2026-08-25 — G3 Xiaomi SSID và route-loading checkpoint
+
+- Tiếp tục đúng kế hoạch `Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare`; G0–G2 giữ nguyên `complete`, G3 vẫn `in progress`, G4 chưa bắt đầu.
+- Xiaomi tái hiện việc không lấy được SSID trong khi quyền Wi-Fi/vị trí đã được cấp nhưng dịch vụ Vị trí hệ thống đang tắt. Android nay phân biệt `LocationDisabled`, giải thích đúng lý do, mở cài đặt Vị trí bằng một chạm và tự đọc lại SSID khi quay về; nhập tay vẫn là fallback.
+- Đã bỏ timer reauthorization chặn toàn màn hình mỗi 30 giây trên cùng route — nguyên nhân của màn “đang xác minh” chớp tắt. Fail-closed vẫn giữ khi foreground lại app, chuyển protected route, authority stale tại lần compose, đổi auth session/workspace, backend reject hoặc authorization event.
+- Gate nguồn mới: `118` JVM suites / `850/850`, AndroidTest Kotlin compile, lint và assemble PASS. APK LAN-integrated SHA-256 `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B`, `26,961,117` bytes, đã cài trên Xiaomi.
+- Runtime UI test chưa được tính PASS: Xiaomi đang secure-locked nên Compose không có hierarchy; MIUI cũng chặn shell bật Vị trí/cấp quyền. Khi mở khóa máy, tiếp tục ngay từ bật Vị trí/quyền trong App → `CurrentWifiSsidHilTest` → QR/provision → WSS/ACK/audio-v2/durable scan. Không đưa mật khẩu Wi-Fi vào source, lệnh, log hay tài liệu.

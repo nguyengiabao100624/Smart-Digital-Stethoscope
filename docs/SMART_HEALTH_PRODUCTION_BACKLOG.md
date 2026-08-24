@@ -1,6 +1,6 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-08-15
+Last updated: 2026-08-25
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -2445,3 +2445,10 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - CLOSED: physical ESP reset/re-detection; application firmware exposes the setup AP whose SSID exactly matches the current QR, and both I2S slots are active.
 - OPEN USER/OS INTERACTION: approve the App's location prompt, scan the QR and enter the Wi-Fi password on-device. MIUI denies shell/UiAutomation permission and input injection, so these actions cannot be truthfully automated from ADB.
 - OPEN AFTER JOIN: run the gated physical SSID test, authenticated WSS presence, command ACK, audio-v2 source binding, durable scan and signed OTA success/forced rollback. G3 and G4 status is unchanged.
+## 2026-08-25 — G3 open runtime gates after SSID/loading fix
+
+- [x] Phân biệt Location services tắt với permission denied/SSID unavailable và thêm recovery một chạm trong Device Pairing.
+- [x] Loại periodic full-screen route reauthorization gây loading chớp tắt; giữ foreground/route/session/workspace fail-closed.
+- [x] Android JVM `850/850`, AndroidTest compile, lint, assemble và cài APK LAN-integrated lên Xiaomi.
+- [ ] Mở khóa Xiaomi, bật Location/chấp thuận quyền trong App rồi chạy lại Compose route test và `CurrentWifiSsidHilTest` không skip.
+- [ ] Hoàn tất QR → local secure provisioning → authenticated WSS → ACK → audio-v2 → durable scan → OTA rollback trước khi đóng G3.

@@ -932,3 +932,9 @@ Any unavailable emulator, board, credential or provider is recorded as `BLOCKED`
 - Android exit: `117` suites / `838/838`, failures/errors/skipped `0`; full unit, compile, AndroidTest compile, assemble and lint pass, lint says `No issues found`. APK: `26,954,873` bytes, SHA-256 `2D33500435F0B7A7A2851648D1672D6973CE3263AE2800828E4063CB61EBFFDB`.
 - Firmware exit: physical ESP Unity `54/54`; production build `1,130,768` bytes, SHA-256 `5B61DDAD78613DEB6A1EB4ECFF1C2035C791666838057D5EC71AFC01551EC828`; HIL application restored on COM9. Captive Web HIL passes Shcare HTML, exact session binding and invalid-CSRF denial, and restores the host Wi-Fi.
 - Final serial proof after restore confirms I2S ready, setup recovery server/portal/AP and non-zero RMS for both mic slots. Runtime App remains blocked only because ADB has no device; success with the actual target Wi-Fi is intentionally waiting for a password entered by the user. G3 remains in progress and G4 pending.
+
+## 2026-08-25 — G3 attached-device install and local Admin authentication
+
+- Installed the integrated-demo APK on the attached Xiaomi and verified Firebase-emulator/backend patient login reaches the real Patient Dashboard with `1/1` Compose instrumentation proof. MIUI denies ADB shell input injection; QR/Wi-Fi remains a physical/Compose interaction, not a source failure.
+- Added the reproducible local-only Admin alias `admin / admin` to the demo launcher. A real browser login returned backend HTTP `200`, reached `/` and produced zero console errors. Removed the pre-existing fake development success fallback.
+- Focused Admin auth contracts pass `2/2`; Admin lint and build pass; the demo launcher passes `node --check`. G3 remains open for user-entered target Wi-Fi and authenticated WSS/ACK/audio-v2/durable-scan/OTA runtime evidence. G4 remains pending.

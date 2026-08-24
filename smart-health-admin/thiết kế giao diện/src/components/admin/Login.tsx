@@ -31,6 +31,7 @@ function assertSurfaceAccess(user?: SmartHealthAuthUser) {
 
 export function Login() {
   const navigate = useNavigate();
+  const productionAuthMode = isProductionAuthMode();
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,7 +48,7 @@ export function Login() {
         const idToken = await signInWithFirebaseEmail(email, password);
         const result = await smartHealthApi.authenticateFirebase(idToken);
         assertSurfaceAccess(result.user);
-      } else if (!isProductionAuthMode()) {
+      } else if (!productionAuthMode) {
         const result = await smartHealthApi.login(email, password);
         assertSurfaceAccess(result.user);
       } else {
@@ -55,13 +56,9 @@ export function Login() {
       }
       navigate("/");
     } catch (err) {
-      if (!isProductionAuthMode() && email === "admin@smarthealth.vn" && password === "admin") {
-        navigate("/");
-      } else {
-        setError(toVietnameseErrorMessage(err, "Email hoặc mật khẩu không đúng."));
-        setIsLoading(false);
-        window.requestAnimationFrame(() => passwordInputRef.current?.focus());
-      }
+      setError(toVietnameseErrorMessage(err, "Tài khoản hoặc mật khẩu không đúng."));
+      setIsLoading(false);
+      window.requestAnimationFrame(() => passwordInputRef.current?.focus());
     }
   };
 
@@ -100,15 +97,19 @@ export function Login() {
         <form method="post" onSubmit={handleLogin} className="space-y-5">
           <div className="space-y-1.5">
             <label htmlFor="admin-email" className="text-sm font-medium text-foreground">
-              {IS_PORTAL_SURFACE ? "Email tài khoản" : "Email quản trị"}
+              {productionAuthMode
+                ? IS_PORTAL_SURFACE
+                  ? "Email tài khoản"
+                  : "Email quản trị"
+                : "Email hoặc tên tài khoản demo"}
             </label>
             <div className="relative">
               <Mail className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 id="admin-email"
                 name="email"
-                type="email"
-                autoComplete="email"
+                type={productionAuthMode ? "email" : "text"}
+                autoComplete={productionAuthMode ? "email" : "username"}
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -116,7 +117,7 @@ export function Login() {
                 }}
                 aria-invalid={Boolean(error)}
                 aria-describedby={error ? "admin-login-error" : undefined}
-                placeholder="admin@smarthealth.vn"
+                placeholder={productionAuthMode ? "admin@smarthealth.vn" : "admin"}
                 className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
               />

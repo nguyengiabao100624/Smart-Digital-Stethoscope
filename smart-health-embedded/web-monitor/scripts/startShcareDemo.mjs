@@ -47,6 +47,10 @@ const adminCredentials = {
   email: "admin.demo@shcare.local",
   password: "Shcare-Demo-2026!",
 };
+const localAdminAlias = {
+  email: "admin",
+  password: "admin",
+};
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shcare-interactive-demo-"));
 const children = new Map();
 let stopping = false;
@@ -359,18 +363,20 @@ async function proveFirebaseBackendExchange() {
 }
 
 async function registerDemoAdmin() {
-  const response = await fetch(`${origins.backend}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      role: "admin",
-      name: "Shcare Demo Platform Admin",
-      ...adminCredentials,
-    }),
-  });
-  if (response.status !== 201) {
-    const body = await response.text();
-    throw new Error(`Unable to create the isolated demo admin: HTTP ${response.status} ${body}`);
+  for (const [index, credentials] of [adminCredentials, localAdminAlias].entries()) {
+    const response = await fetch(`${origins.backend}/api/v1/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: "admin",
+        name: index === 0 ? "Shcare Demo Platform Admin" : "Shcare Local Admin Alias",
+        ...credentials,
+      }),
+    });
+    if (response.status !== 201) {
+      const body = await response.text();
+      throw new Error(`Unable to create isolated demo admin ${index + 1}: HTTP ${response.status} ${body}`);
+    }
   }
 }
 
@@ -505,6 +511,7 @@ async function main() {
   process.stdout.write(`Patient:  patient@example.com / 12345678\n`);
   process.stdout.write(`Doctor:   doctor@example.com / 12345678\n`);
   process.stdout.write(`Admin:    ${adminCredentials.email} / ${adminCredentials.password}\n\n`);
+  process.stdout.write(`Local alias: ${localAdminAlias.email} / ${localAdminAlias.password}\n\n`);
   if (integratedDemo) {
     process.stdout.write(`Android backend:      http://${lanIp}:${ports.backend}\n`);
     process.stdout.write(`Firebase Auth local:  ${lanIp}:${ports.auth}\n`);

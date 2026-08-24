@@ -144,3 +144,9 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Luồng chính phải là `QR/mã đầy đủ → claim backend → nhập Wi-Fi trong App → App kết nối tạm vào ESP → chờ WSS Online`; không dùng trang IP hoặc `setup-access.json` làm hướng dẫn chính. AP/captive page chỉ là transport/fallback vì BLE không thuộc release này.
 - Android source/test/build đã có luồng native đúng. Harness demo đã đổi sang factory-enrolled + QR protocol v1 đầy đủ; QR AP-only cũ không được tính là bằng chứng ghép thiết bị.
 - Web không được tuyên bố tự chuyển Wi-Fi do giới hạn bảo mật của trình duyệt; Web chỉ claim/verify và mở fallback local sau khi người dùng chấp thuận đổi mạng ở hệ điều hành. G3 tiếp tục chờ ADB runtime, người dùng nhập Wi-Fi, WSS/ACK/audio-v2/durable scan và OTA rollback; G4 vẫn pending.
+
+### 2026-08-25 — G3 local install và demo-auth checkpoint
+
+- APK integrated-demo đã được cài và mở trên Xiaomi thật. Firebase emulator → backend → Patient Dashboard pass bằng instrumentation; MIUI vẫn chặn ADB shell inject input nên thao tác QR/Wi-Fi tiếp theo phải dùng Compose instrumentation hoặc người dùng chạm trực tiếp.
+- Web Admin local có tài khoản alias thật `admin / admin` tại `http://127.0.0.1:8766/login`; backend trả HTTP `200`, điều hướng vào dashboard và không có console error. Alias chỉ tồn tại trong demo launcher, không được bật ở preview/live/production.
+- Đã xóa fallback đăng nhập giả từng điều hướng vào Admin khi xác thực thất bại. G3 vẫn `in progress` cho tới khi người dùng nhập target Wi-Fi trong App, sau đó chứng minh authenticated WSS → ACK → audio-v2 → durable scan và OTA rollback. G4 vẫn pending.

@@ -133,3 +133,8 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 
 - Backend đã có release ID + actual commit marker và smoke fail-closed khi deploy sai candidate. Firmware đã pin public trust anchor RSA-3072, build production/OTA PASS và production image mới đã nạp/verify qua COM9.
 - Đây chưa phải OTA runtime PASS: target Wi-Fi/WSS, command/audio HIL, boot-health và forced rollback vẫn phải chạy thật. G3 tiếp tục; G4 vẫn pending.
+
+### 2026-08-25 — G3 Render preflight
+
+- Render service/branch/root/build/start/auto-deploy/health path đã được xác minh trực tiếp. Biến production cũ cho PostgreSQL, S3, Firebase Admin, PHI và Brevo vẫn tồn tại; không được báo thiếu cấu hình giả.
+- Các release key còn thiếu đã được xác định và chuẩn bị ngoài Git. Chưa lưu biến hay deploy để tránh phát hành commit `main` cũ; chỉ bind/deploy một lần ở G4 sau khi HIL G3 PASS.

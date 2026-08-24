@@ -340,3 +340,9 @@ not require firmware rollback while the compatibility verdict remains green.
 - Firmware `f13cc781` pins the public Shcare RSA-3072 OTA trust anchor. The private key is not in Git and the backend signing implementation produced a signature verified by the matching public key. Public-key fingerprint SHA-256: `0B1A7DA75C0F87710CDBD578D3E164E2A12670BF436ACC70C5B640726690E32B`.
 - Wired/production artifact: `1,131,392` bytes, SHA-256 `06167CEFBC405C102B741363BEC6FF21BF1CB91B0A9E08B85B1EAD61203495DD`. OTA-environment artifact: `1,131,392` bytes, SHA-256 `F6F1D0A3AD38982C96897A3759A396DBA3C7EDED17A0797EA73F68431F536381`. The wired image was flashed and verified on COM9.
 - This closes key generation/pinning and build/flash only. It does not claim signed OTA canary, boot-health confirmation or forced rollback until the ESP completes target-Wi-Fi/WSS HIL and the backend secret is bound in the release environment.
+
+## 2026-08-25 Render recovery addendum
+
+- Read-only dashboard proof confirms the canonical Render service builds GitHub `main` from `smart-health-embedded/web-monitor`, runs `npm start`, auto-deploys on commit and checks `/api/health`. Live remains on old commit `c9181740ac1cb7b098b835208974795bd4cdc8cf`.
+- Retained environment key names include production auth, `DATABASE_URL`/PostgreSQL, S3 storage, Firebase Admin, PHI encryption and Brevo. Secret values were neither exported nor logged. This supersedes any claim that those providers were never configured.
+- The remaining release keys are prepared/recoverable without committing secrets. No Render environment save or deploy occurred during preflight; the editor was cancelled. G4 must atomically bind release keys, deploy the final `main` candidate, verify the health release ID/commit, inspect migration logs and run cleanup-safe smoke.

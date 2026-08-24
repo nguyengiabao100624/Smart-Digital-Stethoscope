@@ -892,3 +892,10 @@ recorded contract invalid.
 - Firmware commit `f13cc781` pin public trust anchor RSA-3072; private signing key nằm ngoài repository trong vùng local ACL-restricted và chữ ký thử được xác minh bằng đúng public key. Bốn source/golden contract PASS; production và OTA build PASS.
 - Production firmware mới `1,131,392` byte, SHA-256 `06167CEFBC405C102B741363BEC6FF21BF1CB91B0A9E08B85B1EAD61203495DD`; OTA-environment artifact SHA-256 `F6F1D0A3AD38982C96897A3759A396DBA3C7EDED17A0797EA73F68431F536381`. Production image đã nạp và verify qua COM9; setup AP hoạt động lại sau reset.
 - G3 vẫn đang thực hiện: user-entered target Wi-Fi, authenticated WSS/ACK/audio-v2/durable scan và forced-failure OTA rollback chưa có bằng chứng; backend live/provider/migration cũng chưa deploy. G4 vẫn pending.
+
+## 2026-08-25 active checkpoint — G3 Render configuration recovered
+
+- Render dashboard session is available. The canonical service is `smart-health-api` at `https://smart-health-api-r5is.onrender.com`, connected to GitHub `main`, root `smart-health-embedded/web-monitor`, build `npm install`, start `npm start`, auto-deploy on commit and health path `/api/health`. The currently listed live deploy is still old commit `c9181740ac1cb7b098b835208974795bd4cdc8cf`.
+- Existing Render variable names prove the previous production configuration was retained: production auth, PostgreSQL, S3 object storage, Firebase Admin, PHI encryption and Brevo/email. Do not describe these providers as never configured. Values were not copied or exposed.
+- Missing release-era keys identified by name are `FIREBASE_WEB_API_KEY`, `OTA_SIGNING_PRIVATE_KEY_PEM`, `TWO_FACTOR_ENCRYPTION_KEY`, `PASSWORD_IDEMPOTENCY_HMAC_KEY` and `SMART_HEALTH_RELEASE_ID`. The Firebase Web key was revalidated from retained frontend config; new OTA/2FA/HMAC material is prepared outside Git in ACL-restricted local storage.
+- The Render environment editor was opened for inspection and cancelled without saving, rebuild or deploy. Bind these keys once in the G4 backend lane after G3 HIL passes; do not trigger an intermediate old-main deployment.

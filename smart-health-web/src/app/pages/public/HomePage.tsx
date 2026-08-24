@@ -18,7 +18,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, type CSSProperties } from "react";
+import { memo, useEffect, useRef, type CSSProperties } from "react";
 import { usePublicMotionEnabled } from "@/app/context/PublicMotionContext";
 import { useSEO } from "@/lib/useSEO";
 import doctorVideoUrl from "../../../../MẪU UI UX/bacsi.mp4";
@@ -186,7 +186,7 @@ function ClinicalPreview({ reducedMotion }: { reducedMotion: boolean | null }) {
   );
 }
 
-export default function HomePage() {
+function HomePage() {
   const motionEnabled = usePublicMotionEnabled();
   const reducedMotion = !motionEnabled;
   const cinemaRef = useRef<HTMLDivElement | null>(null);
@@ -213,16 +213,23 @@ export default function HomePage() {
 
   useEffect(() => {
     const videos = cinemaRef.current?.querySelectorAll("video") ?? [];
-    videos.forEach((video) => {
-      if (!motionEnabled) {
-        video.pause();
-        return;
-      }
+    let playTimer = 0;
+    if (motionEnabled) {
+      playTimer = window.setTimeout(() => {
+        videos.forEach((video) => {
+          void video.play().catch(() => {
+            // Muted inline playback can still be blocked by browser policy.
+          });
+        });
+      }, 4_000);
+    } else {
+      videos.forEach((video) => video.pause());
+    }
 
-      void video.play().catch(() => {
-        // Muted inline autoplay can still be blocked by browser policy.
-      });
-    });
+    return () => {
+      window.clearTimeout(playTimer);
+      videos.forEach((video) => video.pause());
+    };
   }, [motionEnabled]);
 
   useEffect(() => {
@@ -270,19 +277,8 @@ export default function HomePage() {
       <section className="shc-hero">
         <div ref={cinemaRef} className="shc-hero-cinema" aria-hidden="true">
           <video
-            className="shc-hero-video shc-hero-video-edge"
-            src={doctorVideoUrl}
-            autoPlay={motionEnabled}
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            tabIndex={-1}
-          />
-          <video
             className="shc-hero-video shc-hero-video-main"
             src={doctorVideoUrl}
-            autoPlay={motionEnabled}
             loop
             muted
             playsInline
@@ -479,3 +475,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+export default memo(HomePage);

@@ -9,7 +9,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Link, Outlet, useLocation } from "react-router";
 
-import logoUrl from "../../../../docs/Logo.png";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-horizontal.svg";
 
 const authFacts = [
   ["Workspace", "Bác sĩ và cơ sở y tế dùng chung một cổng vận hành."],

@@ -11,6 +11,10 @@ const homeSource = readFileSync(
   new URL("src/app/pages/public/HomePage.tsx", webRoot),
   "utf8",
 );
+const motionContextSource = readFileSync(
+  new URL("src/app/context/PublicMotionContext.ts", webRoot),
+  "utf8",
+);
 const notFoundSource = readFileSync(
   new URL("src/app/pages/public/NotFoundPage.tsx", webRoot),
   "utf8",
@@ -29,6 +33,10 @@ const signalHorizonSource = readFileSync(
 );
 const stylesSource = readFileSync(
   new URL("src/styles.css", webRoot),
+  "utf8",
+);
+const fontsSource = readFileSync(
+  new URL("src/web-styles/fonts.css", webRoot),
   "utf8",
 );
 const packageJson = JSON.parse(
@@ -78,16 +86,20 @@ test("keeps Public production markup free of the retired demo-style classes", ()
 });
 
 test("preserves the established classic Public visual without losing motion safety", () => {
-  assert.match(layoutSource, /\.\.\/\.\.\/\.\.\/\.\.\/docs\/Logo\.png/);
+  assert.match(
+    layoutSource,
+    /\.\.\/\.\.\/\.\.\/\.\.\/packages\/shcare-brand\/assets\/shcare-horizontal\.svg/,
+  );
   assert.match(layoutSource, /data-shcare-public-visual="legacy"/);
   assert.match(layoutSource, /id="shcare-public-main"/);
   assert.match(layoutSource, /systemReducedMotion/);
   assert.match(layoutSource, /aria-label="Shcare — Smart Health Care"/);
   assert.match(layoutSource, />Shcare<\/span>/);
 
-  assert.equal(homeSource.match(/<video\b/g)?.length, 2);
-  assert.equal(homeSource.match(/autoPlay=\{motionEnabled\}/g)?.length, 2);
-  assert.match(homeSource, /shc-hero-video-edge/);
+  assert.equal(homeSource.match(/<video\b/g)?.length, 1);
+  assert.doesNotMatch(homeSource, /autoPlay=/);
+  assert.match(homeSource, /window\.setTimeout\([\s\S]*?video\.play\(\)/);
+  assert.doesNotMatch(homeSource, /shc-hero-video-edge/);
   assert.match(homeSource, /shc-hero-video-main/);
   assert.match(homeSource, /video\.pause\(\)/);
   assert.match(homeSource, /video\.play\(\)/);
@@ -103,11 +115,12 @@ test("isolates classic Public typography and stacking from the newer product sur
   assert.ok(
     stylesSource.indexOf('@import "./web-styles/fonts.css";') <
       stylesSource.indexOf('@import "tailwindcss";'),
-    "classic Outfit import must load before generated CSS",
+    "local font boundary must load before generated CSS",
   );
+  assert.doesNotMatch(fontsSource, /fonts\.(?:googleapis|gstatic)\.com/);
   assert.match(
     clinicalPolishSource,
-    /data-shcare-public-visual="legacy"\][\s\S]*--clinical-display:[\s\S]*"Outfit"/,
+    /data-shcare-public-visual="legacy"\][\s\S]*--clinical-display:[\s\S]*"Manrope"/,
   );
   const headerRule = clinicalPolishSource.match(
     /data-shcare-public-visual="legacy"\]\s*> \.shc-header\s*\{([^}]*)\}/,
@@ -122,8 +135,12 @@ test("makes the classic animation control authoritative for CSS and hero media",
   assert.match(layoutSource, /resolveInitialMotionPreference/);
   assert.match(layoutSource, /media\.addEventListener\("change", syncWithSystem\)/);
   assert.match(layoutSource, /motionRequested\s*&&\s*!systemReducedMotion/);
+  assert.match(layoutSource, /PublicMotionContext\.Provider value=\{motionEnabled\}/);
+  assert.match(motionContextSource, /createContext\(true\)/);
+  assert.match(motionContextSource, /return useContext\(PublicMotionContext\)/);
+  assert.doesNotMatch(motionContextSource, /createContext<\(\) => boolean>/);
   assert.match(homeSource, /const motionEnabled = usePublicMotionEnabled\(\)/);
-  assert.match(homeSource, /autoPlay=\{motionEnabled\}/);
+  assert.doesNotMatch(homeSource, /autoPlay=/);
   assert.match(homeSource, /video\.pause\(\)/);
 
   const legacyMotionRules = clinicalPolishSource.slice(
@@ -131,7 +148,7 @@ test("makes the classic animation control authoritative for CSS and hero media",
   );
   assert.match(
     legacyMotionRules,
-    /data-shcare-public-visual="legacy"\]\[data-shc-motion="reduced"\]::before,/,
+    /data-shcare-public-visual="legacy"\]\[data-shc-motion="reduced"\]/,
   );
   assert.match(
     legacyMotionRules,
@@ -139,7 +156,8 @@ test("makes the classic animation control authoritative for CSS and hero media",
   );
   assert.match(legacyMotionRules, /animation:\s*none;/);
   assert.doesNotMatch(legacyMotionRules, /!important/);
-  assert.match(signalHorizonSource, /\.shc-hero-video-edge/);
+  assert.match(signalHorizonSource, /\.shc-hero-video-main/);
+  assert.doesNotMatch(signalHorizonSource, /\.shc-hero-video-edge/);
 });
 
 test("keeps classic Public emphasis and active controls readable in dark mode", () => {

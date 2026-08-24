@@ -123,7 +123,7 @@ test("collects buffered LCP, session-window CLS and interaction-grouped INP", ()
   }
 });
 
-test("accepts zero CLS but rejects missing samples and exceeded Web Vital budgets", () => {
+test("accepts zero CLS and below-threshold INP but rejects invalid observations and exceeded budgets", () => {
   const healthy = {
     supported: { lcp: true, cls: true, inp: true },
     observerErrors: [],
@@ -138,6 +138,19 @@ test("accepts zero CLS but rejects missing samples and exceeded Web Vital budget
   assert.doesNotThrow(() =>
     assertWebVitals("healthy", healthy, DEFAULT_WEB_VITAL_BUDGETS),
   );
+  assert.doesNotThrow(() =>
+    assertWebVitals(
+      "below threshold",
+      {
+        ...healthy,
+        inpMs: 0,
+        eventEntryCount: 0,
+        interactionCount: 0,
+        inpUpperBoundMs: 16,
+      },
+      DEFAULT_WEB_VITAL_BUDGETS,
+    ),
+  );
   assert.throws(
     () =>
       assertWebVitals(
@@ -145,7 +158,16 @@ test("accepts zero CLS but rejects missing samples and exceeded Web Vital budget
         { ...healthy, inpMs: null, eventEntryCount: 0, interactionCount: 0 },
         DEFAULT_WEB_VITAL_BUDGETS,
       ),
-    /mandatory INP sample was not collected/,
+    /mandatory INP observation was invalid/,
+  );
+  assert.throws(
+    () =>
+      assertWebVitals(
+        "unbound interaction",
+        { ...healthy, eventEntryCount: 2, interactionCount: 0 },
+        DEFAULT_WEB_VITAL_BUDGETS,
+      ),
+    /mandatory INP observation was invalid/,
   );
   assert.throws(
     () =>

@@ -2153,7 +2153,7 @@ bun run build:firebase
 npx.cmd --yes firebase-tools@13.35.1 deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
 ```
 
-Published site: `https://shcare.web.app`. Visual QA must confirm at the top of `/` that the header has no surface or blur, the doctor video is visible, and the hero has two video layers: `.shc-hero-video-main` sharp plus `.shc-hero-video-edge` masked/blurred only at the outer edges. After scroll, confirm the rounded low-opacity water-glass header. In a normal-motion browser, scroll public pages to confirm left/right blur-clear reveals; `prefers-reduced-motion` intentionally disables these animations.
+Published site: `https://shcare.web.app`. Visual QA must confirm at the top of `/` that the header has no surface or blur and the single canonical `.shc-hero-video-main` doctor video is visible without a duplicated edge layer. After scroll, confirm the rounded low-opacity water-glass header. In a normal-motion browser, scroll public pages to confirm left/right blur-clear reveals; `prefers-reduced-motion` intentionally disables these animations.
 
 ## 2026-06-25 Public Web Fit/Motion Regression Pass
 
@@ -4299,3 +4299,11 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
 ```
 
 The Unity command temporarily flashes a test runner. Always restore the intended application firmware afterward. The internal captive-portal HIL command is `npm.cmd --prefix smart-health-embedded/web-monitor run hil:device:setup-portal`; it temporarily changes the PC Wi-Fi and restores the original profile in `finally`. It must be run only while the local HIL runtime and setup AP are active. Neither this command nor `setup-access.json` is a user setup flow; users configure Wi-Fi through the Shcare App or the captive Web portal.
+
+## 2026-08-24 G3 current candidate verification
+
+- Do not load production environment variables before unit tests. Run `npm.cmd run test:auth` and `npm.cmd run test:contracts` in a clean process; load the retained external production env only for `build:firebase` and production-preview performance smoke.
+- Latest clean Web proof is Auth `390/390`, contracts `137/137`, TypeScript, lint and Firebase build. Public production-preview budgets pass with LCP `668ms`, CLS `0.05436187199931413`, INP upper bound `16ms`, JavaScript `248111` bytes and CSS `64920` bytes.
+- A Xiaomi target and CH343 ESP32-S3 are currently detectable. Re-detect ADB and COM instead of hardcoding the Android device identity; COM9 is the current verified ESP port only for this checkpoint.
+- The debug APK installed and launched on Xiaomi has SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. The physical captive portal passes session binding and invalid-session rejection; serial shows both microphone slots active.
+- Full authenticated HIL still requires the user to enter the target Wi-Fi password in the App or captive Web portal. Never extract or print the saved Windows password. After the ESP joins Wi-Fi, run `npm.cmd --prefix smart-health-embedded/web-monitor run hil:device:smoke` against the bounded local HIL backend and require authenticated online presence, command ACK, audio-v2 and durable scan completion.

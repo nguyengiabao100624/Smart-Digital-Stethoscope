@@ -26,7 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../docs/Logo.png";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-horizontal.svg";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { smartHealthApi } from "../../lib/smart-health-api";
 import { useAuth, type AuthUser } from "../context/AuthContext";

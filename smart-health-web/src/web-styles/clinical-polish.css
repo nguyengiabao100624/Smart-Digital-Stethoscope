@@ -5207,21 +5207,6 @@ html
   }
 }
 
-.shc-public-layout[data-shcare-public-foundation="v1"][data-shc-motion="reduced"],
-.shc-public-layout[data-shcare-public-foundation="v1"][data-shc-motion="reduced"]::before,
-.shc-public-layout[data-shcare-public-foundation="v1"][data-shc-motion="reduced"]::after,
-.shc-public-layout[data-shcare-public-foundation="v1"][data-shc-motion="reduced"]
-  *,
-.shc-public-layout[data-shcare-public-foundation="v1"][data-shc-motion="reduced"]
-  *::before,
-.shc-public-layout[data-shcare-public-foundation="v1"][data-shc-motion="reduced"]
-  *::after {
-  scroll-behavior: auto;
-  animation: none;
-  transition-duration: 0.01ms;
-  transition-delay: 0ms;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .shc-public-layout[data-shcare-public-foundation="v1"],
   .shc-public-layout[data-shcare-public-foundation="v1"]::before,
@@ -5243,15 +5228,15 @@ html
    classic full-bleed header and hero. */
 .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"] {
   --clinical-ui:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --clinical-display:
-    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+    "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-sans:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --font-display:
-    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+    "Manrope", ui-sans-serif, system-ui, sans-serif;
   font-family:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 }
 
 html
@@ -5265,7 +5250,7 @@ html
 .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
   :is(.shc-header, h1, h2, h3) {
   font-family:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Manrope", ui-sans-serif, system-ui, sans-serif;
 }
 
 .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
@@ -5317,7 +5302,7 @@ html
   .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
   .shc-hero-note {
   font-family:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 }
 
 html:not(.dark)
@@ -5370,17 +5355,17 @@ html:not(.dark)
 
 .shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"],
 .shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]::before,
-.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]::after,
-.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
-  *,
-.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
-  *::before,
-.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
-  *::after {
-  scroll-behavior: auto;
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]::after {
   animation: none;
-  transition-duration: 0.01ms;
-  transition-delay: 0ms;
+}
+
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
+  :where(
+    [data-shc-reveal-state="pending"],
+    [data-shc-home-reveal-state="pending"]
+  ) {
+  opacity: 1;
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5419,21 +5404,21 @@ html.dark
    rendered through this presentational adapter instead of a replacement UI. */
 .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"] {
   --clinical-ui:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --clinical-display:
-    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+    "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-sans:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --font-display:
-    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+    "Manrope", ui-sans-serif, system-ui, sans-serif;
   font-family:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 }
 
 .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
   :is(.shc-auth-card, .shc-auth-card *) {
   font-family:
-    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 }
 
 .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
@@ -5549,7 +5534,7 @@ html.dark
   margin: 0;
   color: var(--shc-readable-ink);
   font-family:
-    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+    "Manrope", ui-sans-serif, system-ui, sans-serif;
   font-size: 2.75rem;
   font-weight: 750;
   line-height: 1.07;

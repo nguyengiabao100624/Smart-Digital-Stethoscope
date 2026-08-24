@@ -1,4 +1,4 @@
-/* global document */
+/* global document, requestAnimationFrame, window */
 
 import fs from "node:fs";
 import net from "node:net";
@@ -31,6 +31,8 @@ const credentialsPath =
     "production-role-smoke-credentials.json",
   );
 const accountKey = process.env.SMOKE_ACCOUNT_KEY || "workspace";
+const performanceHeaded =
+  process.env.SMART_HEALTH_PERFORMANCE_HEADED === "1";
 
 function readBoundedNumber(name, fallback, minimum, maximum) {
   const rawValue = process.env[name];
@@ -288,6 +290,19 @@ async function waitSettled(page) {
   await page.waitForTimeout(500);
 }
 
+async function waitForPresentedFrame(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          // rAF runs before paint. Resolve in the next task so Chromium has
+          // actually presented the state change before another interaction.
+          setTimeout(resolve, 0);
+        });
+      }),
+  );
+}
+
 async function toggleAndRestore(page, configuration, label) {
   const control = page.locator(configuration.controlSelector).first();
   if (!(await control.isVisible()) || !(await control.isEnabled())) {
@@ -317,6 +332,11 @@ async function toggleAndRestore(page, configuration, label) {
   );
   const toggled = await state.getAttribute(configuration.stateAttribute);
 
+  // Treat toggle and restore as two real user interactions. Without a paint
+  // boundary Chromium can coalesce both synthetic clicks into one interaction
+  // and charge the deliberate restore delay to INP.
+  await waitForPresentedFrame(page);
+
   await control.click();
   await page.waitForFunction(
     ({ attribute, beforeValue, selector }) =>
@@ -328,13 +348,48 @@ async function toggleAndRestore(page, configuration, label) {
     },
     { timeout: 5_000 },
   );
-  await page.waitForTimeout(250);
+  await waitForPresentedFrame(page);
 
   return {
     control: configuration.controlSelector,
     state: configuration.stateAttribute,
     before,
     toggled,
+    restored: true,
+  };
+}
+
+async function navigateAndReturn(page, label) {
+  const control = page
+    .locator('.shc-hero-actions a[href="/san-pham"]')
+    .first();
+  if (!(await control.isVisible())) {
+    throw new Error(`${label}: public navigation interaction is unavailable`);
+  }
+
+  const originalUrl = new URL(page.url());
+  const destination = await control.getAttribute("href");
+  if (!destination) {
+    throw new Error(`${label}: public navigation interaction has no href`);
+  }
+
+  await control.click();
+  await page.waitForURL((url) => url.pathname !== originalUrl.pathname, {
+    timeout: 5_000,
+  });
+  await waitForPresentedFrame(page);
+  const navigatedPath = new URL(page.url()).pathname;
+
+  await page.goBack();
+  await page.waitForURL((url) => url.pathname === originalUrl.pathname, {
+    timeout: 5_000,
+  });
+  await waitForPresentedFrame(page);
+
+  return {
+    control: '.shc-hero-actions a[href="/san-pham"]',
+    destination,
+    navigatedPath,
     restored: true,
   };
 }
@@ -363,15 +418,7 @@ async function exerciseMeaningfulInteraction(page, label, group) {
       label,
     );
   }
-  return toggleAndRestore(
-    page,
-    {
-      controlSelector: ".shc-motion-toggle",
-      stateSelector: ".shc-motion-toggle",
-      stateAttribute: "aria-pressed",
-    },
-    label,
-  );
+  return navigateAndReturn(page, label);
 }
 
 async function collectMetrics(page, label, group, options = {}) {
@@ -420,6 +467,18 @@ async function collectMetrics(page, label, group, options = {}) {
           sum + Number(item.transferSize || item.encodedBodySize || 0),
         0,
       );
+    const largestResources = resources
+      .map((item) => ({
+        name: new URL(item.name, window.location.href).pathname,
+        transferBytes: Number(item.transferSize || 0),
+        encodedBytes: Number(item.encodedBodySize || 0),
+      }))
+      .sort(
+        (left, right) =>
+          Math.max(right.transferBytes, right.encodedBytes) -
+          Math.max(left.transferBytes, left.encodedBytes),
+      )
+      .slice(0, 6);
 
     return {
       domContentLoadedMs: Math.round(nav?.domContentLoadedEventEnd || 0),
@@ -430,6 +489,7 @@ async function collectMetrics(page, label, group, options = {}) {
       scriptBytes,
       cssBytes,
       imageBytes,
+      largestResources,
       bodyTextLength: document.body?.innerText?.trim().length || 0,
       webVitals: globalThis.__shcarePerformanceVitals?.snapshot() || null,
     };
@@ -448,7 +508,8 @@ async function collectMetrics(page, label, group, options = {}) {
   }
   if (resourceBudgetEnforced && measured.transferBytes > budget.transferBytes) {
     throw new Error(
-      `${label}: transfer ${measured.transferBytes} bytes exceeds budget ${budget.transferBytes}`,
+      `${label}: transfer ${measured.transferBytes} bytes exceeds budget ${budget.transferBytes}; ` +
+        `largest=${JSON.stringify(measured.largestResources)}`,
     );
   }
   if (resourceBudgetEnforced && measured.scriptBytes > budget.scriptBytes) {
@@ -488,18 +549,39 @@ async function main() {
   let localServer = null;
   let browser = null;
   let context = null;
+  let screencastSession = null;
 
   try {
     localServer = mode.localPublic ? await startLocalPublicServer() : null;
     const siteUrl = localServer?.siteUrl || configuredSiteUrl;
     const account = mode.scope === "full" ? readSmokeAccount() : null;
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      headless: !performanceHeaded,
+      args: [
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+      ],
+    });
     context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       reducedMotion: "no-preference",
       serviceWorkers: "block",
     });
     const page = await context.newPage();
+    screencastSession = await context.newCDPSession(page);
+    screencastSession.on("Page.screencastFrame", ({ sessionId }) => {
+      void screencastSession
+        ?.send("Page.screencastFrameAck", { sessionId })
+        .catch(() => undefined);
+    });
+    await screencastSession.send("Page.startScreencast", {
+      format: "jpeg",
+      quality: 10,
+      maxWidth: 1440,
+      maxHeight: 900,
+      everyNthFrame: 1,
+    });
     await page.addInitScript(installPerformanceVitalsObserver);
     const consoleErrors = [];
     const pageErrors = [];
@@ -571,6 +653,7 @@ async function main() {
           siteUrl,
           scope: mode.scope,
           environment: mode.environment,
+          browserSurface: performanceHeaded ? "headed" : "headless",
           accountKey: mode.scope === "full" ? accountKey : null,
           budgets: routeBudgets,
           webVitalBudgets,
@@ -581,6 +664,10 @@ async function main() {
       ),
     );
   } finally {
+    await screencastSession
+      ?.send("Page.stopScreencast")
+      .catch(() => undefined);
+    await screencastSession?.detach().catch(() => undefined);
     await context?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
     localServer?.child.kill();

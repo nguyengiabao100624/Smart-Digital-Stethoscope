@@ -1756,6 +1756,14 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - Proof: backend runtime contract `2/2`; Android full JVM `840/840`, compile/assemble/lint PASS; physical Xiaomi integrated Firebase → backend → patient Dashboard `1/1`. Screenshot: `%TEMP%/shcare-restored-dashboard-v2.png`.
 - Resume by waking/unlocking the Xiaomi and rerunning focused Compose tests individually. The latest aggregate device attempt found no Compose hierarchy because `mWakefulness=Asleep` and MIUI blocks shell input injection. Then visually inspect device/pairing/scan/appointment/notification/settings routes and continue the existing ESP32 two-mic G3 demo. Do not rerun G0–G2 or replace the restored UI source.
 
+## 2026-08-24 superseding handoff — G3 current Web/device freeze
+
+- Continue only **[“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**. Overall status remains G0–G2 complete, G3 in progress, G4 pending.
+- Current Web candidate preserves the old Web/Admin visual language and current logo while retaining all real workflows. Clean proof: Auth `390/390`, contracts `137/137`, direct TypeScript, lint, Firebase build; public LCP `668ms`, CLS `0.05436187199931413`, INP upper bound `16ms`, JS `248111` bytes and CSS `64920` bytes. The home hero now has one canonical video.
+- Xiaomi ADB is now online. The production-default debug APK installed/launched and hashes to `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`; current aggregate runtime evidence is `83` executions, `0` fail, `3` skipped. Two notification cases are MIUI-policy blocked and remain open.
+- ESP32-S3 is online at current checkpoint COM9. Captive-portal HIL passes and both physical mic slots are active. The board remains `wss=0` until the user enters target Wi-Fi through App/Web; never recover the password from Windows or expose `setup-access.json` as a user workflow.
+- Resume from candidate commit freeze, then complete target-Wi-Fi → authenticated WSS → command ACK → audio-v2 → durable scan, exact-preview CORS/backend migration/provider proof and signed OTA rollback/canary. Do not promote live or mark G3/G4 complete before those gates are truthful.
+
 ### 2026-08-24 runtime continuation
 
 - Xiaomi is awake again. Focused original-style UI runtime tests pass `4/4`; integrated Firebase Auth emulator → backend lifecycle/workspace → real patient Dashboard passes `1/1` with explicit LAN build properties.

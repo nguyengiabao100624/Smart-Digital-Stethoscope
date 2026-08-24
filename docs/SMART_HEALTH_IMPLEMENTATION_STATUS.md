@@ -2783,3 +2783,10 @@ KLTN report artifacts generated from this evidence set:
 - Evidence at commit `bb8b5f4ea31e5ff6c798007d70cf1ef2dcc372a5`: Android `838/838`, AndroidTest compile, lint `No issues found`, debug APK `26,954,873` bytes / SHA-256 `2D33500435F0B7A7A2851648D1672D6973CE3263AE2800828E4063CB61EBFFDB`; physical ESP Unity `54/54`; production firmware `1,130,768` bytes / SHA-256 `5B61DDAD78613DEB6A1EB4ECFF1C2035C791666838057D5EC71AFC01551EC828`.
 - Physical Web HIL passes page rendering, device-bound session and invalid-session denial, then restores the host Wi-Fi. The HIL application firmware is back on COM9; final serial proof shows the setup server/AP and both microphone slots.
 - BLOCKED runtime-only: no Android target is attached, so the system Wi-Fi chooser and complete App claim/provision/presence journey are not runtime-proven. A valid target-network password must be entered by the user in App/Web before the success POST. G3 remains open for this and existing backend CORS/provider/WSS/ACK/OTA release gates.
+
+## 2026-08-24 G3 current Web/device status
+
+- Legacy-style Web candidate gates pass: Auth `390/390`, contracts `137/137`, TypeScript, lint, Firebase build and public production-preview budgets. The home hero uses one canonical video; reduced-motion and theme behavior no longer depend on a stale function-valued React context.
+- Xiaomi ADB is online; the current debug APK was installed/launched and hashes to `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Current aggregate runtime proof remains `83` executions, `0` failures and `3` skips; two notification cases remain MIUI-policy blocked.
+- ESP32-S3 is online on COM9. Captive-portal HIL passes and both mic slots are active, but authenticated WSS is not yet connected because target Wi-Fi must be entered by the user through App/Web.
+- Status remains G0–G2 complete, G3 in progress, G4 pending. Production deployment must not start until the release candidate, authenticated device flow and backend/provider/migration gates are truthful and reproducible.

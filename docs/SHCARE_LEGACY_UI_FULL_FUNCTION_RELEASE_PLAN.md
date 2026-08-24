@@ -107,3 +107,11 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Xiaomi đã thức: original-style UI runtime `4/4` pass và Firebase emulator → backend → patient Dashboard `1/1` pass. Full connected run có `78 PASS`, `0 FAIL`, `2 SKIPPED`; hai proof notification bị MIUI chặn quyền instrumentation nên vẫn mở cho emulator, không tính pass ảo.
 - JVM aggregate mới là `841/841`; `lintDebug` và `assembleDebug` pass. APK debug production-default SHA-256: `91D3BC26C9CEE92A8E008A91C0CBE11660F0DC329A546DDADFE9A8F180F91186`.
 - Quy tắc chống hồi quy đã phủ 19 màn chức năng mới/đã mở rộng: giữ workflow mới nhưng bắt buộc dùng header/semantic theme phong cách Android gốc. Dashboard hiển thị mã hồ sơ có nhãn và cho phép xuống dòng. G3 vẫn `in progress` cho tới khi visual route proof và hai notification proof còn mở được đóng.
+
+### 2026-08-24 — G3 legacy Web candidate and attached-device checkpoint
+
+- Giữ nguyên ranh giới giao diện đã khóa: phong cách Web/Admin cũ và logo Shcare hiện tại; chỉ sửa lỗi tương phản, theme, responsive, motion, asset/performance và thêm UI cho chức năng thật. Hero chỉ còn một video chuẩn, không còn lớp video trùng.
+- Web candidate mới nhất pass Auth `390/390`, contract `137/137`, TypeScript, lint và Firebase build. Production-preview pass LCP `668ms`, CLS `0.05436187199931413`, INP dưới `16ms`, JavaScript `248111` bytes và CSS `64920` bytes.
+- Xiaomi đã online, APK debug production-default được cài/mở thành công, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Bằng chứng aggregate hiện hành là `83` execution, `0` fail, `3` skip; hai notification proof vẫn bị chính sách MIUI chặn, không tính PASS giả.
+- ESP32-S3 CH343 hiện ở COM9. Captive-portal HIL pass HTML/session binding/invalid-session denial/Wi-Fi restore; serial xác nhận hai mic hoạt động nhưng `wss=0` vì target Wi-Fi chưa được người dùng nhập qua App/Web.
+- G3 vẫn `in progress`. Trước G4 phải hoàn tất target-Wi-Fi → authenticated WSS → ACK → audio-v2 → durable scan; exact-preview CORS/backend migrations/provider; và các gate signing/OTA hoặc ghi blocker không thể phát hành. G4 chưa bắt đầu và chưa có live promotion mới.

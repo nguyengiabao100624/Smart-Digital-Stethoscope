@@ -309,3 +309,11 @@ not require firmware rollback while the compatibility verdict remains green.
 - Production firmware: `1,130,768` bytes; SHA-256 `5B61DDAD78613DEB6A1EB4ECFF1C2035C791666838057D5EC71AFC01551EC828`; physical ESP unit test `54/54`.
 - Compatibility verdict: additive local setup protocol v1. Existing browser `/save` remains; Android adds `/api/v1/setup/session` and `/api/v1/setup/wifi`. UI reports ESP acceptance only after HTTP `202` and reports final success only after authenticated backend presence.
 - Captive Web HIL passes on the physical board. Android physical runtime remains `BLOCKED` without an ADB target; real target-network success waits for user-entered Wi-Fi material. This addendum does not close G3 or authorize live promotion.
+
+## 2026-08-24 legacy Web and attached-device candidate addendum
+
+- Intentional Web presentation changes preserve the deployed legacy style and current Shcare logo while retaining functional RC contracts. The duplicate hero edge video was removed; fonts are self-hosted; theme, reduced-motion, responsive contrast and smoke diagnostics are hardened.
+- Clean candidate proof: Auth `390/390`, Web contracts `137/137`, TypeScript, lint and Firebase production build. Public production-preview metrics: LCP `668ms`, CLS `0.05436187199931413`, INP upper bound `16ms`, transfer `398459` bytes, JavaScript `248111` bytes and CSS `64920` bytes.
+- Current Android debug APK is `26,957,689` bytes, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`; it installed and launched on the attached Xiaomi target. Current runtime aggregate is `83` executions, `0` fail, `3` skipped, with two notification cases blocked by MIUI policy.
+- Physical ESP captive-portal HIL passes and both mic slots are active. Authenticated WSS/ACK/audio-v2/durable scan remains open because the target Wi-Fi credential must be entered by the user through the App or captive Web; current serial state is `wss=0`.
+- Compatibility verdict remains additive for UI and provisioning contracts. G3 is not yet PASS, G4 has not started, and no new production promotion is recorded.

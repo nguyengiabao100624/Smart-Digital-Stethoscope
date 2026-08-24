@@ -1,4 +1,4 @@
-/* global document, getComputedStyle, innerWidth, window */
+/* global document, Element, getComputedStyle, innerWidth, window */
 
 import AxeBuilder from "@axe-core/playwright";
 import { spawn } from "node:child_process";
@@ -235,13 +235,23 @@ async function inspectRoute(page) {
           filter: style.filter,
         };
       });
-    const infiniteAnimations = document
+    const infiniteAnimationDetails = document
       .getAnimations()
       .filter(
         (animation) =>
           animation.playState !== "finished" &&
           animation.effect?.getTiming().iterations === Infinity,
-      ).length;
+      )
+      .map((animation) => {
+        const target = animation.effect?.target;
+        return {
+          animationName: animation.animationName || "unnamed",
+          target:
+            target instanceof Element
+              ? `${target.tagName.toLowerCase()}.${target.className}`
+              : "unknown",
+        };
+      });
     return {
       shell: Boolean(shell),
       mainVisible: Boolean(main && visible(main)),
@@ -259,12 +269,13 @@ async function inspectRoute(page) {
           ?.replace(/\s+/g, " ")
           .trim() || "",
       heroVideoCount: document.querySelectorAll(".shc-hero video").length,
-      hasClassicVideoLayers: Boolean(
-        document.querySelector(".shc-hero-video-edge") &&
-          document.querySelector(".shc-hero-video-main"),
+      hasCanonicalHeroVideo: Boolean(
+        document.querySelector(".shc-hero-video-main") &&
+          !document.querySelector(".shc-hero-video-edge"),
       ),
       autoplayVideos: document.querySelectorAll("video[autoplay]").length,
-      infiniteAnimations,
+      infiniteAnimations: infiniteAnimationDetails.length,
+      infiniteAnimationDetails,
     };
   });
 }
@@ -383,7 +394,7 @@ async function runCase(browser, siteUrl, viewport, theme) {
       check(layout.autoplayVideos === 0, "autoplay hero media remained");
       check(
         layout.infiniteAnimations === 0,
-        "infinite decorative animation remained",
+        `infinite decorative animation remained: ${JSON.stringify(layout.infiniteAnimationDetails)}`,
       );
 
       if (route.id === "public.home") {
@@ -392,8 +403,8 @@ async function runCase(browser, siteUrl, viewport, theme) {
           `classic brand changed to "${layout.brandText}"`,
         );
         check(
-          layout.heroVideoCount === 2 && layout.hasClassicVideoLayers,
-          `classic two-layer hero media is missing (${layout.heroVideoCount} videos)`,
+          layout.heroVideoCount === 1 && layout.hasCanonicalHeroVideo,
+          `canonical single-layer hero media is invalid (${layout.heroVideoCount} videos)`,
         );
       }
 

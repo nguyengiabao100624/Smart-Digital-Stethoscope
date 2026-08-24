@@ -13,7 +13,7 @@ async function source(relativePath: string) {
 test("Portal keeps the deployed visual identity while retaining route authority", async () => {
   const layout = await source("src/app/layouts/PortalLayout.tsx");
 
-  assert.match(layout, /docs\/Logo\.png/);
+  assert.match(layout, /shcare-horizontal\.svg/);
   assert.match(layout, /data-shcare-portal-visual="live-legacy"/);
   assert.match(layout, /aria-label="Về Shcare — Smart Health Care"/);
   assert.match(layout, />Shcare<\/span>/);

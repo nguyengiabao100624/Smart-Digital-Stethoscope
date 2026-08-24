@@ -1,7 +1,6 @@
 import {
   type MouseEvent as ReactMouseEvent,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -19,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../docs/Logo.png";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-horizontal.svg";
 import { PublicMotionContext } from "@/app/context/PublicMotionContext";
 
 const navLinks = [
@@ -213,25 +212,11 @@ export default function PublicLayout() {
     }
   }, [location.pathname]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const main = publicMainRef.current;
     if (!main) return;
 
-    const resetTargets = () => {
-      main
-        .querySelectorAll<HTMLElement>("[data-shc-reveal]")
-        .forEach((element) => {
-          delete element.dataset.shcRevealState;
-          if (element.dataset.shcRevealAuto === "true") {
-            delete element.dataset.shcReveal;
-            delete element.dataset.shcRevealAuto;
-            element.style.removeProperty("--shc-reveal-delay");
-          }
-        });
-    };
-
     if (!motionEnabled) {
-      resetTargets();
       return;
     }
 
@@ -252,9 +237,7 @@ export default function PublicLayout() {
       const isHomeElement = (element: HTMLElement) =>
         Boolean(element.closest(homeSelector));
       const authoredTargets = Array.from(
-        main.querySelectorAll<HTMLElement>(
-          '[data-shc-reveal]:not([data-shc-reveal-auto="true"])',
-        ),
+        main.querySelectorAll<HTMLElement>("[data-shc-reveal]"),
       );
       const containers = Array.from(
         main.querySelectorAll<HTMLElement>(
@@ -309,7 +292,6 @@ export default function PublicLayout() {
       window.cancelAnimationFrame(frame);
       main.dispatchEvent(new Event("shc:dispose-reveal"));
       delete main.dataset.shcRevealObserver;
-      resetTargets();
     };
   }, [location.pathname, motionEnabled]);
 

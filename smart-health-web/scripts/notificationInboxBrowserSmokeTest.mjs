@@ -347,7 +347,10 @@ async function runCase(browser, origin, apiPort, testCase) {
     await page.goto(`${origin}/portal/notifications`, {
       waitUntil: "domcontentloaded",
     });
-    await page.getByRole("heading", { name: "Thông báo", exact: true }).waitFor();
+    await page
+      .locator("main.clinical-content")
+      .getByRole("heading", { name: "Thông báo", exact: true })
+      .waitFor();
     const article = page.locator(
       '[data-notification-id="notification-browser-1"]',
     );

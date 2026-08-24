@@ -2774,27 +2774,6 @@ html.dark
   transform: scaleX(-1) scale(1.012);
 }
 
-.shc-hero-video-edge {
-  z-index: 1;
-  filter: blur(16px) saturate(1.08) contrast(1.04);
-  transform: scaleX(-1) scale(1.07);
-  transform-origin: 52% 49%;
-  mask-image: radial-gradient(
-    ellipse 78% 66% at 52% 49%,
-    transparent 0%,
-    transparent 50%,
-    rgba(0, 0, 0, 0.36) 70%,
-    #000000 100%
-  );
-  -webkit-mask-image: radial-gradient(
-    ellipse 78% 66% at 52% 49%,
-    transparent 0%,
-    transparent 50%,
-    rgba(0, 0, 0, 0.36) 70%,
-    #000000 100%
-  );
-}
-
 .shc-hero-video-wash {
   display: none;
 }
@@ -2808,10 +2787,6 @@ html.dark .shc-hero-video-main {
   filter: saturate(1.03) contrast(1.02) brightness(0.88);
 }
 
-html.dark .shc-hero-video-edge {
-  filter: blur(16px) saturate(1.04) contrast(1.02) brightness(0.88);
-}
-
 html.dark .shc-hero-video-wash {
   display: none;
 }
@@ -2821,25 +2796,6 @@ html.dark .shc-hero-video-wash {
     object-position: 58% center;
   }
 
-  .shc-hero-video-edge {
-    filter: blur(12px) saturate(1.06) contrast(1.03);
-    transform: scaleX(-1) scale(1.055);
-    transform-origin: 54% 45%;
-    mask-image: radial-gradient(
-      ellipse 86% 64% at 52% 45%,
-      transparent 0%,
-      transparent 46%,
-      rgba(0, 0, 0, 0.36) 68%,
-      #000000 100%
-    );
-    -webkit-mask-image: radial-gradient(
-      ellipse 86% 64% at 52% 45%,
-      transparent 0%,
-      transparent 46%,
-      rgba(0, 0, 0, 0.36) 68%,
-      #000000 100%
-    );
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4171,13 +4127,6 @@ html:not(.dark)
   .app-shell.public-shell.shc-public-layout[data-shc-home-hero="active"]
   .shc-hero-video-main {
   filter: saturate(1.06) contrast(1.05) brightness(0.82);
-}
-
-html:not(.dark)
-  body
-  .app-shell.public-shell.shc-public-layout[data-shc-home-hero="active"]
-  .shc-hero-video-edge {
-  filter: blur(16px) saturate(1.06) contrast(1.04) brightness(0.82);
 }
 
 html:not(.dark)

@@ -87,7 +87,7 @@ test("makes Auth offline and anonymous approval states explicit", () => {
     /data-shcare-auth-foundation="legacy-enhanced-v1"/,
   );
   assert.match(layoutSource, /data-shcare-auth-visual="live-legacy"/);
-  assert.match(layoutSource, /docs\/Logo\.png/);
+  assert.match(layoutSource, /shcare-horizontal\.svg/);
   assert.match(layoutSource, /className="app-shell auth-shell shc-auth-layout"/);
   assert.match(layoutSource, /navigator\.onLine/);
   assert.match(layoutSource, /addEventListener\("offline"/);

@@ -85,7 +85,7 @@ test("keeps original Auth actions readable and reachable on mobile", () => {
     /className="app-shell auth-shell shc-auth-layout"/,
   );
   assert.match(authLayoutSource, /data-shcare-auth-visual="live-legacy"/);
-  assert.match(authLayoutSource, /docs\/Logo\.png/);
+  assert.match(authLayoutSource, /shcare-horizontal\.svg/);
   assert.doesNotMatch(authLayoutSource, /shc-auth-canonical/);
   assert.match(forgotPasswordSource, /shc-auth-page-forgot/);
   assert.match(loginSource, /shc-auth-legacy-intro/);

@@ -2430,3 +2430,11 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - BLOCKED runtime: attach an Android target and run the system Wi-Fi chooser plus full App claim → provision → authenticated-online journey. Do not replace this with an emulator that cannot join the physical ESP AP.
 - WAITING FOR USER-ENTERED NETWORK MATERIAL: run one successful target-Wi-Fi POST from App or captive Web using a password entered by the user. Never read/export the saved Windows Wi-Fi password and never expose internal HIL JSON as setup instructions.
 - G3 remains open for the prior exact-preview CORS, production provider/migration, secure device WSS/ACK and signed OTA rollback gates. G4 remains pending.
+
+## 2026-08-24 G3 current closure backlog
+
+- CLOSED: current legacy-style Web source gates — Auth `390/390`, contracts `137/137`, TypeScript, lint, Firebase build and public performance budgets; duplicated hero video removed without deleting the real Phase 0–7 workflows.
+- CLOSED: Xiaomi is attached, the current APK installs/launches, ESP captive-portal HIL passes, and both physical mic slots produce live diagnostics.
+- OPEN: user-entered target Wi-Fi followed by authenticated device presence, command ACK, audio-v2 and durable completed scan. Current serial state is `wss=0`; do not infer an online device from captive-portal success.
+- OPEN: two MIUI-blocked notification instrumentation cases, exact-preview backend CORS, additive migration/provider readiness, production signing and forced-failure signed OTA rollback/canary.
+- G3 cannot PASS and G4 cannot promote while these release gates are open. A provider/hardware limitation may be recorded as `BLOCKED`, but it is not a production PASS.

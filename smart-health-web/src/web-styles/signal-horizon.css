@@ -867,7 +867,8 @@ html.dark .shc-public-layout .shc-hero::before {
   .shc-auth-layout .shc-auth-mobile-top {
     display: flex;
     background: color-mix(in srgb, var(--signal-card-solid) 72%, transparent);
-    backdrop-filter: blur(18px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .shc-auth-layout .shc-auth-card {
@@ -954,7 +955,8 @@ html.dark .shc-public-layout .shc-hero::before {
   .shc-auth-layout .shc-auth-mobile-top {
     display: flex;
     background: color-mix(in srgb, var(--signal-card-solid) 76%, transparent);
-    backdrop-filter: blur(16px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .shc-auth-layout .shc-auth-form-scroll {

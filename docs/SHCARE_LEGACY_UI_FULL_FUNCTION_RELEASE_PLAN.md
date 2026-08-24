@@ -150,3 +150,9 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - APK integrated-demo đã được cài và mở trên Xiaomi thật. Firebase emulator → backend → Patient Dashboard pass bằng instrumentation; MIUI vẫn chặn ADB shell inject input nên thao tác QR/Wi-Fi tiếp theo phải dùng Compose instrumentation hoặc người dùng chạm trực tiếp.
 - Web Admin local có tài khoản alias thật `admin / admin` tại `http://127.0.0.1:8766/login`; backend trả HTTP `200`, điều hướng vào dashboard và không có console error. Alias chỉ tồn tại trong demo launcher, không được bật ở preview/live/production.
 - Đã xóa fallback đăng nhập giả từng điều hướng vào Admin khi xác thực thất bại. G3 vẫn `in progress` cho tới khi người dùng nhập target Wi-Fi trong App, sau đó chứng minh authenticated WSS → ACK → audio-v2 → durable scan và OTA rollback. G4 vẫn pending.
+
+### 2026-08-25 — G3 QR foreground-reauthorization fix
+
+- Xiaomi tái hiện lỗi sau khi camera QR trả kết quả: foreground reauthorization tạm thời làm authority callback trả `null`, khiến receipt của claim thành công bị UI hiểu nhầm là phiên hết hạn. Backend đã claim đúng thiết bị cho đúng patient/workspace; không có claim chéo tenant.
+- Android nay chờ bounded reauthorization và chỉ tiếp tục khi đúng cùng user/workspace/epoch. Nếu claim one-time đã được backend tiêu thụ, App chỉ phục hồi setup khi danh sách backend xác nhận cùng device, workspace và owner; khác owner vẫn fail closed.
+- Focused Device Pairing tests và integrated-demo assemble PASS; APK SHA-256 `8AC6BF2942DEDD07425324092314B9F06CAAC2D21408C7F85E499E93B4A3DDF2` đã cài lên Xiaomi. G3 chờ lần quét lại thực tế rồi tiếp tục target Wi-Fi/WSS/ACK/audio-v2.

@@ -67,6 +67,90 @@ class DevicePairingViewModelTest {
     }
 
     @Test
+    fun qrResultWaitsForTransientForegroundReauthorizationBeforeClaiming() =
+        runTest(dispatcher) {
+            val repository = FakeDeviceClaimRepository(
+                claimResult = SmartDevice(id = "dev_alpha", name = "Shcare Alpha", online = false),
+            )
+            var currentAuthority: DevicePairingAuthoritySnapshot? = null
+            val viewModel = secureViewModel(
+                repository = repository,
+                currentAuthority = { currentAuthority },
+                authorityRetryDelaysMillis = listOf(0L, 100L),
+            )
+
+            viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+            runCurrent()
+
+            assertEquals(DevicePairingStage.Claiming, viewModel.uiState.value.stage)
+            assertEquals(0, repository.claimCalls)
+
+            currentAuthority = authority
+            advanceTimeBy(100L)
+            runCurrent()
+
+            assertEquals(1, repository.claimCalls)
+            assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
+            assertEquals(DevicePairingFailureKind.None, viewModel.uiState.value.failureKind)
+        }
+
+    @Test
+    fun consumedQrResumesSetupOnlyWhenBackendListsTheSameOwnedDevice() =
+        runTest(dispatcher) {
+            val repository = FakeDeviceClaimRepository(
+                claimResult = SmartDevice(
+                    id = "dev_alpha",
+                    name = "Shcare Alpha",
+                    ownerUserId = "user-1",
+                    pairedUserId = "user-1",
+                    online = false,
+                ),
+                claimError = SmartHealthApiException(
+                    statusCode = 409,
+                    code = "DEVICE_CLAIM_STATE_INVALID",
+                    requestId = "req-consumed",
+                    message = "already claimed",
+                ),
+            )
+            val viewModel = secureViewModel(repository)
+
+            viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+            runCurrent()
+
+            assertEquals(1, repository.claimCalls)
+            assertEquals(1, repository.listCalls)
+            assertEquals(DevicePairingStage.SetupReady, viewModel.uiState.value.stage)
+            assertEquals("Shcare Alpha", viewModel.uiState.value.claimedDeviceName)
+            assertTrue(viewModel.uiState.value.setupProofOfPossession.isNotBlank())
+            assertEquals(DevicePairingFailureKind.None, viewModel.uiState.value.failureKind)
+        }
+
+    @Test
+    fun consumedQrCannotResumeSetupForAnotherOwner() = runTest(dispatcher) {
+        val repository = FakeDeviceClaimRepository(
+            claimResult = SmartDevice(
+                id = "dev_alpha",
+                ownerUserId = "user-other",
+                pairedUserId = "user-other",
+            ),
+            claimError = SmartHealthApiException(
+                statusCode = 409,
+                code = "DEVICE_CLAIM_STATE_INVALID",
+                requestId = "req-other-owner",
+                message = "already claimed",
+            ),
+        )
+        val viewModel = secureViewModel(repository)
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+
+        assertEquals(DevicePairingStage.ClaimFailed, viewModel.uiState.value.stage)
+        assertEquals(DevicePairingFailureKind.Conflict, viewModel.uiState.value.failureKind)
+        assertEquals("", viewModel.uiState.value.setupProofOfPossession)
+    }
+
+    @Test
     fun inAppProvisioningSendsWifiToEspThenWaitsForAuthenticatedOnlinePresence() =
         runTest(dispatcher) {
             val offline = SmartDevice(id = "dev_alpha", name = "Shcare Alpha", online = false)
@@ -635,6 +719,7 @@ class DevicePairingViewModelTest {
         currentAuthority: () -> DevicePairingAuthoritySnapshot? = { authority },
         idempotencyKeyFactory: () -> String = { "pair-key-1" },
         onlineRetryDelaysMillis: List<Long> = listOf(0L),
+        authorityRetryDelaysMillis: List<Long> = listOf(0L),
     ) = DevicePairingViewModel(
         repository = repository,
         provisioner = provisioner,
@@ -642,6 +727,7 @@ class DevicePairingViewModelTest {
         currentAuthority = currentAuthority,
         idempotencyKeyFactory = idempotencyKeyFactory,
         onlineRetryDelaysMillis = onlineRetryDelaysMillis,
+        authorityRetryDelaysMillis = authorityRetryDelaysMillis,
         nowMillis = { now.toEpochMilli() },
     )
 

@@ -938,3 +938,9 @@ Any unavailable emulator, board, credential or provider is recorded as `BLOCKED`
 - Installed the integrated-demo APK on the attached Xiaomi and verified Firebase-emulator/backend patient login reaches the real Patient Dashboard with `1/1` Compose instrumentation proof. MIUI denies ADB shell input injection; QR/Wi-Fi remains a physical/Compose interaction, not a source failure.
 - Added the reproducible local-only Admin alias `admin / admin` to the demo launcher. A real browser login returned backend HTTP `200`, reached `/` and produced zero console errors. Removed the pre-existing fake development success fallback.
 - Focused Admin auth contracts pass `2/2`; Admin lint and build pass; the demo launcher passes `node --check`. G3 remains open for user-entered target Wi-Fi and authenticated WSS/ACK/audio-v2/durable-scan/OTA runtime evidence. G4 remains pending.
+
+## 2026-08-25 — G3 physical QR foreground race remediation
+
+- Reproduced on Xiaomi: scanner return overlapped foreground reauthorization, temporarily returning no current authority after the backend had already committed the correct device claim. UI incorrectly emitted the expired-session state.
+- Remediation is bounded and fail-closed: wait only for the exact expected authority; recover an already-consumed claim only from an authenticated list receipt matching device id, workspace id and owner user id. Cross-owner recovery is denied and setup proof is cleared.
+- Focused Device Pairing tests and integrated-demo assemble pass. APK `8AC6BF2942DEDD07425324092314B9F06CAAC2D21408C7F85E499E93B4A3DDF2` is installed on Xiaomi. Physical rescan and target-Wi-Fi/WSS chain remain open; no G3 completion is claimed.

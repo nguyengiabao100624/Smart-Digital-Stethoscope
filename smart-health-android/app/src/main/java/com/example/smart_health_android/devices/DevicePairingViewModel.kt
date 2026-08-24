@@ -177,6 +177,8 @@ class DevicePairingViewModel(
     private val currentAuthority: () -> DevicePairingAuthoritySnapshot?,
     private val idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
     private val onlineRetryDelaysMillis: List<Long> = listOf(0L, 1_000L, 2_000L, 4_000L, 8_000L, 15_000L),
+    private val authorityRetryDelaysMillis: List<Long> =
+        listOf(0L, 100L, 250L, 500L, 1_000L, 2_000L, 4_000L),
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private data class PendingClaim(
@@ -330,7 +332,7 @@ class DevicePairingViewModel(
 
     private fun claim(payload: DeviceClaimPayload, connectionMethod: String) {
         if (_uiState.value.isBusy) return
-        if (!hasCurrentAuthority()) {
+        if (expectedAuthority == null || hasDifferentCurrentAuthority()) {
             denyStaleAuthority()
             return
         }
@@ -379,18 +381,42 @@ class DevicePairingViewModel(
         }
         scheduleSetupExpiry(payload, generation)
         claimJob = viewModelScope.launch {
+            if (!awaitCurrentAuthority()) {
+                if (generation == operationGeneration) denyStaleAuthority()
+                return@launch
+            }
             val response = try {
                 repository.claimDevice(payload, connectionMethod, idempotencyKey)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
                 if (generation == operationGeneration) {
-                    if (hasCurrentAuthority()) publishClaimFailure(error) else denyStaleAuthority()
+                    if (!awaitCurrentAuthority()) {
+                        denyStaleAuthority()
+                    } else if (isConsumedClaimConflict(error)) {
+                        val recoveredDevice = try {
+                            recoverOwnedClaimedDevice(payload)
+                        } catch (recoveryError: CancellationException) {
+                            throw recoveryError
+                        } catch (recoveryError: Throwable) {
+                            publishClaimFailure(recoveryError)
+                            return@launch
+                        }
+                        if (!awaitCurrentAuthority()) {
+                            denyStaleAuthority()
+                        } else if (recoveredDevice != null) {
+                            acceptClaimForSetup(recoveredDevice)
+                        } else {
+                            publishClaimFailure(error)
+                        }
+                    } else {
+                        publishClaimFailure(error)
+                    }
                 }
                 return@launch
             }
             if (generation != operationGeneration) return@launch
-            if (!hasCurrentAuthority()) {
+            if (!awaitCurrentAuthority()) {
                 denyStaleAuthority()
                 return@launch
             }
@@ -433,15 +459,35 @@ class DevicePairingViewModel(
                 confirmOnline(device)
                 return@launch
             }
-            _uiState.update {
-                it.copy(
-                    claimedDeviceName = device.name,
-                    stage = DevicePairingStage.SetupReady,
-                    isBusy = false,
-                    canRetryClaim = false,
-                    canRetryOnline = false,
-                )
-            }
+            acceptClaimForSetup(device)
+        }
+    }
+
+    private suspend fun recoverOwnedClaimedDevice(
+        payload: DeviceClaimPayload,
+    ): SmartDevice? {
+        val authority = expectedAuthority ?: return null
+        return repository.listDevices().firstOrNull { device ->
+            device.id == payload.deviceId &&
+                device.organizationId == authority.workspaceId &&
+                (device.ownerUserId == authority.userId || device.pairedUserId == authority.userId)
+        }
+    }
+
+    private fun acceptClaimForSetup(device: SmartDevice) {
+        pendingClaim = null
+        _uiState.update {
+            it.copy(
+                claimedDeviceName = device.name,
+                stage = DevicePairingStage.SetupReady,
+                isBusy = false,
+                canRetryClaim = false,
+                canRetryOnline = false,
+                failureKind = DevicePairingFailureKind.None,
+                errorMessage = "",
+                errorMessageRes = null,
+                requestId = "",
+            )
         }
     }
 
@@ -483,7 +529,7 @@ class DevicePairingViewModel(
             state.setupSsid.isBlank() ||
             state.setupProofOfPossession.isBlank()
         ) return
-        if (!hasCurrentAuthority()) {
+        if (expectedAuthority == null || hasDifferentCurrentAuthority()) {
             denyStaleAuthority()
             return
         }
@@ -539,24 +585,32 @@ class DevicePairingViewModel(
             )
         }
         provisioningJob = viewModelScope.launch {
+            if (!awaitCurrentAuthority()) {
+                if (generation == operationGeneration) denyStaleAuthority()
+                return@launch
+            }
             try {
                 provisioner.provision(request)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                if (generation == operationGeneration && hasCurrentAuthority()) {
-                    _uiState.update {
-                        it.copy(
-                            stage = DevicePairingStage.SetupReady,
-                            isBusy = false,
-                            errorMessageRes = R.string.device_pairing_local_provision_failed,
-                        )
+                if (generation == operationGeneration) {
+                    if (awaitCurrentAuthority()) {
+                        _uiState.update {
+                            it.copy(
+                                stage = DevicePairingStage.SetupReady,
+                                isBusy = false,
+                                errorMessageRes = R.string.device_pairing_local_provision_failed,
+                            )
+                        }
+                    } else {
+                        denyStaleAuthority()
                     }
                 }
                 return@launch
             }
             if (generation != operationGeneration) return@launch
-            if (!hasCurrentAuthority()) {
+            if (!awaitCurrentAuthority()) {
                 denyStaleAuthority()
                 return@launch
             }
@@ -717,7 +771,7 @@ class DevicePairingViewModel(
         for (retryDelay in onlineRetryDelaysMillis) {
             delay(retryDelay)
             if (generation != operationGeneration) return
-            if (!hasCurrentAuthority()) {
+            if (!awaitCurrentAuthority()) {
                 denyStaleAuthority()
                 return
             }
@@ -726,14 +780,14 @@ class DevicePairingViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                if (!hasCurrentAuthority()) {
+                if (!awaitCurrentAuthority()) {
                     denyStaleAuthority()
                     return
                 }
                 lastFailure = error
                 continue
             }
-            if (!hasCurrentAuthority()) {
+            if (!awaitCurrentAuthority()) {
                 denyStaleAuthority()
                 return
             }
@@ -853,7 +907,7 @@ class DevicePairingViewModel(
     }
 
     private suspend fun confirmOnline(device: SmartDevice) {
-        if (!hasCurrentAuthority() || device.organizationId != expectedAuthority?.workspaceId) {
+        if (!awaitCurrentAuthority() || device.organizationId != expectedAuthority?.workspaceId) {
             denyStaleAuthority()
             return
         }
@@ -976,8 +1030,24 @@ class DevicePairingViewModel(
         }
     }
 
-    private fun hasCurrentAuthority(): Boolean =
-        expectedAuthority != null && currentAuthority() == expectedAuthority
+    private fun hasDifferentCurrentAuthority(): Boolean =
+        currentAuthority()?.let { it != expectedAuthority } == true
+
+    private suspend fun awaitCurrentAuthority(): Boolean {
+        if (expectedAuthority == null) return false
+        for (retryDelayMillis in authorityRetryDelaysMillis) {
+            if (retryDelayMillis > 0L) delay(retryDelayMillis)
+            val current = currentAuthority()
+            if (current == expectedAuthority) return true
+            if (current != null) return false
+        }
+        return false
+    }
+
+    private fun isConsumedClaimConflict(error: Throwable): Boolean {
+        val apiError = error as? SmartHealthApiException ?: return false
+        return apiError.statusCode == 409 && apiError.code in ConsumedClaimConflictErrorCodes
+    }
 
     private fun denyStaleAuthority() {
         cancelSensitiveWork()
@@ -1030,6 +1100,11 @@ class DevicePairingViewModel(
         val ExpiredClaimErrorCodes = setOf(
             "DEVICE_CLAIM_EXPIRED",
             "DEVICE_CLAIM_REVOKED",
+        )
+        val ConsumedClaimConflictErrorCodes = setOf(
+            "DEVICE_CLAIM_ALREADY_USED",
+            "DEVICE_CLAIM_STATE_INVALID",
+            "DEVICE_ALREADY_OWNED",
         )
     }
 }

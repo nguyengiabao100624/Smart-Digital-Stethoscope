@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { decryptJson, encryptJson } = require("./cryptoPhi");
 
 const RUNTIME_STATE_ID = "default";
 
@@ -18,6 +19,7 @@ class JsonDataStore {
     this.normalizeDb = options.normalizeDb;
     this.ensureDataDirs = options.ensureDataDirs;
     this.fileSystem = options.fileSystem || fs;
+    this.env = options.env || process.env;
     this.saveQueue = Promise.resolve();
     this.saveSequence = 0;
   }
@@ -29,25 +31,30 @@ class JsonDataStore {
   async load() {
     this.ensureDataDirs();
 
-    if (!fs.existsSync(this.dbFile)) {
+    if (!this.fileSystem.existsSync(this.dbFile)) {
       const freshDb = this.createEmptyDb();
-      fs.writeFileSync(this.dbFile, JSON.stringify(freshDb, null, 2));
+      this.fileSystem.writeFileSync(this.dbFile, JSON.stringify(freshDb, null, 2));
       return freshDb;
     }
 
     try {
-      const loaded = JSON.parse(fs.readFileSync(this.dbFile, "utf8"));
+      const stored = JSON.parse(this.fileSystem.readFileSync(this.dbFile, "utf8"));
+      const loaded = decryptJson(stored, this.env, `runtime-state:${RUNTIME_STATE_ID}`);
       return this.normalizeDb(loaded);
     } catch (err) {
+      if (["PHI_KEY_REQUIRED", "PHI_ENVELOPE_INVALID", "PHI_DECRYPTION_FAILED"].includes(err?.code)) {
+        throw err;
+      }
       const brokenFile = `${this.dbFile}.broken-${Date.now()}`;
-      fs.copyFileSync(this.dbFile, brokenFile);
+      this.fileSystem.copyFileSync(this.dbFile, brokenFile);
       console.error(`Cannot read db.json, copied broken file to ${brokenFile}`);
       return this.createEmptyDb();
     }
   }
 
   async save(db) {
-    const payload = JSON.stringify(db, null, 2);
+    const protectedState = encryptJson(db, this.env, `runtime-state:${RUNTIME_STATE_ID}`);
+    const payload = JSON.stringify(protectedState.encrypted ? protectedState : db, null, 2);
     const operation = this.saveQueue
       .catch(() => {})
       .then(async () => {
@@ -100,6 +107,7 @@ class PostgresDataStore {
     this.createEmptyDb = options.createEmptyDb;
     this.normalizeDb = options.normalizeDb;
     this.ensureDataDirs = options.ensureDataDirs;
+    this.env = options.env || process.env;
     this.pool = null;
     this.saveQueue = Promise.resolve();
   }
@@ -127,11 +135,17 @@ class PostgresDataStore {
     if (result.rowCount === 0) {
       return this.createEmptyDb();
     }
-    return this.normalizeDb(result.rows[0].state);
+    const state = decryptJson(
+      result.rows[0].state,
+      this.env,
+      `runtime-state:${RUNTIME_STATE_ID}`,
+    );
+    return this.normalizeDb(state);
   }
 
   async save(db) {
-    const payload = JSON.stringify(db);
+    const protectedState = encryptJson(db, this.env, `runtime-state:${RUNTIME_STATE_ID}`);
+    const payload = JSON.stringify(protectedState.encrypted ? protectedState : db);
     this.saveQueue = this.saveQueue.then(() =>
       this.pool.query(
         `

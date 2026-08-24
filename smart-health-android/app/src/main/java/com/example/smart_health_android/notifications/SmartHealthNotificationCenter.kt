@@ -144,6 +144,9 @@ object SmartHealthNotificationIntentContract {
             ) {
                 return null
             }
+            if (!SmartHealthNotificationSession.consumeLaunchNonce(nonce, sessionGeneration)) {
+                return null
+            }
 
             SmartHealthNotificationLaunchRequest(
                 destination = SmartHealthNotificationDestination.fromWire(
@@ -312,7 +315,9 @@ object SmartHealthNotificationCenter {
                     workspaceId = activeBinding.workspaceId,
                     sessionGeneration = activeBinding.generation,
                 ),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                PendingIntent.FLAG_UPDATE_CURRENT or
+                    PendingIntent.FLAG_IMMUTABLE or
+                    PendingIntent.FLAG_ONE_SHOT,
             )
         }.getOrNull() ?: return false
         val priority = if (channel == SmartHealthNotificationChannel.ClinicalAlerts) {

@@ -109,12 +109,12 @@ function MetricCard({
   return (
     <Card
       data-testid={testId}
-      className="h-full overflow-hidden transition-colors duration-200 hover:border-primary/30"
+      className="portal-live-metric h-full overflow-hidden transition-colors duration-200"
     >
       {to ? (
         <Link
           to={to}
-          className="block min-h-36 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="portal-live-metric-link block min-h-36 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label={`${label}: ${value.toLocaleString("vi-VN")}. ${description}`}
         >
           {content}
@@ -274,16 +274,16 @@ export default function DashboardPage() {
     <div
       id="portal-dashboard-page"
       data-testid="portal-dashboard-page"
-      className="mx-auto max-w-7xl space-y-5"
+      className="portal-live-dashboard space-y-5"
     >
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <header className="portal-live-dashboard-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <span className="portal-live-title-icon flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Activity aria-hidden="true" className="size-5" />
             </span>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              <h1 className="portal-live-dashboard-title text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
                 Tổng quan
               </h1>
               <p className="mt-1 truncate text-sm text-muted-foreground">
@@ -291,22 +291,28 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{dashboard.range.label}</Badge>
+          <div className="portal-live-dashboard-meta mt-3 flex flex-wrap items-center gap-2">
+            <Badge className="portal-live-range" variant="outline">
+              {dashboard.range.label}
+            </Badge>
             <span className="text-xs text-muted-foreground">
               Cập nhật {formatDateTime(dashboard.generatedAt)}
             </span>
           </div>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+        <div className="portal-live-dashboard-actions flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           {canViewPatients ? (
-            <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
-              <Link to="/portal/patients">Quản lý bệnh nhân</Link>
+            <Button
+              asChild
+              variant="outline"
+              className="portal-live-secondary-action h-11 w-full sm:w-auto"
+            >
+              <Link to="/portal/patients">Thêm bệnh nhân</Link>
             </Button>
           ) : null}
           <Button
             type="button"
-            className="h-11 w-full sm:w-auto"
+            className="portal-live-primary-action h-11 w-full sm:w-auto"
             onClick={refresh}
             disabled={!online || refreshing}
             aria-label="Làm mới tổng quan"
@@ -324,7 +330,7 @@ export default function DashboardPage() {
       </header>
 
       {!online ? (
-        <Alert className="border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]">
+        <Alert className="portal-live-state border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]">
           <WifiOff aria-hidden="true" />
           <AlertTitle>Bạn đang ngoại tuyến</AlertTitle>
           <AlertDescription>
@@ -336,16 +342,16 @@ export default function DashboardPage() {
 
       <section
         aria-label="Chỉ số tổng quan workspace"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        className="portal-live-metric-grid grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
         {metrics.map((metric) => (
           <MetricCard key={metric.testId} {...metric} />
         ))}
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(18rem,.75fr)]">
-        <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+      <section className="portal-live-dashboard-grid grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(18rem,.75fr)]">
+        <Card className="portal-live-panel min-w-0 overflow-hidden">
+          <CardHeader className="portal-live-panel-header flex-row items-start justify-between gap-3 space-y-0">
             <div>
               <CardTitle>Lượt đo gần đây</CardTitle>
               <CardDescription>
@@ -361,7 +367,7 @@ export default function DashboardPage() {
               </Button>
             ) : null}
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="portal-live-panel-content p-0">
             {!canViewScans ? (
               <div className="px-6 pb-6">
                 <Alert>
@@ -421,7 +427,7 @@ export default function DashboardPage() {
                     <li key={scan.id}>
                       <Link
                         to={`/portal/records/${encodeURIComponent(scan.id)}`}
-                        className="flex min-h-16 flex-col gap-3 px-6 py-4 transition-colors duration-150 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex-row sm:items-center"
+                        className="portal-live-scan-row flex min-h-16 flex-col gap-3 px-6 py-4 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex-row sm:items-center"
                         aria-label={`Mở lượt đo của ${
                           scan.patient?.name ||
                           scan.patientId ||
@@ -455,15 +461,15 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="portal-live-panel portal-live-device-panel">
+          <CardHeader className="portal-live-panel-header">
             <CardTitle>Thiết bị</CardTitle>
             <CardDescription>
               Trạng thái hiện diện do backend xác nhận tại thời điểm tạo
               snapshot.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="portal-live-panel-content space-y-4">
             {stats.devicesCount === 0 ? (
               <PortalEmpty label="Workspace chưa có thiết bị" />
             ) : (

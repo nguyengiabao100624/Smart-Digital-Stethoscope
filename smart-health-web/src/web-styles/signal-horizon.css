@@ -223,8 +223,8 @@ html.dark .app-shell.public-shell .shc-header,
   background: linear-gradient(90deg, var(--signal-violet), var(--signal-cyan));
   content: "";
   transform: scaleX(0);
-  transform-origin: center;
-  transition: transform 180ms ease-out;
+  transform-origin: left center;
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shc-public-layout .shc-header a:not(.shc-button):hover::after,
@@ -824,64 +824,6 @@ html.dark .shc-public-layout .shc-hero::before {
   backdrop-filter: blur(16px);
 }
 
-/* Authenticated portal --------------------------------------------------- */
-
-.clinical-portal {
-  background: var(--signal-canvas);
-}
-
-.clinical-sidebar {
-  border-right-color: var(--signal-line);
-  background: var(--signal-card-solid);
-  box-shadow: 12px 0 42px rgba(58, 42, 132, 0.05);
-}
-
-.clinical-topbar {
-  position: relative;
-  z-index: 80;
-  border-bottom-color: var(--signal-line);
-  background: var(--signal-card-solid);
-  box-shadow: 0 8px 28px rgba(58, 42, 132, 0.05);
-  overflow: visible;
-}
-
-.clinical-content {
-  position: relative;
-  z-index: 1;
-  background: transparent;
-}
-
-.clinical-workspace-link,
-.clinical-portal .navy-card,
-.clinical-portal .premium-card {
-  border-color: var(--signal-line);
-  background: var(--signal-card-solid);
-  box-shadow: var(--signal-shadow-tight);
-}
-
-.clinical-side-nav a::before {
-  background: linear-gradient(180deg, var(--signal-violet), var(--signal-cyan));
-}
-
-.clinical-side-nav a:hover,
-.clinical-side-nav a.is-active {
-  border-color: color-mix(in srgb, var(--signal-violet) 32%, transparent);
-  background: linear-gradient(
-    105deg,
-    color-mix(in srgb, var(--signal-violet) 16%, transparent),
-    color-mix(in srgb, var(--signal-cyan) 9%, transparent)
-  );
-  color: var(--signal-violet);
-}
-
-.clinical-top-action:hover,
-.clinical-user-trigger:hover,
-.clinical-mobile-trigger:hover {
-  border-color: color-mix(in srgb, var(--signal-violet) 42%, transparent);
-  background: color-mix(in srgb, var(--signal-violet) 11%, transparent);
-  color: var(--signal-violet);
-}
-
 /* Responsive fit --------------------------------------------------------- */
 
 @media (min-width: 1280px) {
@@ -1123,8 +1065,6 @@ html.dark .shc-public-layout .shc-header.is-scrolled {
   pointer-events: none;
 }
 
-.shc-public-layout .shc-nav-group:hover .shc-dropdown,
-.shc-public-layout .shc-nav-group:focus-within .shc-dropdown,
 .shc-public-layout .shc-nav-group.is-open .shc-dropdown {
   opacity: 1;
   visibility: visible;
@@ -1141,7 +1081,8 @@ html.dark .shc-public-layout .shc-header.is-scrolled {
 
 .shc-public-layout .shc-header a:not(.shc-button).is-active::after,
 .shc-public-layout .shc-header a:not(.shc-button):hover::after,
-.shc-public-layout .shc-header a:not(.shc-button):focus-visible::after {
+.shc-public-layout .shc-header a:not(.shc-button):focus-visible::after,
+.shc-public-layout .shc-nav-group.is-open > a::after {
   transform: scaleX(1);
 }
 

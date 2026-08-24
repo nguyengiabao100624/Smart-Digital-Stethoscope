@@ -1091,7 +1091,12 @@ export default function InvitationsPage() {
               ))}
             </div>
             <Card className="hidden overflow-hidden shadow-sm md:block">
-              <div className="overflow-x-auto">
+              <div
+                role="region"
+                aria-label="Sổ quyền truy cập dữ liệu"
+                tabIndex={0}
+                className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              >
                 <table className="w-full min-w-[1120px] text-sm">
                   <thead className="border-b bg-muted/30 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <tr>

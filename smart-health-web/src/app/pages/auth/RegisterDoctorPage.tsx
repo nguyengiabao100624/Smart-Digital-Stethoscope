@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Building2, FileCheck2, Stethoscope, UploadCloud } from "lucide-react";
+import {
+  Building2,
+  FileCheck2,
+  Fingerprint,
+  UploadCloud,
+} from "lucide-react";
 import { Link } from "react-router";
 
 import {
@@ -37,10 +42,10 @@ import { useSEO } from "@/lib/useSEO";
 
 const steps = [
   "Tài khoản",
-  "Mô hình hoạt động",
+  "Loại đăng ký",
   "Chuyên môn",
   "Nơi làm việc",
-  "Xác minh",
+  "Chứng chỉ",
   "Xác nhận",
 ];
 
@@ -631,9 +636,9 @@ export default function RegisterDoctorPage() {
     <section className="shc-auth-page shc-auth-registration-page">
       <AuthUnsavedChangesGuard when={dirty} />
       <AuthPageIntro
-        icon={Stethoscope}
-        title="Đăng ký tài khoản bác sĩ"
-        description="Cung cấp thông tin theo từng bước. Shcare chỉ cấp quyền sau khi hồ sơ được kiểm tra."
+        icon={Fingerprint}
+        title="Đăng ký Chuyên Gia Y Tế"
+        description="Yêu cầu quyền Workspace Portal"
       />
       <AuthStepper steps={steps} current={step} />
 
@@ -1067,7 +1072,7 @@ export default function RegisterDoctorPage() {
             </AuthSecondaryButton>
           ) : (
             <Link className="shc-auth-text-link" to="/login">
-              Đã có tài khoản?
+              Đã có Workspace? Đăng Nhập
             </Link>
           )}
           <AuthPrimaryButton

@@ -74,7 +74,7 @@ test("locks real Account cleanup, drawer interaction and representative permissi
   assert.match(smoke, /directPermissionChecks \+= 1/);
 });
 
-test("uses the Shcare brand asset and copy on Admin shell and auth surfaces", () => {
+test("keeps the deployed Admin brand mark and copy on shell and auth surfaces", () => {
   const sources = [
     "src/lib/surface.ts",
     "src/routes/__root.tsx",
@@ -84,22 +84,42 @@ test("uses the Shcare brand asset and copy on Admin shell and auth surfaces", ()
     "src/components/admin/ShcareBrand.tsx",
   ].map(read);
   const combined = sources.join("\n");
+  const brand = read("src/components/admin/ShcareBrand.tsx");
+  const login = read("src/components/admin/Login.tsx");
 
-  assert.match(combined, /shcare-symbol\.svg/);
+  assert.match(brand, /import \{ Stethoscope \} from "lucide-react"/);
+  assert.match(brand, /legacyBrandLabel/);
+  assert.match(login, /"Smart Health Admin"/);
   assert.match(combined, /Shcare Platform Admin/);
-  assert.doesNotMatch(combined, /Smart Health Admin|nền tảng Smart Health|Web Admin Smart Health/);
-  assert.doesNotMatch(combined, /float-soft/);
+  assert.doesNotMatch(brand, /shcare-symbol\.svg/);
 });
 
-test("keeps Admin production UI free of demo gradients, blur glass and looping decoration", () => {
-  const combined = sourceFiles("src")
-    .map((relativePath) => read(relativePath))
-    .join("\n");
+test("limits deployed Admin effects to the mobile overlay and reduced-motion brand treatment", () => {
+  const componentEntries = sourceFiles("src")
+    .filter((relativePath) => /\.(?:ts|tsx)$/.test(relativePath))
+    .map((relativePath) => ({ relativePath, source: read(relativePath) }));
+  const combined = componentEntries.map(({ source }) => source).join("\n");
+  const layout = read("src/components/admin/Layout.tsx");
+  const brand = read("src/components/admin/ShcareBrand.tsx");
+  const styles = read("src/styles.css");
 
   assert.doesNotMatch(combined, /bg-gradient|linear-gradient\s*\(/);
-  assert.doesNotMatch(combined, /backdrop-blur/);
-  assert.doesNotMatch(combined, /repeat:\s*Infinity|animate-ping/);
-  assert.doesNotMatch(combined, /health-pulse|scan-sheen|float-soft/);
+  assert.doesNotMatch(combined, /repeat:\s*Infinity|animate-ping|health-pulse|scan-sheen/);
+  assert.match(layout, /bg-black\/50 backdrop-blur-sm z-30 md:hidden/);
+  assert.deepEqual(
+    componentEntries
+      .filter(
+        ({ relativePath, source }) =>
+          relativePath !== "src/components/admin/Layout.tsx" && /backdrop-blur/.test(source),
+      )
+      .map(({ relativePath }) => relativePath),
+    [],
+  );
+  assert.match(brand, /float-soft/);
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.float-soft[\s\S]*?animation:\s*none/,
+  );
 });
 
 test("turns global search into a real navigation command palette", () => {

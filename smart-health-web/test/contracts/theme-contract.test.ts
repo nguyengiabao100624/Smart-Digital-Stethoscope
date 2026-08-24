@@ -47,3 +47,13 @@ test("HTML pre-paint bootstrap preserves the system preference and resolved them
   assert.match(html, /localStorage\.setItem\(storageKey, preference\)/);
   assert.doesNotMatch(html, /localStorage\.setItem\(["']shcare-theme["'], selected\)/);
 });
+
+test("application toaster follows the resolved document theme", () => {
+  const app = readFileSync(
+    new URL("../../src/app/App.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(app, /dataset\.resolvedTheme\s*===\s*["']dark["']/);
+  assert.match(app, /attributeFilter:\s*\[["']data-resolved-theme["']\]/);
+  assert.match(app, /<Toaster\s+theme=\{toasterTheme\}/);
+});

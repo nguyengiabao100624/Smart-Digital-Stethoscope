@@ -6807,6 +6807,23 @@ components:
         audioPacketsDropped: { type: integer, minimum: 0 }
         audioSendFailures: { type: integer, minimum: 0 }
         lastCommandUptimeMs: { type: integer, minimum: 0 }
+        audioCaptureQueueDepth: { type: integer, minimum: 0, maximum: 4294967295 }
+        audioCaptureQueueHighWater: { type: integer, minimum: 0, maximum: 4294967295 }
+        audioCaptureFramesEnqueued: { type: integer, minimum: 0, maximum: 4294967295 }
+        audioCaptureFramesDropped: { type: integer, minimum: 0, maximum: 4294967295 }
+        audioCaptureFramesStale: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot0Rms: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot0Peak: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot0WindowCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot0ActiveWindowCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot0SampleCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot0NonZeroSampleCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot1Rms: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot1Peak: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot1WindowCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot1ActiveWindowCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot1SampleCount: { type: integer, minimum: 0, maximum: 4294967295 }
+        i2sSlot1NonZeroSampleCount: { type: integer, minimum: 0, maximum: 4294967295 }
         resetReason: { type: string, maxLength: 160 }
         i2sStatus: { type: string, maxLength: 160 }
         lastCommandId: { type: string, maxLength: 160 }

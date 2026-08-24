@@ -26,7 +26,8 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
+import logoUrl from "../../../../docs/Logo.png";
+import { ThemeToggle } from "../../components/ThemeToggle";
 import { smartHealthApi } from "../../lib/smart-health-api";
 import { useAuth, type AuthUser } from "../context/AuthContext";
 import {
@@ -216,7 +217,10 @@ export default function PortalLayout() {
   };
 
   return (
-    <div className={`clinical-portal${sidebarOpen ? " is-sidebar-open" : ""}`}>
+    <div
+      className={`clinical-portal${sidebarOpen ? " is-sidebar-open" : ""}`}
+      data-shcare-portal-visual="live-legacy"
+    >
       <div className="clinical-portal-shell">
         <AnimatePresence>
           {sidebarOpen && (
@@ -323,7 +327,7 @@ export default function PortalLayout() {
 
         <div className="clinical-main">
           <header className="clinical-topbar">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <button
                 type="button"
                 className="clinical-mobile-trigger"
@@ -486,14 +490,15 @@ export default function PortalLayout() {
                           >
                             <Shield size={16} /> Nhật ký audit
                           </Link>
-                        ) : null}
-                        <button
-                          id="portal-logout"
-                          type="button"
-                          onClick={handleLogout}
-                        >
-                          <LogOut size={16} /> Đăng xuất
-                        </button>
+                            ) : null}
+                            <ThemeToggle variant="menu" />
+                            <button
+                              id="portal-logout"
+                              type="button"
+                              onClick={handleLogout}
+                            >
+                              <LogOut size={16} /> Đăng xuất
+                            </button>
                       </div>
                     </motion.div>
                   )}

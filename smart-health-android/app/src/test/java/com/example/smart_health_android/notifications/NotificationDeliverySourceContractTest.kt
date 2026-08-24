@@ -12,6 +12,12 @@ class NotificationDeliverySourceContractTest {
     private val modelSource = projectFile(
         "src/main/java/com/example/smart_health_android/data/SmartHealthModels.kt",
     ).readText()
+    private val notificationCenterSource = projectFile(
+        "src/main/java/com/example/smart_health_android/notifications/SmartHealthNotificationCenter.kt",
+    ).readText()
+    private val notificationSessionSource = projectFile(
+        "src/main/java/com/example/smart_health_android/notifications/SmartHealthNotificationSession.kt",
+    ).readText()
 
     @Test
     fun parsesPerChannelDeliveryStateFromTheSharedBackendContract() {
@@ -32,6 +38,15 @@ class NotificationDeliverySourceContractTest {
     fun mobileClientDoesNotExposePlatformCampaignCreation() {
         assertFalse(apiSource.contains("createNotificationCampaign"))
         assertFalse(apiSource.contains("notifications/options"))
+    }
+
+    @Test
+    fun notificationLaunchCapabilityIsOneShotAndPersistentlyConsumed() {
+        assertTrue(notificationCenterSource.contains("PendingIntent.FLAG_ONE_SHOT"))
+        assertTrue(notificationCenterSource.contains("consumeLaunchNonce(nonce, sessionGeneration)"))
+        assertTrue(notificationSessionSource.contains("consumeNotificationIntentNonce"))
+        assertTrue(notificationSessionSource.contains("MAX_CONSUMED_INTENT_NONCES = 64"))
+        assertTrue(notificationSessionSource.contains("digestNonce"))
     }
 
     private fun projectFile(relativePath: String): File {

@@ -82,7 +82,10 @@ const audioStart = section(
   'if (command.type == "audio.session.start") {',
   'if (command.type == "audio.session.stop") {',
 );
-const audioSend = section("void sendAudioCloud(const int samplesRead) {", "void startMdns()");
+const audioSend = section(
+  "void drainAudioCaptureQueue(std::size_t maxPackets) {",
+  "void startMdns()",
+);
 
 assert.match(audioStart, /payloadString\("frameEncoding"\)/);
 assert.match(audioStart, /evaluateAudioSessionContract\(/);
@@ -334,8 +337,8 @@ const loopGate = runtimeLoop.indexOf("if (!otaRecoveryRuntimeServicesAllowed())"
 assert.notEqual(loopGate, -1, "loop must gate OTA recovery safe mode");
 assert.ok(
   loopGate < runtimeLoop.indexOf("handleDeviceServices()") &&
-    loopGate < runtimeLoop.indexOf("setupWiFi()") &&
-    loopGate < runtimeLoop.indexOf("startStationServices()"),
+    loopGate < runtimeLoop.indexOf("handleWiFiReconnect()") &&
+    loopGate < runtimeLoop.indexOf("drainAudioCaptureQueue(2)"),
   "loop safe-mode gate must precede reconnect, control, and audio services",
 );
 assert.match(runtimeLoop, /handleOtaRecoverySafeMode\(\);\s*return;/);
@@ -367,7 +370,7 @@ assert.equal(
 );
 
 const portalCallSites = [...setupWifi.matchAll(/runSetupPortal\([^;]+\);/g)];
-assert.equal(portalCallSites.length, 3, "all setup-portal callers must be gated");
+assert.equal(portalCallSites.length, 2, "all setup-portal callers must be gated");
 for (const call of portalCallSites) {
   const afterCall = setupWifi.slice(call.index + call[0].length);
   assert.match(

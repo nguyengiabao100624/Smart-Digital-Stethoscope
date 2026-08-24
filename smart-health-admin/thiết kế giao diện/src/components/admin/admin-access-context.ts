@@ -25,7 +25,7 @@ export function userHasAnyCapability(
 ) {
   if (capabilities.length === 0) return true;
   if (!user) return false;
-  if (user.role === "admin") return true;
+  if (user.role === "admin" || user.role === "platform_admin") return true;
 
   const userCapabilities = user.capabilities || [];
   if (userCapabilities.length === 0) {

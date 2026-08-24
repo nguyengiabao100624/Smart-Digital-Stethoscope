@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <ArduinoWebsockets.h>
+#include <tiny_websockets/network/esp32/esp32_tcp.hpp>
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
@@ -18,6 +19,10 @@
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 #include <sdkconfig.h>
 #include <math.h>
 #include <mbedtls/base64.h>
@@ -26,6 +31,7 @@
 #include <mbedtls/pk.h>
 #include <mbedtls/sha256.h>
 #include <algorithm>
+#include <memory>
 #include <string.h>
 #include <time.h>
 
@@ -158,12 +164,86 @@ int audioUdpPort = SMART_HEALTH_AUDIO_UDP_PORT;
 int backendPort = SMART_HEALTH_BACKEND_PORT;
 bool backendUseTls = SMART_HEALTH_BACKEND_TLS != 0;
 
+const std::uint32_t CLOUD_SOCKET_CONNECT_TIMEOUT_MS = 1000;
+const std::uint32_t CLOUD_SOCKET_IO_TIMEOUT_SECONDS = 1;
+const std::uint32_t CLOUD_SOCKET_HANDSHAKE_TIMEOUT_SECONDS = 1;
+
+#if SMART_HEALTH_PRODUCTION_PROFILE
+class BoundedSecureCloudTcpClient final
+    : public websockets::network::SecuredEsp32TcpClient {
+public:
+  BoundedSecureCloudTcpClient() { configureTimeouts(); }
+
+  bool connect(const WSString &host, const int port) override {
+    configureTimeouts();
+    yield();
+    const bool connected = client.connect(
+        host.c_str(), port, CLOUD_SOCKET_CONNECT_TIMEOUT_MS);
+    client.setNoDelay(true);
+    return connected;
+  }
+
+  void send(const WSString &data) override {
+    send(reinterpret_cast<const uint8_t *>(data.c_str()), data.size());
+  }
+
+  void send(const WSString &&data) override {
+    send(reinterpret_cast<const uint8_t *>(data.c_str()), data.size());
+  }
+
+  void send(const uint8_t *data, const uint32_t len) override {
+    yield();
+    const size_t written = client.write(data, len);
+    observedWrite = true;
+    observedWriteExpectedBytes = len;
+    observedWriteActualBytes = written;
+    yield();
+  }
+
+  void beginObservedWrite() {
+    observedWrite = false;
+    observedWriteExpectedBytes = 0;
+    observedWriteActualBytes = 0;
+  }
+
+  bool consumeObservedWriteComplete() {
+    const bool complete = observedWrite && observedWriteExpectedBytes > 0 &&
+                          observedWriteActualBytes == observedWriteExpectedBytes &&
+                          client.connected();
+    beginObservedWrite();
+    return complete;
+  }
+
+  void forceClose() {
+    client.stop();
+    beginObservedWrite();
+  }
+
+private:
+  void configureTimeouts() {
+    client.setTimeout(CLOUD_SOCKET_IO_TIMEOUT_SECONDS);
+    client.setHandshakeTimeout(CLOUD_SOCKET_HANDSHAKE_TIMEOUT_SECONDS);
+  }
+
+  bool observedWrite = false;
+  size_t observedWriteExpectedBytes = 0;
+  size_t observedWriteActualBytes = 0;
+};
+#endif
+
 Preferences devicePrefs;
 WebServer setupServer(80);
 DNSServer setupDns;
+#if SMART_HEALTH_PRODUCTION_PROFILE
+std::shared_ptr<BoundedSecureCloudTcpClient> boundedCloudTcpClient =
+    std::make_shared<BoundedSecureCloudTcpClient>();
+WebsocketsClient cloudSocket(boundedCloudTcpClient);
+#else
 WebsocketsClient cloudSocket;
+#endif
 const byte SETUP_DNS_PORT = 53;
-const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
+const unsigned long WIFI_RECONNECT_BASE_MS = 1000;
+const unsigned long WIFI_RECONNECT_MAX_MS = 30000;
 const unsigned long CLOUD_RECONNECT_BASE_MS = 1000;
 const unsigned long CLOUD_RECONNECT_MAX_MS = 30000;
 const unsigned long CLOUD_TELEMETRY_INTERVAL_MS = 10000;
@@ -175,6 +255,12 @@ const std::uint32_t BUILT_TASK_WATCHDOG_TIMEOUT_SECONDS =
     CONFIG_ESP_TASK_WDT_TIMEOUT_S;
 const unsigned long TASK_WATCHDOG_RETRY_MS = 60000;
 const std::size_t OFFLINE_OPERATIONAL_QUEUE_CAPACITY = 8;
+const std::size_t AUDIO_CAPTURE_QUEUE_CAPACITY = 8;
+const std::size_t AUDIO_CAPTURE_MAX_DRAIN_PER_LOOP = 2;
+const unsigned long AUDIO_CAPTURE_MAX_FRAME_AGE_MS = 1000;
+const unsigned long AUDIO_CAPTURE_PAUSE_TIMEOUT_MS = 1000;
+const std::uint32_t AUDIO_CAPTURE_TASK_STACK_BYTES = 8192;
+const UBaseType_t AUDIO_CAPTURE_TASK_PRIORITY = 3;
 const unsigned long OTA_BOOT_STABILITY_MS =
     SMART_HEALTH_OTA_BOOT_STABILITY_MS;
 const unsigned long OTA_BOOT_HEALTH_TIMEOUT_MS =
@@ -213,6 +299,11 @@ unsigned long setupPortalStartedAtMs = 0;
 unsigned long pendingFirmwareBootStartedMs = 0;
 unsigned long pendingFirmwareLastStatusMs = 0;
 unsigned long pendingOtaEventLastAttemptMs = 0;
+unsigned long lastWifiConnectAttemptMs = 0;
+unsigned long wifiReconnectDelayMs = 0;
+std::uint32_t wifiReconnectFailureCount = 0;
+bool wifiReconnectAttempted = false;
+bool wifiConnectionObserved = false;
 unsigned long lastCloudConnectAttemptMs = 0;
 unsigned long cloudReconnectDelayMs = 0;
 std::uint32_t cloudReconnectFailureCount = 0;
@@ -244,6 +335,10 @@ String otaBootOutcome = "";
 bool audioSessionActive = false;
 bool audioDiscontinuityPending = false;
 uint32_t audioSequence = 0;
+uint32_t audioSessionGeneration = 1;
+uint32_t audioCaptureOrdinal = 0;
+uint32_t nextExpectedCaptureOrdinal = 0;
+bool nextExpectedCaptureOrdinalReady = false;
 shcare::RecentCommandIds recentCommandIds(32);
 shcare::CommandJournal commandJournal(6);
 shcare::OfflineOperationalQueue offlineOperationalQueue(
@@ -280,7 +375,7 @@ void endBlockingOtaRuntime();
 bool persistOtaBootOutcome(const char *outcome);
 String loadOtaBootOutcome();
 void handleI2SRecovery();
-void releaseI2SDriver();
+bool releaseI2SDriver();
 void markI2sCaptureDegraded(const char *stableCode);
 void queueOfflineTelemetryIfDue();
 void flushOfflineOperationalQueue(std::size_t maxRecords = 2);
@@ -299,6 +394,15 @@ bool erasePendingOtaReceipt();
 void loadPendingOtaReceipt();
 void replayPendingOtaTerminalEvent();
 String buildWifiConfigProof(const String &ssid, const String &password);
+void setupAudioUdp();
+void startStationServices();
+void captureI2sFrame();
+void audioCaptureTask(void *context);
+bool startAudioCaptureTask();
+bool pauseAudioCaptureTask();
+void resumeAudioCaptureTask();
+void drainAudioCaptureQueue(std::size_t maxPackets =
+                                AUDIO_CAPTURE_MAX_DRAIN_PER_LOOP);
 
 // =======================
 // MSM261S4030H0 I2S pins
@@ -308,6 +412,10 @@ String buildWifiConfigProof(const String &ssid, const String &password);
 #define I2S_WS 12
 #define I2S_SCK 11
 #define I2S_SD 10
+// Both microphones share BCLK, WS and DATA. Their hardware select pins must be
+// wired to opposite L/R select levels so each microphone occupies one I2S slot.
+// Slot diagnostics intentionally stay numbered because the physical select
+// polarity must be verified on the attached microphones during G3 HIL.
 
 #define SAMPLE_RATE 16000
 // 8 ms packets keep latency low while avoiding browser/network underruns.
@@ -320,11 +428,48 @@ static_assert(BUFFER_LEN == shcare::kAudioPacketSamples,
               "capture packet size must match the canonical audio contract");
 
 int32_t micBuffer[BUFFER_LEN * I2S_CHANNEL_COUNT];
-int16_t pcmBuffer[BUFFER_LEN];
 uint8_t audioFrameBuffer[shcare::kAudioV2FixedHeaderBytes +
                          shcare::kAudioV2MaxSessionIdBytes +
                          shcare::kAudioV2MaxScanIdBytes +
                          BUFFER_LEN * sizeof(int16_t)];
+
+struct AudioCaptureItem {
+  std::uint32_t sessionGeneration = 0;
+  std::uint32_t captureOrdinal = 0;
+  std::uint32_t capturedAtMonotonicMs = 0;
+  std::uint64_t capturedAtEpochMs = 0;
+  std::uint16_t sampleCount = 0;
+  bool sessionBound = false;
+  int16_t pcm[BUFFER_LEN] = {};
+};
+
+AudioCaptureItem audioCaptureQueueStorage[AUDIO_CAPTURE_QUEUE_CAPACITY];
+StaticQueue_t audioCaptureQueueControl;
+QueueHandle_t audioCaptureQueue = nullptr;
+StaticSemaphore_t audioCapturePausedAckControl;
+SemaphoreHandle_t audioCapturePausedAck = nullptr;
+TaskHandle_t audioCaptureTaskHandle = nullptr;
+portMUX_TYPE audioCaptureStateMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool audioCapturePauseRequested = false;
+volatile bool audioCapturePaused = false;
+volatile bool pendingI2sCaptureFault = false;
+volatile bool pendingI2sCaptureEmptyFault = false;
+std::uint32_t audioCaptureFramesEnqueued = 0;
+std::uint32_t audioCaptureFramesDropped = 0;
+std::uint32_t audioCaptureFramesStale = 0;
+std::uint32_t audioCaptureQueueHighWater = 0;
+
+struct I2sSlotDiagnostics {
+  std::uint32_t rms = 0;
+  std::uint32_t peak = 0;
+  std::uint32_t windowCount = 0;
+  std::uint32_t activeWindowCount = 0;
+  std::uint32_t sampleCount = 0;
+  std::uint32_t nonZeroSampleCount = 0;
+};
+
+I2sSlotDiagnostics i2sSlot0Diagnostics;
+I2sSlotDiagnostics i2sSlot1Diagnostics;
 
 WiFiUDP audioUdp;
 IPAddress audioServerIp;
@@ -646,6 +791,36 @@ void maintainTaskWatchdog() {
   feedTaskWatchdog();
 }
 
+bool pauseAudioCaptureTask() {
+  if (audioCaptureTaskHandle == nullptr || audioCapturePausedAck == nullptr) {
+    return true;
+  }
+  while (xSemaphoreTake(audioCapturePausedAck, 0) == pdTRUE) {
+  }
+  portENTER_CRITICAL(&audioCaptureStateMux);
+  audioCapturePauseRequested = true;
+  const bool alreadyPaused = audioCapturePaused;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+  if (alreadyPaused) {
+    return true;
+  }
+  if (xSemaphoreTake(audioCapturePausedAck,
+                     pdMS_TO_TICKS(AUDIO_CAPTURE_PAUSE_TIMEOUT_MS)) == pdTRUE) {
+    return true;
+  }
+  portENTER_CRITICAL(&audioCaptureStateMux);
+  audioCapturePauseRequested = false;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+  Serial.println("Audio capture pause acknowledgement timed out.");
+  return false;
+}
+
+void resumeAudioCaptureTask() {
+  portENTER_CRITICAL(&audioCaptureStateMux);
+  audioCapturePauseRequested = false;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+}
+
 bool beginBlockingOtaRuntime(String &failureCode) {
   if (otaInProgress) {
     failureCode = "DEVICE_BUSY_OTA";
@@ -655,11 +830,16 @@ bool beginBlockingOtaRuntime(String &failureCode) {
     failureCode = "OTA_RECORDING_ACTIVE";
     return false;
   }
+  if (!pauseAudioCaptureTask()) {
+    failureCode = "OTA_AUDIO_CAPTURE_PAUSE_FAILED";
+    return false;
+  }
 
   const esp_err_t watchdogStatus = esp_task_wdt_status(nullptr);
   if (watchdogStatus == ESP_OK) {
     const esp_err_t deleteResult = esp_task_wdt_delete(nullptr);
     if (deleteResult != ESP_OK) {
+      resumeAudioCaptureTask();
       failureCode = "OTA_WATCHDOG_HANDOFF_FAILED";
       Serial.printf("OTA watchdog handoff failed: %s\n",
                     esp_err_to_name(deleteResult));
@@ -669,6 +849,7 @@ bool beginBlockingOtaRuntime(String &failureCode) {
     taskWatchdogReady = false;
   } else if (watchdogStatus != ESP_ERR_NOT_FOUND &&
              watchdogStatus != ESP_ERR_INVALID_STATE) {
+    resumeAudioCaptureTask();
     failureCode = "OTA_WATCHDOG_STATE_INVALID";
     Serial.printf("OTA watchdog state check failed: %s\n",
                   esp_err_to_name(watchdogStatus));
@@ -696,6 +877,7 @@ void endBlockingOtaRuntime() {
     }
   }
   otaInProgress = false;
+  resumeAudioCaptureTask();
 }
 
 void copyConfigValue(char *target, size_t targetSize, const char *value) {
@@ -875,7 +1057,7 @@ String generateSetupPortalCsrfToken() {
 }
 
 bool saveRuntimeConfig();
-void sendAudioUdp(const int samplesRead);
+void sendAudioUdp(const int16_t *samples, const int samplesRead);
 
 void eraseRuntimeConfigAndRestart(const char *reason) {
   Serial.println();
@@ -1809,12 +1991,47 @@ int64_t currentEpochMillis() {
   return static_cast<int64_t>(now) * 1000;
 }
 
+std::uint32_t nextAudioSessionGeneration(const std::uint32_t current) {
+  return current == UINT32_MAX ? 1U : current + 1U;
+}
+
+std::uint32_t currentAudioSessionGeneration() {
+  portENTER_CRITICAL(&audioCaptureStateMux);
+  const std::uint32_t generation = audioSessionGeneration;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+  return generation;
+}
+
 void resetAudioSession() {
+  portENTER_CRITICAL(&audioCaptureStateMux);
   audioSessionActive = false;
+  audioSessionGeneration = nextAudioSessionGeneration(audioSessionGeneration);
+  audioCaptureOrdinal = 0;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+  if (audioCaptureQueue != nullptr) {
+    xQueueReset(audioCaptureQueue);
+  }
   audioDiscontinuityPending = false;
   audioSequence = 0;
+  nextExpectedCaptureOrdinal = 0;
+  nextExpectedCaptureOrdinalReady = false;
   activeAudioSessionId = "";
   activeAudioScanId = "";
+}
+
+void activateAudioSessionCapture() {
+  if (audioCaptureQueue != nullptr) {
+    xQueueReset(audioCaptureQueue);
+  }
+  portENTER_CRITICAL(&audioCaptureStateMux);
+  audioSessionGeneration = nextAudioSessionGeneration(audioSessionGeneration);
+  audioCaptureOrdinal = 0;
+  audioSessionActive = true;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+  audioDiscontinuityPending = false;
+  audioSequence = 0;
+  nextExpectedCaptureOrdinal = 0;
+  nextExpectedCaptureOrdinalReady = false;
 }
 
 String base64UrlEncode(const uint8_t *bytes, size_t length) {
@@ -2149,6 +2366,42 @@ String cloudTelemetryJson(const char *type) {
   json += "\"i2sReadFailures\":";
   json += String(i2sReadFailureCount);
   json += ",";
+  json += "\"i2sSlot0Rms\":";
+  json += String(i2sSlot0Diagnostics.rms);
+  json += ",";
+  json += "\"i2sSlot0Peak\":";
+  json += String(i2sSlot0Diagnostics.peak);
+  json += ",";
+  json += "\"i2sSlot0WindowCount\":";
+  json += String(i2sSlot0Diagnostics.windowCount);
+  json += ",";
+  json += "\"i2sSlot0ActiveWindowCount\":";
+  json += String(i2sSlot0Diagnostics.activeWindowCount);
+  json += ",";
+  json += "\"i2sSlot0SampleCount\":";
+  json += String(i2sSlot0Diagnostics.sampleCount);
+  json += ",";
+  json += "\"i2sSlot0NonZeroSampleCount\":";
+  json += String(i2sSlot0Diagnostics.nonZeroSampleCount);
+  json += ",";
+  json += "\"i2sSlot1Rms\":";
+  json += String(i2sSlot1Diagnostics.rms);
+  json += ",";
+  json += "\"i2sSlot1Peak\":";
+  json += String(i2sSlot1Diagnostics.peak);
+  json += ",";
+  json += "\"i2sSlot1WindowCount\":";
+  json += String(i2sSlot1Diagnostics.windowCount);
+  json += ",";
+  json += "\"i2sSlot1ActiveWindowCount\":";
+  json += String(i2sSlot1Diagnostics.activeWindowCount);
+  json += ",";
+  json += "\"i2sSlot1SampleCount\":";
+  json += String(i2sSlot1Diagnostics.sampleCount);
+  json += ",";
+  json += "\"i2sSlot1NonZeroSampleCount\":";
+  json += String(i2sSlot1Diagnostics.nonZeroSampleCount);
+  json += ",";
   json += "\"i2sRetryDelayMs\":";
   json += String(i2sReady ? 0 : i2sRetryDelayMs);
   json += ",";
@@ -2177,10 +2430,28 @@ String cloudTelemetryJson(const char *type) {
   json += String(wsPacketsSent + udpPacketsSent);
   json += ",";
   json += "\"audioPacketsDropped\":";
-  json += String(wsSendFailures + udpSendFailures);
+  json += String(wsSendFailures + udpSendFailures + audioCaptureFramesDropped +
+                 audioCaptureFramesStale);
   json += ",";
   json += "\"audioSendFailures\":";
   json += String(wsSendFailures + udpSendFailures);
+  json += ",";
+  json += "\"audioCaptureQueueDepth\":";
+  json += String(audioCaptureQueue == nullptr
+                     ? 0
+                     : uxQueueMessagesWaiting(audioCaptureQueue));
+  json += ",";
+  json += "\"audioCaptureQueueHighWater\":";
+  json += String(audioCaptureQueueHighWater);
+  json += ",";
+  json += "\"audioCaptureFramesEnqueued\":";
+  json += String(audioCaptureFramesEnqueued);
+  json += ",";
+  json += "\"audioCaptureFramesDropped\":";
+  json += String(audioCaptureFramesDropped);
+  json += ",";
+  json += "\"audioCaptureFramesStale\":";
+  json += String(audioCaptureFramesStale);
   json += ",";
   json += "\"lastCommandId\":\"";
   json += jsonEscape(lastCommandId.c_str());
@@ -3732,9 +4003,7 @@ void handleCloudCommand(const String &message) {
     beginValidatedCommand(command);
     activeAudioSessionId = sessionId;
     activeAudioScanId = scanId;
-    audioSequence = 0;
-    audioDiscontinuityPending = false;
-    audioSessionActive = true;
+    activateAudioSessionCapture();
     sendCommandState(command, "applied", "OK", "audio session ready");
     sendCloudTelemetry("telemetry");
     return;
@@ -3940,7 +4209,11 @@ void setupCloudSocket() {
     return;
   }
   if (cloudSecurityDecision.transport == shcare::CloudTransport::Wss) {
+#if SMART_HEALTH_PRODUCTION_PROFILE
+    boundedCloudTcpClient->setCACert(BACKEND_CA_CERT);
+#else
     cloudSocket.setCACert(BACKEND_CA_CERT);
+#endif
   }
   cloudSocket.onMessage([](WebsocketsMessage message) {
     handleCloudMessage(message.data());
@@ -3997,7 +4270,14 @@ void connectCloudSocketIfNeeded() {
   const String url = cloudWsUrl();
   Serial.print("Connecting cloud control transport: ");
   Serial.println(url);
+#if SMART_HEALTH_PRODUCTION_PROFILE
+  // Production security already requires WSS. Calling the host/port/path
+  // overload retains the bounded, CA-configured transport instead of letting
+  // ArduinoWebsockets replace it with its default 30-120 second TLS client.
+  cloudSocket.connect(String(backendHost), backendPort, String("/esp"));
+#else
   cloudSocket.connect(url);
+#endif
 }
 
 void handleCloudSocket() {
@@ -4021,60 +4301,132 @@ void handleCloudSocket() {
   }
 }
 
-void sendAudioCloud(const int samplesRead) {
-  if (!otaRecoveryRuntimeServicesAllowed() || samplesRead <= 0 ||
-      WiFi.status() != WL_CONNECTED || deviceLocked) {
+void drainAudioCaptureQueue(std::size_t maxPackets) {
+  if (audioCaptureQueue == nullptr || maxPackets == 0 ||
+      !otaRecoveryRuntimeServicesAllowed()) {
     return;
   }
 
-  if (cloudConnected) {
-    if (!audioSessionActive) {
-      return;
+  AudioCaptureItem item;
+  for (std::size_t drained = 0;
+       drained < maxPackets &&
+       xQueueReceive(audioCaptureQueue, &item, 0) == pdTRUE;
+       ++drained) {
+    const std::uint32_t ageMs =
+        static_cast<std::uint32_t>(millis()) - item.capturedAtMonotonicMs;
+    if (ageMs > AUDIO_CAPTURE_MAX_FRAME_AGE_MS) {
+      if (audioCaptureFramesStale != UINT32_MAX) {
+        ++audioCaptureFramesStale;
+      }
+      if (item.sessionBound &&
+          item.sessionGeneration == currentAudioSessionGeneration()) {
+        audioDiscontinuityPending = true;
+      }
+      continue;
     }
-    const int64_t timestampMs = currentEpochMillis();
-    if (timestampMs <= 0) {
-      wsSendFailures++;
+
+    if (item.sessionBound) {
+      portENTER_CRITICAL(&audioCaptureStateMux);
+      const bool currentSession =
+          audioSessionActive &&
+          item.sessionGeneration == audioSessionGeneration;
+      portEXIT_CRITICAL(&audioCaptureStateMux);
+      if (!currentSession) {
+        if (audioCaptureFramesStale != UINT32_MAX) {
+          ++audioCaptureFramesStale;
+        }
+        continue;
+      }
+    }
+
+    if (!cloudConnected) {
+      if (cloudConfigured && wsSendFailures != UINT32_MAX) {
+        ++wsSendFailures;
+      }
+      sendAudioUdp(item.pcm, item.sampleCount);
+      continue;
+    }
+    if (!item.sessionBound || item.sampleCount == 0 ||
+        item.capturedAtEpochMs == 0) {
+      if (item.sessionBound) {
+        if (wsSendFailures != UINT32_MAX) {
+          ++wsSendFailures;
+        }
+        audioDiscontinuityPending = true;
+      }
+      continue;
+    }
+
+    if (nextExpectedCaptureOrdinalReady &&
+        item.captureOrdinal != nextExpectedCaptureOrdinal) {
       audioDiscontinuityPending = true;
-      return;
     }
     uint8_t flags = audioSequence == 0 ? shcare::kAudioV2FlagStart : 0;
-    if (audioDiscontinuityPending && audioSequence > 0) {
+    if (audioSequence > 0 && audioDiscontinuityPending) {
       flags |= shcare::kAudioV2FlagDiscontinuity;
     }
     const auto frame = shcare::buildAudioFrameV2(
         std::string(activeAudioSessionId.c_str()),
         std::string(activeAudioScanId.c_str()), audioSequence,
-        static_cast<uint64_t>(timestampMs), pcmBuffer,
-        static_cast<size_t>(samplesRead), flags, audioFrameBuffer,
+        item.capturedAtEpochMs, item.pcm,
+        static_cast<size_t>(item.sampleCount), flags, audioFrameBuffer,
         sizeof(audioFrameBuffer));
     if (!frame.ok()) {
-      wsSendFailures++;
+      if (wsSendFailures != UINT32_MAX) {
+        ++wsSendFailures;
+      }
       resetAudioSession();
       sendCloudEvent("audio.failed", "failed", "audio v2 frame rejected");
       return;
     }
-    if (cloudSocket.sendBinary((const char *)audioFrameBuffer,
-                               frame.bytesWritten)) {
-      wsPacketsSent++;
+
+    nextExpectedCaptureOrdinal = item.captureOrdinal + 1U;
+    nextExpectedCaptureOrdinalReady = true;
+    bool transportWriteComplete = true;
+#if SMART_HEALTH_PRODUCTION_PROFILE
+    boundedCloudTcpClient->beginObservedWrite();
+#endif
+    const bool websocketAccepted = cloudSocket.sendBinary(
+        (const char *)audioFrameBuffer, frame.bytesWritten);
+#if SMART_HEALTH_PRODUCTION_PROFILE
+    transportWriteComplete =
+        boundedCloudTcpClient->consumeObservedWriteComplete();
+#endif
+    if (websocketAccepted && transportWriteComplete) {
+      if (wsPacketsSent != UINT32_MAX) {
+        ++wsPacketsSent;
+      }
       audioDiscontinuityPending = false;
       if (audioSequence == UINT32_MAX) {
         resetAudioSession();
         sendCloudEvent("audio.failed", "failed", "audio sequence exhausted");
-      } else {
-        audioSequence++;
+        return;
       }
-      return;
+      ++audioSequence;
+      continue;
     }
-    wsSendFailures++;
+
+#if SMART_HEALTH_PRODUCTION_PROFILE
+    if (websocketAccepted && !transportWriteComplete) {
+      // ArduinoWebsockets 0.5.4 reports true after invoking a void transport
+      // send. A short TLS write corrupts the frame boundary, so fail the socket
+      // and let the normal close callback clear authentication/session state.
+      boundedCloudTcpClient->forceClose();
+      cloudSocket.available();
+    }
+#endif
+
+    if (wsSendFailures != UINT32_MAX) {
+      ++wsSendFailures;
+    }
+    // A failed START is retried as sequence zero with the next captured frame.
+    // Later failed attempts consume their sequence and mark the next frame as a
+    // discontinuity, preserving the existing SHC2 sender contract.
     if (audioSequence > 0 && audioSequence < UINT32_MAX) {
-      audioSequence++;
+      ++audioSequence;
     }
     audioDiscontinuityPending = true;
-    return;
   }
-
-  if (cloudConfigured) wsSendFailures++;
-  sendAudioUdp(samplesRead);
 }
 
 void startMdns() {
@@ -4115,12 +4467,19 @@ void setupArduinoOta() {
   ArduinoOTA.setPassword(otaPassword);
   ArduinoOTA.onStart([]() {
     Serial.println("ArduinoOTA update started.");
+    if (!pauseAudioCaptureTask()) {
+      Serial.println("ArduinoOTA aborted: audio capture did not pause safely.");
+      Update.abort();
+      otaInProgress = false;
+      return;
+    }
     otaInProgress = true;
     if (i2sReady) {
       const esp_err_t pauseResult = i2s_stop(MIC_I2S_PORT);
       if (pauseResult == ESP_OK) {
         i2sMaintenancePaused = true;
       } else {
+        resumeAudioCaptureTask();
         markI2sCaptureDegraded("I2S_LAN_OTA_PAUSE_FAILED");
       }
     }
@@ -4132,7 +4491,11 @@ void setupArduinoOta() {
       i2sMaintenancePaused = false;
       if (result != ESP_OK) {
         markI2sCaptureDegraded("I2S_LAN_OTA_RESUME_FAILED");
+      } else {
+        resumeAudioCaptureTask();
       }
+    } else {
+      resumeAudioCaptureTask();
     }
     otaInProgress = false;
   });
@@ -4147,7 +4510,11 @@ void setupArduinoOta() {
       i2sMaintenancePaused = false;
       if (result != ESP_OK) {
         markI2sCaptureDegraded("I2S_LAN_OTA_RESUME_FAILED");
+      } else {
+        resumeAudioCaptureTask();
       }
+    } else {
+      resumeAudioCaptureTask();
     }
     otaInProgress = false;
   });
@@ -4160,6 +4527,9 @@ void setupArduinoOta() {
 
 void startStationServices() {
   if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
     return;
   }
   setupCloudSocket();
@@ -4188,6 +4558,7 @@ void handleDeviceServices() {
     ArduinoOTA.handle();
   }
 
+  drainAudioCaptureQueue(AUDIO_CAPTURE_MAX_DRAIN_PER_LOOP);
   handleCloudSocket();
 }
 
@@ -4329,6 +4700,63 @@ void setupHeartbeatFilters() {
   Serial.println(AUDIO_STREAM_MODE);
 }
 
+void handleWiFiReconnect() {
+  if (!otaRecoveryRuntimeServicesAllowed()) {
+    return;
+  }
+  if (setupPortalActive || !hasWiFiConfig()) {
+    return;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiConnectionObserved) {
+      wifiConnectionObserved = true;
+      wifiReconnectAttempted = false;
+      wifiReconnectFailureCount = 0;
+      wifiReconnectDelayMs = 0;
+      lastWifiConnectAttemptMs = 0;
+      cloudReconnectFailureCount = 0;
+      cloudReconnectDelayMs = 0;
+      lastCloudConnectAttemptMs = 0;
+      Serial.println();
+      Serial.println("WiFi connected");
+      Serial.print("ESP32 IP: ");
+      Serial.println(WiFi.localIP());
+      configTime(0, 0, "pool.ntp.org", "time.google.com");
+      setupAudioUdp();
+      startStationServices();
+    }
+    return;
+  }
+
+  if (wifiConnectionObserved) {
+    wifiConnectionObserved = false;
+    udpAudioReady = false;
+    Serial.println("WiFi disconnected; local I2S capture remains active.");
+  }
+
+  const unsigned long nowMs = millis();
+  if (wifiReconnectAttempted &&
+      nowMs - lastWifiConnectAttemptMs < wifiReconnectDelayMs) {
+    return;
+  }
+
+  lastWifiConnectAttemptMs = nowMs;
+  wifiReconnectAttempted = true;
+  if (wifiReconnectFailureCount < 31U) {
+    ++wifiReconnectFailureCount;
+  }
+  wifiReconnectDelayMs = shcare::reconnectBackoffDelayMs(
+      wifiReconnectFailureCount, WIFI_RECONNECT_BASE_MS,
+      WIFI_RECONNECT_MAX_MS);
+
+  Serial.print("Starting bounded WiFi reconnect attempt ");
+  Serial.println(wifiReconnectFailureCount);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.begin(wifiSsid, wifiPass);
+}
+
 void setupWiFi() {
   if (!otaRecoveryRuntimeServicesAllowed()) {
     return;
@@ -4345,39 +4773,7 @@ void setupWiFi() {
       return;
     }
   }
-
-  Serial.println();
-  Serial.print("Connecting WiFi: ");
-  Serial.println(wifiSsid);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  WiFi.begin(wifiSsid, wifiPass);
-
-  const unsigned long startedAt = millis();
-  while (WiFi.status() != WL_CONNECTED &&
-         millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
-    maintainTaskWatchdog();
-    delay(300);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println();
-    runSetupPortal("Cannot connect to the configured WiFi network.");
-    if (!otaRecoveryRuntimeServicesAllowed()) {
-      return;
-    }
-  }
-
-  Serial.println();
-  Serial.println("WiFi connected");
-  cloudReconnectFailureCount = 0;
-  cloudReconnectDelayMs = 0;
-  lastCloudConnectAttemptMs = 0;
-  Serial.print("ESP32 IP: ");
-  Serial.println(WiFi.localIP());
-  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  handleWiFiReconnect();
 }
 
 void setupAudioUdp() {
@@ -4385,6 +4781,9 @@ void setupAudioUdp() {
     return;
   }
   udpAudioReady = false;
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
   if (!shcare::developmentUdpAllowed(
           isProductionProfile(),
           SMART_HEALTH_ENABLE_DEVELOPMENT_UDP != 0)) {
@@ -4412,16 +4811,16 @@ void setupAudioUdp() {
   udpAudioReady = true;
 }
 
-void sendAudioUdp(const int samplesRead) {
+void sendAudioUdp(const int16_t *samples, const int samplesRead) {
   if (!otaRecoveryRuntimeServicesAllowed() || !udpAudioReady ||
-      WiFi.status() != WL_CONNECTED || samplesRead <= 0) {
+      WiFi.status() != WL_CONNECTED || samples == nullptr || samplesRead <= 0) {
     return;
   }
 
   const size_t bytesToSend = samplesRead * sizeof(int16_t);
 
   audioUdp.beginPacket(audioServerIp, audioUdpPort);
-  audioUdp.write((const uint8_t *)pcmBuffer, bytesToSend);
+  audioUdp.write((const uint8_t *)samples, bytesToSend);
 
   if (audioUdp.endPacket() == 1) {
     udpPacketsSent++;
@@ -4430,14 +4829,28 @@ void sendAudioUdp(const int samplesRead) {
   }
 }
 
-void releaseI2SDriver() {
-  if (!i2sDriverInstalled) {
-    return;
+bool releaseI2SDriver() {
+  if (!pauseAudioCaptureTask()) {
+    return false;
   }
-  i2s_stop(MIC_I2S_PORT);
-  i2s_driver_uninstall(MIC_I2S_PORT);
+  i2sReady = false;
+  if (!i2sDriverInstalled) {
+    return true;
+  }
+  const esp_err_t stopResult = i2s_stop(MIC_I2S_PORT);
+  const esp_err_t uninstallResult = i2s_driver_uninstall(MIC_I2S_PORT);
+  if (uninstallResult != ESP_OK) {
+    Serial.printf("i2s_driver_uninstall failed after capture pause: %s\n",
+                  esp_err_to_name(uninstallResult));
+    return false;
+  }
   i2sDriverInstalled = false;
-  i2sMaintenancePaused = false;
+  i2sMaintenancePaused = true;
+  if (stopResult != ESP_OK && stopResult != ESP_ERR_INVALID_STATE) {
+    Serial.printf("i2s_stop reported during release: %s\n",
+                  esp_err_to_name(stopResult));
+  }
+  return true;
 }
 
 void scheduleI2sRetry(const char *stableCode, bool initFailure) {
@@ -4462,8 +4875,14 @@ bool setupI2S(bool recoveryAttempt) {
   if (!otaRecoveryRuntimeServicesAllowed()) {
     return false;
   }
-  if (i2sDriverInstalled) {
-    releaseI2SDriver();
+  if (!pauseAudioCaptureTask()) {
+    scheduleI2sRetry("I2S_CAPTURE_PAUSE_TIMEOUT", true);
+    return false;
+  }
+  if (i2sDriverInstalled && !releaseI2SDriver()) {
+    scheduleI2sRetry("I2S_DRIVER_RELEASE_FAILED", true);
+    resumeAudioCaptureTask();
+    return false;
   }
   i2sReady = false;
   i2sRuntimeState = recoveryAttempt ? I2sRuntimeState::Retrying
@@ -4497,6 +4916,7 @@ bool setupI2S(bool recoveryAttempt) {
     Serial.print("i2s_driver_install failed: ");
     Serial.println(esp_err_to_name(err));
     scheduleI2sRetry("I2S_DRIVER_INSTALL_FAILED", true);
+    resumeAudioCaptureTask();
     return false;
   }
   i2sDriverInstalled = true;
@@ -4507,6 +4927,7 @@ bool setupI2S(bool recoveryAttempt) {
     Serial.println(esp_err_to_name(err));
     releaseI2SDriver();
     scheduleI2sRetry("I2S_PIN_CONFIG_FAILED", true);
+    resumeAudioCaptureTask();
     return false;
   }
 
@@ -4516,6 +4937,7 @@ bool setupI2S(bool recoveryAttempt) {
     Serial.println(esp_err_to_name(err));
     releaseI2SDriver();
     scheduleI2sRetry("I2S_DMA_INIT_FAILED", true);
+    resumeAudioCaptureTask();
     return false;
   }
   i2sReady = true;
@@ -4535,13 +4957,17 @@ bool setupI2S(bool recoveryAttempt) {
   }
 
   Serial.println("I2S microphone ready");
+  resumeAudioCaptureTask();
   return true;
 }
 
 void markI2sCaptureDegraded(const char *stableCode) {
   const bool sessionInterrupted = audioSessionActive;
-  releaseI2SDriver();
+  if (!releaseI2SDriver()) {
+    stableCode = "I2S_DRIVER_RELEASE_FAILED";
+  }
   scheduleI2sRetry(stableCode, false);
+  resumeAudioCaptureTask();
   if (sessionInterrupted) {
     sendCloudEvent("audio.failed", "failed",
                    "i2s capture interrupted; session was closed");
@@ -4549,6 +4975,18 @@ void markI2sCaptureDegraded(const char *stableCode) {
 }
 
 void handleI2SRecovery() {
+  bool captureFault = false;
+  bool emptyFault = false;
+  portENTER_CRITICAL(&audioCaptureStateMux);
+  captureFault = pendingI2sCaptureFault;
+  emptyFault = pendingI2sCaptureEmptyFault;
+  pendingI2sCaptureFault = false;
+  pendingI2sCaptureEmptyFault = false;
+  portEXIT_CRITICAL(&audioCaptureStateMux);
+  if (captureFault) {
+    markI2sCaptureDegraded(emptyFault ? "I2S_READ_EMPTY" : "I2S_READ_FAILED");
+    return;
+  }
   if (i2sReady ||
       millis() - lastI2sAttemptMs < i2sRetryDelayMs) {
     return;
@@ -4781,6 +5219,24 @@ void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {
     Serial.print(">wssFail:");
     Serial.println((int32_t)wsSendFailures);
 
+    Serial.print(">i2sSlot0Rms:");
+    Serial.println(i2sSlot0Diagnostics.rms);
+
+    Serial.print(">i2sSlot0Peak:");
+    Serial.println(i2sSlot0Diagnostics.peak);
+
+    Serial.print(">i2sSlot0ActiveWindows:");
+    Serial.println(i2sSlot0Diagnostics.activeWindowCount);
+
+    Serial.print(">i2sSlot1Rms:");
+    Serial.println(i2sSlot1Diagnostics.rms);
+
+    Serial.print(">i2sSlot1Peak:");
+    Serial.println(i2sSlot1Diagnostics.peak);
+
+    Serial.print(">i2sSlot1ActiveWindows:");
+    Serial.println(i2sSlot1Diagnostics.activeWindowCount);
+
     plotPeak = 0;
     rawPeak = 0;
     filteredPeak = 0;
@@ -4790,6 +5246,209 @@ void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {
     beatsInPlotWindow = 0;
     lastPlotMs = now;
   }
+}
+
+std::uint32_t saturatingCounterAdd(std::uint32_t current,
+                                   std::uint32_t increment) {
+  return current > UINT32_MAX - increment ? UINT32_MAX : current + increment;
+}
+
+void updateI2sSlotDiagnostics(const int32_t *interleavedSamples,
+                              const int frameCount) {
+  if (interleavedSamples == nullptr || frameCount <= 0) {
+    return;
+  }
+
+  I2sSlotDiagnostics *slots[I2S_CHANNEL_COUNT] = {
+      &i2sSlot0Diagnostics,
+      &i2sSlot1Diagnostics,
+  };
+  for (int slotIndex = 0; slotIndex < I2S_CHANNEL_COUNT; ++slotIndex) {
+    std::uint64_t sumSquares = 0;
+    std::uint32_t peak = 0;
+    std::uint32_t nonZeroSamples = 0;
+    for (int frame = 0; frame < frameCount; ++frame) {
+      const std::int64_t shiftedSample =
+          static_cast<std::int64_t>(
+              interleavedSamples[frame * I2S_CHANNEL_COUNT + slotIndex]) >>
+          RAW_SHIFT;
+      const std::uint64_t magnitude =
+          shiftedSample < 0 ? static_cast<std::uint64_t>(-shiftedSample)
+                            : static_cast<std::uint64_t>(shiftedSample);
+      sumSquares += magnitude * magnitude;
+      if (magnitude > peak) {
+        peak = static_cast<std::uint32_t>(magnitude);
+      }
+      if (magnitude != 0) {
+        ++nonZeroSamples;
+      }
+    }
+
+    I2sSlotDiagnostics &diagnostics = *slots[slotIndex];
+    diagnostics.rms = static_cast<std::uint32_t>(
+        sqrtf(static_cast<float>(sumSquares / frameCount)));
+    diagnostics.peak = peak;
+    diagnostics.windowCount =
+        saturatingCounterAdd(diagnostics.windowCount, 1);
+    diagnostics.activeWindowCount = saturatingCounterAdd(
+        diagnostics.activeWindowCount, peak > 0 ? 1 : 0);
+    diagnostics.sampleCount = saturatingCounterAdd(
+        diagnostics.sampleCount, static_cast<std::uint32_t>(frameCount));
+    diagnostics.nonZeroSampleCount = saturatingCounterAdd(
+        diagnostics.nonZeroSampleCount, nonZeroSamples);
+  }
+}
+
+void captureI2sFrame() {
+  if (!otaRecoveryRuntimeServicesAllowed() || !i2sReady ||
+      i2sMaintenancePaused) {
+    return;
+  }
+
+  size_t bytesRead = 0;
+  const esp_err_t result =
+      i2s_read(MIC_I2S_PORT, micBuffer, sizeof(micBuffer), &bytesRead,
+               pdMS_TO_TICKS(250));
+
+  if (result == ESP_OK && bytesRead > 0) {
+    i2sConsecutiveReadFailures = 0;
+    const int samplesRead =
+        bytesRead / (sizeof(int32_t) * I2S_CHANNEL_COUNT);
+    updateI2sSlotDiagnostics(micBuffer, samplesRead);
+
+    AudioCaptureItem item;
+    item.sampleCount = static_cast<std::uint16_t>(samplesRead);
+    item.capturedAtMonotonicMs = static_cast<std::uint32_t>(millis());
+    for (int i = 0; i < samplesRead; i++) {
+      const int sampleOffset = i * I2S_CHANNEL_COUNT;
+      const int32_t rawA = micBuffer[sampleOffset];
+      const int32_t rawB = micBuffer[sampleOffset + 1];
+      const int32_t rawMixed = (int32_t)(((int64_t)rawA + rawB) / 2);
+
+      const int32_t rawLevel = abs32(rawMixed >> RAW_SHIFT);
+      if (rawLevel > rawPeak) {
+        rawPeak = rawLevel;
+      }
+
+      const float centered = preprocessRawSample(rawMixed);
+      const int16_t listen16 = processListenSample(centered);
+      const int16_t metric16 = processMetricSample(centered);
+
+      item.pcm[i] = selectStreamSample(centered, listen16, metric16);
+      updateAgcAndPlotter(listen16, metric16);
+    }
+    portENTER_CRITICAL(&audioCaptureStateMux);
+    item.sessionBound = audioSessionActive;
+    item.sessionGeneration = audioSessionGeneration;
+    if (item.sessionBound) {
+      item.captureOrdinal = audioCaptureOrdinal;
+      if (audioCaptureOrdinal != UINT32_MAX) {
+        ++audioCaptureOrdinal;
+      }
+    }
+    portEXIT_CRITICAL(&audioCaptureStateMux);
+    if (item.sessionBound) {
+      const int64_t epochMs = currentEpochMillis();
+      item.capturedAtEpochMs = epochMs > 0 ? static_cast<uint64_t>(epochMs) : 0;
+    }
+    if (audioCaptureQueue != nullptr && (item.sessionBound || udpAudioReady)) {
+      if (xQueueSend(audioCaptureQueue, &item, 0) == pdTRUE) {
+        portENTER_CRITICAL(&audioCaptureStateMux);
+        if (audioCaptureFramesEnqueued != UINT32_MAX) {
+          ++audioCaptureFramesEnqueued;
+        }
+        const std::uint32_t queueDepth =
+            static_cast<std::uint32_t>(uxQueueMessagesWaiting(audioCaptureQueue));
+        if (queueDepth > audioCaptureQueueHighWater) {
+          audioCaptureQueueHighWater = queueDepth;
+        }
+        portEXIT_CRITICAL(&audioCaptureStateMux);
+      } else {
+        portENTER_CRITICAL(&audioCaptureStateMux);
+        if (audioCaptureFramesDropped != UINT32_MAX) {
+          ++audioCaptureFramesDropped;
+        }
+        portEXIT_CRITICAL(&audioCaptureStateMux);
+      }
+    }
+    return;
+  }
+
+  if (i2sReadFailureCount != UINT32_MAX) {
+    ++i2sReadFailureCount;
+  }
+  if (i2sConsecutiveReadFailures != UINT32_MAX) {
+    ++i2sConsecutiveReadFailures;
+  }
+  if (i2sConsecutiveReadFailures >= I2S_READ_FAILURE_THRESHOLD) {
+    const char *stableCode =
+        result == ESP_OK ? "I2S_READ_EMPTY" : "I2S_READ_FAILED";
+    Serial.print("I2S capture degraded after bounded read failures: ");
+    Serial.println(result == ESP_OK ? stableCode : esp_err_to_name(result));
+    i2sConsecutiveReadFailures = 0;
+    portENTER_CRITICAL(&audioCaptureStateMux);
+    pendingI2sCaptureFault = true;
+    pendingI2sCaptureEmptyFault = result == ESP_OK;
+    audioCapturePauseRequested = true;
+    i2sReady = false;
+    portEXIT_CRITICAL(&audioCaptureStateMux);
+  }
+}
+
+void audioCaptureTask(void *context) {
+  (void)context;
+  while (true) {
+    portENTER_CRITICAL(&audioCaptureStateMux);
+    const bool pauseRequested = audioCapturePauseRequested;
+    if (pauseRequested && !audioCapturePaused) {
+      audioCapturePaused = true;
+    } else if (!pauseRequested && audioCapturePaused) {
+      audioCapturePaused = false;
+    }
+    const bool acknowledgePause = pauseRequested && audioCapturePaused;
+    portEXIT_CRITICAL(&audioCaptureStateMux);
+    if (acknowledgePause) {
+      if (audioCapturePausedAck != nullptr) {
+        xSemaphoreGive(audioCapturePausedAck);
+      }
+      vTaskDelay(pdMS_TO_TICKS(2));
+      continue;
+    }
+    captureI2sFrame();
+    if (!i2sReady) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
+}
+
+bool startAudioCaptureTask() {
+  if (audioCaptureTaskHandle != nullptr) {
+    return true;
+  }
+  if (audioCaptureQueue == nullptr) {
+    audioCaptureQueue = xQueueCreateStatic(
+        AUDIO_CAPTURE_QUEUE_CAPACITY, sizeof(AudioCaptureItem),
+        reinterpret_cast<std::uint8_t *>(audioCaptureQueueStorage),
+        &audioCaptureQueueControl);
+  }
+  if (audioCapturePausedAck == nullptr) {
+    audioCapturePausedAck =
+        xSemaphoreCreateBinaryStatic(&audioCapturePausedAckControl);
+  }
+  if (audioCaptureQueue == nullptr || audioCapturePausedAck == nullptr) {
+    Serial.println("Audio capture task unavailable: static IPC setup failed.");
+    return false;
+  }
+  const BaseType_t created = xTaskCreatePinnedToCore(
+      audioCaptureTask, "shcare-audio-capture",
+      AUDIO_CAPTURE_TASK_STACK_BYTES, nullptr, AUDIO_CAPTURE_TASK_PRIORITY,
+      &audioCaptureTaskHandle, ARDUINO_RUNNING_CORE);
+  if (created != pdPASS || audioCaptureTaskHandle == nullptr) {
+    audioCaptureTaskHandle = nullptr;
+    Serial.println("Audio capture task unavailable: task creation failed.");
+    return false;
+  }
+  return true;
 }
 
 void setup() {
@@ -4808,6 +5467,9 @@ void setup() {
   loadRuntimeConfig();
   setupI2S(false);
   setupHeartbeatFilters();
+  if (!startAudioCaptureTask()) {
+    markI2sCaptureDegraded("AUDIO_CAPTURE_TASK_START_FAILED");
+  }
   setupWiFi();
   setupAudioUdp();
   startStationServices();
@@ -4828,68 +5490,11 @@ void loop() {
   }
   handleDeviceServices();
   handlePendingFirmwareHealth();
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnected, reconnecting...");
-    setupWiFi();
-    setupAudioUdp();
-    startStationServices();
-  }
-
+  drainAudioCaptureQueue(2);
+  handleWiFiReconnect();
   if (!i2sReady || i2sMaintenancePaused) {
     delay(25);
-    handleDeviceServices();
-    handlePendingFirmwareHealth();
-    return;
   }
-
-  size_t bytesRead = 0;
-
-  esp_err_t result = i2s_read(MIC_I2S_PORT, micBuffer, sizeof(micBuffer),
-                              &bytesRead, pdMS_TO_TICKS(250));
-
-  if (result == ESP_OK && bytesRead > 0) {
-    i2sConsecutiveReadFailures = 0;
-    int samplesRead = bytesRead / (sizeof(int32_t) * I2S_CHANNEL_COUNT);
-
-    for (int i = 0; i < samplesRead; i++) {
-      const int sampleOffset = i * I2S_CHANNEL_COUNT;
-      const int32_t rawA = micBuffer[sampleOffset];
-      const int32_t rawB = micBuffer[sampleOffset + 1];
-      const int32_t rawMixed = (int32_t)(((int64_t)rawA + rawB) / 2);
-
-      int32_t rawLevel = abs32(rawMixed >> RAW_SHIFT);
-      if (rawLevel > rawPeak) {
-        rawPeak = rawLevel;
-      }
-
-      float centered = preprocessRawSample(rawMixed);
-      int16_t listen16 = processListenSample(centered);
-      int16_t metric16 = processMetricSample(centered);
-
-      pcmBuffer[i] = selectStreamSample(centered, listen16, metric16);
-
-      updateAgcAndPlotter(listen16, metric16);
-    }
-
-    sendAudioCloud(samplesRead);
-  } else {
-    if (i2sReadFailureCount != UINT32_MAX) {
-      ++i2sReadFailureCount;
-    }
-    if (i2sConsecutiveReadFailures != UINT32_MAX) {
-      ++i2sConsecutiveReadFailures;
-    }
-    if (i2sConsecutiveReadFailures >= I2S_READ_FAILURE_THRESHOLD) {
-      const char *stableCode = result == ESP_OK ? "I2S_READ_EMPTY"
-                                                : "I2S_READ_FAILED";
-      Serial.print("I2S capture degraded after bounded read failures: ");
-      Serial.println(result == ESP_OK ? stableCode : esp_err_to_name(result));
-      i2sConsecutiveReadFailures = 0;
-      markI2sCaptureDegraded(stableCode);
-    }
-  }
-
   handleDeviceServices();
   handlePendingFirmwareHealth();
 }

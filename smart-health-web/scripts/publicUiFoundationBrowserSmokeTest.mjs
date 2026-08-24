@@ -154,7 +154,7 @@ async function inspectRoute(page) {
   return page.evaluate(() => {
     const root = document.documentElement;
     const shell = document.querySelector(
-      '.shc-public-layout[data-shcare-public-foundation="v1"]',
+      '.shc-public-layout[data-shcare-public-visual="legacy"]',
     );
     const main = document.querySelector("#shcare-public-main");
     const visible = (element) => {
@@ -254,6 +254,15 @@ async function inspectRoute(page) {
       tinyTargets,
       visualSurfaces,
       decoratedHeadings,
+      brandText:
+        document.querySelector(".shc-header .shc-brand")?.textContent
+          ?.replace(/\s+/g, " ")
+          .trim() || "",
+      heroVideoCount: document.querySelectorAll(".shc-hero video").length,
+      hasClassicVideoLayers: Boolean(
+        document.querySelector(".shc-hero-video-edge") &&
+          document.querySelector(".shc-hero-video-main"),
+      ),
       autoplayVideos: document.querySelectorAll("video[autoplay]").length,
       infiniteAnimations,
     };
@@ -318,7 +327,7 @@ async function runCase(browser, siteUrl, viewport, theme) {
       });
       await page
         .locator(
-          '.shc-public-layout[data-shcare-public-foundation="v1"] #shcare-public-main',
+          '.shc-public-layout[data-shcare-public-visual="legacy"] #shcare-public-main',
         )
         .waitFor({ state: "visible" });
 
@@ -354,30 +363,10 @@ async function runCase(browser, siteUrl, viewport, theme) {
         `targets below 44px: ${layout.tinyTargets.slice(0, 8).join(", ")}`,
       );
       check(
-        layout.visualSurfaces.every(
-          (surface) =>
-            (!surface.backdrop || surface.backdrop === "none") &&
-            (!surface.filter || surface.filter === "none"),
-        ),
-        `glass/filter remained: ${layout.visualSurfaces
-          .filter(
-            (surface) =>
-              (surface.backdrop && surface.backdrop !== "none") ||
-              (surface.filter && surface.filter !== "none"),
-          )
-          .slice(0, 5)
-          .map(
-            (surface) =>
-              `${surface.className}: ${surface.backdrop}/${surface.filter}`,
-          )
-          .join(", ")}`,
-      );
-      check(
         layout.decoratedHeadings.every(
           (heading) =>
             heading.backgroundClip !== "text" &&
             heading.webkitTextFillColor !== "transparent" &&
-            heading.textShadow === "none" &&
             heading.filter === "none",
         ),
         `decorated heading remained: ${layout.decoratedHeadings
@@ -385,7 +374,6 @@ async function runCase(browser, siteUrl, viewport, theme) {
             (heading) =>
               heading.backgroundClip === "text" ||
               heading.webkitTextFillColor === "transparent" ||
-              heading.textShadow !== "none" ||
               heading.filter !== "none",
           )
           .slice(0, 5)
@@ -397,6 +385,17 @@ async function runCase(browser, siteUrl, viewport, theme) {
         layout.infiniteAnimations === 0,
         "infinite decorative animation remained",
       );
+
+      if (route.id === "public.home") {
+        check(
+          layout.brandText === "Shcare",
+          `classic brand changed to "${layout.brandText}"`,
+        );
+        check(
+          layout.heroVideoCount === 2 && layout.hasClassicVideoLayers,
+          `classic two-layer hero media is missing (${layout.heroVideoCount} videos)`,
+        );
+      }
 
       if (
         route.id === "public.not-found.catch-all" ||

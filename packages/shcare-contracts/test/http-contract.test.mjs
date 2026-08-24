@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { load as parseYaml } from "js-yaml";
 
 const root = new URL("../", import.meta.url);
+const UINT32_MAX = 0xFFFF_FFFF;
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(relativePath, root), "utf8"));
@@ -107,6 +108,52 @@ function matchesClosedSchema(value, schema, document, documents) {
 }
 
 describe("Shcare HTTP v1 contracts", () => {
+  it("publishes bounded optional dual-microphone telemetry aggregates without raw audio", async () => {
+    const commonSchema = await readJson("http/v1/device-operation-common.schema.json");
+    const fixture = await readJson("http/v1/fixtures/device-dual-mic-telemetry.json");
+    const openApi = parseYaml(
+      await readText("../../smart-health-embedded/web-monitor/public/openapi.yaml"),
+    );
+    const telemetrySchema = commonSchema.$defs.telemetry;
+    const openApiTelemetry = openApi.components.schemas.DeviceOperationTelemetry;
+    const aggregateFields = [
+      "audioCaptureQueueDepth",
+      "audioCaptureQueueHighWater",
+      "audioCaptureFramesEnqueued",
+      "audioCaptureFramesDropped",
+      "audioCaptureFramesStale",
+      "i2sSlot0Rms",
+      "i2sSlot0Peak",
+      "i2sSlot0WindowCount",
+      "i2sSlot0ActiveWindowCount",
+      "i2sSlot0SampleCount",
+      "i2sSlot0NonZeroSampleCount",
+      "i2sSlot1Rms",
+      "i2sSlot1Peak",
+      "i2sSlot1WindowCount",
+      "i2sSlot1ActiveWindowCount",
+      "i2sSlot1SampleCount",
+      "i2sSlot1NonZeroSampleCount",
+    ];
+
+    assert.equal(telemetrySchema.additionalProperties, false);
+    assert.equal(matchesClosedSchema(fixture, telemetrySchema, commonSchema, new Map()), true);
+    assert.equal(fixture.i2sStatus, "ready");
+    assert.equal(fixture.audioStatus, "ready");
+    for (const field of aggregateFields) {
+      const expectedSchema = { type: "integer", minimum: 0, maximum: UINT32_MAX };
+      assert.deepEqual(telemetrySchema.properties[field], expectedSchema);
+      assert.deepEqual(openApiTelemetry.properties[field], expectedSchema);
+      assert.equal(matchesClosedSchema({ ...fixture, [field]: -1 }, telemetrySchema, commonSchema, new Map()), false);
+      assert.equal(matchesClosedSchema({ ...fixture, [field]: 0.5 }, telemetrySchema, commonSchema, new Map()), false);
+      assert.equal(matchesClosedSchema({ ...fixture, [field]: UINT32_MAX + 1 }, telemetrySchema, commonSchema, new Map()), false);
+      assert.equal(matchesClosedSchema({ ...fixture, [field]: "1" }, telemetrySchema, commonSchema, new Map()), false);
+    }
+    assert.equal(matchesClosedSchema({ ...fixture, deviceSecret: "forbidden" }, telemetrySchema, commonSchema, new Map()), false);
+    assert.equal(matchesClosedSchema({ ...fixture, rawAudio: "forbidden" }, telemetrySchema, commonSchema, new Map()), false);
+    assert.doesNotMatch(JSON.stringify(fixture), /(?:secret|credential|password|authorization|token|rawAudio|pcmSamples)/i);
+  });
+
   it("publishes one exact owner-bound account profile update receipt", async () => {
     const requestSchema = await readJson(
       "http/v1/account-profile-update-request.schema.json",

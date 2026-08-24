@@ -93,10 +93,16 @@ const { createKeyedSerialExecutor } = require("./src/deviceEventQueue");
 const { attachActor, createRequestContext, getRequestContext } = require("./src/requestContext");
 const { createMqttControlPlane } = require("./src/mqttControlPlane");
 const { buildProductionReadiness } = require("./src/productionReadiness");
+const { assertRuntimeSecurity, resolveAuthMode } = require("./src/runtimeSecurity");
+const { postOutboundWebhook } = require("./src/outboundWebhookSecurity");
 const { buildPushNotificationPayload } = require("./src/notificationPushPayload");
 const {
   resolveEligibleNotificationDevices,
 } = require("./src/notificationDeviceEligibility");
+const {
+  isValidFcmRegistrationToken,
+  selectBoundedNotificationDevices,
+} = require("./src/notificationDeviceLimits");
 const {
   CLOUD_NOTIFICATION_PREFERENCE_KEYS,
   mergeNotificationPreferences,
@@ -124,7 +130,6 @@ const {
   normalizeAiSettings,
 } = require("./src/aiRuntime");
 const { buildScanObjectKey, createStorageAdapter } = require("./src/storageAdapter");
-const { encryptJson } = require("./src/cryptoPhi");
 const {
   DEVICE_AUTH_CHALLENGE_TTL_MS,
   assertDeviceAuthenticationFence,
@@ -213,12 +218,16 @@ const AUDIO_DIR = path.join(DATA_DIR, "audio");
 const TMP_DIR = path.join(DATA_DIR, "tmp");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const DATA_BACKEND = resolveBackendFromEnv(process.env);
-const AUTH_MODE = String(process.env.AUTH_MODE || "demo").toLowerCase();
+const AUTH_MODE = resolveAuthMode(process.env);
 const FIREBASE_AUTH_ENABLED = isFirebaseAuthEnabled(process.env);
 const ALLOW_DEMO_AUTH = String(process.env.ALLOW_DEMO_AUTH || "").toLowerCase() === "true";
-const SHOULD_SEED_DEMO_DATA = AUTH_MODE !== "production";
+const SHOULD_SEED_DEMO_DATA = AUTH_MODE === "demo";
 
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 100 * 1024 * 1024);
+const MAX_JSON_BODY_BYTES = Math.min(
+  1024 * 1024,
+  Math.max(4 * 1024, Number(process.env.MAX_JSON_BODY_BYTES || 64 * 1024) || 64 * 1024),
+);
 const MAX_WS_BUFFER_BYTES = Number(process.env.MAX_WS_BUFFER_BYTES || 1024 * 1024);
 const MAX_DEVICE_AUDIO_FRAME_BYTES = Number(process.env.MAX_DEVICE_AUDIO_FRAME_BYTES || 4 * 1024);
 const MAX_SCAN_WAVEFORM_BYTES = 256 * 1024;
@@ -9431,8 +9440,8 @@ function sendBuffer(res, statusCode, buffer, headers = {}) {
   res.end(buffer);
 }
 
-async function readRequestBody(req) {
-  const buffer = await readRequestBuffer(req);
+async function readRequestBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
+  const buffer = await readRequestBuffer(req, maxBytes);
   return buffer.toString("utf8");
 }
 
@@ -9455,8 +9464,8 @@ async function readRequestBuffer(req, maxBytes = MAX_BODY_BYTES) {
   return Buffer.concat(chunks);
 }
 
-async function readJsonBody(req) {
-  const text = await readRequestBody(req);
+async function readJsonBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
+  const text = await readRequestBody(req, maxBytes);
   if (!text.trim()) {
     return {};
   }
@@ -11431,9 +11440,11 @@ async function sendNotificationPush(notification, options = {}) {
     });
     return null;
   }
-  const devices = await listEligibleNotificationDevices(notification, {
-    deviceIds: options.deviceIds,
-  });
+  const devices = selectBoundedNotificationDevices(
+    await listEligibleNotificationDevices(notification, {
+      deviceIds: options.deviceIds,
+    }),
+  );
   if (devices.length === 0) {
     const attempts = [
       buildNotificationPushAttempt(notification, {
@@ -11612,12 +11623,27 @@ async function sendTestOutbound(payload = {}, user = null) {
       .update(bodyText)
       .digest("hex");
   }
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: bodyText,
-  });
-  const responseText = await response.text();
+  let outboundResult;
+  try {
+    outboundResult = await postOutboundWebhook({
+      url,
+      headers,
+      bodyText,
+      env: process.env,
+      tenantManaged: !process.env.OUTBOUND_WEBHOOK_URL,
+    });
+  } catch (error) {
+    const statusCode = error?.code === "OUTBOUND_WEBHOOK_DESTINATION_NOT_ALLOWED" ? 403 :
+      error?.code === "OUTBOUND_WEBHOOK_DESTINATION_INVALID" ? 422 :
+      error?.code === "OUTBOUND_WEBHOOK_TIMEOUT" ? 504 : 502;
+    throw httpError(
+      statusCode,
+      error?.message || "Outbound webhook request failed",
+      error?.code || "OUTBOUND_WEBHOOK_REQUEST_FAILED",
+      error?.details,
+    );
+  }
+  const { response, responseText } = outboundResult;
   if (!response.ok) {
     throw httpError(502, `Webhook ${channel} tra ve HTTP ${response.status}: ${responseText.slice(0, 300)}`);
   }
@@ -18936,8 +18962,12 @@ async function handleNotificationsApi(req, res, segments) {
     const sessionUser = requirePrimarySessionUser(req);
     const payload = await readJsonBody(req);
     const fcmToken = readString(payload.fcmToken, 4096);
-    if (!fcmToken) {
-      throw httpError(400, "FCM token is required");
+    if (!isValidFcmRegistrationToken(fcmToken)) {
+      throw httpError(
+        400,
+        "FCM token has an invalid format",
+        "INVALID_NOTIFICATION_DEVICE_TOKEN",
+      );
     }
     const authSessionId = readString(req.authSession?.id, 160);
     if (!authSessionId) {
@@ -24905,6 +24935,7 @@ function startNetworkServers() {
 }
 
 async function startRuntime() {
+  assertRuntimeSecurity(process.env);
   ensureDataDirs();
   dataStore = createDataStore({
     backend: DATA_BACKEND,
@@ -24913,6 +24944,7 @@ async function startRuntime() {
     ensureDataDirs,
     createEmptyDb,
     normalizeDb,
+    env: process.env,
   });
   await dataStore.init();
   db = normalizeDb(await dataStore.load());

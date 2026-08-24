@@ -37,6 +37,13 @@ test("doctor detail removes synthetic audit, assignment and dead edit controls",
   assert.doesNotMatch(source, /Timeline/);
 });
 
+test("doctor active states use the accessible success text token", async () => {
+  const source = await readFile(doctorsPath, "utf8");
+
+  assert.match(source, /bg-success\/10 text-success-foreground/);
+  assert.doesNotMatch(source, /text-success(?:\s|")/);
+});
+
 test("Firebase action is a report-only reconciliation with canonical parsing", async () => {
   const [source, apiSource] = await Promise.all([
     readFile(doctorsPath, "utf8"),

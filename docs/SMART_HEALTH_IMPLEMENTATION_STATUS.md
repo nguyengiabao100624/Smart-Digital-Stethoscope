@@ -2755,3 +2755,17 @@ KLTN report artifacts generated from this evidence set:
 - Verified product-source revision is `c1933d979db69ae8bc105489d1accdec9bfd0fe5`. The only source change after the earlier RC2 proof is a self-contained synthetic identity-migration fixture and its smoke-test binding; it fixes a reproduced clean-clone `ENOENT` without changing runtime behavior.
 - Fresh backend, shared contract, Web, Admin, Android debug and firmware production/OTA gates pass. Git remote push authorization passes in dry-run.
 - Phase 8 remains active. Next is RC2 branch push and Firebase preview creation. Production backend/main promotion stays gated by migrations `044–054`, Render start-mode confirmation, CORS, rollback and live cleanup proof; Android signing/provider/security gates remain open and hardware HIL remains deferred.
+
+## 2026-08-24 G3 integration status
+
+- G0–G2 of the approved legacy-UI/full-function integration plan are closed. G3 source/build/dual-mic HIL is complete; G3 is not marked complete while Deep Security and production secure-device/provider proof remain open.
+- Shared/device telemetry convergence is real: `51/51` shared contracts, `82/82` device-security tests and backend check pass.
+- Firmware production/development/OTA builds and four focused source contracts pass. Production SHA-256 is `A31F9F6B32AF05F253AEB5D00063F8BA0318D6C9965CB0F9EE01B9CB02E54004`; the same artifact was flashed and both I2S slots passed bounded non-PHI HIL.
+- No firmware P0/P1 remains after independent review. P2: telemetry counters are not captured under one common snapshot and may differ slightly within one projection.
+- Deep Security remains a durable release blocker. Plugin `0.1.21`, its skill and durable tools are available and the authoritative scan context loaded successfully, but discovery was rejected because this `Full access` thread supplies `permission_profile=disabled`; workers require a host-managed filesystem profile. Switch the composer to `Ask for approval` and send a new turn, then resume the same scan. It was not replaced, completed, failed or cancelled.
+
+## 2026-08-24 G3 security remediation status
+
+- Deep Security is no longer a blocker: scan `1b48646c-c3fe-4835-9526-92177be380ae` was finalized with `8` findings and canonical artifacts. Remediation covers production demo-auth fail-closed behavior, tenant webhook SSRF, bounded JSON/trusted-proxy handling, bounded notification token ownership/fan-out, Android signed-notification nonce consumption, and versioned AES-256-GCM PHI persistence/backfill.
+- Focused and aggregate backend gates pass, including concurrent notification registration, PHI AAD/wrong-key/backfill tests, clinical status, workspace/repositories and KLT. Web/Admin lint/contracts/build and Android `831/831` unit tests plus compile/lint/APK pass. Firmware production/development builds pass.
+- G3 remains active until the current browser smoke, candidate freeze and production/secure-device preflight are recorded. G4 has not started and production has not been promoted by this checkpoint.

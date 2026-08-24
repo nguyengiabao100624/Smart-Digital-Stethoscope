@@ -1049,7 +1049,7 @@ export function Devices() {
                     ) : (
                       <>
                         <WifiOff className="h-5 w-5 text-destructive" />
-                        <span className="text-sm font-semibold uppercase tracking-wide text-destructive">
+                        <span className="text-sm font-semibold uppercase tracking-wide text-danger-text">
                           Offline
                         </span>
                       </>

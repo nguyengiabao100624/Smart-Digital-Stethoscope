@@ -22,33 +22,60 @@ const browserRuntime = resolveBrowserSmokeRuntime(
   browserArgument || process.env.SHCARE_UI_SMOKE_BROWSER || "chromium",
 );
 
-const cases = [
-  {
-    name: "phone-light",
-    viewport: { width: 390, height: 844 },
-    colorScheme: "light",
-    preference: "light",
-  },
-  {
-    name: "tablet-system-dark",
-    viewport: { width: 768, height: 1024 },
-    colorScheme: "dark",
-    preference: "system",
-  },
-  {
-    name: "desktop-dark",
-    viewport: { width: 1440, height: 900 },
-    colorScheme: "dark",
-    preference: "dark",
-  },
+const viewportMatrix = [
+  { name: "phone-compact", width: 360, height: 800 },
+  { name: "phone", width: 390, height: 844 },
+  { name: "tablet", width: 768, height: 1024 },
+  { name: "laptop", width: 1024, height: 900 },
+  { name: "desktop", width: 1440, height: 900 },
 ];
-const selectedCases = process.env.SHCARE_UI_SMOKE_CASE
-  ? cases.filter((testCase) => testCase.name === process.env.SHCARE_UI_SMOKE_CASE)
-  : cases;
+const themeMatrix = [
+  { preference: "light", colorScheme: "light" },
+  { preference: "dark", colorScheme: "dark" },
+  { preference: "system", colorScheme: "dark" },
+];
 
-if (!selectedCases.length) {
+function readFilter(name) {
+  const prefix = `--${name}=`;
+  return (
+    process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length) || ""
+  ).trim();
+}
+
+const viewportFilter = readFilter("viewport");
+const themeFilter = readFilter("theme");
+const selectedViewports = viewportMatrix.filter(
+  (viewport) =>
+    !viewportFilter ||
+    viewport.name === viewportFilter ||
+    String(viewport.width) === viewportFilter,
+);
+const selectedThemes = themeMatrix.filter(
+  (theme) => !themeFilter || theme.preference === themeFilter,
+);
+const allSelectedCases = selectedViewports.flatMap((viewport) =>
+  selectedThemes.map((theme) => ({
+    name: `${viewport.name}-${theme.preference}`,
+    viewport: { width: viewport.width, height: viewport.height },
+    colorScheme: theme.colorScheme,
+    preference: theme.preference,
+  })),
+);
+const legacyCaseAliases = new Map([
+  ["phone-light", "phone-light"],
+  ["tablet-system-dark", "tablet-system"],
+  ["desktop-dark", "desktop-dark"],
+]);
+const environmentCase = process.env.SHCARE_UI_SMOKE_CASE || "";
+const selectedCases = environmentCase
+  ? allSelectedCases.filter(
+      (testCase) => testCase.name === (legacyCaseAliases.get(environmentCase) || environmentCase),
+    )
+  : allSelectedCases;
+
+if (!selectedViewports.length || !selectedThemes.length || !selectedCases.length) {
   throw new Error(
-    `Unknown SHCARE_UI_SMOKE_CASE=${process.env.SHCARE_UI_SMOKE_CASE || ""}.`,
+    `Portal UI filters selected no cases: viewport=${viewportFilter || "*"}, theme=${themeFilter || "*"}, case=${environmentCase || "*"}.`,
   );
 }
 
@@ -2038,6 +2065,154 @@ async function runCase(browser, origin, apiPort, testCase) {
       if (routeCase.path === "/portal/dashboard") {
         await main.getByTestId("dashboard-metric-patients").waitFor();
         await main.getByText("Hoàn tất", { exact: true }).waitFor();
+        const portalVisual = await page.evaluate(() => {
+          const inspect = (selector) => {
+            const element = document.querySelector(selector);
+            if (!element) return null;
+            const style = window.getComputedStyle(element);
+            return {
+              backgroundColor: style.backgroundColor,
+              backgroundImage: style.backgroundImage,
+              borderColor: style.borderColor,
+              backdropFilter:
+                style.backdropFilter || style.webkitBackdropFilter || "none",
+            };
+          };
+          return {
+            shell: inspect(".clinical-portal"),
+            sidebar: inspect(".clinical-sidebar"),
+            topbar: inspect(".clinical-topbar"),
+            metric: inspect('[data-testid="dashboard-metric-patients"]'),
+            primaryAction: inspect(".portal-live-primary-action"),
+          };
+        });
+        const missingVisualSurface = Object.entries(portalVisual)
+          .filter(([, value]) => !value)
+          .map(([name]) => name);
+        check(
+          missingVisualSurface.length === 0,
+          `${testCase.name}: missing Portal visual surfaces ${missingVisualSurface.join(", ")}`,
+        );
+        for (const [name, style] of Object.entries(portalVisual)) {
+          if (!style) continue;
+          check(
+            style.backgroundImage === "none" &&
+              style.backdropFilter === "none",
+            `${testCase.name}: ${name} retained gradient/glass ${JSON.stringify(style)}`,
+          );
+        }
+        if (testCase.colorScheme === "light") {
+          check(
+            portalVisual.shell?.backgroundColor === "rgb(245, 247, 250)",
+            `${testCase.name}: Portal canvas drift ${portalVisual.shell?.backgroundColor}`,
+          );
+          check(
+            portalVisual.sidebar?.backgroundColor === "rgb(255, 255, 255)" &&
+              portalVisual.topbar?.backgroundColor === "rgb(255, 255, 255)" &&
+              portalVisual.metric?.backgroundColor === "rgb(255, 255, 255)",
+            `${testCase.name}: Portal surfaces are not Admin-white ${JSON.stringify(portalVisual)}`,
+          );
+          check(
+            portalVisual.metric?.borderColor === "rgb(226, 232, 240)",
+            `${testCase.name}: Portal border drift ${portalVisual.metric?.borderColor}`,
+          );
+          check(
+            portalVisual.primaryAction?.backgroundColor === "rgb(11, 92, 154)",
+            `${testCase.name}: Portal primary action drift ${portalVisual.primaryAction?.backgroundColor}`,
+          );
+        }
+        const compactChrome = await page.evaluate(() => {
+          const dot = document.querySelector(".clinical-backend-dot");
+          const floatingTheme = document.querySelector(
+            '.theme-toggle[data-theme-variant="floating"]',
+          );
+          const dotRect = dot?.getBoundingClientRect();
+          return {
+            backendDot: dot
+              ? {
+                  display: window.getComputedStyle(dot).display,
+                  width: dotRect?.width || 0,
+                  height: dotRect?.height || 0,
+                }
+              : null,
+            floatingThemeDisplay: floatingTheme
+              ? window.getComputedStyle(floatingTheme).display
+              : null,
+          };
+        });
+        check(
+          compactChrome.backendDot?.display !== "none" &&
+            compactChrome.backendDot?.width >= 8 &&
+            compactChrome.backendDot?.height >= 8,
+          `${testCase.name}: compact backend status dot is hidden ${JSON.stringify(compactChrome.backendDot)}`,
+        );
+        check(
+          compactChrome.floatingThemeDisplay === "none",
+          `${testCase.name}: floating theme control still covers Portal content (${compactChrome.floatingThemeDisplay})`,
+        );
+
+        const userMenuTrigger = page.locator("#portal-user-menu-trigger");
+        await userMenuTrigger.click();
+        const menuTheme = page.locator(
+          '.clinical-popover .theme-toggle[data-theme-variant="menu"]',
+        );
+        await menuTheme.waitFor();
+        const menuThemeTarget = await menuTheme.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          return { width: rect.width, height: rect.height };
+        });
+        check(
+          menuThemeTarget.width >= 44 && menuThemeTarget.height >= 44,
+          `${testCase.name}: Portal menu theme target is undersized ${JSON.stringify(menuThemeTarget)}`,
+        );
+
+        const preferenceCycle = {
+          system: "light",
+          light: "dark",
+          dark: "system",
+        };
+        let activePreference = testCase.preference;
+        for (let step = 0; step < 3; step += 1) {
+          const expectedPreference = preferenceCycle[activePreference];
+          await menuTheme.click();
+          await page.waitForFunction(
+            (expected) =>
+              document.documentElement.dataset.theme === expected &&
+              window.localStorage.getItem("shcare-theme") === expected &&
+              Array.from(
+                document.querySelectorAll("[data-theme-preference]"),
+              ).every(
+                (element) =>
+                  element.getAttribute("data-theme-preference") === expected,
+              ),
+            expectedPreference,
+          );
+          activePreference = expectedPreference;
+        }
+        check(
+          activePreference === testCase.preference,
+          `${testCase.name}: theme cycle did not restore ${testCase.preference}`,
+        );
+        const menuAxe = await new AxeBuilder({ page })
+          .include(".clinical-topbar")
+          .analyze();
+        const menuSerious = menuAxe.violations.filter((violation) =>
+          ["serious", "critical"].includes(violation.impact || ""),
+        );
+        check(
+          menuSerious.length === 0,
+          `${testCase.name}: Portal account menu axe serious/critical ${menuSerious
+            .map((violation) => violation.id)
+            .join(", ")}`,
+        );
+        await userMenuTrigger.click();
+        await menuTheme.waitFor({ state: "hidden" });
+        if (process.env.SHCARE_PORTAL_SCREENSHOT) {
+          await page.screenshot({
+            path: path.resolve(process.env.SHCARE_PORTAL_SCREENSHOT),
+            fullPage: true,
+          });
+        }
         check(
           (await main.getByText("abnormal", { exact: true }).count()) === 0,
           `${testCase.name}: dashboard leaked the supplemental AI label`,

@@ -2406,3 +2406,19 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - BLOCKED before authenticated preview proof: add the exact generated preview origins to backend CORS. Do not use Admin `deploy:firebase:portal`, which collides with the canonical Web target.
 - BLOCKED before `main`/backend/live promotion: verify Render uses `npm start`/`scripts/start.js` rather than Docker `node server.js`, prove migrations `044–054` and rollback/locking, verify current S3/provider behavior, create live-channel backups and complete cleanup-safe mutation smokes.
 - BLOCKED: Android production signing/current FCM-device-TalkBack proof, OTA artifact signing/canary and Deep Security completion. `DEFERRED — chờ phần cứng`: physical ESP32-S3 HIL only.
+
+## 2026-08-24 superseding G3 backlog
+
+- CLOSED: firmware capture/network isolation, bounded WSS timeouts, exact TLS write-byte verification, additive dual-slot/capture-queue telemetry contract, all three PlatformIO builds, final source review and physical ESP32-S3/two-mic I2S/serial HIL.
+- CLOSED hardware subset: production image wired-flashed with hash verification; both mic slots produced only non-zero retained RMS/peak samples and no degraded/reboot marker.
+- P2: take a common atomic snapshot of diagnostic counters if exact intra-projection consistency becomes operationally necessary.
+- BLOCKED secure-device subset: encrypted NVS/device credential/CA provisioning, production WSS authentication, command ACK and forced-failure signed OTA rollback/canary. Do not bypass fail-closed security or burn eFuses without a provisioning runbook.
+- BLOCKED G3 sign-off: durable Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae`. Plugin/tool/context are available; this thread's `Full access` mode maps to `permission_profile=disabled`, while Deep workers require a host-managed profile. Switch the composer to `Ask for approval`, send a new turn and resume the same scan. Preserve it for retry, then freeze candidate SHA/inventory. G4 stays pending.
+
+## 2026-08-24 superseding G3 backlog after Deep Security
+
+- CLOSED: Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae`; all `8` reportable findings have remediation or explicit already-safe validation with focused tests.
+- CLOSED: affected backend/source gates, Web/Admin production builds, Android unit/compile/lint/debug APK and firmware production/development builds.
+- OPEN G3: run browser smoke after the security diff; verify production env/provider/database migration readiness without exposing secrets; freeze the candidate SHA, hashes and compatibility manifest.
+- BLOCKED runtime proof only: Android instrumentation while no ADB target is online; native PlatformIO tests while host GCC is missing; secure production device WSS/command/OTA until credential, CA and signed OTA provisioning is available. These do not permit a fake G3/G4 PASS.
+- G4 remains pending until G3 candidate proof is reproducible. No production promotion is recorded yet.

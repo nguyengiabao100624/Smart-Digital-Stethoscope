@@ -871,7 +871,7 @@ export function Layout() {
                 exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
                 transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
                 onClick={() => setMobileOpen(false)}
-                className="fixed inset-0 bg-black/50 z-30 md:hidden"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden"
               />
               <motion.aside
                 ref={mobileDrawerRef}
@@ -926,22 +926,20 @@ export function Layout() {
               >
                 <Menu className="w-5 h-5" />
               </button>
-              <ShcareBrand compact className="md:hidden" />
-
               {/* Desktop / tablet search */}
-              <div className="hidden w-full max-w-md items-center md:flex lg:max-w-lg">
+              <div className="relative hidden w-full max-w-md items-center md:flex lg:max-w-lg">
+                <Search
+                  className="pointer-events-none absolute left-3 z-10 h-4 w-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <button
                   id="admin-global-search"
                   type="button"
                   aria-keyshortcuts="Control+K Meta+K"
                   onClick={() => setCommandOpen(true)}
-                  className="flex min-h-11 w-full items-center gap-3 rounded-md border border-transparent bg-input-background px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-h-11 w-full rounded-md border border-transparent bg-input-background py-2 pl-9 pr-4 text-left text-sm text-muted-foreground outline-none transition-all hover:border-border hover:text-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{searchPlaceholder}</span>
-                  <kbd className="hidden rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline">
-                    Ctrl K
-                  </kbd>
+                  <span className="block truncate">{searchPlaceholder}</span>
                 </button>
               </div>
 
@@ -959,7 +957,7 @@ export function Layout() {
             </div>
 
             <div className="flex items-center gap-2 md:gap-4 lg:gap-6 shrink-0">
-              <div className="hidden min-w-0 max-w-[260px] flex-col items-end text-right text-sm xl:flex">
+              <div className="hidden min-w-0 max-w-[260px] flex-col items-end text-right text-sm lg:flex">
                 <div
                   className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold ${accessMode.toneClass}`}
                 >

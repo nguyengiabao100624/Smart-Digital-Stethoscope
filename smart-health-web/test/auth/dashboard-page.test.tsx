@@ -150,7 +150,7 @@ describe("DashboardPage", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("renders canonical theme-safe KPI cards from backend truth and not from AI-label inference", async () => {
+  it("renders the live Portal visual adapter from backend truth and not from AI-label inference", async () => {
     const { container } = renderDashboard();
 
     expect(
@@ -177,6 +177,7 @@ describe("DashboardPage", () => {
     ).toBeVisible();
     expect(screen.getByText("Hoàn tất")).toBeVisible();
     expect(screen.queryByText("abnormal")).not.toBeInTheDocument();
+    expect(container.querySelector(".portal-live-dashboard")).not.toBeNull();
     expect(
       container.querySelector(
         ".glass-panel, .hero-gradient-text, .brand-gradient-text, .premium-button",

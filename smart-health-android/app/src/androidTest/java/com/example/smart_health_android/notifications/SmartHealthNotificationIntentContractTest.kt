@@ -19,12 +19,18 @@ class SmartHealthNotificationIntentContractTest {
 
     @Test
     fun postedNotificationIntentCarriesItsBackendOwner() {
+        val lease = SmartHealthNotificationSession.beginAuthentication(
+            firebaseUserId = "firebase-user-a",
+            workspaceId = "workspace-a",
+        )
+        assertTrue(SmartHealthNotificationSession.activate(lease, "backend-user-a"))
+        val binding = requireNotNull(SmartHealthNotificationSession.activeBindingOrNull())
         val intent = SmartHealthNotificationIntentContract.createIntent(
             context = context,
             destination = SmartHealthNotificationDestination.RecordDetail("record/42"),
-            ownerUserId = " backend-user-a ",
-            workspaceId = " workspace-a ",
-            sessionGeneration = " generation-a ",
+            ownerUserId = " ${binding.backendUserId} ",
+            workspaceId = " ${binding.workspaceId} ",
+            sessionGeneration = " ${binding.generation} ",
         )
 
         assertEquals(
@@ -32,10 +38,30 @@ class SmartHealthNotificationIntentContractTest {
                 destination = SmartHealthNotificationDestination.RecordDetail("record/42"),
                 ownerUserId = "backend-user-a",
                 workspaceId = "workspace-a",
-                sessionGeneration = "generation-a",
+                sessionGeneration = binding.generation,
             ),
             SmartHealthNotificationIntentContract.launchRequestFrom(intent),
         )
+    }
+
+    @Test
+    fun signedNotificationIntentCanOnlyBeConsumedOnce() {
+        val lease = SmartHealthNotificationSession.beginAuthentication(
+            firebaseUserId = "firebase-replay-test",
+            workspaceId = "workspace-replay-test",
+        )
+        assertTrue(SmartHealthNotificationSession.activate(lease, "backend-replay-test"))
+        val binding = requireNotNull(SmartHealthNotificationSession.activeBindingOrNull())
+        val intent = SmartHealthNotificationIntentContract.createIntent(
+            context = context,
+            destination = SmartHealthNotificationDestination.Inbox,
+            ownerUserId = binding.backendUserId,
+            workspaceId = binding.workspaceId,
+            sessionGeneration = binding.generation,
+        )
+
+        assertTrue(SmartHealthNotificationIntentContract.launchRequestFrom(intent) != null)
+        assertNull(SmartHealthNotificationIntentContract.launchRequestFrom(Intent(intent)))
     }
 
     @Test

@@ -48,8 +48,9 @@ export function ForgotPassword() {
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
               <p className="text-muted-foreground">
-                <strong className="text-foreground">Lưu ý:</strong> Link đặt lại mật khẩu có thời
-                hạn. Nếu chưa thấy email, hãy kiểm tra mục spam hoặc gửi lại sau vài phút.
+                <strong className="text-foreground">Lưu ý:</strong> Link đặt lại mật khẩu do
+                Firebase Auth gửi và sẽ hết hạn theo cấu hình Firebase. Nếu chưa thấy email, hãy
+                kiểm tra mục spam hoặc gửi lại sau vài phút.
               </p>
             </div>
 
@@ -74,7 +75,7 @@ export function ForgotPassword() {
           <ShcareBrand compact centered className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Quên mật khẩu?</h1>
           <p className="mt-2 text-muted-foreground">
-            Nhập email tài khoản admin để nhận link đặt lại mật khẩu.
+            Nhập email tài khoản admin để Firebase gửi link đặt lại mật khẩu.
           </p>
         </div>
 

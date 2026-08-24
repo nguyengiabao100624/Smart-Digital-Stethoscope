@@ -1,24 +1,154 @@
 # Shcare Active Restart Checkpoint
 
-Last updated: 2026-08-15 ICT
+Last updated: 2026-08-24 ICT
 
 Read this file first after quota exhaustion, task compaction, Codex restart or
 host power-off. It records unfinished work only. Closed evidence lives in the
 newest sections of `SMART_HEALTH_CONTEXT_NEW_CHAT.md` and
 `SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md`.
 
-## Governing plan and visible progress
+## Current pointer — approved integration plan v4
 
-- Governing plan: **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**.
-- Canonical plan: `docs/SHCARE_REBUILD_MASTER_PLAN.md`. This checkpoint never
-  replaces that plan.
-- User-visible state: Phase 0–3 complete, **Phase 4 in progress**, Phase 5–8
-  pending. Internal slice labels must not replace this overview.
-- Canonical implementation worktree:
-  `C:\Users\baobe\Documents\Codex\2026-07-13\lam\work\shcare-rc2-impl-8e2`.
-- Frozen Security source is separate. Deep Security Scan
-  `1b48646c-c3fe-4835-9526-92177be380ae` remains `running/preflight` and was
-  not touched by the product work.
+- Master plan: **[“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform
+  Admin, Android và firmware”](SHCARE_REBUILD_MASTER_PLAN.md)**.
+- Approved addendum: **[“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và
+  phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**.
+- Master state: Phase 0–7 closed at `source/build/local`; Phase 8 active.
+- Addendum state: G0–G2 are closed; **G3 — Khóa release candidate và test ESP32
+  hai mic is active**; G4 pending. User-visible progress must show only G0–G4.
+- Worktree: `C:\Users\baobe\Documents\Codex\2026-07-13\lam\work\shcare-rc2-impl-8e2`.
+- Branch/HEAD at G0 entry: `release/shcare-v1.0.0-rc.2-local-demo` /
+  `1c902b29405717c28d8dfa908e4eeb16137971cc`.
+- Initial dirty-set digest: `d68fc486a354ed0fc0df75a061eece45f75870e98c517a63117d065d45b97776`
+  over 32 non-`.gstack` files. Canonical inventory:
+  `docs/SHCARE_G0_INTEGRATION_SOURCE_MANIFEST.md`.
+- Last retained gate: Phase 8 release-source proof at verified product revision
+  `c1933d979db69ae8bc105489d1accdec9bfd0fe5`; do not rerun Phase 0–7 without a
+  reproduced regression.
+- G0 verdict: all 65 Web routes have UI; current Public/Auth/Portal work is a
+  presentation merge, not a business rewrite. Current RC already has complete
+  Storage UI/API/RBAC; production missed its menu/direct-route entry point.
+- Hardware preflight and final G3 flash bind `COM9` to ESP32-S3 revision 0.2,
+  16MB flash and 8MB PSRAM. The latest production image is flashed and its
+  bootloader/partition/OTA-data/app writes were hash-verified.
+- G1 closure (`2026-08-23`): G0 proves all 65 Web routes already have usable UI,
+  `CHƯA_CÓ_UI=none` and no genuine Phase 0–7 business gap. G1 therefore closed
+  the presentation merge and reproduced regressions only; it did not reopen or
+  rewrite Phase 0–7.
+- Web is GREEN at contracts `135/135`, direct local TypeScript, ESLint and Vite
+  client+SSR build. Public desktop/light remains `17/17` and the new all-route
+  phone/system sweep is `335/335` across 22 routes. Auth login and forgot-password
+  desktop/dark remain `17/17`; mobile/system registration remains reachable.
+  Portal phone/light is `478/478` and desktop/dark is `474/474`, each across 21
+  routes. Theme is `light|dark|system`, same-tab/cross-tab synchronized, and the
+  Portal account-menu control no longer covers mobile KPI content.
+- Admin is GREEN at contracts `189/189`, ESLint and client+SSR build. Storage
+  menu/direct URL/capability/403 proof is `7/7`; Storage browser proof passes all
+  four phone/desktop × light/dark combinations. Full 15-route sweeps pass at
+  phone/light and desktop/dark, including command palette, offline, Account
+  contracts, detail-drawer focus, representative states and limited-principal
+  direct-URL denial. All recorded G1 browser gates have zero Axe serious/critical,
+  horizontal overflow, sub-44px target, unintended console error or request error.
+- Reproduced contrast fixes are deliberately narrow: Admin light secondary text
+  uses `#52677a`, device Offline uses the semantic danger-text token, and live
+  Public dark-system flow counters/active billing controls use accessible text.
+  The deployed legacy visual vocabulary, copy and composition remain preserved.
+- Current working snapshot remains on HEAD
+  `1c902b29405717c28d8dfa908e4eeb16137971cc`; deterministic dirty digest is
+  `a22ba6db562490128711e03593a72c33283705fadfae04ceb390024f7a0a6e8f`
+  over the tracked binary diff plus 14 extant non-`.gstack` untracked-file hashes,
+  excluding this self-referential checkpoint file. Preserve this dirty work; do
+  not reset or replace it with the old Live checkout.
+- G2 closure (`2026-08-23`): backend/shared/Android/firmware have zero source diff.
+  Fresh shared contracts are `50/50`, storage metadata `6/6`, workspace-access
+  and repository smokes PASS; retained Android `116 suites / 830 tests` and
+  firmware production/OTA evidence remain applicable. Admin 5-viewport ×
+  3-theme coverage is `225/225` route-cases. Public is `5,025/5,025`, Auth is
+  `3,615/3,615`, and Portal is `7,130/7,130` browser checks across all canonical
+  routes at 360/390/768/1024/1440 and light/dark/system. Portal RouteContract
+  coverage is `315/315` route-cases. Final aggregate gates are Web contracts
+  `137/137`, direct TypeScript, ESLint and client+SSR build; Admin contracts
+  `190/190`, ESLint and client+SSR build; `git diff --check` is clean.
+- G2 reproduced and fixed only three genuine seams: inaccessible Doctors success
+  text, Auth laptop mobile-header blur, and a non-focusable scrollable consent
+  ledger. The Portal runner is now permanently filterable over the full 5×3
+  matrix. Parallel external-font aborts were rerun sequentially and passed; they
+  are not recorded as product failures.
+- G3 in-progress checkpoint (`2026-08-24`): fresh release-source gates are GREEN
+  at Web contracts `137/137`, direct TypeScript `8.828s`, lint and client+SSR
+  build; Admin contracts `190/190`, lint and client+SSR build; backend
+  `smoke:release-runtime 1/1` and provider-free `check`. Web `dist` tree SHA-256
+  is `d3ada8977f812a8a3636db06d40b6a43eea4c09ed624fe6fa31b609f585723f9`;
+  Admin `dist` tree SHA-256 is
+  `04718b8fc2ace54224cc3a274f2702f6e46a8271f5bc6206a3791b21746d135f`.
+- G3 firmware diagnostics expose bounded aggregate RMS/peak/window/sample
+  counters independently for I2S slot 0 and slot 1 while preserving the exact
+  averaged mono PCM and audio-v2 contract. The five additive capture-queue
+  counters are now synchronized through the backend sanitizer, closed shared
+  schema, OpenAPI and JSON/SQL projection. Shared contracts are `51/51`, device
+  security is `82/82`, backend check and all focused firmware source contracts
+  pass.
+- The prior synchronous WSS/capture P1 is remediated: a dedicated priority-3
+  FreeRTOS capture task owns I2S/DSP, enqueues into a static bounded eight-frame
+  queue without waiting, and the loop task alone owns WSS/UDP. Session
+  generation/ordinal fences, stale/drop/discontinuity accounting and OTA
+  pause/ACK are present. Production TCP connect, I/O and TLS-handshake timeouts
+  are bounded to one second, below the built five-second watchdog.
+- A second independent P1 review proved ArduinoWebsockets 0.5.4 could report a
+  binary send as successful after a partial TLS write. The production transport
+  now observes the exact `client.write` byte count, increments `wsPacketsSent`
+  only after a full write, and force-closes/resets auth and audio state on a
+  partial write. Final independent review reports zero remaining firmware
+  P0/P1. A P2 remains: separately-read diagnostic counters can differ slightly
+  within one telemetry snapshot; it does not affect frames, sessions or OTA.
+- Final production and OTA images are `1,124,704` bytes against a `6,291,456`
+  byte app slot. Production SHA-256 is
+  `A31F9F6B32AF05F253AEB5D00063F8BA0318D6C9965CB0F9EE01B9CB02E54004`;
+  OTA SHA-256 is
+  `ECB97D1D56561D954425365CF15E7FE35F3A7C26BDC65B659196FFB028A3A9E1`.
+  Both images have valid checksum/validation hashes and the dual-OTA partition
+  table ends exactly at 16 MiB.
+- Same-run final HIL flashed the production image with every write hash verified.
+  A controlled 20-second boot capture retained 63 reports per slot: slot 0 RMS
+  `21–5,696` / peak `53–7,892`; slot 1 RMS `17–4,634` / peak `49–7,154`; every
+  retained RMS/peak sample was nonzero, both reached `2,358` active windows, the
+  watchdog was active at five seconds, and no degraded/unavailable/post-boot
+  reboot marker was observed. A separate stable 25-second capture retained
+  `82/82` nonzero reports per slot. Two-slot I2S/serial HIL is PASS. Evidence:
+  `docs/evidence/g3-hardware-01.md`.
+- Production WSS remains deliberately fail-closed at
+  `CREDENTIAL_STORAGE_ENCRYPTION_REQUIRED`: the current precompiled Arduino/IDF
+  target has neither flash encryption nor an `nvs_keys` partition. Never fake
+  this with a compiler define or burn irreversible eFuses without a dedicated
+  provisioning runbook. Local non-PHI I2S/serial HIL may proceed independently.
+- The earlier deterministic dirty digest `a22ba6db...` is superseded by the G3
+  firmware/backend evidence. Recompute the exact candidate inventory/digest only
+  after the Deep Security disposition settles.
+- Pre-security restart identity: `77` intentional non-`.gstack` files excluding
+  this self-referential checkpoint; sorted `status|path|bytes|sha256` digest is
+  `55383c8d2d809c57fceb7ce33b4df58aed8eea07bd7ea28d2b7c049e3e312d4b`.
+  Final staged inventory must still be recomputed after the scan.
+- Resume action: continue G3 only. In the Codex composer switch this thread from
+  `Full access` to `Ask for approval`, send a new turn so the host supplies a
+  managed filesystem permission profile, then resume the existing scan (never
+  create a replacement). After it completes, freeze the exact intentional
+  candidate/source manifest and recompute hashes. Do not reopen G0–G2 without a
+  newly reproduced regression.
+- Deep Security Scan `1b48646c-c3fe-4835-9526-92177be380ae` remains separate at
+  its last-known `running/preflight` and blocks G3 release sign-off, not G0–G2
+  work. Plugin `0.1.21`, its skill and durable tools are now exposed; the
+  authoritative context was loaded successfully. Discovery did not start
+  because this thread exposes `permission_profile=disabled` under `Full access`,
+  while read-only Deep Scan workers require a host-managed profile. The scan was
+  not replaced, completed, failed or cancelled and no canonical artifacts were
+  created. This cannot be repaired from shell or `config.toml`; apply the
+  composer permission change above and resume the same durable scan next turn.
+- ESP32 plus two microphones are now physically available. Hardware proof is no
+  longer globally deferred. Safe board/pin/partition preflight, wired flash and
+  two-slot I2S HIL are complete; production cloud/OTA rollback proof remains a
+  separate BLOCKED row until secure device provisioning is available.
+
+## Historical checkpoint archive
 
 ## Last closed checkpoint — Phase 3 source/build/local closure
 
@@ -704,3 +834,14 @@ recorded contract invalid.
 - Fresh release gates pass for backend check/test plus API/KLT/workspace/repository/identity/notification/support/role-document/2FA/device/appointment/avatar readiness; shared contracts `50/50`; Web direct TypeScript/lint/contracts/build; Admin lint/contracts/build; Android unit/compile/AndroidTest compile/lint/debug APK; firmware source/production/OTA build.
 - Remote push authorization passes in dry-run. Push the RC2 branch next, then build Firebase Admin/Web previews with retained external env. Do not merge `main` or promote live until migrations `044–054`, Render start mode, preview CORS, rollback and cleanup-safe authenticated smoke are proven.
 - Android production signing, current FCM/device/manual TalkBack, OTA signing/canary, provider delivery and Deep Security remain open. Physical firmware HIL remains **`DEFERRED — chờ phần cứng`**.
+
+## 2026-08-24 active checkpoint — G3 security closure and release preflight
+
+- Continue only **[“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**. G0–G2 remain complete, G3 remains active, and G4 remains pending. Do not rebuild completed integration/UI work without a reproduced regression.
+- Durable Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae` is finalized and sealed: `8` findings (`1 critical`, `2 high`, `4 medium`, `1 low`). Confirmed paths have source remediations or were revalidated as already safe; focused security, notification, PHI persistence, workspace, repository and KLT gates pass.
+- Current identity: base HEAD `1c902b29405717c28d8dfa908e4eeb16137971cc`, intentional dirty snapshot hash `dc3e7457f923ddb2483e9e12aff0a6205d58aff5`. Preserve the worktree; do not reset, stash-all or stage unrelated files.
+- Fresh evidence: backend check/test and affected domain smokes pass; Web/Admin lint, contracts and production builds pass; Android has `831/831` unit tests, AndroidTest Kotlin compile, lint and debug APK build with SHA-256 `9B58268A123FB66CFD4139CF3F47C8C13F491EAC0BE0CACDAEA416ED0D866C62`; production/development firmware builds pass.
+- G3 is not yet PASS. Remaining work is browser smoke after the security diff, candidate manifest/hash freeze, live/provider and production credential preflight, Android runtime when a target is online, and secure-device WSS/ACK/OTA proof. Native PlatformIO host tests are blocked by missing host `gcc/g++`, not a firmware compile failure. Production firmware SHA-256 remains `A31F9F6B32AF05F253AEB5D00063F8BA0318D6C9965CB0F9EE01B9CB02E54004`; physical two-mic I2S HIL remains valid.
+- Current browser-diff smoke is green: Public `17`, Auth forgot-password `17`, Portal `478` across all 21 routes in the selected phone/light case, and Admin Storage mobile/system with accessibility/theme/overflow/console/request checks. Historical full Chromium/Firefox/WebKit matrices remain valid because the security diff did not alter those UI routes.
+- Release preflight: Firebase CLI access to active project `smart-health-stethoscope` is valid; both Hosting sites return HTTP `200`; both known Render backends return HTTP `200` at `/api/health` and `/api/v1/health`, while `/metrics` still lacks the RC2 legacy markers and proves the live backend is old. The current shell has no production secret env bound, so PostgreSQL/S3/PHI migration/provider readiness remains unverified rather than “never configured”.
+- Hardware was re-detected on `COM9`; esptool read the physical ESP32-S3 directly and confirmed `16MB` flash plus `8MB` PSRAM. No reflash is required while the production firmware hash is unchanged.

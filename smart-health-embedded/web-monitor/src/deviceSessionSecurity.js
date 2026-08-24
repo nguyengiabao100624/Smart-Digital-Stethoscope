@@ -89,6 +89,27 @@ const DEVICE_TELEMETRY_INTEGER_FIELDS = new Set([
   "lastCommandUptimeMs",
 ]);
 
+const UINT32_MAX = 0xFFFF_FFFF;
+const DEVICE_TELEMETRY_UINT32_FIELDS = new Set([
+  "audioCaptureQueueDepth",
+  "audioCaptureQueueHighWater",
+  "audioCaptureFramesEnqueued",
+  "audioCaptureFramesDropped",
+  "audioCaptureFramesStale",
+  "i2sSlot0Rms",
+  "i2sSlot0Peak",
+  "i2sSlot0WindowCount",
+  "i2sSlot0ActiveWindowCount",
+  "i2sSlot0SampleCount",
+  "i2sSlot0NonZeroSampleCount",
+  "i2sSlot1Rms",
+  "i2sSlot1Peak",
+  "i2sSlot1WindowCount",
+  "i2sSlot1ActiveWindowCount",
+  "i2sSlot1SampleCount",
+  "i2sSlot1NonZeroSampleCount",
+]);
+
 const DEVICE_TELEMETRY_STRING_FIELDS = new Set([
   "resetReason",
   "i2sStatus",
@@ -107,6 +128,12 @@ function sanitizeDeviceTelemetry(value) {
     if (!Object.prototype.hasOwnProperty.call(source, field)) continue;
     const number = Number(source[field]);
     if (!Number.isSafeInteger(number) || number < 0) continue;
+    sanitized[field] = number;
+  }
+  for (const field of DEVICE_TELEMETRY_UINT32_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) continue;
+    const number = source[field];
+    if (!Number.isSafeInteger(number) || number < 0 || number > UINT32_MAX) continue;
     sanitized[field] = number;
   }
   for (const field of DEVICE_TELEMETRY_STRING_FIELDS) {

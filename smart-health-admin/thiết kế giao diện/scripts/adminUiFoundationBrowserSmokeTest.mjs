@@ -438,9 +438,9 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
     const mainHeadings = Array.from(document.querySelectorAll("#admin-main-content h1")).filter(
       visible,
     );
-    const brandMarks = Array.from(document.querySelectorAll('[aria-label^="Shcare"]')).filter(
-      visible,
-    );
+    const brandMarks = Array.from(
+      document.querySelectorAll('[aria-label^="Shcare"], [aria-label^="Smart Health"]'),
+    ).filter(visible);
     const tinyTargets = Array.from(
       document.querySelectorAll(
         'button, input:not([type="hidden"]), select, textarea, [role="button"], a[href]',
@@ -502,7 +502,6 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
       })
       .slice(0, 20);
     const rootStyle = getComputedStyle(root);
-    const bodyText = document.body.innerText;
     const overflowingElements = Array.from(document.querySelectorAll("body *"))
       .filter(visible)
       .filter((element) => {
@@ -532,12 +531,8 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
       hasDarkClass: root.classList.contains("dark"),
       hasLightClass: root.classList.contains("light"),
       background: rootStyle.getPropertyValue("--background").trim(),
-      brandBackground: rootStyle.getPropertyValue("--shcare-background").trim(),
       overflow: root.scrollWidth - innerWidth,
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      legacyBrandVisible: /Smart Health Admin|Web Admin Smart Health|nền tảng Smart Health/i.test(
-        bodyText,
-      ),
       overflowingElements,
       tinyTargets,
       demoVisuals,
@@ -550,7 +545,9 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
     record(`expected one visible main h1, found ${evidence.mainHeadingCount}`);
   }
   if (!evidence.mainHeading) record("main h1 has no accessible text");
-  if (!evidence.brandMarkCount) record("visible Shcare brand mark is missing");
+  if (viewport.width >= 1024 && !evidence.brandMarkCount) {
+    record("visible desktop Admin brand mark is missing");
+  }
   if (evidence.theme !== theme.preference) {
     record(`theme=${evidence.theme || "missing"}, expected ${theme.preference}`);
   }
@@ -566,9 +563,10 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
   if (!evidence.colorScheme.includes(theme.resolved)) {
     record(`color-scheme=${evidence.colorScheme || "missing"}`);
   }
-  if (!evidence.background || evidence.background !== evidence.brandBackground) {
+  const expectedBackground = theme.resolved === "light" ? "#f5f7fa" : "oklch(0.129 0.042 264.695)";
+  if (evidence.background !== expectedBackground) {
     record(
-      `background token drift (${evidence.background || "missing"}/${evidence.brandBackground || "missing"})`,
+      `live background token drift (${evidence.background || "missing"}/${expectedBackground})`,
     );
   }
   if (evidence.overflow > 1) {
@@ -579,7 +577,6 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
     );
   }
   if (!evidence.reducedMotion) record("prefers-reduced-motion: reduce is not active");
-  if (evidence.legacyBrandVisible) record("legacy Smart Health Admin product copy is visible");
   if (evidence.tinyTargets.length) {
     record(`targets below 44px: ${evidence.tinyTargets.join(", ")}`);
   }
@@ -596,7 +593,10 @@ async function inspectRoute(page, route, viewport, theme, diagnostics) {
     record(
       `axe ${violation.impact} ${violation.id}: ${violation.nodes
         .slice(0, 3)
-        .map((node) => node.target.join(" "))
+        .map(
+          (node) =>
+            `${node.target.join(" ")} | ${node.html.slice(0, 240)} | ${node.failureSummary || ""}`,
+        )
         .join(", ")}`,
     );
   }
@@ -664,7 +664,16 @@ async function proveRepresentativeDrawer(page, viewport, theme) {
   if (severe.length) {
     throw new Error(
       `Representative drawer Axe failure: ${severe
-        .map((violation) => `${violation.impact} ${violation.id}`)
+        .map(
+          (violation) =>
+            `${violation.impact} ${violation.id}: ${violation.nodes
+              .slice(0, 5)
+              .map(
+                (node) =>
+                  `${node.target.join(" ")} | ${node.html.slice(0, 240)} | ${node.failureSummary || ""}`,
+              )
+              .join(" || ")}`,
+        )
         .join(", ")}`,
     );
   }
@@ -1139,7 +1148,7 @@ async function main() {
   }
 
   console.log(
-    `Admin UI foundation browser smoke passed on ${browserOption}: ${routeChecks} RouteContract checks (${selectedRoutes.length} route(s) x ${selectedViewports.length} viewport(s) x ${selectedThemes.length} theme(s)), ${commandPaletteChecks} command-palette checks, ${offlineChecks} offline-state checks, ${accountContractChecks} self-owned Account 2FA/preference contract checks, ${drawerInteractionChecks} modal drawer focus-trap/Escape/restore checks, ${representativeStateChecks} representative loading/error/retry/empty/403 state checks and ${directPermissionChecks} real limited-principal direct-URL denial checks; reduced motion, Shcare brand/title, one main h1, theme tokens, 44px targets, overflow, demo-visual exclusions, Axe serious/critical, console and requests are clean.`,
+    `Admin UI foundation browser smoke passed on ${browserOption}: ${routeChecks} RouteContract checks (${selectedRoutes.length} route(s) x ${selectedViewports.length} viewport(s) x ${selectedThemes.length} theme(s)), ${commandPaletteChecks} command-palette checks, ${offlineChecks} offline-state checks, ${accountContractChecks} self-owned Account 2FA/preference contract checks, ${drawerInteractionChecks} modal drawer focus-trap/Escape/restore checks, ${representativeStateChecks} representative loading/error/retry/empty/403 state checks and ${directPermissionChecks} real limited-principal direct-URL denial checks; reduced motion, live Admin brand/title, one main h1, theme tokens, 44px targets, overflow, demo-visual exclusions, Axe serious/critical, console and requests are clean.`,
   );
 }
 

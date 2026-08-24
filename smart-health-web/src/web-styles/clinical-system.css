@@ -1149,8 +1149,7 @@ html.dark .shc-public-layout > .shc-announcement {
     padding: 0.85rem;
   }
 
-  .clinical-user-trigger > svg,
-  .clinical-user-trigger > span {
+  .clinical-user-trigger > svg {
     display: none;
   }
 }

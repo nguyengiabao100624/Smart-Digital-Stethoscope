@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
-import { Building2, FileCheck2, UploadCloud, UsersRound } from "lucide-react";
+import {
+  Building2,
+  Database,
+  FileCheck2,
+  UploadCloud,
+  UsersRound,
+} from "lucide-react";
 import { Link } from "react-router";
 
 import {
@@ -569,9 +575,9 @@ export default function RegisterClinicPage() {
     <section className="shc-auth-page shc-auth-registration-page">
       <AuthUnsavedChangesGuard when={dirty} />
       <AuthPageIntro
-        icon={Building2}
-        title="Đăng ký cơ sở y tế"
-        description="Tạo yêu cầu workspace theo từng bước. Shcare không kích hoạt cơ sở trước khi hoàn tất kiểm tra."
+        icon={Database}
+        title="Đăng ký Workspace"
+        description="Tổ chức & Trung Tâm Y Tế"
       />
       <AuthStepper steps={steps} current={step} />
 
@@ -984,7 +990,7 @@ export default function RegisterClinicPage() {
             </AuthSecondaryButton>
           ) : (
             <Link className="shc-auth-text-link" to="/login">
-              Đã có tài khoản?
+              Đã có Workspace? Đăng Nhập
             </Link>
           )}
           <AuthPrimaryButton

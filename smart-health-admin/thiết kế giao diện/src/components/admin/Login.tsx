@@ -77,12 +77,12 @@ export function Login() {
         <div className="flex flex-col items-center mb-8 text-center">
           <ShcareBrand compact centered className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">
-            {IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Shcare Platform Admin"}
+            {IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Smart Health Admin"}
           </h1>
           <p className="text-muted-foreground mt-2">
             {IS_PORTAL_SURFACE
               ? "Đăng nhập để vận hành bệnh nhân, thiết bị và lượt đo"
-              : "Đăng nhập để quản trị nền tảng Shcare"}
+              : "Đăng nhập để quản trị nền tảng Smart Health"}
           </p>
         </div>
 
@@ -168,7 +168,11 @@ export function Login() {
 
         <div className="mt-8 pt-6 border-t border-border flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <ShieldCheck className="w-4 h-4 text-success" />
-          <span>Xác thực tài khoản an toàn</span>
+          <span>
+            {IS_PORTAL_SURFACE
+              ? "Xác thực tài khoản bằng Firebase"
+              : "Xác thực quản trị bằng Firebase"}
+          </span>
         </div>
         <div className="mt-4 text-center text-xs text-muted-foreground">
           {IS_PORTAL_SURFACE ? "Platform Admin dùng " : "Bác sĩ/phòng khám dùng "}
@@ -176,7 +180,7 @@ export function Login() {
             href={getSurfaceAccessTargetUrl()}
             className="font-medium text-primary hover:underline"
           >
-            {IS_PORTAL_SURFACE ? "Shcare Platform Admin" : "Shcare Web Portal"}
+            {IS_PORTAL_SURFACE ? "Smart Health Admin" : "Shcare Web Portal"}
           </a>
         </div>
       </motion.div>

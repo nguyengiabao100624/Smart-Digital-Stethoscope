@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, LogIn, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Fingerprint,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
 import {
@@ -220,11 +229,13 @@ export default function LoginPage() {
 
   return (
     <div className="shc-auth-page shc-auth-page-login">
-      <AuthPageIntro
-        icon={LogIn}
-        title="Đăng nhập workspace"
-        description="Dùng tài khoản đã được cấp quyền cho bác sĩ hoặc cơ sở y tế."
-      />
+      <header className="shc-auth-legacy-intro">
+        <span className="shc-auth-legacy-intro-icon" aria-hidden="true">
+          <Fingerprint size={28} />
+        </span>
+        <h1>Đăng nhập workspace</h1>
+        <p>Cổng bác sĩ và cơ sở y tế</p>
+      </header>
 
       <form
         method="post"
@@ -236,6 +247,7 @@ export default function LoginPage() {
           id="login-email"
           label="Email đăng nhập"
           error={fieldErrors.email}
+          leadingIcon={Mail}
           required
         >
           <input
@@ -254,14 +266,25 @@ export default function LoginPage() {
           error={fieldErrors.password}
           required
           action={
+            <Link className="shc-auth-legacy-forgot-link" to="/quen-mat-khau">
+              Quên mật khẩu?
+            </Link>
+          }
+          leadingIcon={LockKeyhole}
+          controlAction={
             <button
               type="button"
-              className="shc-auth-inline-action"
+              className="shc-auth-password-toggle"
               onClick={() => setShowPassword((current) => !current)}
               aria-controls="login-password"
               aria-pressed={showPassword}
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
             >
-              {showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              {showPassword ? (
+                <EyeOff size={18} aria-hidden="true" />
+              ) : (
+                <Eye size={18} aria-hidden="true" />
+              )}
             </button>
           }
         >
@@ -273,10 +296,6 @@ export default function LoginPage() {
             placeholder="Nhập mật khẩu"
           />
         </AuthField>
-
-        <div className="shc-auth-form-meta">
-          <Link to="/quen-mat-khau">Quên mật khẩu?</Link>
-        </div>
 
         {error ? (
           <AuthAlert tone="error" id="login-error">
@@ -295,10 +314,10 @@ export default function LoginPage() {
       </form>
 
       <div className="shc-auth-account-switch">
-        <span>Chưa có quyền workspace?</span>
-        <Link to="/register">Đăng ký bác sĩ</Link>
+        <span>Chưa được cấp quyền?</span>
+        <Link to="/register">Yêu cầu truy cập →</Link>
         <span aria-hidden="true">·</span>
-        <Link to="/register/phong-kham">Đăng ký cơ sở</Link>
+        <Link to="/register/phong-kham">Cơ sở y tế</Link>
       </div>
     </div>
   );

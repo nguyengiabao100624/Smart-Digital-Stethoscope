@@ -42,6 +42,7 @@ const scanStopFinalizeReadyPath = path.join(dataDir, "scan-stop-finalize.ready")
 const scanStopFinalizeReleasePath = path.join(dataDir, "scan-stop-finalize.release");
 const port = 3462;
 const audioPort = 3463;
+const UINT32_MAX = 0xFFFF_FFFF;
 const secrets = {
   alpha: "alpha-device-secret",
   beta: "beta-device-secret",
@@ -1431,6 +1432,11 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     audioPacketsSent: 12,
     audioPacketsDropped: 2,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 3,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 1_250,
+    audioCaptureFramesDropped: 17,
+    audioCaptureFramesStale: 2,
     lastCommandUptimeMs: 11_000,
     resetReason: " brownout ",
     i2sStatus: "ready",
@@ -1440,7 +1446,21 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
     secret: "must-not-persist",
+    rawAudio: "must-not-persist",
+    pcmSamples: [1, 2, 3],
     unknownField: "must-not-persist",
     freeHeapBytesInvalid: -1,
   });
@@ -1450,6 +1470,11 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     audioPacketsSent: 12,
     audioPacketsDropped: 2,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 3,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 1_250,
+    audioCaptureFramesDropped: 17,
+    audioCaptureFramesStale: 2,
     lastCommandUptimeMs: 11_000,
     resetReason: "brownout",
     i2sStatus: "ready",
@@ -1459,7 +1484,34 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
   });
+
+  const aggregateFields = Object.keys(telemetry).filter(
+    (field) => field.startsWith("i2sSlot") || field.startsWith("audioCapture"),
+  );
+  assert.equal(aggregateFields.length, 17);
+  for (const field of aggregateFields) {
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: -1 }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: 0.5 }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: UINT32_MAX + 1 }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: "1" }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: UINT32_MAX }), { [field]: UINT32_MAX });
+  }
+  assert.deepEqual(sanitizeDeviceTelemetry({ deviceSecret: "forbidden", ...telemetry }), telemetry);
+  assert.equal(Object.hasOwn(telemetry, "rawAudio"), false);
+  assert.equal(Object.hasOwn(telemetry, "pcmSamples"), false);
 
   const runtimeDb = { devices: [] };
   const statements = [];
@@ -1499,6 +1551,11 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     audioPacketsSent: 14,
     audioPacketsDropped: 1,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 2,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 512,
+    audioCaptureFramesDropped: 4,
+    audioCaptureFramesStale: 1,
     lastCommandId: "cmd_telemetry",
     lastCommandState: "applied",
     lastCommandCode: "OK",
@@ -1506,6 +1563,18 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
   });
   const token = await loginPlatformAdmin();
   const response = await requestJson("/api/v1/devices", {
@@ -1521,6 +1590,11 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     audioPacketsSent: 14,
     audioPacketsDropped: 1,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 2,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 512,
+    audioCaptureFramesDropped: 4,
+    audioCaptureFramesStale: 1,
     lastCommandId: "cmd_telemetry",
     lastCommandState: "applied",
     lastCommandCode: "OK",
@@ -1528,6 +1602,18 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
   });
   client.socket.close();
   await client.closed();

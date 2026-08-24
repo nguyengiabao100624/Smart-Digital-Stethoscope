@@ -1,6 +1,7 @@
 const { getAiProviderAvailability } = require("./aiProvider");
 const { getOtaSignerAvailability } = require("./otaManifestSigning");
 const { getTwoFactorAvailability } = require("./twoFactorAuth");
+const { isPhiEncryptionConfigured } = require("./cryptoPhi");
 
 function readString(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -327,13 +328,13 @@ function buildProductionReadiness(env = process.env) {
     id: "security.phi_encryption",
     group: "security",
     label: "Mã hóa dữ liệu nhạy cảm",
-    status: statusFromBoolean(Boolean(readString(env.PHI_ENCRYPTION_KEY)), true),
+    status: statusFromBoolean(isPhiEncryptionConfigured(env), true),
     required: true,
-    detail: readString(env.PHI_ENCRYPTION_KEY)
-      ? "PHI_ENCRYPTION_KEY đã cấu hình."
+    detail: isPhiEncryptionConfigured(env)
+      ? "PHI_ENCRYPTION_KEY đã cấu hình cho AES-256-GCM persistence envelopes."
       : "Chưa có PHI_ENCRYPTION_KEY; dữ liệu nhạy cảm có thể không được mã hóa.",
-    env: ["PHI_ENCRYPTION_KEY"],
-    setup: "Tạo secret 32 byte hoặc chuỗi hex 64 ký tự và lưu trong secret manager của hosting.",
+    env: ["PHI_ENCRYPTION_KEY", "PHI_ENCRYPTION_KEY_VERSION"],
+    setup: "Tạo secret tối thiểu 32 ký tự, chạy migrate:phi sau migration schema và lưu key trong secret manager.",
   });
 
   const passwordFingerprintKey =

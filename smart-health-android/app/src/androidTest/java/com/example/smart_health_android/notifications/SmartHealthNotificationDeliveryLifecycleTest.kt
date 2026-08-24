@@ -17,6 +17,7 @@ import java.util.UUID
 import kotlin.concurrent.thread
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -155,15 +156,8 @@ class SmartHealthNotificationDeliveryLifecycleTest {
                 workspaceId = "workspace-b",
             )
             assertTrue(SmartHealthNotificationSession.activate(accountBLease, "backend-b"))
-            val staleRequest = requireNotNull(
+            assertNull(
                 SmartHealthNotificationIntentContract.launchRequestFrom(staleLaunchIntent),
-            )
-            assertFalse(
-                SmartHealthNotificationSession.canOpen(
-                    request = staleRequest,
-                    currentFirebaseUserId = "firebase-b",
-                    currentWorkspaceId = "workspace-b",
-                ),
             )
         } finally {
             SmartHealthNotificationSession.deactivateAndClearPostedNotifications {

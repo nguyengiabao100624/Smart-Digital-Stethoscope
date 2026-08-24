@@ -109,6 +109,13 @@ test("does not expose raw event JSON and exposes retryable live states", async (
   assert.match(devicesSource, /Chỉ Platform Admin/);
 });
 
+test("uses the accessible danger text token for device presence labels", async () => {
+  const devicesSource = await readFile(devicesPath, "utf8");
+
+  assert.match(devicesSource, /tracking-wide text-danger-text/);
+  assert.doesNotMatch(devicesSource, /tracking-wide text-destructive/);
+});
+
 test("claims readiness only after backend online confirmation", async () => {
   const activateSource = await readFile(activatePath, "utf8");
 

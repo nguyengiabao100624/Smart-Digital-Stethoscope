@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import {
   ArrowRight,
@@ -12,7 +18,8 @@ import {
   Play,
   X,
 } from "lucide-react";
-import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
+import { AnimatePresence, motion } from "motion/react";
+import logoUrl from "../../../../docs/Logo.png";
 import { PublicMotionContext } from "@/app/context/PublicMotionContext";
 
 const navLinks = [
@@ -80,9 +87,7 @@ function resolveInitialMotionPreference() {
   }
 
   const storedMotion = window.localStorage.getItem("shc-public-motion");
-  if (storedMotion) return storedMotion === "enabled";
-
-  return true;
+  return storedMotion ? storedMotion === "enabled" : true;
 }
 
 export default function PublicLayout() {
@@ -90,6 +95,7 @@ export default function PublicLayout() {
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null);
   const [openDesktopGroup, setOpenDesktopGroup] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [homeHeroActive, setHomeHeroActive] = useState(false);
   const [motionRequested, setMotionRequested] = useState(
     resolveInitialMotionPreference,
   );
@@ -99,8 +105,10 @@ export default function PublicLayout() {
       : window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const closeDesktopTimer = useRef<number | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const publicMainRef = useRef<HTMLElement | null>(null);
   const location = useLocation();
+  const isHome = location.pathname === "/";
   const motionEnabled = motionRequested && !systemReducedMotion;
 
   const clearDesktopCloseTimer = () => {
@@ -123,6 +131,22 @@ export default function PublicLayout() {
     }, 140);
   };
 
+  const closeDesktopMenuAfterNavigation = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+  ) => {
+    clearDesktopCloseTimer();
+    setOpenDesktopGroup(null);
+    event.currentTarget.blur();
+  };
+
+  const closeMobileMenuAfterNavigation = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+  ) => {
+    setMobileOpen(false);
+    setOpenMobileGroup(null);
+    event.currentTarget.blur();
+  };
+
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncWithSystem = () => setSystemReducedMotion(media.matches);
@@ -132,11 +156,31 @@ export default function PublicLayout() {
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 16);
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      const hero =
+        publicMainRef.current?.querySelector<HTMLElement>(".shc-hero");
+      const heroHeight = hero?.offsetHeight || window.innerHeight;
+      const fadeStart = Math.max(0, heroHeight - window.innerHeight * 1.04);
+      const fadeDistance = Math.max(
+        260,
+        Math.min(560, window.innerHeight * 0.48),
+      );
+      const heroExitProgress = isHome
+        ? Math.min(1, Math.max(0, (scrollY - fadeStart) / fadeDistance))
+        : 1;
+
+      setScrolled(scrollY > 16);
+      shellRef.current?.style.setProperty(
+        "--shc-hero-exit-progress",
+        heroExitProgress.toFixed(3),
+      );
+      setHomeHeroActive(isHome && heroExitProgress < 0.96);
+    };
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [isHome]);
 
   useEffect(
     () => () => {
@@ -152,6 +196,11 @@ export default function PublicLayout() {
     setOpenMobileGroup(null);
     setOpenDesktopGroup(null);
     setScrolled(false);
+    setHomeHeroActive(location.pathname === "/");
+    shellRef.current?.style.setProperty(
+      "--shc-hero-exit-progress",
+      location.pathname === "/" ? "0" : "1",
+    );
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     publicMainRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
     window.requestAnimationFrame(() => {
@@ -279,8 +328,10 @@ export default function PublicLayout() {
   return (
     <PublicMotionContext.Provider value={motionEnabled}>
       <div
+        ref={shellRef}
         className="app-shell public-shell shc-public-layout"
-        data-shcare-public-foundation="v1"
+        data-shcare-public-visual="legacy"
+        data-shc-home-hero={homeHeroActive ? "active" : "rest"}
         data-shc-motion={motionEnabled ? "enabled" : "reduced"}
       >
         <div className="shc-announcement">
@@ -294,7 +345,15 @@ export default function PublicLayout() {
           </Link>
         </div>
 
-        <header className={scrolled ? "shc-header is-scrolled" : "shc-header"}>
+        <header
+          className={scrolled ? "shc-header is-scrolled" : "shc-header"}
+          style={{
+            backdropFilter: scrolled ? "blur(44px) saturate(195%)" : "none",
+            WebkitBackdropFilter: scrolled
+              ? "blur(44px) saturate(195%)"
+              : "none",
+          }}
+        >
           <div className="shc-container shc-header-inner">
             <Link
               to="/"
@@ -338,6 +397,7 @@ export default function PublicLayout() {
                           : ""
                       }
                       aria-expanded={openDesktopGroup === item.label}
+                      onClick={closeDesktopMenuAfterNavigation}
                     >
                       {item.label}
                       <ChevronDown size={14} />
@@ -347,7 +407,7 @@ export default function PublicLayout() {
                         <Link
                           key={child.href}
                           to={child.href}
-                          onClick={() => setOpenDesktopGroup(null)}
+                          onClick={closeDesktopMenuAfterNavigation}
                         >
                           {child.label}
                         </Link>
@@ -415,73 +475,101 @@ export default function PublicLayout() {
             </button>
           </div>
 
-          {mobileOpen && (
-            <nav
-              className="shc-mobile-menu"
-              data-shc-menu-state="open"
-              aria-label="Điều hướng di động"
-            >
-              {navLinks.map((item) =>
-                item.children ? (
-                  <div key={item.label} className="shc-mobile-group">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOpenMobileGroup((current) =>
-                          current === item.label ? null : item.label,
-                        )
-                      }
+          <AnimatePresence>
+            {mobileOpen && (
+              <motion.nav
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="shc-mobile-menu"
+                data-shc-menu-state="open"
+                aria-label="Điều hướng di động"
+              >
+                {navLinks.map((item) =>
+                  item.children ? (
+                    <div key={item.label} className="shc-mobile-group">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenMobileGroup((current) =>
+                            current === item.label ? null : item.label,
+                          )
+                        }
+                      >
+                        {item.label}
+                        <ChevronDown
+                          size={16}
+                          className={
+                            openMobileGroup === item.label ? "rotate-180" : ""
+                          }
+                        />
+                      </button>
+                      <AnimatePresence initial={false}>
+                        {openMobileGroup === item.label && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="shc-mobile-submenu"
+                          >
+                            {item.children.map((child) => (
+                              <Link
+                                key={child.href}
+                                to={child.href}
+                                onClick={closeMobileMenuAfterNavigation}
+                              >
+                                {child.label}
+                              </Link>
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ) : (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      onClick={closeMobileMenuAfterNavigation}
                     >
                       {item.label}
-                      <ChevronDown
-                        size={16}
-                        className={
-                          openMobileGroup === item.label ? "rotate-180" : ""
-                        }
-                      />
-                    </button>
-                    {openMobileGroup === item.label && (
-                      <div className="shc-mobile-submenu">
-                        {item.children.map((child) => (
-                          <Link key={child.href} to={child.href}>
-                            {child.label}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <Link key={item.href} to={item.href}>
-                    {item.label}
+                    </Link>
+                  ),
+                )}
+                <div className="shc-mobile-actions">
+                  <button
+                    type="button"
+                    className="shc-motion-toggle shc-mobile-motion-toggle"
+                    onClick={toggleMotion}
+                    aria-pressed={motionEnabled}
+                    disabled={systemReducedMotion}
+                  >
+                    {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
+                    <span>
+                      {systemReducedMotion
+                        ? "Hệ thống đang giảm chuyển động"
+                        : motionEnabled
+                          ? "Tắt hiệu ứng"
+                          : "Bật hiệu ứng"}
+                    </span>
+                  </button>
+                  <Link
+                    to="/login"
+                    className="shc-button shc-button-secondary"
+                    onClick={closeMobileMenuAfterNavigation}
+                  >
+                    Đăng nhập
                   </Link>
-                ),
-              )}
-              <div className="shc-mobile-actions">
-                <button
-                  type="button"
-                  className="shc-motion-toggle shc-mobile-motion-toggle"
-                  onClick={toggleMotion}
-                  aria-pressed={motionEnabled}
-                  disabled={systemReducedMotion}
-                >
-                  {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
-                  <span>
-                    {systemReducedMotion
-                      ? "Hệ thống đang giảm chuyển động"
-                      : motionEnabled
-                        ? "Tắt hiệu ứng"
-                        : "Bật hiệu ứng"}
-                  </span>
-                </button>
-                <Link to="/login" className="shc-button shc-button-secondary">
-                  Đăng nhập
-                </Link>
-                <Link to="/register" className="shc-button shc-button-primary">
-                  Bắt đầu
-                </Link>
-              </div>
-            </nav>
-          )}
+                  <Link
+                    to="/register"
+                    className="shc-button shc-button-primary"
+                    onClick={closeMobileMenuAfterNavigation}
+                  >
+                    Bắt đầu
+                  </Link>
+                </div>
+              </motion.nav>
+            )}
+          </AnimatePresence>
         </header>
 
         <main

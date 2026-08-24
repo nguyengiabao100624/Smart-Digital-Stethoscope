@@ -157,6 +157,7 @@ test("keeps the active CSS import graph explicit and recursively reviewable", ()
     "src/styles.css",
     "src/web-styles/clinical-polish.css",
     "src/web-styles/clinical-system.css",
+    "src/web-styles/fonts.css",
     "src/web-styles/signal-horizon.css",
     "src/web-styles/theme.css",
   ]);
@@ -301,7 +302,7 @@ test("keeps the Portal title semantic and visible on compact layouts", () => {
   }
 });
 
-test("keeps active Portal shell surfaces opaque and free of blur glass", () => {
+test("keeps every Portal shell surface opaque and free of glass", () => {
   const layoutSource = readFileSync(
     path.join(sourceRoot, "app", "layouts", "PortalLayout.tsx"),
     "utf8",
@@ -320,6 +321,23 @@ test("keeps active Portal shell surfaces opaque and free of blur glass", () => {
     cssSource,
     /\.clinical-popover\s*\{[\s\S]*?border:\s*1px solid var\(--clinical-line\)[\s\S]*?background:\s*var\(--clinical-surface\)/,
   );
+  assert.doesNotMatch(
+    cssSource,
+    /\.clinical-user-trigger\s*>\s*svg,\s*\.clinical-user-trigger\s*>\s*span\s*\{[\s\S]*?display:\s*none/,
+  );
+  for (const { selector, body } of cssDeclarationBlocks(cssSource)) {
+    if (
+      !selector.includes(".clinical-portal .clinical-top-actions") ||
+      !selector.includes(".clinical-portal .portal-toolbar")
+    ) {
+      continue;
+    }
+    assert.doesNotMatch(
+      body,
+      /width\s*:\s*100%/,
+      `Portal top actions inherit a full-width toolbar rule from ${selector}`,
+    );
+  }
 
   for (const { filePath, source } of activeSources) {
     for (const { selector, body } of cssDeclarationBlocks(source)) {

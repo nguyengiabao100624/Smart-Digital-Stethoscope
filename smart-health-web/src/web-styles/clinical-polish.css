@@ -696,6 +696,19 @@ button:disabled,
   padding-left: 2.5rem;
 }
 
+body:has(.clinical-portal) .theme-toggle[data-theme-variant="floating"] {
+  display: none;
+}
+
+.clinical-popover-menu .clinical-theme-action {
+  min-height: 2.75rem;
+  color: var(--clinical-ink);
+}
+
+.clinical-popover-menu .clinical-theme-action:hover {
+  color: var(--clinical-ink);
+}
+
 .clinical-portal .overflow-x-auto,
 .clinical-portal .overflow-auto,
 .shc-public-layout .overflow-x-auto {
@@ -869,7 +882,6 @@ button:disabled,
     font-size: 1.42rem;
   }
 
-  .clinical-portal .clinical-top-actions,
   .clinical-portal .portal-toolbar,
   .clinical-portal .clinical-toolbar {
     width: 100%;
@@ -927,7 +939,9 @@ button:disabled,
   }
 
   .clinical-portal .clinical-topbar-title .clinical-topbar-context,
-  .clinical-portal .clinical-backend-status span,
+  .clinical-portal
+    .clinical-backend-status
+    > span:not(.clinical-backend-dot),
   .clinical-portal .clinical-sidebar-meta {
     display: none;
   }
@@ -2207,6 +2221,366 @@ html.dark .shc-auth-link-button {
 
   .shc-auth-canonical .shc-auth-spinner {
     animation: none;
+  }
+}
+
+/* Portal live visual compatibility ---------------------------------------
+   Preserve the established Portal structure while aligning its presentation
+   with the Admin FE vocabulary. Authority, routes and workflows stay local to
+   Portal; only semantic color, surface, border and motion language is shared. */
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"] {
+  --portal-admin-primary: #0b5c9a;
+  --portal-admin-primary-hover: #094d82;
+  --portal-admin-action: #0b5c9a;
+  --portal-admin-action-hover: #094d82;
+  --portal-admin-accent: #00a896;
+  --portal-admin-accent-text: #087f75;
+  background: var(--clinical-canvas);
+  color: var(--clinical-ink);
+}
+
+html:not(.dark)
+  .clinical-portal[data-shcare-portal-visual="live-legacy"] {
+  --clinical-canvas: #f5f7fa;
+  --clinical-canvas-raised: #f8fafc;
+  --clinical-surface: #ffffff;
+  --clinical-surface-strong: #f8fafc;
+  --clinical-ink: #0f172a;
+  --clinical-ink-soft: #334155;
+  --clinical-muted: #52677a;
+  --clinical-line: #e2e8f0;
+  --clinical-line-strong: #cbd5e1;
+  --clinical-primary: var(--portal-admin-primary);
+  --clinical-primary-strong: var(--portal-admin-primary-hover);
+  --clinical-teal: var(--portal-admin-accent);
+  --background: var(--clinical-canvas);
+  --foreground: var(--clinical-ink);
+  --card: var(--clinical-surface);
+  --card-foreground: var(--clinical-ink);
+  --popover: var(--clinical-surface);
+  --popover-foreground: var(--clinical-ink);
+  --primary: var(--portal-admin-primary);
+  --primary-foreground: #ffffff;
+  --secondary: #e8f5f3;
+  --secondary-foreground: #086f66;
+  --muted: #f1f5f9;
+  --muted-foreground: var(--clinical-muted);
+  --accent: #e2e8f0;
+  --accent-foreground: var(--clinical-ink);
+  --border: var(--clinical-line);
+  --input: var(--clinical-line);
+  --input-background: #ffffff;
+  --ring: var(--portal-admin-primary);
+}
+
+html.dark .clinical-portal[data-shcare-portal-visual="live-legacy"] {
+  --portal-admin-primary: #8ccaf0;
+  --portal-admin-primary-hover: #b7ddf7;
+  --portal-admin-accent: #45bfb3;
+  --portal-admin-accent-text: #78d4cb;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-sidebar {
+  border-right-color: var(--clinical-line);
+  background: var(--clinical-surface);
+  box-shadow: 4px 0 16px rgba(15, 23, 42, 0.04);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-topbar {
+  border-bottom-color: var(--clinical-line);
+  background: var(--clinical-surface);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-content {
+  background: var(--clinical-canvas);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  :where(.clinical-workspace-link, .clinical-popover, .portal-live-panel) {
+  border-color: var(--clinical-line);
+  background: var(--clinical-surface);
+  box-shadow: var(--clinical-shadow-tight);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-side-nav
+  a:hover,
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-side-nav
+  a.is-active,
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-side-footer
+  a:hover,
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-side-footer
+  a.is-active {
+  border-color: color-mix(
+    in srgb,
+    var(--portal-admin-primary) 28%,
+    var(--clinical-line)
+  );
+  background: color-mix(
+    in srgb,
+    var(--portal-admin-primary) 10%,
+    var(--clinical-surface)
+  );
+  color: var(--portal-admin-primary);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  :where(
+    .clinical-top-action:hover,
+    .clinical-user-trigger:hover,
+    .clinical-mobile-trigger:hover
+  ) {
+  border-color: color-mix(
+    in srgb,
+    var(--portal-admin-primary) 36%,
+    var(--clinical-line)
+  );
+  background: color-mix(
+    in srgb,
+    var(--portal-admin-primary) 8%,
+    var(--clinical-surface)
+  );
+  color: var(--portal-admin-primary);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .clinical-sidebar-brand
+  img {
+  background: #ffffff;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-dashboard {
+  width: 100%;
+  max-width: none;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-dashboard-title {
+  margin: 0;
+  color: var(--clinical-ink);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-title-icon {
+  display: none;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-dashboard-meta {
+  margin-top: 0.45rem;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-range {
+  border-color: var(--clinical-line);
+  background: var(--clinical-surface);
+  color: var(--clinical-ink-soft);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  :where(.portal-live-primary-action, .portal-live-secondary-action) {
+  min-height: 44px;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-primary-action {
+  border-color: var(--portal-admin-action);
+  background: var(--portal-admin-action);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(11, 92, 154, 0.22);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-primary-action:hover {
+  border-color: var(--portal-admin-action-hover);
+  background: var(--portal-admin-action-hover);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-secondary-action {
+  border-color: var(--clinical-line);
+  background: var(--clinical-surface);
+  color: var(--portal-admin-primary);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-secondary-action:hover {
+  border-color: var(--portal-admin-primary);
+  background: color-mix(
+    in srgb,
+    var(--portal-admin-primary) 7%,
+    var(--clinical-surface)
+  );
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric {
+  --portal-live-tone: var(--portal-admin-primary);
+  border-color: var(--clinical-line);
+  background: var(--clinical-surface);
+  box-shadow: var(--clinical-shadow-tight);
+  transition:
+    border-color 180ms ease-out,
+    transform 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric[data-testid="dashboard-metric-patients"] {
+  --portal-live-tone: var(--portal-admin-accent-text);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric[data-testid="dashboard-metric-scans"] {
+  --portal-live-tone: #2563a6;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric[data-testid="dashboard-metric-failed"] {
+  --portal-live-tone: #a15c00;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric[data-testid="dashboard-metric-devices"] {
+  --portal-live-tone: var(--portal-admin-primary);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--portal-live-tone) 52%,
+    var(--clinical-line)
+  );
+  box-shadow: var(--clinical-shadow-soft);
+  transform: translateY(-2px);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric
+  [class*="text-3xl"],
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric
+  svg {
+  color: var(--portal-live-tone);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-metric
+  [class*="bg-"] {
+  background: color-mix(
+    in srgb,
+    var(--portal-live-tone) 14%,
+    transparent
+  );
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-panel {
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-panel-header {
+  border-bottom: 1px solid var(--clinical-line);
+  padding: 1rem;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-panel-header
+  h3 {
+  color: var(--clinical-ink);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-panel-content {
+  color: var(--clinical-ink-soft);
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-scan-row:hover {
+  background: color-mix(
+    in srgb,
+    var(--portal-admin-primary) 6%,
+    var(--clinical-surface)
+  );
+}
+
+.clinical-portal[data-shcare-portal-visual="live-legacy"]
+  .portal-live-state {
+  border-radius: 1rem;
+  box-shadow: var(--clinical-shadow-tight);
+}
+
+@media (max-width: 640px) {
+  .clinical-portal[data-shcare-portal-visual="live-legacy"]
+    .portal-live-dashboard-title {
+    font-size: 1.65rem;
+  }
+
+  .clinical-portal[data-shcare-portal-visual="live-legacy"]
+    .portal-live-dashboard-actions {
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clinical-portal[data-shcare-portal-visual="live-legacy"]
+    :where(
+      .portal-live-metric,
+      .portal-live-primary-action,
+      .portal-live-secondary-action
+    ) {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Original Auth compatibility: keep the established button geometry while
+   preventing the light-theme white-on-white recovery action seen on live. */
+html:not(.dark)
+  .shc-auth-layout:not(.shc-auth-canonical)
+  .shc-auth-card
+  button[type="submit"] {
+  border-color: #2457d6;
+  background: #2457d6;
+  color: #ffffff;
+}
+
+/* Original Auth mobile compatibility: the legacy shell is viewport-locked.
+   Let its form region consume only the space below the mobile header so the
+   final account-switch action remains reachable without a nested scroll trap. */
+@media (max-width: 1023px) {
+  html
+    body
+    .app-shell.auth-shell.shc-auth-layout:not(.shc-auth-canonical)
+    .shc-auth-form-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
   }
 }
 
@@ -4857,6 +5231,747 @@ html
   .shc-public-layout[data-shcare-public-foundation="v1"] *::after {
     scroll-behavior: auto;
     animation: none;
+    transition-duration: 0.01ms;
+    transition-delay: 0ms;
+  }
+}
+
+/* Legacy public visual preservation --------------------------------------
+   The public marketing surface intentionally keeps the established live
+   composition. Brand-package typography and the global light-surface stacking
+   guard remain active for Portal/Auth, but must not restyle or unpin this
+   classic full-bleed header and hero. */
+.app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"] {
+  --clinical-ui:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --clinical-display:
+    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display:
+    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+html
+  body
+  .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  > .shc-header {
+  position: fixed;
+  z-index: 140;
+}
+
+.app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  :is(.shc-header, h1, h2, h3) {
+  font-family:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  :is(
+    .shc-brand,
+    .shc-desktop-nav > a,
+    .shc-nav-group > a,
+    .shc-login-link,
+    .shc-motion-toggle,
+    .shc-text-link,
+    .shc-socials a,
+    .shc-footer-column a,
+    .shc-footer-bottom a
+  ) {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+.app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  .shc-socials
+  a {
+  width: 44px;
+  height: 44px;
+  justify-content: center;
+}
+
+.app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  .shc-footer-bottom
+  a {
+  min-width: 44px;
+  justify-content: center;
+}
+
+.app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  :is(
+    .shc-brand,
+    .shc-button,
+    .shc-desktop-nav > a,
+    .shc-nav-group > a,
+    .shc-login-link,
+    .shc-hero-note
+  ) {
+  letter-spacing: normal;
+}
+
+html
+  body
+  .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  .shc-hero-note {
+  font-family:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+html:not(.dark)
+  body
+  .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  .shc-hero-actions
+  .shc-button-secondary {
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="enabled"]
+  .shc-home
+  [data-shc-home-reveal] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition:
+    opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--shc-home-reveal-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="enabled"]
+  .shc-home
+  [data-shc-home-reveal-state="pending"] {
+  opacity: 0.01;
+  transform: translate3d(
+      var(--shc-home-reveal-x, 0),
+      var(--shc-home-reveal-y, 24px),
+      0
+    )
+    scale(0.985);
+}
+
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="enabled"]
+  .shc-home
+  [data-shc-home-reveal-state="visible"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+@media (max-width: 767px) {
+  .shc-public-layout[data-shcare-public-visual="legacy"]
+    .shc-home
+    [data-shc-home-reveal] {
+    --shc-home-reveal-x: 0px;
+    --shc-home-reveal-y: 24px;
+  }
+}
+
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"],
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]::before,
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]::after,
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
+  *,
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
+  *::before,
+.shc-public-layout[data-shcare-public-visual="legacy"][data-shc-motion="reduced"]
+  *::after {
+  scroll-behavior: auto;
+  animation: none;
+  transition-duration: 0.01ms;
+  transition-delay: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shc-public-layout[data-shcare-public-visual="legacy"],
+  .shc-public-layout[data-shcare-public-visual="legacy"]::before,
+  .shc-public-layout[data-shcare-public-visual="legacy"]::after,
+  .shc-public-layout[data-shcare-public-visual="legacy"] *,
+  .shc-public-layout[data-shcare-public-visual="legacy"] *::before,
+  .shc-public-layout[data-shcare-public-visual="legacy"] *::after {
+    scroll-behavior: auto;
+    animation: none;
+    transition-duration: 0.01ms;
+    transition-delay: 0ms;
+  }
+}
+
+html.dark
+  body
+  .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  .shc-flow-list
+  strong {
+  color: #70c4ba;
+}
+
+html.dark
+  body
+  .app-shell.public-shell.shc-public-layout[data-shcare-public-visual="legacy"]
+  .shc-billing-toggle
+  button.is-active {
+  color: #fff;
+}
+
+/* Legacy Auth visual preservation ----------------------------------------
+   Authentication keeps the currently deployed composition and controls.
+   The newer validation, idempotency, recovery, offline and 2FA behavior is
+   rendered through this presentational adapter instead of a replacement UI. */
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"] {
+  --clinical-ui:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --clinical-display:
+    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display:
+    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  :is(.shc-auth-card, .shc-auth-card *) {
+  font-family:
+    "Outfit", "Inter", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-mobile-top {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-back {
+  min-height: 2.75rem;
+  align-items: center;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-preview-card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html:not(.dark)
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-card {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+html.dark
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-card {
+  background: rgba(7, 28, 36, 0.86);
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-login,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-forgot,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page {
+  display: block;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-intro,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  > .shc-auth-page-intro {
+  display: block;
+  margin: 0 0 1.15rem;
+  text-align: center;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-intro-icon,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  > .shc-auth-page-intro
+  .shc-auth-page-icon {
+  display: grid;
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 1.25rem;
+  place-items: center;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  border-radius: 50%;
+  background: rgba(226, 246, 242, 0.72);
+  color: #005ed8;
+  box-shadow: none;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  > .shc-auth-page-intro
+  .shc-auth-page-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 1rem;
+}
+
+html.dark
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  :is(
+    .shc-auth-legacy-intro-icon,
+    .shc-auth-registration-page
+      > .shc-auth-page-intro
+      .shc-auth-page-icon
+  ) {
+  border-color: rgba(94, 234, 212, 0.22);
+  background: rgba(15, 118, 110, 0.16);
+  color: #5eead4;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-intro
+  h1,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  > .shc-auth-page-intro
+  h1,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-copy-intro
+  h1 {
+  margin: 0;
+  color: var(--shc-readable-ink);
+  font-family:
+    "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 2.75rem;
+  font-weight: 750;
+  line-height: 1.07;
+  letter-spacing: normal;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-intro
+  p,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  > .shc-auth-page-intro
+  p {
+  margin: 0.75rem 0 0;
+  color: #304d6b;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+html.dark
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  :is(
+    .shc-auth-legacy-intro p,
+    .shc-auth-registration-page > .shc-auth-page-intro p
+  ) {
+  color: rgba(213, 234, 232, 0.82);
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-copy-intro {
+  margin: 0 0 1.5rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-copy-intro
+  p {
+  margin: 0.5rem 0 0;
+  color: var(--shc-readable-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-login
+  .shc-auth-form,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-forgot
+  .shc-auth-form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-field {
+  gap: 0.5rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-label-row {
+  min-height: 1rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-label-row
+  :is(label, a) {
+  color: #304d6b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-forgot-link {
+  display: inline;
+  color: #005ed8;
+  text-transform: uppercase;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-control-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-control-wrap
+  .shc-auth-input-icon {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 1rem;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-control-wrap[data-leading-icon="true"]
+  .shc-auth-control {
+  padding-left: 2.75rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-control-wrap[data-control-action="true"]
+  .shc-auth-control {
+  padding-right: 3rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-control-action {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 0.2rem;
+  display: grid;
+  transform: translateY(-50%);
+  place-items: center;
+}
+
+html
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-card
+  .shc-auth-password-toggle {
+  display: grid;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  box-shadow: none;
+  color: #0a5d58;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-login
+  .shc-auth-control,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-forgot
+  .shc-auth-control {
+  min-height: 3.012rem;
+  padding-block: 0.875rem;
+}
+
+html
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-card
+  .shc-auth-primary-button {
+  min-height: 3.5rem;
+  border: 1px solid rgba(7, 21, 31, 0.92);
+  background-color: #0f766e;
+  background-image: linear-gradient(
+    135deg,
+    #06323a 0%,
+    #0f766e 58%,
+    #10a99a 118%
+  );
+  color: #f8fffd;
+}
+
+html:not(.dark)
+  body
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-forgot
+  .shc-auth-primary-button {
+  border-color: #2457d6;
+  background-color: #2457d6;
+  background-image: none;
+  color: #ffffff;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-account-switch {
+  margin-top: 1.5rem;
+  border: 0;
+  padding: 0;
+  color: #304d6b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-account-switch
+  a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  margin-block: -0.875rem;
+  color: #005ed8;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-forgot-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  margin-block: -0.875rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-page-forgot
+  .shc-auth-label-row {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-legacy-back-link {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 1.5rem;
+  color: #304d6b;
+  font-size: 0.75rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress {
+  display: block;
+  margin: 0 0 2rem;
+  border: 0;
+  padding: 0 0 1rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  > p {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  ol {
+  display: grid;
+  grid-template-columns: repeat(var(--shc-auth-step-count, 6), minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  ol:has(> li:nth-child(5):last-child) {
+  --shc-auth-step-count: 5;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li {
+  position: relative;
+  z-index: 0;
+  gap: 0.5rem;
+  color: #304d6b;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li:not(:last-child)::after {
+  position: absolute;
+  z-index: -1;
+  top: 0.83rem;
+  left: calc(50% + 1rem);
+  width: calc(100% - 1.75rem);
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  border-radius: 999px;
+  background: #0f766e;
+  content: "";
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li[data-state="complete"]::after {
+  transform: scaleX(1);
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li
+  > span:first-child {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-color: rgba(15, 118, 110, 0.2);
+  background: rgba(226, 246, 242, 0.72);
+  color: #005ed8;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li[data-state="current"]
+  > span:first-child,
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li[data-state="complete"]
+  > span:first-child {
+  border-color: #0f766e;
+  background: rgba(226, 246, 242, 0.92);
+  color: #005ed8;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-progress
+  li[data-state="current"]
+  > span:last-child {
+  color: #005ed8;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-actions {
+  margin-top: 1rem;
+}
+
+.app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+  .shc-auth-registration-page
+  .shc-auth-control {
+  height: 3rem;
+  min-height: 3rem;
+}
+
+@media (max-width: 1023px) {
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-mobile-top {
+    background: rgba(248, 252, 255, 0.96);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  html.dark
+    body
+    .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-mobile-top {
+    background: rgba(7, 28, 36, 0.96);
+  }
+
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-mobile-top
+    .shc-brand {
+    min-height: 2.75rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-legacy-intro
+    h1,
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-registration-page
+    > .shc-auth-page-intro
+    h1,
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-legacy-copy-intro
+    h1 {
+    font-size: 2rem;
+    line-height: 1.08;
+  }
+
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-registration-page
+    .shc-auth-progress
+    li
+    > span:last-child {
+    display: block;
+    font-size: 0.61rem;
+  }
+
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    .shc-auth-registration-page
+    .shc-auth-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"],
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    *,
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    *::before,
+  .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
+    *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
     transition-duration: 0.01ms;
     transition-delay: 0ms;
   }

@@ -6,7 +6,10 @@ Baseline revision: `fdeb1f8783827c6493534b9083858ccc113ee8da`
 
 Verified product-source revision: `c1933d979db69ae8bc105489d1accdec9bfd0fe5`
 
-Prepared: `2026-08-23` (`Asia/Saigon`)
+Prepared: `2026-08-24` (`Asia/Saigon`)
+
+Integration candidate status: `G3 source/build/security/HIL complete; final
+intentional candidate commit and tag pending`.
 
 Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal,
 Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
@@ -14,8 +17,9 @@ Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
 This manifest binds the Phase 8 local demo/release-candidate evidence to one
 intentional product-source commit. It does not claim that this RC2 revision has
 been promoted, that current provider delivery has been re-proven, that Android
-has production signing/current runtime proof, or that firmware has physical
-proof. Earlier Firebase/Render/Supabase setup and deployment evidence remains
+has production signing/current runtime proof, or that firmware production
+WSS/command/OTA rollback has been proven. Physical two-slot I2S/serial HIL is
+now proven separately. Earlier Firebase/Render/Supabase setup and deployment evidence remains
 valid historical evidence and must not be reclassified as "never configured"
 only because a clean worktree or its current shell omits ignored secrets.
 
@@ -46,11 +50,11 @@ commit is accepted.
 
 | Surface | RC2 version | Canonical contract | Compatibility verdict |
 | --- | --- | --- | --- |
-| Backend | package `0.2.0`, release label `1.0.0-rc.2` | HTTP `/api/v1`, authenticated WSS, migrations through `054` | Additive migration and compatibility-window aliases retained |
+| Backend | package `0.2.0`, release label `1.0.0-rc.2` | HTTP `/api/v1`, authenticated WSS, migrations through `055` | Additive migration and compatibility-window aliases retained |
 | Public/Auth/Portal | `1.0.0-rc.2` | Route/capability/state contracts and strict backend receipts | Compatible; no mutation success before a validated backend outcome |
 | Platform Admin | `1.0.0-rc.2` | Independent Admin route/capability and real list/mutation APIs | Compatible and independently deployable/rollbackable from Portal |
 | Android | `versionCode=3`, `versionName=1.0.0-rc.2` | Native typed routes, repositories/ViewModels and shared HTTP/WSS schema | Backend-compatible; UI/UX remains native and separate from Web |
-| Firmware | `1.0.1` | authenticated device command v1, audio v2 and OTA lifecycle | New release version is monotonic; physical compatibility proof remains deferred |
+| Firmware | `1.0.1` | authenticated device command v1, audio v2, bounded capture queue and OTA lifecycle | Physical ESP32-S3/two-mic capture is proven; production cloud/OTA remains gated by secure provisioning |
 | Brand | `@shcare/brand@0.1.0` | React-free Web/Admin tokens, fonts and SVG | Web/Admin only; Android uses `ShcareMobileTheme` |
 | Shared schemas | `@shcare/contracts@0.1.0` | HTTP v1, device command/event and audio v2 fixtures | Source/build fixtures agree across consumers |
 
@@ -98,13 +102,13 @@ Demo accounts:
 - Local production-preview performance PASS: load `113ms`, transfer `346,058`
   bytes, JavaScript `200,809` bytes, LCP `400ms`, INP `56ms`, CLS
   `0.0003938633`; all configured budgets passed.
-- Generated `dist` tree: `246` files, `5,660,568` bytes, tree SHA-256
-  `B3C5B13F323BD63EB1BC84E07A4440B34F337DBAE1A9CFEA76BA4B5CC3379E89`.
+- Current G3 generated `dist` tree SHA-256:
+  `D3ADA8977F812A8A3636DB06D40B6A43EEA4C09ED624FE6FA31B609F585723F9`.
 
 ### Backend
 
 - `npm.cmd run check`, base smoke and KLT contract smoke: PASS.
-- Shared contracts: `50/50`.
+- Shared contracts: `51/51` after additive dual-slot/capture-queue telemetry.
 - Phase 7 admin-list contract: `3/3`; workspace-access and repository gates:
   PASS.
 - `npm audit`: `0 vulnerabilities`.
@@ -123,8 +127,8 @@ Demo accounts:
 - `npm audit`: no high/critical; one low development-only `tsx/esbuild`
   Windows development-server advisory remains. The static production artifact
   does not expose the development server.
-- Generated `dist` tree: `239` files, `8,510,428` bytes, tree SHA-256
-  `9C1B6A17E912B7E2C0E7B3EF20C02D44B5300EC27A6BB4A89ED6011DC8B3645E`.
+- Current G3 generated `dist` tree SHA-256:
+  `04718B8FC2ACE54224CC3A274F2702F6E46A8271F5BC6206A3791B21746D135F`.
 
 ### Android
 
@@ -142,14 +146,32 @@ Demo accounts:
 
 | Profile | Version | Bytes | SHA-256 |
 | --- | --- | ---: | --- |
-| `esp32-s3-devkitm-1` production | `1.0.1` | 1,121,328 | `8C69BC84BFEA58594606B3778817855758E1599C7916936570621466058B626A` |
-| `esp32-s3-ota` build | `1.0.1` | 1,121,328 | `FE01440C043110EC90A01E0F0F3FAADB288991F1A8985C796F0B5037A6167968` |
+| `esp32-s3-devkitm-1` production | `1.0.1` | 1,124,704 | `A31F9F6B32AF05F253AEB5D00063F8BA0318D6C9965CB0F9EE01B9CB02E54004` |
+| `esp32-s3-ota` build | `1.0.1` | 1,124,704 | `ECB97D1D56561D954425365CF15E7FE35F3A7C26BDC65B659196FFB028A3A9E1` |
+| `esp32-s3-development` | `1.0.1` | 1,125,888 | `3A2D09EE57B5F020B6C3BBBF5649C0AA753560F87267FF55DBBBF95B4499AC8D` |
 
-Both PlatformIO builds pass. Production reports RAM `52,864 / 327,680` and
-flash use `1,120,965 / 6,291,456`; both binaries contain the `1.0.1` literal.
-OTA upload was not attempted because no target/IP exists. PlatformIO reports an
-8 MB board definition while the intended partition design is 16 MB; only
-physical flash/partition inspection can close that discrepancy.
+All three PlatformIO builds pass. Production reports RAM `55,200 / 327,680`
+and linked flash use `1,124,333 / 6,291,456`. Esptool identifies the physical
+target as ESP32-S3 revision 0.2 with 16 MB flash and 8 MB PSRAM; image checksums,
+validation hashes and the dual-OTA partition boundary are valid.
+
+The final production image was wired-flashed to `COM9`; every written region
+was hash-verified. A controlled 20-second boot capture proved the built
+five-second watchdog, I2S readiness and `63/63` non-zero RMS/peak reports for
+both hardware slots with no degraded/unavailable/reboot marker. A separate
+25-second stable capture produced `82/82` non-zero reports per slot. Aggregate
+diagnostics retain no raw PCM, credential, network identity or PHI. Evidence:
+[G3 ESP32-S3 dual-microphone HIL](evidence/g3-hardware-01.md).
+
+The capture task owns I2S/DSP and uses a static eight-frame, zero-wait queue;
+the loop task alone owns WSS/UDP. Production WSS connect/I/O/TLS timeouts are
+bounded below the watchdog. Exact TLS byte count is checked before incrementing
+`wsPacketsSent`; partial writes close the socket and reset authenticated audio
+state. Independent final review reports no remaining firmware P0/P1. Production
+WSS/auth and forced OTA rollback remain blocked by the deliberate
+`CREDENTIAL_STORAGE_ENCRYPTION_REQUIRED` gate until encrypted NVS/device
+credential/CA provisioning exists; no insecure define or irreversible eFuse
+operation was used.
 
 ## Configuration recovery audit
 
@@ -185,7 +207,7 @@ promotion blockers without copying or committing secrets:
 
 | Gate | RC2 status |
 | --- | --- |
-| Intentional source scope, staged secret scan and diff | `PASS`: 787 paths, 0 outside allowlist, 0 secret-signature matches, clean staged diff |
+| Intentional source scope, staged secret scan and diff | `PENDING final G1-G3 candidate`: the older product-source candidate passed at 787 staged paths, but the current integration worktree is intentionally unstaged; recompute allowlisted inventory, secret scan and digest only after Deep Security disposition |
 | Local source/unit/type/lint/build | `PASS` for Backend/Web/Admin/Android/Firmware |
 | Local demo launcher and authenticated Web/Admin journeys | `PASS` |
 | Admin responsive/theme/permission/a11y/mutation browser matrix | `PASS` (`72` route checks plus cleanup-safe mutations) |
@@ -198,8 +220,9 @@ promotion blockers without copying or committing secrets:
 | Email/push/AI providers, CORS and Redis | `MIXED/BLOCKED`; prior Firebase email-link and adapter smoke evidence is retained, while current device delivery, Brevo/SMTP inbox delivery, AI credentials and remaining production inputs are unproven |
 | OTA signing key/artifact URL and canary infrastructure | `BLOCKED` |
 | Android Firebase/FCM, ADB/emulator/device and production signing | `MIXED/BLOCKED`; Firebase code and retained local config plus historical emulator runtime exist; RC2 lacks the ignored config, no target is online now, current FCM is unproven and production signing is genuinely absent |
-| Physical ESP32-S3 flash, serial, I2S, WSS, command ACK and OTA rollback | `DEFERRED — chờ phần cứng` |
-| Deep Security Scan | Separate durable scan remains `running/preflight`; not represented as complete here |
+| Physical ESP32-S3 flash, serial and dual-slot I2S | `PASS`; final image flashed and hash-verified, both mic slots non-zero with no degraded/reboot marker |
+| Production device WSS/auth, command ACK and forced OTA rollback | `BLOCKED`; requires encrypted NVS/device credential/CA provisioning and signed canary infrastructure |
+| Deep Security Scan | `PASS`; durable scan `1b48646c-c3fe-4835-9526-92177be380ae` finalized and sealed with `8` findings, and every confirmed path has remediation or explicit already-safe validation with focused regression proof |
 
 The candidate is **local-demo ready**, not production-ready. Phase 8 and the
 overall plan remain open until all required non-deferred release gates pass.
@@ -253,3 +276,18 @@ Rollback remains independent: previous backend deploy or commit revert,
 Firebase backup channel per Web/Admin site, previous Android distribution
 artifact, and the previous confirmed firmware image. A UI-only rollback does
 not require firmware rollback while the compatibility verdict remains green.
+
+## 2026-08-24 G3 security candidate addendum
+
+- Governing plan: [“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G3 is still in progress and G4 has not started.
+- Durable Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae` is complete and sealed with `8` findings. Confirmed paths have source remediation or were revalidated as already safe, with focused regression proof.
+- Candidate working identity before final freeze: base HEAD `1c902b29405717c28d8dfa908e4eeb16137971cc`, dirty snapshot hash `dc3e7457f923ddb2483e9e12aff0a6205d58aff5`.
+- Current Android debug APK SHA-256 is `9B58268A123FB66CFD4139CF3F47C8C13F491EAC0BE0CACDAEA416ED0D866C62`. Production firmware SHA-256 remains `A31F9F6B32AF05F253AEB5D00063F8BA0318D6C9965CB0F9EE01B9CB02E54004`; OTA SHA-256 remains `ECB97D1D56561D954425365CF15E7FE35F3A7C26BDC65B659196FFB028A3A9E1`.
+- Do not promote from this addendum alone. Browser smoke, production/provider/migration preflight, exact candidate freeze and rollback evidence remain required before G4 deployment.
+
+## 2026-08-24 final G3 pre-candidate evidence
+
+- Post-security browser smoke passes: Public `17`, Auth forgot-password `17`, Portal `478`, and Admin Storage mobile/system. The older full browser matrices remain valid because no current security change modified those route presentations.
+- Secret-pattern scan covered `89` intentional modified/untracked source files and found `0` private-key, AWS, Google API key, GitHub token, Slack token or JWT literal hits. `git diff --check` passes with only Git line-ending notices.
+- Firebase project access is live, both Hosting sites are HTTP `200`, and both known Render services are healthy on `/api/health`. Their metrics still identify an older backend revision. Candidate PostgreSQL/S3 secrets are not bound to this shell, so migration `055`, PHI backfill and provider behavior must be proven in G4 before promotion.
+- Physical `COM9` reports ESP32-S3 revision `0.2`, `16MB` flash and `8MB` PSRAM. The already-flashed firmware artifact is unchanged; the existing two-mic HIL proof remains the relevant evidence.

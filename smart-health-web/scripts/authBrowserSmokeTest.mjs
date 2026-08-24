@@ -149,7 +149,7 @@ async function inspectRoute(page) {
   return page.evaluate(() => {
     const root = document.documentElement;
     const shell = document.querySelector(
-      '.shc-auth-layout[data-shcare-auth-foundation="v1"]',
+      '.shc-auth-layout[data-shcare-auth-foundation="legacy-enhanced-v1"][data-shcare-auth-visual="live-legacy"]',
     );
     const main = document.querySelector("#shcare-auth-main");
     const visible = (element) => {
@@ -185,9 +185,10 @@ async function inspectRoute(page) {
     const visualSurfaces = Array.from(
       document.querySelectorAll(
         [
-          ".shc-auth-brand-panel",
-          ".shc-auth-canonical-card",
-          ".shc-auth-mobile-header",
+          ".shc-auth-aside",
+          ".shc-auth-card",
+          ".shc-auth-mobile-top",
+          ".shc-auth-preview-card",
           ".shc-auth-alert",
           ".shc-auth-choice",
           ".shc-auth-upload",
@@ -304,7 +305,9 @@ async function runCase(browser, siteUrl, viewport, theme) {
         describeFailure(route, viewport, theme, message);
 
       checks += 1;
-      if (!layout.shell) failures.push(prefix("canonical Auth shell missing"));
+      if (!layout.shell) {
+        failures.push(prefix("legacy-enhanced Auth shell missing"));
+      }
       checks += 1;
       if (!layout.mainVisible)
         failures.push(prefix("Auth main is not visible"));

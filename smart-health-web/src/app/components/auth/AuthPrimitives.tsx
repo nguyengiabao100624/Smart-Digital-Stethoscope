@@ -60,6 +60,8 @@ export function AuthField({
   error,
   required,
   action,
+  leadingIcon: LeadingIcon,
+  controlAction,
   children,
 }: {
   id: string;
@@ -68,11 +70,21 @@ export function AuthField({
   error?: string;
   required?: boolean;
   action?: ReactNode;
+  leadingIcon?: LucideIcon;
+  controlAction?: ReactNode;
   children: ReactElement<ControlProps>;
 }) {
   const descriptionIds = [hint ? `${id}-hint` : "", error ? `${id}-error` : ""]
     .filter(Boolean)
     .join(" ");
+  const control = cloneElement(children, {
+    id,
+    name: children.props.name || id,
+    className: `shc-auth-control ${children.props.className || ""}`.trim(),
+    "aria-invalid": Boolean(error),
+    "aria-describedby": descriptionIds || undefined,
+    "aria-required": required || undefined,
+  });
 
   return (
     <div className="shc-auth-field" data-invalid={error ? "true" : undefined}>
@@ -83,14 +95,27 @@ export function AuthField({
         </div>
         {action}
       </div>
-      {cloneElement(children, {
-        id,
-        name: children.props.name || id,
-        className: `shc-auth-control ${children.props.className || ""}`.trim(),
-        "aria-invalid": Boolean(error),
-        "aria-describedby": descriptionIds || undefined,
-        "aria-required": required || undefined,
-      })}
+      {LeadingIcon || controlAction ? (
+        <div
+          className="shc-auth-control-wrap"
+          data-leading-icon={LeadingIcon ? "true" : undefined}
+          data-control-action={controlAction ? "true" : undefined}
+        >
+          {LeadingIcon ? (
+            <LeadingIcon
+              className="shc-auth-input-icon"
+              size={18}
+              aria-hidden="true"
+            />
+          ) : null}
+          {control}
+          {controlAction ? (
+            <span className="shc-auth-control-action">{controlAction}</span>
+          ) : null}
+        </div>
+      ) : (
+        control
+      )}
       {hint ? (
         <p id={`${id}-hint`} className="shc-auth-field-hint">
           {hint}

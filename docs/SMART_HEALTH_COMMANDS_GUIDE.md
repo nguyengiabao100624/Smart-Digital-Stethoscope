@@ -4244,3 +4244,39 @@ npm.cmd run build
 
 - Canonical Firebase targets are Web `webapp -> shcare` and Admin `admin -> shcare-admin`. Bind the retained external `.env.production` only in the current process or through `SHCARE_WEB_ENV_FILE`; never copy or print it. Build with `build:firebase` and `build:firebase:admin`, then deploy distinct preview channels `rc2-web` and `rc2-admin` with pinned `firebase-tools@15.28.1`.
 - Preview creation is safe before production promotion, but authenticated preview smoke requires the exact preview origins in backend CORS. Do not clone preview to `live` until backup, migrations, rollback and cleanup gates are green.
+
+## 2026-08-24 G3 firmware verification commands
+
+Run from `smart-health-embedded\MSM261S4030H0`; never place Wi-Fi, device secrets, CA private material or OTA signing keys in committed flags.
+
+```powershell
+node test\audio_capture_task_source_contract_test.js
+node test\wifi_capture_resilience_source_contract_test.js
+node test\dual_mic_diagnostics_source_contract_test.js
+node test\firmware_runtime_source_contract_test.js
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-development
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-ota
+```
+
+Final wired upload used the explicitly verified CH343 ESP32-S3 port:
+
+```powershell
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1 -t upload --upload-port COM9
+```
+
+Only bounded aggregate RMS/peak/window evidence may be retained; do not save raw audio, SSID, IP, MAC, credential, token or PHI. Production WSS remains fail-closed until encrypted NVS/device credential/CA provisioning is implemented.
+
+## 2026-08-24 Deep Security continuation requirement
+
+- Keep durable scan `1b48646c-c3fe-4835-9526-92177be380ae`; never create, fail or cancel a replacement merely because the current waiter is blocked.
+- In the Codex composer, change `Full access` to `Ask for approval` and send a new turn. The host applies the managed filesystem profile only on the next turn; `config.toml`, terminal commands and fabricated MCP metadata cannot substitute for it.
+- Resume the same scan using its retained scan ID and handoff claim. If the next turn still reports `permission_profile=disabled`, create a local task in the same workspace with `Ask for approval` selected from the start; restart Codex only if that UI setting remains stale.
+- After successful scan completion, recompute the intentional allowlisted staged inventory, secret scan, artifact hashes and candidate SHA before opening G4.
+
+## 2026-08-24 G3 resume commands after Deep Security
+
+- The durable scan is complete; do not rerun it. Resume with browser smoke, provider/database read-only preflight and candidate freeze.
+- Re-detect hardware before flash: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe device list`.
+- Build firmware without assuming flash size: `C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1` from `smart-health-embedded/MSM261S4030H0`.
+- Native PlatformIO tests require host `gcc/g++`; absence of that compiler is an environment blocker and must not be misreported as an ESP32 build failure.

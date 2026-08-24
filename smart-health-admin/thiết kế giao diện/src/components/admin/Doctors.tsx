@@ -849,7 +849,7 @@ export function Doctors() {
                   </td>
                   <td className="px-5 py-4">
                     {doc.status === "active" ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success-foreground border border-success/20">
                         <span className="w-1.5 h-1.5 rounded-full bg-success mr-1.5"></span>
                         Tài khoản hoạt động
                       </span>
@@ -888,7 +888,7 @@ export function Doctors() {
                               {doc.status === "inactive" ? (
                                 <DropdownMenu.Item
                                   onSelect={() => handleUnlock(doc)}
-                                  className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-success/10 text-success hover:text-success rounded-sm flex items-center gap-2"
+                                  className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-success/10 text-success-foreground hover:text-success-foreground rounded-sm flex items-center gap-2"
                                 >
                                   <LockOpen className="w-4 h-4" /> Mở khóa tài khoản
                                 </DropdownMenu.Item>
@@ -1027,7 +1027,7 @@ export function Doctors() {
                 {selectedDoctor.status === "inactive" ? (
                   <button
                     onClick={() => handleUnlock(selectedDoctor)}
-                    className="rounded-md bg-success/10 px-3 py-2 text-sm font-medium text-success hover:bg-success/20 transition-colors"
+                    className="rounded-md bg-success/10 px-3 py-2 text-sm font-medium text-success-foreground hover:bg-success/20 transition-colors"
                   >
                     Mở khóa tài khoản
                   </button>
@@ -1064,7 +1064,7 @@ export function Doctors() {
           <Dialog.Overlay className="fixed inset-0 z-[60] bg-slate-900/45" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] w-[min(92vw,480px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
             <div
-              className={`mb-4 flex items-center gap-3 ${confirmAction?.tone === "success" ? "text-success" : "text-destructive"}`}
+              className={`mb-4 flex items-center gap-3 ${confirmAction?.tone === "success" ? "text-success-foreground" : "text-destructive"}`}
             >
               {confirmAction?.tone === "success" ? (
                 <ShieldCheck className="h-6 w-6" />

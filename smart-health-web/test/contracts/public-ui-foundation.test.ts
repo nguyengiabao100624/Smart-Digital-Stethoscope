@@ -27,6 +27,10 @@ const signalHorizonSource = readFileSync(
   new URL("src/web-styles/signal-horizon.css", webRoot),
   "utf8",
 );
+const stylesSource = readFileSync(
+  new URL("src/styles.css", webRoot),
+  "utf8",
+);
 const packageJson = JSON.parse(
   readFileSync(new URL("package.json", webRoot), "utf8"),
 ) as { scripts?: Record<string, string> };
@@ -73,89 +77,80 @@ test("keeps Public production markup free of the retired demo-style classes", ()
   }
 });
 
-test("uses purposeful bounded Public motion without glass or looping hero media", () => {
-  assert.doesNotMatch(layoutSource, /backdropFilter|WebkitBackdropFilter/);
-  assert.doesNotMatch(
-    layoutSource,
-    /entry\.isIntersecting\s*\?\s*"visible"\s*:\s*"pending"/,
-  );
-  assert.match(layoutSource, /index\s*%\s*4/);
+test("preserves the established classic Public visual without losing motion safety", () => {
+  assert.match(layoutSource, /\.\.\/\.\.\/\.\.\/\.\.\/docs\/Logo\.png/);
+  assert.match(layoutSource, /data-shcare-public-visual="legacy"/);
+  assert.match(layoutSource, /id="shcare-public-main"/);
   assert.match(layoutSource, /systemReducedMotion/);
+  assert.match(layoutSource, /aria-label="Shcare — Smart Health Care"/);
+  assert.match(layoutSource, />Shcare<\/span>/);
 
+  assert.equal(homeSource.match(/<video\b/g)?.length, 2);
+  assert.equal(homeSource.match(/autoPlay=\{motionEnabled\}/g)?.length, 2);
+  assert.match(homeSource, /shc-hero-video-edge/);
+  assert.match(homeSource, /shc-hero-video-main/);
+  assert.match(homeSource, /video\.pause\(\)/);
+  assert.match(homeSource, /video\.play\(\)/);
+  assert.match(homeSource, /Đăng ký sử dụng/);
+  assert.match(homeSource, /Xem giải pháp/);
   assert.doesNotMatch(
     homeSource,
-    /backdropFilter|WebkitBackdropFilter|<video\b|autoPlay|\bloop\b/,
+    /pin\/kết nối|online\/offline, pin|Heartbeat, pin/,
   );
-  assert.doesNotMatch(homeSource, /\bHeartPulse\b/);
 });
 
-test("keeps Public section eyebrows semantic and contrast-token driven", () => {
-  assert.equal(
-    homeSource.match(/<span className="shc-section-eyebrow">/g)?.length,
-    4,
+test("isolates classic Public typography and stacking from the newer product surfaces", () => {
+  assert.ok(
+    stylesSource.indexOf('@import "./web-styles/fonts.css";') <
+      stylesSource.indexOf('@import "tailwindcss";'),
+    "classic Outfit import must load before generated CSS",
   );
   assert.match(
     clinicalPolishSource,
-    /--shc-public-eyebrow:\s*var\(--clinical-teal\);/,
+    /data-shcare-public-visual="legacy"\][\s\S]*--clinical-display:[\s\S]*"Outfit"/,
   );
-
-  const eyebrowRule = clinicalPolishSource.match(
-    /\.shc-public-layout\[data-shcare-public-foundation="v1"\] \.shc-section-eyebrow\s*\{([^}]*)\}/,
+  const headerRule = clinicalPolishSource.match(
+    /data-shcare-public-visual="legacy"\]\s*> \.shc-header\s*\{([^}]*)\}/,
   );
-  assert.ok(eyebrowRule, "canonical Public eyebrow rule is missing");
-  assert.match(eyebrowRule[1], /color:\s*var\(--shc-public-eyebrow\);/);
-  assert.doesNotMatch(eyebrowRule[1], /!important/);
-
-  const announcementAction = clinicalPolishSource.match(
-    /\.shc-public-layout\[data-shcare-public-foundation="v1"\] \.shc-announcement a\s*\{([^}]*)\}/,
-  );
-  assert.ok(announcementAction, "Public announcement action rule is missing");
-  assert.match(announcementAction[1], /min-height:\s*2\.75rem;/);
-  assert.doesNotMatch(announcementAction[1], /!important/);
+  assert.ok(headerRule, "classic fixed-header preservation rule is missing");
+  assert.match(headerRule[1], /position:\s*fixed;/);
+  assert.match(headerRule[1], /z-index:\s*140;/);
+  assert.doesNotMatch(headerRule[1], /!important/);
 });
 
-test("keeps the Public entry free of the motion runtime while preserving bounded reveals", () => {
-  for (const [name, source] of [
-    ["PublicLayout", layoutSource],
-    ["HomePage", homeSource],
-  ] as const) {
-    assert.doesNotMatch(
-      source,
-      /motion\/react|AnimatePresence|<motion\./,
-      name,
-    );
-  }
+test("makes the classic animation control authoritative for CSS and hero media", () => {
+  assert.match(layoutSource, /resolveInitialMotionPreference/);
+  assert.match(layoutSource, /media\.addEventListener\("change", syncWithSystem\)/);
+  assert.match(layoutSource, /motionRequested\s*&&\s*!systemReducedMotion/);
+  assert.match(homeSource, /const motionEnabled = usePublicMotionEnabled\(\)/);
+  assert.match(homeSource, /autoPlay=\{motionEnabled\}/);
+  assert.match(homeSource, /video\.pause\(\)/);
 
-  assert.match(homeSource, /"data-shc-reveal":\s*direction/);
-  assert.match(homeSource, /"data-shc-reveal-state":\s*"pending"/);
-  assert.match(homeSource, /Math\.min\(Math\.max\(delaySeconds, 0\), 0\.24\)/);
-  assert.match(layoutSource, /const authoredTargets\s*=/);
-  assert.match(layoutSource, /dataset\.shcRevealAuto\s*=\s*"true"/);
-  assert.match(layoutSource, /observer\.unobserve\(element\)/);
-
-  assert.match(
-    clinicalPolishSource,
-    /transition-property:\s*opacity, transform;/,
+  const legacyMotionRules = clinicalPolishSource.slice(
+    clinicalPolishSource.indexOf("Legacy public visual preservation"),
   );
-  assert.match(clinicalPolishSource, /transition-duration:\s*420ms;/);
-  assert.doesNotMatch(clinicalPolishSource, /!important/);
-  assert.match(clinicalPolishSource, /shc-mobile-menu-enter 320ms/);
-  assert.match(clinicalPolishSource, /shc-mobile-submenu-enter 300ms/);
   assert.match(
-    clinicalPolishSource,
+    legacyMotionRules,
+    /data-shcare-public-visual="legacy"\]\[data-shc-motion="reduced"\]::before,/,
+  );
+  assert.match(
+    legacyMotionRules,
     /@media \(prefers-reduced-motion: reduce\)/,
   );
-  assert.match(
-    clinicalPolishSource,
-    /data-shcare-public-foundation="v1"\]\[data-shc-motion="reduced"\]::before,/,
-  );
-  assert.match(
-    clinicalPolishSource,
-    /data-shcare-public-foundation="v1"\]::before,/,
-  );
+  assert.match(legacyMotionRules, /animation:\s*none;/);
+  assert.doesNotMatch(legacyMotionRules, /!important/);
+  assert.match(signalHorizonSource, /\.shc-hero-video-edge/);
+});
 
-  assert.doesNotMatch(signalHorizonSource, /shc-premium-breathe/);
-  assert.doesNotMatch(signalHorizonSource, /data-shc-home-reveal/);
+test("keeps classic Public emphasis and active controls readable in dark mode", () => {
+  assert.match(
+    clinicalPolishSource,
+    /html\.dark[\s\S]*?data-shcare-public-visual="legacy"\][\s\S]*?\.shc-flow-list[\s\S]*?strong\s*\{\s*color:\s*#70c4ba/,
+  );
+  assert.match(
+    clinicalPolishSource,
+    /html\.dark[\s\S]*?data-shcare-public-visual="legacy"\][\s\S]*?\.shc-billing-toggle[\s\S]*?button\.is-active\s*\{\s*color:\s*#fff/,
+  );
 });
 
 test("keeps maintenance and 404 inside the Public shell without fabricated support details", () => {

@@ -1,3 +1,4 @@
+@import "./web-styles/fonts.css";
 @import "tailwindcss";
 @source "../src";
 @import "tw-animate-css";

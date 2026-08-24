@@ -40,6 +40,7 @@ const { createAvatarMutationRepository } = require("./avatarMutationRepository")
 const { createWorkspaceLifecycleRepository } = require("./workspaceLifecycleRepository");
 const { normalizeWorkspaceCreate, publicWorkspaceLifecycle } = require("./workspaceLifecycleContract");
 const { SIGNAL_QUALITY_ANALYZER_VERSION } = require("./aiRuntime");
+const { protectPhiRecord, unprotectPhiRecord } = require("./phiPersistence");
 const {
   normalizeServicePackageCreate,
   normalizeServicePackagePatch,
@@ -62,6 +63,15 @@ const {
   resolveNotificationPreferenceDecision,
 } = require("./notificationPreferences");
 const {
+  MAX_ACTIVE_NOTIFICATION_DEVICES_PER_USER,
+  MAX_NOTIFICATION_DEVICE_HISTORY_PER_USER,
+  MAX_NOTIFICATION_PUSH_FANOUT,
+  assertNotificationDeviceCapacity,
+  isValidFcmRegistrationToken,
+  notificationDeviceLimitError,
+  selectBoundedNotificationDevices,
+} = require("./notificationDeviceLimits");
+const {
   normalizePasswordHash,
   verifyPasswordSecret,
 } = require("./passwordHash");
@@ -82,6 +92,16 @@ function optionalTimestamp(value) {
 
 function objectOf(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function jsonObjectOf(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value) return {};
+  try {
+    return objectOf(JSON.parse(value));
+  } catch {
+    return {};
+  }
 }
 
 function normalizeUserPasswordMaterial(user) {
@@ -346,29 +366,37 @@ function rowToAuditLog(row) {
 
 function rowToPatient(row) {
   if (!row) return null;
+  const phi = unprotectPhiRecord(
+    "patient",
+    row.id,
+    row.organization_id || "",
+    jsonObjectOf(row.phi_payload),
+  ) || {};
   return {
     id: row.id,
     organizationId: row.organization_id || "",
     ownerUserId: row.owner_user_id || "",
-    patientCode: row.patient_code || "",
-    name: row.name || "",
-    age: row.age === null || row.age === undefined ? null : Number(row.age),
-    dateOfBirth: toIso(row.date_of_birth).slice(0, 10),
-    bloodType: row.blood_type || "",
-    allergies: Array.isArray(row.allergies) ? row.allergies : [],
-    emergencyContact: objectOf(row.emergency_contact),
-    gender: row.gender || "",
-    phone: row.phone || "",
-    email: row.email || "",
-    address: row.address || "",
-    notes: row.notes || "",
+    patientCode: phi.patientCode ?? row.patient_code ?? "",
+    name: phi.name ?? row.name ?? "",
+    age: phi.age ?? (row.age === null || row.age === undefined ? null : Number(row.age)),
+    dateOfBirth: phi.dateOfBirth ?? toIso(row.date_of_birth).slice(0, 10),
+    bloodType: phi.bloodType ?? row.blood_type ?? "",
+    allergies: Array.isArray(phi.allergies)
+      ? phi.allergies
+      : Array.isArray(row.allergies) ? row.allergies : [],
+    emergencyContact: phi.emergencyContact ?? objectOf(row.emergency_contact),
+    gender: phi.gender ?? row.gender ?? "",
+    phone: phi.phone ?? row.phone ?? "",
+    email: phi.email ?? row.email ?? "",
+    address: phi.address ?? row.address ?? "",
+    notes: phi.notes ?? row.notes ?? "",
     guardianUserId: row.guardian_user_id || "",
     profileType: row.profile_type || (row.owner_user_id ? "dependent" : "patient"),
-    relationship: row.relationship || "",
+    relationship: phi.relationship ?? row.relationship ?? "",
     familyGroupId: row.family_group_id || "",
     accountUserId: row.account_user_id || "",
     primaryDoctorId: row.primary_doctor_id || "",
-    doctorName: row.doctor_name || "",
+    doctorName: phi.doctorName ?? row.doctor_name ?? "",
     deletedAt: toIso(row.deleted_at),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -611,11 +639,23 @@ async function repairLegacyPasswordRows(pool, rows = []) {
 
 function rowToScan(row) {
   if (!row) return null;
+  const phi = unprotectPhiRecord(
+    "scan",
+    row.id,
+    row.organization_id || "",
+    jsonObjectOf(row.phi_payload),
+  ) || {};
+  const patientPhi = unprotectPhiRecord(
+    "patient",
+    row.patient_id || "",
+    row.organization_id || "",
+    jsonObjectOf(row.patient_phi_payload),
+  ) || {};
   return {
     id: row.id,
     organizationId: row.organization_id || "",
     patientId: row.patient_id || "",
-    patientName: row.patient_name || row.patientName || "",
+    patientName: patientPhi.name ?? row.patient_name ?? row.patientName ?? "",
     deviceId: row.device_id || "",
     createdByUserId: row.created_by_user_id || "",
     idempotencyKey: row.idempotency_key || "",
@@ -640,8 +680,8 @@ function rowToScan(row) {
     bpm: row.bpm === null || row.bpm === undefined ? 0 : Number(row.bpm),
     aiLabel: row.ai_label || "",
     aiConfidence: row.ai_confidence === null || row.ai_confidence === undefined ? null : Number(row.ai_confidence),
-    aiSummary: row.ai_summary || "",
-    doctorNotes: row.doctor_notes || "",
+    aiSummary: phi.aiSummary ?? row.ai_summary ?? "",
+    doctorNotes: phi.doctorNotes ?? row.doctor_notes ?? "",
     audioUrl: row.audio_url || "",
     wavFile: row.wav_file || "",
     audioFileId: row.audio_file_id || "",
@@ -671,14 +711,20 @@ function rowToAudioFile(row) {
 
 function rowToAiResult(row) {
   if (!row) return null;
+  const phi = unprotectPhiRecord(
+    "ai_result",
+    row.id,
+    row.scan_id || "",
+    jsonObjectOf(row.phi_payload),
+  ) || {};
   return {
     id: row.id,
     scanId: row.scan_id || "",
     modelVersion: row.model_version || "",
     label: row.label || "",
     confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
-    summary: row.summary || "",
-    rawResult: row.raw_result || {},
+    summary: phi.summary ?? row.summary ?? "",
+    rawResult: phi.rawResult ?? row.raw_result ?? {},
     status: row.status || "queued",
     errorCode: row.error_code || "",
     createdAt: toIso(row.created_at),
@@ -2423,13 +2469,35 @@ function createRepositories(options) {
   }
 
   async function queryUpsertPatient(queryable, patient) {
+    const phiPayload = protectPhiRecord(
+      "patient",
+      patient.id,
+      patient.organizationId,
+      {
+        patientCode: patient.patientCode || patient.id,
+        name: patient.name || patient.patientCode || patient.id,
+        age: patient.age === undefined || patient.age === "" ? null : patient.age,
+        dateOfBirth: patient.dateOfBirth || "",
+        bloodType: patient.bloodType || "",
+        allergies: Array.isArray(patient.allergies) ? patient.allergies : [],
+        emergencyContact: objectOf(patient.emergencyContact),
+        gender: patient.gender || "",
+        phone: patient.phone || "",
+        email: patient.email || "",
+        address: patient.address || "",
+        notes: patient.notes || "",
+        relationship: patient.relationship || "",
+        doctorName: patient.doctorName || "",
+      },
+    );
+    const encrypted = phiPayload.encrypted === true;
     await queryable.query(
         `
           INSERT INTO patients (
             id, organization_id, owner_user_id, patient_code, name, age, date_of_birth, blood_type,
             allergies, emergency_contact, gender, phone, email, address, notes, guardian_user_id,
             profile_type, relationship, family_group_id, account_user_id, primary_doctor_id,
-            doctor_name, created_at, updated_at
+            doctor_name, created_at, updated_at, phi_payload
           )
           VALUES (
             $1, $2,
@@ -2439,7 +2507,7 @@ function createRepositories(options) {
             $17, $18, $19,
             CASE WHEN $20 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $20) THEN $20 ELSE NULL END,
             CASE WHEN $21 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $21) THEN $21 ELSE NULL END,
-            $22, COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now())
+            $22, COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now()), $25::jsonb
           )
           ON CONFLICT (id)
           DO UPDATE SET
@@ -2464,33 +2532,35 @@ function createRepositories(options) {
             account_user_id = EXCLUDED.account_user_id,
             primary_doctor_id = EXCLUDED.primary_doctor_id,
             doctor_name = EXCLUDED.doctor_name,
+            phi_payload = EXCLUDED.phi_payload,
             updated_at = EXCLUDED.updated_at
         `,
         [
           patient.id,
           optional(patient.organizationId),
           optional(patient.ownerUserId),
-          patient.patientCode || patient.id,
-          patient.name || patient.patientCode || patient.id,
-          patient.age === undefined || patient.age === "" ? null : patient.age,
-          patient.dateOfBirth || null,
-          optional(patient.bloodType),
-          JSON.stringify(Array.isArray(patient.allergies) ? patient.allergies : []),
-          JSON.stringify(objectOf(patient.emergencyContact)),
-          optional(patient.gender),
-          optional(patient.phone),
-          optional(patient.email),
-          optional(patient.address),
-          optional(patient.notes),
+          encrypted ? patient.id : patient.patientCode || patient.id,
+          encrypted ? "Encrypted patient" : patient.name || patient.patientCode || patient.id,
+          encrypted ? null : patient.age === undefined || patient.age === "" ? null : patient.age,
+          encrypted ? null : patient.dateOfBirth || null,
+          optional(encrypted ? "" : patient.bloodType),
+          JSON.stringify(encrypted ? [] : Array.isArray(patient.allergies) ? patient.allergies : []),
+          JSON.stringify(encrypted ? {} : objectOf(patient.emergencyContact)),
+          optional(encrypted ? "" : patient.gender),
+          optional(encrypted ? "" : patient.phone),
+          optional(encrypted ? "" : patient.email),
+          optional(encrypted ? "" : patient.address),
+          optional(encrypted ? "" : patient.notes),
           optional(patient.guardianUserId),
           patient.profileType || (patient.ownerUserId ? "dependent" : "patient"),
-          optional(patient.relationship),
+          optional(encrypted ? "" : patient.relationship),
           optional(patient.familyGroupId),
           optional(patient.accountUserId),
           optional(patient.primaryDoctorId),
-          optional(patient.doctorName),
+          optional(encrypted ? "" : patient.doctorName),
           optional(patient.createdAt),
           patient.updatedAt || nowIso(),
+          JSON.stringify(encrypted ? phiPayload : {}),
         ],
       );
   }
@@ -2796,6 +2866,16 @@ function createRepositories(options) {
   }
 
   async function upsertScanSql(scan) {
+    const phiPayload = protectPhiRecord(
+      "scan",
+      scan.id,
+      scan.organizationId,
+      {
+        aiSummary: scan.aiSummary || "",
+        doctorNotes: scan.doctorNotes || "",
+      },
+    );
+    const encrypted = phiPayload.encrypted === true;
     await withSql((pool) =>
       pool.query(
         `
@@ -2806,7 +2886,7 @@ function createRepositories(options) {
             doctor_notes, audio_url, wav_file, created_at, updated_at,
             uploaded_bytes, audio_chunk_count, audio_upload_completed_at,
             processing_generation, processing_intent, processing_artifact_fingerprint,
-            processing_run_id, audio_file_id, ai_result_id
+            processing_run_id, audio_file_id, ai_result_id, phi_payload
           )
           VALUES (
             $1, $2, $3, $4, $5, $6, $7,
@@ -2814,7 +2894,7 @@ function createRepositories(options) {
             $15, $16, $17, $18, $19, $20, $21, $22,
             $23, $24, $25, COALESCE($26::timestamptz, now()), COALESCE($27::timestamptz, now()),
             $28, $29, $30::timestamptz,
-            $31, $32, $33, $34, $35, $36
+            $31, $32, $33, $34, $35, $36, $37::jsonb
           )
           ON CONFLICT (id)
           DO UPDATE SET
@@ -2851,6 +2931,7 @@ function createRepositories(options) {
             processing_run_id = EXCLUDED.processing_run_id,
             audio_file_id = EXCLUDED.audio_file_id,
             ai_result_id = EXCLUDED.ai_result_id,
+            phi_payload = EXCLUDED.phi_payload,
             updated_at = EXCLUDED.updated_at
         `,
         [
@@ -2875,8 +2956,8 @@ function createRepositories(options) {
           scan.bpm || 0,
           optional(scan.aiLabel),
           scan.aiConfidence === undefined || scan.aiConfidence === "" ? null : scan.aiConfidence,
-          optional(scan.aiSummary),
-          optional(scan.doctorNotes),
+          optional(encrypted ? "" : scan.aiSummary),
+          optional(encrypted ? "" : scan.doctorNotes),
           optional(scan.audioUrl),
           optional(scan.wavFile),
           optional(scan.createdAt || scan.startedAt),
@@ -2890,6 +2971,7 @@ function createRepositories(options) {
           scan.processingRunId || "",
           optional(scan.audioFileId),
           optional(scan.aiResultId),
+          JSON.stringify(encrypted ? phiPayload : {}),
         ]
       )
     );
@@ -2927,13 +3009,23 @@ function createRepositories(options) {
   }
 
   async function upsertAiResultSql(aiResult) {
+    const phiPayload = protectPhiRecord(
+      "ai_result",
+      aiResult.id,
+      aiResult.scanId,
+      {
+        summary: aiResult.summary || "",
+        rawResult: aiResult.rawResult || {},
+      },
+    );
+    const encrypted = phiPayload.encrypted === true;
     await withSql((pool) =>
       pool.query(
         `
           INSERT INTO ai_results (
-            id, scan_id, model_version, label, confidence, summary, raw_result, status, error_code, created_at, updated_at
+            id, scan_id, model_version, label, confidence, summary, raw_result, status, error_code, created_at, updated_at, phi_payload
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, COALESCE($10::timestamptz, now()), COALESCE($11::timestamptz, now()))
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, COALESCE($10::timestamptz, now()), COALESCE($11::timestamptz, now()), $12::jsonb)
           ON CONFLICT (id)
           DO UPDATE SET
             model_version = EXCLUDED.model_version,
@@ -2943,6 +3035,7 @@ function createRepositories(options) {
             raw_result = EXCLUDED.raw_result,
             status = EXCLUDED.status,
             error_code = EXCLUDED.error_code,
+            phi_payload = EXCLUDED.phi_payload,
             updated_at = EXCLUDED.updated_at
         `,
         [
@@ -2951,25 +3044,33 @@ function createRepositories(options) {
           aiResult.modelVersion || SIGNAL_QUALITY_ANALYZER_VERSION,
           optional(aiResult.label),
           aiResult.confidence === undefined || aiResult.confidence === "" ? null : aiResult.confidence,
-          optional(aiResult.summary),
-          JSON.stringify(aiResult.rawResult || {}),
+          optional(encrypted ? "" : aiResult.summary),
+          JSON.stringify(encrypted ? {} : aiResult.rawResult || {}),
           aiResult.status || "queued",
           optional(aiResult.errorCode),
           optional(aiResult.createdAt),
           aiResult.updatedAt || nowIso(),
+          JSON.stringify(encrypted ? phiPayload : {}),
         ]
       )
     );
   }
 
   async function saveAudioProcessingSql({ scan, audioFile, aiResult }) {
+    const aiPhiPayload = protectPhiRecord(
+      "ai_result",
+      aiResult.id,
+      aiResult.scanId,
+      { summary: aiResult.summary || "", rawResult: aiResult.rawResult || {} },
+    );
+    const aiEncrypted = aiPhiPayload.encrypted === true;
     return withSqlTransaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
         `audio-processing:${scan.id}`,
       ]);
 
       const currentScanResult = await client.query(
-        "SELECT id, organization_id, patient_id FROM scan_sessions WHERE id = $1 LIMIT 1 FOR UPDATE",
+        "SELECT id, organization_id, patient_id, ai_summary, doctor_notes, phi_payload FROM scan_sessions WHERE id = $1 LIMIT 1 FOR UPDATE",
         [scan.id],
       );
       const currentScan = currentScanResult.rows?.[0];
@@ -2982,6 +3083,22 @@ function createRepositories(options) {
       ) {
         throw repositoryError(409, "SCAN_SCOPE_CONFLICT", "Processed artifacts do not belong to this scan");
       }
+      const currentScanPhi = unprotectPhiRecord(
+        "scan",
+        currentScan.id,
+        currentScan.organization_id || scan.organizationId,
+        jsonObjectOf(currentScan.phi_payload),
+      ) || {};
+      const scanPhiPayload = protectPhiRecord(
+        "scan",
+        scan.id,
+        scan.organizationId || currentScan.organization_id,
+        {
+          aiSummary: scan.aiSummary ?? currentScanPhi.aiSummary ?? currentScan.ai_summary ?? "",
+          doctorNotes: currentScanPhi.doctorNotes ?? currentScan.doctor_notes ?? "",
+        },
+      );
+      const scanEncrypted = scanPhiPayload.encrypted === true;
 
       const scanResult = await client.query(
         `
@@ -3005,7 +3122,8 @@ function createRepositories(options) {
               processing_artifact_fingerprint = $18,
               processing_run_id = $19,
               audio_file_id = $20,
-              ai_result_id = $21
+              ai_result_id = $21,
+              phi_payload = $22::jsonb
           WHERE id = $1
           RETURNING *
         `,
@@ -3021,7 +3139,7 @@ function createRepositories(options) {
           scan.levelPercent || 0,
           optional(scan.aiLabel),
           scan.aiConfidence === undefined || scan.aiConfidence === "" ? null : scan.aiConfidence,
-          optional(scan.aiSummary),
+          optional(scanEncrypted ? "" : scan.aiSummary),
           optional(scan.audioUrl),
           optional(scan.wavFile),
           scan.updatedAt || nowIso(),
@@ -3031,6 +3149,7 @@ function createRepositories(options) {
           scan.processingRunId || "",
           optional(scan.audioFileId || audioFile.id),
           optional(scan.aiResultId || aiResult.id),
+          JSON.stringify(scanEncrypted ? scanPhiPayload : {}),
         ],
       );
 
@@ -3070,9 +3189,9 @@ function createRepositories(options) {
       const aiResultRow = await client.query(
         `
           INSERT INTO ai_results (
-            id, scan_id, model_version, label, confidence, summary, raw_result, status, error_code, created_at, updated_at
+            id, scan_id, model_version, label, confidence, summary, raw_result, status, error_code, created_at, updated_at, phi_payload
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, COALESCE($10::timestamptz, now()), COALESCE($11::timestamptz, now()))
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, COALESCE($10::timestamptz, now()), COALESCE($11::timestamptz, now()), $12::jsonb)
           ON CONFLICT (id)
           DO UPDATE SET
             model_version = EXCLUDED.model_version,
@@ -3082,6 +3201,7 @@ function createRepositories(options) {
             raw_result = EXCLUDED.raw_result,
             status = EXCLUDED.status,
             error_code = EXCLUDED.error_code,
+            phi_payload = EXCLUDED.phi_payload,
             updated_at = EXCLUDED.updated_at
           WHERE ai_results.scan_id = EXCLUDED.scan_id
           RETURNING *
@@ -3092,12 +3212,13 @@ function createRepositories(options) {
           aiResult.modelVersion || SIGNAL_QUALITY_ANALYZER_VERSION,
           optional(aiResult.label),
           aiResult.confidence === undefined || aiResult.confidence === "" ? null : aiResult.confidence,
-          optional(aiResult.summary),
-          JSON.stringify(aiResult.rawResult || {}),
+          optional(aiEncrypted ? "" : aiResult.summary),
+          JSON.stringify(aiEncrypted ? {} : aiResult.rawResult || {}),
           aiResult.status || "queued",
           optional(aiResult.errorCode),
           optional(aiResult.createdAt),
           aiResult.updatedAt || nowIso(),
+          JSON.stringify(aiEncrypted ? aiPhiPayload : {}),
         ],
       );
       if (!aiResultRow.rows?.[0]) {
@@ -3195,9 +3316,8 @@ function createRepositories(options) {
     await withSql((pool) => queryUpsertDeviceCommand(pool, command));
   }
 
-  async function upsertNotificationDeviceSql(device) {
-    return withSql(async (pool) => {
-      const result = await pool.query(
+  async function queryUpsertNotificationDevice(queryable, device) {
+    return queryable.query(
         `
           INSERT INTO notification_devices (
             id, user_id, workspace_id, platform, fcm_token, auth_session_id,
@@ -3233,7 +3353,45 @@ function createRepositories(options) {
           device.updatedAt || nowIso(),
         ]
       );
-      return result.rows[0] ? rowToNotificationDevice(result.rows[0]) : null;
+  }
+
+  async function upsertNotificationDeviceSql(device) {
+    return withSqlTransaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `notification-token:${device.fcmToken}`,
+      ]);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `notification-user:${device.userId}`,
+      ]);
+      if (device.enabled !== false) {
+        const capacityResult = await client.query(
+          `
+            SELECT COUNT(DISTINCT fcm_token)::int AS active_count
+            FROM notification_devices
+            WHERE user_id = $1 AND enabled = true AND fcm_token <> $2
+          `,
+          [device.userId, device.fcmToken],
+        );
+        const activeCount = Number(capacityResult.rows?.[0]?.active_count || 0);
+        if (activeCount >= MAX_ACTIVE_NOTIFICATION_DEVICES_PER_USER) {
+          throw notificationDeviceLimitError();
+        }
+      }
+      const result = await queryUpsertNotificationDevice(client, device);
+      await client.query(
+        `
+          DELETE FROM notification_devices
+          WHERE id IN (
+            SELECT id
+            FROM notification_devices
+            WHERE user_id = $1 AND enabled = false
+            ORDER BY updated_at DESC
+            OFFSET $2
+          )
+        `,
+        [device.userId, MAX_NOTIFICATION_DEVICE_HISTORY_PER_USER],
+      );
+      return result.rows?.[0] ? rowToNotificationDevice(result.rows[0]) : null;
     });
   }
 
@@ -16286,7 +16444,7 @@ function createRepositories(options) {
       const pagedOrder = `${pageContract.sortContract.paged} ${pageContract.sortContract.direction}, paged.id ASC`;
       const result = await pool.query(
         `WITH filtered AS (
-           SELECT scan.*, patient.name AS patient_name
+           SELECT scan.*, patient.name AS patient_name, patient.phi_payload AS patient_phi_payload
            FROM scan_sessions scan
            LEFT JOIN patients patient ON patient.id = scan.patient_id
            ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -17197,6 +17355,7 @@ function createRepositories(options) {
       const userId = String(input.userId || "");
       const workspaceId = String(input.workspaceId || "");
       const authSessionId = String(input.authSessionId || "");
+      const fcmToken = String(input.fcmToken || "");
       const notificationProtocolVersion = Number(input.notificationProtocolVersion || 0);
       if (!userId || !workspaceId || !authSessionId) {
         throw repositoryError(
@@ -17212,43 +17371,73 @@ function createRepositories(options) {
           "Notification protocol version 2 or newer is required",
         );
       }
-      const runtimeDb = getDb();
-      runtimeDb.notificationDevices = Array.isArray(runtimeDb.notificationDevices)
-        ? runtimeDb.notificationDevices
-        : [];
-      const matchingTokens = runtimeDb.notificationDevices
-        .filter((item) => item.fcmToken === input.fcmToken)
-        .sort((left, right) =>
-          String(right.updatedAt || right.createdAt || "").localeCompare(
-            String(left.updatedAt || left.createdAt || ""),
-          ),
+      if (!isValidFcmRegistrationToken(fcmToken)) {
+        throw repositoryError(
+          400,
+          "INVALID_NOTIFICATION_DEVICE_TOKEN",
+          "Notification device token has an invalid format",
         );
-      const existing = matchingTokens[0] || null;
-      const item = existing || {
-        id: input.id || createId("ndev"),
-        createdAt: nowIso(),
-      };
-      item.userId = userId;
-      item.workspaceId = workspaceId;
-      item.platform = input.platform || "android";
-      item.fcmToken = input.fcmToken;
-      item.authSessionId = authSessionId;
-      item.notificationProtocolVersion = notificationProtocolVersion;
-      item.appVersion = String(input.appVersion || "");
-      item.enabled = input.enabled !== false;
-      item.updatedAt = nowIso();
-      runtimeDb.notificationDevices = runtimeDb.notificationDevices.filter(
-        (candidate) => candidate.fcmToken !== item.fcmToken || candidate.id === item.id,
-      );
-      syncArrayItem(runtimeDb.notificationDevices, item);
-      const sqlDevice = await upsertNotificationDeviceSql(item);
-      const canonicalDevice = sqlDevice || item;
-      runtimeDb.notificationDevices = runtimeDb.notificationDevices.filter(
-        (candidate) => candidate.fcmToken !== canonicalDevice.fcmToken,
-      );
-      syncArrayItem(runtimeDb.notificationDevices, canonicalDevice);
-      await saveDb();
-      return canonicalDevice;
+      }
+      return runUserAuthorityMutationExclusive(userId, async () => {
+        const runtimeDb = getDb();
+        runtimeDb.notificationDevices = Array.isArray(runtimeDb.notificationDevices)
+          ? runtimeDb.notificationDevices
+          : [];
+        assertNotificationDeviceCapacity(
+          runtimeDb.notificationDevices,
+          userId,
+          fcmToken,
+          input.enabled !== false,
+        );
+        const matchingTokens = runtimeDb.notificationDevices
+          .filter((item) => item.fcmToken === fcmToken)
+          .sort((left, right) =>
+            String(right.updatedAt || right.createdAt || "").localeCompare(
+              String(left.updatedAt || left.createdAt || ""),
+            ),
+          );
+        const existing = matchingTokens[0] || null;
+        const item = {
+          ...(existing || {}),
+          id: existing?.id || input.id || createId("ndev"),
+          createdAt: existing?.createdAt || nowIso(),
+          userId,
+          workspaceId,
+          platform: input.platform || "android",
+          fcmToken,
+          authSessionId,
+          notificationProtocolVersion,
+          appVersion: String(input.appVersion || ""),
+          enabled: input.enabled !== false,
+          updatedAt: nowIso(),
+        };
+        const sqlDevice = await upsertNotificationDeviceSql(item);
+        const canonicalDevice = sqlDevice || item;
+        runtimeDb.notificationDevices = runtimeDb.notificationDevices.filter(
+          (candidate) => candidate.fcmToken !== canonicalDevice.fcmToken,
+        );
+        syncArrayItem(runtimeDb.notificationDevices, canonicalDevice);
+        const disabledForUser = runtimeDb.notificationDevices
+          .filter((candidate) => candidate.userId === userId && candidate.enabled === false)
+          .sort((left, right) =>
+            String(right.updatedAt || right.createdAt || "").localeCompare(
+              String(left.updatedAt || left.createdAt || ""),
+            ),
+          );
+        const retainedDisabledIds = new Set(
+          disabledForUser
+            .slice(0, MAX_NOTIFICATION_DEVICE_HISTORY_PER_USER)
+            .map((candidate) => candidate.id),
+        );
+        runtimeDb.notificationDevices = runtimeDb.notificationDevices.filter(
+          (candidate) =>
+            candidate.userId !== userId ||
+            candidate.enabled !== false ||
+            retainedDisabledIds.has(candidate.id),
+        );
+        await saveDb();
+        return canonicalDevice;
+      });
     },
 
     async listForUser(userId, workspaceId, options = {}) {
@@ -17270,8 +17459,9 @@ function createRepositories(options) {
               AND notification_protocol_version >= $3
               AND enabled = true
             ORDER BY updated_at DESC
+            LIMIT $4
           `,
-          [id, scopedWorkspaceId, minimumProtocolVersion],
+          [id, scopedWorkspaceId, minimumProtocolVersion, MAX_NOTIFICATION_PUSH_FANOUT],
         );
         return result.rows.map(rowToNotificationDevice);
       });
@@ -17279,14 +17469,16 @@ function createRepositories(options) {
         for (const device of sqlDevices) {
           syncArrayItem(getDb().notificationDevices, device);
         }
-        return sqlDevices;
+        return selectBoundedNotificationDevices(sqlDevices);
       }
-      return getDb().notificationDevices.filter(
-        (item) =>
-          item.userId === id &&
-          item.workspaceId === scopedWorkspaceId &&
-          Number(item.notificationProtocolVersion || 0) >= minimumProtocolVersion &&
-          item.enabled !== false,
+      return selectBoundedNotificationDevices(
+        getDb().notificationDevices.filter(
+          (item) =>
+            item.userId === id &&
+            item.workspaceId === scopedWorkspaceId &&
+            Number(item.notificationProtocolVersion || 0) >= minimumProtocolVersion &&
+            item.enabled !== false,
+        ),
       );
     },
 

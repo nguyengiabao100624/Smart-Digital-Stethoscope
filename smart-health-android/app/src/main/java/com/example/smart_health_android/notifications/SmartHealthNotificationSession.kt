@@ -8,11 +8,13 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class NotificationSessionBinding(
@@ -245,12 +247,7 @@ internal class EncryptedNotificationSessionStore(
             return false
         }
         return runCatching {
-            val encrypted = encrypt(binding.toJson().toString())
-            preferences.edit()
-                .putString(KEY_CIPHERTEXT, encrypted.ciphertext)
-                .putString(KEY_IV, encrypted.iv)
-                .putInt(KEY_VERSION, CURRENT_VERSION)
-                .commit()
+            persistJson(binding.toJson().put(JSON_CONSUMED_INTENT_NONCES, JSONArray()))
         }.getOrDefault(false)
     }
 
@@ -284,6 +281,37 @@ internal class EncryptedNotificationSessionStore(
     }
 
     @Synchronized
+    fun consumeNotificationIntentNonce(
+        nonce: String,
+        sessionGeneration: String,
+    ): Boolean {
+        val canonicalNonce = nonce.trim().takeIf { it.length in 16..160 } ?: return false
+        val canonicalGeneration = sessionGeneration.trim().takeIf(String::isNotEmpty) ?: return false
+        return runCatching {
+            val json = loadJsonOrNull() ?: return false
+            if (json.optString(JSON_GENERATION) != canonicalGeneration) return false
+            val nonceDigest = digestNonce(canonicalNonce)
+            val existing = json.optJSONArray(JSON_CONSUMED_INTENT_NONCES) ?: JSONArray()
+            for (index in 0 until existing.length()) {
+                if (existing.optString(index) == nonceDigest) return false
+            }
+            val bounded = JSONArray()
+            val firstRetainedIndex = (existing.length() - MAX_CONSUMED_INTENT_NONCES + 1)
+                .coerceAtLeast(0)
+            for (index in firstRetainedIndex until existing.length()) {
+                existing.optString(index).takeIf(String::isNotBlank)?.let(bounded::put)
+            }
+            bounded.put(nonceDigest)
+            json.put(JSON_CONSUMED_INTENT_NONCES, bounded)
+            persistJson(json)
+        }.getOrElse {
+            clear()
+            resetKey()
+            false
+        }
+    }
+
+    @Synchronized
     fun clear(): Boolean {
         return preferences.edit()
             .remove(KEY_CIPHERTEXT)
@@ -308,6 +336,28 @@ internal class EncryptedNotificationSessionStore(
             ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
             iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP),
         )
+    }
+
+    private fun loadJsonOrNull(): JSONObject? {
+        val ciphertext = preferences.getString(KEY_CIPHERTEXT, null) ?: return null
+        val iv = preferences.getString(KEY_IV, null) ?: return null
+        if (preferences.getInt(KEY_VERSION, 0) != CURRENT_VERSION) return null
+        return JSONObject(decrypt(ciphertext, iv))
+    }
+
+    private fun persistJson(json: JSONObject): Boolean {
+        val encrypted = encrypt(json.toString())
+        return preferences.edit()
+            .putString(KEY_CIPHERTEXT, encrypted.ciphertext)
+            .putString(KEY_IV, encrypted.iv)
+            .putInt(KEY_VERSION, CURRENT_VERSION)
+            .commit()
+    }
+
+    private fun digestNonce(nonce: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(nonce.toByteArray(StandardCharsets.UTF_8))
+        return Base64.encodeToString(digest, Base64.NO_WRAP or Base64.NO_PADDING)
     }
 
     private fun decrypt(ciphertext: String, iv: String): String {
@@ -387,6 +437,8 @@ internal class EncryptedNotificationSessionStore(
         const val JSON_FIREBASE_USER_ID = "firebaseUserId"
         const val JSON_WORKSPACE_ID = "workspaceId"
         const val JSON_GENERATION = "generation"
+        const val JSON_CONSUMED_INTENT_NONCES = "consumedIntentNonces"
+        const val MAX_CONSUMED_INTENT_NONCES = 64
     }
 }
 
@@ -507,6 +559,16 @@ internal object SmartHealthNotificationSession {
 
     @Synchronized
     fun activeBindingOrNull(): NotificationSessionBinding? = gate.activeBindingOrNull()
+
+    @Synchronized
+    fun consumeLaunchNonce(
+        nonce: String,
+        sessionGeneration: String,
+    ): Boolean {
+        val binding = gate.activeBindingOrNull() ?: return false
+        if (binding.generation != sessionGeneration.trim()) return false
+        return store?.consumeNotificationIntentNonce(nonce, sessionGeneration) == true
+    }
 
     @Synchronized
     fun canDisplay(

@@ -21,6 +21,10 @@ const verificationSource = readFileSync(
   new URL("src/app/pages/auth/EmailVerificationPage.tsx", webRoot),
   "utf8",
 );
+const clinicalPolishSource = readFileSync(
+  new URL("src/web-styles/clinical-polish.css", webRoot),
+  "utf8",
+);
 const packageJson = JSON.parse(
   readFileSync(new URL("package.json", webRoot), "utf8"),
 ) as { scripts?: Record<string, string> };
@@ -78,7 +82,13 @@ test("makes Auth offline and anonymous approval states explicit", () => {
     );
   }
 
-  assert.match(layoutSource, /data-shcare-auth-foundation="v1"/);
+  assert.match(
+    layoutSource,
+    /data-shcare-auth-foundation="legacy-enhanced-v1"/,
+  );
+  assert.match(layoutSource, /data-shcare-auth-visual="live-legacy"/);
+  assert.match(layoutSource, /docs\/Logo\.png/);
+  assert.match(layoutSource, /className="app-shell auth-shell shc-auth-layout"/);
   assert.match(layoutSource, /navigator\.onLine/);
   assert.match(layoutSource, /addEventListener\("offline"/);
   assert.match(layoutSource, /Bạn đang ngoại tuyến/);
@@ -102,10 +112,17 @@ test("keeps Auth production markup free of retired demo styling and provider lea
 
 test("uses bounded native Web motion and authoritative reduced-motion handling", () => {
   assert.match(layoutSource, /useReducedMotion/);
-  assert.match(layoutSource, /opacity:\s*0,\s*y:\s*8/);
+  assert.match(layoutSource, /opacity:\s*0,\s*y:\s*10/);
   assert.match(layoutSource, /duration:\s*reduceMotion\s*\?\s*0\s*:\s*0\.2/);
   assert.doesNotMatch(
     layoutSource,
     /backdropFilter|WebkitBackdropFilter|repeat:\s*Infinity/,
+  );
+});
+
+test("keeps the live Auth mobile header blur-free at every breakpoint", () => {
+  assert.match(
+    clinicalPolishSource,
+    /data-shcare-auth-visual="live-legacy"\]\s+\.shc-auth-mobile-top\s*\{[^}]*backdrop-filter:\s*none;[^}]*-webkit-backdrop-filter:\s*none;/,
   );
 });

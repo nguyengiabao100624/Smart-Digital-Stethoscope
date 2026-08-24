@@ -123,6 +123,13 @@ test("uses bounded native Web motion and authoritative reduced-motion handling",
 test("keeps the live Auth mobile header blur-free at every breakpoint", () => {
   assert.match(
     clinicalPolishSource,
-    /data-shcare-auth-visual="live-legacy"\]\s+\.shc-auth-mobile-top\s*\{[^}]*backdrop-filter:\s*none;[^}]*-webkit-backdrop-filter:\s*none;/,
+    /data-shcare-auth-visual="live-legacy"\]\s+\.shc-auth-mobile-top\s*\{[^}]*-webkit-backdrop-filter:\s*none;[^}]*backdrop-filter:\s*none;/,
+  );
+});
+
+test("keeps the production-minified legacy Auth card blur-free", () => {
+  assert.match(
+    clinicalPolishSource,
+    /html\s+body\s+\.app-shell\.auth-shell\.shc-auth-layout\[data-shcare-auth-visual="live-legacy"\]\s+\.shc-auth-card\s*\{[^}]*-webkit-backdrop-filter:\s*none;[^}]*backdrop-filter:\s*none;/,
   );
 });

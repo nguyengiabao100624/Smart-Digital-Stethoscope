@@ -63,6 +63,8 @@ test("publishes a RouteContract-driven browser sweep for every Public route", ()
   assert.match(smokeSource, /import\s+\{\s*routeContracts\s*\}/);
   assert.match(smokeSource, /route\.surface\s*===\s*"public"/);
   assert.match(smokeSource, /public\.not-found\.catch-all/);
+  assert.match(smokeSource, /waitUntil:\s*"domcontentloaded"/);
+  assert.doesNotMatch(smokeSource, /waitUntil:\s*"networkidle"/);
   for (const width of [360, 390, 768, 1024, 1440]) {
     assert.match(smokeSource, new RegExp(`width:\\s*${width}\\b`));
   }

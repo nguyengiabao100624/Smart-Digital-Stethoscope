@@ -333,7 +333,9 @@ async function runCase(browser, siteUrl, viewport, theme) {
       unauthorizedApiRequests.length = 0;
       const pathName = routePath(route);
       await page.goto(`${siteUrl}${pathName}`, {
-        waitUntil: "networkidle",
+        // Firebase serves the hero video as a long-lived media request, so
+        // networkidle is not a valid readiness signal for the public shell.
+        waitUntil: "domcontentloaded",
         timeout: 30_000,
       });
       await page

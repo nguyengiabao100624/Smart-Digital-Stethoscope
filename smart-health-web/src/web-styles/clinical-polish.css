@@ -5423,8 +5423,8 @@ html.dark
 
 .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
   .shc-auth-mobile-top {
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
@@ -5435,16 +5435,16 @@ html.dark
 
 .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
   .shc-auth-preview-card {
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html
   body
   .app-shell.auth-shell.shc-auth-layout[data-shcare-auth-visual="live-legacy"]
   .shc-auth-card {
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html:not(.dark)

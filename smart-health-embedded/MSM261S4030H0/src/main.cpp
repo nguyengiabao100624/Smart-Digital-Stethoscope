@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <ArduinoWebsockets.h>
+#include "shcare_ota_trust_anchor.h"
 #include <tiny_websockets/network/esp32/esp32_tcp.hpp>
 #include <DNSServer.h>
 #include <ESPmDNS.h>

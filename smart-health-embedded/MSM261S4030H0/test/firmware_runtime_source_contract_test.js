@@ -1,9 +1,32 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(projectRoot, "src", "main.cpp"), "utf8");
+const otaTrustAnchorPath = path.join(
+  projectRoot,
+  "include",
+  "shcare_ota_trust_anchor.h",
+);
+assert.equal(
+  fs.existsSync(otaTrustAnchorPath),
+  true,
+  "production firmware must pin the Shcare OTA public key",
+);
+const otaTrustAnchor = fs.readFileSync(otaTrustAnchorPath, "utf8");
+assert.match(source, /#include\s+"shcare_ota_trust_anchor\.h"/);
+const otaPublicKeyMatch = /R"SHCARE_OTA\((-----BEGIN PUBLIC KEY-----[\s\S]+?-----END PUBLIC KEY-----)\r?\n\)SHCARE_OTA"/.exec(
+  otaTrustAnchor,
+);
+assert.ok(otaPublicKeyMatch, "OTA trust anchor must use the bounded raw PEM literal");
+const otaPublicKey = crypto.createPublicKey(otaPublicKeyMatch[1]);
+assert.equal(otaPublicKey.asymmetricKeyType, "rsa");
+assert.ok(
+  Number(otaPublicKey.asymmetricKeyDetails?.modulusLength || 0) >= 2048,
+  "OTA trust anchor must use RSA-2048 or stronger",
+);
 const protocolSource = fs.readFileSync(
   path.join(
     projectRoot,

@@ -156,3 +156,9 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Xiaomi tái hiện lỗi sau khi camera QR trả kết quả: foreground reauthorization tạm thời làm authority callback trả `null`, khiến receipt của claim thành công bị UI hiểu nhầm là phiên hết hạn. Backend đã claim đúng thiết bị cho đúng patient/workspace; không có claim chéo tenant.
 - Android nay chờ bounded reauthorization và chỉ tiếp tục khi đúng cùng user/workspace/epoch. Nếu claim one-time đã được backend tiêu thụ, App chỉ phục hồi setup khi danh sách backend xác nhận cùng device, workspace và owner; khác owner vẫn fail closed.
 - Focused Device Pairing tests và integrated-demo assemble PASS; APK SHA-256 `8AC6BF2942DEDD07425324092314B9F06CAAC2D21408C7F85E499E93B4A3DDF2` đã cài lên Xiaomi. G3 chờ lần quét lại thực tế rồi tiếp tục target Wi-Fi/WSS/ACK/audio-v2.
+
+### 2026-08-25 — G3 tự điền Wi-Fi hiện tại và khôi phục AP thật
+
+- Android đã bổ sung đúng UX yêu cầu: sau QR/mã và claim thật, App đọc SSID điện thoại đang dùng, xin quyền đúng lúc, tự điền một lần, không ghi đè tên mạng người dùng đã sửa và vẫn cho nhập tay nếu Android che SSID/từ chối quyền. Không có mật khẩu nào được ghi vào source, lệnh, log hoặc tài liệu.
+- Gate mới PASS: `118` JVM suite / `849/849`, AndroidTest compile, assemble và lint; APK integrated-demo SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF` đã cài trên Xiaomi.
+- ESP trên COM9 đã được reset về application firmware; setup AP đang phát và SSID trùng chính xác QR, hai slot mic có dữ liệu. MIUI cấm ADB/UiAutomation cấp quyền và bơm thao tác, nên còn đúng bước người dùng duyệt quyền, quét QR và nhập mật khẩu trên máy; sau đó phải chạy WSS/ACK/audio-v2/durable scan/OTA rollback. G3 vẫn `in progress`, G4 vẫn pending.

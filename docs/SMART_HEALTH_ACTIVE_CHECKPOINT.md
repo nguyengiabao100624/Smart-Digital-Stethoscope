@@ -1,6 +1,6 @@
 # Shcare Active Restart Checkpoint
 
-Last updated: 2026-08-24 ICT
+Last updated: 2026-08-25 ICT
 
 Read this file first after quota exhaustion, task compaction, Codex restart or
 host power-off. It records unfinished work only. Closed evidence lives in the
@@ -906,3 +906,10 @@ recorded contract invalid.
 - The earlier `setup-ap-qr.png` contained only setup-network access and is not acceptable pairing evidence. The integrated demo was restarted with a factory-enrolled device and a new protocol-v1 artifact containing `deviceId`, one-time `claimCode`, expiry and setup AP PoP. The sensitive canonical QR artifact remains outside Git under the local HIL runtime directory.
 - Android focused pairing/claim tests and debug assemble pass. The build is bound to the isolated LAN backend and Firebase Auth emulator, but installation/runtime remains open because no ADB target is currently detected. G3 remains in progress; G4 remains pending.
 - Web Portal can claim and verify Online, but a normal browser cannot silently change the host OS Wi-Fi network. The captive local Web surface is a truthful fallback after explicit OS network consent; it must not be described as equivalent to Android's native `WifiNetworkSpecifier` automation.
+## 2026-08-25 active checkpoint — G3 Xiaomi Wi-Fi/location and loading flash
+
+- Continue only **G3** of `Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare`; G0–G2 remain complete and G4 remains pending. Latest pushed commits are `694c34e6` (Android fix) and `5418a560` (handoff docs).
+- Reproduced on Xiaomi before reinstall: App Wi-Fi/Fine Location permissions were granted, connected Wi-Fi existed, but system Location services was OFF, so Android redacted the SSID. Source now exposes `LocationDisabled`, opens native Location settings and refreshes automatically on return; manual entry remains available.
+- The intermittent full-screen loading was the 30-second TTL timer in `AuthorizedMobileRoute`. The timer was removed for a retained foreground route. Reauthorization remains fail-closed on app foreground, protected-route entry, auth-session/workspace/authority changes, backend rejection and authorization events.
+- Proof: JVM `118` suites / `850/850`, AndroidTest compile, lint and assemble PASS. LAN-integrated APK `26,961,117` bytes, SHA-256 `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B`, is installed on Xiaomi.
+- Exact resume step: Xiaomi is secure-locked and MIUI denies shell/UiAutomation Location/permission/input changes. Unlock once, enable Location/approve App permission, then run the compiled route instrumentation and `CurrentWifiSsidHilTest`; continue QR provisioning → authenticated WSS → ACK → audio-v2 → durable scan → OTA rollback. Never put the target-network password in source, commands, env, logs or artifacts.

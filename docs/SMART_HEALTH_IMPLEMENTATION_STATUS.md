@@ -2769,3 +2769,10 @@ KLTN report artifacts generated from this evidence set:
 - Deep Security is no longer a blocker: scan `1b48646c-c3fe-4835-9526-92177be380ae` was finalized with `8` findings and canonical artifacts. Remediation covers production demo-auth fail-closed behavior, tenant webhook SSRF, bounded JSON/trusted-proxy handling, bounded notification token ownership/fan-out, Android signed-notification nonce consumption, and versioned AES-256-GCM PHI persistence/backfill.
 - Focused and aggregate backend gates pass, including concurrent notification registration, PHI AAD/wrong-key/backfill tests, clinical status, workspace/repositories and KLT. Web/Admin lint/contracts/build and Android `831/831` unit tests plus compile/lint/APK pass. Firmware production/development builds pass.
 - G3 remains active until the current browser smoke, candidate freeze and production/secure-device preflight are recorded. G4 has not started and production has not been promoted by this checkpoint.
+
+## 2026-08-24 G3 Firebase preview status
+
+- Web/Admin live channels were backed up and separate preview channels deployed from the G3 candidate. No production Hosting promotion occurred.
+- Preview Auth production CSS passes light/dark/system mobile verification after revision `927b171132d834acfe6a52bb7f3ab7e6e6d7189a` removed the surviving legacy backdrop blur. Recovery-button contrast is WCAG AA, horizontal overflow is zero and the checked routes emit no console errors.
+- Admin Storage remains capability/direct-URL protected and is present in the candidate; anonymous preview access correctly redirects to login. Authenticated preview data/mutation proof is blocked by the old backend CORS response, not by a missing Storage UI route.
+- Overall state remains G0–G2 complete, G3 in progress, G4 pending under `SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md`.

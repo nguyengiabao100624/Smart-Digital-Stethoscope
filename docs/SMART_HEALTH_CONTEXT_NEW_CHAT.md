@@ -1732,3 +1732,10 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae` completed and was sealed. Its `8` findings were remediated or revalidated with focused regression tests; do not restart or recreate that scan.
 - Resume from base HEAD `1c902b29405717c28d8dfa908e4eeb16137971cc` plus dirty snapshot `dc3e7457f923ddb2483e9e12aff0a6205d58aff5`. Backend/Web/Admin/Android/firmware build gates are green; Android unit aggregate is `831/831` and APK SHA-256 is `9B58268A123FB66CFD4139CF3F47C8C13F491EAC0BE0CACDAEA416ED0D866C62`.
 - Next: browser smoke for the current security diff, production/provider/DB migration preflight, freeze the exact candidate manifest, then enter G4 only when G3 PASS is reproducible. Re-detect COM/flash size before reflashing; never infer 16MB from `platformio.ini` alone.
+
+## 2026-08-24 superseding handoff — G3 previews created, CORS blocker reproduced
+
+- Continue only **[“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**. Overall state remains G0–G2 complete, G3 in progress, G4 pending.
+- Git checkpoints: integration/security commit `9a4855a4f286b77c35470dfc92e269a6504ef111`; production Auth CSS fix `927b171132d834acfe6a52bb7f3ab7e6e6d7189a`. The branch is pushed; never move the existing G3 tag.
+- Firebase live Web/Admin were backed up to `backup-20260824-g3`; previews exist at the URLs recorded in `SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md`. Web Auth preview and anonymous Admin protected-route smoke pass. No live channel was promoted.
+- Exact preview-origin OPTIONS requests reproduce a live backend CORS mismatch. Continue with safe Render configuration/migration/secret recovery and authenticated preview smoke; do not merge/promote first. Secure-device WSS/auth/ACK/forced OTA rollback remains the other G3 blocker. Do not rerun completed G0–G2, Deep Security, full Android unit matrices or unchanged firmware builds without a new regression.

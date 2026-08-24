@@ -4,15 +4,16 @@ Release label: `Shcare 1.0.0-rc.2`
 
 Baseline revision: `fdeb1f8783827c6493534b9083858ccc113ee8da`
 
-Verified product-source revision: `c1933d979db69ae8bc105489d1accdec9bfd0fe5`
+Verified product-source revision: `927b171132d834acfe6a52bb7f3ab7e6e6d7189a`
 
 Prepared: `2026-08-24` (`Asia/Saigon`)
 
-Integration candidate status: `G3 source/build/security/HIL complete; final
-intentional candidate commit and tag pending`.
+Integration candidate status: `G3 in progress; source/build/security/browser and
+dual-microphone capture checkpoints are frozen, while production CORS/provider
+and secure-device WSS/ACK/OTA proof remain open`.
 
-Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal,
-Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
+Governing plan: **[Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát
+hành Shcare](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**.
 
 This manifest binds the Phase 8 local demo/release-candidate evidence to one
 intentional product-source commit. It does not claim that this RC2 revision has
@@ -207,7 +208,7 @@ promotion blockers without copying or committing secrets:
 
 | Gate | RC2 status |
 | --- | --- |
-| Intentional source scope, staged secret scan and diff | `PENDING final G1-G3 candidate`: the older product-source candidate passed at 787 staged paths, but the current integration worktree is intentionally unstaged; recompute allowlisted inventory, secret scan and digest only after Deep Security disposition |
+| Intentional source scope, staged secret scan and diff | `PASS checkpoint`: commit `9a4855a4` contains the exact allowlisted G1–G3 integration set (`103` staged files, `93` text files scanned, zero matched secret patterns); focused production-CSS follow-up `927b1711` passes contracts, build, preview smoke and diff check |
 | Local source/unit/type/lint/build | `PASS` for Backend/Web/Admin/Android/Firmware |
 | Local demo launcher and authenticated Web/Admin journeys | `PASS` |
 | Admin responsive/theme/permission/a11y/mutation browser matrix | `PASS` (`72` route checks plus cleanup-safe mutations) |
@@ -217,7 +218,7 @@ promotion blockers without copying or committing secrets:
 | Candidate PostgreSQL migration/locking/rollback | `BLOCKED for RC2 live proof`; Supabase/PostgreSQL was configured and previously exercised, but the RC2 shell lacks `DATABASE_URL` and migrations through `054` are not live-verified |
 | Firebase Admin/service account and public HTTPS backend | `PARTIAL/BLOCKED for RC2 promotion`; retained Firebase Admin credential works read-only and Web/Admin plus both Render health URLs are HTTP 200, but the RC2 shell is not bound to the secret env and Render metrics prove the backend is still the older revision |
 | S3/object storage and PHI/HMAC keys | `BLOCKED for current RC2 proof`; Supabase S3-compatible Storage has prior setup evidence, but current production credentials and signed upload/download/expiry behavior were not re-verified |
-| Email/push/AI providers, CORS and Redis | `MIXED/BLOCKED`; prior Firebase email-link and adapter smoke evidence is retained, while current device delivery, Brevo/SMTP inbox delivery, AI credentials and remaining production inputs are unproven |
+| Email/push/AI providers, CORS and Redis | `MIXED/BLOCKED`; preview-origin preflight reproduces a backend CORS mismatch (both preview origins receive the Admin live origin), while current device delivery, Brevo/SMTP inbox delivery, AI credentials and remaining production inputs are unproven |
 | OTA signing key/artifact URL and canary infrastructure | `BLOCKED` |
 | Android Firebase/FCM, ADB/emulator/device and production signing | `MIXED/BLOCKED`; Firebase code and retained local config plus historical emulator runtime exist; RC2 lacks the ignored config, no target is online now, current FCM is unproven and production signing is genuinely absent |
 | Physical ESP32-S3 flash, serial and dual-slot I2S | `PASS`; final image flashed and hash-verified, both mic slots non-zero with no degraded/reboot marker |
@@ -291,3 +292,12 @@ not require firmware rollback while the compatibility verdict remains green.
 - Secret-pattern scan covered `89` intentional modified/untracked source files and found `0` private-key, AWS, Google API key, GitHub token, Slack token or JWT literal hits. `git diff --check` passes with only Git line-ending notices.
 - Firebase project access is live, both Hosting sites are HTTP `200`, and both known Render services are healthy on `/api/health`. Their metrics still identify an older backend revision. Candidate PostgreSQL/S3 secrets are not bound to this shell, so migration `055`, PHI backfill and provider behavior must be proven in G4 before promotion.
 - Physical `COM9` reports ESP32-S3 revision `0.2`, `16MB` flash and `8MB` PSRAM. The already-flashed firmware artifact is unchanged; the existing two-mic HIL proof remains the relevant evidence.
+
+## 2026-08-24 Firebase backup and preview checkpoint
+
+- The intentional integration checkpoint is commit `9a4855a4f286b77c35470dfc92e269a6504ef111`; the focused production-CSS fix is commit `927b171132d834acfe6a52bb7f3ab7e6e6d7189a`. The branch is pushed. Existing tag `shcare-v1.0.0-rc.2-g3` is immutable; the documentation checkpoint is released under a new tag rather than moving it.
+- Live Hosting was backed up independently before any preview work: Web [backup-20260824-g3](https://shcare--backup-20260824-g3-qjvu7wk6.web.app) and Admin [backup-20260824-g3](https://shcare-admin--backup-20260824-g3-8xb53yl7.web.app).
+- Candidate previews are Web [rc2-web-9a4855a4](https://shcare--rc2-web-9a4855a4-qxpr54og.web.app) and Admin [rc2-admin-9a4855a4](https://shcare-admin--rc2-admin-9a4855a4-8mb2r6z9.web.app). No live channel has been promoted.
+- Production-minified CSS initially retained a legacy mobile Auth blur. The source rule now explicitly disables both standard and WebKit backdrop filters. The deployed Web preview passes `/quen-mat-khau` at 360 px in `light`, `dark` and `system`: no overflow or console error, `backdrop-filter: none`, and button contrast `6.16:1` light / `5.40:1` dark.
+- Admin preview `/storage` resolves through the protected route to `/login` for an anonymous actor, returns HTTP `200`, uses dark/system theme without horizontal overflow and emits no console error. Source contract tests continue to prove that `platform.storage.manage` exposes the Storage menu/direct URL while unauthorized users are denied.
+- Both exact preview origins currently receive `Access-Control-Allow-Origin: https://shcare-admin.web.app` from the old live backend. This is a reproduced G3 blocker for authenticated preview API smoke. Do not promote Hosting or backend until the production CORS list is updated atomically with the backend release and migrations/secret readiness is proven.

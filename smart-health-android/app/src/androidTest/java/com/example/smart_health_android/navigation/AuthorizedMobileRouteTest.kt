@@ -133,7 +133,7 @@ class AuthorizedMobileRouteTest {
     }
 
     @Test
-    fun retainedProtectedDestinationIsHiddenWhenFreshAuthorityCrossesTtl() {
+    fun retainedProtectedDestinationIsNotInterruptedSolelyBecauseTtlElapses() {
         val clock = AtomicLong(10_000L)
         authorityStore.clear()
         assertTrue(
@@ -143,14 +143,13 @@ class AuthorizedMobileRouteTest {
                 verifiedAtElapsedRealtimeMillis = clock.get(),
             ) is MobileAuthorityUpdate.Accepted,
         )
-        val backendResponse = CompletableDeferred<AuthUser>()
         val coordinator = MobileAuthorityReauthorizationCoordinator(
             authorityStore = authorityStore,
-            loadCurrentUser = { backendResponse.await() },
+            loadCurrentUser = { user },
             currentFirebaseUserId = { "firebase-uid-1" },
             currentAuthSessionEpoch = { 1L },
             elapsedRealtimeMillis = clock::get,
-            maxAgeMillis = 1_000L,
+            maxAgeMillis = 100L,
         )
         val runtime = MobileAuthorityReauthorizationRuntime(
             coordinator = coordinator,
@@ -160,16 +159,10 @@ class AuthorizedMobileRouteTest {
         setProtectedRouteContent(runtime = runtime)
         composeRule.onNodeWithTag(ProtectedContentTag).assertExists()
 
-        composeRule.waitUntil(timeoutMillis = 3_000) {
-            authorityStore.state.value.reauthorizing
-        }
-        composeRule.onNodeWithTag(ProtectedContentTag).assertDoesNotExist()
+        Thread.sleep(250L)
+        composeRule.waitForIdle()
 
-        clock.set(11_000L)
-        backendResponse.complete(user)
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            !authorityStore.state.value.reauthorizing
-        }
+        assertTrue(!authorityStore.state.value.reauthorizing)
         composeRule.onNodeWithTag(ProtectedContentTag).assertExists()
     }
 

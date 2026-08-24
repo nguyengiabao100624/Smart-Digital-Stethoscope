@@ -123,6 +123,45 @@ class DevicePairingViewModelTest {
     }
 
     @Test
+    fun locationDisabledOffersSystemRecoveryAndPrefillsAfterReturning() = runTest(dispatcher) {
+        val provisioner = FakeDeviceWifiProvisioner(
+            currentWifiSsid = DeviceCurrentWifiSsid.LocationDisabled,
+        )
+        val viewModel = secureViewModel(
+            repository = FakeDeviceClaimRepository(),
+            provisioner = provisioner,
+        )
+
+        viewModel.onAction(DevicePairingUiAction.QrScanned(secureQr()))
+        runCurrent()
+
+        assertEquals(
+            DeviceCurrentWifiSsidState.LocationDisabled,
+            viewModel.uiState.value.currentWifiSsidState,
+        )
+
+        val settingsEffect = async { viewModel.effects.first() }
+        viewModel.onAction(DevicePairingUiAction.UseCurrentWifiSsid)
+        runCurrent()
+
+        assertEquals(
+            DevicePairingUiEffect.OpenSystemLocationSettings,
+            settingsEffect.await(),
+        )
+
+        provisioner.currentWifiSsid = DeviceCurrentWifiSsid.Available("Home WiFi")
+        viewModel.onAction(DevicePairingUiAction.ScreenStopped)
+        viewModel.onAction(DevicePairingUiAction.ScreenStarted)
+        runCurrent()
+
+        assertEquals("Home WiFi", viewModel.uiState.value.targetWifiSsid)
+        assertEquals(
+            DeviceCurrentWifiSsidState.Detected,
+            viewModel.uiState.value.currentWifiSsidState,
+        )
+    }
+
+    @Test
     fun delayedCurrentWifiResultNeverOverwritesAnSsidEditedByTheUser() = runTest(dispatcher) {
         val permissions = listOf("android.permission.ACCESS_FINE_LOCATION")
         val provisioner = FakeDeviceWifiProvisioner(

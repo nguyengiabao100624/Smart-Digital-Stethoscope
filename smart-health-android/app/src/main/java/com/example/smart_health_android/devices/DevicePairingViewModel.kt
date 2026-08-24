@@ -78,6 +78,7 @@ enum class DeviceCurrentWifiSsidState {
     Idle,
     Detected,
     PermissionRequired,
+    LocationDisabled,
     Manual,
     Unavailable,
 }
@@ -149,6 +150,7 @@ sealed interface DevicePairingUiAction {
 sealed interface DevicePairingUiEffect {
     data class RequestCurrentWifiSsidPermissions(val permissions: List<String>) : DevicePairingUiEffect
     data class RequestNearbyWifiPermissions(val permissions: List<String>) : DevicePairingUiEffect
+    data object OpenSystemLocationSettings : DevicePairingUiEffect
     data object OpenSystemWifiSettings : DevicePairingUiEffect
     data class OpenExternalSetupPortal(val url: String) : DevicePairingUiEffect
     data class DeviceOnlineConfirmed(val deviceName: String) : DevicePairingUiEffect
@@ -246,7 +248,16 @@ class DevicePairingViewModel(
             )
             DevicePairingUiAction.UseCurrentWifiSsid -> {
                 targetWifiSsidEdited = false
-                refreshCurrentWifiSsid(requestPermission = true)
+                if (
+                    _uiState.value.currentWifiSsidState ==
+                    DeviceCurrentWifiSsidState.LocationDisabled
+                ) {
+                    viewModelScope.launch {
+                        _effects.send(DevicePairingUiEffect.OpenSystemLocationSettings)
+                    }
+                } else {
+                    refreshCurrentWifiSsid(requestPermission = true)
+                }
             }
             is DevicePairingUiAction.CurrentWifiSsidPermissionResult -> {
                 if (action.granted) {
@@ -594,6 +605,12 @@ class DevicePairingViewModel(
                 }
             }
 
+            DeviceCurrentWifiSsid.LocationDisabled -> {
+                _uiState.update {
+                    it.copy(currentWifiSsidState = DeviceCurrentWifiSsidState.LocationDisabled)
+                }
+            }
+
             DeviceCurrentWifiSsid.Unavailable -> markCurrentWifiUnavailable()
         }
     }
@@ -819,6 +836,16 @@ class DevicePairingViewModel(
         if (_uiState.value.stage == DevicePairingStage.OpeningWifi) {
             wifiSettingsReturned()
             return
+        }
+        if (
+            _uiState.value.stage in setOf(
+                DevicePairingStage.SetupReady,
+                DevicePairingStage.PortalGuidance,
+            ) &&
+            _uiState.value.currentWifiSsidState ==
+            DeviceCurrentWifiSsidState.LocationDisabled
+        ) {
+            refreshCurrentWifiSsid(requestPermission = false)
         }
         if (!resumePollingOnStart) return
         val deviceId = _uiState.value.claimedDeviceId

@@ -42,6 +42,7 @@ sealed interface DeviceWifiProvisioningAvailability {
 sealed interface DeviceCurrentWifiSsid {
     data class Available(val value: String) : DeviceCurrentWifiSsid
     data class PermissionRequired(val permissions: List<String>) : DeviceCurrentWifiSsid
+    data object LocationDisabled : DeviceCurrentWifiSsid
     data object Unavailable : DeviceCurrentWifiSsid
 }
 
@@ -103,7 +104,7 @@ class AndroidDeviceWifiProvisioner(context: Context) : DeviceWifiProvisioner {
             return DeviceCurrentWifiSsid.PermissionRequired(permissions)
         }
         if (!isLocationEnabled()) {
-            return DeviceCurrentWifiSsid.Unavailable
+            return DeviceCurrentWifiSsid.LocationDisabled
         }
 
         val rawSsid = runCatching { currentWifiInfo()?.ssid }.getOrNull()

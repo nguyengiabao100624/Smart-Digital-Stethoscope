@@ -135,6 +135,7 @@ fun DevicePairingScreen(
     val context = LocalContext.current
     val scannerError = stringResource(R.string.device_pairing_scanner_error)
     val wifiSettingsError = stringResource(R.string.device_pairing_wifi_settings_error)
+    val locationSettingsError = stringResource(R.string.device_pairing_location_settings_error)
     val setupPortalError = stringResource(R.string.device_pairing_portal_open_error)
     val copiedMessage = stringResource(R.string.device_pairing_copied)
     val scanner = rememberDeviceScanner()
@@ -190,6 +191,14 @@ fun DevicePairingScreen(
 
                     is DevicePairingUiEffect.RequestNearbyWifiPermissions -> {
                         nearbyWifiPermissionLauncher.launch(effect.permissions.toTypedArray())
+                    }
+
+                    DevicePairingUiEffect.OpenSystemLocationSettings -> {
+                        runCatching {
+                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        }.onFailure {
+                            snackbarHostState.showSnackbar(locationSettingsError)
+                        }
                     }
 
                     DevicePairingUiEffect.OpenSystemWifiSettings -> {
@@ -796,6 +805,8 @@ private fun DevicePairingSetupContent(
                                         R.string.device_pairing_current_wifi_detected
                                     DeviceCurrentWifiSsidState.Manual ->
                                         R.string.device_pairing_current_wifi_manual
+                                    DeviceCurrentWifiSsidState.LocationDisabled ->
+                                        R.string.device_pairing_current_wifi_location_disabled
                                     DeviceCurrentWifiSsidState.PermissionRequired,
                                     DeviceCurrentWifiSsidState.Unavailable,
                                     -> R.string.device_pairing_current_wifi_unavailable
@@ -811,6 +822,7 @@ private fun DevicePairingSetupContent(
                 if (
                     state.currentWifiSsidState in setOf(
                         DeviceCurrentWifiSsidState.PermissionRequired,
+                        DeviceCurrentWifiSsidState.LocationDisabled,
                         DeviceCurrentWifiSsidState.Unavailable,
                     )
                 ) {
@@ -820,7 +832,18 @@ private fun DevicePairingSetupContent(
                             .heightIn(min = 48.dp)
                             .testTag("device_pairing.use_current_wifi"),
                     ) {
-                        Text(stringResource(R.string.device_pairing_use_current_wifi))
+                        Text(
+                            stringResource(
+                                if (
+                                    state.currentWifiSsidState ==
+                                    DeviceCurrentWifiSsidState.LocationDisabled
+                                ) {
+                                    R.string.device_pairing_enable_location
+                                } else {
+                                    R.string.device_pairing_use_current_wifi
+                                },
+                            ),
+                        )
                     }
                 }
                 OutlinedTextField(

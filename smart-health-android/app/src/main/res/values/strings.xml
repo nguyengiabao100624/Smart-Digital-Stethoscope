@@ -201,7 +201,10 @@
     <string name="device_pairing_current_wifi_detected">Đã lấy từ Wi-Fi điện thoại đang kết nối. Bạn có thể sửa nếu cần.</string>
     <string name="device_pairing_current_wifi_manual">Đang dùng tên Wi-Fi bạn nhập.</string>
     <string name="device_pairing_current_wifi_unavailable">Không đọc được Wi-Fi hiện tại. Bạn vẫn có thể nhập tên mạng bên trên.</string>
+    <string name="device_pairing_current_wifi_location_disabled">Android cần bật Vị trí để cho phép Shcare đọc tên Wi-Fi đang kết nối. Shcare không đọc hoặc lưu vị trí của bạn.</string>
     <string name="device_pairing_use_current_wifi">Lấy lại Wi-Fi hiện tại</string>
+    <string name="device_pairing_enable_location">Bật Vị trí để lấy tên Wi-Fi</string>
+    <string name="device_pairing_location_settings_error">Không thể mở cài đặt Vị trí. Bạn vẫn có thể nhập tên Wi-Fi bên trên.</string>
     <string name="device_pairing_target_wifi_password">Mật khẩu Wi-Fi</string>
     <string name="device_pairing_target_wifi_password_hint">Để trống nếu mạng không có mật khẩu</string>
     <string name="device_pairing_target_wifi_help">Mật khẩu chỉ nằm trong bộ nhớ trong lúc thiết lập, được gửi thẳng đến ESP qua AP WPA2 và bị xóa khi hoàn tất hoặc hủy.</string>

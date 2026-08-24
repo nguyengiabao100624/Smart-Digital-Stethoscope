@@ -17,7 +17,6 @@ import com.example.smart_health_android.R
 import com.example.smart_health_android.ui.components.ShcareErrorState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
-import kotlinx.coroutines.delay
 
 /**
  * Prevents a protected destination from composing, and therefore from loading data, until the
@@ -90,27 +89,6 @@ private fun AuthorizedMobileRoute(
             )
         }
     }
-    LaunchedEffect(
-        backStackEntry,
-        authorityState.authority,
-        authorityState.reauthorizing,
-        authorityState.verifiedAtElapsedRealtimeMillis,
-        reauthorizationRuntime,
-    ) {
-        val runtime = reauthorizationRuntime
-        if (authorityState.authority == null || authorityState.reauthorizing) {
-            return@LaunchedEffect
-        }
-        val waitMillis =
-            runtime.coordinator.millisUntilReauthorization() ?: return@LaunchedEffect
-        if (waitMillis > 0L) delay(waitMillis)
-        val expectedAuthority =
-            runtime.coordinator.beginForegroundReauthorization() ?: return@LaunchedEffect
-        runtime.onResult(
-            runtime.coordinator.completeForegroundReauthorization(expectedAuthority),
-        )
-    }
-
     val authorityStillStale = authorityState.authority != null &&
         reauthorizationRuntime.coordinator.needsReauthorizationNow()
     if (

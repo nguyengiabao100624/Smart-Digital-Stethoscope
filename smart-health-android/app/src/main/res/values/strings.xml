@@ -204,6 +204,8 @@
     <string name="device_pairing_connect_in_app">Kết nối và gửi Wi-Fi</string>
     <string name="device_pairing_provisioning_in_app">Đang kết nối tạm thời với ESP và gửi Wi-Fi</string>
     <string name="device_pairing_browser_fallback">Cấu hình bằng trình duyệt</string>
+    <string name="device_pairing_show_browser_fallback">Không kết nối tự động được?</string>
+    <string name="device_pairing_hide_browser_fallback">Ẩn cách cấu hình thủ công</string>
     <string name="device_pairing_setup_network_heading">Mạng thiết lập của thiết bị</string>
     <string name="device_pairing_setup_ssid">Tên mạng</string>
     <string name="device_pairing_setup_password">Mật khẩu thiết lập một lần</string>

@@ -2,11 +2,14 @@ package com.example.smart_health_android.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performClick
 import com.example.smart_health_android.data.DevicePairingOutcome
 import com.example.smart_health_android.data.DevicePairingPresence
 import com.example.smart_health_android.data.DevicePairingResponse
@@ -56,8 +59,14 @@ class DevicePairingScreenTest {
         }
 
         composeRule.onNodeWithTag("device_pairing.setup_ready").assertIsDisplayed()
-        composeRule.onNodeWithText("Shcare-9487FC14F3E6").assertIsDisplayed()
-        composeRule.onNodeWithText("4hxulJ_mCLIz2XhP-KXh").assertIsDisplayed()
+        composeRule.onNodeWithTag("device_pairing.provision_in_app").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Shcare-9487FC14F3E6").assertCountEquals(0)
+        composeRule.onAllNodesWithText("4hxulJ_mCLIz2XhP-KXh").assertCountEquals(0)
+        composeRule.onNodeWithTag("device_pairing.toggle_manual_fallback")
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        composeRule.onNodeWithTag("device_pairing.setup_ready")
+            .performScrollToNode(hasTestTag("device_pairing.open_wifi_settings"))
         composeRule.onNodeWithTag("device_pairing.open_wifi_settings").assertIsDisplayed()
     }
 

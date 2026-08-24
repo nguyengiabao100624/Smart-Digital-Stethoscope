@@ -30,6 +30,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -684,6 +686,9 @@ private fun DevicePairingSetupContent(
 ) {
     val spacing = ShcareTheme.spacing
     var showTargetPassword by rememberSaveable(state.claimedDeviceId) { mutableStateOf(false) }
+    var showManualFallback by rememberSaveable(state.claimedDeviceId, isPortalStep) {
+        mutableStateOf(isPortalStep)
+    }
     val ssidLabel = stringResource(R.string.device_pairing_setup_ssid)
     val passwordLabel = stringResource(R.string.device_pairing_setup_password)
     LazyColumn(
@@ -816,91 +821,124 @@ private fun DevicePairingSetupContent(
             }
         }
 
-        item {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(spacing.large),
-                    verticalArrangement = Arrangement.spacedBy(spacing.large),
+        if (!isPortalStep) {
+            item {
+                OutlinedButton(
+                    onClick = { showManualFallback = !showManualFallback },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("device_pairing.toggle_manual_fallback"),
                 ) {
+                    Icon(
+                        imageVector = if (showManualFallback) {
+                            Icons.Default.ExpandLess
+                        } else {
+                            Icons.Default.ExpandMore
+                        },
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.size(spacing.small))
                     Text(
-                        text = stringResource(R.string.device_pairing_setup_network_heading),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    SetupCredentialRow(
-                        label = ssidLabel,
-                        value = state.setupSsid,
-                        copyDescription = stringResource(R.string.device_pairing_copy_ssid),
-                        onCopy = { onCopy(ssidLabel, state.setupSsid) },
-                    )
-                    HorizontalDivider()
-                    SetupCredentialRow(
-                        label = passwordLabel,
-                        value = state.setupProofOfPossession,
-                        copyDescription = stringResource(R.string.device_pairing_copy_password),
-                        onCopy = { onCopy(passwordLabel, state.setupProofOfPossession) },
-                    )
-                    Text(
-                        text = stringResource(R.string.device_pairing_setup_sensitive_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        stringResource(
+                            if (showManualFallback) {
+                                R.string.device_pairing_hide_browser_fallback
+                            } else {
+                                R.string.device_pairing_show_browser_fallback
+                            },
+                        ),
                     )
                 }
             }
         }
 
-        if (!isPortalStep) {
+        if (showManualFallback || isPortalStep) {
             item {
-                OutlinedButton(
-                    onClick = onOpenWifiSettings,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = 48.dp)
-                        .testTag("device_pairing.open_wifi_settings"),
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Default.Router, contentDescription = null)
-                    Spacer(Modifier.size(spacing.small))
-                    Text(stringResource(R.string.device_pairing_browser_fallback))
+                    Column(
+                        modifier = Modifier.padding(spacing.large),
+                        verticalArrangement = Arrangement.spacedBy(spacing.large),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.device_pairing_setup_network_heading),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        SetupCredentialRow(
+                            label = ssidLabel,
+                            value = state.setupSsid,
+                            copyDescription = stringResource(R.string.device_pairing_copy_ssid),
+                            onCopy = { onCopy(ssidLabel, state.setupSsid) },
+                        )
+                        HorizontalDivider()
+                        SetupCredentialRow(
+                            label = passwordLabel,
+                            value = state.setupProofOfPossession,
+                            copyDescription = stringResource(R.string.device_pairing_copy_password),
+                            onCopy = { onCopy(passwordLabel, state.setupProofOfPossession) },
+                        )
+                        Text(
+                            text = stringResource(R.string.device_pairing_setup_sensitive_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-        } else {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
-                    Text(
-                        text = stringResource(R.string.device_pairing_portal_instruction),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+
+            if (!isPortalStep) {
+                item {
                     OutlinedButton(
                         onClick = onOpenWifiSettings,
                         modifier = Modifier
                             .fillMaxWidth()
                             .defaultMinSize(minHeight = 48.dp)
-                            .testTag("device_pairing.reopen_wifi_settings"),
+                            .testTag("device_pairing.open_wifi_settings"),
                     ) {
-                        Text(stringResource(R.string.device_pairing_reopen_wifi_settings))
+                        Icon(Icons.Default.Router, contentDescription = null)
+                        Spacer(Modifier.size(spacing.small))
+                        Text(stringResource(R.string.device_pairing_browser_fallback))
                     }
-                    Button(
-                        onClick = onOpenPortal,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                            .testTag("device_pairing.open_portal"),
-                    ) {
-                        Text(stringResource(R.string.device_pairing_open_portal))
-                    }
-                    OutlinedButton(
-                        onClick = onConfirmPortal,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                            .testTag("device_pairing.confirm_portal"),
-                    ) {
-                        Text(stringResource(R.string.device_pairing_confirm_portal))
+                }
+            } else {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
+                        Text(
+                            text = stringResource(R.string.device_pairing_portal_instruction),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = onOpenWifiSettings,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("device_pairing.reopen_wifi_settings"),
+                        ) {
+                            Text(stringResource(R.string.device_pairing_reopen_wifi_settings))
+                        }
+                        Button(
+                            onClick = onOpenPortal,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("device_pairing.open_portal"),
+                        ) {
+                            Text(stringResource(R.string.device_pairing_open_portal))
+                        }
+                        OutlinedButton(
+                            onClick = onConfirmPortal,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("device_pairing.confirm_portal"),
+                        ) {
+                            Text(stringResource(R.string.device_pairing_confirm_portal))
+                        }
                     }
                 }
             }

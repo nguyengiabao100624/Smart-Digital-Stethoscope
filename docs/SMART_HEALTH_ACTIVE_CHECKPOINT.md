@@ -877,3 +877,11 @@ recorded contract invalid.
 - Superseding product binary/source is `6c6d79f67c6d03e464545d37bf50bd31a57312e2`; current branch tip `b09461428818da90e34ad05641e16a329df92a03` is test-only. Preview is `https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app`; live remains unchanged.
 - Uploaded-preview proof is `102/102` for Home/Forgot Password × `light|dark|system` at 390px. Aggregate source proof is Auth `390/390`, contracts `138/138`, TypeScript, lint and Firebase build. Latest public metrics: LCP `532ms`, CLS `0.05434283907750343`, INP upper bound `16ms`, JS `248011` bytes and CSS `64921` bytes.
 - Xiaomi ADB, ESP COM9 and bounded HIL backend remain online. Continue with exact-preview CORS/backend migration/provider proof and user-entered target Wi-Fi → authenticated WSS/ACK/audio-v2/durable scan. G3 remains in progress; G4 is pending.
+
+## 2026-08-25 active checkpoint — G3 backend CORS source closed
+
+- Tiếp tục duy nhất **[“Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare”](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md)**. G0–G2 đã hoàn tất, G3 đang thực hiện, G4 chưa bắt đầu; không làm lại UI/chức năng đã đóng nếu không tái hiện được regression.
+- Backend candidate `4727e183d85e8368203d2f0bcd1ba9f6154105ca` đã thay fallback CORS sai bằng allowlist exact cho hai live site và hai RC preview hiện hành. Unknown origin không còn nhận `Access-Control-Allow-Origin`; wildcard chỉ còn khi được cấu hình tường minh cho development.
+- Bằng chứng mới: CORS unit + HTTP preflight `4/4`, backend check/test, KLT, workspace-access, repositories, release-security `4/4` và device-security `82/82` đều PASS. Nhánh RC đã push; live backend chưa deploy nên live CORS chưa được tính PASS.
+- ESP32-S3 vẫn ở COM9. Setup AP đã được reset có kiểm soát và xác nhận đang phát; QR chỉ chứa thông tin setup AP. Thiết bị vẫn offline cho tới khi người dùng nhập target Wi-Fi qua App/Web. Ngay khi presence chuyển online phải chạy WSS auth → `wifi.status` ACK → audio-v2 → durable scan HIL.
+- Trước khi sang G4 vẫn phải có HIL thật, migration/provider/runtime readiness và OTA signing/rollback proof. Không push `main`, promote Hosting hoặc báo production hoàn tất từ checkpoint này.

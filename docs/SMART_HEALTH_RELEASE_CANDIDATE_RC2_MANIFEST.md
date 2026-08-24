@@ -304,8 +304,8 @@ not require firmware rollback while the compatibility verdict remains green.
 
 ## 2026-08-24 Android/ESP Wi-Fi provisioning candidate addendum
 
-- Source checkpoint: `6a28fe2b431ffae5bb9d62d26d712136359f3bd9`.
-- Android debug APK: `26,953,969` bytes; SHA-256 `3807D1274398E52A11D9AB5F7754BE4AF9758C9AE8E03B3DD0C46BCDE369E1A7`; `838/838` unit tests and zero lint issues.
+- Source checkpoint: `bb8b5f4ea31e5ff6c798007d70cf1ef2dcc372a5`.
+- Android debug APK: `26,954,873` bytes; SHA-256 `2D33500435F0B7A7A2851648D1672D6973CE3263AE2800828E4063CB61EBFFDB`; `838/838` unit tests, AndroidTest compile and zero lint issues.
 - Production firmware: `1,130,768` bytes; SHA-256 `5B61DDAD78613DEB6A1EB4ECFF1C2035C791666838057D5EC71AFC01551EC828`; physical ESP unit test `54/54`.
 - Compatibility verdict: additive local setup protocol v1. Existing browser `/save` remains; Android adds `/api/v1/setup/session` and `/api/v1/setup/wifi`. UI reports ESP acceptance only after HTTP `202` and reports final success only after authenticated backend presence.
 - Captive Web HIL passes on the physical board. Android physical runtime remains `BLOCKED` without an ADB target; real target-network success waits for user-entered Wi-Fi material. This addendum does not close G3 or authorize live promotion.

@@ -122,3 +122,9 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 - Product binary/source đã khóa tại `6c6d79f67c6d03e464545d37bf50bd31a57312e2`; commit `b09461428818da90e34ad05641e16a329df92a03` chỉ cập nhật test. Preview riêng `https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app`, chưa promote live.
 - Preview Home và Quên mật khẩu pass `102/102` kiểm tra ở mobile với `light|dark|system`. Aggregate Web pass Auth `390/390`, contracts `138/138`, TypeScript, lint, Firebase build và performance budget.
 - G3 tiếp tục ở backend/provider/CORS và authenticated ESP HIL; G4 vẫn pending.
+
+### 2026-08-25 — G3 backend CORS và ESP setup gate
+
+- Backend CORS source đã đóng tại `4727e183d85e8368203d2f0bcd1ba9f6154105ca`: exact live/preview origin được echo, unknown origin không có ACAO; test policy + HTTP `4/4`, backend aggregate và device security `82/82` PASS. Live backend chưa deploy nên chưa tính live PASS.
+- ESP32-S3 COM9 đã reset và setup AP được xác nhận đang phát. Target Wi-Fi vẫn chờ người dùng nhập qua App/Web; G3 chỉ hoàn tất sau authenticated WSS, command ACK, audio-v2, durable scan, migration/provider và signed OTA/rollback proof.
+- G4 vẫn pending; không promote production trước các gate trên.

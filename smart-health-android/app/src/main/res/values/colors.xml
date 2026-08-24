@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="shcare_cobalt">#FF2457D6</color>
-    <color name="shcare_vital_teal">#FF087F75</color>
-    <color name="shcare_launch_background">#FFF7F9FC</color>
+    <color name="shcare_cobalt">#FF0B5C9A</color>
+    <color name="shcare_vital_teal">#FF00A896</color>
+    <color name="shcare_launch_background">#FF0B5C9A</color>
     <color name="shcare_notification_accent">@color/shcare_cobalt</color>
 </resources>

@@ -4,10 +4,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -111,7 +116,10 @@ class StethoscopeSettingsScreenTest {
         }
         composeRule.onNodeWithText("Shcare One").assertIsDisplayed()
         composeRule.onNodeWithText("Trực tuyến").assertIsDisplayed()
-        composeRule.onNodeWithText("Tùy chỉnh nâng cao chưa khả dụng").assertIsDisplayed()
+        composeRule.onNodeWithTag("stethoscope.content")
+            .performScrollToNode(hasText("Tùy chỉnh nâng cao chưa khả dụng"))
+        composeRule.onAllNodesWithText("Tùy chỉnh nâng cao chưa khả dụng")
+            .assertCountEquals(1)
         composeRule.onNodeWithText("Hiệu chuẩn cảm biến").assertDoesNotExist()
         composeRule.onNodeWithText("Online qua cloud").assertDoesNotExist()
     }

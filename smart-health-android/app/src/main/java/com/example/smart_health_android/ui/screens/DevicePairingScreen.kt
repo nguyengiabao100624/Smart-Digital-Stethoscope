@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -52,7 +53,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -96,6 +96,7 @@ import com.example.smart_health_android.devices.DevicePairingViewModel
 import com.example.smart_health_android.devices.DevicePairingViewModelFactory
 import com.example.smart_health_android.devices.DeviceTargetWifiField
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -204,22 +205,14 @@ fun DevicePairingScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.device_pairing_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            viewModel.onAction(DevicePairingUiAction.Cancel)
-                            onNavigateBack()
-                        },
-                        modifier = Modifier.testTag("device_pairing.back"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.device_pairing_back),
-                        )
-                    }
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.device_pairing_title),
+                onNavigateBack = {
+                    viewModel.onAction(DevicePairingUiAction.Cancel)
+                    onNavigateBack()
                 },
+                backContentDescription = stringResource(R.string.device_pairing_back),
+                backModifier = Modifier.testTag("device_pairing.back"),
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -658,8 +651,8 @@ private fun DevicePairingEntryContent(
                     enabled = !state.isBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .defaultMinSize(minHeight = 48.dp)
-                        .testTag("device_pairing.submit_manual"),
+                        .testTag("device_pairing.submit_manual")
+                        .heightIn(min = 48.dp),
                 ) {
                     Text(stringResource(R.string.device_pairing_submit_manual))
                 }

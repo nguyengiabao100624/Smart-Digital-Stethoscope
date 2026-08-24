@@ -16,6 +16,27 @@ val releaseGoogleServicesConfigured =
 val configuredSmartHealthBaseUrl = providers
     .gradleProperty("SMART_HEALTH_BASE_URL")
     .map { it.trim().trimEnd('/') }
+val firebaseAuthEmulatorHost = providers
+    .gradleProperty("SHCARE_FIREBASE_AUTH_EMULATOR_HOST")
+    .orNull
+    ?.trim()
+    .orEmpty()
+val firebaseAuthEmulatorPort = providers
+    .gradleProperty("SHCARE_FIREBASE_AUTH_EMULATOR_PORT")
+    .orNull
+    ?.trim()
+    ?.toIntOrNull()
+    ?: 9099
+
+require(
+    firebaseAuthEmulatorHost.isEmpty() ||
+        firebaseAuthEmulatorHost.matches(Regex("^[A-Za-z0-9.-]+$")),
+) {
+    "SHCARE_FIREBASE_AUTH_EMULATOR_HOST must be a host name or IP address without a scheme."
+}
+require(firebaseAuthEmulatorPort in 1..65535) {
+    "SHCARE_FIREBASE_AUTH_EMULATOR_PORT must be between 1 and 65535."
+}
 
 if (googleServicesConfigured) {
     pluginManager.apply("com.google.gms.google-services")
@@ -31,6 +52,9 @@ val smartHealthBaseUrl = configuredSmartHealthBaseUrl
     .get()
     .trimEnd('/')
 fun validateReleaseConfiguration() {
+    require(firebaseAuthEmulatorHost.isEmpty()) {
+        "Release builds must not use the Firebase Auth emulator."
+    }
     require(releaseGoogleServicesConfigured) {
         "google-services.json is required for release builds. " +
             "Provide it through the secure release environment; never commit it."
@@ -84,10 +108,22 @@ android {
     buildTypes {
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
+            buildConfigField(
+                "String",
+                "SHCARE_FIREBASE_AUTH_EMULATOR_HOST",
+                "\"$firebaseAuthEmulatorHost\"",
+            )
+            buildConfigField(
+                "int",
+                "SHCARE_FIREBASE_AUTH_EMULATOR_PORT",
+                if (firebaseAuthEmulatorHost.isEmpty()) "0" else firebaseAuthEmulatorPort.toString(),
+            )
         }
         release {
             isMinifyEnabled = false
             manifestPlaceholders["usesCleartextTraffic"] = "false"
+            buildConfigField("String", "SHCARE_FIREBASE_AUTH_EMULATOR_HOST", "\"\"")
+            buildConfigField("int", "SHCARE_FIREBASE_AUTH_EMULATOR_PORT", "0")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

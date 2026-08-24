@@ -1,6 +1,7 @@
 package com.example.smart_health_android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -110,12 +112,20 @@ fun ShcareStartupContent(
     modifier: Modifier = Modifier,
 ) {
     val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
     val scrollState = rememberScrollState()
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        semanticColors.brandHeaderStart,
+                        semanticColors.brandHeaderEnd,
+                    ),
+                ),
+            )
             .windowInsetsPadding(WindowInsets.safeDrawing),
         contentAlignment = Alignment.Center,
     ) {
@@ -137,17 +147,23 @@ fun ShcareStartupContent(
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
                 Surface(
-                    modifier = Modifier.size(88.dp),
+                    modifier = Modifier.size(104.dp),
                     shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = semanticColors.onBrandHeader.copy(alpha = 0.12f),
+                    contentColor = semanticColors.onBrandHeader,
+                    border = BorderStroke(
+                        1.dp,
+                        semanticColors.onBrandHeader.copy(alpha = 0.32f),
+                    ),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         ShcareSignalMark(
                             contentDescription = stringResource(
                                 R.string.splash_logo_content_description,
                             ),
-                            modifier = Modifier.size(60.dp),
+                            modifier = Modifier.size(68.dp),
+                            primaryColor = semanticColors.onBrandHeader,
+                            vitalColor = semanticColors.onBrandHeader.copy(alpha = 0.78f),
                         )
                     }
                 }
@@ -159,19 +175,19 @@ fun ShcareStartupContent(
                         .testTag("splash.brand.heading")
                         .semantics { heading() },
                     style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = semanticColors.onBrandHeader,
                     textAlign = TextAlign.Center,
                 )
                 Text(
                     text = stringResource(R.string.splash_brand_endorsement),
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = semanticColors.onBrandHeader.copy(alpha = 0.92f),
                     textAlign = TextAlign.Center,
                 )
                 Text(
                     text = stringResource(R.string.splash_brand_description),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = semanticColors.onBrandHeader.copy(alpha = 0.76f),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -192,6 +208,7 @@ fun ShcareStartupContent(
 @Composable
 private fun SplashLoadingStatus() {
     val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
     val loadingMessage = stringResource(R.string.splash_loading)
     Surface(
         modifier = Modifier
@@ -201,9 +218,9 @@ private fun SplashLoadingStatus() {
                 liveRegion = LiveRegionMode.Polite
                 stateDescription = loadingMessage
             },
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.medium,
+        color = semanticColors.onBrandHeader.copy(alpha = 0.94f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
             modifier = Modifier.padding(spacing.large),
@@ -229,6 +246,7 @@ private fun SplashErrorStatus(
     onRetry: () -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
     val title = stringResource(R.string.splash_error_title)
     Surface(
         modifier = Modifier
@@ -239,8 +257,12 @@ private fun SplashErrorStatus(
                 stateDescription = "$title. $message"
             },
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        color = semanticColors.onBrandHeader.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            semanticColors.onBrandHeader.copy(alpha = 0.42f),
+        ),
     ) {
         Column(
             modifier = Modifier.padding(spacing.large),
@@ -251,6 +273,7 @@ private fun SplashErrorStatus(
                 imageVector = Icons.Default.ErrorOutline,
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
+                tint = MaterialTheme.colorScheme.error,
             )
             Text(
                 text = title,
@@ -258,6 +281,7 @@ private fun SplashErrorStatus(
                     .testTag("splash.error.heading")
                     .semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
             )
             Text(

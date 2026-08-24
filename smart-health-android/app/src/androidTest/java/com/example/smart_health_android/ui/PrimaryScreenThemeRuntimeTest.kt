@@ -46,10 +46,10 @@ class PrimaryScreenThemeRuntimeTest {
         composeRule.onNodeWithText("TÀI KHOẢN").assertIsDisplayed()
         composeRule.onNodeWithText("Gần đây").assertIsDisplayed()
         composeRule.runOnIdle {
-            assertEquals(Color(0xFFF7F9FC), observed.get().background)
-            assertEquals(Color(0xFFF7F9FC), observed.get().surface)
-            assertEquals(Color(0xFF171C22), observed.get().onSurface)
-            assertEquals(Color(0xFF0A5E91), observed.get().brandHeaderStart)
+            assertEquals(Color(0xFFF5F7FA), observed.get().background)
+            assertEquals(Color.White, observed.get().surface)
+            assertEquals(Color(0xFF1A202C), observed.get().onSurface)
+            assertEquals(Color(0xFF0B5C9A), observed.get().brandHeaderStart)
             assertEquals(Color.White, observed.get().onBrandHeader)
         }
     }
@@ -75,11 +75,11 @@ class PrimaryScreenThemeRuntimeTest {
         composeRule.onNodeWithText("TÀI KHOẢN").assertIsDisplayed()
         composeRule.onNodeWithText("Gần đây").assertIsDisplayed()
         composeRule.runOnIdle {
-            assertEquals(Color(0xFF0E141A), observed.get().background)
-            assertEquals(Color(0xFF0E141A), observed.get().surface)
-            assertEquals(Color(0xFFDDE3EA), observed.get().onSurface)
-            assertEquals(Color(0xFF164C6C), observed.get().brandHeaderStart)
-            assertEquals(Color(0xFFF0F7FB), observed.get().onBrandHeader)
+            assertEquals(Color(0xFF0F1419), observed.get().background)
+            assertEquals(Color(0xFF1A202C), observed.get().surface)
+            assertEquals(Color(0xFFE2E8F0), observed.get().onSurface)
+            assertEquals(Color(0xFF0EA5E9), observed.get().brandHeaderStart)
+            assertEquals(Color.White, observed.get().onBrandHeader)
         }
     }
 

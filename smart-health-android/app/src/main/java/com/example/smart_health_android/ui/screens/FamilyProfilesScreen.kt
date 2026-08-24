@@ -48,8 +48,6 @@ import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -85,6 +83,7 @@ import com.example.smart_health_android.data.ActiveProfileResult
 import com.example.smart_health_android.data.Patient
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -122,23 +121,12 @@ fun FamilyProfilesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.family_profiles_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            if (hasDraft) showDiscardDialog = true else onNavigateBack()
-                        },
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.family_profiles_back),
-                        )
-                    }
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.family_profiles_title),
+                onNavigateBack = {
+                    if (hasDraft) showDiscardDialog = true else onNavigateBack()
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+                backContentDescription = stringResource(R.string.family_profiles_back),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,

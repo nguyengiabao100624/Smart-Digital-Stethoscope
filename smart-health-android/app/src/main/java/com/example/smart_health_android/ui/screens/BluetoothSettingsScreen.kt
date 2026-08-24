@@ -51,7 +51,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,6 +85,7 @@ import com.example.smart_health_android.devices.DeviceManagementViewModel
 import com.example.smart_health_android.devices.DevicePresenceStatus
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -185,19 +185,10 @@ fun DeviceManagementScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.device_management_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.device_management_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.device_management_title),
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.device_management_back),
                 actions = {
                     IconButton(
                         onClick = { viewModel.onAction(DeviceManagementUiAction.Refresh) },
@@ -208,6 +199,7 @@ fun DeviceManagementScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
+                                color = ShcareTheme.colors.onBrandHeader,
                             )
                         } else {
                             Icon(

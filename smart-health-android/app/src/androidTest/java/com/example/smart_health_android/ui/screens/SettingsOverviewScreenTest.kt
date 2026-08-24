@@ -5,12 +5,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -44,15 +49,19 @@ class SettingsOverviewScreenTest {
             themeMode = ShcareThemeMode.Dark,
         )
 
-        composeRule.onNodeWithTag("settings.profile")
-            .assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(
+        composeRule.onAllNodesWithTag("settings.profile")
+            .assertCountEquals(1)
+        composeRule.onAllNodesWithContentDescription(
             "Bác sĩ Nguyễn An. Vai trò Bác sĩ. Mã thành viên member-01. " +
                 "Workspace Workspace Tim phổi.",
-        ).assertIsDisplayed()
+        ).assertCountEquals(1)
+        composeRule.onNodeWithTag("settings.content")
+            .performScrollToNode(hasTestTag("settings.item.profile"))
         composeRule.onNodeWithTag("settings.item.profile")
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("settings.content")
+            .performScrollToNode(hasTestTag("settings.item.logout"))
         composeRule.onNodeWithTag("settings.item.logout")
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
@@ -107,6 +116,8 @@ class SettingsOverviewScreenTest {
             state = readyState().copy(isLoggingOut = true),
         )
 
+        composeRule.onNodeWithTag("settings.content")
+            .performScrollToNode(hasTestTag("settings.item.logout"))
         composeRule.onNodeWithTag("settings.item.logout")
             .assertIsDisplayed()
         composeRule.onNodeWithText("Đang đăng xuất…")

@@ -26,6 +26,11 @@ function parseServiceAccount(value) {
   return parsed;
 }
 
+function isFirebaseAuthEmulatorConfigured(env = process.env) {
+  const value = String(env.FIREBASE_AUTH_EMULATOR_HOST || "").trim();
+  return Boolean(value) && /^[A-Za-z0-9.-]+:\d{1,5}$/.test(value);
+}
+
 function getFirebaseAdmin(env = process.env) {
   if (!isFirebaseAuthEnabled(env)) {
     return null;
@@ -46,13 +51,14 @@ function getFirebaseAdmin(env = process.env) {
   const { getMessaging } = require("firebase-admin/messaging");
 
   const serviceAccount = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const authEmulatorConfigured = isFirebaseAuthEmulatorConfigured(env);
   const options = {};
   if (env.FIREBASE_PROJECT_ID) {
     options.projectId = env.FIREBASE_PROJECT_ID;
   }
   if (serviceAccount) {
     options.credential = cert(serviceAccount);
-  } else {
+  } else if (!authEmulatorConfigured) {
     options.credential = applicationDefault();
   }
 
@@ -116,6 +122,7 @@ function isFirebaseProviderMutationConfirmed(
 module.exports = {
   getFirebaseAdmin,
   getFirebaseIdTokenErrorCode,
+  isFirebaseAuthEmulatorConfigured,
   isFirebaseAuthEnabled,
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,

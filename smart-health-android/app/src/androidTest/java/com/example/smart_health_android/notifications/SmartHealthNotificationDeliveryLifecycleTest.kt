@@ -19,6 +19,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -31,10 +32,18 @@ class SmartHealthNotificationDeliveryLifecycleTest {
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         val permissionWasGranted = hasNotificationPermission(context)
         if (!permissionWasGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            instrumentation.uiAutomation.grantRuntimePermission(
-                context.packageName,
-                Manifest.permission.POST_NOTIFICATIONS,
-            )
+            try {
+                instrumentation.uiAutomation.grantRuntimePermission(
+                    context.packageName,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            } catch (_: SecurityException) {
+                assumeTrue(
+                    "Device policy blocks instrumentation notification permission; " +
+                        "run this proof on an emulator or enable USB debugging security settings.",
+                    false,
+                )
+            }
         }
 
         SmartHealthNotificationCenter.ensureChannels(context)
@@ -175,10 +184,18 @@ class SmartHealthNotificationDeliveryLifecycleTest {
         val context = instrumentation.targetContext
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         if (!hasNotificationPermission(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            instrumentation.uiAutomation.grantRuntimePermission(
-                context.packageName,
-                Manifest.permission.POST_NOTIFICATIONS,
-            )
+            try {
+                instrumentation.uiAutomation.grantRuntimePermission(
+                    context.packageName,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            } catch (_: SecurityException) {
+                assumeTrue(
+                    "Device policy blocks instrumentation notification permission; " +
+                        "run this proof on an emulator or enable USB debugging security settings.",
+                    false,
+                )
+            }
         }
         SmartHealthNotificationCenter.ensureChannels(context)
         SmartHealthNotificationCenter.clearAllPostedNotifications(context)

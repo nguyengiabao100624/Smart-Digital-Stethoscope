@@ -21,23 +21,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,11 +51,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -77,6 +80,7 @@ import com.example.smart_health_android.security.LoginUiState
 import com.example.smart_health_android.security.LoginViewModel
 import com.example.smart_health_android.security.LoginViewModelFactory
 import com.example.smart_health_android.ui.theme.ShcareTheme
+import com.example.smart_health_android.ui.components.ShcareSignalMark
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -183,7 +187,7 @@ private fun LoginBrandHeader(isTwoFactor: Boolean) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Surface(
-            shape = CircleShape,
+            shape = MaterialTheme.shapes.large,
             color = if (isTwoFactor) {
                 ShcareTheme.colors.successContainer
             } else {
@@ -194,13 +198,13 @@ private fun LoginBrandHeader(isTwoFactor: Boolean) {
             } else {
                 MaterialTheme.colorScheme.onPrimaryContainer
             },
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(64.dp),
+            shadowElevation = 2.dp,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = if (isTwoFactor) Icons.Default.Security else Icons.Default.Lock,
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp),
+                ShcareSignalMark(
+                    contentDescription = stringResource(R.string.splash_logo_content_description),
+                    modifier = Modifier.size(42.dp),
                 )
             }
         }
@@ -210,6 +214,11 @@ private fun LoginBrandHeader(isTwoFactor: Boolean) {
             ),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
+            color = if (isTwoFactor) {
+                ShcareTheme.colors.success
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
             textAlign = TextAlign.Center,
             modifier = Modifier.semantics { heading() },
         )
@@ -234,29 +243,11 @@ private fun CredentialsStep(
     val spacing = ShcareTheme.spacing
     val focusManager = LocalFocusManager.current
     Column(verticalArrangement = Arrangement.spacedBy(spacing.large)) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(spacing.small),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            FilterChip(
-                selected = state.mode == LoginAccountMode.Doctor,
-                onClick = { onAction(LoginAction.ModeChanged(LoginAccountMode.Doctor)) },
-                label = { Text(stringResource(R.string.login_doctor_mode)) },
-                enabled = !state.isLoading,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp),
-            )
-            FilterChip(
-                selected = state.mode == LoginAccountMode.Patient,
-                onClick = { onAction(LoginAction.ModeChanged(LoginAccountMode.Patient)) },
-                label = { Text(stringResource(R.string.login_patient_mode)) },
-                enabled = !state.isLoading,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp),
-            )
-        }
+        LoginAccountModeSelector(
+            selectedMode = state.mode,
+            enabled = !state.isLoading,
+            onModeSelected = { onAction(LoginAction.ModeChanged(it)) },
+        )
 
         OutlinedTextField(
             value = state.email,
@@ -273,7 +264,11 @@ private fun CredentialsStep(
             ),
             singleLine = true,
             enabled = !state.isLoading,
-            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = legacyLoginFieldColors(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("login.email"),
         )
 
         OutlinedTextField(
@@ -319,7 +314,11 @@ private fun CredentialsStep(
             ),
             singleLine = true,
             enabled = !state.isLoading,
-            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = legacyLoginFieldColors(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("login.password"),
         )
 
         TextButton(
@@ -337,9 +336,15 @@ private fun CredentialsStep(
         Button(
             onClick = { onAction(LoginAction.SubmitCredentials) },
             enabled = !state.isLoading,
+            shape = MaterialTheme.shapes.medium,
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation = 3.dp,
+                pressedElevation = 1.dp,
+            ),
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp),
+                .heightIn(min = 52.dp)
+                .testTag("login.submit"),
         ) {
             if (state.isLoading) {
                 CircularProgressIndicator(
@@ -425,6 +430,8 @@ private fun TwoFactorStep(
             singleLine = true,
             enabled = !state.isLoading,
             isError = state.errorMessage.isNotBlank(),
+            shape = MaterialTheme.shapes.medium,
+            colors = legacyLoginFieldColors(),
             supportingText = {
                 Text(stringResource(R.string.login_two_factor_code_support))
             },
@@ -436,6 +443,11 @@ private fun TwoFactorStep(
         Button(
             onClick = { onAction(LoginAction.SubmitTwoFactor) },
             enabled = state.otp.length == 6 && !state.isLoading,
+            shape = MaterialTheme.shapes.medium,
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation = 3.dp,
+                pressedElevation = 1.dp,
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 52.dp),
@@ -465,6 +477,77 @@ private fun TwoFactorStep(
 }
 
 @Composable
+private fun LoginAccountModeSelector(
+    selectedMode: LoginAccountMode,
+    enabled: Boolean,
+    onModeSelected: (LoginAccountMode) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            LoginAccountMode.entries.forEach { mode ->
+                val selected = selectedMode == mode
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("login.mode.${mode.name.lowercase()}")
+                        .selectable(
+                            selected = selected,
+                            enabled = enabled,
+                            role = Role.Tab,
+                            onClick = { onModeSelected(mode) },
+                        ),
+                    shape = MaterialTheme.shapes.small,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.surface
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    contentColor = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    shadowElevation = if (selected) 2.dp else 0.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(
+                                if (mode == LoginAccountMode.Doctor) {
+                                    R.string.login_doctor_mode
+                                } else {
+                                    R.string.login_patient_mode
+                                },
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun legacyLoginFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.surface,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
+    unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+)
+
+@Composable
 private fun LoginError(message: String) {
     if (message.isBlank()) return
     Surface(
@@ -473,7 +556,11 @@ private fun LoginError(message: String) {
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { liveRegion = LiveRegionMode.Polite },
+            .testTag("login.error")
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = message
+            },
     ) {
         Text(
             text = message,

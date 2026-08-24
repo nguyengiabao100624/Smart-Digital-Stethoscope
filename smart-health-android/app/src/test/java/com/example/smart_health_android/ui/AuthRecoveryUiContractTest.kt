@@ -28,10 +28,14 @@ class AuthRecoveryUiContractTest {
             assertFalse(screen.contains("import com.example.smart_health_android.ui.theme.*"))
         }
 
-        assertTrue(settingsHeader.contains("MaterialTheme.colorScheme.surface"))
-        assertTrue(settingsHeader.contains("MaterialTheme.colorScheme.outlineVariant"))
+        assertTrue(settingsHeader.contains("Brush.linearGradient"))
+        assertTrue(settingsHeader.contains("colors.brandHeaderStart"))
+        assertTrue(settingsHeader.contains("colors.brandHeaderEnd"))
+        assertTrue(settingsHeader.contains("colors.onBrandHeader"))
+        assertTrue(settingsHeader.contains("RoundedCornerShape(bottomStart = 18.dp"))
         assertTrue(settingsHeader.contains("Icons.AutoMirrored.Filled.ArrowBack"))
-        assertTrue(settingsHeader.contains("defaultMinSize(minHeight = 56.dp)"))
+        assertTrue(settingsHeader.contains("defaultMinSize(minHeight = 64.dp)"))
+        assertTrue(settingsHeader.contains("defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)"))
         assertTrue(settingsHeader.contains("heading()"))
     }
 

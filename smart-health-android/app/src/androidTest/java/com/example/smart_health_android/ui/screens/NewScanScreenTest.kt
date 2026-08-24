@@ -7,10 +7,12 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -80,14 +82,16 @@ class NewScanScreenTest {
             }
         }
 
+        composeRule.onNodeWithTag("new_scan.content")
+            .performScrollToNode(hasTestTag("new_scan.body_site.mitral"))
         composeRule.onNodeWithTag("new_scan.body_site.mitral")
-            .performScrollTo()
             .assertIsDisplayed()
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
             .performClick()
+        composeRule.onNodeWithTag("new_scan.content")
+            .performScrollToNode(hasTestTag("new_scan.readiness.patientready"))
         composeRule.onNodeWithTag("new_scan.readiness.patientready")
-            .performScrollTo()
             .assertIsDisplayed()
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
@@ -132,10 +136,13 @@ class NewScanScreenTest {
 
         composeRule.onNodeWithTag("new_scan.screen").assertIsDisplayed()
         composeRule.onNodeWithTag("new_scan.title").assertIsDisplayed()
+        composeRule.onNodeWithTag("new_scan.content")
+            .performScrollToNode(hasTestTag("new_scan.body_site.mitral"))
         composeRule.onNodeWithTag("new_scan.body_site.mitral")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("new_scan.guide.mitral", useUnmergedTree = true)
             .performScrollTo()
             .assertIsDisplayed()
-        composeRule.onNodeWithTag("new_scan.guide.mitral").assertIsDisplayed()
     }
 
     private fun contentState(

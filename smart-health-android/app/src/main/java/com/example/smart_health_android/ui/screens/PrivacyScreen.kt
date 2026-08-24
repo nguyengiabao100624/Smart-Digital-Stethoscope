@@ -50,7 +50,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -87,6 +86,7 @@ import com.example.smart_health_android.security.BiometricLocalUnlockUiAction
 import com.example.smart_health_android.security.BiometricLocalUnlockUiState
 import com.example.smart_health_android.security.TwoFactorSetupStep
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -126,24 +126,16 @@ fun PrivacyScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.security_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            if (recoveryDeliveryPending) {
-                                viewModel.onAction(AccountSecurityAction.RecoveryExitAttempted)
-                            } else {
-                                onNavigateBack()
-                            }
-                        },
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.security_back),
-                        )
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.security_title),
+                onNavigateBack = {
+                    if (recoveryDeliveryPending) {
+                        viewModel.onAction(AccountSecurityAction.RecoveryExitAttempted)
+                    } else {
+                        onNavigateBack()
                     }
                 },
+                backContentDescription = stringResource(R.string.security_back),
             )
         },
         modifier = Modifier

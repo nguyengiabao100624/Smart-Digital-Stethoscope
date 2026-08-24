@@ -1077,6 +1077,7 @@ function ensureAppDefaults() {
       {
         id: "usr_patient_default",
         role: "patient",
+        accountStatus: "active",
         name: "Người dùng Smart Health",
         email: "patient@example.com",
         phone: "0900000000",
@@ -1388,6 +1389,10 @@ function publicUser(user) {
           : user.role || "");
   return {
     ...safeUser,
+    // Authentication clients must never infer lifecycle defaults. Keep these
+    // fields explicit even for older records that predate lifecycle storage.
+    accountStatus: user.accountStatus || "active",
+    deletedAt: user.deletedAt || null,
     roleRequestDocuments: (Array.isArray(roleRequestDocuments)
       ? roleRequestDocuments
       : []

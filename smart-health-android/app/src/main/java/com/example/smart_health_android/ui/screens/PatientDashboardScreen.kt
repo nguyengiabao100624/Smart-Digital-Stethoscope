@@ -2,6 +2,7 @@ package com.example.smart_health_android.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BatteryFull
@@ -41,13 +44,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +59,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -68,6 +74,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -171,9 +178,15 @@ internal fun PatientDashboardContent(
     Scaffold(
         topBar = {
             PatientDashboardTopBar(
+                profile = state.profile,
+                query = state.query,
+                searchEnabled = state.scansState != PatientDashboardSectionState.Unavailable,
                 isRefreshing = state.isRefreshing,
                 onRefresh = { onAction(PatientDashboardUiAction.Refresh) },
                 onNavigateToNotifications = onNavigateToNotifications,
+                onQueryChange = {
+                    onAction(PatientDashboardUiAction.SearchChanged(it))
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -246,16 +259,24 @@ internal fun PatientDashboardContent(
 
 @Composable
 private fun PatientDashboardTopBar(
+    profile: PatientDashboardProfile?,
+    query: String,
+    searchEnabled: Boolean,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onNavigateToNotifications: () -> Unit,
+    onQueryChange: (String) -> Unit,
 ) {
     val semanticColors = ShcareTheme.colors
+    val displayName = profile?.displayName.orEmpty().ifBlank {
+        stringResource(R.string.patient_dashboard_profile_fallback)
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
             .background(
-                Brush.horizontalGradient(
+                Brush.linearGradient(
                     listOf(
                         semanticColors.brandHeaderStart,
                         semanticColors.brandHeaderEnd,
@@ -263,54 +284,123 @@ private fun PatientDashboardTopBar(
                 ),
             ),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(
                     start = ShcareTheme.spacing.large,
-                    end = ShcareTheme.spacing.small,
-                    top = ShcareTheme.spacing.small,
-                    bottom = ShcareTheme.spacing.small,
+                    end = ShcareTheme.spacing.large,
+                    top = ShcareTheme.spacing.medium,
+                    bottom = ShcareTheme.spacing.extraLarge,
                 ),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
         ) {
-            Text(
-                text = stringResource(R.string.patient_dashboard_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = semanticColors.onBrandHeader,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.patient_dashboard_welcome),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = semanticColors.onBrandHeader.copy(alpha = 0.8f),
+                    )
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = semanticColors.onBrandHeader,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                }
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = !isRefreshing,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            semanticColors.onBrandHeader.copy(alpha = 0.16f),
+                            CircleShape,
+                        )
+                        .border(
+                            1.dp,
+                            semanticColors.onBrandHeader.copy(alpha = 0.28f),
+                            CircleShape,
+                        )
+                        .testTag("patient-dashboard.action.refresh"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.patient_dashboard_refresh),
+                        tint = semanticColors.onBrandHeader,
+                    )
+                }
+                IconButton(
+                    onClick = onNavigateToNotifications,
+                    modifier = Modifier
+                        .padding(start = ShcareTheme.spacing.small)
+                        .size(48.dp)
+                        .background(
+                            semanticColors.onBrandHeader.copy(alpha = 0.16f),
+                            CircleShape,
+                        )
+                        .border(
+                            1.dp,
+                            semanticColors.onBrandHeader.copy(alpha = 0.28f),
+                            CircleShape,
+                        )
+                        .testTag("patient-dashboard.action.notifications"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = stringResource(
+                            R.string.patient_dashboard_notifications,
+                        ),
+                        tint = semanticColors.onBrandHeader,
+                    )
+                }
+            }
+
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                enabled = searchEnabled,
                 modifier = Modifier
-                    .weight(1f)
-                    .semantics { heading() },
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+                    .border(
+                        1.dp,
+                        semanticColors.onBrandHeader.copy(alpha = 0.30f),
+                        MaterialTheme.shapes.medium,
+                    )
+                    .testTag("patient-dashboard.search"),
+                placeholder = {
+                    Text(stringResource(R.string.patient_dashboard_search_hint))
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.18f),
+                    unfocusedContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.14f),
+                    disabledContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.10f),
+                    focusedTextColor = semanticColors.onBrandHeader,
+                    unfocusedTextColor = semanticColors.onBrandHeader,
+                    focusedPlaceholderColor = semanticColors.onBrandHeader.copy(alpha = 0.72f),
+                    unfocusedPlaceholderColor = semanticColors.onBrandHeader.copy(alpha = 0.72f),
+                    focusedLeadingIconColor = semanticColors.onBrandHeader.copy(alpha = 0.82f),
+                    unfocusedLeadingIconColor = semanticColors.onBrandHeader.copy(alpha = 0.82f),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    cursorColor = semanticColors.onBrandHeader,
+                ),
             )
-            IconButton(
-                onClick = onRefresh,
-                enabled = !isRefreshing,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("patient-dashboard.action.refresh"),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = stringResource(R.string.patient_dashboard_refresh),
-                    tint = semanticColors.onBrandHeader,
-                )
-            }
-            IconButton(
-                onClick = onNavigateToNotifications,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("patient-dashboard.action.notifications"),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Notifications,
-                    contentDescription = stringResource(
-                        R.string.patient_dashboard_notifications,
-                    ),
-                    tint = semanticColors.onBrandHeader,
-                )
-            }
         }
     }
 }
@@ -334,7 +424,7 @@ private fun PatientDashboardReadyContent(
     ) {
         val fontScale = LocalDensity.current.fontScale
         val useTwoColumns = maxWidth >= 840.dp && fontScale < 1.5f
-        val stackQuickActions = maxWidth < 412.dp || fontScale >= 1.5f
+        val stackQuickActions = maxWidth < 320.dp || fontScale >= 1.5f
         val contentWidth = when {
             maxWidth >= 840.dp -> 840.dp
             maxWidth >= 600.dp -> 600.dp
@@ -481,30 +571,6 @@ private fun PatientDashboardReadyContent(
                 }
             }
 
-            if (state.scansState != PatientDashboardSectionState.Unavailable) {
-                item {
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = {
-                            onAction(PatientDashboardUiAction.SearchChanged(it))
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("patient-dashboard.search"),
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                            )
-                        },
-                        label = {
-                            Text(stringResource(R.string.patient_dashboard_search_hint))
-                        },
-                    )
-                }
-            }
-
             when {
                 state.scansState == PatientDashboardSectionState.Unavailable -> item {
                     PatientDashboardNoticeCard(
@@ -587,10 +653,12 @@ private fun PatientProfileCard(profile: PatientDashboardProfile?) {
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = MaterialTheme.shapes.extraLarge,
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
@@ -606,7 +674,7 @@ private fun PatientProfileCard(profile: PatientDashboardProfile?) {
                 modifier = Modifier
                     .size(56.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.primaryContainer,
                         shape = CircleShape,
                     ),
                 contentAlignment = Alignment.Center,
@@ -614,7 +682,7 @@ private fun PatientProfileCard(profile: PatientDashboardProfile?) {
                 Icon(
                     imageVector = Icons.Default.MonitorHeart,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             }
             Spacer(modifier = Modifier.width(ShcareTheme.spacing.large))
@@ -632,12 +700,19 @@ private fun PatientProfileCard(profile: PatientDashboardProfile?) {
                 )
                 Text(
                     text = stringResource(
-                        R.string.patient_dashboard_profile_meta,
+                        R.string.patient_dashboard_patient_code_value,
                         patientCode,
-                        relationship,
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = relationship,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
                 )
             }
         }
@@ -927,6 +1002,7 @@ private fun PatientDashboardQuickActions(
                     icon = Icons.Default.MonitorHeart,
                     labelRes = R.string.patient_dashboard_start_scan,
                     testTag = "patient-dashboard.action.scan",
+                    tone = PatientDashboardQuickActionTone.Primary,
                     action = onNavigateToNewScan,
                 ),
             )
@@ -937,6 +1013,7 @@ private fun PatientDashboardQuickActions(
                     icon = Icons.Default.Description,
                     labelRes = R.string.patient_dashboard_records,
                     testTag = "patient-dashboard.action.records",
+                    tone = PatientDashboardQuickActionTone.Outline,
                     action = onNavigateToRecords,
                 ),
             )
@@ -947,6 +1024,7 @@ private fun PatientDashboardQuickActions(
                     icon = Icons.Default.CalendarMonth,
                     labelRes = R.string.patient_dashboard_appointments,
                     testTag = "patient-dashboard.action.appointments",
+                    tone = PatientDashboardQuickActionTone.Secondary,
                     action = onNavigateToAppointments,
                 ),
             )
@@ -962,6 +1040,7 @@ private fun PatientDashboardQuickActions(
                 PatientDashboardQuickActionButton(
                     action = action,
                     modifier = Modifier.fillMaxWidth(),
+                    compact = false,
                 )
             }
         }
@@ -970,7 +1049,7 @@ private fun PatientDashboardQuickActions(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
         ) {
-            actions.chunked(2).forEach { rowActions ->
+            actions.chunked(3).forEach { rowActions ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(
@@ -981,9 +1060,10 @@ private fun PatientDashboardQuickActions(
                         PatientDashboardQuickActionButton(
                             action = action,
                             modifier = Modifier.weight(1f),
+                            compact = true,
                         )
                     }
-                    if (rowActions.size == 1) {
+                    repeat(3 - rowActions.size) {
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
@@ -996,36 +1076,99 @@ private data class PatientDashboardQuickAction(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val labelRes: Int,
     val testTag: String,
+    val tone: PatientDashboardQuickActionTone,
     val action: () -> Unit,
 )
+
+private enum class PatientDashboardQuickActionTone {
+    Primary,
+    Outline,
+    Secondary,
+}
 
 @Composable
 private fun PatientDashboardQuickActionButton(
     action: PatientDashboardQuickAction,
     modifier: Modifier = Modifier,
+    compact: Boolean,
 ) {
-    OutlinedButton(
+    val containerColor = when (action.tone) {
+        PatientDashboardQuickActionTone.Primary -> MaterialTheme.colorScheme.primary
+        PatientDashboardQuickActionTone.Outline -> MaterialTheme.colorScheme.surface
+        PatientDashboardQuickActionTone.Secondary -> MaterialTheme.colorScheme.secondary
+    }
+    val contentColor = when (action.tone) {
+        PatientDashboardQuickActionTone.Primary -> MaterialTheme.colorScheme.onPrimary
+        PatientDashboardQuickActionTone.Outline -> MaterialTheme.colorScheme.primary
+        PatientDashboardQuickActionTone.Secondary -> MaterialTheme.colorScheme.onSecondary
+    }
+    Card(
         onClick = action.action,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (action.tone == PatientDashboardQuickActionTone.Outline) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                containerColor
+            },
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = MaterialTheme.shapes.large,
         modifier = modifier
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (compact) 104.dp else 60.dp)
             .semantics { role = Role.Button }
             .testTag(action.testTag),
-        contentPadding = PaddingValues(
-            horizontal = ShcareTheme.spacing.medium,
-            vertical = ShcareTheme.spacing.small,
-        ),
     ) {
-        Icon(
-            imageVector = action.icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
-        Text(
-            text = stringResource(action.labelRes),
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 2,
-        )
+        if (compact) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(ShcareTheme.spacing.medium),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = action.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(modifier = Modifier.height(ShcareTheme.spacing.small))
+                Text(
+                    text = stringResource(action.labelRes),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = ShcareTheme.spacing.large,
+                        vertical = ShcareTheme.spacing.medium,
+                    ),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = action.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                Text(
+                    text = stringResource(action.labelRes),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+        }
     }
 }
 

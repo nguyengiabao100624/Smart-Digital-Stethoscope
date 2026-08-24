@@ -992,6 +992,7 @@
     <string name="settings_overview_logging_out">Đang đăng xuất…</string>
 
     <string name="patient_dashboard_title">Tổng quan</string>
+    <string name="patient_dashboard_welcome">Chào mừng trở lại,</string>
     <string name="patient_dashboard_refresh">Làm mới tổng quan</string>
     <string name="patient_dashboard_refreshing">Đang cập nhật dữ liệu mới nhất…</string>
     <string name="patient_dashboard_refresh_confirmed">Đã cập nhật dữ liệu từ hệ thống</string>
@@ -1011,6 +1012,7 @@
 
     <string name="patient_dashboard_profile_fallback">Hồ sơ đang hoạt động</string>
     <string name="patient_dashboard_patient_code_unavailable">Chưa có mã hồ sơ</string>
+    <string name="patient_dashboard_patient_code_value">Mã hồ sơ: %1$s</string>
     <string name="patient_dashboard_relationship_self">Bản thân</string>
     <string name="patient_dashboard_relationship_child">Con</string>
     <string name="patient_dashboard_relationship_parent">Cha hoặc mẹ</string>

@@ -586,11 +586,11 @@ private fun SettingsAccountCard(account: SettingsOverviewAccount?) {
         shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("settings.profile")
             .clearAndSetSemantics {
                 contentDescription = spokenSummary
                 heading()
-            }
-            .testTag("settings.profile"),
+            },
     ) {
         Row(
             modifier = Modifier.padding(spacing.large),

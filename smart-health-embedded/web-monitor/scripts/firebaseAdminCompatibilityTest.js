@@ -7,6 +7,7 @@ const {
   getFirebaseIdTokenErrorCode,
   getFirebaseAdmin,
   isFirebaseProviderMutationConfirmed,
+  isFirebaseAuthEmulatorConfigured,
   normalizeFirebaseAuthTime,
   verifyFirebaseIdToken,
 } = require("../src/firebaseAuth");
@@ -29,6 +30,22 @@ test("Firebase Admin v14 modular adapter exposes the auth and messaging services
   assert.equal(typeof services.auth().listUsers, "function");
   assert.equal(typeof services.messaging, "function");
   assert.equal(typeof services.messaging().send, "function");
+});
+
+test("Firebase Auth emulator is explicit and never confused with a production credential", () => {
+  assert.equal(
+    isFirebaseAuthEmulatorConfigured({
+      FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+    }),
+    true,
+  );
+  assert.equal(
+    isFirebaseAuthEmulatorConfigured({
+      FIREBASE_AUTH_EMULATOR_HOST: "http://127.0.0.1:9099",
+    }),
+    false,
+  );
+  assert.equal(isFirebaseAuthEmulatorConfigured({}), false);
 });
 
 test("Firebase token verification always checks revocation", async () => {

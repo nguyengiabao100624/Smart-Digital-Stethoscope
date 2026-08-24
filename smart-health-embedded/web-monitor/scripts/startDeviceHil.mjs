@@ -27,6 +27,8 @@ let deviceSecret = "";
 const backendPort = Number(process.env.SHCARE_HIL_BACKEND_PORT || 3765);
 const audioPort = Number(process.env.SHCARE_HIL_AUDIO_PORT || 3766);
 const tlsPort = Number(process.env.SHCARE_HIL_TLS_PORT || 3767);
+const useExternalBackend =
+  String(process.env.SHCARE_HIL_EXTERNAL_BACKEND || "").toLowerCase() === "true";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shcare-device-hil-"));
 const children = new Set();
 let tlsServer = null;
@@ -80,13 +82,15 @@ function validateInputs() {
     throw new Error("SHCARE_HIL_DEVICE_SECRET must contain 16-95 characters");
   }
   for (const [filePath, label] of [
-    [backendEntry, "backend entrypoint"],
     [tlsKeyPath, "HIL TLS private key"],
     [tlsCertificatePath, "HIL TLS certificate"],
   ]) {
     if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       throw new Error(`${label} is missing`);
     }
+  }
+  if (!useExternalBackend && (!fs.existsSync(backendEntry) || !fs.statSync(backendEntry).isFile())) {
+    throw new Error("backend entrypoint is missing");
   }
   for (const [value, label] of [
     [backendPort, "backend port"],
@@ -279,7 +283,7 @@ async function waitForBackend(child, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "not ready";
   while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
       throw new Error("backend exited before readiness");
     }
     try {
@@ -322,8 +326,11 @@ async function stopAll(exitCode = 0) {
 async function main() {
   prepareRuntimeMaterial();
   validateInputs();
-  writeSeedDatabase();
-  const backend = startBackend();
+  let backend = null;
+  if (!useExternalBackend) {
+    writeSeedDatabase();
+    backend = startBackend();
+  }
   await waitForBackend(backend);
   await listenTlsProxy();
   process.stdout.write(`${JSON.stringify({
@@ -333,6 +340,7 @@ async function main() {
     audioPort,
     tlsPort,
     runtimeDir,
+    externalBackend: useExternalBackend,
   })}\n`);
   await new Promise(() => {});
 }

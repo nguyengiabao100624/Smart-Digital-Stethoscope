@@ -1,5 +1,6 @@
 package com.example.smart_health_android.data
 
+import com.example.smart_health_android.BuildConfig
 import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
@@ -52,6 +53,16 @@ object FirebaseAuthService {
     private var ownerSessionEpoch = 0L
     private val auth: FirebaseAuth by lazy {
         FirebaseAuth.getInstance().also { instance ->
+            if (
+                BuildConfig.DEBUG &&
+                BuildConfig.SHCARE_FIREBASE_AUTH_EMULATOR_HOST.isNotBlank() &&
+                BuildConfig.SHCARE_FIREBASE_AUTH_EMULATOR_PORT in 1..65535
+            ) {
+                instance.useEmulator(
+                    BuildConfig.SHCARE_FIREBASE_AUTH_EMULATOR_HOST,
+                    BuildConfig.SHCARE_FIREBASE_AUTH_EMULATOR_PORT,
+                )
+            }
             instance.addAuthStateListener { state ->
                 observeOwner(
                     firebaseUserId = state.currentUser?.uid.orEmpty(),

@@ -51,15 +51,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -89,10 +85,11 @@ import com.example.smart_health_android.scan.NewScanViewModelFactory
 import com.example.smart_health_android.scan.ScanBodySite
 import com.example.smart_health_android.scan.isEligibleForScan
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
-import com.example.smart_health_android.ui.components.ShcarePermissionState
 import com.example.smart_health_android.ui.theme.ShcareTheme
+import com.example.smart_health_android.ui.components.ShcarePermissionState
 import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
 
@@ -129,7 +126,6 @@ internal fun NewScanContent(
     onNavigateBack: () -> Unit,
     showBackNavigation: Boolean,
 ) {
-    val semanticColors = ShcareTheme.colors
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -137,49 +133,12 @@ internal fun NewScanContent(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Box(
-                modifier = Modifier.background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            semanticColors.brandHeaderStart,
-                            semanticColors.brandHeaderEnd,
-                        ),
-                    ),
-                ),
-            ) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = stringResource(R.string.new_scan_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.testTag("new_scan.title"),
-                        )
-                    },
-                    navigationIcon = {
-                        if (showBackNavigation) {
-                            IconButton(
-                                onClick = onNavigateBack,
-                                modifier = Modifier
-                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                    .testTag("new_scan.back"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(R.string.shcare_action_back),
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = semanticColors.onBrandHeader,
-                        navigationIconContentColor = semanticColors.onBrandHeader,
-                    ),
-                )
-            }
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.new_scan_title),
+                onNavigateBack = onNavigateBack.takeIf { showBackNavigation },
+                backModifier = Modifier.testTag("new_scan.back"),
+                titleModifier = Modifier.testTag("new_scan.title"),
+            )
         },
         bottomBar = {
             if (state.loadState == NewScanLoadState.Content) {
@@ -303,7 +262,7 @@ private fun NewScanForm(
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
-        modifier = modifier,
+        modifier = modifier.testTag("new_scan.content"),
         contentPadding = PaddingValues(start = 16.dp, top = 20.dp, end = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

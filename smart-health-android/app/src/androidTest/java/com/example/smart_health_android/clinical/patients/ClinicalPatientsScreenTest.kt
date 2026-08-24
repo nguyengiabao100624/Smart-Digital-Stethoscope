@@ -1,5 +1,7 @@
 package com.example.smart_health_android.clinical.patients
 
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
@@ -20,7 +22,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.espresso.Espresso.pressBack
 import com.example.smart_health_android.data.ClinicalPatientList
 import com.example.smart_health_android.data.EmergencyContact
 import com.example.smart_health_android.data.Patient
@@ -127,7 +128,10 @@ class ClinicalPatientsScreenTest {
 
     @Test
     fun noSelectionToDetailAndSystemBackReturnsToSelectedList() {
+        lateinit var backDispatcher: OnBackPressedDispatcher
         composeRule.setContent {
+            backDispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current)
+                .onBackPressedDispatcher
             val hostDensity = LocalDensity.current
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val hostWidthPixels = with(hostDensity) { maxWidth.toPx() }
@@ -177,7 +181,7 @@ class ClinicalPatientsScreenTest {
             .performClick()
 
         composeRule.onNodeWithTag("shcare.list-detail.single-detail").assertIsDisplayed()
-        pressBack()
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
 
         composeRule.onNodeWithTag("shcare.list-detail.list").assertIsDisplayed()
         composeRule.onNodeWithTag("shcare.list-detail.single-detail").assertDoesNotExist()

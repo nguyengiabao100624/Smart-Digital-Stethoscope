@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,8 +49,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +84,7 @@ import com.example.smart_health_android.account.AccountProfileUiState
 import com.example.smart_health_android.account.AccountProfileViewModel
 import com.example.smart_health_android.data.AvatarCleanupStatus
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -149,16 +149,10 @@ fun ProfileScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.profile_title)) },
-                navigationIcon = {
-                    IconButton(onClick = ::leaveProfile) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.profile_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.profile_title),
+                onNavigateBack = ::leaveProfile,
+                backContentDescription = stringResource(R.string.profile_back),
                 actions = {
                     if (state.loadState == AccountProfileLoadState.Ready) {
                         TextButton(
@@ -170,11 +164,16 @@ fun ProfileScreen(
                             },
                             enabled = !state.isSaving && !state.isAvatarBusy,
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = ShcareTheme.colors.onBrandHeader,
+                                disabledContentColor = ShcareTheme.colors.onBrandHeader.copy(alpha = 0.55f),
+                            ),
                         ) {
                             if (state.isSaving) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
+                                    color = ShcareTheme.colors.onBrandHeader,
                                 )
                                 Spacer(Modifier.size(8.dp))
                             } else {
@@ -197,9 +196,6 @@ fun ProfileScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,

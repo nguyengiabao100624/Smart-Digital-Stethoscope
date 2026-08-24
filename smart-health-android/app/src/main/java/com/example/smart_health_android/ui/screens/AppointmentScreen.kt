@@ -57,7 +57,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -103,6 +102,7 @@ import com.example.smart_health_android.appointments.AppointmentViewModel
 import com.example.smart_health_android.appointments.AppointmentWorkflow
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.theme.ShcareTheme
@@ -162,35 +162,20 @@ fun AppointmentScreen(
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = when (state.actor) {
-                            AppointmentActor.Patient -> stringResource(R.string.appointment_title_patient)
-                            AppointmentActor.Doctor -> stringResource(R.string.appointment_title_doctor)
-                            AppointmentActor.Staff -> stringResource(R.string.appointment_title_staff)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            ShcareGradientTopAppBar(
+                title = when (state.actor) {
+                    AppointmentActor.Patient -> stringResource(R.string.appointment_title_patient)
+                    AppointmentActor.Doctor -> stringResource(R.string.appointment_title_doctor)
+                    AppointmentActor.Staff -> stringResource(R.string.appointment_title_staff)
                 },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            if (state.selectedAppointmentId != null || state.detailAppointmentId != null) {
-                                viewModel.onAction(AppointmentUiAction.CloseAppointment)
-                            } else {
-                                onNavigateBack()
-                            }
-                        },
-                        modifier = Modifier.defaultMinSize(48.dp, 48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.appointment_back),
-                        )
+                onNavigateBack = {
+                    if (state.selectedAppointmentId != null || state.detailAppointmentId != null) {
+                        viewModel.onAction(AppointmentUiAction.CloseAppointment)
+                    } else {
+                        onNavigateBack()
                     }
                 },
+                backContentDescription = stringResource(R.string.appointment_back),
                 actions = {
                     IconButton(
                         onClick = { viewModel.onAction(AppointmentUiAction.Load) },

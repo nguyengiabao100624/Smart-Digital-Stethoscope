@@ -41,8 +41,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +71,7 @@ import com.example.smart_health_android.notifications.NotificationInboxUiState
 import com.example.smart_health_android.notifications.NotificationInboxViewModel
 import com.example.smart_health_android.notifications.NotificationInboxViewModelFactory
 import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareErrorState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
@@ -125,52 +124,14 @@ fun NotificationsScreen(
             SnackbarHost(hostState = snackbarHostState)
         },
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.notification_inbox_title),
+                subtitle = stringResource(
+                    R.string.notification_inbox_unread_count,
+                    state.unreadCount,
                 ),
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.defaultMinSize(
-                            minWidth = 48.dp,
-                            minHeight = 48.dp,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(
-                                R.string.notification_inbox_back,
-                            ),
-                        )
-                    }
-                },
-                title = {
-                    Column(
-                        modifier = Modifier.semantics {
-                            heading()
-                        },
-                    ) {
-                        Text(
-                            text = stringResource(
-                                R.string.notification_inbox_title,
-                            ),
-                            style = MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.notification_inbox_unread_count,
-                                state.unreadCount,
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                },
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.notification_inbox_back),
                 actions = {
                     IconButton(
                         onClick = {

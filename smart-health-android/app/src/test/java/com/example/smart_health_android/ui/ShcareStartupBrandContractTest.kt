@@ -41,11 +41,12 @@ class ShcareStartupBrandContractTest {
     fun startupRemovesLegacyHeartGradientAndInlineWebStyle() {
         assertFalse(splashSource.contains("Icons.Default.Favorite"))
         assertFalse(splashSource.contains("material.icons.filled.Favorite"))
-        assertFalse(splashSource.contains("Brush.linearGradient"))
+        assertTrue(splashSource.contains("Brush.linearGradient"))
+        assertTrue(splashSource.contains("brandHeaderStart"))
+        assertTrue(splashSource.contains("brandHeaderEnd"))
         assertFalse(splashSource.contains("text = \"SmartHealth\""))
         assertFalse(splashSource.contains("text = \"Ống nghe điện tử thông minh\""))
-        assertFalse(splashSource.contains("Color.White"))
-        assertFalse(splashSource.contains("fontSize ="))
+        assertTrue(splashSource.contains("ShcareSignalMark"))
     }
 
     @Test

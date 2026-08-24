@@ -3,6 +3,7 @@ package com.example.smart_health_android.ui
 import com.example.smart_health_android.ui.theme.ShcareDarkSemanticColors
 import com.example.smart_health_android.ui.theme.ShcareLightSemanticColors
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -22,6 +23,28 @@ class PrimaryScreenThemeContractTest {
             "src/main/java/com/example/smart_health_android/ui/screens/$fileName",
         ).readText()
     }
+
+    private val legacyHeaderScreenNames = listOf(
+        "AIAssistantScreen.kt",
+        "AICalibrationScreen.kt",
+        "AccessLogScreen.kt",
+        "AppointmentScreen.kt",
+        "BluetoothSettingsScreen.kt",
+        "ChangePasswordScreen.kt",
+        "DataAccessScreen.kt",
+        "DataStorageScreen.kt",
+        "DevicePairingScreen.kt",
+        "ExportDataScreen.kt",
+        "FamilyProfilesScreen.kt",
+        "NewScanScreen.kt",
+        "NotificationSettingsScreen.kt",
+        "NotificationsScreen.kt",
+        "PrivacyScreen.kt",
+        "ProfileScreen.kt",
+        "RecordDetailScreen.kt",
+        "StethoscopeSettingsScreen.kt",
+        "WorkspaceSwitcherScreen.kt",
+    )
 
     @Test
     fun primaryScreensResolveSurfacesAndContentFromTheNativeTheme() {
@@ -47,23 +70,47 @@ class PrimaryScreenThemeContractTest {
     @Test
     fun brandedHeadersUseThemeSpecificSemanticColors() {
         primaryScreens.forEach { (fileName, source) ->
-            assertTrue("$fileName must use the native brand header start role", source.contains("brandHeaderStart"))
-            assertTrue("$fileName must use the native brand header end role", source.contains("brandHeaderEnd"))
-            assertTrue("$fileName must use the native on-brand role", source.contains("onBrandHeader"))
+            val usesDirectBrandRoles =
+                source.contains("brandHeaderStart") &&
+                    source.contains("brandHeaderEnd") &&
+                    source.contains("onBrandHeader")
+            val usesCanonicalLegacyHeader = source.contains("ShcareGradientTopAppBar")
+            assertTrue(
+                "$fileName must use direct native brand roles or the canonical legacy header",
+                usesDirectBrandRoles || usesCanonicalLegacyHeader,
+            )
         }
 
         assertNotEquals(
             ShcareLightSemanticColors.brandHeaderStart,
             ShcareDarkSemanticColors.brandHeaderStart,
         )
-        assertNotEquals(
+        assertEquals(
             ShcareLightSemanticColors.brandHeaderEnd,
             ShcareDarkSemanticColors.brandHeaderEnd,
         )
-        assertNotEquals(
+        assertEquals(
             ShcareLightSemanticColors.onBrandHeader,
             ShcareDarkSemanticColors.onBrandHeader,
         )
+    }
+
+    @Test
+    fun newFeatureScreensKeepTheCanonicalOriginalStyleHeader() {
+        legacyHeaderScreenNames.forEach { fileName ->
+            val source = projectFile(
+                "src/main/java/com/example/smart_health_android/ui/screens/$fileName",
+            ).readText()
+            assertTrue(
+                "$fileName must keep the canonical original-style Shcare header",
+                source.contains("ShcareGradientTopAppBar(") ||
+                    source.contains("ShcareSettingsHeader("),
+            )
+            assertFalse(
+                "$fileName must not reintroduce a flat Material TopAppBar",
+                Regex("""(?<!ShcareGradient)TopAppBar\(""").containsMatchIn(source),
+            )
+        }
     }
 
     private fun projectFile(relativePath: String): File {

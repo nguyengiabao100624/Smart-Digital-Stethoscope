@@ -14,6 +14,14 @@ Ngày cập nhật: `2026-08-23`
 - Chỉ Portal dùng màu, component, icon, state và motion gần Admin ở lớp frontend; không sao chép menu, route, quyền hoặc chức năng platform-admin. Workflow Portal được định hình riêng theo actor/capability và chức năng Phase 0–7.
 - Sau khi tất cả gate xanh: tự backup, deploy production, smoke/canary và rollback lane lỗi; không chờ thêm một vòng duyệt deploy.
 
+### Ranh giới bắt buộc cho Android
+
+- **Giữ nguyên chức năng mới:** API/repository/domain/ViewModel, `UiState`/`UiAction`/`UiEffect`, navigation, role/capability, validation, lifecycle, offline/retry, audit, receipt backend/device và các workflow mới không được thay bằng logic cũ.
+- **Phục hồi lớp UI/UX:** màu semantic, typography, spacing, card, header, icon treatment, trạng thái trực quan và motion phải kế thừa ngôn ngữ Android gốc tại commit `2e5be444` cùng prototype `smart-health-android/figma`.
+- **Màn mới không có bản gốc:** giữ nguyên chức năng mới nhưng dựng bằng cùng primitive và vocabulary gốc; không tự phát minh một design system khác và không sao chép layout Web/Admin sang Compose.
+- **Ngoại lệ đã chốt:** giữ logo tín hiệu Shcare hiện tại; không phục hồi dữ liệu mẫu, AI/chẩn đoán giả, Bluetooth/QR giả hoặc tuyên bố y tế chưa được hỗ trợ.
+- Test source phải chặn màu light-only/hard-code và `TopAppBar` phẳng quay lại các màn đã migrate; test runtime phải giữ 48dp, semantics, light/dark và luồng chức năng thật.
+
 ## 2. Lỗi phải xử lý trong lúc ghép
 
 - Theme `light | dark | system`, contrast, typography, mobile overflow/IME, focus và touch target.
@@ -84,3 +92,18 @@ Ngày cập nhật: `2026-08-23`
 ## 5. Cổng xác nhận
 
 Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0** và tự đi tiếp đến G4; mọi deploy/nạp firmware vẫn phải qua đúng gate tương ứng.
+
+## 2026-08-24 — G3 Android legacy visual-language restoration checkpoint
+
+- Ranh giới bất biến: giữ mọi workflow Phase 0–7/chức năng mới, repository, ViewModel, `UiState`, RBAC, validation, offline/retry và backend/device receipt; chỉ phục hồi lớp trình bày Android theo ngôn ngữ sản phẩm gốc. Chức năng mới chưa có màn cũ phải mở rộng cùng ngôn ngữ đó. Giữ logo tín hiệu Shcare hiện tại.
+- Nguồn hình ảnh chuẩn là Git commit `2e5be444` và prototype `smart-health-android/figma` trong RC1. Vocabulary đã khóa: canvas sáng `#F5F7FA`, card trắng, xanh `#0B5C9A`, teal `#00A896`, viền/bóng mềm, radius 12–18dp, hierarchy gọn và motion native có mục đích. Không phục hồi Bluetooth giả, AI/chẩn đoán mẫu hoặc claim y tế chưa hỗ trợ.
+- Đã phục hồi theme semantic light/dark, Splash, Login và Dashboard bệnh nhân. Dashboard dùng lại gradient/card và quick-action tile xanh/trắng/teal; logo hiện tại được giữ. App bar gradient bo đáy canonical đã phủ device management/pairing, appointment, new scan, notification, family profile, consent, security, workspace, profile, AI và các màn settings/detail dùng header chung.
+- Đã tái hiện và sửa contract đăng nhập tích hợp thật: demo patient thiếu `accountStatus` rõ ràng và `publicUser` bỏ `deletedAt` khi chưa xóa. Backend giờ gửi lifecycle tường minh; Android vẫn fail-closed. Regression `releaseRuntimeContractTest.js` pass `2/2`.
+- Bằng chứng: Xiaomi thật pass Firebase emulator → backend owner/lifecycle/workspace → Dashboard bệnh nhân `1/1`; Android compile/assemble/lint và JVM đầy đủ `840/840` pass. Ảnh cục bộ: `%TEMP%/shcare-restored-dashboard-v2.png`.
+- Không làm lại lát cắt này sau khi mở lại. Bước G3 kế tiếp: đánh thức/mở khóa Xiaomi rồi chạy lại 5 focused Compose/runtime test độc lập, visual-check các route chức năng mới, sau đó tiếp tục gate demo ESP32 hai mic hiện hữu. Aggregate device run gần nhất không có Compose hierarchy vì `mWakefulness=Asleep` và MIUI chặn shell input; đây không phải code PASS hoặc code failure.
+
+### 2026-08-24 — G3 Android runtime proof continuation
+
+- Xiaomi đã thức: original-style UI runtime `4/4` pass và Firebase emulator → backend → patient Dashboard `1/1` pass. Full connected run có `78 PASS`, `0 FAIL`, `2 SKIPPED`; hai proof notification bị MIUI chặn quyền instrumentation nên vẫn mở cho emulator, không tính pass ảo.
+- JVM aggregate mới là `841/841`; `lintDebug` và `assembleDebug` pass. APK debug production-default SHA-256: `91D3BC26C9CEE92A8E008A91C0CBE11660F0DC329A546DDADFE9A8F180F91186`.
+- Quy tắc chống hồi quy đã phủ 19 màn chức năng mới/đã mở rộng: giữ workflow mới nhưng bắt buộc dùng header/semantic theme phong cách Android gốc. Dashboard hiển thị mã hồ sơ có nhãn và cho phép xuống dòng. G3 vẫn `in progress` cho tới khi visual route proof và hai notification proof còn mở được đóng.

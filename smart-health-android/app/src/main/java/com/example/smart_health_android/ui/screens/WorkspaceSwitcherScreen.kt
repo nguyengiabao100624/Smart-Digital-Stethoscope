@@ -35,8 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +60,7 @@ import com.example.smart_health_android.data.AuthUser
 import com.example.smart_health_android.data.WorkspaceSummary
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -93,22 +92,11 @@ fun WorkspaceSwitcherScreen(
     }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.workspace_switcher_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        enabled = state.switchingWorkspaceId.isBlank(),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.workspace_switcher_back),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.workspace_switcher_title),
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.workspace_switcher_back),
+                backEnabled = state.switchingWorkspaceId.isBlank(),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,

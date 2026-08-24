@@ -30,12 +30,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.example.smart_health_android.R
 import com.example.smart_health_android.navigation.ShcareMobileRoute
 import com.example.smart_health_android.navigation.ShcarePrimaryDestination
@@ -325,7 +327,10 @@ private fun CompactShcareScaffold(
                                 text = stringResource(item.labelRes),
                                 maxLines = NavigationLabelMaxLines,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.testTag(item.labelTestTag()),
+                                modifier = Modifier
+                                    .testTag(item.labelTestTag())
+                                    .heightIn(min = 32.dp)
+                                    .wrapContentHeight(Alignment.CenterVertically),
                             )
                         },
                     )
@@ -375,7 +380,10 @@ private fun ExpandedShcareScaffold(
                             text = stringResource(item.labelRes),
                             maxLines = NavigationLabelMaxLines,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.testTag(item.labelTestTag()),
+                            modifier = Modifier
+                                .testTag(item.labelTestTag())
+                                .heightIn(min = 32.dp)
+                                .wrapContentHeight(Alignment.CenterVertically),
                         )
                     },
                 )

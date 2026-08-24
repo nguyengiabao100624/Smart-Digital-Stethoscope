@@ -110,6 +110,7 @@ Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0**
 
 ### 2026-08-24 — G3 legacy Web candidate and attached-device checkpoint
 
+- Product-source candidate đã khóa tại `f6b6e2aa4a957ccfb395ec265348950e407bbeb8`; các commit tài liệu sau đó không thay đổi binary sản phẩm.
 - Giữ nguyên ranh giới giao diện đã khóa: phong cách Web/Admin cũ và logo Shcare hiện tại; chỉ sửa lỗi tương phản, theme, responsive, motion, asset/performance và thêm UI cho chức năng thật. Hero chỉ còn một video chuẩn, không còn lớp video trùng.
 - Web candidate mới nhất pass Auth `390/390`, contract `137/137`, TypeScript, lint và Firebase build. Production-preview pass LCP `668ms`, CLS `0.05436187199931413`, INP dưới `16ms`, JavaScript `248111` bytes và CSS `64920` bytes.
 - Xiaomi đã online, APK debug production-default được cài/mở thành công, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Bằng chứng aggregate hiện hành là `83` execution, `0` fail, `3` skip; hai notification proof vẫn bị chính sách MIUI chặn, không tính PASS giả.

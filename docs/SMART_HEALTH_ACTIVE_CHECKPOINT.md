@@ -865,6 +865,7 @@ recorded contract invalid.
 
 ## 2026-08-24 active checkpoint — G3 Web freeze and attached runtime
 
+- Frozen product-source commit is `f6b6e2aa4a957ccfb395ec265348950e407bbeb8`; use it for the next preview/backend compatibility comparison. Do not reinterpret the later documentation-only checkpoint as a different product binary.
 - Supersedes only the stale runtime facts in the prior row: Xiaomi ADB and ESP32-S3 COM9 are now online. Do not reopen completed G0–G2 or replace the approved legacy-UI integration plan.
 - The current Web diff preserves the legacy visual language and current logo, removes the duplicated hero video layer, self-hosts the fonts, fixes reduced-motion/theme behavior and hardens browser diagnostics. Clean proof: Auth `390/390`, contracts `137/137`, direct TypeScript, lint, Firebase build, plus production-preview LCP `668ms`, CLS `0.05436187199931413`, INP upper bound `16ms`, JS `248111` bytes and CSS `64920` bytes.
 - The production-default debug APK was installed and launched on Xiaomi; SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Existing current device aggregate remains `83` executions / `0` fail / `3` skipped, with two notification cases blocked by MIUI policy.

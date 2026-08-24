@@ -312,8 +312,10 @@ not require firmware rollback while the compatibility verdict remains green.
 
 ## 2026-08-24 legacy Web and attached-device candidate addendum
 
+- Frozen product-source commit: `f6b6e2aa4a957ccfb395ec265348950e407bbeb8`.
 - Intentional Web presentation changes preserve the deployed legacy style and current Shcare logo while retaining functional RC contracts. The duplicate hero edge video was removed; fonts are self-hosted; theme, reduced-motion, responsive contrast and smoke diagnostics are hardened.
 - Clean candidate proof: Auth `390/390`, Web contracts `137/137`, TypeScript, lint and Firebase production build. Public production-preview metrics: LCP `668ms`, CLS `0.05436187199931413`, INP upper bound `16ms`, transfer `398459` bytes, JavaScript `248111` bytes and CSS `64920` bytes.
+- Web artifact hashes: `dist-firebase/index.html` SHA-256 `8B92AB206D2493777507FBBB84E877A9F4CA67FC86A8D32DA62CF5F970B495ED`; `assets/index-DfmaCRK3.css` SHA-256 `D88A4A108F660D64A9F01A699C11FE1B570D40DBF706CF88DB572301724D0AFA`.
 - Current Android debug APK is `26,957,689` bytes, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`; it installed and launched on the attached Xiaomi target. Current runtime aggregate is `83` executions, `0` fail, `3` skipped, with two notification cases blocked by MIUI policy.
 - Physical ESP captive-portal HIL passes and both mic slots are active. Authenticated WSS/ACK/audio-v2/durable scan remains open because the target Wi-Fi credential must be entered by the user through the App or captive Web; current serial state is `wss=0`.
 - Compatibility verdict remains additive for UI and provisioning contracts. G3 is not yet PASS, G4 has not started, and no new production promotion is recorded.

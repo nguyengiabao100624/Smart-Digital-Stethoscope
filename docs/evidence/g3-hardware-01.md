@@ -77,3 +77,11 @@ Assertions:
   encryption is disabled. Production cloud therefore remains deliberately
   fail-closed; no compiler-define workaround or irreversible eFuse operation was
   performed.
+
+## 2026-08-24 local setup AP and dual-surface provisioning addendum
+
+- Source checkpoint: `6a28fe2b431ffae5bb9d62d26d712136359f3bd9`.
+- Physical ESP Unity runner passed `54/54`, including the version/device/session-bound setup Wi-Fi JSON parser. The application HIL firmware was wired-flashed back to COM9 afterward with hash verification.
+- A bounded host HIL connected temporarily to the per-device WPA2 setup AP, verified the Vietnamese Shcare captive HTML, validated the exact device/session response, proved an invalid CSRF token returns `403 SETUP_SESSION_INVALID`, deleted the temporary AP profile and confirmed the original host Wi-Fi was restored.
+- Final serial reset after restoring application firmware reported `I2S microphone ready`, `Smart Health WiFi recovery server ready on port 80`, setup portal/AP readiness and non-zero RMS values for both I2S slots.
+- No real target-network password was read from the host. A successful target-Wi-Fi POST remains intentionally reserved for a password entered by the user in the Android App or captive Web portal. Android runtime evidence remains blocked until an ADB device is attached.

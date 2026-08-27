@@ -1,0 +1,169 @@
+# Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare
+
+Trạng thái: **ACTIVE v4 — người dùng xác nhận `2026-08-23`**
+Ngày cập nhật: `2026-08-25`
+
+## 1. Nguyên tắc chính
+
+- Phase 0–7 của [kế hoạch tổng thể](SHCARE_REBUILD_MASTER_PLAN.md) đã hoàn thành ở mức `source/build/local`; **không phát triển lại và không chạy lại từ đầu**.
+- Lấy toàn bộ logic, API, contract, validation, RBAC, dữ liệu, Android và firmware đã hoàn thành làm nguồn chức năng cố định.
+- Công việc mới là: **ghép các chức năng đó vào giao diện production hiện tại**; chức năng nào giao diện cũ chưa có thì thiết kế thêm màn/control/flow cần thiết trong đúng phong cách hiện tại.
+- Chức năng đã có UI thì giữ và sửa chất lượng; chức năng chưa có UI thì bổ sung UI/UX đầy đủ; chỉ khi test chứng minh nghiệp vụ/contract thật sự còn hở mới phát triển đúng phần thiếu đó.
+- Backend/database/provider chỉ được sửa khi test chứng minh có regression, contract mismatch hoặc cấu hình release chưa nối đúng; không mở lại domain đã PASS chỉ để “hoàn thiện thêm”.
+- Web và Admin giữ phong cách hiện tại nhưng được sửa chữ to/nhỏ thất thường, màu xấu, contrast, spacing, responsive, accessibility và hiệu ứng chưa tốt.
+- Chỉ Portal dùng màu, component, icon, state và motion gần Admin ở lớp frontend; không sao chép menu, route, quyền hoặc chức năng platform-admin. Workflow Portal được định hình riêng theo actor/capability và chức năng Phase 0–7.
+- Sau khi tất cả gate xanh: tự backup, deploy production, smoke/canary và rollback lane lỗi; không chờ thêm một vòng duyệt deploy.
+
+### Ranh giới bắt buộc cho Android
+
+- **Giữ nguyên chức năng mới:** API/repository/domain/ViewModel, `UiState`/`UiAction`/`UiEffect`, navigation, role/capability, validation, lifecycle, offline/retry, audit, receipt backend/device và các workflow mới không được thay bằng logic cũ.
+- **Phục hồi lớp UI/UX:** màu semantic, typography, spacing, card, header, icon treatment, trạng thái trực quan và motion phải kế thừa ngôn ngữ Android gốc tại commit `2e5be444` cùng prototype `smart-health-android/figma`.
+- **Màn mới không có bản gốc:** giữ nguyên chức năng mới nhưng dựng bằng cùng primitive và vocabulary gốc; không tự phát minh một design system khác và không sao chép layout Web/Admin sang Compose.
+- **Ngoại lệ đã chốt:** giữ logo tín hiệu Shcare hiện tại; không phục hồi dữ liệu mẫu, AI/chẩn đoán giả, Bluetooth/QR giả hoặc tuyên bố y tế chưa được hỗ trợ.
+- Test source phải chặn màu light-only/hard-code và `TopAppBar` phẳng quay lại các màn đã migrate; test runtime phải giữ 48dp, semantics, light/dark và luồng chức năng thật.
+
+## 2. Lỗi phải xử lý trong lúc ghép
+
+- Theme `light | dark | system`, contrast, typography, mobile overflow/IME, focus và touch target.
+- Menu Public: underline/dropdown có motion, dropdown đóng sau điều hướng và route cuộn đúng vị trí.
+- `/quen-mat-khau`: nút gửi nhìn rõ, trạng thái API thật.
+- Đăng ký mobile: cuộn tới được nút và liên kết đăng nhập.
+- Admin **Lưu trữ**: kiểm tra RouteContract/menu/direct URL/RBAC/API. Có capability thì thấy menu và dữ liệu thật; không quyền vẫn 403.
+- Không còn fake KPI, seeded AI/diagnosis, QR giả, nút chết, toast-only mutation hoặc success trước receipt thật.
+
+## 3. Tiến độ mới G0–G4
+
+### G0 — Khóa nguồn ghép
+
+- Bảo toàn worktree, SHA và toàn bộ bằng chứng Phase 0–7.
+- Khóa hai nguồn: functional RC đã hoàn thành và giao diện Live Web/Admin hiện tại.
+- Phân loại từng chức năng theo `ĐÃ_CÓ_UI`, `CHƯA_CÓ_UI`, `MIXED_CẦN_GHÉP`, `REGRESSION` và `NGHIỆP_VỤ_THẬT_SỰ_CÒN_THIẾU`.
+- Ghi production target/recovery reference cho Firebase, backend, database và storage.
+
+**PASS:** có manifest nguồn ghép; không có phần Phase 0–7 nào bị mở lại vô lý.
+
+### G1 — Ghép chức năng và bổ sung UI còn thiếu
+
+- Dùng functional RC làm nền; giữ handler/API/state/capability/test và đưa lớp trình bày về phong cách Live tương ứng.
+- Ghép Public/Auth/Portal trước, sau đó Admin; không checkout nguyên file cũ làm mất logic mới.
+- Với chức năng chưa có trong giao diện cũ, thiết kế đủ entry point, màn hình/control, validation, loading/empty/error/offline/403/retry/confirm và responsive bằng component vocabulary hiện tại.
+- Portal hội tụ frontend với Admin nhưng workflow theo người dùng Portal; khôi phục phần frontend của mục Lưu trữ trong Admin.
+- Sửa các lỗi hình ảnh nêu ở mục 2 trong khi vẫn giữ nhận diện hiện tại.
+
+**PASS:** mọi chức năng Phase 0–7 có UI sử dụng được trên surface phù hợp, giao diện đúng phong cách hiện tại và không còn visual regression ngoài allowlist.
+
+### G2 — Kiểm tra mối nối và chỉ sửa regression
+
+- Chạy route–role–state–action, direct URL, API mutation, offline/retry, tenant-negative và cleanup test.
+- Browser test 360/390/768/1024/1440, light/dark/system; zero Axe serious/critical.
+- Hoàn tất backend/RBAC/data/audit của Lưu trữ nếu test G1 chứng minh mối nối còn thiếu.
+- Chỉ phát triển/sửa backend, migration `044–054`, provider, Android hoặc firmware khi có lỗi tái hiện hoặc workflow bắt buộc thật sự còn thiếu; bằng chứng cũ còn hiệu lực thì tái sử dụng.
+
+**PASS:** mọi lỗi ghép đã đóng; không biến G2 thành một vòng phát triển lại hệ thống.
+
+### G3 — Khóa release candidate và test ESP32 hai mic
+
+- Chạy focused test theo diff rồi aggregate gate; hoàn tất Deep Security scan hiện có trước release.
+- Tạo candidate SHA, artifact hash và compatibility manifest.
+- Preflight model ESP, PlatformIO environment, flash/partition và chân nguồn/clock/data/LR; không tự suy diễn stereo/multiplex.
+- Tự dò cổng, build/nạp firmware và test serial, Wi‑Fi/WSS, auth, reconnect, telemetry, command ACK, audio-v2, từng mic, luồng hai mic, packet loss và OTA rollback; không log secret hoặc dùng audio có PHI.
+- Android chỉ build/test lại phần bị ảnh hưởng bởi mối nối/contract.
+
+**PASS:** release candidate tái lập được; HIL có log thật cho ESP32 và hai mic; không còn P0/P1.
+
+### G4 — Tự động phát hành và kiểm tra production
+
+1. Backup/restore reference cho database, storage và hai Firebase site.
+2. Deploy backend cùng migration/config release đã hoàn thành; xác minh version marker.
+3. Deploy Admin; smoke Lưu trữ, RBAC và mutation cleanup.
+4. Deploy Web/Portal; smoke Public/Auth/Portal/theme/WSS.
+5. Nạp lại firmware nếu artifact thay đổi; test ESP32 + hai mic bằng workspace/device thử nghiệm với production.
+6. Canary theo ngưỡng đã ghi; tự rollback riêng lane lỗi.
+7. Cập nhật deploy ID, smoke ID, hash, HIL log và handoff.
+
+**PASS:** production chạy đúng candidate mới nhất và phần cứng giao tiếp thật với production.
+
+## 4. Chống làm lại sau khi ngắt
+
+- Bảng tiến độ chỉ hiển thị `G0–G4`; task con không đưa lên tổng quan.
+- Checkpoint ghi SHA, dirty hash, nguồn ghép, G-phase, gate vừa PASS, lỗi đang mở và bước tiếp theo.
+- Khi mở lại: đọc kế hoạch gốc → bản v4 này → checkpoint → git diff; tiếp tục đúng mối nối/lỗi đang dở, không chạy lại Phase 0–7.
+
+## 5. Cổng xác nhận
+
+Kế hoạch đã được người dùng xác nhận. Bắt đầu tại **G0** và tự đi tiếp đến G4; mọi deploy/nạp firmware vẫn phải qua đúng gate tương ứng.
+
+## 2026-08-24 — G3 Android legacy visual-language restoration checkpoint
+
+- Ranh giới bất biến: giữ mọi workflow Phase 0–7/chức năng mới, repository, ViewModel, `UiState`, RBAC, validation, offline/retry và backend/device receipt; chỉ phục hồi lớp trình bày Android theo ngôn ngữ sản phẩm gốc. Chức năng mới chưa có màn cũ phải mở rộng cùng ngôn ngữ đó. Giữ logo tín hiệu Shcare hiện tại.
+- Nguồn hình ảnh chuẩn là Git commit `2e5be444` và prototype `smart-health-android/figma` trong RC1. Vocabulary đã khóa: canvas sáng `#F5F7FA`, card trắng, xanh `#0B5C9A`, teal `#00A896`, viền/bóng mềm, radius 12–18dp, hierarchy gọn và motion native có mục đích. Không phục hồi Bluetooth giả, AI/chẩn đoán mẫu hoặc claim y tế chưa hỗ trợ.
+- Đã phục hồi theme semantic light/dark, Splash, Login và Dashboard bệnh nhân. Dashboard dùng lại gradient/card và quick-action tile xanh/trắng/teal; logo hiện tại được giữ. App bar gradient bo đáy canonical đã phủ device management/pairing, appointment, new scan, notification, family profile, consent, security, workspace, profile, AI và các màn settings/detail dùng header chung.
+- Đã tái hiện và sửa contract đăng nhập tích hợp thật: demo patient thiếu `accountStatus` rõ ràng và `publicUser` bỏ `deletedAt` khi chưa xóa. Backend giờ gửi lifecycle tường minh; Android vẫn fail-closed. Regression `releaseRuntimeContractTest.js` pass `2/2`.
+- Bằng chứng: Xiaomi thật pass Firebase emulator → backend owner/lifecycle/workspace → Dashboard bệnh nhân `1/1`; Android compile/assemble/lint và JVM đầy đủ `840/840` pass. Ảnh cục bộ: `%TEMP%/shcare-restored-dashboard-v2.png`.
+- Không làm lại lát cắt này sau khi mở lại. Bước G3 kế tiếp: đánh thức/mở khóa Xiaomi rồi chạy lại 5 focused Compose/runtime test độc lập, visual-check các route chức năng mới, sau đó tiếp tục gate demo ESP32 hai mic hiện hữu. Aggregate device run gần nhất không có Compose hierarchy vì `mWakefulness=Asleep` và MIUI chặn shell input; đây không phải code PASS hoặc code failure.
+
+### 2026-08-24 — G3 Android runtime proof continuation
+
+- Xiaomi đã thức: original-style UI runtime `4/4` pass và Firebase emulator → backend → patient Dashboard `1/1` pass. Full connected run có `78 PASS`, `0 FAIL`, `2 SKIPPED`; hai proof notification bị MIUI chặn quyền instrumentation nên vẫn mở cho emulator, không tính pass ảo.
+- JVM aggregate mới là `841/841`; `lintDebug` và `assembleDebug` pass. APK debug production-default SHA-256: `91D3BC26C9CEE92A8E008A91C0CBE11660F0DC329A546DDADFE9A8F180F91186`.
+- Quy tắc chống hồi quy đã phủ 19 màn chức năng mới/đã mở rộng: giữ workflow mới nhưng bắt buộc dùng header/semantic theme phong cách Android gốc. Dashboard hiển thị mã hồ sơ có nhãn và cho phép xuống dòng. G3 vẫn `in progress` cho tới khi visual route proof và hai notification proof còn mở được đóng.
+
+### 2026-08-24 — G3 legacy Web candidate and attached-device checkpoint
+
+- Product-source candidate đã khóa tại `f6b6e2aa4a957ccfb395ec265348950e407bbeb8`; các commit tài liệu sau đó không thay đổi binary sản phẩm.
+- Giữ nguyên ranh giới giao diện đã khóa: phong cách Web/Admin cũ và logo Shcare hiện tại; chỉ sửa lỗi tương phản, theme, responsive, motion, asset/performance và thêm UI cho chức năng thật. Hero chỉ còn một video chuẩn, không còn lớp video trùng.
+- Web candidate mới nhất pass Auth `390/390`, contract `137/137`, TypeScript, lint và Firebase build. Production-preview pass LCP `668ms`, CLS `0.05436187199931413`, INP dưới `16ms`, JavaScript `248111` bytes và CSS `64920` bytes.
+- Xiaomi đã online, APK debug production-default được cài/mở thành công, SHA-256 `8EB49417A11D33388D3C04BB339916ED8A7E978EDD193D5F432A531ABBC159D3`. Bằng chứng aggregate hiện hành là `83` execution, `0` fail, `3` skip; hai notification proof vẫn bị chính sách MIUI chặn, không tính PASS giả.
+- ESP32-S3 CH343 hiện ở COM9. Captive-portal HIL pass HTML/session binding/invalid-session denial/Wi-Fi restore; serial xác nhận hai mic hoạt động nhưng `wss=0` vì target Wi-Fi chưa được người dùng nhập qua App/Web.
+- G3 vẫn `in progress`. Trước G4 phải hoàn tất target-Wi-Fi → authenticated WSS → ACK → audio-v2 → durable scan; exact-preview CORS/backend migrations/provider; và các gate signing/OTA hoặc ghi blocker không thể phát hành. G4 chưa bắt đầu và chưa có live promotion mới.
+
+### 2026-08-25 — G3 Web preview gate
+
+- Product binary/source đã khóa tại `6c6d79f67c6d03e464545d37bf50bd31a57312e2`; commit `b09461428818da90e34ad05641e16a329df92a03` chỉ cập nhật test. Preview riêng `https://shcare--rc2-web-6c6d79f6-fz0by6g2.web.app`, chưa promote live.
+- Preview Home và Quên mật khẩu pass `102/102` kiểm tra ở mobile với `light|dark|system`. Aggregate Web pass Auth `390/390`, contracts `138/138`, TypeScript, lint, Firebase build và performance budget.
+- G3 tiếp tục ở backend/provider/CORS và authenticated ESP HIL; G4 vẫn pending.
+
+### 2026-08-25 — G3 backend CORS và ESP setup gate
+
+- Backend CORS source đã đóng tại `4727e183d85e8368203d2f0bcd1ba9f6154105ca`: exact live/preview origin được echo, unknown origin không có ACAO; test policy + HTTP `4/4`, backend aggregate và device security `82/82` PASS. Live backend chưa deploy nên chưa tính live PASS.
+- ESP32-S3 COM9 đã reset và setup AP được xác nhận đang phát. Target Wi-Fi vẫn chờ người dùng nhập qua App/Web; G3 chỉ hoàn tất sau authenticated WSS, command ACK, audio-v2, durable scan, migration/provider và signed OTA/rollback proof.
+- G4 vẫn pending; không promote production trước các gate trên.
+
+### 2026-08-25 — G3 release marker và signed-OTA foundation
+
+- Backend đã có release ID + actual commit marker và smoke fail-closed khi deploy sai candidate. Firmware đã pin public trust anchor RSA-3072, build production/OTA PASS và production image mới đã nạp/verify qua COM9.
+- Đây chưa phải OTA runtime PASS: target Wi-Fi/WSS, command/audio HIL, boot-health và forced rollback vẫn phải chạy thật. G3 tiếp tục; G4 vẫn pending.
+
+### 2026-08-25 — G3 Render preflight
+
+- Render service/branch/root/build/start/auto-deploy/health path đã được xác minh trực tiếp. Biến production cũ cho PostgreSQL, S3, Firebase Admin, PHI và Brevo vẫn tồn tại; không được báo thiếu cấu hình giả.
+- Các release key còn thiếu đã được xác định và chuẩn bị ngoài Git. Chưa lưu biến hay deploy để tránh phát hành commit `main` cũ; chỉ bind/deploy một lần ở G4 sau khi HIL G3 PASS.
+
+### 2026-08-25 — G3 canonical pairing correction
+
+- Luồng chính phải là `QR/mã đầy đủ → claim backend → nhập Wi-Fi trong App → App kết nối tạm vào ESP → chờ WSS Online`; không dùng trang IP hoặc `setup-access.json` làm hướng dẫn chính. AP/captive page chỉ là transport/fallback vì BLE không thuộc release này.
+- Android source/test/build đã có luồng native đúng. Harness demo đã đổi sang factory-enrolled + QR protocol v1 đầy đủ; QR AP-only cũ không được tính là bằng chứng ghép thiết bị.
+- Web không được tuyên bố tự chuyển Wi-Fi do giới hạn bảo mật của trình duyệt; Web chỉ claim/verify và mở fallback local sau khi người dùng chấp thuận đổi mạng ở hệ điều hành. G3 tiếp tục chờ ADB runtime, người dùng nhập Wi-Fi, WSS/ACK/audio-v2/durable scan và OTA rollback; G4 vẫn pending.
+
+### 2026-08-25 — G3 local install và demo-auth checkpoint
+
+- APK integrated-demo đã được cài và mở trên Xiaomi thật. Firebase emulator → backend → Patient Dashboard pass bằng instrumentation; MIUI vẫn chặn ADB shell inject input nên thao tác QR/Wi-Fi tiếp theo phải dùng Compose instrumentation hoặc người dùng chạm trực tiếp.
+- Web Admin local có tài khoản alias thật `admin / admin` tại `http://127.0.0.1:8766/login`; backend trả HTTP `200`, điều hướng vào dashboard và không có console error. Alias chỉ tồn tại trong demo launcher, không được bật ở preview/live/production.
+- Đã xóa fallback đăng nhập giả từng điều hướng vào Admin khi xác thực thất bại. G3 vẫn `in progress` cho tới khi người dùng nhập target Wi-Fi trong App, sau đó chứng minh authenticated WSS → ACK → audio-v2 → durable scan và OTA rollback. G4 vẫn pending.
+
+### 2026-08-25 — G3 QR foreground-reauthorization fix
+
+- Xiaomi tái hiện lỗi sau khi camera QR trả kết quả: foreground reauthorization tạm thời làm authority callback trả `null`, khiến receipt của claim thành công bị UI hiểu nhầm là phiên hết hạn. Backend đã claim đúng thiết bị cho đúng patient/workspace; không có claim chéo tenant.
+- Android nay chờ bounded reauthorization và chỉ tiếp tục khi đúng cùng user/workspace/epoch. Nếu claim one-time đã được backend tiêu thụ, App chỉ phục hồi setup khi danh sách backend xác nhận cùng device, workspace và owner; khác owner vẫn fail closed.
+- Focused Device Pairing tests và integrated-demo assemble PASS; APK SHA-256 `8AC6BF2942DEDD07425324092314B9F06CAAC2D21408C7F85E499E93B4A3DDF2` đã cài lên Xiaomi. G3 chờ lần quét lại thực tế rồi tiếp tục target Wi-Fi/WSS/ACK/audio-v2.
+
+### 2026-08-25 — G3 tự điền Wi-Fi hiện tại và khôi phục AP thật
+
+- Android đã bổ sung đúng UX yêu cầu: sau QR/mã và claim thật, App đọc SSID điện thoại đang dùng, xin quyền đúng lúc, tự điền một lần, không ghi đè tên mạng người dùng đã sửa và vẫn cho nhập tay nếu Android che SSID/từ chối quyền. Không có mật khẩu nào được ghi vào source, lệnh, log hoặc tài liệu.
+- Gate mới PASS: `118` JVM suite / `849/849`, AndroidTest compile, assemble và lint; APK integrated-demo SHA-256 `D1309E2C1793717453DE5610EFE4824A589EFD69FEFA819F58F980E888DC53FF` đã cài trên Xiaomi.
+- ESP trên COM9 đã được reset về application firmware; setup AP đang phát và SSID trùng chính xác QR, hai slot mic có dữ liệu. MIUI cấm ADB/UiAutomation cấp quyền và bơm thao tác, nên còn đúng bước người dùng duyệt quyền, quét QR và nhập mật khẩu trên máy; sau đó phải chạy WSS/ACK/audio-v2/durable scan/OTA rollback. G3 vẫn `in progress`, G4 vẫn pending.
+### 2026-08-25 — G3 Xiaomi SSID và loading-flash correction
+
+- Đã tái hiện trên Xiaomi: quyền ứng dụng có nhưng Location services tắt làm Android che SSID. App nay có trạng thái/copy/action riêng để mở Location settings và tự đọc lại khi quay về, không còn thông báo chung gây hiểu nhầm.
+- Đã tìm đúng nguồn loading chớp tắt: protected route tự chạy reauthorization toàn màn hình mỗi 30 giây. Timer giữa cùng một route đã bỏ; foreground, route entry, account/workspace/session change và backend denial vẫn fail-closed.
+- Source/build gate PASS `850/850`, AndroidTest compile, lint, assemble; APK integrated SHA-256 `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B` đã cài. Runtime UI/SSID vẫn chưa PASS vì Xiaomi secure-locked và MIUI chặn shell bật Location/cấp quyền. G3 vẫn `in progress`; G4 vẫn pending.

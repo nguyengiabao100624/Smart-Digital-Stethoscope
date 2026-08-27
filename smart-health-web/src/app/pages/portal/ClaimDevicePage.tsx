@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -49,6 +49,8 @@ type ClaimFailure = {
 };
 
 type ClaimIntent = {
+  userId: string;
+  workspaceId: string;
   deviceId: string;
   claimCode: string;
   idempotencyKey: string;
@@ -142,37 +144,77 @@ export default function ClaimDevicePage() {
   const capabilities = user?.capabilities || [];
   const canClaim = capabilities.some((capability) =>
     [
-      "workspace.devices.view",
       "workspace.devices.manage",
       "platform.devices.manage",
       "personal.devices.manage",
     ].includes(capability),
   );
-  const workspaceId = user?.currentWorkspace.id || "unknown";
+  const workspaceId = user?.currentWorkspace.id || "";
+  const userId = user?.id || "";
+  const activeAuthorityRef = useRef({ userId, workspaceId });
+  activeAuthorityRef.current = { userId, workspaceId };
+
+  useEffect(() => {
+    intentKeyRef.current = "";
+    inFlightKeyRef.current = "";
+    setFailure(null);
+    setResult(null);
+    setPresenceMessage("");
+    setCheckingPresence(false);
+  }, [userId, workspaceId]);
+
+  const ownsActiveAuthority = (intent: ClaimIntent) =>
+    intent.userId === activeAuthorityRef.current.userId &&
+    intent.workspaceId === activeAuthorityRef.current.workspaceId;
 
   const claim = useMutation<DevicePairingResponse, unknown, ClaimIntent>({
-    mutationFn: ({ deviceId: exactDeviceId, claimCode: exactClaimCode, idempotencyKey }) =>
+    mutationFn: ({
+      deviceId: exactDeviceId,
+      claimCode: exactClaimCode,
+      workspaceId: exactWorkspaceId,
+      idempotencyKey,
+    }) =>
       smartHealthApi.activateDeviceByClaim(
         {
           deviceId: exactDeviceId,
           claimCode: exactClaimCode,
-          connectionMethod: "QR",
+          connectionMethod: "Manual",
+          organizationId: exactWorkspaceId,
         },
         idempotencyKey,
-      ),
+    ),
     onSuccess: async (response, intent) => {
-      if (intentKeyRef.current !== intent.idempotencyKey) return;
+      if (
+        intentKeyRef.current !== intent.idempotencyKey ||
+        !ownsActiveAuthority(intent)
+      ) {
+        return;
+      }
+      if (response.device.organizationId !== intent.workspaceId) {
+        setResult(null);
+        setFailure(
+          classifyClaimFailure(
+            new Error("Biên nhận ghép không thuộc workspace hiện tại."),
+          ),
+        );
+        return;
+      }
       setResult(response);
       setFailure(null);
       setPresenceMessage("");
       inFlightKeyRef.current = "";
       intentKeyRef.current = "";
       await queryClient.invalidateQueries({
-        queryKey: ["portal", "devices", workspaceId],
+        queryKey: ["portal", "workspace", workspaceId, "devices"],
       });
     },
     onError: (error, intent) => {
-      if (intentKeyRef.current !== intent.idempotencyKey) return;
+      if (
+        intentKeyRef.current !== intent.idempotencyKey ||
+        !ownsActiveAuthority(intent)
+      ) {
+        return;
+      }
       setFailure(classifyClaimFailure(error));
     },
     onSettled: (_data, _error, intent) => {
@@ -207,7 +249,7 @@ export default function ClaimDevicePage() {
       return;
     }
 
-    claim.mutate({ deviceId, claimCode, idempotencyKey });
+    claim.mutate({ userId, workspaceId, deviceId, claimCode, idempotencyKey });
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -217,11 +259,23 @@ export default function ClaimDevicePage() {
 
   const checkPresence = async () => {
     if (!result || checkingPresence) return;
+    const checkAuthority = { userId, workspaceId };
+    const checkedDeviceId = result.device.id;
     setCheckingPresence(true);
     setPresenceMessage("");
     try {
-      const response = await smartHealthApi.listDevices();
-      const currentDevice = response.devices.find((device) => device.id === result.device.id);
+      const response = await smartHealthApi.listDevices(workspaceId);
+      if (
+        activeAuthorityRef.current.userId !== checkAuthority.userId ||
+        activeAuthorityRef.current.workspaceId !== checkAuthority.workspaceId
+      ) {
+        return;
+      }
+      const currentDevice = response.devices.find(
+        (device) =>
+          device.id === checkedDeviceId &&
+          device.organizationId === checkAuthority.workspaceId,
+      );
       if (currentDevice?.online) {
         setResult({
           ...result,
@@ -235,7 +289,7 @@ export default function ClaimDevicePage() {
         });
         setPresenceMessage("Thiết bị đã đăng nhập WSS và backend xác nhận Online.");
         await queryClient.invalidateQueries({
-          queryKey: ["portal", "devices", workspaceId],
+          queryKey: ["portal", "workspace", workspaceId, "devices"],
         });
       } else {
         setPresenceMessage(
@@ -243,11 +297,22 @@ export default function ClaimDevicePage() {
         );
       }
     } catch {
+      if (
+        activeAuthorityRef.current.userId !== checkAuthority.userId ||
+        activeAuthorityRef.current.workspaceId !== checkAuthority.workspaceId
+      ) {
+        return;
+      }
       setPresenceMessage(
         "Không thể kiểm tra trạng thái lúc này. Kết quả ghép đã chấp nhận vẫn được giữ; vui lòng thử lại.",
       );
     } finally {
-      setCheckingPresence(false);
+      if (
+        activeAuthorityRef.current.userId === checkAuthority.userId &&
+        activeAuthorityRef.current.workspaceId === checkAuthority.workspaceId
+      ) {
+        setCheckingPresence(false);
+      }
     }
   };
 

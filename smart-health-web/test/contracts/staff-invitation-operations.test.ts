@@ -66,48 +66,116 @@ test("rejects drifted invitation and membership success responses", () => {
         },
         "staff_1",
         "suspend",
+        "clinic_1",
       ),
     /không khớp/i,
   );
 });
 
 test("validates list and each workspace membership lifecycle", () => {
-  const list = parsePortalStaffInvitationList({
-    invitations: [
-      {
-        id: "staff_inv_1",
-        organizationId: "clinic_1",
-        email: "viewer@example.com",
-        role: "viewer",
-        status: "accepted",
-      },
-    ],
-  });
+  const list = parsePortalStaffInvitationList(
+    {
+      invitations: [
+        {
+          id: "staff_inv_1",
+          organizationId: "clinic_1",
+          email: "viewer@example.com",
+          role: "viewer",
+          status: "accepted",
+        },
+      ],
+    },
+    "clinic_1",
+  );
   assert.equal(list.length, 1);
 
   assert.doesNotThrow(() =>
     assertMembershipLifecycleOutcome(
       {
         action: "reactivate",
-        membership: { userId: "staff_1", status: "active" },
+        membership: {
+          userId: "staff_1",
+          organizationId: "clinic_1",
+          status: "active",
+        },
         user: { id: "staff_1" },
         revoked: false,
       },
       "staff_1",
       "reactivate",
+      "clinic_1",
     ),
   );
   assert.doesNotThrow(() =>
     assertMembershipLifecycleOutcome(
       {
         action: "revoke",
-        membership: { userId: "staff_1", status: "revoked" },
+        membership: {
+          userId: "staff_1",
+          organizationId: "clinic_1",
+          status: "revoked",
+        },
         user: { id: "staff_1" },
         revoked: true,
       },
       "staff_1",
       "revoke",
+      "clinic_1",
     ),
+  );
+});
+
+test("rejects foreign or duplicate invitation and membership ledger rows", () => {
+  assert.throws(
+    () =>
+      parsePortalStaffInvitationList(
+        {
+          invitations: [
+            {
+              id: "staff_inv_foreign",
+              organizationId: "clinic_2",
+              email: "viewer@example.com",
+              role: "viewer",
+              status: "pending",
+            },
+          ],
+        },
+        "clinic_1",
+      ),
+    /workspace/i,
+  );
+  const duplicate = {
+    id: "staff_inv_duplicate",
+    organizationId: "clinic_1",
+    email: "viewer@example.com",
+    role: "viewer",
+    status: "pending",
+  };
+  assert.throws(
+    () =>
+      parsePortalStaffInvitationList(
+        { invitations: [duplicate, duplicate] },
+        "clinic_1",
+      ),
+    /trùng ID/i,
+  );
+  assert.throws(
+    () =>
+      assertMembershipLifecycleOutcome(
+        {
+          action: "suspend",
+          membership: {
+            userId: "staff_1",
+            organizationId: "clinic_2",
+            status: "suspended",
+          },
+          user: { id: "staff_1" },
+        },
+        "staff_1",
+        "suspend",
+        "clinic_1",
+      ),
+    /workspace/i,
   );
 });
 

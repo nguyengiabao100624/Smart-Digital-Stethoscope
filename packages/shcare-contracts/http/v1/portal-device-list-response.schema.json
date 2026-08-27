@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/portal-device-list-response.schema.json",
+  "title": "Shcare Portal device list response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generatedAt", "workspaceId", "devices"],
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "devices": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "portal-monitoring-response.schema.json#/$defs/device"
+      }
+    }
+  }
+}

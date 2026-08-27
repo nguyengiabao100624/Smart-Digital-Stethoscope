@@ -39,7 +39,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: WEB_SURFACE_TITLE },
       { name: "description", content: WEB_SURFACE_DESCRIPTION },
-      { name: "author", content: "Smart Health" },
+      { name: "author", content: "Shcare" },
       { property: "og:title", content: WEB_SURFACE_TITLE },
       {
         property: "og:description",

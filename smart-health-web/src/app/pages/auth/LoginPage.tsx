@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, LogIn, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Fingerprint,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
 import {
@@ -30,7 +39,10 @@ function getLoginErrorMessage(error?: string) {
 }
 
 function getTwoFactorErrorMessage(error?: string) {
-  if (error === "TWO_FACTOR_CHALLENGE_EXPIRED" || error === "two_factor_expired") {
+  if (
+    error === "TWO_FACTOR_CHALLENGE_EXPIRED" ||
+    error === "two_factor_expired"
+  ) {
     return "Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.";
   }
   if (error === "TWO_FACTOR_CHALLENGE_LOCKED") {
@@ -151,14 +163,22 @@ export default function LoginPage() {
           description="Mở ứng dụng xác thực đã liên kết với Shcare và nhập mã gồm 6 chữ số."
         />
 
-        <form method="post" noValidate onSubmit={handleTwoFactor} className="shc-auth-form">
+        <form
+          method="post"
+          noValidate
+          onSubmit={handleTwoFactor}
+          className="shc-auth-form"
+        >
           <AuthField
             id="login-otp"
             label="Mã xác thực"
-            hint={`Phiên xác thực hết hạn lúc ${new Intl.DateTimeFormat("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }).format(new Date(twoFactorChallenge.expiresAt))}.`}
+            hint={`Phiên xác thực hết hạn lúc ${new Intl.DateTimeFormat(
+              "vi-VN",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            ).format(new Date(twoFactorChallenge.expiresAt))}.`}
             error={otpError}
             required
           >
@@ -180,7 +200,8 @@ export default function LoginPage() {
           </AuthField>
 
           <AuthAlert tone="info">
-            Shcare chỉ xác nhận đăng nhập sau khi backend kiểm tra mã này. Hệ thống không yêu cầu bạn gửi mã qua email hoặc tin nhắn.
+            Shcare chỉ xác nhận đăng nhập sau khi backend kiểm tra mã này. Hệ
+            thống không yêu cầu bạn gửi mã qua email hoặc tin nhắn.
           </AuthAlert>
 
           <AuthPrimaryButton
@@ -208,17 +229,25 @@ export default function LoginPage() {
 
   return (
     <div className="shc-auth-page shc-auth-page-login">
-      <AuthPageIntro
-        icon={LogIn}
-        title="Đăng nhập workspace"
-        description="Dùng tài khoản đã được cấp quyền cho bác sĩ hoặc cơ sở y tế."
-      />
+      <header className="shc-auth-legacy-intro">
+        <span className="shc-auth-legacy-intro-icon" aria-hidden="true">
+          <Fingerprint size={28} />
+        </span>
+        <h1>Đăng nhập workspace</h1>
+        <p>Cổng bác sĩ và cơ sở y tế</p>
+      </header>
 
-      <form method="post" noValidate onSubmit={handleLogin} className="shc-auth-form">
+      <form
+        method="post"
+        noValidate
+        onSubmit={handleLogin}
+        className="shc-auth-form"
+      >
         <AuthField
           id="login-email"
           label="Email đăng nhập"
           error={fieldErrors.email}
+          leadingIcon={Mail}
           required
         >
           <input
@@ -237,14 +266,25 @@ export default function LoginPage() {
           error={fieldErrors.password}
           required
           action={
+            <Link className="shc-auth-legacy-forgot-link" to="/quen-mat-khau">
+              Quên mật khẩu?
+            </Link>
+          }
+          leadingIcon={LockKeyhole}
+          controlAction={
             <button
               type="button"
-              className="shc-auth-inline-action"
+              className="shc-auth-password-toggle"
               onClick={() => setShowPassword((current) => !current)}
               aria-controls="login-password"
               aria-pressed={showPassword}
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
             >
-              {showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              {showPassword ? (
+                <EyeOff size={18} aria-hidden="true" />
+              ) : (
+                <Eye size={18} aria-hidden="true" />
+              )}
             </button>
           }
         >
@@ -256,10 +296,6 @@ export default function LoginPage() {
             placeholder="Nhập mật khẩu"
           />
         </AuthField>
-
-        <div className="shc-auth-form-meta">
-          <Link to="/quen-mat-khau">Quên mật khẩu?</Link>
-        </div>
 
         {error ? (
           <AuthAlert tone="error" id="login-error">
@@ -278,10 +314,10 @@ export default function LoginPage() {
       </form>
 
       <div className="shc-auth-account-switch">
-        <span>Chưa có quyền workspace?</span>
-        <Link to="/register">Đăng ký bác sĩ</Link>
+        <span>Chưa được cấp quyền?</span>
+        <Link to="/register">Yêu cầu truy cập →</Link>
         <span aria-hidden="true">·</span>
-        <Link to="/register/phong-kham">Đăng ký cơ sở</Link>
+        <Link to="/register/phong-kham">Cơ sở y tế</Link>
       </div>
     </div>
   );

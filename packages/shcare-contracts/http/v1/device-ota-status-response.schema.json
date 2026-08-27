@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-ota-status-response.schema.json",
+  "title": "Shcare public device and OTA lifecycle status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device"],
+  "properties": {
+    "device": { "$ref": "device-operation-common.schema.json#/$defs/publicDevice" }
+  },
+  "x-shcare-http": {
+    "method": "GET",
+    "path": "/v1/devices/{deviceId}"
+  },
+  "x-shcare-ota-availability": {
+    "field": "device.ota",
+    "missingOutcome": "no-ota-lifecycle-to-report",
+    "successAuthority": "device.ota.status=confirmed-after-new-authenticated-session-version-match-and-device-confirmed-boot-health"
+  }
+}

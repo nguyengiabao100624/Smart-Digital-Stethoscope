@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "queueCapacity": 8,
+  "enqueueWaitTicks": 0,
+  "maxDrainPerLoop": 2,
+  "maxFrameAgeMs": 1000,
+  "pauseTimeoutMs": 1000
+}

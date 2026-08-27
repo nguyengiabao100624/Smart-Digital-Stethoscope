@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/appointment-list-response.schema.json",
+  "title": "Shcare appointment list response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointments"],
+  "properties": {
+    "appointments": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/appointment" }
+    }
+  },
+  "$defs": {
+    "patient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "patientCode", "name", "organizationId"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "patientCode": { "type": "string", "maxLength": 120 },
+        "name": { "type": "string", "maxLength": 240 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "email", "specialty"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "name": { "type": "string", "maxLength": 240 },
+        "email": { "type": "string", "maxLength": 320 },
+        "specialty": { "type": "string", "maxLength": 240 }
+      }
+    },
+    "appointment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "organizationId", "patientId", "doctorUserId", "type", "status",
+        "startsAt", "endsAt", "location", "channel", "reason", "notes",
+        "cancellationReason", "cancelledAt", "completedAt", "createdAt", "updatedAt",
+        "patient", "doctor"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "patientId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "doctorUserId": { "type": "string", "maxLength": 120 },
+        "type": { "enum": ["remote_consultation", "clinic_visit", "measurement", "follow_up"] },
+        "status": { "enum": ["scheduled", "confirmed", "completed", "cancelled", "no_show"] },
+        "startsAt": { "type": "string", "format": "date-time" },
+        "endsAt": { "type": "string", "format": "date-time" },
+        "location": { "type": "string", "maxLength": 240 },
+        "channel": { "type": "string", "maxLength": 80 },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "cancellationReason": { "type": "string", "maxLength": 1000 },
+        "cancelledAt": { "type": "string", "maxLength": 80 },
+        "completedAt": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "patient": { "type": ["object", "null"], "oneOf": [{ "$ref": "#/$defs/patient" }, { "type": "null" }] },
+        "doctor": { "type": ["object", "null"], "oneOf": [{ "$ref": "#/$defs/doctor" }, { "type": "null" }] }
+      }
+    }
+  },
+  "x-shcare-http": { "method": "GET", "path": "/portal/appointments" },
+  "x-shcare-workspace-binding": { "field": "organizationId", "source": "authenticated-current-workspace", "failClosed": true }
+}

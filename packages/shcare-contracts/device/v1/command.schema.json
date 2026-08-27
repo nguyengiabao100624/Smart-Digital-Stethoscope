@@ -73,6 +73,99 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "ota.update" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url",
+              "firmwareVersion",
+              "checksum",
+              "signature",
+              "hardwareTarget",
+              "partitionTarget",
+              "minimumProtocolVersion"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://",
+                "maxLength": 800
+              },
+              "downloadAuthorization": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 180,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "firmwareVersion": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                "maxLength": 80
+              },
+              "checksum": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 512,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "hardwareTarget": { "const": "MSM261S4030H0" },
+              "partitionTarget": { "const": "app" },
+              "minimumProtocolVersion": { "const": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "audio.session.start" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "protocolVersion",
+              "frameEncoding",
+              "workspaceId",
+              "patientId",
+              "deviceId",
+              "scanId",
+              "sessionId",
+              "sampleRate",
+              "sampleCount",
+              "encoding"
+            ],
+            "properties": {
+              "protocolVersion": { "const": 2 },
+              "frameEncoding": { "const": "shcare_audio_v2" },
+              "workspaceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "patientId": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "deviceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "scanId": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "sessionId": { "type": "string", "minLength": 1, "maxLength": 160 },
+              "sampleRate": { "const": 16000 },
+              "sampleCount": { "const": 128 },
+              "encoding": { "const": "pcm_s16le" }
+            }
+          }
+        }
+      }
     }
   ]
 }

@@ -9,6 +9,8 @@ import {
   getAdminSmokeContracts,
   type AdminWebSurface,
 } from "../../src/contracts/admin-route-contract.ts";
+import { userHasAnyCapability } from "../../src/components/admin/admin-access-context.ts";
+import type { SmartHealthAuthUser } from "../../src/lib/smart-health-api.ts";
 
 const surfaces: AdminWebSurface[] = ["admin", "portal"];
 
@@ -54,6 +56,51 @@ test("derives ordered navigation from the same contracts and capability truth", 
     portalPatientNavigation.map((contract) => contract.id),
     ["portal.patients"],
   );
+});
+
+test("keeps the Storage sidebar and direct-route permission boundary aligned", () => {
+  const storageCapability = "platform.storage.manage";
+  const storageManager: SmartHealthAuthUser = {
+    id: "storage-manager",
+    role: "managed_admin",
+    capabilities: [storageCapability],
+  };
+  const deniedAdmin: SmartHealthAuthUser = {
+    id: "storage-denied",
+    role: "managed_admin",
+    capabilities: ["platform.dashboard.view"],
+  };
+
+  const storageNavigation = getAdminNavigationContracts("admin", storageManager.capabilities || []);
+  const storageMenuItem = storageNavigation.find((contract) => contract.id === "admin.storage");
+  const storageRoute = findAdminRouteContract("admin", "/storage");
+
+  assert.equal(storageMenuItem?.nav.label, "Lưu trữ");
+  assert.equal(storageMenuItem?.path, "/storage");
+  assert.equal(storageRoute?.id, "admin.storage");
+  assert.equal(
+    userHasAnyCapability(storageManager, storageRoute?.requiredCapabilities || []),
+    true,
+  );
+
+  const deniedNavigation = getAdminNavigationContracts("admin", deniedAdmin.capabilities || []);
+  assert.equal(
+    deniedNavigation.some((contract) => contract.id === "admin.storage"),
+    false,
+  );
+  assert.equal(userHasAnyCapability(deniedAdmin, storageRoute?.requiredCapabilities || []), false);
+});
+
+test("keeps the platform_admin compatibility alias authorized at the Storage boundary", () => {
+  const storageRoute = findAdminRouteContract("admin", "/storage");
+  const platformAdmin: SmartHealthAuthUser = {
+    id: "platform-admin-alias",
+    role: "platform_admin",
+    capabilities: [],
+  };
+
+  assert.ok(storageRoute);
+  assert.equal(userHasAnyCapability(platformAdmin, storageRoute.requiredCapabilities), true);
 });
 
 test("derives the admin browser sweep from smoke-enabled route contracts", () => {

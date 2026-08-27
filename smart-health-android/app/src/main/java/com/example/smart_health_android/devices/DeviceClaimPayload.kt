@@ -5,7 +5,14 @@ import java.time.Instant
 
 enum class DeviceClaimSource {
     SecureSetupQr,
-    ManualClaimOnly,
+    SecureSetupManual,
+}
+
+enum class DeviceManualSetupField {
+    DeviceId,
+    ClaimCode,
+    SetupSsid,
+    ProofOfPossession,
 }
 
 data class DeviceSetupAccessPoint(
@@ -18,11 +25,12 @@ data class DeviceClaimPayload(
     val deviceId: String,
     val claimCode: String,
     val claimExpiresAt: Instant? = null,
+    val setupExpiresAt: Instant? = claimExpiresAt,
     val setupAp: DeviceSetupAccessPoint? = null,
-    val source: DeviceClaimSource = DeviceClaimSource.ManualClaimOnly,
+    val source: DeviceClaimSource,
 ) {
     val supportsSecureSetup: Boolean
-        get() = source == DeviceClaimSource.SecureSetupQr && setupAp != null && claimExpiresAt != null
+        get() = setupAp != null && setupExpiresAt != null
 }
 
 object DeviceClaimPayloadParser {
@@ -41,7 +49,68 @@ object DeviceClaimPayloadParser {
      * payloads are deliberately rejected so a QR can never silently downgrade to a
      * claim-only flow.
      */
-    fun parse(raw: String, now: Instant = Instant.now()): DeviceClaimPayload? {
+    fun parse(raw: String, now: Instant = Instant.now()): DeviceClaimPayload? =
+        parseCanonical(raw = raw, now = now, source = DeviceClaimSource.SecureSetupQr)
+
+    /**
+     * Manual fallback uses the human-readable fields printed with the provision artifact.
+     * Device ID + claim code alone is deliberately insufficient because it would silently
+     * downgrade secure provisioning and cannot prove access to the per-device setup AP.
+     * The backend remains authoritative for claim expiry; local setup material is retained
+     * for at most one short foreground provisioning session.
+     */
+    fun fromManualSetupFields(
+        deviceId: String,
+        claimCode: String,
+        setupSsid: String,
+        proofOfPossession: String,
+        now: Instant = Instant.now(),
+    ): DeviceClaimPayload? {
+        val canonicalDeviceId = deviceId.trim()
+        val canonicalClaimCode = claimCode.trim()
+        val canonicalSetupSsid = setupSsid.trim()
+        val canonicalProof = proofOfPossession.trim()
+        if (
+            validateManualSetupFields(
+                deviceId = canonicalDeviceId,
+                claimCode = canonicalClaimCode,
+                setupSsid = canonicalSetupSsid,
+                proofOfPossession = canonicalProof,
+            ).isNotEmpty()
+        ) return null
+        return DeviceClaimPayload(
+            deviceId = canonicalDeviceId,
+            claimCode = canonicalClaimCode,
+            claimExpiresAt = null,
+            setupExpiresAt = now.plusSeconds(ManualSetupMaterialLifetimeSeconds),
+            setupAp = DeviceSetupAccessPoint(
+                ssid = canonicalSetupSsid,
+                security = CanonicalSetupSecurity,
+                proofOfPossession = canonicalProof,
+            ),
+            source = DeviceClaimSource.SecureSetupManual,
+        )
+    }
+
+    fun validateManualSetupFields(
+        deviceId: String,
+        claimCode: String,
+        setupSsid: String,
+        proofOfPossession: String,
+    ): Set<DeviceManualSetupField> = buildSet {
+        if (!deviceIdPattern.matches(deviceId.trim())) add(DeviceManualSetupField.DeviceId)
+        if (!claimCodePattern.matches(claimCode.trim())) add(DeviceManualSetupField.ClaimCode)
+        if (!setupSsidPattern.matches(setupSsid.trim())) add(DeviceManualSetupField.SetupSsid)
+        if (!proofOfPossessionPattern.matches(proofOfPossession.trim())) {
+            add(DeviceManualSetupField.ProofOfPossession)
+        }
+    }
+
+    private fun parseCanonical(
+        raw: String,
+        now: Instant,
+        source: DeviceClaimSource,
+    ): DeviceClaimPayload? {
         if (raw.isEmpty() || raw.length > MaxQrLength || !raw.startsWith("{")) return null
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if (json.opt("type") !is String || json.optString("type") != CanonicalQrType) return null
@@ -70,25 +139,13 @@ object DeviceClaimPayloadParser {
             deviceId = deviceId,
             claimCode = claimCode,
             claimExpiresAt = claimExpiresAt,
+            setupExpiresAt = claimExpiresAt,
             setupAp = DeviceSetupAccessPoint(
                 ssid = ssid,
                 security = security,
                 proofOfPossession = proofOfPossession,
             ),
-            source = DeviceClaimSource.SecureSetupQr,
-        )
-    }
-
-    /** Manual entry is intentionally claim-only and never invents local setup data. */
-    fun fromManualEntry(deviceId: String, claimCode: String): DeviceClaimPayload? {
-        val normalizedDeviceId = deviceId.trim()
-        val normalizedClaimCode = claimCode.trim()
-        if (!deviceIdPattern.matches(normalizedDeviceId)) return null
-        if (!claimCodePattern.matches(normalizedClaimCode)) return null
-        return DeviceClaimPayload(
-            deviceId = normalizedDeviceId,
-            claimCode = normalizedClaimCode,
-            source = DeviceClaimSource.ManualClaimOnly,
+            source = source,
         )
     }
 
@@ -96,4 +153,6 @@ object DeviceClaimPayloadParser {
         val value = opt(key) as? String ?: return null
         return value.takeIf { it.isNotEmpty() }
     }
+
+    private const val ManualSetupMaterialLifetimeSeconds = 15L * 60L
 }

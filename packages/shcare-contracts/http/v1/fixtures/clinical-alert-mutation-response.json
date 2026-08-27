@@ -1,0 +1,30 @@
+{
+  "workspaceId": "workspace-clinic-1",
+  "alert": {
+    "id": "alert-001",
+    "organizationId": "workspace-clinic-1",
+    "sourceType": "scan",
+    "sourceId": "scan-001",
+    "dedupeKey": "scan:scan-001",
+    "occurrenceNumber": 1,
+    "previousAlertId": "",
+    "occurredAt": "2026-07-28T09:00:00.000Z",
+    "status": "acknowledged",
+    "severity": "warning",
+    "title": "Cần xem lại chất lượng tín hiệu",
+    "message": "Lượt đo có nhiễu và cần người có chuyên môn xem lại.",
+    "patientId": "patient-001",
+    "deviceId": "device-001",
+    "scanId": "scan-001",
+    "acknowledgedByUserId": "doctor-001",
+    "acknowledgedAt": "2026-07-28T09:05:00.000Z",
+    "acknowledgementNote": "Đang kiểm tra lại lượt đo.",
+    "resolvedByUserId": "",
+    "resolvedAt": "",
+    "resolutionNote": "",
+    "version": 2,
+    "metadata": {},
+    "createdAt": "2026-07-28T09:00:00.000Z",
+    "updatedAt": "2026-07-28T09:05:00.000Z"
+  }
+}

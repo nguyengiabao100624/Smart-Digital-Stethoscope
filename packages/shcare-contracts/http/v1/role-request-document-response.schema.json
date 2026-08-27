@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/role-request-document-response.schema.json",
+  "title": "Shcare role-request document upload receipt",
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/auth/role-request-document",
+    "requiredHeaders": [
+      "Idempotency-Key",
+      "X-File-Name",
+      "Content-Type"
+    ],
+    "requestContentTypes": [
+      "application/pdf",
+      "image/jpeg",
+      "image/png"
+    ],
+    "maxBytes": 10485760
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document",
+    "operationId",
+    "replayed"
+  ],
+  "properties": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "userId",
+        "organizationId",
+        "name",
+        "contentType",
+        "byteSize",
+        "sha256",
+        "uploadedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "contentType": {
+          "type": "string",
+          "enum": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ]
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  }
+}

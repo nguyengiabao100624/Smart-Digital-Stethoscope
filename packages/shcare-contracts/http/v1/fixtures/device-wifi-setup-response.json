@@ -1,0 +1,30 @@
+{
+  "device": {
+    "id": "dev_patient_alpha",
+    "organizationId": "org_personal_alpha",
+    "ownerUserId": "usr_patient_alpha",
+    "pairedUserId": "usr_patient_alpha",
+    "ownershipState": "claimed",
+    "name": "Shcare ESP32-S3",
+    "type": "stethoscope",
+    "status": "offline",
+    "connected": false,
+    "online": false,
+    "connectionMethod": "Manual",
+    "updatedAt": "2026-08-27T00:00:00.000Z"
+  },
+  "setup": {
+    "protocolVersion": 2,
+    "transport": "esptouch_v2",
+    "smartConfig": {
+      "security": "aes128",
+      "provisioningKey": "AAECAwQFBgcICQoLDA0ODw",
+      "reservedData": "djI6MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"
+    },
+    "expiresAt": "2026-08-27T00:10:00.000Z",
+    "activation": {
+      "requested": false,
+      "state": "device_offline"
+    }
+  }
+}

@@ -13,6 +13,9 @@ COPY src ./src
 RUN npm install --omit=dev
 
 ENV NODE_ENV=production
+ENV AUTH_MODE=production
+ENV ALLOW_DEMO_AUTH=false
+ENV FIREBASE_AUTH_ENABLED=true
 ENV PORT=3000
 ENV AUDIO_UDP_PORT=3001
 ENV DATA_DIR=/data
@@ -21,4 +24,4 @@ RUN mkdir -p /data/audio /data/tmp
 
 EXPOSE 3000 3001/udp
 
-CMD ["node", "server.js"]
+CMD ["npm", "start"]

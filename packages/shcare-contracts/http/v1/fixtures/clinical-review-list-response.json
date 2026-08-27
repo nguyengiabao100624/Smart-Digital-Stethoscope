@@ -1,0 +1,22 @@
+{
+  "workspaceId": "workspace-clinic-1",
+  "reviews": [
+    {
+      "id": "review-scan-001",
+      "scanId": "scan-001",
+      "organizationId": "workspace-clinic-1",
+      "patientId": "patient-001",
+      "deviceId": "device-001",
+      "status": "pending",
+      "decision": "",
+      "note": "",
+      "reviewerUserId": "",
+      "reviewedAt": "",
+      "version": 1,
+      "scanStatus": "needs_review",
+      "scanCreatedAt": "2026-07-29T08:00:00.000Z",
+      "createdAt": "",
+      "updatedAt": "2026-07-29T08:00:00.000Z"
+    }
+  ]
+}

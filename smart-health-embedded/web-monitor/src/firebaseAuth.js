@@ -26,6 +26,11 @@ function parseServiceAccount(value) {
   return parsed;
 }
 
+function isFirebaseAuthEmulatorConfigured(env = process.env) {
+  const value = String(env.FIREBASE_AUTH_EMULATOR_HOST || "").trim();
+  return Boolean(value) && /^[A-Za-z0-9.-]+:\d{1,5}$/.test(value);
+}
+
 function getFirebaseAdmin(env = process.env) {
   if (!isFirebaseAuthEnabled(env)) {
     return null;
@@ -46,13 +51,14 @@ function getFirebaseAdmin(env = process.env) {
   const { getMessaging } = require("firebase-admin/messaging");
 
   const serviceAccount = parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const authEmulatorConfigured = isFirebaseAuthEmulatorConfigured(env);
   const options = {};
   if (env.FIREBASE_PROJECT_ID) {
     options.projectId = env.FIREBASE_PROJECT_ID;
   }
   if (serviceAccount) {
     options.credential = cert(serviceAccount);
-  } else {
+  } else if (!authEmulatorConfigured) {
     options.credential = applicationDefault();
   }
 
@@ -65,12 +71,23 @@ function getFirebaseAdmin(env = process.env) {
   return firebaseServices;
 }
 
-async function verifyFirebaseIdToken(idToken, env = process.env) {
-  const admin = getFirebaseAdmin(env);
+async function verifyFirebaseIdToken(idToken, env = process.env, options = {}) {
+  const admin = options.admin || getFirebaseAdmin(env);
   if (!admin) {
     return null;
   }
   return admin.auth().verifyIdToken(idToken, true);
+}
+
+function getFirebaseIdTokenErrorCode(error = {}) {
+  const providerCode = String(error.code || "");
+  if (providerCode === "auth/id-token-revoked") {
+    return "FIREBASE_ID_TOKEN_REVOKED";
+  }
+  if (providerCode === "auth/id-token-expired") {
+    return "FIREBASE_ID_TOKEN_EXPIRED";
+  }
+  return "INVALID_FIREBASE_TOKEN";
 }
 
 function normalizeFirebaseAuthTime(decodedToken = {}) {
@@ -81,9 +98,16 @@ function normalizeFirebaseAuthTime(decodedToken = {}) {
   return String(value);
 }
 
-function isFirebaseProviderMutationConfirmed(targetUser = {}, result = {}) {
+function isFirebaseProviderMutationConfirmed(
+  targetUser = {},
+  result = {},
+  operation = "",
+) {
   if (result.providerSucceeded === false) {
     return false;
+  }
+  if (operation === "reset_password") {
+    return result.updated === true;
   }
   if (!String(targetUser.firebaseUid || "")) {
     return true;
@@ -97,6 +121,8 @@ function isFirebaseProviderMutationConfirmed(targetUser = {}, result = {}) {
 
 module.exports = {
   getFirebaseAdmin,
+  getFirebaseIdTokenErrorCode,
+  isFirebaseAuthEmulatorConfigured,
   isFirebaseAuthEnabled,
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,

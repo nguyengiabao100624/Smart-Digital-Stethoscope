@@ -1,488 +1,934 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
 import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
+import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.notifications.NotificationPermissionDecision
-import com.example.smart_health_android.notifications.NotificationPermissionPolicy
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.smart_health_android.R
+import com.example.smart_health_android.notifications.NotificationChannelAvailability
+import com.example.smart_health_android.notifications.NotificationCloudPreferences
 import com.example.smart_health_android.notifications.NotificationPreferenceField
-import com.example.smart_health_android.notifications.NotificationPreferenceMutation
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
-import org.json.JSONObject
-
-private fun Context.hasPostNotificationsPermission(): Boolean {
-    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-}
-
-private fun JSONObject.toBooleanPreferenceMap(): Map<String, Boolean> {
-    val preferences = linkedMapOf<String, Boolean>()
-    val keys = keys()
-    while (keys.hasNext()) {
-        val key = keys.next()
-        if (opt(key) is Boolean) preferences[key] = optBoolean(key)
-    }
-    return preferences
-}
-
-private fun Map<String, Boolean>.toJsonObject(): JSONObject {
-    return JSONObject().also { json ->
-        forEach { (key, value) -> json.put(key, value) }
-    }
-}
+import com.example.smart_health_android.notifications.NotificationPreferencesSnapshot
+import com.example.smart_health_android.notifications.NotificationRuntimeReadiness
+import com.example.smart_health_android.notifications.NotificationSettingsLoadState
+import com.example.smart_health_android.notifications.NotificationSettingsMessage
+import com.example.smart_health_android.notifications.NotificationSettingsUiAction
+import com.example.smart_health_android.notifications.NotificationSettingsUiEffect
+import com.example.smart_health_android.notifications.NotificationSettingsUiState
+import com.example.smart_health_android.notifications.NotificationSettingsViewModel
+import com.example.smart_health_android.notifications.NotificationSettingsViewModelFactory
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.components.ShcareSettingsHeader
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
 @Composable
-fun NotificationSettingsScreen(onNavigateBack: () -> Unit) {
+fun NotificationSettingsScreen(
+    onNavigateBack: () -> Unit,
+    expectedUserId: String,
+    expectedWorkspaceId: String,
+    role: String,
+    modifier: Modifier = Modifier,
+    providedViewModel: NotificationSettingsViewModel? = null,
+) {
     val context = LocalContext.current
-    var enabled by remember { mutableStateOf(true) }
-    var sound by remember { mutableStateOf(true) }
-    var vibration by remember { mutableStateOf(true) }
-    
-    var abnormalResults by remember { mutableStateOf(true) }
-    var deviceConnection by remember { mutableStateOf(true) }
-    var appointments by remember { mutableStateOf(true) }
-    var aiUpdates by remember { mutableStateOf(false) }
-    var messages by remember { mutableStateOf(true) }
-    var isLoading by remember { mutableStateOf(true) }
-    var isSaving by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
-    var showNotificationPrePrompt by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
-
-    fun currentPreference(field: NotificationPreferenceField): Boolean {
-        return when (field) {
-            NotificationPreferenceField.Enabled -> enabled
-            NotificationPreferenceField.Sound -> sound
-            NotificationPreferenceField.Vibration -> vibration
-            NotificationPreferenceField.AbnormalResults -> abnormalResults
-            NotificationPreferenceField.DeviceOffline -> deviceConnection
-            NotificationPreferenceField.Appointments -> appointments
-            NotificationPreferenceField.AiUpdates -> aiUpdates
-            NotificationPreferenceField.Messages -> messages
-        }
-    }
-
-    fun applyPreference(field: NotificationPreferenceField, value: Boolean) {
-        when (field) {
-            NotificationPreferenceField.Enabled -> enabled = value
-            NotificationPreferenceField.Sound -> sound = value
-            NotificationPreferenceField.Vibration -> vibration = value
-            NotificationPreferenceField.AbnormalResults -> abnormalResults = value
-            NotificationPreferenceField.DeviceOffline -> deviceConnection = value
-            NotificationPreferenceField.Appointments -> appointments = value
-            NotificationPreferenceField.AiUpdates -> aiUpdates = value
-            NotificationPreferenceField.Messages -> messages = value
-        }
-    }
-
-    fun applyPreferences(preferences: JSONObject) {
-        enabled = preferences.optBoolean("enabled", true)
-        sound = preferences.optBoolean("sound", true)
-        vibration = preferences.optBoolean("vibration", true)
-        abnormalResults = preferences.optBoolean("abnormalResults", true)
-        deviceConnection = preferences.optBoolean("deviceOffline", true)
-        appointments = preferences.optBoolean("appointments", true)
-        aiUpdates = preferences.optBoolean("aiUpdates", false)
-        messages = preferences.optBoolean("messages", true)
-    }
-
-    fun persistPreference(
-        mutation: NotificationPreferenceMutation,
-        successMessage: String = "Đã lưu tùy chọn thông báo",
-    ) {
-        val previousValue = currentPreference(mutation.field)
-        applyPreference(mutation.field, mutation.value)
-        isSaving = true
-        errorMessage = null
-        statusMessage = null
-        coroutineScope.launch {
-            try {
-                val currentPreferences = SmartHealthRepository.api
-                    .getMe()
-                    .notificationPreferences
-                    .toBooleanPreferenceMap()
-                val nextPreferences = mutation
-                    .requestFields(currentPreferences)
-                    .getValue("notificationPreferences")
-                val user = SmartHealthRepository.api.updateMe(
-                    JSONObject().put("notificationPreferences", nextPreferences.toJsonObject())
-                )
-                applyPreferences(user.notificationPreferences)
-                statusMessage = successMessage
-            } catch (exception: Exception) {
-                applyPreference(mutation.field, previousValue)
-                errorMessage = exception.toVietnameseMessage("Không thể lưu tùy chọn thông báo")
-            } finally {
-                isSaving = false
-            }
-        }
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+    val resolvedViewModel = providedViewModel ?: viewModel(
+        key = "notification-settings:$expectedUserId:$expectedWorkspaceId",
+        factory = NotificationSettingsViewModelFactory(
+            context = context,
+            expectedUserId = expectedUserId,
+            expectedWorkspaceId = expectedWorkspaceId,
+            role = role,
+        ),
+    )
+    val state by resolvedViewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val errorMessage = state.errorMessage?.resolveNotificationSettingsMessage()
+    val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        val decision = NotificationPermissionPolicy.onPermissionResult(granted)
-        persistPreference(
-            mutation = decision.mutation,
-            successMessage = if (granted) {
-                "Đã bật thông báo"
-            } else {
-                "Chưa cấp quyền; thông báo vẫn đang tắt"
-            },
+        resolvedViewModel.onAction(
+            NotificationSettingsUiAction.SystemPermissionResult(granted),
         )
     }
 
-    LaunchedEffect(Unit) {
-        isLoading = true
-        errorMessage = null
-        runCatching {
-            applyPreferences(SmartHealthRepository.api.getMe().notificationPreferences)
-        }.onFailure {
-            errorMessage = it.toVietnameseMessage("Không thể tải tùy chọn thông báo")
-        }
-        isLoading = false
-    }
-
-    if (showNotificationPrePrompt) {
-        AlertDialog(
-            onDismissRequest = { showNotificationPrePrompt = false },
-            title = { Text("Cho phép thông báo") },
-            text = {
-                Text("Smart Health cần quyền thông báo để gửi cảnh báo kết quả bất thường, trạng thái ống nghe và nhắc lịch khám.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showNotificationPrePrompt = false
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.Enabled, true)
-                            )
-                        }
+    LaunchedEffect(resolvedViewModel) {
+        resolvedViewModel.effects.collect { effect ->
+            when (effect) {
+                NotificationSettingsUiEffect.RequestSystemPermission -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        resolvedViewModel.onAction(
+                            NotificationSettingsUiAction.SystemPermissionResult(true),
+                        )
                     }
-                ) {
-                    Text("Tiếp tục")
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNotificationPrePrompt = false }) {
-                    Text("Để sau")
+                NotificationSettingsUiEffect.OpenSystemNotificationSettings -> {
+                    context.startActivity(
+                        Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName),
+                    )
                 }
             }
-        )
+        }
+    }
+    DisposableEffect(lifecycleOwner, resolvedViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                resolvedViewModel.onAction(
+                    NotificationSettingsUiAction.RefreshOnResume,
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .background(Background)
+            .testTag("notification-settings-screen"),
     ) {
-        // Gradient Header
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-                .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 24.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại", tint = Color.White)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text("Tùy chọn thông báo", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Quản lý cảnh báo và nhắc nhở", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-                }
-            }
-        }
-
-        // Scrollable Content
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            if (isLoading || isSaving) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = PrimaryTeal,
-                    trackColor = Border
-                )
-            }
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-            }
-            statusMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = Color(0xFF047857),
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-            }
-            // Section 1: Tổng Quan
-            Column {
-                Text("TỔNG QUAN", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
+        ShcareSettingsHeader(
+            title = stringResource(R.string.notification_settings_title),
+            onNavigateBack = onNavigateBack,
+            actions = {
+                IconButton(
+                    onClick = {
+                        resolvedViewModel.onAction(NotificationSettingsUiAction.Refresh)
+                    },
+                    enabled = !state.isRefreshing &&
+                        state.savingFields.isEmpty(),
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
-                    NotificationToggleRow(
-                        icon = Icons.Default.NotificationsActive,
-                        iconColor = PrimaryBlue,
-                        title = "Bật thông báo",
-                        subtitle = "Nhận tất cả thông báo",
-                        checked = enabled,
-                        onCheckedChange = { requestedEnabled ->
-                            when (
-                                val decision = NotificationPermissionPolicy.onToggle(
-                                    requestedEnabled = requestedEnabled,
-                                    hasSystemPermission = context.hasPostNotificationsPermission(),
-                                )
-                            ) {
-                                NotificationPermissionDecision.RequestSystemPermission -> {
-                                    showNotificationPrePrompt = true
-                                }
-                                is NotificationPermissionDecision.Persist -> {
-                                    persistPreference(decision.mutation)
-                                }
-                            }
-                        },
-                        enabled = !isLoading && !isSaving,
-                        showDivider = true
-                    )
-                    NotificationToggleRow(
-                        icon = Icons.AutoMirrored.Filled.VolumeUp,
-                        iconColor = Color(0xFF8B5CF6),
-                        title = "Âm thanh",
-                        subtitle = "Phát âm thanh cảnh báo",
-                        checked = sound && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.Sound, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = true
-                    )
-                    NotificationToggleRow(
-                        icon = Icons.Default.Vibration,
-                        iconColor = Color(0xFFF97316),
-                        title = "Rung",
-                        subtitle = "Rung khi có thông báo",
-                        checked = vibration && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.Vibration, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = false
-                    )
+                    if (state.isRefreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(
+                                R.string.notification_settings_refresh,
+                            ),
+                        )
+                    }
                 }
-            }
+            },
+        )
 
-            // Section 2: Loại Thông Báo
-            Column {
-                Text("LOẠI THÔNG BÁO", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .border(1.dp, Border, RoundedCornerShape(16.dp))
-                        .alpha(if (enabled) 1f else 0.5f)
-                ) {
-                    NotificationToggleRow(
-                        icon = Icons.Default.Warning,
-                        iconColor = Color(0xFFEF4444),
-                        title = "Kết quả bất thường",
-                        subtitle = "Cảnh báo khi phát hiện dấu hiệu bất thường",
-                        checked = abnormalResults && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.AbnormalResults, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = true
-                    )
-                    NotificationToggleRow(
-                        icon = Icons.Default.CheckCircle,
-                        iconColor = Color(0xFF3B82F6),
-                        title = "Kết nối thiết bị",
-                        subtitle = "Thông báo trạng thái ống nghe",
-                        checked = deviceConnection && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.DeviceOffline, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = true
-                    )
-                    NotificationToggleRow(
-                        icon = Icons.Default.Event,
-                        iconColor = Color(0xFF10B981),
-                        title = "Lịch hẹn",
-                        subtitle = "Nhắc nhở lịch khám bệnh",
-                        checked = appointments && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.Appointments, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = true
-                    )
-                    NotificationToggleRow(
-                        icon = Icons.AutoMirrored.Filled.Message,
-                        iconColor = Color(0xFF00A896),
-                        title = "Tin nhắn",
-                        subtitle = "Trao đổi phân tích và hỗ trợ",
-                        checked = messages && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.Messages, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = true
-                    )
-                    NotificationToggleRow(
-                        icon = Icons.Default.Info,
-                        iconColor = Color(0xFF8B5CF6),
-                        title = "Cập nhật phân tích tín hiệu",
-                        subtitle = "Thay đổi bộ kiểm tra chất lượng tín hiệu",
-                        checked = aiUpdates && enabled,
-                        onCheckedChange = {
-                            persistPreference(
-                                NotificationPreferenceMutation(NotificationPreferenceField.AiUpdates, it)
-                            )
-                        },
-                        enabled = enabled && !isLoading && !isSaving,
-                        showDivider = false
-                    )
-                }
-            }
-
-            // Alert Box
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFEFF6FF), RoundedCornerShape(16.dp))
-                    .border(1.dp, Color(0xFFBFDBFE), RoundedCornerShape(16.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.padding(top = 2.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text("Lưu ý", color = Color(0xFF1E3A8A), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Khuyến nghị bật thông báo \"Kết quả bất thường\" để nhận cảnh báo kịp thời về tình trạng sức khỏe bệnh nhân.",
-                        color = Color(0xFF1E40AF),
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
+        when (state.loadState) {
+            NotificationSettingsLoadState.Loading -> ShcareLoadingState(
+                message = stringResource(R.string.notification_settings_loading),
+                modifier = Modifier.fillMaxSize(),
+            )
+            NotificationSettingsLoadState.Empty -> ShcareEmptyState(
+                title = stringResource(R.string.notification_settings_empty_title),
+                message = stringResource(R.string.notification_settings_empty_message),
+                actionLabel = stringResource(R.string.notification_settings_action_reload),
+                onAction = {
+                    resolvedViewModel.onAction(NotificationSettingsUiAction.Refresh)
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+            NotificationSettingsLoadState.PermissionDenied -> ShcarePermissionState(
+                onRequestPermission = {
+                    resolvedViewModel.onAction(NotificationSettingsUiAction.Refresh)
+                },
+                title = stringResource(R.string.notification_settings_permission_title),
+                message = errorMessage,
+                actionLabel = stringResource(R.string.shcare_action_retry),
+                modifier = Modifier.fillMaxSize(),
+            )
+            NotificationSettingsLoadState.Offline -> ShcareOfflineState(
+                onRetry = {
+                    resolvedViewModel.onAction(NotificationSettingsUiAction.Refresh)
+                },
+                message = errorMessage,
+                modifier = Modifier.fillMaxSize(),
+            )
+            NotificationSettingsLoadState.Error -> ShcareErrorState(
+                onRetry = {
+                    resolvedViewModel.onAction(NotificationSettingsUiAction.Refresh)
+                },
+                message = errorMessage,
+                modifier = Modifier.fillMaxSize(),
+            )
+            NotificationSettingsLoadState.Ready -> NotificationSettingsContent(
+                state = state,
+                onAction = resolvedViewModel::onAction,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }
 
 @Composable
-fun NotificationToggleRow(
-    icon: ImageVector,
-    iconColor: Color,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-    showDivider: Boolean
+internal fun NotificationSettingsContent(
+    state: NotificationSettingsUiState,
+    onAction: (NotificationSettingsUiAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
-        Row(
+    val snapshot = state.snapshot ?: return
+    val semanticColors = ShcareTheme.colors
+    val mutationInFlight = state.savingFields.isNotEmpty()
+    val errorMessage = state.errorMessage?.resolveNotificationSettingsMessage()
+    val statusMessage = state.statusMessage?.resolveNotificationSettingsMessage()
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = enabled) { onCheckedChange(!checked) }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .widthIn(max = 840.dp)
+                .navigationBarsPadding()
+                .testTag("notification-settings-list"),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
+            if (state.isStale && !errorMessage.isNullOrBlank()) {
+                item {
+                    SettingsStatusBanner(
+                        message = stringResource(
+                            R.string.notification_settings_stale,
+                            errorMessage,
+                        ),
+                        containerColor = semanticColors.warningContainer,
+                        contentColor = semanticColors.onWarningContainer,
+                        assertive = true,
+                    )
+                }
+            } else if (!errorMessage.isNullOrBlank()) {
+                item {
+                    SettingsStatusBanner(
+                        message = errorMessage,
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        assertive = true,
+                    )
+                }
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, color = TextSecondary, fontSize = 14.sp)
+            if (!statusMessage.isNullOrBlank()) {
+                item {
+                    SettingsStatusBanner(
+                        message = statusMessage,
+                        containerColor = semanticColors.successContainer,
+                        contentColor = semanticColors.onSuccessContainer,
+                        assertive = false,
+                    )
+                }
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color(0xFF10B981),
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color(0xFFE2E8F0)
+            item {
+                SectionHeading(stringResource(R.string.notification_settings_section_account))
+            }
+            item {
+                PreferenceGroup {
+                    CloudPreferenceRow(
+                        icon = Icons.Default.NotificationsActive,
+                        title = stringResource(R.string.notification_settings_master_title),
+                        supporting = stringResource(
+                            R.string.notification_settings_master_supporting,
+                        ),
+                        checked = snapshot.preferences.enabled,
+                        saving = NotificationPreferenceField.Enabled in state.savingFields,
+                        enabled = !state.isRefreshing &&
+                            !mutationInFlight &&
+                            NotificationPreferenceField.Enabled !in state.savingFields,
+                        onCheckedChange = {
+                            onAction(
+                                NotificationSettingsUiAction.SetCloudPreference(
+                                    NotificationPreferenceField.Enabled,
+                                    it,
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
+            item {
+                SectionHeading(stringResource(R.string.notification_settings_section_channels))
+            }
+            item {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val stackCards = maxWidth < 600.dp || LocalDensity.current.fontScale >= 1.5f
+                    NotificationChannelLayout(
+                        stackCards = stackCards,
+                        snapshot = snapshot,
+                        state = state,
+                        onRequestPermission = {
+                            onAction(NotificationSettingsUiAction.RequestSystemPermission)
+                        },
+                        onOpenSystemSettings = {
+                            onAction(
+                                NotificationSettingsUiAction.OpenSystemNotificationSettings,
+                            )
+                        },
+                    )
+                }
+            }
+            item {
+                SectionHeading(stringResource(R.string.notification_settings_section_local))
+            }
+            item {
+                SystemNotificationSettingsCard(
+                    title = stringResource(
+                        R.string.notification_settings_system_controls_title,
+                    ),
+                    supporting = stringResource(
+                        R.string.notification_settings_system_controls_supporting,
+                    ),
+                    actionLabel = stringResource(
+                        R.string.notification_settings_action_open_android,
+                    ),
+                    enabled = !state.isRefreshing && !mutationInFlight,
+                    onOpen = {
+                        onAction(NotificationSettingsUiAction.OpenSystemNotificationSettings)
+                    },
                 )
-            )
-        }
-        if (showDivider) {
-            HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item {
+                SectionHeading(stringResource(R.string.notification_settings_section_categories))
+            }
+            item {
+                CloudPreferenceList(
+                    preferences = snapshot.preferences,
+                    savingFields = state.savingFields,
+                    accountEnabled = snapshot.preferences.enabled,
+                    refreshing = state.isRefreshing,
+                    mutationInFlight = mutationInFlight,
+                    onPreferenceChange = { field, enabled ->
+                        onAction(
+                            NotificationSettingsUiAction.SetCloudPreference(field, enabled),
+                        )
+                    },
+                )
+            }
+            item {
+                Surface(
+                    color = semanticColors.infoContainer,
+                    contentColor = semanticColors.onInfoContainer,
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.notification_settings_truth_note),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
+}
+
+@Composable
+private fun CloudPreferenceList(
+    preferences: NotificationCloudPreferences,
+    savingFields: Set<NotificationPreferenceField>,
+    accountEnabled: Boolean,
+    refreshing: Boolean,
+    mutationInFlight: Boolean,
+    onPreferenceChange: (NotificationPreferenceField, Boolean) -> Unit,
+) {
+    val rows = listOf(
+        PreferenceRowSpec(
+            NotificationPreferenceField.DoctorRequests,
+            Icons.Default.PersonAdd,
+            R.string.notification_settings_doctor_requests,
+            R.string.notification_settings_doctor_requests_supporting,
+        ),
+        PreferenceRowSpec(
+            NotificationPreferenceField.AbnormalResults,
+            Icons.Default.WarningAmber,
+            R.string.notification_settings_abnormal_results,
+            R.string.notification_settings_abnormal_results_supporting,
+        ),
+        PreferenceRowSpec(
+            NotificationPreferenceField.DeviceOffline,
+            Icons.Default.Devices,
+            R.string.notification_settings_device_offline,
+            R.string.notification_settings_device_offline_supporting,
+        ),
+        PreferenceRowSpec(
+            NotificationPreferenceField.Appointments,
+            Icons.Default.Event,
+            R.string.notification_settings_appointments,
+            R.string.notification_settings_appointments_supporting,
+        ),
+        PreferenceRowSpec(
+            NotificationPreferenceField.Messages,
+            Icons.AutoMirrored.Filled.Message,
+            R.string.notification_settings_messages,
+            R.string.notification_settings_messages_supporting,
+        ),
+        PreferenceRowSpec(
+            NotificationPreferenceField.AiUpdates,
+            Icons.Default.AutoGraph,
+            R.string.notification_settings_ai_updates,
+            R.string.notification_settings_ai_updates_supporting,
+        ),
+        PreferenceRowSpec(
+            NotificationPreferenceField.NewLogin,
+            Icons.AutoMirrored.Filled.Login,
+            R.string.notification_settings_new_login,
+            R.string.notification_settings_new_login_supporting,
+        ),
+    )
+    PreferenceGroup {
+        rows.forEachIndexed { index, row ->
+            CloudPreferenceRow(
+                icon = row.icon,
+                title = stringResource(row.titleRes),
+                supporting = stringResource(row.supportingRes),
+                checked = preferences[row.field],
+                saving = row.field in savingFields,
+                enabled = accountEnabled &&
+                    !refreshing &&
+                    !mutationInFlight &&
+                    row.field !in savingFields,
+                onCheckedChange = { onPreferenceChange(row.field, it) },
+            )
+            if (index < rows.lastIndex) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
+    }
+}
+
+private data class PreferenceRowSpec(
+    val field: NotificationPreferenceField,
+    val icon: ImageVector,
+    @param:StringRes val titleRes: Int,
+    @param:StringRes val supportingRes: Int,
+)
+
+@Composable
+private fun PreferenceGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+        content = {
+            Column(content = content)
+        },
+    )
+}
+
+@Composable
+private fun NotificationChannelLayout(
+    stackCards: Boolean,
+    snapshot: NotificationPreferencesSnapshot,
+    state: NotificationSettingsUiState,
+    onRequestPermission: () -> Unit,
+    onOpenSystemSettings: () -> Unit,
+) {
+    val canRequestPermission = canRequestSystemPermission(
+        snapshot,
+        state.runtimeReadiness,
+    )
+    val shouldOpenSystemSettings =
+        state.runtimeReadiness.runtimePermissionGranted &&
+            (!state.runtimeReadiness.appNotificationsEnabled ||
+                !state.runtimeReadiness.channelEnabled)
+    val pushActionLabel = when {
+        canRequestPermission -> stringResource(R.string.notification_settings_action_grant)
+        shouldOpenSystemSettings ->
+            stringResource(R.string.notification_settings_action_open_android)
+        else -> null
+    }
+    val pushAction = if (canRequestPermission) onRequestPermission else onOpenSystemSettings
+    if (stackCards) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ChannelStatusCard(
+                icon = Icons.Default.Inbox,
+                title = stringResource(R.string.notification_settings_channel_in_app),
+                status = accountChannelStatusText(
+                    snapshot.preferences.enabled,
+                    snapshot.channels.inApp,
+                ),
+                ready = snapshot.preferences.enabled && snapshot.channels.inApp.ready,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ChannelStatusCard(
+                icon = Icons.Default.Email,
+                title = stringResource(R.string.notification_settings_channel_email),
+                status = accountChannelStatusText(
+                    snapshot.preferences.enabled,
+                    snapshot.channels.email,
+                ),
+                ready = snapshot.preferences.enabled && snapshot.channels.email.ready,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ChannelStatusCard(
+                icon = Icons.Default.PhoneAndroid,
+                title = stringResource(R.string.notification_settings_channel_push),
+                status = pushStatusText(snapshot, state.runtimeReadiness),
+                ready = state.pushReady,
+                actionLabel = pushActionLabel,
+                onAction = pushAction,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ChannelStatusCard(
+                icon = Icons.Default.Inbox,
+                title = stringResource(R.string.notification_settings_channel_in_app),
+                status = accountChannelStatusText(
+                    snapshot.preferences.enabled,
+                    snapshot.channels.inApp,
+                ),
+                ready = snapshot.preferences.enabled && snapshot.channels.inApp.ready,
+                modifier = Modifier.weight(1f),
+            )
+            ChannelStatusCard(
+                icon = Icons.Default.Email,
+                title = stringResource(R.string.notification_settings_channel_email),
+                status = accountChannelStatusText(
+                    snapshot.preferences.enabled,
+                    snapshot.channels.email,
+                ),
+                ready = snapshot.preferences.enabled && snapshot.channels.email.ready,
+                modifier = Modifier.weight(1f),
+            )
+            ChannelStatusCard(
+                icon = Icons.Default.PhoneAndroid,
+                title = stringResource(R.string.notification_settings_channel_push),
+                status = pushStatusText(snapshot, state.runtimeReadiness),
+                ready = state.pushReady,
+                actionLabel = pushActionLabel,
+                onAction = pushAction,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CloudPreferenceRow(
+    icon: ImageVector,
+    title: String,
+    supporting: String,
+    checked: Boolean,
+    saving: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    PreferenceToggleRow(
+        icon = icon,
+        title = title,
+        supporting = supporting,
+        checked = checked,
+        enabled = enabled,
+        trailing = {
+            if (saving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Switch(
+                    checked = checked,
+                    onCheckedChange = null,
+                    enabled = enabled,
+                    modifier = Modifier.clearAndSetSemantics { },
+                )
+            }
+        },
+        onCheckedChange = onCheckedChange,
+    )
+}
+
+@Composable
+private fun SystemNotificationSettingsCard(
+    title: String,
+    supporting: String,
+    actionLabel: String,
+    enabled: Boolean,
+    onOpen: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier.size(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = supporting,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Button(
+                onClick = onOpen,
+                enabled = enabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreferenceToggleRow(
+    icon: ImageVector,
+    title: String,
+    supporting: String,
+    checked: Boolean,
+    enabled: Boolean,
+    trailing: @Composable () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val resolvedStateDescription = if (checked) {
+        stringResource(R.string.notification_settings_state_on)
+    } else {
+        stringResource(R.string.notification_settings_state_off)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 72.dp)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .semantics(mergeDescendants = true) {
+                stateDescription = resolvedStateDescription
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        Spacer(modifier = Modifier.size(12.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.size(12.dp))
+        Box(
+            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            trailing()
+        }
+    }
+}
+
+@Composable
+private fun ChannelStatusCard(
+    icon: ImageVector,
+    title: String,
+    status: String,
+    ready: Boolean,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    val semanticColors = ShcareTheme.colors
+    val containerColor = if (ready) {
+        semanticColors.successContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val contentColor = if (ready) {
+        semanticColors.onSuccessContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 136.dp)
+            .semantics(mergeDescendants = true) {
+                stateDescription = "$title. $status"
+            },
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(imageVector = icon, contentDescription = null)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!actionLabel.isNullOrBlank() && onAction != null) {
+                Button(
+                    onClick = onAction,
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.semantics { heading() },
+    )
+}
+
+@Composable
+private fun SettingsStatusBanner(
+    message: String,
+    containerColor: androidx.compose.ui.graphics.Color,
+    contentColor: androidx.compose.ui.graphics.Color,
+    assertive: Boolean,
+) {
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.semantics {
+            liveRegion = if (assertive) LiveRegionMode.Assertive else LiveRegionMode.Polite
+            stateDescription = message
+        },
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun channelStatusText(channel: NotificationChannelAvailability): String {
+    return when {
+        channel.ready ->
+            stringResource(R.string.notification_settings_channel_ready)
+        channel.status == "disabled" ->
+            stringResource(R.string.notification_settings_channel_disabled)
+        channel.status == "unavailable" ->
+            stringResource(R.string.notification_settings_channel_unavailable)
+        else ->
+            stringResource(R.string.notification_settings_channel_unknown)
+    }
+}
+
+@Composable
+private fun accountChannelStatusText(
+    accountEnabled: Boolean,
+    channel: NotificationChannelAvailability,
+): String {
+    return if (accountEnabled) {
+        channelStatusText(channel)
+    } else {
+        stringResource(R.string.notification_settings_account_disabled)
+    }
+}
+
+@Composable
+private fun pushStatusText(
+    snapshot: NotificationPreferencesSnapshot,
+    runtime: NotificationRuntimeReadiness,
+): String {
+    return when {
+        !snapshot.preferences.enabled ->
+            stringResource(R.string.notification_settings_account_disabled)
+        !snapshot.channels.push.ready -> channelStatusText(snapshot.channels.push)
+        !runtime.firebaseConfigured ->
+            stringResource(R.string.notification_settings_firebase_unconfigured)
+        !runtime.encryptedSessionMatches ->
+            stringResource(R.string.notification_settings_session_unbound)
+        !runtime.runtimePermissionGranted ->
+            stringResource(R.string.notification_settings_android_permission_missing)
+        !runtime.appNotificationsEnabled ->
+            stringResource(R.string.notification_settings_android_app_disabled)
+        !runtime.channelEnabled ->
+            stringResource(R.string.notification_settings_android_channel_disabled)
+        else -> stringResource(R.string.notification_settings_push_ready)
+    }
+}
+
+@Composable
+private fun NotificationSettingsMessage.resolveNotificationSettingsMessage(): String {
+    val resource = when (this) {
+        NotificationSettingsMessage.Refreshed ->
+            R.string.notification_settings_refreshed
+        NotificationSettingsMessage.CloudPreferenceSaved ->
+            R.string.notification_settings_cloud_saved
+        NotificationSettingsMessage.SystemPermissionGranted ->
+            R.string.notification_settings_permission_granted
+        NotificationSettingsMessage.SystemPermissionDenied ->
+            R.string.notification_settings_permission_denied
+        NotificationSettingsMessage.MissingAuthority ->
+            R.string.notification_settings_error_authority
+        NotificationSettingsMessage.PermissionDenied ->
+            R.string.notification_settings_error_permission
+        NotificationSettingsMessage.ServerError ->
+            R.string.notification_settings_error_server
+        NotificationSettingsMessage.ConfirmationMissing ->
+            R.string.notification_settings_error_confirmation
+        NotificationSettingsMessage.Offline ->
+            R.string.notification_settings_error_offline
+        NotificationSettingsMessage.UnknownError ->
+            R.string.notification_settings_error_unknown
+    }
+    return stringResource(resource)
+}
+
+private fun canRequestSystemPermission(
+    snapshot: NotificationPreferencesSnapshot,
+    runtime: NotificationRuntimeReadiness,
+): Boolean {
+    return snapshot.preferences.enabled &&
+        snapshot.channels.push.ready &&
+        runtime.firebaseConfigured &&
+        runtime.encryptedSessionMatches &&
+        !runtime.runtimePermissionGranted
 }

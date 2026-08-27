@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/device-assignment-response.schema.json",
+  "title": "Shcare device assignment response",
+  "description": "Backend-confirmed receipt for one tenant-scoped, audited and idempotent device assignment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "device",
+    "replayed"
+  ],
+  "properties": {
+    "device": {
+      "$ref": "#/$defs/device"
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "device": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "organizationId",
+        "assignedPatientId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "assignedPatientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

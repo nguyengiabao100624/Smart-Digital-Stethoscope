@@ -22,7 +22,7 @@
   "properties": {
     "type": { "const": "audio.session" },
     "protocolVersion": { "const": 2 },
-    "frameEncoding": { "const": "raw_pcm_s16le" },
+    "frameEncoding": { "const": "shcare_audio_v2" },
     "workspaceId": { "type": "string", "minLength": 1, "maxLength": 120 },
     "patientId": { "type": "string", "minLength": 1, "maxLength": 120 },
     "deviceId": { "type": "string", "minLength": 1, "maxLength": 120 },

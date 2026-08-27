@@ -8,6 +8,7 @@ const { after, before, test } = require("node:test");
 const { createRepositories } = require("../src/repositories");
 const { upsertDevice: migrateDeviceToPostgres } = require("./migrateJsonToPostgres");
 const {
+  assertDeviceAuthenticationFence,
   canonicalDeviceRotationAad,
   canonicalDeviceSecretHash,
   containsSensitiveDeviceCredential,
@@ -25,6 +26,8 @@ const {
   expireDeviceCommandIfOverdue,
 } = require("../src/deviceCommandLifecycle");
 const { buildProductionReadiness } = require("../src/productionReadiness");
+const { createFactoryEnrolledDeviceFixture } = require("./factoryDeviceFixture");
+const { createDeviceOtaOwnershipBinding } = require("../src/deviceOtaLifecycle");
 const {
   assertOtaUpgradeVersion,
   hashOtaDownloadToken,
@@ -33,18 +36,47 @@ const {
 
 const rootDir = path.join(__dirname, "..");
 const dataDir = path.join(rootDir, ".test-data", "device-security");
+const authFenceReadyPath = path.join(dataDir, "auth-fence.ready");
+const authFenceReleasePath = path.join(dataDir, "auth-fence.release");
+const scanStopFinalizeReadyPath = path.join(dataDir, "scan-stop-finalize.ready");
+const scanStopFinalizeReleasePath = path.join(dataDir, "scan-stop-finalize.release");
 const port = 3462;
 const audioPort = 3463;
+const UINT32_MAX = 0xFFFF_FFFF;
 const secrets = {
   alpha: "alpha-device-secret",
   beta: "beta-device-secret",
   peer: "alpha-peer-device-secret",
   enrolled: "enrolled-device-secret-000000000001",
   rotated: "rotated-device-secret-000000000002",
+  authFence: "auth-fence-device-secret-000000000003",
+  otaPrivateValid: "private-ota-valid-device-secret-000000000004",
+  otaPrivateMissing: "private-ota-missing-device-secret-00000000005",
+  otaPrivateOversized: "private-ota-oversized-device-secret-000000006",
+  otaPrivateTruncated: "private-ota-truncated-device-secret-000000007",
+  otaPrivateTransfer: "private-ota-transfer-device-secret-0000000008",
 };
 const otaSigningKeys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
 const otaPrivateKeyPem = otaSigningKeys.privateKey.export({ type: "pkcs8", format: "pem" });
 const otaPublicKeyPem = otaSigningKeys.publicKey.export({ type: "spki", format: "pem" });
+const privateFirmwareBytes = Buffer.from("shcare-private-firmware-v1.2.0\n", "utf8");
+const privateFirmwareChecksum = crypto.createHash("sha256").update(privateFirmwareBytes).digest("hex");
+const oversizedFirmwareBytes = Buffer.alloc(1024 * 1024 + 1, 0x5a);
+const oversizedFirmwareChecksum = crypto.createHash("sha256").update(oversizedFirmwareBytes).digest("hex");
+const truncatedFirmwareBytes = privateFirmwareBytes.subarray(0, 8);
+const privateFirmwareObjectKey = "org/org_alpha/storage/device-firmware/shcare-1.2.0.bin";
+const missingFirmwareObjectKey = "org/org_alpha/storage/device-firmware/missing-1.2.0.bin";
+const oversizedFirmwareObjectKey = "org/org_alpha/storage/device-firmware/oversized-1.2.0.bin";
+const truncatedFirmwareObjectKey = "org/org_alpha/storage/device-firmware/truncated-1.2.0.bin";
+const seededOtaTokens = Object.freeze({
+  deliveryExpired: "delivery-expired-private-ota-token-0000000001",
+  expired: "expired-private-ota-download-token-000000000001",
+  terminal: "terminal-private-ota-download-token-00000000001",
+  revoked: "revoked-private-ota-download-token-000000000001",
+  replaced: "replaced-private-ota-download-token-0000000001",
+  missingExpiry: "missing-expiry-private-ota-token-000000000001",
+  malformedExpiry: "malformed-expiry-private-ota-token-000000001",
+});
 
 let child;
 let stderr = "";
@@ -53,10 +85,80 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForFile(filePath, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(filePath)) return;
+    await delay(5);
+  }
+  assert.fail(`timed out waiting for file ${filePath}`);
+}
+
 function writeSeedDb() {
   fs.rmSync(dataDir, { recursive: true, force: true });
   fs.mkdirSync(dataDir, { recursive: true });
   const createdAt = new Date().toISOString();
+  const factoryDevice = (deviceId, organizationId, factoryCredential) =>
+    createFactoryEnrolledDeviceFixture({
+      deviceId,
+      organizationId,
+      factoryCredential,
+      createdAt,
+    });
+  const privateOtaDevice = (id, secret, extra = {}) => ({
+    id,
+    name: id,
+    type: "stethoscope",
+    status: "available",
+    organizationId: "org_alpha",
+    connected: false,
+    secret,
+    firmwareVersion: "1.0.0",
+    createdAt,
+    updatedAt: createdAt,
+    ...extra,
+  });
+  const seededOtaLifecycle = ({
+    id,
+    token,
+    status = "delivered",
+    expiresAt,
+    objectKey = privateFirmwareObjectKey,
+  }) => ({
+    protocolVersion: 1,
+    id,
+    commandId: id,
+    correlationId: `correlation_${id}`,
+    firmwareVersion: "1.2.0",
+    checksum: privateFirmwareChecksum,
+    firmwareFileId: "firmware_private_valid",
+    firmwareFileName: "shcare-1.2.0.bin",
+    firmwareStorageBucket: "device-firmware",
+    firmwareObjectKey: objectKey,
+    firmwareByteSize: privateFirmwareBytes.length,
+    hardwareTarget: "MSM261S4030H0",
+    partitionTarget: "app",
+    minimumProtocolVersion: 1,
+    tokenHash: hashOtaDownloadToken(token),
+    expiresAt,
+    status,
+    requestedByUserId: "usr_platform",
+    requestedSessionId: "session_seeded_ota",
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const seededProvisionedOtaLifecycle = (input) => {
+    const grant = {
+      ...seededOtaLifecycle(input),
+      organizationId: "org_alpha",
+      ownerUserId: "",
+      ownershipState: "provisioned",
+    };
+    return {
+      ...grant,
+      ownershipBinding: createDeviceOtaOwnershipBinding(grant),
+    };
+  };
   fs.writeFileSync(
     path.join(dataDir, "db.json"),
     JSON.stringify(
@@ -108,11 +210,26 @@ function writeSeedDb() {
             createdAt,
             updatedAt: createdAt,
           },
+          {
+            id: "usr_admin_multi",
+            role: "workspace_admin",
+            requestedRole: "workspace_admin",
+            roleRequestStatus: "approved",
+            accountStatus: "active",
+            name: "Multi Workspace Admin",
+            email: "admin@multi.test",
+            password: "12345678",
+            organizationId: "org_alpha",
+            createdAt,
+            updatedAt: createdAt,
+          },
         ],
         memberships: [
           { id: "mem_platform", userId: "usr_platform", organizationId: "org_alpha", role: "platform_admin", createdAt },
           { id: "mem_doctor_alpha", userId: "usr_doctor_alpha", organizationId: "org_alpha", role: "doctor", createdAt },
           { id: "mem_admin_beta", userId: "usr_admin_beta", organizationId: "org_beta", role: "workspace_admin", createdAt },
+          { id: "mem_admin_multi_alpha", userId: "usr_admin_multi", organizationId: "org_alpha", role: "workspace_admin", createdAt },
+          { id: "mem_admin_multi_beta", userId: "usr_admin_multi", organizationId: "org_beta", role: "workspace_admin", createdAt },
         ],
         patients: [
           { id: "pat_alpha", patientCode: "ALPHA-001", name: "Alpha Patient", organizationId: "org_alpha", createdAt, updatedAt: createdAt },
@@ -128,6 +245,39 @@ function writeSeedDb() {
             connected: false,
             secret: secrets.alpha,
             deviceSecret: "legacy-device-secret-that-must-never-be-public",
+            factoryCredential: "factory-credential-that-must-never-be-public",
+            setupAp: { proofOfPossession: "setup-pop-that-must-never-be-public" },
+            unknownClinicalMetadata: { note: "unknown-device-metadata-must-not-be-public" },
+            lastCommand: {
+              protocolVersion: 1,
+              id: "cmd_seed_private",
+              deviceId: "dev_alpha",
+              organizationId: "org_alpha",
+              type: "restart",
+              correlationId: "corr_seed_private",
+              state: "accepted",
+              idempotencyKey: "device-command-key-must-not-be-public",
+              requestFingerprint: "device-command-fingerprint-must-not-be-public",
+              payload: { password: "device-command-payload-must-not-be-public" },
+              issuedAt: createdAt,
+              expiresAt: new Date(Date.parse(createdAt) + 60_000).toISOString(),
+              delivery: {
+                websocket: false,
+                mqtt: false,
+                delivered: false,
+                authorization: "delivery-authorization-must-not-be-public",
+              },
+            },
+            ota: {
+              id: "ota_seed_private",
+              commandId: "cmd_seed_private",
+              firmwareVersion: "1.1.0",
+              status: "pending",
+              checksum: "sha256:public-artifact-integrity",
+              token: "ota-token-that-must-never-be-public",
+              signature: "ota-signature-that-must-never-be-public",
+              url: "https://signed-download.invalid/private",
+            },
             createdAt,
             updatedAt: createdAt,
           },
@@ -143,19 +293,203 @@ function writeSeedDb() {
             updatedAt: createdAt,
           },
           {
+            id: "dev_release",
+            name: "Release Contract Device",
+            type: "stethoscope",
+            status: "available",
+            organizationId: "org_beta",
+            ownershipState: "claimed",
+            ownerUserId: "usr_admin_beta",
+            pairedUserId: "usr_admin_beta",
+            connected: false,
+            secret: "release-contract-device-secret",
+            historyMarker: "retained",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
             id: "dev_alpha_peer",
             name: "Alpha Peer Device",
             type: "stethoscope",
             status: "available",
             organizationId: "org_alpha",
+            ownershipState: "claimed",
+            ownerUserId: "usr_platform",
+            pairedUserId: "usr_platform",
             connected: false,
             secret: secrets.peer,
             firmwareVersion: "1.0.0",
             createdAt,
             updatedAt: createdAt,
           },
+          {
+            id: "dev_auth_fence",
+            name: "Authentication Fence Device",
+            type: "stethoscope",
+            status: "available",
+            organizationId: "org_alpha",
+            ownershipState: "claimed",
+            ownerUserId: "usr_platform",
+            pairedUserId: "usr_platform",
+            connected: false,
+            secret: secrets.authFence,
+            createdAt,
+            updatedAt: createdAt,
+          },
+          privateOtaDevice("dev_ota_private_valid", secrets.otaPrivateValid),
+          privateOtaDevice("dev_ota_private_missing", secrets.otaPrivateMissing),
+          privateOtaDevice("dev_ota_private_oversized", secrets.otaPrivateOversized),
+          privateOtaDevice("dev_ota_private_truncated", secrets.otaPrivateTruncated),
+          privateOtaDevice("dev_ota_private_transfer", secrets.otaPrivateTransfer),
+          privateOtaDevice("dev_ota_download_delivery_expired", "seeded-delivery-expired-secret", {
+            ownershipState: "provisioned",
+            ownerUserId: "",
+            pairedUserId: "",
+            ota: seededProvisionedOtaLifecycle({
+              id: "ota_seeded_delivery_expired",
+              token: seededOtaTokens.deliveryExpired,
+              expiresAt: new Date(Date.parse(createdAt) + 60 * 60_000).toISOString(),
+            }),
+          }),
+          privateOtaDevice("dev_ota_download_missing_expiry", "seeded-missing-expiry-secret", {
+            ota: seededOtaLifecycle({
+              id: "ota_seeded_missing_expiry",
+              token: seededOtaTokens.missingExpiry,
+            }),
+          }),
+          privateOtaDevice("dev_ota_download_malformed_expiry", "seeded-malformed-expiry-secret", {
+            ota: seededOtaLifecycle({
+              id: "ota_seeded_malformed_expiry",
+              token: seededOtaTokens.malformedExpiry,
+              expiresAt: "not-a-date",
+            }),
+          }),
+          privateOtaDevice("dev_ota_download_expired", "seeded-expired-device-secret", {
+            ota: seededOtaLifecycle({
+              id: "ota_seeded_expired",
+              token: seededOtaTokens.expired,
+              expiresAt: new Date(Date.parse(createdAt) - 60_000).toISOString(),
+            }),
+          }),
+          privateOtaDevice("dev_ota_download_terminal", "seeded-terminal-device-secret", {
+            ota: seededOtaLifecycle({
+              id: "ota_seeded_terminal",
+              token: seededOtaTokens.terminal,
+              status: "failed",
+              expiresAt: new Date(Date.parse(createdAt) + 60 * 60_000).toISOString(),
+            }),
+          }),
+          privateOtaDevice("dev_ota_download_revoked", "seeded-revoked-device-secret", {
+            status: "revoked",
+            revokedAt: createdAt,
+            ota: seededOtaLifecycle({
+              id: "ota_seeded_revoked",
+              token: seededOtaTokens.revoked,
+              expiresAt: new Date(Date.parse(createdAt) + 60 * 60_000).toISOString(),
+            }),
+          }),
+          privateOtaDevice("dev_ota_download_replaced", "seeded-replaced-device-secret", {
+            ota: seededOtaLifecycle({
+              id: "ota_replacement_current",
+              token: seededOtaTokens.replaced,
+              expiresAt: new Date(Date.parse(createdAt) + 60 * 60_000).toISOString(),
+            }),
+          }),
+          factoryDevice(
+            "dev_inventory_metadata",
+            "org_alpha",
+            "factory-inventory-metadata-secret-000000000001",
+          ),
+          factoryDevice(
+            "dev_provision_idempotent",
+            "org_alpha",
+            "factory-idempotent-provision-secret-000000000001",
+          ),
+          factoryDevice("dev_pair_scope_alpha", "org_alpha", "factory-pair-alpha-secret-000000000001"),
+          factoryDevice("dev_pair_scope_beta", "org_beta", "factory-pair-beta-secret-000000000001"),
+          factoryDevice("dev_pair_active_beta", "org_beta", "factory-pair-active-beta-secret-000000000001"),
+          factoryDevice("dev_pair_concurrent", "org_alpha", "factory-pair-concurrent-secret-000000000001"),
+          factoryDevice(
+            "dev_pair_revoked_replay",
+            "org_alpha",
+            "factory-pair-revoked-replay-secret-000000000001",
+          ),
+          factoryDevice("dev_pair_qr", "org_alpha", "factory-pair-qr-secret-000000000001"),
+          factoryDevice("dev_enrolled", "org_alpha", secrets.enrolled),
         ],
-        scans: [],
+        deviceCommands: [
+          ...[
+            ["ota_seeded_missing_expiry", "dev_ota_download_missing_expiry"],
+            ["ota_seeded_malformed_expiry", "dev_ota_download_malformed_expiry"],
+          ].map(([id, deviceId]) => ({
+            protocolVersion: 1,
+            id,
+            deviceId,
+            organizationId: "org_alpha",
+            type: "ota.update",
+            correlationId: `correlation_${id}`,
+            state: "accepted",
+            code: "COMMAND_ACCEPTED",
+            detail: "",
+            requestedByUserId: "usr_platform",
+            issuedAt: createdAt,
+            expiresAt: new Date(Date.parse(createdAt) + 5 * 60_000).toISOString(),
+            executionExpiresAt: new Date(Date.parse(createdAt) + 60 * 60_000).toISOString(),
+            acceptedAt: createdAt,
+            createdAt,
+            updatedAt: createdAt,
+          })),
+          {
+            protocolVersion: 1,
+            id: "ota_seeded_delivery_expired",
+            deviceId: "dev_ota_download_delivery_expired",
+            organizationId: "org_alpha",
+            type: "ota.update",
+            correlationId: "correlation_ota_seeded_delivery_expired",
+            state: "delivered",
+            code: "TRANSPORT_DELIVERED",
+            detail: "Command delivered without an authenticated acknowledgement",
+            requestedByUserId: "usr_platform",
+            issuedAt: new Date(Date.parse(createdAt) - 2 * 60_000).toISOString(),
+            expiresAt: new Date(Date.parse(createdAt) - 60_000).toISOString(),
+            executionExpiresAt: new Date(Date.parse(createdAt) + 60 * 60_000).toISOString(),
+            acceptedAt: new Date(Date.parse(createdAt) - 2 * 60_000).toISOString(),
+            deliveredAt: new Date(Date.parse(createdAt) - 90_000).toISOString(),
+            delivery: { websocket: true, mqtt: false, delivered: true },
+            createdAt: new Date(Date.parse(createdAt) - 2 * 60_000).toISOString(),
+            updatedAt: new Date(Date.parse(createdAt) - 90_000).toISOString(),
+          },
+        ],
+        scans: [
+          {
+            id: "scan_restart_created",
+            organizationId: "org_alpha",
+            patientId: "pat_alpha",
+            patient: { id: "pat_alpha", patientCode: "ALPHA-001", name: "Alpha Patient" },
+            deviceId: "dev_alpha_peer",
+            status: "created",
+            processingStatus: "created",
+            aiLabel: "created",
+            startedAt: createdAt,
+            endedAt: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
+            id: "scan_restart_recording",
+            organizationId: "org_alpha",
+            patientId: "pat_alpha",
+            patient: { id: "pat_alpha", patientCode: "ALPHA-001", name: "Alpha Patient" },
+            deviceId: "dev_alpha_peer",
+            status: "recording",
+            processingStatus: "recording",
+            aiLabel: "recording",
+            startedAt: createdAt,
+            endedAt: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        ],
         deviceEvents: [],
         sessions: [],
         notifications: [],
@@ -164,7 +498,71 @@ function writeSeedDb() {
         audioFiles: [],
         aiResults: [],
         storageBuckets: [],
-        storageFiles: [],
+        storageFiles: [
+          {
+            id: "firmware_private_valid",
+            organizationId: "org_alpha",
+            bucket: "device-firmware",
+            objectKey: privateFirmwareObjectKey,
+            name: "shcare-1.2.0.bin",
+            contentType: "application/octet-stream",
+            byteSize: privateFirmwareBytes.length,
+            checksum: privateFirmwareChecksum,
+            sha256: privateFirmwareChecksum,
+            firmwareVersion: "1.2.0",
+            status: "active",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
+            id: "firmware_private_missing",
+            organizationId: "org_alpha",
+            bucket: "device-firmware",
+            objectKey: missingFirmwareObjectKey,
+            name: "missing-1.2.0.bin",
+            contentType: "application/octet-stream",
+            byteSize: privateFirmwareBytes.length,
+            checksum: privateFirmwareChecksum,
+            sha256: privateFirmwareChecksum,
+            firmwareVersion: "1.2.0",
+            status: "active",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
+            id: "firmware_private_oversized",
+            organizationId: "org_alpha",
+            bucket: "device-firmware",
+            objectKey: oversizedFirmwareObjectKey,
+            name: "oversized-1.2.0.bin",
+            contentType: "application/octet-stream",
+            // The registry metadata is deliberately stale so the download
+            // boundary must validate the actual object length before state
+            // advances to downloading.
+            byteSize: privateFirmwareBytes.length,
+            checksum: oversizedFirmwareChecksum,
+            sha256: oversizedFirmwareChecksum,
+            firmwareVersion: "1.2.0",
+            status: "active",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
+            id: "firmware_private_truncated",
+            organizationId: "org_alpha",
+            bucket: "device-firmware",
+            objectKey: truncatedFirmwareObjectKey,
+            name: "truncated-1.2.0.bin",
+            contentType: "application/octet-stream",
+            byteSize: privateFirmwareBytes.length,
+            checksum: privateFirmwareChecksum,
+            sha256: privateFirmwareChecksum,
+            firmwareVersion: "1.2.0",
+            status: "active",
+            createdAt,
+            updatedAt: createdAt,
+          },
+        ],
         servicePackages: [],
         subscriptions: [],
         exports: [],
@@ -174,6 +572,19 @@ function writeSeedDb() {
       2,
     ),
   );
+  for (const [objectKey, bytes] of [
+    [privateFirmwareObjectKey, privateFirmwareBytes],
+    [oversizedFirmwareObjectKey, oversizedFirmwareBytes],
+    [truncatedFirmwareObjectKey, truncatedFirmwareBytes],
+  ]) {
+    const objectPath = path.join(
+      dataDir,
+      "objects",
+      ...objectKey.split("/").map((part) => path.basename(part)),
+    );
+    fs.mkdirSync(path.dirname(objectPath), { recursive: true });
+    fs.writeFileSync(objectPath, bytes);
+  }
 }
 
 async function waitForHealth() {
@@ -327,6 +738,21 @@ async function requestJson(pathname, options = {}) {
   return { response, body: text ? JSON.parse(text) : {} };
 }
 
+async function waitForPersistedDevice(deviceId, predicate, timeoutMs = 2_000) {
+  const dbPath = path.join(dataDir, "db.json");
+  const deadline = Date.now() + timeoutMs;
+  let latestDevice = null;
+  while (Date.now() < deadline) {
+    const persisted = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+    latestDevice = persisted.devices.find((item) => item.id === deviceId) || null;
+    if (latestDevice && predicate(latestDevice, persisted)) {
+      return { device: latestDevice, persisted };
+    }
+    await delay(25);
+  }
+  assert.fail(`device ${deviceId} did not reach the expected persisted state: ${JSON.stringify(latestDevice)}`);
+}
+
 async function waitForCommandState(token, deviceId, commandId, expectedState, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
   let latest = null;
@@ -419,7 +845,15 @@ before(async () => {
       FIREBASE_AUTH_ENABLED: "false",
       OBJECT_STORAGE_PROVIDER: "local",
       LOCAL_OBJECT_STORAGE_DIR: path.join(dataDir, "objects"),
+      OTA_MAX_FIRMWARE_BYTES: String(1024 * 1024),
       OTA_SIGNING_PRIVATE_KEY_PEM: otaPrivateKeyPem,
+      NODE_ENV: "test",
+      DEVICE_AUTH_FENCE_TEST_DEVICE_ID: "dev_auth_fence",
+      DEVICE_AUTH_FENCE_TEST_READY_FILE: authFenceReadyPath,
+      DEVICE_AUTH_FENCE_TEST_RELEASE_FILE: authFenceReleasePath,
+      SCAN_STOP_FINALIZE_TEST_READY_FILE: scanStopFinalizeReadyPath,
+      SCAN_STOP_FINALIZE_TEST_RELEASE_FILE: scanStopFinalizeReleasePath,
+      SCAN_STOP_FINALIZE_TEST_IDEMPOTENCY_KEY: "audio-stop-finalize-before-ack-stop",
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -474,6 +908,7 @@ test("device credential overlap identifies the verified slot and derives a sessi
   const nextSecret = "device-next-credential-for-overlap-test";
   const device = {
     id: "dev_rotation_unit",
+    organizationId: "org_rotation_unit",
     status: "available",
     secretHash: canonicalDeviceSecretHash(oldSecret),
     credentialRotation: {
@@ -502,6 +937,8 @@ test("device credential overlap identifies the verified slot and derives a sessi
     assert.equal(result.ok, true);
     assert.equal(result.credentialSlot, expectedSlot);
     assert.equal(result.rotationId, expectedSlot === "rotation_candidate" ? "rotation_unit" : "");
+    assert.ok(result.credentialBinding);
+    assert.doesNotThrow(() => assertDeviceAuthenticationFence(device, result));
     assert.equal(result.rotationWrapKey.length, 32);
     const expectedKey = deriveDeviceRotationWrapKey(
       crypto.createHash("sha256").update(secret, "utf8").digest(),
@@ -527,6 +964,46 @@ test("device credential overlap identifies the verified slot and derives a sessi
     telemetry: {},
   });
   assert.deepEqual(expiredResult, { ok: false, code: "INVALID_CREDENTIALS" });
+});
+
+test("the final device authentication fence rejects changed workspace, revocation, and credentials", async () => {
+  const secret = "device-authentication-fence-unit-secret";
+  const device = {
+    id: "dev_authentication_fence_unit",
+    organizationId: "org_authentication_fence_unit",
+    status: "available",
+    secretHash: canonicalDeviceSecretHash(secret),
+  };
+  const authenticator = createDeviceAuthenticator({
+    findDeviceById: async () => device,
+  });
+  const socket = {};
+  const challenge = authenticator.issueChallenge(socket);
+  const result = await authenticator.authenticate(socket, {
+    type: "auth.response",
+    protocolVersion: 1,
+    deviceId: device.id,
+    challengeId: challenge.challengeId,
+    proof: createDeviceProof(challenge, device.id, secret),
+    telemetry: {},
+  });
+  assert.equal(result.ok, true);
+  assert.doesNotThrow(() => assertDeviceAuthenticationFence(device, result));
+  assert.throws(
+    () => assertDeviceAuthenticationFence({ ...device, organizationId: "org_other" }, result),
+    (error) => error?.code === "DEVICE_AUTH_AUTHORITY_CHANGED",
+  );
+  assert.throws(
+    () => assertDeviceAuthenticationFence({ ...device, status: "revoked" }, result),
+    (error) => error?.code === "DEVICE_AUTH_AUTHORITY_CHANGED",
+  );
+  assert.throws(
+    () => assertDeviceAuthenticationFence({
+      ...device,
+      secretHash: canonicalDeviceSecretHash("different-device-credential"),
+    }, result),
+    (error) => error?.code === "DEVICE_AUTH_CREDENTIAL_CHANGED",
+  );
 });
 
 test("rotation credential wrapping is session-bound authenticated encryption", () => {
@@ -587,6 +1064,68 @@ test("device query credentials cannot register or stream before challenge authen
   listener.socket.close();
 });
 
+test("public device projections use an allowlist and strip nested command or OTA credentials", async () => {
+  const token = await loginPlatformAdmin();
+  const result = await requestJson("/api/v1/devices", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  const device = result.body.devices.find((item) => item.id === "dev_alpha");
+  assert.ok(device, "the seeded device must be visible to Platform Admin");
+  assert.equal(device.factoryCredential, undefined);
+  assert.equal(device.setupAp, undefined);
+  assert.equal(device.unknownClinicalMetadata, undefined);
+  assert.equal(device.lastCommand?.idempotencyKey, undefined);
+  assert.equal(device.lastCommand?.requestFingerprint, undefined);
+  assert.equal(device.lastCommand?.payload, undefined);
+  assert.equal(device.lastCommand?.delivery?.authorization, undefined);
+  assert.equal(device.ota, undefined, "an incomplete legacy OTA lifecycle must not be projected as canonical");
+  assert.equal(device.otaStatus, undefined);
+  assert.doesNotMatch(
+    JSON.stringify(device),
+    /must-not-be-public|signed-download\.invalid/,
+  );
+});
+
+test("Wi-Fi setup sessions require an assigned manageable device and never disclose its verifier", async () => {
+  const token = await loginPlatformAdmin();
+  const unassigned = await requestJson("/api/v1/devices/dev_alpha/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(unassigned.response.status, 409, JSON.stringify(unassigned.body));
+  assert.equal(unassigned.body.code, "device_wifi_setup_not_assigned");
+
+  const opened = await requestJson("/api/v1/devices/dev_auth_fence/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(opened.response.status, 200, JSON.stringify(opened.body));
+  assert.equal(opened.response.headers.get("cache-control"), "no-store");
+  assert.equal(opened.body.setup?.protocolVersion, 2);
+  assert.equal(opened.body.setup?.transport, "esptouch_v2");
+  assert.equal(opened.body.setup?.smartConfig?.security, "aes128");
+  assert.match(opened.body.setup?.smartConfig?.provisioningKey || "", /^[A-Za-z0-9_-]{22}$/);
+  const reservedData = Buffer.from(
+    opened.body.setup?.smartConfig?.reservedData || "",
+    "base64url",
+  ).toString("ascii");
+  assert.match(reservedData, /^v2:[a-f0-9]{32}$/);
+  assert.equal(opened.body.setup?.setupAp, undefined);
+  assert.ok(Number.isFinite(Date.parse(opened.body.setup?.expiresAt)));
+  assert.doesNotMatch(JSON.stringify(opened.body), /auth-fence-device-secret|secretHash|"secret"/);
+
+  const legacy = await requestJson("/api/v1/devices/dev_auth_fence/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["softap_v1"] }),
+  });
+  assert.equal(legacy.response.status, 426, JSON.stringify(legacy.body));
+  assert.equal(legacy.body.code, "device_wifi_setup_transport_upgrade_required");
+});
+
 test("provisioning authorizes an existing device before any workspace mutation", async () => {
   const betaAdminToken = await login("admin@beta.test");
   const attemptedTakeover = await requestJson("/api/v1/devices/provision-qr", {
@@ -595,6 +1134,7 @@ test("provisioning authorizes an existing device before any workspace mutation",
     body: JSON.stringify({ deviceId: "dev_alpha", organizationId: "org_beta", name: "Taken Device" }),
   });
   assert.equal(attemptedTakeover.response.status, 403);
+  assert.equal(attemptedTakeover.body.code, "device_provision_platform_admin_required");
 
   const platformToken = await loginPlatformAdmin();
   const devices = await requestJson("/api/v1/devices", {
@@ -609,6 +1149,22 @@ test("provisioning authorizes an existing device before any workspace mutation",
 
 test("device provisioning persists the inventory fields shown by Platform Admin", async () => {
   const token = await loginPlatformAdmin();
+  const credentialInjection = await requestJson("/api/v1/devices/provision-qr", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "provision-credential-injection-rejected",
+    },
+    body: JSON.stringify({
+      deviceId: "dev_inventory_metadata",
+      organizationId: "org_alpha",
+      deviceSecret: "browser-must-not-enroll-device-credentials",
+    }),
+  });
+  assert.equal(credentialInjection.response.status, 400);
+  assert.equal(credentialInjection.body.code, "device_provision_credential_field_forbidden");
+
   const provisioned = await requestJson("/api/v1/devices/provision-qr", {
     method: "POST",
     headers: {
@@ -625,10 +1181,36 @@ test("device provisioning persists the inventory fields shown by Platform Admin"
       model: "SH-RPM-1",
       serialNumber: "SERIAL-INVENTORY-001",
       purchaseDate: "2026-07-17",
-      deviceSecret: "inventory-device-secret-000000000001",
     }),
   });
   assert.equal(provisioned.response.status, 201, JSON.stringify(provisioned.body));
+  assert.deepEqual(Object.keys(provisioned.body).sort(), ["claim", "device"]);
+  assert.deepEqual(Object.keys(provisioned.body.device).sort(), [
+    "connected",
+    "createdAt",
+    "id",
+    "manufacturer",
+    "model",
+    "name",
+    "online",
+    "organizationId",
+    "ownershipState",
+    "purchaseDate",
+    "serialNumber",
+    "status",
+    "type",
+    "updatedAt",
+  ]);
+  assert.deepEqual(Object.keys(provisioned.body.claim).sort(), [
+    "claimCode",
+    "deviceId",
+    "expiresAt",
+    "qrPayload",
+  ]);
+  assert.equal(provisioned.body.claim.deviceId, provisioned.body.device.id);
+  assert.equal(provisioned.body.claim.qrPayload.deviceId, provisioned.body.device.id);
+  assert.equal(provisioned.body.claim.qrPayload.claimCode, provisioned.body.claim.claimCode);
+  assert.equal(provisioned.body.claim.qrPayload.claimExpiresAt, provisioned.body.claim.expiresAt);
   assert.deepEqual(
     {
       type: provisioned.body.device.type,
@@ -702,12 +1284,14 @@ test("device provisioning is idempotent without persisting the one-time claim co
     deviceId: "dev_provision_idempotent",
     name: "Idempotent Provision",
     organizationId: "org_alpha",
-    deviceSecret: "idempotent-provision-secret-000000000001",
   };
 
   const missingKey = await requestJson("/api/v1/devices/provision-qr", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ ...payload, deviceId: "dev_provision_missing_key" }),
   });
   assert.equal(missingKey.response.status, 400);
@@ -790,6 +1374,22 @@ test("device provisioning rolls back the SQL transaction when its audit cannot c
       if (/SELECT\s+fingerprint[\s\S]+FROM\s+mutation_idempotency/i.test(sql)) {
         return { rows: [] };
       }
+      if (/SELECT\s+\*\s+FROM\s+devices\s+WHERE\s+id\s*=\s*\$1\s+FOR\s+UPDATE/i.test(sql)) {
+        return {
+          rows: [{
+            id: "dev_atomic_provision",
+            organization_id: "org_alpha",
+            ownership_state: "provisioned",
+            name: "Factory-enrolled device",
+            type: "stethoscope",
+            status: "unclaimed",
+            connected: false,
+            secret_hash: canonicalDeviceSecretHash("atomic-provision-secret-000000000001"),
+            created_at: "2026-07-17T00:00:00.000Z",
+            updated_at: "2026-07-17T00:00:00.000Z",
+          }],
+        };
+      }
       return { rows: [] };
     },
   };
@@ -845,8 +1445,8 @@ test("device provisioning rolls back the SQL transaction when its audit cannot c
   const deviceWrite = statements.find((statement) => /INSERT\s+INTO\s+devices/i.test(statement));
   assert.match(
     deviceWrite,
-    /secret_hash\s*=\s*COALESCE\(NULLIF\(devices\.secret_hash,\s*''\),\s*EXCLUDED\.secret_hash\)/i,
-    "provisioning may enroll missing verification material but must not replace an existing device credential",
+    /secret_hash\s*=\s*devices\.secret_hash/i,
+    "claim provisioning must retain the credential installed by factory enrollment",
   );
   assert.deepEqual(runtimeDb.devices, []);
   assert.deepEqual(runtimeDb.deviceClaims, []);
@@ -889,6 +1489,11 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     audioPacketsSent: 12,
     audioPacketsDropped: 2,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 3,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 1_250,
+    audioCaptureFramesDropped: 17,
+    audioCaptureFramesStale: 2,
     lastCommandUptimeMs: 11_000,
     resetReason: " brownout ",
     i2sStatus: "ready",
@@ -898,7 +1503,21 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
     secret: "must-not-persist",
+    rawAudio: "must-not-persist",
+    pcmSamples: [1, 2, 3],
     unknownField: "must-not-persist",
     freeHeapBytesInvalid: -1,
   });
@@ -908,6 +1527,11 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     audioPacketsSent: 12,
     audioPacketsDropped: 2,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 3,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 1_250,
+    audioCaptureFramesDropped: 17,
+    audioCaptureFramesStale: 2,
     lastCommandUptimeMs: 11_000,
     resetReason: "brownout",
     i2sStatus: "ready",
@@ -917,7 +1541,34 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
   });
+
+  const aggregateFields = Object.keys(telemetry).filter(
+    (field) => field.startsWith("i2sSlot") || field.startsWith("audioCapture"),
+  );
+  assert.equal(aggregateFields.length, 17);
+  for (const field of aggregateFields) {
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: -1 }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: 0.5 }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: UINT32_MAX + 1 }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: "1" }), {});
+    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: UINT32_MAX }), { [field]: UINT32_MAX });
+  }
+  assert.deepEqual(sanitizeDeviceTelemetry({ deviceSecret: "forbidden", ...telemetry }), telemetry);
+  assert.equal(Object.hasOwn(telemetry, "rawAudio"), false);
+  assert.equal(Object.hasOwn(telemetry, "pcmSamples"), false);
 
   const runtimeDb = { devices: [] };
   const statements = [];
@@ -957,6 +1608,11 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     audioPacketsSent: 14,
     audioPacketsDropped: 1,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 2,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 512,
+    audioCaptureFramesDropped: 4,
+    audioCaptureFramesStale: 1,
     lastCommandId: "cmd_telemetry",
     lastCommandState: "applied",
     lastCommandCode: "OK",
@@ -964,6 +1620,18 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
   });
   const token = await loginPlatformAdmin();
   const response = await requestJson("/api/v1/devices", {
@@ -979,6 +1647,11 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     audioPacketsSent: 14,
     audioPacketsDropped: 1,
     audioSendFailures: 1,
+    audioCaptureQueueDepth: 2,
+    audioCaptureQueueHighWater: 8,
+    audioCaptureFramesEnqueued: 512,
+    audioCaptureFramesDropped: 4,
+    audioCaptureFramesStale: 1,
     lastCommandId: "cmd_telemetry",
     lastCommandState: "applied",
     lastCommandCode: "OK",
@@ -986,6 +1659,18 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    i2sSlot0Rms: 1_280,
+    i2sSlot0Peak: 4_096,
+    i2sSlot0WindowCount: 40,
+    i2sSlot0ActiveWindowCount: 39,
+    i2sSlot0SampleCount: 10_240,
+    i2sSlot0NonZeroSampleCount: 9_800,
+    i2sSlot1Rms: 1_144,
+    i2sSlot1Peak: 3_840,
+    i2sSlot1WindowCount: 40,
+    i2sSlot1ActiveWindowCount: 38,
+    i2sSlot1SampleCount: 10_240,
+    i2sSlot1NonZeroSampleCount: 9_620,
   });
   client.socket.close();
   await client.closed();
@@ -1207,6 +1892,19 @@ test("device command migration is additive, scoped, and never persists command p
     "the importer must never copy raw command data into the normalized ledger",
   );
 
+  const executionMigration = fs.readFileSync(
+    path.join(rootDir, "db", "migrations", "053_device_command_execution_deadline.sql"),
+    "utf8",
+  );
+  assert.match(executionMigration, /ADD COLUMN IF NOT EXISTS execution_expires_at timestamptz/i);
+  assert.match(
+    executionMigration,
+    /UPDATE device_commands[\s\S]*command_type = 'ota\.update'[\s\S]*state IN \('acknowledged', 'applying'\)/i,
+    "existing acknowledged/applying OTA rows need a bounded compatibility backfill",
+  );
+  assert.match(executionMigration, /execution_expires_at > expires_at/i);
+  assert.match(importer, /execution_expires_at/i);
+
 });
 
 test("credential rotation migration stores only a private verification document", () => {
@@ -1411,16 +2109,22 @@ test("human device mutations cannot spoof telemetry or hard-delete the audit gra
 
   const spoofed = await requestJson("/api/v1/devices/dev_beta", {
     method: "PATCH",
-    headers: betaHeaders,
+    headers: {
+      ...betaHeaders,
+      "Idempotency-Key": "device-security-spoof-telemetry",
+    },
     body: JSON.stringify({ name: "Spoof attempt", status: "connected", signal: 100, battery: 100 }),
   });
   assert.equal(spoofed.response.status, 400, JSON.stringify(spoofed.body));
   assert.equal(spoofed.body.code, "device_reported_field_forbidden");
 
-  for (const token of [betaAdminToken, platformToken]) {
+  for (const [index, token] of [betaAdminToken, platformToken].entries()) {
     const removed = await requestJson("/api/v1/devices/dev_beta", {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": `device-security-hard-delete-${index}`,
+      },
     });
     assert.equal(removed.response.status, 409, JSON.stringify(removed.body));
     assert.equal(removed.body.code, "device_revoke_required");
@@ -1428,7 +2132,10 @@ test("human device mutations cannot spoof telemetry or hard-delete the audit gra
 
   const renamed = await requestJson("/api/v1/devices/dev_beta", {
     method: "PATCH",
-    headers: betaHeaders,
+    headers: {
+      ...betaHeaders,
+      "Idempotency-Key": "device-security-rename-metadata",
+    },
     body: JSON.stringify({ name: "Beta Device Renamed" }),
   });
   assert.equal(renamed.response.status, 200, JSON.stringify(renamed.body));
@@ -1467,6 +2174,51 @@ test("unpair is rejected without erasing ownership or fabricating an offline dev
   await esp.closed();
 });
 
+test("account release is tenant-scoped, idempotent, audited, and retains the device row", async () => {
+  const betaToken = await login("admin@beta.test");
+  const alphaToken = await login("doctor@alpha.test");
+  const idempotencyKey = "device-release-contract";
+  const denied = await requestJson("/api/v1/devices/dev_release/release", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${alphaToken}`, "Idempotency-Key": idempotencyKey },
+  });
+  assert.equal(denied.response.status, 403, JSON.stringify(denied.body));
+
+  const released = await requestJson("/api/v1/devices/dev_release/release", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${betaToken}`, "Idempotency-Key": idempotencyKey },
+  });
+  assert.equal(released.response.status, 200, JSON.stringify(released.body));
+  assert.deepEqual(released.body.release, {
+    deviceId: "dev_release",
+    released: true,
+    historyRetained: true,
+  });
+  assert.equal(released.body.replayed, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(released.body, "device"), false);
+
+  const replay = await requestJson("/api/v1/devices/dev_release/release", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${betaToken}`, "Idempotency-Key": idempotencyKey },
+  });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.replayed, true);
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const device = persisted.devices.find((candidate) => candidate.id === "dev_release");
+  assert.ok(device, "release must retain the canonical device row");
+  assert.equal(device.ownershipState, "provisioned");
+  assert.equal(device.ownerUserId, null);
+  assert.equal(device.pairedUserId, null);
+  assert.equal(device.historyMarker, "retained");
+  assert.equal(
+    persisted.auditLogs.filter(
+      (entry) => entry.action === "device.release" && entry.resourceId === "dev_release",
+    ).length,
+    1,
+  );
+});
+
 test("OTA is platform-only, signed, canonical, and confirmed only after authenticated reconnect telemetry", async () => {
   const checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
   const betaAdminToken = await login("admin@beta.test");
@@ -1489,18 +2241,20 @@ test("OTA is platform-only, signed, canonical, and confirmed only after authenti
   await esp.opened;
   await authenticateDevice(esp, "dev_alpha_peer", secrets.peer);
   const token = await loginPlatformAdmin();
+  const otaHeaders = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": "ota-canonical-signed-001",
+  };
+  const otaPayload = {
+    url: "https://firmware.shcare.example/MSM261S4030H0/1.1.0.bin",
+    firmwareVersion: "1.1.0",
+    checksum,
+  };
   const created = await requestJson("/api/v1/devices/dev_alpha_peer/ota", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "Idempotency-Key": "ota-canonical-signed-001",
-    },
-    body: JSON.stringify({
-      url: "https://firmware.shcare.example/MSM261S4030H0/1.1.0.bin",
-      firmwareVersion: "1.1.0",
-      checksum,
-    }),
+    headers: otaHeaders,
+    body: JSON.stringify(otaPayload),
   });
   assert.equal(created.response.status, 202, JSON.stringify(created.body));
   assert.equal(created.body.command.protocolVersion, 1);
@@ -1508,6 +2262,23 @@ test("OTA is platform-only, signed, canonical, and confirmed only after authenti
   assert.equal(created.body.command.state, "delivered");
   assert.equal(created.body.ota.status, "delivered");
   assert.notEqual(created.body.ota.status, "confirmed");
+
+  const otaReplay = await requestJson("/api/v1/devices/dev_alpha_peer/ota", {
+    method: "POST",
+    headers: otaHeaders,
+    body: JSON.stringify(otaPayload),
+  });
+  assert.equal(otaReplay.response.status, 202, JSON.stringify(otaReplay.body));
+  assert.equal(otaReplay.body.idempotent, true);
+  assert.equal(otaReplay.body.command.id, created.body.command.id);
+
+  const otaMismatch = await requestJson("/api/v1/devices/dev_alpha_peer/ota", {
+    method: "POST",
+    headers: otaHeaders,
+    body: JSON.stringify({ ...otaPayload, firmwareVersion: "1.2.0" }),
+  });
+  assert.equal(otaMismatch.response.status, 409, JSON.stringify(otaMismatch.body));
+  assert.equal(otaMismatch.body.code, "idempotency_key_reused");
 
   const wireCommand = await esp.nextJson();
   assert.equal(wireCommand.id, created.body.command.id);
@@ -1553,31 +2324,36 @@ test("OTA is platform-only, signed, canonical, and confirmed only after authenti
     true,
     "backend signature must match the exact firmware canonical bytes",
   );
-
   esp.socket.send(JSON.stringify({
     protocolVersion: 1,
-    type: "command.status",
+    type: "ota.confirmed",
+    deviceId: "dev_alpha_peer",
     commandId: wireCommand.id,
     correlationId: wireCommand.correlationId,
-    state: "acknowledged",
-    code: "COMMAND_ACKNOWLEDGED",
+    otaId: wireCommand.id,
+    otaStatus: "failed",
+    firmwareVersion: "1.1.0",
+    otaBootOutcome: "confirmed",
   }));
-  await waitForCommandState(token, "dev_alpha_peer", wireCommand.id, "acknowledged");
-  esp.socket.send(JSON.stringify({
-    protocolVersion: 1,
-    type: "command.status",
-    commandId: wireCommand.id,
-    correlationId: wireCommand.correlationId,
-    state: "applying",
-    code: "OTA_REBOOTING",
-  }));
-  await waitForCommandState(token, "dev_alpha_peer", wireCommand.id, "applying");
+  const mismatchedEventReceipt = await esp.nextJson();
+  assert.equal(mismatchedEventReceipt.type, "event.rejected");
+  assert.equal(mismatchedEventReceipt.code, "DEVICE_OTA_EVENT_STATUS_MISMATCH");
+  await assert.rejects(
+    () => esp.nextJson(150),
+    /timed out waiting for WebSocket message/,
+    "an OTA idempotency replay must not deliver a second command",
+  );
 
   const beforeReconnect = await requestJson("/api/v1/devices", {
     headers: { Authorization: `Bearer ${token}` },
   });
   const pendingDevice = beforeReconnect.body.devices.find((device) => device.id === "dev_alpha_peer");
   assert.notEqual(pendingDevice.otaStatus, "confirmed");
+  assert.equal(
+    pendingDevice.lastCommand?.state,
+    "delivered",
+    "the test deliberately drops every command ACK/progress frame before reboot",
+  );
 
   esp.socket.send(JSON.stringify({
     type: "telemetry",
@@ -1600,7 +2376,11 @@ test("OTA is platform-only, signed, canonical, and confirmed only after authenti
   await authenticateDevice(reconnectedEsp, "dev_alpha_peer", secrets.peer);
   reconnectedEsp.socket.send(JSON.stringify({
     type: "telemetry",
-    telemetry: { firmwareVersion: "1.1.0", audioStatus: "ready" },
+    telemetry: {
+      firmwareVersion: "1.1.0",
+      otaBootOutcome: "confirmed",
+      audioStatus: "ready",
+    },
   }));
   const deadline = Date.now() + 2_000;
   let confirmedDevice = null;
@@ -1613,6 +2393,8 @@ test("OTA is platform-only, signed, canonical, and confirmed only after authenti
     await delay(25);
   }
   assert.equal(confirmedDevice?.otaStatus, "confirmed");
+  assert.equal(confirmedDevice?.lastCommand?.state, "applied");
+  assert.equal(confirmedDevice?.lastCommand?.code, "OTA_BOOT_HEALTH_CONFIRMED");
 
   const events = await requestJson("/api/v1/devices/dev_alpha_peer/events", {
     headers: { Authorization: `Bearer ${token}` },
@@ -1621,7 +2403,297 @@ test("OTA is platform-only, signed, canonical, and confirmed only after authenti
   assert.equal(serializedEvents.includes("token="), false);
   assert.equal(serializedEvents.includes('"token"'), false);
   assert.equal(serializedEvents.includes(wireCommand.payload.signature), false, "events need metadata, not the signed envelope");
+  const otaEvents = events.body.events.filter(
+    (event) => event.payload?.commandId === created.body.command.id,
+  );
+  assert.ok(otaEvents.length >= 2);
+  assert.ok(
+    otaEvents.every((event) => event.payload.protocolVersion === 1),
+    "OTA receipts must retain their protocol version",
+  );
   reconnectedEsp.socket.close();
+});
+
+async function startPrivateFirmwareOta({ deviceId, secret, firmwareFileId, idempotencyKey }) {
+  const esp = openSocket("/esp");
+  await esp.opened;
+  await authenticateDevice(esp, deviceId, secret);
+  const platformToken = await loginPlatformAdmin();
+  const created = await requestJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/ota`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
+      "X-Forwarded-Proto": "https",
+      "X-Forwarded-Host": `127.0.0.1:${port}`,
+    },
+    body: JSON.stringify({ firmwareFileId }),
+  });
+  assert.equal(created.response.status, 202, JSON.stringify(created.body));
+  const wireCommand = await esp.nextJson();
+  assert.equal(wireCommand.type, "ota.update");
+  assert.equal(typeof wireCommand.payload.downloadAuthorization, "string");
+  assert.ok(wireCommand.payload.downloadAuthorization.length >= 32);
+  assert.equal(new URL(wireCommand.payload.url).search, "", "private bearer must never enter the URL");
+  const localDownloadUrl = wireCommand.payload.url.replace(/^https:/, "http:");
+  return { esp, platformToken, created, wireCommand, localDownloadUrl };
+}
+
+test("private OTA download pins the exact storage artifact and accepts only an Authorization bearer", async () => {
+  const { esp, platformToken, created, wireCommand, localDownloadUrl } = await startPrivateFirmwareOta({
+    deviceId: "dev_ota_private_valid",
+    secret: secrets.otaPrivateValid,
+    firmwareFileId: "firmware_private_valid",
+    idempotencyKey: "ota-private-valid-001",
+  });
+  const bearer = wireCommand.payload.downloadAuthorization;
+
+  const queryOnly = await fetch(`${localDownloadUrl}?token=${encodeURIComponent(bearer)}`, {
+    redirect: "manual",
+  });
+  assert.equal(queryOnly.status, 404, "query-string credentials must never authorize firmware bytes");
+
+  const downloaded = await fetch(localDownloadUrl, {
+    headers: { Authorization: `Bearer ${bearer}` },
+    redirect: "manual",
+  });
+  assert.equal(downloaded.status, 200);
+  assert.equal(downloaded.headers.get("location"), null, "the backend must proxy bytes instead of redirecting a bearer");
+  assert.equal(downloaded.headers.get("cache-control"), "no-store");
+  assert.equal(downloaded.headers.get("x-smart-health-sha256"), privateFirmwareChecksum);
+  assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), privateFirmwareBytes);
+
+  const detail = await requestJson("/api/v1/devices/dev_ota_private_valid", {
+    headers: { Authorization: `Bearer ${platformToken}` },
+  });
+  assert.equal(detail.response.status, 200, JSON.stringify(detail.body));
+  assert.equal(detail.body.device.ota.status, "downloading");
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const persistedDevice = persisted.devices.find((item) => item.id === "dev_ota_private_valid");
+  assert.equal(persistedDevice.ota.firmwareFileId, "firmware_private_valid");
+  assert.equal(persistedDevice.ota.firmwareStorageBucket, "device-firmware");
+  assert.equal(persistedDevice.ota.firmwareObjectKey, privateFirmwareObjectKey);
+  assert.equal(persistedDevice.ota.firmwareByteSize, privateFirmwareBytes.length);
+  assert.equal(persistedDevice.ota.status, "downloading");
+  assert.ok(persistedDevice.ota.tokenHash);
+  assert.equal(JSON.stringify(created.body).includes(bearer), false);
+  esp.socket.close();
+  await esp.closed();
+});
+
+for (const artifactCase of [
+  {
+    label: "unavailable",
+    deviceId: "dev_ota_private_missing",
+    secret: secrets.otaPrivateMissing,
+    firmwareFileId: "firmware_private_missing",
+    idempotencyKey: "ota-private-missing-001",
+    expectedStatus: 404,
+    expectedCode: "OTA_FIRMWARE_OBJECT_UNAVAILABLE",
+  },
+  {
+    label: "oversized",
+    deviceId: "dev_ota_private_oversized",
+    secret: secrets.otaPrivateOversized,
+    firmwareFileId: "firmware_private_oversized",
+    idempotencyKey: "ota-private-oversized-001",
+    expectedStatus: 413,
+    expectedCode: "OTA_FIRMWARE_SIZE_INVALID",
+  },
+  {
+    label: "truncated after metadata authorization",
+    deviceId: "dev_ota_private_truncated",
+    secret: secrets.otaPrivateTruncated,
+    firmwareFileId: "firmware_private_truncated",
+    idempotencyKey: "ota-private-truncated-001",
+    expectedStatus: 409,
+    expectedCode: "OTA_FIRMWARE_SIZE_MISMATCH",
+  },
+]) {
+  test(`private OTA ${artifactCase.label} artifact fails atomically and revokes its bearer`, async () => {
+    const { esp, wireCommand, localDownloadUrl } = await startPrivateFirmwareOta(artifactCase);
+    const bearer = wireCommand.payload.downloadAuthorization;
+    const failedDownload = await fetch(localDownloadUrl, {
+      headers: { Authorization: `Bearer ${bearer}` },
+      redirect: "manual",
+    });
+    assert.equal(failedDownload.status, artifactCase.expectedStatus);
+
+    const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+    const persistedDevice = persisted.devices.find((item) => item.id === artifactCase.deviceId);
+    const persistedCommand = persisted.deviceCommands.find((item) => item.id === wireCommand.id);
+    assert.equal(persistedDevice.ota.status, "failed");
+    assert.equal(persistedDevice.ota.failureCode, artifactCase.expectedCode);
+    assert.equal(Object.hasOwn(persistedDevice.ota, "tokenHash"), false);
+    assert.equal(persistedCommand.state, "failed");
+    assert.equal(persistedCommand.code, artifactCase.expectedCode);
+
+    const retriedBearer = await fetch(localDownloadUrl, {
+      headers: { Authorization: `Bearer ${bearer}` },
+      redirect: "manual",
+    });
+    assert.equal(retriedBearer.status, 404, "a terminal OTA bearer must be unusable immediately");
+    esp.socket.close();
+    await esp.closed();
+  });
+}
+
+test("private OTA rejects expired, terminal, revoked, and replaced lifecycle bindings", async () => {
+  const attempts = [
+    {
+      deviceId: "dev_ota_download_expired",
+      otaId: "ota_seeded_expired",
+      token: seededOtaTokens.expired,
+      status: 410,
+    },
+    {
+      deviceId: "dev_ota_download_terminal",
+      otaId: "ota_seeded_terminal",
+      token: seededOtaTokens.terminal,
+      status: 404,
+    },
+    {
+      deviceId: "dev_ota_download_revoked",
+      otaId: "ota_seeded_revoked",
+      token: seededOtaTokens.revoked,
+      status: 404,
+    },
+    {
+      deviceId: "dev_ota_download_replaced",
+      otaId: "ota_replaced_old",
+      token: seededOtaTokens.replaced,
+      status: 404,
+    },
+  ];
+  for (const attempt of attempts) {
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/devices/${attempt.deviceId}/ota/${attempt.otaId}/firmware`,
+      {
+        headers: { Authorization: `Bearer ${attempt.token}` },
+        redirect: "manual",
+      },
+    );
+    assert.equal(response.status, attempt.status, `${attempt.deviceId} must deny stale firmware authority`);
+    assert.equal(response.headers.get("location"), null);
+  }
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const expired = persisted.devices.find((item) => item.id === "dev_ota_download_expired");
+  assert.equal(expired.ota.status, "expired");
+  assert.equal(Object.hasOwn(expired.ota, "tokenHash"), false);
+});
+
+test("JSON private firmware GET expires an unacknowledged delivery before the longer OTA deadline", async () => {
+  const response = await fetch(
+    `http://127.0.0.1:${port}/api/v1/devices/dev_ota_download_delivery_expired/ota/ota_seeded_delivery_expired/firmware`,
+    {
+      headers: { Authorization: `Bearer ${seededOtaTokens.deliveryExpired}` },
+      redirect: "manual",
+    },
+  );
+
+  assert.equal(response.status, 410);
+  assert.equal(response.headers.get("location"), null);
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const device = persisted.devices.find(
+    (item) => item.id === "dev_ota_download_delivery_expired",
+  );
+  const command = persisted.deviceCommands.find(
+    (item) => item.id === "ota_seeded_delivery_expired",
+  );
+  assert.equal(device.ota.status, "expired");
+  assert.equal(Object.hasOwn(device.ota, "tokenHash"), false);
+  assert.equal(command.state, "expired");
+  assert.equal(command.code, "COMMAND_EXPIRED");
+  assert.ok(
+    Date.parse(command.executionExpiresAt) > Date.now(),
+    "the execution deadline is still future but must not authorize a command that never ACKed",
+  );
+
+  const retry = await fetch(
+    `http://127.0.0.1:${port}/api/v1/devices/dev_ota_download_delivery_expired/ota/ota_seeded_delivery_expired/firmware`,
+    {
+      headers: { Authorization: `Bearer ${seededOtaTokens.deliveryExpired}` },
+      redirect: "manual",
+    },
+  );
+  assert.equal(retry.status, 404, "the revoked bearer verifier must fail every retry");
+});
+
+test("legacy private OTA grants with missing or malformed expiry fail closed atomically", async () => {
+  for (const attempt of [
+    {
+      deviceId: "dev_ota_download_missing_expiry",
+      otaId: "ota_seeded_missing_expiry",
+      token: seededOtaTokens.missingExpiry,
+    },
+    {
+      deviceId: "dev_ota_download_malformed_expiry",
+      otaId: "ota_seeded_malformed_expiry",
+      token: seededOtaTokens.malformedExpiry,
+    },
+  ]) {
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/devices/${attempt.deviceId}/ota/${attempt.otaId}/firmware`,
+      {
+        headers: { Authorization: `Bearer ${attempt.token}` },
+        redirect: "manual",
+      },
+    );
+    assert.equal(response.status, 410);
+    assert.equal(response.headers.get("location"), null);
+  }
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  for (const [deviceId, commandId] of [
+    ["dev_ota_download_missing_expiry", "ota_seeded_missing_expiry"],
+    ["dev_ota_download_malformed_expiry", "ota_seeded_malformed_expiry"],
+  ]) {
+    const device = persisted.devices.find((item) => item.id === deviceId);
+    const command = persisted.deviceCommands.find((item) => item.id === commandId);
+    assert.equal(device.ota.status, "expired");
+    assert.equal(Object.hasOwn(device.ota, "tokenHash"), false);
+    assert.equal(command.state, "expired");
+    assert.equal(command.code, "OTA_DOWNLOAD_TOKEN_EXPIRED");
+  }
+});
+
+test("an ownership transfer revokes the old private OTA bearer and command", async () => {
+  const { esp, platformToken, wireCommand, localDownloadUrl } = await startPrivateFirmwareOta({
+    deviceId: "dev_ota_private_transfer",
+    secret: secrets.otaPrivateTransfer,
+    firmwareFileId: "firmware_private_valid",
+    idempotencyKey: "ota-private-transfer-001",
+  });
+  const bearer = wireCommand.payload.downloadAuthorization;
+  const transferred = await requestJson("/api/v1/devices/dev_ota_private_transfer/transfer", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "transfer-private-ota-to-beta-001",
+    },
+    body: JSON.stringify({ organizationId: "org_beta", ownerUserId: "usr_admin_beta" }),
+  });
+  assert.equal(transferred.response.status, 200, JSON.stringify(transferred.body));
+  await esp.closed();
+
+  const staleDownload = await fetch(localDownloadUrl, {
+    headers: { Authorization: `Bearer ${bearer}` },
+    redirect: "manual",
+  });
+  assert.equal(staleDownload.status, 404);
+  assert.equal(staleDownload.headers.get("location"), null);
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const device = persisted.devices.find((item) => item.id === "dev_ota_private_transfer");
+  const command = persisted.deviceCommands.find((item) => item.id === wireCommand.id);
+  assert.equal(device.organizationId, "org_beta");
+  assert.equal(device.ota.status, "failed");
+  assert.equal(Object.hasOwn(device.ota, "tokenHash"), false);
+  assert.equal(command.state, "failed");
+  assert.equal(command.code, "OTA_OWNERSHIP_CHANGED");
 });
 
 test("concurrent auth responses cannot register a socket after it has been closed", async () => {
@@ -1647,6 +2719,48 @@ test("concurrent auth responses cannot register a socket after it has been close
   assert.equal(status.type, "status");
   assert.equal(status.wsEsp, 0, "a closed auth race must never leave a ghost device session");
   listener.socket.close();
+});
+
+test("a revoke committed between proof verification and registration fails the final authentication fence", async () => {
+  const token = await loginPlatformAdmin();
+  const esp = openSocket("/esp");
+  await esp.opened;
+  const challenge = await esp.nextJson();
+  esp.socket.send(JSON.stringify({
+    type: "auth.response",
+    protocolVersion: 1,
+    deviceId: "dev_auth_fence",
+    challengeId: challenge.challengeId,
+    proof: createDeviceProof(challenge, "dev_auth_fence", secrets.authFence),
+    telemetry: {},
+  }));
+
+  await waitForFile(authFenceReadyPath);
+  const revoked = await requestJson("/api/v1/devices/dev_auth_fence/revoke", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "revoke-during-device-auth-fence",
+    },
+    body: JSON.stringify({}),
+  });
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  fs.writeFileSync(authFenceReleasePath, "release", "utf8");
+
+  assert.deepEqual(await esp.nextJson(), {
+    type: "auth.rejected",
+    code: "DEVICE_AUTH_AUTHORITY_CHANGED",
+  });
+  const closed = await esp.closed();
+  assert.equal(closed.code, 1008);
+  assert.equal(closed.reason, "DEVICE_AUTH_AUTHORITY_CHANGED");
+  const current = await requestJson("/api/v1/devices/dev_auth_fence", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(current.response.status, 200, JSON.stringify(current.body));
+  assert.equal(current.body.device.online, false);
+  assert.equal(current.body.device.status, "revoked");
 });
 
 test("device challenges are socket-bound, expiring, and one-use", async () => {
@@ -1733,10 +2847,101 @@ test("authenticated device audio frames are bounded", async () => {
   );
 });
 
+test("pairing HTTP replay cannot bypass the transactional ownership fence", () => {
+  const source = fs.readFileSync(path.join(rootDir, "server.js"), "utf8");
+  const routeStart = source.indexOf(
+    'if (segments.length === 3 && segments[2] === "pair" && method === "POST")',
+  );
+  const routeEnd = source.indexOf("\n  const device = segments[2]", routeStart);
+  assert.ok(routeStart >= 0 && routeEnd > routeStart, "pairing route source must be discoverable");
+  const routeSource = source.slice(routeStart, routeEnd);
+  assert.equal(
+    routeSource.includes("findIdempotentResource("),
+    false,
+    "HTTP pairing must not return an in-memory receipt before the canonical ownership lock",
+  );
+  assert.match(routeSource, /repositories\.devices\.savePairingWithAudit\(/);
+  assert.match(routeSource, /DEVICE_PAIRING_REPOSITORY_UNAVAILABLE/);
+});
+
 test("pairing idempotency is tenant scoped, concurrency safe, and defaults QR claims correctly", async () => {
   const token = await loginPlatformAdmin();
   const sharedKey = "pair-shared-across-tenants";
-  const pairForTenant = (organizationId, deviceId) =>
+  const provisionClaim = async (organizationId, deviceId, idempotencyKey) => {
+    const provisioned = await requestJson("/api/v1/devices/provision-qr", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify({
+        organizationId,
+        deviceId,
+      }),
+    });
+    assert.equal(provisioned.response.status, 201, JSON.stringify(provisioned.body));
+    return provisioned.body.claim.claimCode;
+  };
+  const alphaClaimCode = await provisionClaim("org_alpha", "dev_pair_scope_alpha", "provision-pair-alpha");
+  const betaClaimCode = await provisionClaim("org_beta", "dev_pair_scope_beta", "provision-pair-beta");
+  const activeBetaClaimCode = await provisionClaim(
+    "org_beta",
+    "dev_pair_active_beta",
+    "provision-pair-active-beta",
+  );
+  const multiWorkspaceToken = await login("admin@multi.test");
+  const omittedWorkspace = await requestJson("/api/v1/devices/pair", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${multiWorkspaceToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "pair-active-workspace-omitted",
+    },
+    body: JSON.stringify({
+      deviceId: "dev_pair_scope_alpha",
+      claimCode: alphaClaimCode,
+      connectionMethod: "QR",
+    }),
+  });
+  assert.equal(omittedWorkspace.response.status, 400, JSON.stringify(omittedWorkspace.body));
+  assert.equal(omittedWorkspace.body.code, "device_claim_workspace_required");
+
+  const mismatchedDeviceWorkspace = await requestJson("/api/v1/devices/pair", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${multiWorkspaceToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "pair-device-workspace-mismatch",
+    },
+    body: JSON.stringify({
+      deviceId: "dev_pair_active_beta",
+      organizationId: "org_alpha",
+      claimCode: activeBetaClaimCode,
+      connectionMethod: "QR",
+    }),
+  });
+  assert.equal(mismatchedDeviceWorkspace.response.status, 403, JSON.stringify(mismatchedDeviceWorkspace.body));
+  assert.equal(mismatchedDeviceWorkspace.body.code, "device_claim_workspace_mismatch");
+
+  const inactiveSelectedWorkspace = await requestJson("/api/v1/devices/pair", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${multiWorkspaceToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "pair-background-membership-denied",
+    },
+    body: JSON.stringify({
+      deviceId: "dev_pair_active_beta",
+      organizationId: "org_beta",
+      claimCode: activeBetaClaimCode,
+      connectionMethod: "QR",
+    }),
+  });
+  assert.equal(inactiveSelectedWorkspace.response.status, 403, JSON.stringify(inactiveSelectedWorkspace.body));
+  assert.equal(inactiveSelectedWorkspace.body.code, "device_claim_active_workspace_mismatch");
+
+  const pairForTenant = (organizationId, deviceId, claimCode) =>
     requestJson("/api/v1/devices/pair", {
       method: "POST",
       headers: {
@@ -1744,15 +2949,10 @@ test("pairing idempotency is tenant scoped, concurrency safe, and defaults QR cl
         "Content-Type": "application/json",
         "Idempotency-Key": sharedKey,
       },
-      body: JSON.stringify({
-        organizationId,
-        deviceId,
-        name: `${organizationId} scoped device`,
-        deviceSecret: `${organizationId}-${deviceId}-pairing-secret-000001`,
-      }),
+      body: JSON.stringify({ organizationId, deviceId, claimCode }),
     });
-  const alphaPair = await pairForTenant("org_alpha", "dev_pair_scope_alpha");
-  const betaPair = await pairForTenant("org_beta", "dev_pair_scope_beta");
+  const alphaPair = await pairForTenant("org_alpha", "dev_pair_scope_alpha", alphaClaimCode);
+  const betaPair = await pairForTenant("org_beta", "dev_pair_scope_beta", betaClaimCode);
   assert.equal(alphaPair.response.status, 200, JSON.stringify(alphaPair.body));
   assert.equal(betaPair.response.status, 200, JSON.stringify(betaPair.body));
   assert.equal(alphaPair.body.device.organizationId, "org_alpha");
@@ -1766,15 +2966,24 @@ test("pairing idempotency is tenant scoped, concurrency safe, and defaults QR cl
       "Content-Type": "application/json",
       "Idempotency-Key": sharedKey,
     },
-    body: JSON.stringify({ deviceId: "dev_pair_scope_beta", organizationId: "org_beta" }),
+    body: JSON.stringify({
+      deviceId: "dev_pair_scope_beta",
+      organizationId: "org_beta",
+      claimCode: betaClaimCode,
+    }),
   });
   assert.equal(crossWorkspaceReplay.response.status, 403, "an idempotency key must never bypass workspace isolation");
+  assert.equal(crossWorkspaceReplay.body.code, "device_claim_active_workspace_mismatch");
 
+  const concurrentClaimCode = await provisionClaim(
+    "org_alpha",
+    "dev_pair_concurrent",
+    "provision-pair-concurrent",
+  );
   const concurrentPayload = {
     organizationId: "org_alpha",
     deviceId: "dev_pair_concurrent",
-    name: "Concurrent Pair",
-    deviceSecret: "concurrent-device-pairing-secret-000001",
+    claimCode: concurrentClaimCode,
   };
   const concurrentHeaders = {
     Authorization: `Bearer ${token}`,
@@ -1809,6 +3018,63 @@ test("pairing idempotency is tenant scoped, concurrency safe, and defaults QR cl
     1,
   );
 
+  const revokedReplayClaimCode = await provisionClaim(
+    "org_alpha",
+    "dev_pair_revoked_replay",
+    "provision-pair-revoked-replay",
+  );
+  const revokedReplayPayload = {
+    organizationId: "org_alpha",
+    deviceId: "dev_pair_revoked_replay",
+    claimCode: revokedReplayClaimCode,
+  };
+  const revokedReplayHeaders = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": "pair-before-revoke",
+  };
+  const pairedBeforeRevoke = await requestJson("/api/v1/devices/pair", {
+    method: "POST",
+    headers: revokedReplayHeaders,
+    body: JSON.stringify(revokedReplayPayload),
+  });
+  assert.equal(pairedBeforeRevoke.response.status, 200, JSON.stringify(pairedBeforeRevoke.body));
+  const revoked = await requestJson("/api/v1/devices/dev_pair_revoked_replay/revoke", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": "revoke-paired-replay-device",
+    },
+  });
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  const beforeStaleReplay = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const staleReplay = await requestJson("/api/v1/devices/pair", {
+    method: "POST",
+    headers: revokedReplayHeaders,
+    body: JSON.stringify(revokedReplayPayload),
+  });
+  assert.notEqual(staleReplay.response.status, 200, "a revoked authority must invalidate the old pairing receipt");
+  assert.equal(staleReplay.body.code, "device_claim_revoked");
+  const afterStaleReplay = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  assert.equal(
+    afterStaleReplay.auditLogs.filter(
+      (entry) => entry.action === "device.pair" && entry.resourceId === "dev_pair_revoked_replay",
+    ).length,
+    beforeStaleReplay.auditLogs.filter(
+      (entry) => entry.action === "device.pair" && entry.resourceId === "dev_pair_revoked_replay",
+    ).length,
+    "a stale replay must not append another pairing audit",
+  );
+  assert.equal(
+    afterStaleReplay.notifications.filter(
+      (notification) => notification.metadata?.deviceId === "dev_pair_revoked_replay",
+    ).length,
+    beforeStaleReplay.notifications.filter(
+      (notification) => notification.metadata?.deviceId === "dev_pair_revoked_replay",
+    ).length,
+    "a stale replay must not enqueue another pairing notification",
+  );
+
   const provisioned = await requestJson("/api/v1/devices/provision-qr", {
     method: "POST",
     headers: {
@@ -1820,7 +3086,6 @@ test("pairing idempotency is tenant scoped, concurrency safe, and defaults QR cl
       organizationId: "org_alpha",
       deviceId: "dev_pair_qr",
       name: "QR Pair",
-      deviceSecret: "qr-provisioning-device-secret-000001",
     }),
   });
   assert.equal(provisioned.response.status, 201, JSON.stringify(provisioned.body));
@@ -1833,6 +3098,7 @@ test("pairing idempotency is tenant scoped, concurrency safe, and defaults QR cl
     },
     body: JSON.stringify({
       deviceId: "dev_pair_qr",
+      organizationId: "org_alpha",
       claimCode: provisioned.body.claim.claimCode,
     }),
   });
@@ -1846,14 +3112,18 @@ test("device enrollment and two-phase server-generated credential rotation never
   const token = await loginPlatformAdmin();
   const oversized = await requestJson("/api/v1/devices/pair", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       deviceId: "dev_oversized_secret",
       organizationId: "org_alpha",
       deviceSecret: "x".repeat(96),
     }),
   });
-  assert.equal(oversized.response.status, 400, "backend secret bounds must match firmware capacity");
+  assert.equal(oversized.response.status, 400, "claim must reject every client-supplied credential");
+  assert.equal(oversized.body.code, "device_pairing_field_forbidden");
 
   const bluetooth = await requestJson("/api/v1/devices/pair", {
     method: "POST",
@@ -1864,14 +3134,28 @@ test("device enrollment and two-phase server-generated credential rotation never
     },
     body: JSON.stringify({
       deviceId: "dev_bluetooth_forbidden",
-      name: "Unsupported Bluetooth Device",
       organizationId: "org_alpha",
-      deviceSecret: "bluetooth-must-not-create-a-device",
+      claimCode: "unused-claim-code",
       connectionMethod: "Bluetooth",
     }),
   });
   assert.equal(bluetooth.response.status, 400, "pairing must reject Bluetooth until a real BLE contract exists");
   assert.equal(bluetooth.body.code, "device_pairing_method_unsupported");
+
+  const provisioned = await requestJson("/api/v1/devices/provision-qr", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "provision-enrolled-device",
+    },
+    body: JSON.stringify({
+      deviceId: "dev_enrolled",
+      organizationId: "org_alpha",
+      name: "Enrolled Device",
+    }),
+  });
+  assert.equal(provisioned.response.status, 201, JSON.stringify(provisioned.body));
 
   const pairHeaders = {
     Authorization: `Bearer ${token}`,
@@ -1880,9 +3164,9 @@ test("device enrollment and two-phase server-generated credential rotation never
   };
   const pairPayload = {
     deviceId: "dev_enrolled",
-    name: "Enrolled Device",
     organizationId: "org_alpha",
-    deviceSecret: secrets.enrolled,
+    claimCode: provisioned.body.claim.claimCode,
+    connectionMethod: "Manual",
   };
   const enrolled = await requestJson("/api/v1/devices/pair", {
     method: "POST",
@@ -1890,6 +3174,21 @@ test("device enrollment and two-phase server-generated credential rotation never
     body: JSON.stringify(pairPayload),
   });
   assert.equal(enrolled.response.status, 200, JSON.stringify(enrolled.body));
+  assert.deepEqual(Object.keys(enrolled.body).sort(), ["device", "pairing"]);
+  assert.deepEqual(Object.keys(enrolled.body.device).sort(), [
+    "connected",
+    "id",
+    "name",
+    "online",
+    "organizationId",
+    "ownerUserId",
+    "ownershipState",
+    "pairedUserId",
+    "status",
+    "type",
+    "updatedAt",
+    "connectionMethod",
+  ].sort());
   assert.equal(enrolled.body.device.secret, undefined);
   assert.equal(enrolled.body.device.secretHash, undefined);
   assert.equal(enrolled.body.device.deviceSecret, undefined);
@@ -1914,7 +3213,7 @@ test("device enrollment and two-phase server-generated credential rotation never
   const mismatchedReplay = await requestJson("/api/v1/devices/pair", {
     method: "POST",
     headers: pairHeaders,
-    body: JSON.stringify({ ...pairPayload, name: "A different request" }),
+    body: JSON.stringify({ ...pairPayload, connectionMethod: "QR" }),
   });
   assert.equal(mismatchedReplay.response.status, 409, "one key cannot be reused for a different pairing payload");
   assert.equal(mismatchedReplay.body.code, "idempotency_key_reused");
@@ -1941,28 +3240,23 @@ test("device enrollment and two-phase server-generated credential rotation never
   await esp.opened;
   const initialAuth = await authenticateDevice(esp, "dev_enrolled", secrets.enrolled);
 
-  const onlinePair = await requestJson("/api/v1/devices/pair", {
+  const onlineDevice = await requestJson("/api/v1/devices/dev_enrolled", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(onlineDevice.response.status, 200, JSON.stringify(onlineDevice.body));
+  assert.equal(onlineDevice.body.device.online, true, "online state requires authenticated WSS presence");
+
+  const consumedClaim = await requestJson("/api/v1/devices/pair", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      "Idempotency-Key": "pair-enrolled-online",
+      "Idempotency-Key": "pair-enrolled-consumed-claim",
     },
     body: JSON.stringify(pairPayload),
   });
-  assert.equal(onlinePair.response.status, 200, JSON.stringify(onlinePair.body));
-  assert.deepEqual(onlinePair.body.pairing, {
-    outcome: "success",
-    presence: "online",
-    onlineConfirmed: true,
-    authenticatedTransport: "wss",
-  });
-  const afterOnlinePair = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
-  const onlinePairNotifications = afterOnlinePair.notifications.filter(
-    (notification) => notification.metadata?.deviceId === "dev_enrolled" && notification.metadata?.pairingOutcome === "success",
-  );
-  assert.equal(onlinePairNotifications.length, 1);
-  assert.equal(onlinePairNotifications[0].type, "success", "success requires an authenticated live WSS socket");
+  assert.equal(consumedClaim.response.status, 409, "a one-time claim cannot create a second pairing mutation");
+  assert.equal(consumedClaim.body.code, "device_claim_state_invalid");
 
   const operatorSecret = await requestJson("/api/v1/devices/dev_enrolled/rotate-secret", {
     method: "POST",
@@ -2131,13 +3425,21 @@ test("device enrollment and two-phase server-generated credential rotation never
   assert.equal(recoveredAuth.accepted.rotationState, "");
   const activeScan = await requestJson("/api/v1/scans/start", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "rotation-reconnect-active-scan",
+    },
     body: JSON.stringify({ patientId: "pat_alpha", deviceId: "dev_enrolled", mode: "heart" }),
   });
   assert.equal(activeScan.response.status, 201, JSON.stringify(activeScan.body));
   const transferred = await requestJson("/api/v1/devices/dev_enrolled/transfer", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "transfer-enrolled-to-beta",
+    },
     body: JSON.stringify({ organizationId: "org_beta", ownerUserId: "usr_admin_beta" }),
   });
   assert.equal(transferred.response.status, 200, JSON.stringify(transferred.body));
@@ -2185,8 +3487,12 @@ test("failed candidate persistence rolls rotation back to the old-only credentia
   assert.equal(rolledBack.body.device.credentialRotation.state, "rolled_back");
   assert.equal(rolledBack.body.device.credentialRotation.confirmed, false);
   assert.equal(esp.socket.readyState, WebSocket.OPEN, "rollback must keep the old authenticated session alive");
-  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
-  const device = persisted.devices.find((item) => item.id === "dev_alpha");
+  const { device, persisted } = await waitForPersistedDevice(
+    "dev_alpha",
+    (candidate) =>
+      candidate.credentialRotation?.state === "rolled_back" &&
+      candidate.credentialRotation?.nextSecretHash === "",
+  );
   assert.equal(device.secretHash, canonicalDeviceSecretHash(secrets.alpha));
   assert.equal(device.credentialRotation.nextSecretHash, "");
   assert.equal(
@@ -2215,6 +3521,101 @@ test("device command lifecycle requires canonical delivery and correlated device
     "Content-Type": "application/json",
     "Idempotency-Key": "device-command-wifi-status-001",
   };
+  const openedSetup = await requestJson(
+    "/api/v1/devices/dev_alpha_peer/setup-session",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+    },
+  );
+  assert.equal(openedSetup.response.status, 200, JSON.stringify(openedSetup.body));
+  assert.equal(openedSetup.body.setup?.protocolVersion, 2);
+  const openSetupCommand = await esp.nextJson();
+  assert.equal(openSetupCommand.type, "wifi.setup.open");
+  assert.deepEqual(openSetupCommand.payload, {});
+  assert.equal(openSetupCommand.deviceId, undefined);
+  assert.doesNotMatch(
+    JSON.stringify(openSetupCommand),
+    /password|secret|proofOfPossession|ssid/i,
+    "the remote setup-open command must never carry Wi-Fi or device credentials",
+  );
+  const wifiCredential = "clinic-low-entropy-password";
+  const beforeRemoteWifiUpdate = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  const rejectedRemoteWifiUpdate = await requestJson(
+    "/api/v1/devices/dev_alpha_peer/commands",
+    {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Idempotency-Key": "remote-wifi-update-must-not-persist",
+      },
+      body: JSON.stringify({
+        type: "wifi.update",
+        payload: { ssid: "Clinic WiFi", password: wifiCredential },
+      }),
+    },
+  );
+  assert.equal(rejectedRemoteWifiUpdate.response.status, 409, JSON.stringify(rejectedRemoteWifiUpdate.body));
+  assert.equal(rejectedRemoteWifiUpdate.body.code, "device_wifi_update_local_setup_required");
+  assert.equal(rejectedRemoteWifiUpdate.body.details?.setupFlow, "secure_setup_ap");
+  await assert.rejects(
+    () => esp.nextJson(150),
+    /timed out waiting for WebSocket message/,
+    "a remote Wi-Fi credential must never reach the device transport",
+  );
+  const afterRemoteWifiUpdate = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  assert.equal(afterRemoteWifiUpdate.deviceCommands.length, beforeRemoteWifiUpdate.deviceCommands.length);
+  assert.equal(afterRemoteWifiUpdate.idempotencyKeys.length, beforeRemoteWifiUpdate.idempotencyKeys.length);
+  assert.equal(afterRemoteWifiUpdate.auditLogs.length, beforeRemoteWifiUpdate.auditLogs.length);
+  assert.doesNotMatch(
+    JSON.stringify(afterRemoteWifiUpdate),
+    new RegExp(wifiCredential, "i"),
+    "a rejected Wi-Fi credential must not enter the durable database",
+  );
+  const specializedCommands = new Map([
+    ["device.revoke", "/v1/devices/{deviceId}/revoke"],
+    ["device.rotate_secret", "/v1/devices/{deviceId}/rotate-secret"],
+    ["ota.update", "/v1/devices/{deviceId}/ota"],
+    ["audio.session.start", "/v1/scans/start"],
+    ["audio.session.stop", "/v1/scans/{scanId}/stop"],
+  ]);
+  const beforeSpecializedRejections = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  for (const [type, specializedRoute] of specializedCommands) {
+    const rejected = await requestJson("/api/v1/devices/dev_alpha_peer/commands", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Idempotency-Key": `generic-bypass-${type.replace(/[^a-z0-9]+/gi, "-")}`,
+      },
+      body: JSON.stringify({ type, payload: {} }),
+    });
+    assert.equal(rejected.response.status, 409, JSON.stringify(rejected.body));
+    assert.equal(rejected.body.code, "device_command_specialized_route_required");
+    assert.equal(rejected.body.details?.commandType, type);
+    assert.equal(rejected.body.details?.specializedRoute, specializedRoute);
+  }
+  await assert.rejects(
+    () => esp.nextJson(150),
+    /timed out waiting for WebSocket message/,
+    "a rejected specialized command must never reach the device transport",
+  );
+  const afterSpecializedRejections = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
+  );
+  for (const type of specializedCommands.keys()) {
+    assert.equal(
+      afterSpecializedRejections.deviceCommands.filter((command) => command.type === type).length,
+      beforeSpecializedRejections.deviceCommands.filter((command) => command.type === type).length,
+      `the generic endpoint must not reserve a ${type} lifecycle command`,
+    );
+  }
   const created = await requestJson("/api/v1/devices/dev_alpha_peer/commands", {
     method: "POST",
     headers,
@@ -2296,6 +3697,83 @@ test("device command lifecycle requires canonical delivery and correlated device
   );
   assert.equal(terminal.code, "OK", "a terminal command must not regress on a late status replay");
 
+  const concurrentHeaders = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": "device-command-concurrent-reservation-001",
+  };
+  const concurrentPayload = { type: "wifi.status", payload: { probe: "concurrent" } };
+  const concurrentResponses = await Promise.all([
+    requestJson("/api/v1/devices/dev_alpha_peer/commands", {
+      method: "POST",
+      headers: concurrentHeaders,
+      body: JSON.stringify(concurrentPayload),
+    }),
+    requestJson("/api/v1/devices/dev_alpha_peer/commands", {
+      method: "POST",
+      headers: concurrentHeaders,
+      body: JSON.stringify(concurrentPayload),
+    }),
+  ]);
+  assert.deepEqual(concurrentResponses.map(({ response }) => response.status), [202, 202]);
+  assert.equal(
+    concurrentResponses[0].body.command.id,
+    concurrentResponses[1].body.command.id,
+    "concurrent retries must resolve to one durable command reservation",
+  );
+  assert.equal(
+    concurrentResponses.filter(({ body }) => body.idempotent === true).length,
+    1,
+  );
+  const concurrentWireCommand = await esp.nextJson();
+  assert.equal(concurrentWireCommand.id, concurrentResponses[0].body.command.id);
+  assert.equal(concurrentWireCommand.protocolVersion, 1);
+  await assert.rejects(
+    () => esp.nextJson(150),
+    /timed out waiting for WebSocket message/,
+    "the atomic reservation must prevent duplicate transport delivery",
+  );
+  const commandMismatch = await requestJson("/api/v1/devices/dev_alpha_peer/commands", {
+    method: "POST",
+    headers: concurrentHeaders,
+    body: JSON.stringify({ type: "wifi.status", payload: { probe: "different" } }),
+  });
+  assert.equal(commandMismatch.response.status, 409, JSON.stringify(commandMismatch.body));
+  assert.equal(commandMismatch.body.code, "idempotency_key_reused");
+  await confirmDeviceCommandApplied(esp, concurrentWireCommand);
+  await waitForCommandState(
+    token,
+    "dev_alpha_peer",
+    concurrentWireCommand.id,
+    "applied",
+  );
+  const commandReservationDb = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  assert.equal(
+    commandReservationDb.auditLogs.filter(
+      (entry) => entry.action === "device.command" && entry.metadata?.commandId === concurrentWireCommand.id,
+    ).length,
+    1,
+  );
+  assert.equal(
+    commandReservationDb.deviceEvents.filter(
+      (event) => event.eventType === "command.accepted" && event.payload?.commandId === concurrentWireCommand.id,
+    ).length,
+    1,
+  );
+  assert.ok(
+    commandReservationDb.deviceEvents
+      .filter((event) => event.payload?.commandId === concurrentWireCommand.id)
+      .every((event) => event.payload.protocolVersion === 1),
+    "command event receipts must retain the protocol version",
+  );
+  const commandReservationReceipt = commandReservationDb.idempotencyKeys.find(
+    (entry) =>
+      entry.operation === "device.command:dev_alpha_peer" &&
+      entry.key === concurrentHeaders["Idempotency-Key"],
+  );
+  assert.equal(commandReservationReceipt?.resourceType, "device_command_reservation");
+  assert.equal(commandReservationReceipt?.responseResource?.command?.protocolVersion, 1);
+
   const expiring = await requestJson("/api/v1/devices/dev_alpha_peer/commands", {
     method: "POST",
     headers: {
@@ -2316,6 +3794,98 @@ test("device command lifecycle requires canonical delivery and correlated device
   assert.equal(expired.body.command.state, "expired");
   assert.equal(expired.body.command.code, "COMMAND_EXPIRED");
   esp.socket.close();
+});
+
+test("startup recovery terminalizes a stranded created scan", async () => {
+  const token = await loginPlatformAdmin();
+  const recovered = await requestJson("/api/v1/scans/scan_restart_created", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(recovered.response.status, 200, JSON.stringify(recovered.body));
+  assert.equal(recovered.body.scan.status, "interrupted");
+  assert.equal(recovered.body.scan.processingStatus, "interrupted");
+  assert.equal(recovered.body.scan.aiLabel, "interrupted");
+  assert.ok(recovered.body.scan.endedAt, "restart recovery must record a terminal timestamp");
+});
+
+test("scan stop requires idempotency and rejects exact-key reuse for another scan", async () => {
+  const token = await loginPlatformAdmin();
+  const missingKey = await requestJson("/api/v1/scans/scan_restart_created/stop", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(missingKey.response.status, 400, JSON.stringify(missingKey.body));
+  assert.equal(missingKey.body.code, "idempotency_key_required");
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Idempotency-Key": "scan-stop-exact-fingerprint",
+  };
+  const first = await requestJson("/api/v1/scans/scan_restart_created/stop", {
+    method: "POST",
+    headers,
+  });
+  assert.equal(first.response.status, 200, JSON.stringify(first.body));
+  const replay = await requestJson("/api/v1/scans/scan_restart_created/stop", {
+    method: "POST",
+    headers,
+  });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.idempotent, true);
+
+  const mismatch = await requestJson("/api/v1/scans/scan_restart_recording/stop", {
+    method: "POST",
+    headers,
+  });
+  assert.equal(mismatch.response.status, 409, JSON.stringify(mismatch.body));
+  assert.equal(mismatch.body.code, "idempotency_key_reused");
+});
+
+test("scan start requires idempotency and rejects an exact-key payload mismatch", async () => {
+  const peer = openSocket("/esp");
+  await peer.opened;
+  await authenticateDevice(peer, "dev_alpha_peer", secrets.peer);
+  const token = await loginPlatformAdmin();
+  const requestBody = { patientId: "pat_alpha", deviceId: "dev_alpha_peer", mode: "heart" };
+  const missingKey = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  });
+  assert.equal(missingKey.response.status, 400, JSON.stringify(missingKey.body));
+  assert.equal(missingKey.body.code, "idempotency_key_required");
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": "scan-start-exact-fingerprint",
+  };
+  const started = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(requestBody),
+  });
+  assert.equal(started.response.status, 201, JSON.stringify(started.body));
+  const command = await peer.nextJson();
+  const replay = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(requestBody),
+  });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.idempotent, true);
+  assert.equal(replay.body.scan.id, started.body.scan.id);
+
+  const mismatch = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ ...requestBody, mode: "lung" }),
+  });
+  assert.equal(mismatch.response.status, 409, JSON.stringify(mismatch.body));
+  assert.equal(mismatch.body.code, "idempotency_key_reused");
+  sendDeviceCommandStatus(peer, command, "failed", "TEST_CLEANUP", "test cleanup");
+  await waitForScanState(token, started.body.scan.id, "interrupted");
+  peer.socket.close();
 });
 
 test("audio sessions are concurrent per device and start ACKs are durable and idempotent", async () => {
@@ -2400,6 +3970,20 @@ test("audio sessions are concurrent per device and start ACKs are durable and id
   assert.ok(boundStatus.patientId);
   assert.ok(boundStatus.deviceId);
   assert.ok(boundStatus.sessionId);
+  for (const privateField of [
+    "esp",
+    "wsEsp",
+    "udpEsp",
+    "listeners",
+    "udpPort",
+    "httpPort",
+  ]) {
+    assert.equal(
+      Object.hasOwn(boundStatus, privateField),
+      false,
+      `authenticated listeners must not receive infrastructure field ${privateField}`,
+    );
+  }
   const boundMetadata = await listener.nextJson();
   assert.equal(boundMetadata.type, "audio.session");
   assert.equal(boundMetadata.scanId, boundStatus.scanId);
@@ -2463,7 +4047,10 @@ test("audio sessions are concurrent per device and start ACKs are durable and id
   for (const scanId of [alphaStarted.body.scan.id, betaStarted.body.scan.id]) {
     const stopped = await requestJson(`/api/v1/scans/${encodeURIComponent(scanId)}/stop`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": `audio-stop-concurrent-${scanId}`,
+      },
     });
     assert.equal(stopped.response.status, 200, JSON.stringify(stopped.body));
     assert.equal(stopped.body.scan.status, "completed");
@@ -2507,6 +4094,123 @@ test("a failed start ACK interrupts only its matching scan and releases the devi
   const replacementCommand = await peer.nextJson();
   sendDeviceCommandStatus(peer, replacementCommand, "failed", "TEST_CLEANUP", "test cleanup");
   await waitForScanState(token, replacement.body.scan.id, "interrupted");
+  peer.socket.close();
+});
+
+test("an authenticated audio.failed event terminalizes only its bound active scan", async () => {
+  const peer = openSocket("/esp");
+  await peer.opened;
+  await authenticateDevice(peer, "dev_alpha_peer", secrets.peer);
+  const token = await loginPlatformAdmin();
+  const started = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "audio-runtime-failure-terminalizes-scan",
+    },
+    body: JSON.stringify({ patientId: "pat_alpha", deviceId: "dev_alpha_peer", mode: "heart" }),
+  });
+  assert.equal(started.response.status, 201, JSON.stringify(started.body));
+  const command = await peer.nextJson();
+  await confirmDeviceCommandApplied(peer, command);
+  await waitForCommandState(token, "dev_alpha_peer", command.id, "applied");
+  peer.socket.send(encodeAudioFrameV2({
+    sessionId: command.payload.sessionId,
+    scanId: command.payload.scanId,
+    sequence: 0,
+    timestampMs: Date.now(),
+    sampleCount: 128,
+    flags: ["start"],
+    payload: pcmPacket(),
+  }));
+  await waitForScanState(token, started.body.scan.id, "recording");
+
+  peer.socket.send(JSON.stringify({
+    protocolVersion: 1,
+    type: "audio.failed",
+    deviceId: "dev_alpha_peer",
+    scanId: started.body.scan.id,
+    sessionId: command.payload.sessionId,
+    audioStatus: "failed",
+    code: "I2S_CAPTURE_FAILED",
+    detail: "i2s capture interrupted; session was closed",
+  }));
+
+  const interrupted = await waitForScanState(token, started.body.scan.id, "interrupted");
+  assert.equal(interrupted.processingStatus, "interrupted");
+  assert.match(interrupted.aiSummary, /I2S_CAPTURE_FAILED|i2s capture interrupted/i);
+  peer.socket.close();
+});
+
+test("a stop applied ACK remains nonterminal until scan finalization is durable", async () => {
+  fs.rmSync(scanStopFinalizeReadyPath, { force: true });
+  fs.rmSync(scanStopFinalizeReleasePath, { force: true });
+  const peer = openSocket("/esp");
+  await peer.opened;
+  await authenticateDevice(peer, "dev_alpha_peer", secrets.peer);
+  const token = await loginPlatformAdmin();
+  const started = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "audio-stop-finalize-before-ack-start",
+    },
+    body: JSON.stringify({ patientId: "pat_alpha", deviceId: "dev_alpha_peer", mode: "heart" }),
+  });
+  assert.equal(started.response.status, 201, JSON.stringify(started.body));
+  const startCommand = await peer.nextJson();
+  await confirmDeviceCommandApplied(peer, startCommand);
+  await waitForCommandState(token, "dev_alpha_peer", startCommand.id, "applied");
+  peer.socket.send(encodeAudioFrameV2({
+    sessionId: startCommand.payload.sessionId,
+    scanId: startCommand.payload.scanId,
+    sequence: 0,
+    timestampMs: Date.now(),
+    sampleCount: 128,
+    flags: ["start"],
+    payload: pcmPacket(),
+  }));
+  await waitForScanState(token, started.body.scan.id, "recording");
+
+  const stopRequest = requestJson(`/api/v1/scans/${encodeURIComponent(started.body.scan.id)}/stop`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": "audio-stop-finalize-before-ack-stop",
+    },
+  });
+  const stopCommand = await peer.nextJson();
+  assert.equal(stopCommand.type, "audio.session.stop");
+  sendDeviceCommandStatus(peer, stopCommand, "acknowledged", "COMMAND_ACKNOWLEDGED");
+  sendDeviceCommandStatus(peer, stopCommand, "applying", "COMMAND_APPLYING");
+  sendDeviceCommandStatus(peer, stopCommand, "applied", "OK", "device stopped capture");
+  try {
+    await waitForFile(scanStopFinalizeReadyPath);
+    await delay(50);
+    const beforeRelease = await requestJson(
+      `/api/v1/devices/dev_alpha_peer/commands/${encodeURIComponent(stopCommand.id)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(beforeRelease.response.status, 200, JSON.stringify(beforeRelease.body));
+    assert.notEqual(
+      beforeRelease.body.command.state,
+      "applied",
+      "the stop command must not become terminal before durable scan finalization",
+    );
+  } finally {
+    fs.writeFileSync(scanStopFinalizeReleasePath, "release", "utf8");
+  }
+
+  const stopped = await stopRequest;
+  assert.equal(stopped.response.status, 200, JSON.stringify(stopped.body));
+  assert.equal(stopped.body.scan.status, "completed");
+  await waitForCommandState(token, "dev_alpha_peer", stopCommand.id, "applied");
+  const durableScan = await requestJson(`/api/v1/scans/${encodeURIComponent(started.body.scan.id)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(durableScan.body.scan.status, "completed");
   peer.socket.close();
 });
 
@@ -2558,7 +4262,11 @@ test("revoking a device immediately closes its authenticated socket", async () =
   const token = await loginPlatformAdmin();
   const recording = await requestJson("/api/v1/scans/start", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "revoke-active-audio-scan",
+    },
     body: JSON.stringify({ patientId: "pat_alpha", deviceId: "dev_alpha", mode: "heart" }),
   });
   assert.equal(recording.response.status, 201, JSON.stringify(recording.body));
@@ -2567,7 +4275,10 @@ test("revoking a device immediately closes its authenticated socket", async () =
 
   const revoked = await requestJson("/api/v1/devices/dev_alpha/revoke", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Idempotency-Key": "revoke-dev-alpha-once",
+    },
   });
   assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
   assert.equal(revoked.body.device.secretHash, undefined, "credential-equivalent verification material must stay private");
@@ -2619,7 +4330,7 @@ test("recording binds protocol v2 identity, rejects replay, and ignores unbound 
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const crossWorkspace = await requestJson("/api/v1/scans/start", {
     method: "POST",
-    headers,
+    headers: { ...headers, "Idempotency-Key": "audio-cross-workspace-denied" },
     body: JSON.stringify({ patientId: "pat_alpha", deviceId: "dev_beta", mode: "heart" }),
   });
   assert.equal(crossWorkspace.response.status, 403, "scan device and patient must belong to the same workspace");
@@ -2632,7 +4343,7 @@ test("recording binds protocol v2 identity, rejects replay, and ignores unbound 
 
   const started = await requestJson("/api/v1/scans/start", {
     method: "POST",
-    headers,
+    headers: { ...headers, "Idempotency-Key": "audio-v2-binding-active" },
     body: JSON.stringify({ patientId: "pat_beta", deviceId: "dev_beta", mode: "heart" }),
   });
   assert.equal(started.response.status, 201, JSON.stringify(started.body));
@@ -2682,6 +4393,7 @@ test("recording binds protocol v2 identity, rejects replay, and ignores unbound 
   const sessionCommand = await beta.nextJson();
   assert.equal(sessionCommand.type, "audio.session.start");
   assert.equal(sessionCommand.payload.protocolVersion, 2);
+  assert.equal(sessionCommand.payload.frameEncoding, "shcare_audio_v2");
   assert.equal(sessionCommand.payload.scanId, started.body.scan.id);
   assert.equal(sessionCommand.payload.workspaceId, "org_beta");
   assert.equal(sessionCommand.payload.patientId, "pat_beta");

@@ -330,7 +330,7 @@ export function ExportDataDialog({
             <Dialog.Close
               aria-label="Đóng hộp thoại xuất dữ liệu"
               disabled={isSubmitting}
-              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </Dialog.Close>
@@ -346,7 +346,7 @@ export function ExportDataDialog({
                   return (
                     <label
                       key={option.value}
-                      className={`flex min-h-[72px] cursor-pointer items-start gap-2 rounded-lg border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring ${
+                      className={`flex min-h-[72px] cursor-pointer items-start gap-2 rounded-lg border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring motion-reduce:transition-none ${
                         selected
                           ? "border-primary bg-primary/8 text-foreground"
                           : "border-border bg-background text-muted-foreground hover:bg-muted/40"
@@ -419,7 +419,7 @@ export function ExportDataDialog({
                 ].map(([key, label]) => (
                   <label
                     key={key}
-                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-muted/40"
+                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-muted/40 motion-reduce:transition-none"
                   >
                     <input
                       type="checkbox"
@@ -499,7 +499,7 @@ export function ExportDataDialog({
                 <button
                   type="button"
                   disabled={isSubmitting}
-                  className="min-h-11 rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-28"
+                  className="min-h-11 rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-28"
                 >
                   Hủy
                 </button>
@@ -507,7 +507,7 @@ export function ExportDataDialog({
               <button
                 type="submit"
                 disabled={isSubmitting || !isOnline}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-48"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-48"
               >
                 {isSubmitting ? (
                   <Loader2

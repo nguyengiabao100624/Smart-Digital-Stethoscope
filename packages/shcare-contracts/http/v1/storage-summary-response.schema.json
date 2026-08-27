@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/storage-summary-response.schema.json",
+  "title": "Shcare storage summary response",
+  "description": "Tenant-authorized server storage measurements. Device-local cache is measured by the native client and is never inferred by the backend.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["storage"],
+  "properties": {
+    "storage": {
+      "$ref": "#/$defs/storageSummary"
+    }
+  },
+  "$defs": {
+    "storageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "autoSync",
+        "cloudBackup",
+        "localUsedMb",
+        "localTotalMb",
+        "cloudUsedMb",
+        "cloudTotalMb",
+        "cacheMb",
+        "scanCount",
+        "patientCount",
+        "audioFileCount",
+        "audioUsedMb",
+        "cloudUsedBytes",
+        "audioUsedBytes",
+        "storageFileCount",
+        "updatedAt"
+      ],
+      "properties": {
+        "autoSync": {
+          "const": false,
+          "deprecated": true,
+          "description": "Compatibility field. Native synchronization is unavailable until a real sync contract is implemented."
+        },
+        "cloudBackup": {
+          "const": false,
+          "deprecated": true,
+          "description": "Compatibility field. It must not be rendered as an enabled control without a persisted provider workflow."
+        },
+        "localUsedMb": {
+          "const": 0,
+          "deprecated": true,
+          "description": "The backend cannot measure Android app-private storage."
+        },
+        "localTotalMb": {
+          "const": 0,
+          "deprecated": true,
+          "description": "The backend does not publish an invented device quota."
+        },
+        "cloudUsedMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cloudTotalMb": {
+          "const": 0,
+          "deprecated": true,
+          "description": "No provider quota is published until the provider exposes a verified quota."
+        },
+        "cacheMb": {
+          "const": 0,
+          "deprecated": true,
+          "description": "Android measures and clears only its own app-private cache."
+        },
+        "scanCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "patientCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "audioFileCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "audioUsedMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cloudUsedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "audioUsedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "storageFileCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

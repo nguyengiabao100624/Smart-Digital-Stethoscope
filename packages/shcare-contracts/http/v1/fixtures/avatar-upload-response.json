@@ -1,0 +1,18 @@
+{
+  "avatar": {
+    "fileId": "file_avatar_3c6c37e77f5e7e046418d808e6510ee5",
+    "ownerUserId": "user_avatar_owner",
+    "name": "profile.png",
+    "contentType": "image/png",
+    "byteSize": 184320,
+    "sha256": "f7d9db7f2055dd85215815fcbfa4d5b08d75fbaf503a03e1e4f61efc15eae928",
+    "downloadUrl": "/api/v1/me/avatar",
+    "uploadedAt": "2026-08-09T09:00:00.000Z"
+  },
+  "cleanup": {
+    "status": "completed",
+    "previousFileId": "file_avatar_previous"
+  },
+  "operationId": "avatar_upload_b4a8d7c9b91877cc282eadce",
+  "replayed": false
+}

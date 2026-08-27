@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-fcm-data-envelope.schema.json",
+  "title": "Shcare FCM notification data envelope",
+  "description": "Minimal FCM wake-up envelope. The backend reauthorizes the registered device against its current account, workspace and authentication session before each send or retry. Android accepts only the active encrypted user/workspace binding, ignores provider clinical copy and reloads the authenticated inbox.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "notificationId",
+    "workspaceId",
+    "userId",
+    "notificationProtocolVersion",
+    "createdAt"
+  ],
+  "properties": {
+    "notificationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "organizationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "deprecated": true,
+      "description": "Compatibility alias only. When emitted, it must equal workspaceId."
+    },
+    "userId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "notificationProtocolVersion": {
+      "const": "2"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

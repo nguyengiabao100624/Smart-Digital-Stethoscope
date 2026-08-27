@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, FileText, Search } from "lucide-react";
 import { Link } from "react-router";
 
-import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
   Card,
@@ -12,8 +11,11 @@ import {
   CardHeader,
   CardTitle,
 } from "../../../components/ui/card";
+import { DataTableShell } from "../../../components/ui/data-table-shell";
+import { FilterBar } from "../../../components/ui/filter-bar";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { PageHeader } from "../../../components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -21,7 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
-import { Skeleton } from "../../../components/ui/skeleton";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../../../components/ui/state-surface";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "../../../components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -47,20 +57,24 @@ const STATUS_LABELS: Record<string, string> = {
   interrupted: "Bị gián đoạn",
 };
 
-function statusClassName(status?: string) {
+function statusTone(status?: string): StatusTone {
   if (status === "completed") {
-    return "border-[var(--clinical-success)] text-[var(--clinical-success)]";
+    return "success";
   }
   if (status === "failed" || status === "interrupted") {
-    return "border-destructive text-destructive";
+    return "danger";
   }
   if (status === "needs_review") {
-    return "border-[var(--clinical-warning)] text-[var(--clinical-warning)]";
+    return "warning";
   }
-  if (status === "processing" || status === "uploading" || status === "queued") {
-    return "border-primary text-primary";
+  if (
+    status === "processing" ||
+    status === "uploading" ||
+    status === "queued"
+  ) {
+    return "info";
   }
-  return "border-border text-muted-foreground";
+  return "neutral";
 }
 
 function formatScanTime(scan: Scan) {
@@ -81,9 +95,9 @@ function formatAiResult(scan: Scan) {
 
 function ScanStatusBadge({ status }: { status?: string }) {
   return (
-    <Badge variant="outline" className={statusClassName(status)}>
+    <StatusBadge tone={statusTone(status)}>
       {STATUS_LABELS[status || ""] || status || "Chưa xác định"}
-    </Badge>
+    </StatusBadge>
   );
 }
 
@@ -128,115 +142,110 @@ export default function RecordsPage() {
 
   return (
     <div className="space-y-5">
-      <header className="clinical-page-header">
-        <h1 className="clinical-page-title flex items-center gap-2 text-foreground">
-          <FileText aria-hidden="true" size={22} />
-          Lượt đo & hồ sơ
-        </h1>
-        <p className="clinical-page-subtitle mt-1 text-sm text-muted-foreground">
-          Tra cứu dữ liệu thật trong workspace hiện tại. Bộ lọc và phân trang được xử lý bởi backend.
-        </p>
-      </header>
+      <PageHeader
+        title="Lượt đo & hồ sơ"
+        description="Tra cứu dữ liệu thật trong workspace hiện tại. Bộ lọc và phân trang được xử lý bởi backend."
+        icon={<FileText aria-hidden="true" className="size-[1.375rem]" />}
+      />
 
-      <Card className="shadow-sm">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base">Tìm kiếm và lọc</CardTitle>
-          <CardDescription>
-            Nhập từ khóa rồi chọn Tìm kiếm để tránh gửi yêu cầu khi đang gõ.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_13rem_13rem_auto]"
-            onSubmit={submitSearch}
+      <FilterBar
+        aria-label="Tìm kiếm và lọc lượt đo"
+        title="Tìm kiếm và lọc"
+        description="Nhập từ khóa rồi chọn Tìm kiếm để tránh gửi yêu cầu khi đang gõ."
+        contentClassName="sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_13rem_13rem_auto]"
+        onSubmit={submitSearch}
+      >
+        <div className="space-y-2 sm:col-span-2 xl:col-span-1">
+          <Label htmlFor="portal-record-search">Từ khóa</Label>
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              id="portal-record-search"
+              name="portalRecordSearch"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              className="min-h-11 pl-10"
+              placeholder="Mã lượt đo, bệnh nhân..."
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="portal-record-status">Trạng thái</Label>
+          <Select
+            value={status || "all"}
+            onValueChange={(value) => {
+              setStatus(value === "all" ? "" : value);
+              setPage(1);
+            }}
           >
-            <div className="space-y-2 sm:col-span-2 xl:col-span-1">
-              <Label htmlFor="portal-record-search">Từ khóa</Label>
-              <div className="relative">
-                <Search
-                  aria-hidden="true"
-                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  id="portal-record-search"
-                  name="portalRecordSearch"
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  className="min-h-11 pl-10"
-                  placeholder="Mã lượt đo, bệnh nhân..."
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="portal-record-status">Trạng thái</Label>
-              <Select
-                value={status || "all"}
-                onValueChange={(value) => {
-                  setStatus(value === "all" ? "" : value);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger id="portal-record-status" className="min-h-11">
-                  <SelectValue placeholder="Tất cả trạng thái" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                  <SelectItem value="needs_review">Cần xem lại</SelectItem>
-                  <SelectItem value="completed">Hoàn tất</SelectItem>
-                  <SelectItem value="processing">Đang xử lý</SelectItem>
-                  <SelectItem value="failed">Thất bại</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="portal-record-sort">Sắp xếp</Label>
-              <Select
-                value={sort}
-                onValueChange={(value) => {
-                  setSort(value);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger id="portal-record-sort" className="min-h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="createdAt:desc">Mới nhất trước</SelectItem>
-                  <SelectItem value="createdAt:asc">Cũ nhất trước</SelectItem>
-                  <SelectItem value="status:asc">Trạng thái A–Z</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" className="min-h-11 self-end">
-              <Search aria-hidden="true" />
-              Tìm kiếm
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+            <SelectTrigger id="portal-record-status" className="min-h-11">
+              <SelectValue placeholder="Tất cả trạng thái" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả trạng thái</SelectItem>
+              <SelectItem value="needs_review">Cần xem lại</SelectItem>
+              <SelectItem value="completed">Hoàn tất</SelectItem>
+              <SelectItem value="processing">Đang xử lý</SelectItem>
+              <SelectItem value="failed">Thất bại</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="portal-record-sort">Sắp xếp</Label>
+          <Select
+            value={sort}
+            onValueChange={(value) => {
+              setSort(value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger id="portal-record-sort" className="min-h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="createdAt:desc">Mới nhất trước</SelectItem>
+              <SelectItem value="createdAt:asc">Cũ nhất trước</SelectItem>
+              <SelectItem value="status:asc">Trạng thái A–Z</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button type="submit" className="min-h-11 self-end">
+          <Search aria-hidden="true" />
+          Tìm kiếm
+        </Button>
+      </FilterBar>
 
       {scans.isPending ? (
-        <RecordsLoading />
+        <LoadingState label="Đang tải danh sách lượt đo..." rows={4} />
       ) : scans.error ? (
-        <RecordsError error={scans.error} retry={() => void scans.refetch()} />
+        <ErrorState
+          title="Không thể tải danh sách lượt đo"
+          error={scans.error}
+          retry={() => void scans.refetch()}
+        />
       ) : !rows.length ? (
-        <Card role="status" className="shadow-sm">
-          <CardContent className="space-y-4 p-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              Không có lượt đo phù hợp trên trang này.
-            </p>
-            {page > 1 ? (
+        <EmptyState
+          title="Không có lượt đo phù hợp"
+          description="Không có lượt đo phù hợp trên trang này."
+          action={
+            page > 1 ? (
               <Button variant="outline" onClick={() => setPage(page - 1)}>
                 <ChevronLeft aria-hidden="true" />
                 Quay lại trang trước
               </Button>
-            ) : null}
-          </CardContent>
-        </Card>
+            ) : undefined
+          }
+        />
       ) : (
         <>
-          <Card className="hidden overflow-hidden shadow-sm md:block">
-            <Table>
+          <DataTableShell
+            label="Danh sách lượt đo trong workspace hiện tại"
+            className="hidden md:block"
+          >
+            <Table className="min-w-[52rem]">
               <caption className="sr-only">
                 Danh sách lượt đo trong workspace hiện tại
               </caption>
@@ -278,7 +287,7 @@ export default function RecordsPage() {
                 ))}
               </TableBody>
             </Table>
-          </Card>
+          </DataTableShell>
 
           <div className="grid gap-3 md:hidden">
             {rows.map((scan) => (
@@ -287,7 +296,9 @@ export default function RecordsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <CardTitle className="truncate text-base">
-                        {scan.patient?.name || scan.patientId || "Chưa xác định"}
+                        {scan.patient?.name ||
+                          scan.patientId ||
+                          "Chưa xác định"}
                       </CardTitle>
                       <CardDescription className="mt-1 font-mono">
                         {scan.id}
@@ -299,18 +310,28 @@ export default function RecordsPage() {
                 <CardContent className="space-y-3">
                   <dl className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <dt className="text-xs text-muted-foreground">Thời gian</dt>
-                      <dd className="mt-1 text-foreground">{formatScanTime(scan)}</dd>
+                      <dt className="text-xs text-muted-foreground">
+                        Thời gian
+                      </dt>
+                      <dd className="mt-1 text-foreground">
+                        {formatScanTime(scan)}
+                      </dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-muted-foreground">Thiết bị</dt>
+                      <dt className="text-xs text-muted-foreground">
+                        Thiết bị
+                      </dt>
                       <dd className="mt-1 break-all font-mono text-xs text-foreground">
                         {scan.deviceId || "—"}
                       </dd>
                     </div>
                     <div className="col-span-2">
-                      <dt className="text-xs text-muted-foreground">Chất lượng tín hiệu</dt>
-                      <dd className="mt-1 text-foreground">{formatAiResult(scan)}</dd>
+                      <dt className="text-xs text-muted-foreground">
+                        Chất lượng tín hiệu
+                      </dt>
+                      <dd className="mt-1 text-foreground">
+                        {formatAiResult(scan)}
+                      </dd>
                     </div>
                   </dl>
                   <Button asChild variant="outline" className="min-h-11 w-full">
@@ -363,36 +384,5 @@ export default function RecordsPage() {
         </nav>
       ) : null}
     </div>
-  );
-}
-
-function RecordsLoading() {
-  return (
-    <Card role="status" aria-label="Đang tải danh sách lượt đo" className="shadow-sm">
-      <CardContent className="space-y-3 p-5">
-        <span className="sr-only">Đang tải danh sách lượt đo...</span>
-        {[0, 1, 2, 3].map((item) => (
-          <Skeleton key={item} className="h-12 w-full motion-reduce:animate-none" />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function RecordsError({ error, retry }: { error: unknown; retry: () => void }) {
-  return (
-    <Card role="alert" className="border-destructive/40 shadow-sm">
-      <CardContent className="flex flex-wrap items-center gap-3 p-5">
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-foreground">Không thể tải danh sách lượt đo</p>
-          <p className="mt-1 text-sm text-destructive">
-            {error instanceof Error ? error.message : "Yêu cầu backend thất bại."}
-          </p>
-        </div>
-        <Button variant="outline" className="min-h-11" onClick={retry}>
-          Thử lại
-        </Button>
-      </CardContent>
-    </Card>
   );
 }

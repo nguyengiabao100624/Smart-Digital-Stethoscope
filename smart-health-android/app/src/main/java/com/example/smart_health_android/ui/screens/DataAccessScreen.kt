@@ -61,7 +61,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.collectionInfo
@@ -102,6 +102,7 @@ import com.example.smart_health_android.data.Scan
 import com.example.smart_health_android.data.formatIso
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -137,25 +138,10 @@ fun DataAccessScreen(
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.consent_title),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.defaultMinSize(48.dp, 48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.consent_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.consent_title),
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.consent_back),
                 actions = {
                     IconButton(
                         onClick = { viewModel.onAction(ConsentUiAction.Refresh) },
@@ -512,8 +498,9 @@ private fun ConsentSummary(state: ConsentUiState) {
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = stringResource(
-                        R.string.consent_summary_counts,
+                    text = pluralStringResource(
+                        R.plurals.consent_summary_counts,
+                        state.activeShareCount,
                         state.patients.size,
                         state.activeShareCount,
                     ),

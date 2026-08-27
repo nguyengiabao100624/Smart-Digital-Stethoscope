@@ -36,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -58,6 +57,7 @@ import com.example.smart_health_android.ai.SignalAnalysisUiState
 import com.example.smart_health_android.ai.SignalAnalysisViewModel
 import com.example.smart_health_android.data.SignalAnalysisStatus
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -73,16 +73,10 @@ fun AICalibrationScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.signal_analysis_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.signal_analysis_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.signal_analysis_title),
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.signal_analysis_back),
                 actions = {
                     IconButton(
                         onClick = { viewModel.onAction(SignalAnalysisUiAction.Retry) },

@@ -80,15 +80,17 @@ test("Admin and auth surfaces expose an accessible 44px theme control", async ()
   assert.match(forgotPassword, /<ThemeToggle className="absolute right-4 top-4" \/>/);
 });
 
-test("Admin semantic colors and typography derive from the shared Shcare brand", async () => {
+test("Admin semantic colors and typography preserve the deployed live palette", async () => {
   const source = await readFile(stylesPath, "utf8");
 
-  assert.match(source, /--background: var\(--shcare-background\)/);
-  assert.match(source, /--card: var\(--shcare-surface\)/);
-  assert.match(source, /--primary: var\(--shcare-color-primary\)/);
-  assert.match(source, /--border: var\(--shcare-border\)/);
+  assert.match(source, /--background:\s*#f5f7fa/);
+  assert.match(source, /--card:\s*#ffffff/);
+  assert.match(source, /--primary:\s*#0b5c9a/);
+  assert.match(source, /--secondary:\s*#00a896/);
+  assert.match(source, /--border:\s*#e2e8f0/);
+  assert.match(source, /--muted-foreground:\s*#52677a/);
   assert.match(source, /var\(--shcare-font-product, "Source Sans 3"\)/);
-  assert.doesNotMatch(source, /oklch\(/);
+  assert.match(source, /\.dark\s*\{/);
   assert.doesNotMatch(source, /\.data-table th\s*\{[\s\S]*?background:\s*#f8fafc/);
 });
 
@@ -106,5 +108,8 @@ test("local browser QA can load shared fonts and reduced motion removes choreogr
   assert.match(layout, /initial=\{shouldReduceMotion \? false/);
   assert.match(designSystem, /useReducedMotion\(\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(styles, /\.float-soft,[\s\S]*?animation: none/);
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.float-soft[\s\S]*?animation:\s*none/,
+  );
 });

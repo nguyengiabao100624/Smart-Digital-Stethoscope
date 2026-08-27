@@ -1,0 +1,11 @@
+{
+  "protocolVersion": 1,
+  "type": "event.accepted",
+  "deviceId": "dev_factory_alpha",
+  "eventType": "ota.confirmed",
+  "otaStatus": "confirmed",
+  "commandId": "cmd_ota_alpha_001",
+  "correlationId": "corr_ota_alpha_001",
+  "otaId": "cmd_ota_alpha_001",
+  "code": "DEVICE_OTA_BOOT_HEALTH_ACCEPTED"
+}

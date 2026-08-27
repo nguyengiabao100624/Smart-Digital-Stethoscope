@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 1,
+  "type": "ota.confirmed",
+  "deviceId": "dev_factory_alpha",
+  "commandId": "cmd_ota_alpha_001",
+  "correlationId": "corr_ota_alpha_001",
+  "otaId": "cmd_ota_alpha_001",
+  "otaStatus": "confirmed",
+  "firmwareVersion": "1.0.0",
+  "otaBootOutcome": "confirmed",
+  "detail": "boot health confirmed; rollback cancelled"
+}

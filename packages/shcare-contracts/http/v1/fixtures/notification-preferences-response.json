@@ -1,0 +1,37 @@
+{
+  "userId": "usr_clinician_001",
+  "workspaceId": "wsp_clinic_001",
+  "ownership": {
+    "kind": "self",
+    "userId": "usr_clinician_001"
+  },
+  "preferences": {
+    "enabled": true,
+    "doctorRequests": true,
+    "abnormalResults": true,
+    "deviceOffline": true,
+    "appointments": false,
+    "messages": true,
+    "aiUpdates": false,
+    "newLogin": true
+  },
+  "channels": {
+    "inApp": {
+      "available": true,
+      "status": "ready",
+      "reasonCode": ""
+    },
+    "email": {
+      "available": false,
+      "status": "unavailable",
+      "reasonCode": "NOTIFICATION_EMAIL_PROVIDER_UNAVAILABLE"
+    },
+    "push": {
+      "available": false,
+      "status": "unavailable",
+      "reasonCode": "PUSH_PROVIDER_UNAVAILABLE"
+    }
+  },
+  "updatedAt": "2026-07-27T08:00:00.000Z",
+  "replayed": false
+}

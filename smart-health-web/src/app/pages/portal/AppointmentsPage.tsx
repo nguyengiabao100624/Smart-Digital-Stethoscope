@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -13,11 +13,22 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  Trash2,
   UserRound,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../../components/ui/alert-dialog";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
@@ -38,8 +49,28 @@ import {
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Skeleton } from "../../../components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../../components/ui/table";
 import { Textarea } from "../../../components/ui/textarea";
 import { useAuth } from "../../context/AuthContext";
+import {
+  parseAppointmentDetailResponse,
+  parseAppointmentDeletionReceipt,
+  parseAppointmentListResponse,
+  parseAppointmentMutationOutcome,
+  parseAppointmentStaffResponse,
+  resolveAppointmentOperationAttempt,
+  type AppointmentOperation,
+  type AppointmentOperationAttempt,
+} from "../../../lib/appointment-operations";
+import { parsePatientListResponse } from "../../../lib/patient-operations";
 import {
   smartHealthApi,
   type ApiError,
@@ -91,13 +122,6 @@ const CLINICAL_MANAGE_CAPABILITIES = [
 ];
 const PERSONAL_MANAGE_CAPABILITY = "personal.appointments.manage";
 
-function createAppointmentIntentKey(operation: string, appointmentId = "new") {
-  const uniquePart =
-    globalThis.crypto?.randomUUID?.() ||
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `portal-appointment-${operation}-${appointmentId}-${uniquePart}`;
-}
-
 function toDatetimeLocal(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -139,7 +163,7 @@ function formFromAppointment(appointment: Appointment): AppointmentForm {
 }
 
 function statusOf(appointment: Appointment): AppointmentStatus {
-  return (appointment.status || "scheduled") as AppointmentStatus;
+  return appointment.status as AppointmentStatus;
 }
 
 function formatDateTime(value?: string) {
@@ -152,14 +176,14 @@ function formatDateTime(value?: string) {
 
 function statusClass(status: AppointmentStatus) {
   if (status === "cancelled" || status === "no_show") {
-    return "border-destructive/30 bg-destructive/10 text-destructive";
+    return "border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]";
   }
   if (status === "completed") {
-    return "border-[var(--clinical-success)]/30 bg-[var(--clinical-success)]/10 text-[var(--clinical-success)]";
+    return "border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]";
   }
   if (status === "confirmed")
-    return "border-primary/30 bg-primary/10 text-primary";
-  return "border-[var(--clinical-warning)]/30 bg-[var(--clinical-warning)]/10 text-[var(--clinical-warning)]";
+    return "border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]";
+  return "border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]";
 }
 
 function validateForm(mode: AppointmentFormMode, form: AppointmentForm) {
@@ -179,6 +203,13 @@ function isOffline() {
   return typeof navigator !== "undefined" && !navigator.onLine;
 }
 
+class AppointmentOperationSupersededError extends Error {
+  constructor() {
+    super("Workspace đã thay đổi; phản hồi lịch hẹn cũ đã bị bỏ qua.");
+    this.name = "AppointmentOperationSupersededError";
+  }
+}
+
 export default function AppointmentsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -190,18 +221,37 @@ export default function AppointmentsPage() {
   const canPersonalManage = capabilities.includes(PERSONAL_MANAGE_CAPABILITY);
   const canManageStaff = capabilities.includes("workspace.staff.manage");
   const canManage = canClinicalManage || canPersonalManage;
+  const previousWorkspaceRef = useRef(workspaceId);
+  const activeWorkspaceRef = useRef(workspaceId);
+  const operationEpochRef = useRef(0);
+  const workspaceChanging =
+    Boolean(previousWorkspaceRef.current) &&
+    previousWorkspaceRef.current !== workspaceId;
+  const saveAttemptRef = useRef<AppointmentOperationAttempt | null>(null);
+  const statusAttemptRef = useRef<AppointmentOperationAttempt | null>(null);
+  const cancelAttemptRef = useRef<AppointmentOperationAttempt | null>(null);
+  const deleteAttemptRef = useRef<AppointmentOperationAttempt | null>(null);
+  const formBaselineRef = useRef("");
 
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [online, setOnline] = useState(() => !isOffline());
-  const [detail, setDetail] = useState<Appointment | null>(null);
+  const [detailTargetId, setDetailTargetId] = useState("");
   const [formMode, setFormMode] = useState<AppointmentFormMode | null>(null);
   const [formTarget, setFormTarget] = useState<Appointment | null>(null);
   const [form, setForm] = useState<AppointmentForm>(defaultForm);
   const [formError, setFormError] = useState("");
+  const [discardFormOpen, setDiscardFormOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancelError, setCancelError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const formDirty = Boolean(
+    formMode &&
+      formBaselineRef.current &&
+      formBaselineRef.current !== JSON.stringify(form),
+  );
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -213,31 +263,109 @@ export default function AppointmentsPage() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    activeWorkspaceRef.current = workspaceId;
+    if (previousWorkspaceRef.current === workspaceId) return;
+    operationEpochRef.current += 1;
+    previousWorkspaceRef.current = workspaceId;
+    saveAttemptRef.current = null;
+    statusAttemptRef.current = null;
+    cancelAttemptRef.current = null;
+    deleteAttemptRef.current = null;
+    formBaselineRef.current = "";
+    setStatusFilter("");
+    setSearch("");
+    setDetailTargetId("");
+    setFormMode(null);
+    setFormTarget(null);
+    setForm(defaultForm());
+    setFormError("");
+    setDiscardFormOpen(false);
+    setCancelTarget(null);
+    setCancellationReason("");
+    setCancelError("");
+    setDeleteTarget(null);
+    setDeleteError("");
+  }, [workspaceId]);
+
+  useEffect(() => {
+    const protectDraft = (event: BeforeUnloadEvent) => {
+      if (!formDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protectDraft);
+    return () => window.removeEventListener("beforeunload", protectDraft);
+  }, [formDirty]);
+
   const appointmentsQuery = useQuery({
-    queryKey: ["portal", "appointments", workspaceId, statusFilter],
-    queryFn: () => smartHealthApi.listAppointments({ status: statusFilter }),
-    enabled: Boolean(workspaceId),
+    queryKey: [
+      "portal",
+      "workspace",
+      workspaceId,
+      "appointments",
+      statusFilter,
+    ],
+    queryFn: async () =>
+      parseAppointmentListResponse(
+        await smartHealthApi.listAppointments({ status: statusFilter }),
+        workspaceId,
+      ),
+    enabled: Boolean(workspaceId && !workspaceChanging),
     retry: false,
   });
   const patientsQuery = useQuery({
-    queryKey: ["portal", "patients", workspaceId],
-    queryFn: () => smartHealthApi.listPatients(),
-    enabled: Boolean(workspaceId && canManage),
+    queryKey: ["portal", "workspace", workspaceId, "patients"],
+    queryFn: async () => ({
+      patients: parsePatientListResponse(
+        await smartHealthApi.listPatients(),
+        workspaceId,
+      ),
+    }),
+    enabled: Boolean(workspaceId && canManage && !workspaceChanging),
     retry: false,
   });
   const staffQuery = useQuery({
-    queryKey: ["portal", "staff", workspaceId],
-    queryFn: smartHealthApi.listStaff,
-    enabled: Boolean(workspaceId && canManageStaff),
+    queryKey: ["portal", "workspace", workspaceId, "staff"],
+    queryFn: async () =>
+      parseAppointmentStaffResponse(
+        await smartHealthApi.listStaff(),
+        workspaceId,
+      ),
+    enabled: Boolean(workspaceId && canManageStaff && !workspaceChanging),
+    retry: false,
+  });
+  const detailQuery = useQuery({
+    queryKey: [
+      "portal",
+      "workspace",
+      workspaceId,
+      "appointments",
+      "detail",
+      detailTargetId,
+    ],
+    queryFn: async () =>
+      parseAppointmentDetailResponse(
+        await smartHealthApi.getAppointment(detailTargetId),
+        { workspaceId, appointmentId: detailTargetId },
+      ),
+    enabled: Boolean(
+      workspaceId && detailTargetId && !workspaceChanging,
+    ),
     retry: false,
   });
 
-  const refresh = () => {
+  const refresh = (operationWorkspaceId = workspaceId) => {
     void queryClient.invalidateQueries({
-      queryKey: ["portal", "appointments", workspaceId],
+      queryKey: [
+        "portal",
+        "workspace",
+        operationWorkspaceId,
+        "appointments",
+      ],
     });
     void queryClient.invalidateQueries({
-      queryKey: ["portal", "notifications"],
+      queryKey: ["portal", "notifications", operationWorkspaceId],
     });
   };
 
@@ -257,47 +385,90 @@ export default function AppointmentsPage() {
         );
       const validationError = validateForm(mode, payload);
       if (validationError) throw new Error(validationError);
+      const operationWorkspaceId = workspaceId;
+      const operationEpoch = operationEpochRef.current;
+      const appointmentId = appointment?.id || "new";
+      const operation: AppointmentOperation =
+        mode === "create" ? "create" : mode;
+      let requestPayload: Partial<Appointment>;
       if (mode === "create") {
-        return smartHealthApi.createAppointment(
-          {
-            patientId: payload.patientId,
-            doctorUserId: payload.doctorUserId || undefined,
-            type: payload.type,
-            startsAt: toIsoFromLocal(payload.startsAt),
-            endsAt: toIsoFromLocal(payload.endsAt),
-            location: payload.location,
-            reason: payload.reason,
-            notes: payload.notes,
-          },
-          createAppointmentIntentKey("create"),
-        );
-      }
-      if (!appointment)
-        throw new Error("Không tìm thấy lịch hẹn cần cập nhật.");
-      if (mode === "reschedule") {
-        return smartHealthApi.rescheduleAppointment(
-          appointment.id,
-          {
-            startsAt: toIsoFromLocal(payload.startsAt),
-            endsAt: toIsoFromLocal(payload.endsAt),
-            reason: payload.reason,
-          },
-          createAppointmentIntentKey("reschedule", appointment.id),
-        );
-      }
-      return smartHealthApi.updateAppointment(
-        appointment.id,
-        {
-          doctorUserId: payload.doctorUserId || undefined,
+        requestPayload = {
+          patientId: payload.patientId,
+          doctorUserId: payload.doctorUserId,
+          type: payload.type,
+          startsAt: toIsoFromLocal(payload.startsAt),
+          endsAt: toIsoFromLocal(payload.endsAt),
+          location: payload.location,
+          reason: payload.reason,
+          notes: payload.notes,
+        };
+      } else if (mode === "reschedule") {
+        requestPayload = {
+          startsAt: toIsoFromLocal(payload.startsAt),
+          endsAt: toIsoFromLocal(payload.endsAt),
+          reason: payload.reason,
+        };
+      } else {
+        requestPayload = {
+          doctorUserId: payload.doctorUserId,
           type: payload.type,
           location: payload.location,
           reason: payload.reason,
           notes: payload.notes,
+        };
+      }
+      const attempt = resolveAppointmentOperationAttempt(
+        saveAttemptRef.current,
+        {
+          operation,
+          workspaceId: operationWorkspaceId,
+          appointmentId,
+          payload: requestPayload as Record<string, unknown>,
         },
-        createAppointmentIntentKey("edit", appointment.id),
       );
+      saveAttemptRef.current = attempt;
+      let response: unknown;
+      if (mode === "create") {
+        response = await smartHealthApi.createAppointment(
+          requestPayload,
+          attempt.idempotencyKey,
+        );
+      } else {
+        if (!appointment) {
+          throw new Error("Không tìm thấy lịch hẹn cần cập nhật.");
+        }
+        if (mode === "reschedule") {
+          response = await smartHealthApi.rescheduleAppointment(
+            appointment.id,
+            requestPayload as Pick<Appointment, "startsAt" | "endsAt"> & {
+              reason?: string;
+            },
+            attempt.idempotencyKey,
+          );
+        } else {
+          response = await smartHealthApi.updateAppointment(
+            appointment.id,
+            requestPayload,
+            attempt.idempotencyKey,
+          );
+        }
+      }
+      if (
+        activeWorkspaceRef.current !== operationWorkspaceId ||
+        operationEpochRef.current !== operationEpoch
+      ) {
+        throw new AppointmentOperationSupersededError();
+      }
+      return {
+        receipt: parseAppointmentMutationOutcome(response, {
+          workspaceId: operationWorkspaceId,
+          appointmentId: appointment?.id,
+          expected: requestPayload,
+        }),
+        operationWorkspaceId,
+      };
     },
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
       const message =
         variables.mode === "create"
           ? "Backend đã tạo lịch hẹn."
@@ -305,19 +476,23 @@ export default function AppointmentsPage() {
             ? "Backend đã xác nhận lịch mới."
             : "Backend đã cập nhật lịch hẹn.";
       toast.success(message);
+      saveAttemptRef.current = null;
+      formBaselineRef.current = "";
       setFormMode(null);
       setFormTarget(null);
       setFormError("");
-      refresh();
+      refresh(result.operationWorkspaceId);
     },
-    onError: (error) =>
+    onError: (error) => {
+      if (error instanceof AppointmentOperationSupersededError) return;
       setFormError(
         error instanceof Error ? error.message : "Không thể lưu lịch hẹn.",
-      ),
+      );
+    },
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       appointment,
       nextStatus,
     }: {
@@ -328,28 +503,65 @@ export default function AppointmentsPage() {
         throw new Error(
           "Thiết bị đang ngoại tuyến. Vui lòng kết nối mạng rồi thử lại.",
         );
-      return smartHealthApi.updateAppointment(
-        appointment.id,
-        { status: nextStatus },
-        createAppointmentIntentKey(`status-${nextStatus}`, appointment.id),
+      const operationWorkspaceId = workspaceId;
+      const operationEpoch = operationEpochRef.current;
+      const operation = (
+        nextStatus === "confirmed"
+          ? "confirm"
+          : nextStatus === "completed"
+            ? "complete"
+            : "no_show"
+      ) as AppointmentOperation;
+      const payload = { status: nextStatus };
+      const attempt = resolveAppointmentOperationAttempt(
+        statusAttemptRef.current,
+        {
+          operation,
+          workspaceId: operationWorkspaceId,
+          appointmentId: appointment.id,
+          payload,
+        },
       );
+      statusAttemptRef.current = attempt;
+      const response = await smartHealthApi.updateAppointment(
+        appointment.id,
+        payload,
+        attempt.idempotencyKey,
+      );
+      if (
+        activeWorkspaceRef.current !== operationWorkspaceId ||
+        operationEpochRef.current !== operationEpoch
+      ) {
+        throw new AppointmentOperationSupersededError();
+      }
+      return {
+        receipt: parseAppointmentMutationOutcome(response, {
+          workspaceId: operationWorkspaceId,
+          appointmentId: appointment.id,
+          expected: payload,
+        }),
+        operationWorkspaceId,
+      };
     },
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
+      statusAttemptRef.current = null;
       toast.success(
         `Backend đã cập nhật trạng thái: ${STATUS_LABELS[variables.nextStatus]}.`,
       );
-      refresh();
+      refresh(result.operationWorkspaceId);
     },
-    onError: (error) =>
+    onError: (error) => {
+      if (error instanceof AppointmentOperationSupersededError) return;
       toast.error(
         error instanceof Error
           ? error.message
           : "Không thể cập nhật trạng thái.",
-      ),
+      );
+    },
   });
 
   const cancelMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       appointment,
       reason,
     }: {
@@ -363,23 +575,102 @@ export default function AppointmentsPage() {
       const normalizedReason = reason.trim();
       if (!normalizedReason)
         throw new Error("Vui lòng nhập lý do hủy lịch hẹn.");
-      return smartHealthApi.cancelAppointment(
-        appointment.id,
-        { cancellationReason: normalizedReason },
-        createAppointmentIntentKey("cancel", appointment.id),
+      const operationWorkspaceId = workspaceId;
+      const operationEpoch = operationEpochRef.current;
+      const payload = { cancellationReason: normalizedReason };
+      const attempt = resolveAppointmentOperationAttempt(
+        cancelAttemptRef.current,
+        {
+          operation: "cancel",
+          workspaceId: operationWorkspaceId,
+          appointmentId: appointment.id,
+          payload,
+        },
       );
+      cancelAttemptRef.current = attempt;
+      const response = await smartHealthApi.cancelAppointment(
+        appointment.id,
+        payload,
+        attempt.idempotencyKey,
+      );
+      if (
+        activeWorkspaceRef.current !== operationWorkspaceId ||
+        operationEpochRef.current !== operationEpoch
+      ) {
+        throw new AppointmentOperationSupersededError();
+      }
+      return {
+        receipt: parseAppointmentMutationOutcome(response, {
+          workspaceId: operationWorkspaceId,
+          appointmentId: appointment.id,
+          expected: {
+            status: "cancelled",
+            cancellationReason: normalizedReason,
+          },
+        }),
+        operationWorkspaceId,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      cancelAttemptRef.current = null;
       toast.success("Backend đã xác nhận hủy lịch hẹn.");
       setCancelTarget(null);
       setCancellationReason("");
       setCancelError("");
-      refresh();
+      refresh(result.operationWorkspaceId);
     },
-    onError: (error) =>
+    onError: (error) => {
+      if (error instanceof AppointmentOperationSupersededError) return;
       setCancelError(
         error instanceof Error ? error.message : "Không thể hủy lịch hẹn.",
-      ),
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (appointment: Appointment) => {
+      if (isOffline()) {
+        throw new Error("Thiết bị đang ngoại tuyến. Vui lòng kết nối mạng rồi thử lại.");
+      }
+      const operationWorkspaceId = workspaceId;
+      const operationEpoch = operationEpochRef.current;
+      const attempt = resolveAppointmentOperationAttempt(deleteAttemptRef.current, {
+        operation: "delete",
+        workspaceId: operationWorkspaceId,
+        appointmentId: appointment.id,
+        payload: {},
+      });
+      deleteAttemptRef.current = attempt;
+      const response = await smartHealthApi.deleteAppointment(
+        appointment.id,
+        attempt.idempotencyKey,
+      );
+      if (
+        activeWorkspaceRef.current !== operationWorkspaceId ||
+        operationEpochRef.current !== operationEpoch
+      ) {
+        throw new AppointmentOperationSupersededError();
+      }
+      return {
+        receipt: parseAppointmentDeletionReceipt(response, {
+          workspaceId: operationWorkspaceId,
+          appointmentId: appointment.id,
+        }),
+        operationWorkspaceId,
+      };
+    },
+    onSuccess: (result) => {
+      deleteAttemptRef.current = null;
+      setDeleteTarget(null);
+      setDeleteError("");
+      setDetailTargetId("");
+      toast.success("Backend đã xác nhận xóa mềm lịch hẹn.");
+      refresh(result.operationWorkspaceId);
+    },
+    onError: (error) => {
+      if (error instanceof AppointmentOperationSupersededError) return;
+      setDeleteError(error instanceof Error ? error.message : "Không thể xóa lịch hẹn.");
+    },
   });
 
   const appointments = useMemo(() => {
@@ -403,6 +694,12 @@ export default function AppointmentsPage() {
   }, [appointmentsQuery.data?.appointments, search]);
 
   const patients = patientsQuery.data?.patients || [];
+  const patientCatalogUnavailable = Boolean(
+    formMode === "create" &&
+      (patientsQuery.isPending ||
+        patientsQuery.isError ||
+        patients.length === 0),
+  );
   const doctors =
     staffQuery.data?.doctors ||
     (user?.role === "doctor"
@@ -421,6 +718,11 @@ export default function AppointmentsPage() {
   const attentionCount = appointments.filter(
     (appointment) => statusOf(appointment) === "scheduled",
   ).length;
+  const mutationBusy =
+    statusMutation.isPending ||
+    saveMutation.isPending ||
+    cancelMutation.isPending ||
+    deleteMutation.isPending;
 
   const openForm = (
     mode: AppointmentFormMode,
@@ -430,10 +732,31 @@ export default function AppointmentsPage() {
     if (mode === "create" && !canManageStaff && user?.role === "doctor") {
       nextForm.doctorUserId = user.id;
     }
+    saveAttemptRef.current = null;
+    formBaselineRef.current = JSON.stringify(nextForm);
     setFormMode(mode);
     setFormTarget(appointment);
     setForm(nextForm);
     setFormError("");
+  };
+
+  const closeForm = () => {
+    if (saveMutation.isPending) return;
+    saveAttemptRef.current = null;
+    formBaselineRef.current = "";
+    setDiscardFormOpen(false);
+    setFormMode(null);
+    setFormTarget(null);
+    setFormError("");
+  };
+
+  const requestFormClose = () => {
+    if (saveMutation.isPending) return;
+    if (formDirty) {
+      setDiscardFormOpen(true);
+      return;
+    }
+    closeForm();
   };
 
   const canModify = (appointment: Appointment) =>
@@ -441,10 +764,6 @@ export default function AppointmentsPage() {
 
   const renderActions = (appointment: Appointment) => {
     const currentStatus = statusOf(appointment);
-    const busy =
-      statusMutation.isPending ||
-      saveMutation.isPending ||
-      cancelMutation.isPending;
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button
@@ -452,7 +771,7 @@ export default function AppointmentsPage() {
           variant="ghost"
           size="sm"
           className="min-h-11"
-          onClick={() => setDetail(appointment)}
+          onClick={() => setDetailTargetId(appointment.id)}
         >
           <Eye aria-hidden="true" />
           Chi tiết
@@ -463,7 +782,7 @@ export default function AppointmentsPage() {
             variant="outline"
             size="sm"
             className="min-h-11"
-            disabled={busy}
+          disabled={mutationBusy}
             onClick={() => openForm("edit", appointment)}
           >
             <Pencil aria-hidden="true" />
@@ -476,11 +795,29 @@ export default function AppointmentsPage() {
             variant="outline"
             size="sm"
             className="min-h-11"
-            disabled={busy}
+          disabled={mutationBusy}
             onClick={() => openForm("reschedule", appointment)}
           >
             <RotateCcw aria-hidden="true" />
             Đổi lịch
+          </Button>
+        ) : null}
+        {canClinicalManage ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-11 text-destructive hover:text-destructive"
+            disabled={mutationBusy}
+            data-appointment-delete={appointment.id}
+            onClick={() => {
+              deleteAttemptRef.current = null;
+              setDeleteTarget(appointment);
+              setDeleteError("");
+            }}
+          >
+            <Trash2 aria-hidden="true" />
+            Xóa
           </Button>
         ) : null}
         {canClinicalManage && currentStatus === "scheduled" ? (
@@ -488,7 +825,7 @@ export default function AppointmentsPage() {
             type="button"
             size="sm"
             className="min-h-11"
-            disabled={busy}
+            disabled={mutationBusy}
             onClick={() =>
               statusMutation.mutate({ appointment, nextStatus: "confirmed" })
             }
@@ -502,7 +839,7 @@ export default function AppointmentsPage() {
             type="button"
             size="sm"
             className="min-h-11"
-            disabled={busy}
+            disabled={mutationBusy}
             onClick={() =>
               statusMutation.mutate({ appointment, nextStatus: "completed" })
             }
@@ -518,7 +855,7 @@ export default function AppointmentsPage() {
             variant="outline"
             size="sm"
             className="min-h-11"
-            disabled={busy}
+            disabled={mutationBusy}
             onClick={() =>
               statusMutation.mutate({ appointment, nextStatus: "no_show" })
             }
@@ -533,7 +870,7 @@ export default function AppointmentsPage() {
             variant="outline"
             size="sm"
             className="min-h-11 text-destructive hover:text-destructive"
-            disabled={busy}
+            disabled={mutationBusy}
             onClick={() => {
               setCancelTarget(appointment);
               setCancellationReason("");
@@ -548,8 +885,44 @@ export default function AppointmentsPage() {
     );
   };
 
+  if (workspaceChanging) {
+    return (
+      <div
+        data-testid="portal-appointments-page"
+        className="space-y-6"
+      >
+        <header className="clinical-page-header">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+            Điều phối chăm sóc
+          </p>
+          <h1 className="clinical-page-title mt-2 flex items-center gap-2 text-foreground">
+            <CalendarDays aria-hidden="true" size={24} />
+            Lịch hẹn
+          </h1>
+        </header>
+        <Card role="status" className="shadow-sm">
+          <CardContent className="flex items-center gap-3 p-5">
+            <Loader2
+              aria-hidden="true"
+              className="animate-spin text-primary motion-reduce:animate-none"
+            />
+            <div>
+              <p className="font-semibold text-foreground">
+                Đang đổi workspace
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Shcare đang đóng dữ liệu lịch hẹn cũ trước khi tải workspace
+                mới.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div data-testid="portal-appointments-page" className="space-y-6">
       <header className="clinical-page-header flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -569,7 +942,7 @@ export default function AppointmentsPage() {
             id="portal-add-appointment"
             type="button"
             className="min-h-11"
-            disabled={!online}
+            disabled={!online || mutationBusy}
             onClick={() => openForm("create")}
           >
             <Plus aria-hidden="true" />
@@ -706,39 +1079,33 @@ export default function AppointmentsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4 p-4 pt-2">
                   <dl className="grid gap-3 text-sm">
-                    <div className="flex gap-3">
+                    <dt className="sr-only">Thời gian</dt>
+                    <dd className="flex gap-3">
                       <Clock3
                         aria-hidden="true"
                         className="mt-0.5 text-muted-foreground"
                       />
                       <div>
-                        <dt className="sr-only">Thời gian</dt>
-                        <dd className="font-medium text-foreground">
+                        <span className="block font-medium text-foreground">
                           {formatDateTime(appointment.startsAt)}
-                        </dd>
-                        <dd className="text-muted-foreground">
+                        </span>
+                        <span className="block text-muted-foreground">
                           đến {formatDateTime(appointment.endsAt)}
-                        </dd>
+                        </span>
                       </div>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Bác sĩ</dt>
-                      <dd className="mt-1 text-foreground">
-                        {appointment.doctor?.name ||
-                          appointment.doctorUserId ||
-                          "Chưa gán"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted-foreground">
-                        Loại lịch
-                      </dt>
-                      <dd className="mt-1 text-foreground">
-                        {TYPE_LABELS[appointment.type || ""] ||
-                          appointment.type ||
-                          "Chưa xác định"}
-                      </dd>
-                    </div>
+                    </dd>
+                    <dt className="text-xs text-muted-foreground">Bác sĩ</dt>
+                    <dd className="text-foreground">
+                      {appointment.doctor?.name ||
+                        appointment.doctorUserId ||
+                        "Chưa gán"}
+                    </dd>
+                    <dt className="text-xs text-muted-foreground">Loại lịch</dt>
+                    <dd className="text-foreground">
+                      {TYPE_LABELS[appointment.type || ""] ||
+                        appointment.type ||
+                        "Chưa xác định"}
+                    </dd>
                   </dl>
                   {renderActions(appointment)}
                 </CardContent>
@@ -746,72 +1113,75 @@ export default function AppointmentsPage() {
             ))}
           </div>
 
-          <Card className="hidden md:block overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
-                <thead className="border-b bg-muted/30 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3">Thời gian</th>
-                    <th className="px-4 py-3">Bệnh nhân</th>
-                    <th className="px-4 py-3">Bác sĩ</th>
-                    <th className="px-4 py-3">Loại</th>
-                    <th className="px-4 py-3">Trạng thái</th>
-                    <th className="px-4 py-3 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {appointments.map((appointment) => (
-                    <tr
-                      key={appointment.id}
-                      data-appointment-row={appointment.id}
-                      className="transition-colors hover:bg-muted/20"
-                    >
-                      <td className="px-4 py-4">
-                        <p className="font-medium text-foreground">
-                          {formatDateTime(appointment.startsAt)}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          đến {formatDateTime(appointment.endsAt)}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="font-medium text-foreground">
-                          {appointment.patient?.name ||
-                            appointment.patientId ||
-                            "—"}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {appointment.patient?.patientCode || appointment.id}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4 text-muted-foreground">
-                        {appointment.doctor?.name ||
-                          appointment.doctorUserId ||
-                          "Chưa gán"}
-                      </td>
-                      <td className="px-4 py-4 text-foreground">
-                        {TYPE_LABELS[appointment.type || ""] ||
-                          appointment.type ||
+          <Card className="hidden overflow-hidden shadow-sm md:block">
+            <Table className="min-w-[980px]">
+              <TableCaption className="sr-only">
+                Danh sách lịch hẹn thuộc workspace hiện tại
+              </TableCaption>
+              <TableHeader className="border-b bg-muted/30 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <TableRow>
+                  <TableHead className="px-4 py-3">Thời gian</TableHead>
+                  <TableHead className="px-4 py-3">Bệnh nhân</TableHead>
+                  <TableHead className="px-4 py-3">Bác sĩ</TableHead>
+                  <TableHead className="px-4 py-3">Loại</TableHead>
+                  <TableHead className="px-4 py-3">Trạng thái</TableHead>
+                  <TableHead className="px-4 py-3 text-right">
+                    Thao tác
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y">
+                {appointments.map((appointment) => (
+                  <TableRow
+                    key={appointment.id}
+                    data-appointment-row={appointment.id}
+                    className="transition-colors hover:bg-muted/20"
+                  >
+                    <TableCell className="px-4 py-4">
+                      <p className="font-medium text-foreground">
+                        {formatDateTime(appointment.startsAt)}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        đến {formatDateTime(appointment.endsAt)}
+                      </p>
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <p className="font-medium text-foreground">
+                        {appointment.patient?.name ||
+                          appointment.patientId ||
                           "—"}
-                      </td>
-                      <td className="px-4 py-4">
-                        <AppointmentStatusBadge appointment={appointment} />
-                      </td>
-                      <td className="px-4 py-4">
-                        {renderActions(appointment)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {appointment.patient?.patientCode || appointment.id}
+                      </p>
+                    </TableCell>
+                    <TableCell className="px-4 py-4 text-muted-foreground">
+                      {appointment.doctor?.name ||
+                        appointment.doctorUserId ||
+                        "Chưa gán"}
+                    </TableCell>
+                    <TableCell className="px-4 py-4 text-foreground">
+                      {TYPE_LABELS[appointment.type || ""] ||
+                        appointment.type ||
+                        "—"}
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <AppointmentStatusBadge appointment={appointment} />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      {renderActions(appointment)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </Card>
         </>
       )}
 
       <Dialog
-        open={Boolean(detail)}
-        onOpenChange={(open) => !open && setDetail(null)}
+        open={Boolean(detailTargetId)}
+        onOpenChange={(open) => !open && setDetailTargetId("")}
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
@@ -820,13 +1190,47 @@ export default function AppointmentsPage() {
               Dữ liệu dưới đây được lấy từ bản ghi backend hiện tại.
             </DialogDescription>
           </DialogHeader>
-          {detail ? <AppointmentDetails appointment={detail} /> : null}
+          {detailQuery.isLoading ? (
+            <div
+              role="status"
+              aria-label="Đang tải chi tiết lịch hẹn"
+              className="space-y-3"
+            >
+              <Skeleton className="h-6 w-28 motion-reduce:animate-none" />
+              <Skeleton className="h-48 w-full motion-reduce:animate-none" />
+            </div>
+          ) : detailQuery.error ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/5 p-4"
+            >
+              <p className="font-semibold text-destructive">
+                Không thể tải chi tiết lịch hẹn
+              </p>
+              <p className="mt-1 text-sm text-destructive">
+                {detailQuery.error instanceof Error
+                  ? detailQuery.error.message
+                  : "Backend chưa trả về bản ghi hợp lệ."}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-4 min-h-11"
+                onClick={() => void detailQuery.refetch()}
+              >
+                <RefreshCw aria-hidden="true" />
+                Thử lại
+              </Button>
+            </div>
+          ) : detailQuery.data?.appointment ? (
+            <AppointmentDetails appointment={detailQuery.data.appointment} />
+          ) : null}
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
               className="min-h-11"
-              onClick={() => setDetail(null)}
+              onClick={() => setDetailTargetId("")}
             >
               Đóng
             </Button>
@@ -836,9 +1240,7 @@ export default function AppointmentsPage() {
 
       <Dialog
         open={Boolean(formMode)}
-        onOpenChange={(open) =>
-          !open && !saveMutation.isPending && setFormMode(null)
-        }
+        onOpenChange={(open) => !open && requestFormClose()}
       >
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
@@ -881,7 +1283,12 @@ export default function AppointmentsPage() {
                   <select
                     id="appointment-patient-id"
                     required={formMode === "create"}
-                    disabled={formMode !== "create" || saveMutation.isPending}
+                    disabled={
+                      formMode !== "create" ||
+                      saveMutation.isPending ||
+                      patientsQuery.isPending ||
+                      patientsQuery.isError
+                    }
                     value={form.patientId}
                     onChange={(event) =>
                       setForm({ ...form, patientId: event.target.value })
@@ -895,14 +1302,46 @@ export default function AppointmentsPage() {
                       </option>
                     ))}
                   </select>
+                  {formMode === "create" && patientsQuery.isPending ? (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      Đang tải danh mục bệnh nhân của workspace...
+                    </p>
+                  ) : null}
+                  {formMode === "create" && patientsQuery.isError ? (
+                    <div
+                      role="alert"
+                      className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+                    >
+                      <p className="text-destructive">
+                        Không tải được danh mục bệnh nhân. Chưa thể gửi lịch hẹn
+                        mới.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="min-h-11"
+                        onClick={() => void patientsQuery.refetch()}
+                      >
+                        Thử tải lại
+                      </Button>
+                    </div>
+                  ) : null}
+                  {formMode === "create" &&
+                  patientsQuery.isSuccess &&
+                  patients.length === 0 ? (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      Workspace chưa có bệnh nhân để tạo lịch hẹn.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="appointment-doctor-id">
                     Bác sĩ phụ trách
                   </Label>
-                   <select
-                     id="appointment-doctor-id"
-                     disabled={!canManageStaff || saveMutation.isPending}
+                  <select
+                    id="appointment-doctor-id"
+                    disabled={!canManageStaff || saveMutation.isPending}
                     value={form.doctorUserId}
                     onChange={(event) =>
                       setForm({ ...form, doctorUserId: event.target.value })
@@ -1034,14 +1473,16 @@ export default function AppointmentsPage() {
               variant="outline"
               className="min-h-11"
               disabled={saveMutation.isPending}
-              onClick={() => setFormMode(null)}
+              onClick={requestFormClose}
             >
               Đóng
             </Button>
             <Button
               form="appointment-form"
               className="min-h-11"
-              disabled={saveMutation.isPending || !online}
+              disabled={
+                saveMutation.isPending || !online || patientCatalogUnavailable
+              }
             >
               {saveMutation.isPending ? (
                 <Loader2
@@ -1054,6 +1495,35 @@ export default function AppointmentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={discardFormOpen}
+        onOpenChange={(open) => setDiscardFormOpen(open)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bỏ thay đổi chưa lưu?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Nội dung bạn vừa nhập chưa được backend xác nhận. Nếu đóng, bản
+              nháp lịch hẹn này sẽ bị bỏ.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-11">
+              Tiếp tục chỉnh sửa
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                closeForm();
+              }}
+            >
+              Bỏ thay đổi
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={Boolean(cancelTarget)}
@@ -1133,6 +1603,55 @@ export default function AppointmentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            deleteAttemptRef.current = null;
+            setDeleteTarget(null);
+            setDeleteError("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa lịch hẹn khỏi vận hành?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Lịch hẹn sẽ được xóa mềm và ẩn khỏi danh sách, nhưng dấu vết audit vẫn được giữ để
+              truy vết. Thao tác chỉ hoàn tất sau khi backend trả receipt đúng lịch và workspace.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {deleteError}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-11" disabled={deleteMutation.isPending}>
+              Giữ lịch hẹn
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending || !online}
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteTarget) deleteMutation.mutate(deleteTarget);
+              }}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2
+                  aria-hidden="true"
+                  className="animate-spin motion-reduce:animate-none"
+                />
+              ) : (
+                <Trash2 aria-hidden="true" />
+              )}
+              {deleteMutation.isPending ? "Đang xóa..." : "Xác nhận xóa mềm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

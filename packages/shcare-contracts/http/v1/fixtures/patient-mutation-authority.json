@@ -1,0 +1,5 @@
+{
+  "expectedUserId": "usr_patient",
+  "expectedWorkspaceId": "org_personal_patient",
+  "expectedAuthSessionId": "auth_session_patient_current"
+}

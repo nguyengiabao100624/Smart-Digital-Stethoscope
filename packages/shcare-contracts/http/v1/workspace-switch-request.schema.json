@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/workspace-switch-request.schema.json",
+  "title": "Shcare workspace switch request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "organizationId"
+  ],
+  "properties": {
+    "organizationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    }
+  }
+}

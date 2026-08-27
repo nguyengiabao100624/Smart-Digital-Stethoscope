@@ -1,5 +1,7 @@
 package com.example.smart_health_android.security
 
+import com.example.smart_health_android.data.AuthUser
+import com.example.smart_health_android.data.FirebaseOwnerBinding
 import com.example.smart_health_android.data.TwoFactorChallenge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,7 +67,7 @@ class LoginViewModelTest {
     fun `server confirmed OTP emits authenticated effect`() = runTest(dispatcher) {
         val repository = FakeLoginRepository(
             signInResult = LoginResult.TwoFactorRequired(testChallenge),
-            completeResult = LoginResult.Authenticated(isDoctorAccount = true),
+            completeResult = LoginResult.Authenticated(testDoctor, testFirebaseOwner),
         )
         val viewModel = LoginViewModel(repository)
         viewModel.enterCredentials()
@@ -79,7 +81,10 @@ class LoginViewModelTest {
 
         assertEquals("123456", repository.lastOtp)
         assertEquals(1, repository.completeCalls)
-        assertEquals(LoginEffect.Authenticated(isDoctorAccount = true), effect.await())
+        assertEquals(
+            LoginEffect.Authenticated(testDoctor, testFirebaseOwner),
+            effect.await(),
+        )
         assertTrue(viewModel.uiState.value.password.isEmpty())
         assertTrue(viewModel.uiState.value.otp.isEmpty())
     }
@@ -122,11 +127,51 @@ class LoginViewModelTest {
         assertTrue(viewModel.uiState.value.password.isEmpty())
         assertTrue(viewModel.uiState.value.challengeExpiresAt.isEmpty())
     }
+
+    @Test
+    fun `doctor approval effect preserves the Firebase owner pinned by the repository`() =
+        runTest(dispatcher) {
+            val repository = FakeLoginRepository(
+                signInResult = LoginResult.DoctorApprovalPending(testFirebaseOwner),
+            )
+            val viewModel = LoginViewModel(repository)
+            viewModel.enterCredentials()
+            val effect = async { viewModel.effects.first() }
+
+            viewModel.onAction(LoginAction.SubmitCredentials)
+            advanceUntilIdle()
+
+            assertEquals(
+                LoginEffect.DoctorApprovalPending(testFirebaseOwner),
+                effect.await(),
+            )
+        }
+
+    @Test
+    fun `email verification effect preserves the Firebase owner pinned by the repository`() =
+        runTest(dispatcher) {
+            val repository = FakeLoginRepository(
+                signInResult = LoginResult.VerifyEmail("solo_doctor", testFirebaseOwner),
+            )
+            val viewModel = LoginViewModel(repository)
+            viewModel.enterCredentials()
+            val effect = async { viewModel.effects.first() }
+
+            viewModel.onAction(LoginAction.SubmitCredentials)
+            advanceUntilIdle()
+
+            assertEquals(
+                LoginEffect.VerifyEmail("solo_doctor", testFirebaseOwner),
+                effect.await(),
+            )
+        }
 }
 
 private class FakeLoginRepository(
-    private val signInResult: LoginResult = LoginResult.Authenticated(isDoctorAccount = false),
-    private val completeResult: LoginResult = LoginResult.Authenticated(isDoctorAccount = false),
+    private val signInResult: LoginResult =
+        LoginResult.Authenticated(testPatient, testFirebaseOwner),
+    private val completeResult: LoginResult =
+        LoginResult.Authenticated(testPatient, testFirebaseOwner),
     private val completeFailure: Throwable? = null,
 ) : LoginRepository {
     var signInCalls = 0
@@ -167,4 +212,24 @@ private val testChallenge = TwoFactorChallenge(
     challengeId = "challenge_1",
     method = "app",
     expiresAt = "2099-01-01T00:05:00.000Z",
+)
+
+private val testDoctor = AuthUser(
+    id = "doctor_1",
+    role = "doctor",
+    currentWorkspaceId = "workspace_1",
+    capabilities = listOf("workspace.dashboard.view"),
+)
+
+private val testPatient = AuthUser(
+    id = "patient_1",
+    role = "patient",
+    currentWorkspaceId = "personal_patient_1",
+    capabilities = listOf("personal.dashboard.view"),
+)
+
+private val testFirebaseOwner = FirebaseOwnerBinding(
+    firebaseUserId = "firebase-owner-1",
+    email = "doctor@example.com",
+    sessionEpoch = 41L,
 )

@@ -2616,6 +2616,35 @@ async function main() {
     /CREATE\s+INDEX[\s\S]*exports\s*\(organization_id,\s*format,\s*created_at\s+DESC\)/i,
   );
 
+  const notificationWorkspaceBindingMigration = fs.readFileSync(
+    path.join(__dirname, "..", "db", "migrations", "044_notification_device_workspace_binding.sql"),
+    "utf8",
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+workspace_id\s+text/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+auth_session_id\s+text/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+notification_protocol_version\s+integer\s+NOT\s+NULL\s+DEFAULT\s+1/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+app_version\s+text\s+NOT\s+NULL\s+DEFAULT\s+''/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /UPDATE\s+notification_devices[\s\S]*SET\s+workspace_id\s*=\s*users\.organization_id/i,
+  );
+  assert.match(
+    notificationWorkspaceBindingMigration,
+    /notification_devices\s*\(user_id,\s*workspace_id,\s*enabled,\s*updated_at\s+DESC\)/i,
+  );
+
   const importedExportSnapshot = {
     schemaVersion: "shcare.export.v1",
     exportId: "export_import_csv",
@@ -3166,14 +3195,17 @@ async function main() {
   );
   assert.match(importerSource, /Migration JSON -> PostgreSQL đã đối soát:/);
 
-  const bundledDb = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "db.json"), "utf8"));
-  assert.doesNotThrow(() => normalizeLegacyPatientIdentityGraph(bundledDb));
-  const remediatedBundledPatient = bundledDb.patients.find(
-    (patient) => patient.id === "pat_20260523210428_eb7affd2",
+  const legacyFixture = JSON.parse(fs.readFileSync(
+    path.join(__dirname, "fixtures", "identity-migration-legacy-db.json"),
+    "utf8",
+  ));
+  assert.doesNotThrow(() => normalizeLegacyPatientIdentityGraph(legacyFixture));
+  const remediatedFixturePatient = legacyFixture.patients.find(
+    (patient) => patient.id === "patient_legacy_fixture",
   );
-  assert.equal(remediatedBundledPatient.organizationId, "vn_hospital_quan_y_175");
-  assert.equal(remediatedBundledPatient.ownerUserId, "usr_20260526062020_05a18dfc");
-  assert.equal(remediatedBundledPatient.accountUserId, "usr_20260526062020_05a18dfc");
+  assert.equal(remediatedFixturePatient.organizationId, "org_legacy_fixture");
+  assert.equal(remediatedFixturePatient.ownerUserId, "user_legacy_fixture");
+  assert.equal(remediatedFixturePatient.accountUserId, "user_legacy_fixture");
   console.log("Identity migration/import smoke passed");
 }
 

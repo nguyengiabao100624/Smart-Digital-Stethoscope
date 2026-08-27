@@ -1,0 +1,30 @@
+{
+  "workspaceId": "workspace-clinic-1",
+  "patients": [
+    {
+      "id": "patient-001",
+      "patientCode": "SHC-001",
+      "name": "Nguyễn An",
+      "age": 42,
+      "dateOfBirth": "1984-02-15",
+      "gender": "female",
+      "phone": "0900000001",
+      "notes": "Theo dõi hô hấp định kỳ.",
+      "bloodType": "A+",
+      "allergies": ["Penicillin"],
+      "emergencyContact": {
+        "name": "Nguyễn Bình",
+        "phone": "0900000002",
+        "relationship": "Người thân"
+      },
+      "profileType": "workspace",
+      "relationship": "",
+      "ownerUserId": "",
+      "scanCount": 3,
+      "lastScanAt": "2026-07-28T08:30:00.000Z",
+      "lastAiLabel": "Cần bác sĩ xem lại",
+      "createdAt": "2026-07-01T08:00:00.000Z",
+      "updatedAt": "2026-07-28T08:30:00.000Z"
+    }
+  ]
+}

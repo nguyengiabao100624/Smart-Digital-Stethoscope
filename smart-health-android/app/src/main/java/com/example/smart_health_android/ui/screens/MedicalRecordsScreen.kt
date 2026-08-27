@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,23 +19,26 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
 import com.example.smart_health_android.data.Scan
 import com.example.smart_health_android.data.ShareTargetDoctor
 import com.example.smart_health_android.data.ShareTargetWorkspace
 import com.example.smart_health_android.data.ShareTargets
-import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.scanIsNormal
-import com.example.smart_health_android.data.scanLabel
 import com.example.smart_health_android.data.scanSummary
-import com.example.smart_health_android.data.toVietnameseMessage
+import com.example.smart_health_android.records.MedicalRecordsLoadState
+import com.example.smart_health_android.records.MedicalRecordsUiAction
+import com.example.smart_health_android.records.MedicalRecordsViewModel
+import com.example.smart_health_android.records.MedicalRecordsViewModelFactory
 import com.example.smart_health_android.ui.theme.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.util.UUID
 import kotlin.math.roundToInt
 
 data class MedicalRecord(
@@ -76,119 +80,27 @@ private fun ShareTargetDoctor.displayName(): String = name.ifBlank { id }
 private fun ShareTargetWorkspace.displayName(): String = name.ifBlank { id }
 
 @Composable
-fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String) -> Unit) {
-    var activeTab by remember { mutableStateOf("recent") }
-    var backendScans by remember { mutableStateOf<List<Scan>>(emptyList()) }
-    var isLoadingRecords by remember { mutableStateOf(true) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    var stoppingRecordId by remember { mutableStateOf<String?>(null) }
-    var sharingRecordId by remember { mutableStateOf<String?>(null) }
-    var shareTargetQuery by remember { mutableStateOf("") }
-    var shareTargets by remember { mutableStateOf(ShareTargets()) }
-    var selectedShareDoctor by remember { mutableStateOf<ShareTargetDoctor?>(null) }
-    var selectedShareWorkspace by remember { mutableStateOf<ShareTargetWorkspace?>(null) }
-    var isLoadingShareTargets by remember { mutableStateOf(false) }
-    val shareIntentKeys = remember { mutableStateMapOf<String, String>() }
-    val coroutineScope = rememberCoroutineScope()
+fun MedicalRecordsScreen(
+    onNavigateBack: () -> Unit,
+    onNavigateToDetail: (String) -> Unit,
+    showBackNavigation: Boolean = true,
+) {
+    val recordsViewModel: MedicalRecordsViewModel = viewModel(
+        factory = MedicalRecordsViewModelFactory(),
+    )
+    val state by recordsViewModel.uiState.collectAsStateWithLifecycle()
 
-    suspend fun refreshRecords() {
-        if (isLoadingRecords.not()) {
-            loadError = null
-        }
-        runCatching {
-            backendScans = SmartHealthRepository.api.listScans(limit = 100)
-            loadError = null
-        }.onFailure {
-            loadError = it.message ?: "Không kết nối được máy chủ"
-        }.also {
-            isLoadingRecords = false
-        }
-    }
-
-    suspend fun refreshShareTargets(query: String = shareTargetQuery) {
-        isLoadingShareTargets = true
-        runCatching {
-            shareTargets = SmartHealthRepository.api.listShareTargets(query.trim())
-        }.onFailure {
-            loadError = it.toVietnameseMessage("Không tải được danh sách nơi nhận chia sẻ")
-        }.also {
-            isLoadingShareTargets = false
-        }
-    }
-
-    LaunchedEffect(Unit) {
+    LaunchedEffect(recordsViewModel) {
         while (true) {
-            refreshRecords()
             delay(5000)
+            recordsViewModel.onAction(MedicalRecordsUiAction.Refresh)
         }
     }
 
-    LaunchedEffect(shareTargetQuery) {
-        delay(300)
-        refreshShareTargets(shareTargetQuery)
-    }
-
-    fun stopRecord(recordId: String) {
-        if (stoppingRecordId != null) return
-        coroutineScope.launch {
-            stoppingRecordId = recordId
-            runCatching {
-                SmartHealthRepository.api.stopScan(recordId)
-                refreshRecords()
-            }.onFailure {
-                loadError = it.message ?: "Không dừng được lượt ghi"
-            }
-            stoppingRecordId = null
-        }
-    }
-
-    fun shareRecord(record: MedicalRecord) {
-        val targetDoctor = selectedShareDoctor
-        val targetWorkspace = selectedShareWorkspace
-        if (sharingRecordId != null) return
-        if (record.sourcePatientId.isBlank()) {
-            loadError = "Lượt đo này chưa gắn với hồ sơ bệnh nhân để chia sẻ"
-            return
-        }
-        if (targetDoctor == null && targetWorkspace == null) {
-            loadError = "Chọn bác sĩ hoặc cơ sở nhận chia sẻ trước khi bấm chia sẻ"
-            return
-        }
-        val intentFingerprint = listOf(
-            record.sourcePatientId,
-            record.id,
-            targetDoctor?.id.orEmpty(),
-            targetWorkspace?.id.orEmpty(),
-        ).joinToString(":")
-        val idempotencyKey = shareIntentKeys.getOrPut(intentFingerprint) {
-            UUID.randomUUID().toString()
-        }
-        coroutineScope.launch {
-            sharingRecordId = record.id
-            runCatching {
-                SmartHealthRepository.api.sharePatientRecord(
-                    patientId = record.sourcePatientId,
-                    targetDoctorUserId = targetDoctor?.id.orEmpty(),
-                    targetWorkspaceId = targetWorkspace?.id.orEmpty(),
-                    scope = "selected_scans",
-                    scanIds = listOf(record.id),
-                    idempotencyKey = idempotencyKey,
-                )
-            }.onSuccess {
-                shareIntentKeys.remove(intentFingerprint)
-                val targetName = targetDoctor?.displayName() ?: targetWorkspace?.displayName() ?: "nơi nhận đã chọn"
-                loadError = "Đã chia sẻ lượt đo với $targetName"
-            }.onFailure {
-                loadError = it.toVietnameseMessage("Không chia sẻ được lượt đo")
-            }
-            sharingRecordId = null
-        }
-    }
-
-    val displayRecords = backendScans.map { it.toMedicalRecord() }
+    val displayRecords = state.scans.map { it.toMedicalRecord() }
 
     val filteredRecords = displayRecords.filter {
-        when (activeTab) {
+        when (state.activeTab) {
             "recent" -> true
             "heart" -> it.type == "heart"
             "lung" -> it.type == "lung"
@@ -196,17 +108,25 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             else -> true
         }
     }
+    val semanticColors = ShcareTheme.colors
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         // Header
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            semanticColors.brandHeaderStart,
+                            semanticColors.brandHeaderEnd,
+                        ),
+                    ),
+                )
                 .padding(horizontal = 16.dp, vertical = 16.dp)
                 .statusBarsPadding()
         ) {
@@ -215,19 +135,23 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                if (showBackNavigation) {
+                    IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.shcare_action_back),
+                            tint = semanticColors.onBrandHeader,
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(48.dp))
                 }
-                Text("Hồ Sơ Bệnh Án", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Hồ Sơ Bệnh Án", color = semanticColors.onBrandHeader, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 IconButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            refreshRecords()
-                        }
-                    },
+                    onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.Refresh) },
                     modifier = Modifier.offset(x = 12.dp)
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Làm mới", tint = Color.White)
+                    Icon(Icons.Default.Refresh, contentDescription = "Làm mới", tint = semanticColors.onBrandHeader)
                 }
             }
         }
@@ -243,66 +167,72 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
             FilterTab(
                 text = "Gần đây",
                 icon = null,
-                isSelected = activeTab == "recent",
-                onClick = { activeTab = "recent" }
+                isSelected = state.activeTab == "recent",
+                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("recent")) }
             )
             FilterTab(
                 text = "Đo Tim",
                 icon = Icons.Default.Favorite,
-                isSelected = activeTab == "heart",
-                onClick = { activeTab = "heart" }
+                isSelected = state.activeTab == "heart",
+                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("heart")) }
             )
             FilterTab(
                 text = "Đo Phổi",
                 icon = Icons.Default.Air,
-                isSelected = activeTab == "lung",
-                onClick = { activeTab = "lung" }
+                isSelected = state.activeTab == "lung",
+                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("lung")) }
             )
             FilterTab(
                 text = "Chỉ cảnh báo",
                 icon = Icons.Default.Warning,
-                isSelected = activeTab == "abnormal",
-                onClick = { activeTab = "abnormal" }
+                isSelected = state.activeTab == "abnormal",
+                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("abnormal")) }
             )
         }
 
         ShareTargetPicker(
-            query = shareTargetQuery,
-            onQueryChange = { shareTargetQuery = it },
-            targets = shareTargets,
-            selectedDoctor = selectedShareDoctor,
-            selectedWorkspace = selectedShareWorkspace,
-            loading = isLoadingShareTargets,
+            query = state.shareTargetQuery,
+            onQueryChange = {
+                recordsViewModel.onAction(MedicalRecordsUiAction.ShareQueryChanged(it))
+            },
+            targets = state.shareTargets,
+            selectedDoctor = state.selectedShareDoctor,
+            selectedWorkspace = state.selectedShareWorkspace,
+            loading = state.isLoadingShareTargets,
             onSelectDoctor = {
-                selectedShareDoctor = it
-                selectedShareWorkspace = null
+                recordsViewModel.onAction(MedicalRecordsUiAction.DoctorSelected(it))
             },
             onSelectWorkspace = {
-                selectedShareWorkspace = it
-                selectedShareDoctor = null
+                recordsViewModel.onAction(MedicalRecordsUiAction.WorkspaceSelected(it))
             },
-            onRetry = {
-                coroutineScope.launch { refreshShareTargets(shareTargetQuery) }
-            },
+            onRetry = { recordsViewModel.onAction(MedicalRecordsUiAction.RefreshShareTargets) },
             modifier = Modifier.padding(horizontal = 16.dp)
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        loadError?.let { message ->
+        state.statusMessage.takeIf { it.isNotBlank() }?.let { message ->
             Text(
                 text = message,
-                color = if (message.startsWith("Đã")) Color(0xFF10B981) else ErrorRed,
+                color = semanticColors.success,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
+        state.errorMessage.takeIf { it.isNotBlank() }?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
 
-        if (isLoadingRecords) {
+        if (state.loadState == MedicalRecordsLoadState.Loading || state.isRefreshing) {
             LinearProgressIndicator(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                color = PrimaryBlue
+                color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -315,20 +245,26 @@ fun MedicalRecordsScreen(onNavigateBack: () -> Unit, onNavigateToDetail: (String
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (!isLoadingRecords && filteredRecords.isEmpty()) {
-                EmptyRecordsState(activeTab = activeTab, hasError = loadError != null, onRetry = {
-                    coroutineScope.launch { refreshRecords() }
-                })
+            if (state.loadState != MedicalRecordsLoadState.Loading && filteredRecords.isEmpty()) {
+                EmptyRecordsState(
+                    activeTab = state.activeTab,
+                    hasError = state.loadState != MedicalRecordsLoadState.Content,
+                    onRetry = { recordsViewModel.onAction(MedicalRecordsUiAction.Refresh) },
+                )
             } else {
                 filteredRecords.forEach { record ->
                     RecordCard(
                         record = record,
                         onClick = { onNavigateToDetail(record.id) },
-                        onShare = { shareRecord(record) },
-                        onStop = { stopRecord(record.id) },
-                        isStopping = stoppingRecordId == record.id,
-                        isSharing = sharingRecordId == record.id,
-                        hasShareTarget = selectedShareDoctor != null || selectedShareWorkspace != null
+                        onShare = {
+                            recordsViewModel.onAction(MedicalRecordsUiAction.ShareRecord(record.id))
+                        },
+                        onStop = {
+                            recordsViewModel.onAction(MedicalRecordsUiAction.StopRecord(record.id))
+                        },
+                        isStopping = state.stoppingRecordId == record.id,
+                        isSharing = state.sharingRecordId == record.id,
+                        hasShareTarget = state.hasShareTarget,
                     )
                 }
             }
@@ -353,8 +289,8 @@ private fun ShareTargetPicker(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -364,14 +300,14 @@ private fun ShareTargetPicker(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Nơi nhận chia sẻ", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text("Tìm bác sĩ hoặc cơ sở y tế đã được cấp quyền", color = TextSecondary, fontSize = 12.sp)
+                Text("Nơi nhận chia sẻ", color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text("Tìm bác sĩ hoặc cơ sở y tế đã được cấp quyền", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryBlue)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
             } else {
                 IconButton(onClick = onRetry) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Tải lại nơi nhận", tint = PrimaryBlue)
+                    Icon(Icons.Default.Refresh, contentDescription = "Tải lại nơi nhận", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -380,13 +316,13 @@ private fun ShareTargetPicker(
             value = query,
             onValueChange = onQueryChange,
             placeholder = { Text("Tìm bác sĩ hoặc cơ sở nhận chia sẻ") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrimaryBlue,
-                unfocusedBorderColor = Border
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
             )
         )
 
@@ -394,7 +330,7 @@ private fun ShareTargetPicker(
         val doctorOptions = targets.doctors.take(4)
 
         if (workspaceOptions.isNotEmpty()) {
-            Text("Cơ sở y tế", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Cơ sở y tế", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             workspaceOptions.forEach { workspace ->
                 ShareTargetOptionRow(
                     title = workspace.displayName(),
@@ -407,7 +343,7 @@ private fun ShareTargetPicker(
         }
 
         if (doctorOptions.isNotEmpty()) {
-            Text("Bác sĩ", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Bác sĩ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             doctorOptions.forEach { doctor ->
                 ShareTargetOptionRow(
                     title = doctor.displayName(),
@@ -422,7 +358,7 @@ private fun ShareTargetPicker(
         if (!loading && workspaceOptions.isEmpty() && doctorOptions.isEmpty()) {
             Text(
                 "Chưa có nơi nhận phù hợp. Hãy thử từ khóa khác hoặc tải lại.",
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
@@ -443,12 +379,14 @@ private fun ShareTargetOptionRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (selected) PrimaryBlue.copy(alpha = 0.08f) else Color(0xFFF8FAFC),
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                 RoundedCornerShape(12.dp)
             )
             .border(
                 1.dp,
-                if (selected) PrimaryBlue else Color(0xFFE2E8F0),
+                if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant,
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
@@ -458,29 +396,39 @@ private fun ShareTargetOptionRow(
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .background(if (selected) PrimaryBlue.copy(alpha = 0.12f) else Color.White, RoundedCornerShape(10.dp)),
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    else MaterialTheme.colorScheme.surface,
+                    RoundedCornerShape(10.dp),
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = if (selected) PrimaryBlue else TextSecondary, modifier = Modifier.size(20.dp))
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
         }
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             if (subtitle.isNotBlank()) {
-                Text(subtitle, color = TextSecondary, fontSize = 12.sp)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
         }
         if (selected) {
-            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         }
     }
 }
 
 @Composable
 fun FilterTab(text: String, icon: ImageVector?, isSelected: Boolean, onClick: () -> Unit) {
-    val bgColor = if (isSelected) PrimaryBlue else Color.White
-    val textColor = if (isSelected) Color.White else TextPrimary
-    val borderColor = if (isSelected) Color.Transparent else Border
+    val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val borderColor = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outlineVariant
     val shadow = if (isSelected) 4.dp else 0.dp
 
     Row(
@@ -510,11 +458,17 @@ fun RecordCard(
     isSharing: Boolean,
     hasShareTarget: Boolean
 ) {
+    val semanticColors = ShcareTheme.colors
     val isRecording = record.status == "recording"
-    val statusColor = when (record.status) {
-        "normal" -> Color(0xFF10B981)
-        "recording" -> PrimaryBlue
-        else -> Color(0xFFF59E0B)
+    val statusContainerColor = when (record.status) {
+        "normal" -> semanticColors.successContainer
+        "recording" -> MaterialTheme.colorScheme.primaryContainer
+        else -> semanticColors.warningContainer
+    }
+    val statusContentColor = when (record.status) {
+        "normal" -> semanticColors.onSuccessContainer
+        "recording" -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> semanticColors.onWarningContainer
     }
     val statusText = when (record.status) {
         "normal" -> "Bình thường"
@@ -525,8 +479,8 @@ fun RecordCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             .clickable { onClick() }
             .padding(16.dp)
     ) {
@@ -538,12 +492,13 @@ fun RecordCard(
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(record.id, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text(record.id, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.width(8.dp))
                     Box(
                         modifier = Modifier
                             .background(
-                                if (record.type == "heart") Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF0EA5E9).copy(alpha = 0.1f),
+                                if (record.type == "heart") MaterialTheme.colorScheme.primaryContainer
+                                else semanticColors.infoContainer,
                                 RoundedCornerShape(4.dp)
                             )
                             .padding(4.dp)
@@ -551,20 +506,21 @@ fun RecordCard(
                         Icon(
                             if (record.type == "heart") Icons.Default.Favorite else Icons.Default.Air,
                             contentDescription = null,
-                            tint = if (record.type == "heart") Color(0xFFEF4444) else Color(0xFF0EA5E9),
+                            tint = if (record.type == "heart") MaterialTheme.colorScheme.onPrimaryContainer
+                            else semanticColors.onInfoContainer,
                             modifier = Modifier.size(12.dp)
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(record.patientName, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(record.patientId, color = TextSecondary, fontSize = 14.sp)
+                Text(record.patientName, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(record.patientId, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             }
             
             Box(
                 modifier = Modifier
                     .background(
-                        statusColor.copy(alpha = 0.1f),
+                        statusContainerColor,
                         RoundedCornerShape(16.dp)
                     )
                     .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -573,13 +529,13 @@ fun RecordCard(
                     Icon(
                         if (record.status == "normal") Icons.Default.CheckCircle else Icons.Default.Warning,
                         contentDescription = null,
-                        tint = statusColor,
+                        tint = statusContentColor,
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         statusText,
-                        color = statusColor,
+                        color = statusContentColor,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -593,11 +549,11 @@ fun RecordCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF8FAFC), RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
                 .padding(12.dp)
         ) {
-            Text(record.diagnosis, color = TextPrimary.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(record.diagnosis, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
         
         Spacer(modifier = Modifier.height(12.dp))
@@ -609,19 +565,19 @@ fun RecordCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${record.date} • ${record.time}", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("${record.date} • ${record.time}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.width(16.dp))
-                Text("Thời lượng: ${record.duration}", color = TextSecondary, fontSize = 14.sp)
+                Text("Thời lượng: ${record.duration}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             }
             Box(
                 modifier = Modifier
-                    .background(PrimaryBlue.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Độ tin cậy:", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text("Độ tin cậy:", color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("${record.aiConfidence}%", color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("${record.aiConfidence}%", color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -651,15 +607,15 @@ fun RecordCard(
                 enabled = !isStopping,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryBlue,
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 if (isStopping) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
@@ -675,11 +631,21 @@ fun EmptyRecordsState(
     hasError: Boolean,
     onRetry: () -> Unit
 ) {
+    val containerColor = if (hasError) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (hasError) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Border, RoundedCornerShape(16.dp))
+            .background(containerColor, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -687,12 +653,12 @@ fun EmptyRecordsState(
         Icon(
             if (hasError) Icons.Default.Warning else Icons.Default.Description,
             contentDescription = null,
-            tint = if (hasError) Color(0xFFEF4444) else PrimaryBlue,
+            tint = if (hasError) contentColor else MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(32.dp)
         )
         Text(
             text = if (hasError) "Không tải được hồ sơ" else "Chưa có hồ sơ trong bộ lọc này",
-            color = TextPrimary,
+            color = contentColor,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold
         )
@@ -707,7 +673,7 @@ fun EmptyRecordsState(
                     else -> "Chưa có lượt đo nào được đồng bộ về backend."
                 }
             },
-            color = TextSecondary,
+            color = if (hasError) contentColor else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
             lineHeight = 20.sp

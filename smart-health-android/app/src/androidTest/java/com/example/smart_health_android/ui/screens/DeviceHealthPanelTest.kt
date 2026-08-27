@@ -2,6 +2,9 @@ package com.example.smart_health_android.ui.screens
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -43,11 +46,9 @@ class DeviceHealthPanelTest {
                 ShcareMobileTheme(mode = ShcareThemeMode.Dark) {
                     DeviceHealthPanel(
                         snapshot = snapshot,
-                        isDisconnecting = false,
-                        isDeleting = false,
+                        isReleasing = false,
                         mutationEnabled = true,
-                        onDisconnect = {},
-                        onDelete = {},
+                        onRelease = {},
                     )
                 }
             }
@@ -61,6 +62,7 @@ class DeviceHealthPanelTest {
 
     @Test
     fun degradedTelemetryAndLongCommandRemainAvailableToTalkBack() {
+        val commandId = "cmd-2026-07-18-very-long-correlation-identifier"
         val snapshot = DeviceHealthSnapshot.from(
             device = SmartDevice(
                 id = "dev-001",
@@ -70,7 +72,7 @@ class DeviceHealthPanelTest {
                     i2sStatus = "degraded",
                     lastCommandState = "failed",
                     lastCommandCode = "DEVICE_AUDIO_PIPELINE_NOT_READY",
-                    lastCommandId = "cmd-2026-07-18-very-long-correlation-identifier",
+                    lastCommandId = commandId,
                 ),
             ),
             now = Instant.parse("2026-07-18T12:00:00Z"),
@@ -80,11 +82,9 @@ class DeviceHealthPanelTest {
             ShcareMobileTheme {
                 DeviceHealthPanel(
                     snapshot = snapshot,
-                    isDisconnecting = false,
-                    isDeleting = false,
+                    isReleasing = false,
                     mutationEnabled = true,
-                    onDisconnect = {},
-                    onDelete = {},
+                    onRelease = {},
                 )
             }
         }
@@ -92,6 +92,13 @@ class DeviceHealthPanelTest {
         composeRule.onNodeWithTag("device_health.presence")
             .assertTextContains("Online, cần kiểm tra")
         composeRule.onNodeWithTag("device_health.metric.last_command")
-            .assertTextContains("cmd-2026-07-18-very-long-correlation-identifier")
+            .assertTextContains(commandId, substring = true)
+            .assert(
+                SemanticsMatcher("state description contains the command correlation ID") { node ->
+                    node.config
+                        .getOrElse(SemanticsProperties.StateDescription) { "" }
+                        .contains(commandId)
+                },
+            )
     }
 }

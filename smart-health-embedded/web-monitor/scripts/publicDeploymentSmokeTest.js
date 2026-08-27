@@ -2,6 +2,7 @@ const DEFAULT_BACKEND_URL = "https://smart-health-api-r5is.onrender.com";
 const DEFAULT_ADMIN_URL = "https://shcare-admin.web.app";
 const DEFAULT_PORTAL_URL = "https://shcare.web.app";
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
+const { normalizeCommit, normalizeReleaseId } = require("../src/releaseIdentity");
 
 function normalizeUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
@@ -58,6 +59,34 @@ async function expectStatus(name, url, expectedStatuses, options = {}) {
   return { status: response.status, text };
 }
 
+function assertExpectedReleaseIdentity(data, expectedValue, expectedCommitValue) {
+  const raw = String(expectedValue || "").trim();
+  if (raw) {
+    const expected = normalizeReleaseId(raw);
+    if (!expected) {
+      throw new Error("SMOKE_EXPECTED_RELEASE_ID is malformed.");
+    }
+    const actual = normalizeReleaseId(data?.release?.id);
+    if (actual !== expected) {
+      throw new Error(`Backend release mismatch: expected ${expected}, received ${actual || "missing"}.`);
+    }
+  }
+
+  const rawCommit = String(expectedCommitValue || "").trim();
+  if (rawCommit) {
+    const expectedCommit = normalizeCommit(rawCommit);
+    if (!expectedCommit) {
+      throw new Error("SMOKE_EXPECTED_COMMIT is malformed.");
+    }
+    const actualCommit = normalizeCommit(data?.release?.commit);
+    if (actualCommit !== expectedCommit) {
+      throw new Error(
+        `Backend commit mismatch: expected ${expectedCommit}, received ${actualCommit || "missing"}.`,
+      );
+    }
+  }
+}
+
 async function main() {
   const backendUrl = normalizeUrl(process.env.SMOKE_BACKEND_URL || process.env.PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL);
   const adminUrl = normalizeUrl(process.env.SMOKE_ADMIN_URL || DEFAULT_ADMIN_URL);
@@ -69,7 +98,18 @@ async function main() {
     `${backendUrl}/api/health`,
     (data) => data && data.ok === true && data.service === "smart-health-backend",
   );
+  assertExpectedReleaseIdentity(
+    health.data,
+    process.env.SMOKE_EXPECTED_RELEASE_ID,
+    process.env.SMOKE_EXPECTED_COMMIT,
+  );
   results.push(`PASS backend health HTTP ${health.status}`);
+  if (process.env.SMOKE_EXPECTED_RELEASE_ID) {
+    results.push(`PASS backend release ${health.data.release.id}`);
+  }
+  if (process.env.SMOKE_EXPECTED_COMMIT) {
+    results.push(`PASS backend commit ${health.data.release.commit}`);
+  }
 
   const me = await expectStatus("Unauthenticated /api/me", `${backendUrl}/api/me`, [401]);
   results.push(`PASS unauthenticated /api/me rejected with HTTP ${me.status}`);
@@ -107,8 +147,15 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("Smart Health public deployment smoke: FAIL");
-  console.error(error && error.message ? error.message : error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("Smart Health public deployment smoke: FAIL");
+    console.error(error && error.message ? error.message : error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  assertExpectedReleaseIdentity,
+  normalizeUrl,
+};

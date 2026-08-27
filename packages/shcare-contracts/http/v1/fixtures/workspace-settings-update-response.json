@@ -1,0 +1,18 @@
+{
+  "ownership": {
+    "userId": "user_alpha_admin",
+    "workspaceId": "workspace_alpha"
+  },
+  "workspace": {
+    "id": "workspace_alpha",
+    "name": "Phòng khám Alpha",
+    "address": "1 Đường Sức Khỏe",
+    "phone": "0281234567",
+    "email": "ops@alpha.example",
+    "website": "https://alpha.example",
+    "version": 8,
+    "updatedAt": "2026-08-09T08:00:00.000Z"
+  },
+  "operationId": "workspace_settings_operation_alpha_1",
+  "replayed": false
+}

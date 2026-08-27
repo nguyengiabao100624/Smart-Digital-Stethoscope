@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/appointment-mutation-response.schema.json",
+  "title": "Shcare appointment mutation response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appointment"],
+  "properties": {
+    "appointment": { "$ref": "appointment-list-response.schema.json#/$defs/appointment" }
+  },
+  "x-shcare-http": {
+    "methods": ["POST", "PATCH"],
+    "paths": [
+      "/portal/appointments",
+      "/portal/appointments/{appointmentId}",
+      "/portal/appointments/{appointmentId}/reschedule",
+      "/portal/appointments/{appointmentId}/cancel"
+    ],
+    "requiredHeaders": ["Idempotency-Key"]
+  }
+}

@@ -1,29 +1,33 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
@@ -33,48 +37,48 @@ import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.smart_health_android.data.AuthUser
-import com.example.smart_health_android.data.ClinicOption
-import com.example.smart_health_android.data.FirebaseAuthService
-import com.example.smart_health_android.data.SmartHealthPushRegistrar
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.SpecialtyOption
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.Background
-import com.example.smart_health_android.ui.theme.Border
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.PrimaryTeal
-import com.example.smart_health_android.ui.theme.Surface
-import com.example.smart_health_android.ui.theme.TextPrimary
-import com.example.smart_health_android.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import org.json.JSONObject
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.BuildConfig
+import com.example.smart_health_android.R
+import com.example.smart_health_android.data.FirebaseOwnerBinding
+import com.example.smart_health_android.security.DoctorApprovalUiAction
+import com.example.smart_health_android.security.DoctorApprovalUiEffect
+import com.example.smart_health_android.security.DoctorApprovalViewModel
+import com.example.smart_health_android.security.DoctorApprovalViewModelFactory
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
 private fun roleInfoFieldLabel(field: String): String {
     return when (field) {
@@ -88,348 +92,629 @@ private fun roleInfoFieldLabel(field: String): String {
     }
 }
 
-private fun AuthUser.isSoloPracticeDoctor(): Boolean {
-    return workspaceType == "solo_practice" || accountType == "solo_doctor"
+@Composable
+fun DoctorApprovalPendingScreen(
+    firebaseOwner: FirebaseOwnerBinding,
+    onApproved: (FirebaseOwnerBinding) -> Unit,
+    onLogout: (FirebaseOwnerBinding) -> Unit,
+) {
+    val factory = remember(firebaseOwner) {
+        DoctorApprovalViewModelFactory(firebaseOwner)
+    }
+    val doctorApprovalViewModel: DoctorApprovalViewModel = viewModel(
+        factory = factory,
+    )
+    DoctorApprovalPendingRoute(
+        onApproved = onApproved,
+        onLogout = onLogout,
+        doctorApprovalViewModel = doctorApprovalViewModel,
+    )
 }
 
 @Composable
-fun DoctorApprovalPendingScreen(
-    onApproved: () -> Unit,
-    onLogout: () -> Unit
+internal fun DoctorApprovalPendingRoute(
+    onApproved: (FirebaseOwnerBinding) -> Unit,
+    onLogout: (FirebaseOwnerBinding) -> Unit,
+    doctorApprovalViewModel: DoctorApprovalViewModel,
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    var user by remember { mutableStateOf<AuthUser?>(null) }
-    var clinics by remember { mutableStateOf<List<ClinicOption>>(emptyList()) }
-    var specialties by remember { mutableStateOf<List<SpecialtyOption>>(emptyList()) }
-    var name by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var license by remember { mutableStateOf("") }
-    var selectedClinicId by remember { mutableStateOf("") }
-    var clinicName by remember { mutableStateOf("") }
-    var selectedAccountType by remember { mutableStateOf("doctor") }
-    var selectedSpecialtyId by remember { mutableStateOf("") }
-    var reason by remember { mutableStateOf("") }
-    var isChecking by remember { mutableStateOf(false) }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var statusMessage by remember {
-        mutableStateOf("Yêu cầu của bạn đã được gửi đến quản trị viên. Bạn sẽ dùng được chế độ bác sĩ sau khi tài khoản được phê duyệt.")
-    }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    fun applyUser(nextUser: AuthUser) {
-        user = nextUser
-        name = nextUser.name
-        phone = nextUser.phone
-        license = nextUser.license
-        clinicName = nextUser.hospital.ifBlank { nextUser.clinicName.ifBlank { nextUser.clinicSuggestion } }
-        selectedAccountType = if (nextUser.isSoloPracticeDoctor()) "solo_doctor" else "doctor"
-        selectedClinicId = if (nextUser.isSoloPracticeDoctor()) "" else nextUser.organizationId
-        selectedSpecialtyId = specialties.firstOrNull { it.name == nextUser.department || it.name == nextUser.specialty }?.id.orEmpty()
-        reason = nextUser.registrationReason
-    }
-
-    fun refreshStatus(showLoading: Boolean = true) {
-        if (showLoading) {
-            isChecking = true
-        }
-        errorMessage = null
-        coroutineScope.launch {
-            try {
-                val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
-                val result = SmartHealthRepository.api.authenticateFirebase(idToken)
-                runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
-                applyUser(result.user)
-                val approvedDoctor = result.user.role == "doctor" && result.user.roleRequestStatus == "approved"
-                if (approvedDoctor || result.user.role == "admin") {
-                    statusMessage = "Tài khoản đã được phê duyệt. Đang chuyển vào dashboard bác sĩ..."
-                    onApproved()
-                } else {
-                    statusMessage = when (result.user.roleRequestStatus) {
-                        "rejected" -> "Yêu cầu bác sĩ đã bị từ chối. Vui lòng liên hệ quản trị viên."
-                        "needs_info" -> result.user.roleInfoRequestMessage.ifBlank {
-                            "Quản trị viên yêu cầu bổ sung thông tin hồ sơ bác sĩ."
-                        }
-                        "pending" -> "Tài khoản vẫn đang chờ quản trị viên phê duyệt."
-                        else -> "Tài khoản chưa có quyền bác sĩ. Vui lòng gửi yêu cầu hoặc liên hệ quản trị viên."
-                    }
-                }
-            } catch (exception: Exception) {
-                if (showLoading) {
-                    errorMessage = exception.toVietnameseMessage("Không thể kiểm tra trạng thái duyệt tài khoản.")
-                }
-            } finally {
-                if (showLoading) {
-                    isChecking = false
-                }
+    val uiState by doctorApprovalViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(doctorApprovalViewModel, onApproved, onLogout) {
+        doctorApprovalViewModel.effects.collect { effect ->
+            when (effect) {
+                is DoctorApprovalUiEffect.NavigateApproved ->
+                    onApproved(effect.firebaseOwner)
+                is DoctorApprovalUiEffect.NavigateLogout ->
+                    onLogout(effect.firebaseOwner)
             }
         }
     }
 
-    LaunchedEffect(Unit) {
-        try {
-            clinics = SmartHealthRepository.api.listClinics()
-            specialties = SmartHealthRepository.api.listSpecialties()
-        } catch (_: Exception) {
-            // The status check below still works; the form will show a retryable error if submit needs catalogs.
-        }
-        refreshStatus()
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(15000)
-            val currentStatus = user?.roleRequestStatus
-            if (currentStatus == "approved" || currentStatus == "rejected" || currentStatus == "needs_info") {
-                break
-            }
-            refreshStatus(showLoading = false)
-        }
-    }
-
+    val user = uiState.user
+    val clinics = uiState.clinics
+    val specialties = uiState.specialties
+    val name = uiState.name
+    val phone = uiState.phone
+    val license = uiState.license
+    val selectedClinicId = uiState.selectedClinicId
+    val clinicName = uiState.clinicName
+    val selectedSpecialtyId = uiState.selectedSpecialtyId
+    val reason = uiState.reason
+    val isChecking = uiState.isChecking
+    val isSubmitting = uiState.isSubmitting
+    val isLoadingCatalogs = uiState.isLoadingCatalogs
+    val fieldErrors = uiState.fieldErrors
+    val showDiscardDialog = uiState.showDiscardDialog
+    val statusMessage = uiState.statusMessage
+    val errorMessage = uiState.errorMessage.takeIf(String::isNotBlank)
+    val catalogErrorMessage = listOf(
+        uiState.clinicCatalogError,
+        uiState.specialtyCatalogError,
+    ).filter(String::isNotBlank).joinToString(" ").takeIf(String::isNotBlank)
     val selectedClinic = clinics.firstOrNull { it.id == selectedClinicId }
     val selectedSpecialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
-    val needsInfo = user?.roleRequestStatus == "needs_info"
-    val isSoloPractice = selectedAccountType == "solo_doctor"
-    val requiredFieldLabels = user?.roleInfoRequiredFields
-        .orEmpty()
+    val needsInfo = uiState.needsInfo
+    val isRejected = uiState.isRejected
+    val isSoloPractice = uiState.isSoloPractice
+    val requiredFields = user?.roleInfoRequiredFields.orEmpty()
+    val requiredFieldLabels = requiredFields
         .map(::roleInfoFieldLabel)
         .distinct()
 
-    Column(
+    BackHandler(enabled = uiState.isBusy || uiState.hasUnsavedChanges) {
+        doctorApprovalViewModel.onAction(DoctorApprovalUiAction.LogoutRequested)
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                doctorApprovalViewModel.onAction(DoctorApprovalUiAction.DiscardDismissed)
+            },
+            title = { Text("Bỏ thay đổi chưa gửi?") },
+            text = {
+                Text(
+                    "Thông tin bạn vừa sửa chưa được quản trị viên nhận. " +
+                        "Bạn có muốn bỏ thay đổi và đăng xuất không?",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        doctorApprovalViewModel.onAction(
+                            DoctorApprovalUiAction.DiscardLogoutConfirmed,
+                        )
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text("Bỏ thay đổi và đăng xuất")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        doctorApprovalViewModel.onAction(DoctorApprovalUiAction.DiscardDismissed)
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text("Tiếp tục chỉnh sửa")
+                }
+            },
+        )
+    }
+
+    val statusContainerColor = when {
+        isRejected -> MaterialTheme.colorScheme.errorContainer
+        needsInfo || user?.roleRequestStatus == "pending" ->
+            ShcareTheme.colors.warningContainer
+
+        else -> ShcareTheme.colors.infoContainer
+    }
+    val statusContentColor = when {
+        isRejected -> MaterialTheme.colorScheme.onErrorContainer
+        needsInfo || user?.roleRequestStatus == "pending" ->
+            ShcareTheme.colors.onWarningContainer
+
+        else -> ShcareTheme.colors.onInfoContainer
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
-            .padding(24.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding(),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
-        Box(
+        LazyColumn(
             modifier = Modifier
-                .size(88.dp)
-                .background(PrimaryBlue.copy(alpha = 0.1f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.HourglassTop, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(44.dp))
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            if (needsInfo) "Cần bổ sung hồ sơ bác sĩ" else "Đang chờ duyệt tài khoản bác sĩ",
-            color = TextPrimary,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
+                .widthIn(max = 640.dp)
                 .fillMaxWidth()
-                .background(Color(0xFFFFF7ED), RoundedCornerShape(14.dp))
-                .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                .padding(14.dp)
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(
+                horizontal = ShcareTheme.spacing.extraLarge,
+                vertical = ShcareTheme.spacing.extraLarge,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                statusMessage,
-                color = Color(0xFF92400E),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                lineHeight = 22.sp,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White, RoundedCornerShape(16.dp))
-                .border(1.dp, Border, RoundedCornerShape(16.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            PendingStep(Icons.Default.Email, PrimaryTeal, "Email đã xác thực", "Tài khoản đã qua bước xác thực Firebase.")
-            PendingStep(
-                Icons.Default.VerifiedUser,
-                PrimaryBlue,
-                "Hồ sơ đang được kiểm tra",
-                if (isSoloPractice) {
-                    "Quản trị viên xác minh giấy phép, phòng khám tư và chuyên khoa."
-                } else {
-                    "Quản trị viên xác minh giấy phép, cơ sở y tế và chuyên khoa."
-                }
-            )
-            PendingStep(Icons.Default.CheckCircle, Color(0xFF10B981), "Kích hoạt quyền bác sĩ", "Sau khi được duyệt, bấm kiểm tra trạng thái để vào dashboard.")
-        }
-
-        if (needsInfo) {
-            Spacer(modifier = Modifier.height(18.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White, RoundedCornerShape(16.dp))
-                    .border(1.dp, Border, RoundedCornerShape(16.dp))
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text("Bổ sung thông tin", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                if (requiredFieldLabels.isNotEmpty()) {
+            item {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HourglassTop,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(44.dp),
+                        )
+                    }
                     Text(
-                        "Admin yêu cầu bổ sung: ${requiredFieldLabels.joinToString(", ")}.",
-                        color = Color(0xFF92400E),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 18.sp
+                        text = if (needsInfo) {
+                            "Cần bổ sung hồ sơ bác sĩ"
+                        } else {
+                            "Đang chờ duyệt tài khoản bác sĩ"
+                        },
+                        color = MaterialTheme.colorScheme.onBackground,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.semantics { heading() },
                     )
                 }
-                TextFieldGroup("Họ và tên", name, { name = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "Nhập họ tên")
-                TextFieldGroup("Số điện thoại", phone, { phone = it }, Icons.Default.Phone, "0912 345 678")
-                TextFieldGroup("Số chứng chỉ hành nghề", license, { license = it }, androidx.compose.material.icons.Icons.Default.VerifiedUser, "VD: CCHN-BYT-2026-001")
-                if (isSoloPractice) {
-                    TextFieldGroup("Tên phòng khám tư", clinicName, { clinicName = it }, Icons.Default.Home, "VD: Phòng khám Tim mạch An Khang")
-                } else {
-                    PendingDropdown("Cơ sở y tế", selectedClinic?.name.orEmpty(), "Chọn cơ sở y tế", clinics.map { it.id to it.name }, Icons.Default.Home) {
-                        selectedClinicId = it
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    shape = MaterialTheme.shapes.large,
+                    color = statusContainerColor,
+                    contentColor = statusContentColor,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = statusContentColor.copy(alpha = 0.28f),
+                    ),
+                ) {
+                    Text(
+                        text = statusMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(ShcareTheme.spacing.large),
+                    )
+                }
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(ShcareTheme.spacing.large),
+                        verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+                    ) {
+                        PendingStep(
+                            icon = Icons.Default.Email,
+                            iconTint = ShcareTheme.colors.success,
+                            iconContainerColor = ShcareTheme.colors.successContainer,
+                            title = stringResource(R.string.doctor_approval_email_verified_title),
+                            description = stringResource(
+                                R.string.doctor_approval_email_verified_description,
+                            ),
+                        )
+                        PendingStep(
+                            icon = Icons.Default.VerifiedUser,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            title = stringResource(R.string.doctor_approval_review_title),
+                            description = if (isSoloPractice) {
+                                "Quản trị viên xác minh giấy phép, phòng khám tư và chuyên khoa."
+                            } else {
+                                "Quản trị viên xác minh giấy phép, cơ sở y tế và chuyên khoa."
+                            },
+                        )
+                        PendingStep(
+                            icon = Icons.Default.CheckCircle,
+                            iconTint = ShcareTheme.colors.info,
+                            iconContainerColor = ShcareTheme.colors.infoContainer,
+                            title = stringResource(R.string.doctor_approval_activation_title),
+                            description =
+                                "Sau khi được duyệt, hãy kiểm tra trạng thái để mở không gian bác sĩ.",
+                        )
                     }
                 }
-                PendingDropdown("Chuyên khoa", selectedSpecialty?.name.orEmpty(), "Chọn chuyên khoa", specialties.map { it.id to it.name }, Icons.Default.LocalHospital) {
-                    selectedSpecialtyId = it
-                }
-                TextFieldGroup("Lý do đăng ký", reason, { reason = it }, Icons.Default.Send, "Bổ sung lý do nếu admin yêu cầu")
-                Button(
-                    onClick = {
-                        val clinic = clinics.firstOrNull { it.id == selectedClinicId }
-                        val specialty = specialties.firstOrNull { it.id == selectedSpecialtyId }
-                        val nextClinicName = if (isSoloPractice) clinicName.trim() else clinic?.name.orEmpty()
-                        if (name.isBlank() || phone.isBlank() || license.isBlank() || specialty == null) {
-                            errorMessage = "Vui lòng bổ sung đủ họ tên, số điện thoại, CCHN và chuyên khoa."
-                            return@Button
-                        }
-                        if (isSoloPractice && nextClinicName.isBlank()) {
-                            errorMessage = "Vui lòng nhập tên phòng khám tư."
-                            return@Button
-                        }
-                        if (!isSoloPractice && clinic == null) {
-                            errorMessage = "Vui lòng chọn cơ sở y tế."
-                            return@Button
-                        }
-                        val nextAccountType = if (isSoloPractice) "solo_doctor" else "doctor"
-                        val nextWorkspaceType = if (isSoloPractice) "solo_practice" else "clinic"
-                        val nextOrganizationId = if (isSoloPractice) "" else clinic!!.id
-                        isSubmitting = true
-                        errorMessage = null
-                        coroutineScope.launch {
-                            try {
-                                val profilePayload = JSONObject()
-                                    .put("name", name.trim())
-                                    .put("phone", phone.trim())
-                                    .put("license", license.trim())
-                                    .put("hospital", nextClinicName)
-                                    .put("department", specialty.name)
-                                    .put("specialty", specialty.name)
-                                    .put("accountType", nextAccountType)
-                                    .put("workspaceType", nextWorkspaceType)
-                                if (!isSoloPractice) {
-                                    profilePayload.put("organizationId", nextOrganizationId)
+            }
+
+            if (needsInfo) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(ShcareTheme.spacing.large),
+                            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.doctor_approval_add_information),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.semantics { heading() },
+                            )
+
+                            if (requiredFieldLabels.isNotEmpty()) {
+                                Surface(
+                                    color = ShcareTheme.colors.warningContainer,
+                                    contentColor = ShcareTheme.colors.onWarningContainer,
+                                    shape = MaterialTheme.shapes.medium,
+                                ) {
+                                    Text(
+                                        text =
+                                            "Quản trị viên yêu cầu bổ sung: " +
+                                                "${requiredFieldLabels.joinToString(", ")}.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(ShcareTheme.spacing.medium),
+                                    )
                                 }
-                                SmartHealthRepository.api.updateMe(profilePayload)
-                                val updated = SmartHealthRepository.api.requestRole(
-                                    requestedRole = "doctor",
-                                    name = name.trim(),
-                                    phone = phone.trim(),
-                                    license = license.trim(),
-                                    hospital = nextClinicName,
-                                    department = specialty.name,
-                                    organizationId = nextOrganizationId,
-                                    reason = reason.trim(),
-                                    accountType = nextAccountType,
-                                    workspaceType = nextWorkspaceType
+                            }
+
+                            if (isLoadingCatalogs) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .semantics { liveRegion = LiveRegionMode.Polite },
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        ShcareTheme.spacing.medium,
+                                    ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.doctor_approval_loading_catalog),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                            catalogErrorMessage?.let { catalogError ->
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                    shape = MaterialTheme.shapes.medium,
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(ShcareTheme.spacing.medium),
+                                        verticalArrangement = Arrangement.spacedBy(
+                                            ShcareTheme.spacing.small,
+                                        ),
+                                    ) {
+                                        Text(
+                                            text = catalogError,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.semantics {
+                                                liveRegion = LiveRegionMode.Assertive
+                                            },
+                                        )
+                                        TextButton(
+                                            onClick = {
+                                                doctorApprovalViewModel.onAction(
+                                                    DoctorApprovalUiAction.RetryCatalogs,
+                                                )
+                                            },
+                                            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                        ) {
+                                            Text("Thử tải lại")
+                                        }
+                                    }
+                                }
+                            }
+
+                            TextFieldGroup(
+                                label = stringResource(R.string.doctor_approval_full_name),
+                                value = name,
+                                onValueChange = {
+                                    doctorApprovalViewModel.onAction(
+                                        DoctorApprovalUiAction.NameChanged(it),
+                                    )
+                                },
+                                icon = Icons.Default.VerifiedUser,
+                                placeholder = stringResource(R.string.doctor_approval_full_name_hint),
+                                enabled = !uiState.isBusy,
+                                errorMessage = fieldErrors["name"],
+                            )
+                            TextFieldGroup(
+                                label = stringResource(R.string.doctor_approval_phone),
+                                value = phone,
+                                onValueChange = {
+                                    doctorApprovalViewModel.onAction(
+                                        DoctorApprovalUiAction.PhoneChanged(it),
+                                    )
+                                },
+                                icon = Icons.Default.Phone,
+                                placeholder = stringResource(R.string.doctor_approval_phone_hint),
+                                enabled = !uiState.isBusy,
+                                errorMessage = fieldErrors["phone"],
+                            )
+                            TextFieldGroup(
+                                label = stringResource(R.string.doctor_approval_license),
+                                value = license,
+                                onValueChange = {
+                                    doctorApprovalViewModel.onAction(
+                                        DoctorApprovalUiAction.LicenseChanged(it),
+                                    )
+                                },
+                                icon = Icons.Default.VerifiedUser,
+                                placeholder = stringResource(R.string.doctor_approval_license_hint),
+                                enabled = !uiState.isBusy,
+                                errorMessage = fieldErrors["license"],
+                            )
+                            if (isSoloPractice) {
+                                TextFieldGroup(
+                                    label = stringResource(R.string.doctor_approval_private_clinic),
+                                    value = clinicName,
+                                    onValueChange = {
+                                        doctorApprovalViewModel.onAction(
+                                            DoctorApprovalUiAction.ClinicNameChanged(it),
+                                        )
+                                    },
+                                    icon = Icons.Default.Home,
+                                    placeholder = stringResource(
+                                        R.string.doctor_approval_private_clinic_hint,
+                                    ),
+                                    enabled = !uiState.isBusy,
+                                    errorMessage = fieldErrors["clinic"],
                                 )
-                                applyUser(updated)
-                                statusMessage = "Đã gửi lại hồ sơ. Tài khoản đang chờ quản trị viên phê duyệt."
-                            } catch (exception: Exception) {
-                                errorMessage = exception.toVietnameseMessage("Không thể gửi lại hồ sơ bác sĩ.")
-                            } finally {
-                                isSubmitting = false
+                            } else {
+                                PendingDropdown(
+                                    label = stringResource(R.string.doctor_approval_facility),
+                                    value = selectedClinic?.name.orEmpty(),
+                                    placeholder = stringResource(R.string.doctor_approval_facility_hint),
+                                    options = clinics.map { it.id to it.name },
+                                    icon = Icons.Default.Home,
+                                    enabled = !uiState.isBusy,
+                                    errorMessage = fieldErrors["clinic"],
+                                ) {
+                                    doctorApprovalViewModel.onAction(
+                                        DoctorApprovalUiAction.ClinicSelected(it),
+                                    )
+                                }
+                            }
+                            PendingDropdown(
+                                label = stringResource(R.string.doctor_approval_department),
+                                value = selectedSpecialty?.name.orEmpty(),
+                                placeholder = stringResource(R.string.doctor_approval_department_hint),
+                                options = specialties.map { it.id to it.name },
+                                icon = Icons.Default.LocalHospital,
+                                enabled = !uiState.isBusy,
+                                errorMessage = fieldErrors["specialty"],
+                            ) {
+                                doctorApprovalViewModel.onAction(
+                                    DoctorApprovalUiAction.SpecialtySelected(it),
+                                )
+                            }
+                            TextFieldGroup(
+                                label = stringResource(R.string.doctor_approval_reason),
+                                value = reason,
+                                onValueChange = {
+                                    doctorApprovalViewModel.onAction(
+                                        DoctorApprovalUiAction.ReasonChanged(it),
+                                    )
+                                },
+                                icon = Icons.AutoMirrored.Filled.Send,
+                                placeholder = stringResource(R.string.doctor_approval_reason_hint),
+                                enabled = !uiState.isBusy,
+                                errorMessage = fieldErrors["reason"],
+                            )
+                            Button(
+                                onClick = {
+                                    doctorApprovalViewModel.onAction(
+                                        DoctorApprovalUiAction.SubmitNeedsInfo,
+                                    )
+                                },
+                                enabled = !uiState.isBusy && !isLoadingCatalogs,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 52.dp),
+                            ) {
+                                if (isSubmitting) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                                    Text("Đang gửi hồ sơ…")
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                                    Text(
+                                        text = stringResource(R.string.doctor_approval_update_and_resubmit),
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
                             }
                         }
-                    },
-                    enabled = !isSubmitting,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isSubmitting) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                    } else {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Cập nhật và gửi lại", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-        }
 
-        errorMessage?.let {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                it,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+            errorMessage?.let { message ->
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { liveRegion = LiveRegionMode.Assertive },
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(ShcareTheme.spacing.large),
+                        )
+                    }
+                }
+            }
 
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = { refreshStatus() },
-            enabled = !isChecking,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            if (isChecking) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-            } else {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Kiểm tra lại trạng thái", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+                ) {
+                    Button(
+                        onClick = {
+                            doctorApprovalViewModel.onAction(
+                                DoctorApprovalUiAction.RefreshStatus,
+                            )
+                        },
+                        enabled = !isChecking && !isSubmitting,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 52.dp),
+                    ) {
+                        if (isChecking) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                            Text("Đang kiểm tra…")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                            Text(
+                                text = stringResource(R.string.doctor_approval_refresh_status),
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            doctorApprovalViewModel.onAction(
+                                DoctorApprovalUiAction.LogoutRequested,
+                            )
+                        },
+                        enabled = !uiState.isBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 52.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                        Text(
+                            text = stringResource(R.string.doctor_approval_sign_out),
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(
+                        R.string.doctor_approval_app_version,
+                        BuildConfig.VERSION_NAME,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedButton(
-            onClick = onLogout,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = Surface),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Icon(Icons.Default.Logout, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Đăng xuất", color = TextSecondary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        }
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun PendingStep(icon: ImageVector, iconTint: Color, title: String, description: String) {
-    Row(verticalAlignment = Alignment.Top) {
+private fun PendingStep(
+    icon: ImageVector,
+    iconTint: Color,
+    iconContainerColor: Color,
+    title: String,
+    description: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = title
+            },
+        verticalAlignment = Alignment.Top,
+    ) {
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .background(iconTint.copy(alpha = 0.12f), CircleShape),
-            contentAlignment = Alignment.Center
+                .background(iconContainerColor, CircleShape),
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp),
+            )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(description, color = TextSecondary, fontSize = 13.sp, lineHeight = 18.sp)
+        Spacer(modifier = Modifier.width(ShcareTheme.spacing.medium))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+        ) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
@@ -441,10 +726,15 @@ private fun PendingDropdown(
     placeholder: String,
     options: List<Pair<String, String>>,
     icon: ImageVector,
-    onSelected: (String) -> Unit
+    enabled: Boolean,
+    errorMessage: String?,
+    onSelected: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    LaunchedEffect(enabled) {
+        if (!enabled) expanded = false
+    }
     val visibleOptions = remember(options, query) {
         val cleanQuery = query.trim()
         if (cleanQuery.isBlank()) {
@@ -453,83 +743,145 @@ private fun PendingDropdown(
             options.filter { (_, name) -> name.contains(cleanQuery, ignoreCase = true) }
         }
     }
-    Column {
-        Text(label, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
+
+    Column(verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small)) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+        )
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .background(Color.White, RoundedCornerShape(12.dp))
-                .border(1.dp, if (expanded) PrimaryBlue else Border, RoundedCornerShape(12.dp))
-                .clickable {
+                .defaultMinSize(minHeight = 56.dp)
+                .clickable(
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClickLabel = "Mở danh sách $label",
+                ) {
                     query = ""
                     expanded = true
                 }
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .semantics {
+                    role = Role.Button
+                    stateDescription = value.ifBlank { "Chưa chọn" }
+                },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = BorderStroke(
+                width = 1.dp,
+                color = when {
+                    errorMessage != null -> MaterialTheme.colorScheme.error
+                    expanded -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                },
+            ),
         ) {
-            Icon(icon, contentDescription = null, tint = TextSecondary)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = value.ifBlank { placeholder },
-                color = if (value.isBlank()) TextSecondary.copy(alpha = 0.55f) else TextPrimary,
-                fontSize = 14.sp,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextSecondary)
+            Row(
+                modifier = Modifier.padding(horizontal = ShcareTheme.spacing.large),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.width(ShcareTheme.spacing.medium))
+                Text(
+                    text = value.ifBlank { placeholder },
+                    color = if (value.isBlank()) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        if (expanded) {
-            Dialog(onDismissRequest = { expanded = false }) {
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.semantics {
+                    liveRegion = LiveRegionMode.Assertive
+                },
+            )
+        }
+    }
+
+    if (expanded) {
+        Dialog(onDismissRequest = { expanded = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 6.dp,
+            ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(16.dp))
-                        .padding(16.dp)
+                    modifier = Modifier.padding(ShcareTheme.spacing.large),
+                    verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
                 ) {
-                    Text(label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.semantics { heading() },
+                    )
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Tìm kiếm", color = TextSecondary.copy(alpha = 0.6f)) },
+                        placeholder = { Text("Tìm kiếm") },
                         singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryBlue,
-                            unfocusedBorderColor = Border,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
-                        )
+                        shape = MaterialTheme.shapes.medium,
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 360.dp)
+                            .heightIn(max = 360.dp),
                     ) {
-                        items(visibleOptions, key = { it.first }) { (id, name) ->
-                            Text(
-                                text = name,
-                                color = TextPrimary,
-                                fontSize = 15.sp,
+                        items(visibleOptions, key = { it.first }) { (id, optionName) ->
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .clickable(
+                                        role = Role.Button,
+                                        onClickLabel = "Chọn $optionName",
+                                    ) {
                                         onSelected(id)
                                         expanded = false
                                     }
-                                    .padding(vertical = 14.dp, horizontal = 4.dp)
-                            )
+                                    .padding(horizontal = ShcareTheme.spacing.small),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = optionName,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                            }
                         }
                         if (visibleOptions.isEmpty()) {
                             item {
                                 Text(
-                                    text = "Không có kết quả phù hợp",
-                                    color = TextSecondary,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(vertical = 14.dp, horizontal = 4.dp)
+                                    text = stringResource(R.string.doctor_approval_no_matching_result),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(
+                                        vertical = ShcareTheme.spacing.large,
+                                        horizontal = ShcareTheme.spacing.small,
+                                    ),
                                 )
                             }
                         }

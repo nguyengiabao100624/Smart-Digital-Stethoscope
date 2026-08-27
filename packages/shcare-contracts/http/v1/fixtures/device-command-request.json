@@ -1,0 +1,6 @@
+{
+  "type": "wifi.status",
+  "payload": {},
+  "correlationId": "corr_device_status_001",
+  "ttlMs": 30000
+}

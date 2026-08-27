@@ -2,20 +2,30 @@ package com.example.smart_health_android.account
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.smart_health_android.data.AccountProfileUpdateIntent
+import com.example.smart_health_android.data.AccountProfileUpdateReceipt
 import com.example.smart_health_android.data.AuthUser
+import com.example.smart_health_android.data.AvatarCleanupAction
+import com.example.smart_health_android.data.AvatarCleanupStatus
+import com.example.smart_health_android.data.AvatarCleanupStatusSnapshot
+import com.example.smart_health_android.data.AvatarDeleteIntent
+import com.example.smart_health_android.data.AvatarDeleteReceipt
+import com.example.smart_health_android.data.AvatarDownloadIntent
+import com.example.smart_health_android.data.AvatarUploadIntent
+import com.example.smart_health_android.data.AvatarUploadReceipt
+import com.example.smart_health_android.data.canonicalWorkspaceId
 import com.example.smart_health_android.data.ClinicOption
 import com.example.smart_health_android.data.SmartHealthApiException
 import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.SpecialtyOption
 import java.io.IOException
+import java.security.MessageDigest
+import java.time.Instant
 import java.util.UUID
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 enum class AccountProfileLoadState {
     Loading,
@@ -44,6 +54,17 @@ enum class AccountProfileConfirmation {
     AvatarUpdated,
     AvatarDeleted,
 }
+
+enum class AccountProfileAvatarCleanup {
+    Upload,
+    Delete,
+    OrphanUpload,
+}
+
+data class AccountProfileAvatarCleanupNotice(
+    val action: AccountProfileAvatarCleanup,
+    val status: AvatarCleanupStatus,
+)
 
 data class AccountProfileDraft(
     val name: String = "",
@@ -81,12 +102,16 @@ data class AccountProfileUiState(
     val showDiscardConfirmation: Boolean = false,
     val showAvatarDeleteConfirmation: Boolean = false,
     val nameInvalid: Boolean = false,
-    val phoneInvalid: Boolean = false,
     val errorKind: AccountProfileErrorKind? = null,
     val requestId: String = "",
     val confirmation: AccountProfileConfirmation? = null,
+    val avatarCleanupNotice: AccountProfileAvatarCleanupNotice? = null,
     internal val saveIdempotencyKey: String = "",
+    internal val authSessionEpoch: Long = -1L,
+    internal val uploadAvatarIdempotencyKey: String = "",
+    internal val uploadAvatarFingerprint: String = "",
     internal val deleteAvatarIdempotencyKey: String = "",
+    internal val deleteAvatarFileId: String = "",
 ) {
     val hasUnsavedChanges: Boolean
         get() = draft.normalized() != savedDraft.normalized()
@@ -110,7 +135,6 @@ sealed interface AccountProfileAction {
     data object ConfirmAvatarDelete : AccountProfileAction
     data object ClearMessage : AccountProfileAction
     data class ChangeName(val value: String) : AccountProfileAction
-    data class ChangePhone(val value: String) : AccountProfileAction
     data class ChangeLicense(val value: String) : AccountProfileAction
     data class ChangeHospital(val value: String) : AccountProfileAction
     data class SelectClinic(val id: String) : AccountProfileAction
@@ -124,42 +148,51 @@ sealed interface AccountProfileAction {
     ) : AccountProfileAction
 }
 
-sealed interface AccountProfileEffect {
-    data object StartPhoneEnrollment : AccountProfileEffect
-    data class ReverifyPhone(val phone: String) : AccountProfileEffect
-}
-
 data class AccountProfileSnapshot(
     val user: AuthUser,
     val clinics: List<ClinicOption>,
     val specialties: List<SpecialtyOption>,
     val avatarBytes: ByteArray?,
     val avatarLoadFailed: Boolean,
+    val authSessionEpoch: Long,
+    val avatarCleanup: AvatarCleanupStatusSnapshot,
 )
 
 interface AccountProfileRepository {
     suspend fun load(): AccountProfileSnapshot
-    suspend fun updateProfile(draft: AccountProfileDraft, idempotencyKey: String): AuthUser
-    suspend fun uploadAvatar(
-        fileName: String,
-        contentType: String,
-        bytes: ByteArray,
-        idempotencyKey: String,
-    ): AuthUser
-    suspend fun deleteAvatar(idempotencyKey: String): AuthUser
-    suspend fun downloadAvatar(): ByteArray
+    suspend fun updateProfile(intent: AccountProfileUpdateIntent): AccountProfileUpdateReceipt
+    suspend fun uploadAvatar(intent: AvatarUploadIntent): AvatarUploadReceipt
+    suspend fun deleteAvatar(intent: AvatarDeleteIntent): AvatarDeleteReceipt
+    suspend fun downloadAvatar(intent: AvatarDownloadIntent): ByteArray
+    fun isAuthorityCurrent(expectedUserId: String, expectedAuthSessionEpoch: Long): Boolean
 }
 
 class ApiAccountProfileRepository : AccountProfileRepository {
     override suspend fun load(): AccountProfileSnapshot {
+        val authSessionEpoch = SmartHealthRepository.api.currentAuthSessionEpoch()
         val clinics = SmartHealthRepository.api.listClinics()
         val specialties = SmartHealthRepository.api.listSpecialties()
         val user = SmartHealthRepository.api.getMe()
+        if (!isAuthorityCurrent(user.id, authSessionEpoch)) {
+            throw authorityChangedException()
+        }
+        val workspaceId = user.canonicalWorkspaceId()
+        if (workspaceId.isBlank()) {
+            throw authorityChangedException()
+        }
+        val avatarCleanup = SmartHealthRepository.api.getMyAvatarCleanupStatus(
+            expectedUserId = user.id,
+            expectedWorkspaceId = workspaceId,
+            expectedAuthSessionEpoch = authSessionEpoch,
+        )
         val hasAvatar = user.avatarFileId.isNotBlank() || user.avatarUrl.isNotBlank()
         val avatarResult = if (hasAvatar) {
             runCatching { SmartHealthRepository.api.downloadMyAvatarBytes() }
         } else {
             Result.success(null)
+        }
+        if (!isAuthorityCurrent(user.id, authSessionEpoch)) {
+            throw authorityChangedException()
         }
         return AccountProfileSnapshot(
             user = user,
@@ -167,42 +200,30 @@ class ApiAccountProfileRepository : AccountProfileRepository {
             specialties = specialties,
             avatarBytes = avatarResult.getOrNull(),
             avatarLoadFailed = hasAvatar && avatarResult.isFailure,
+            authSessionEpoch = authSessionEpoch,
+            avatarCleanup = avatarCleanup,
         )
     }
 
     override suspend fun updateProfile(
-        draft: AccountProfileDraft,
-        idempotencyKey: String,
-    ): AuthUser {
-        val normalized = draft.normalized()
-        val body = JSONObject()
-            .put("name", normalized.name)
-            .put("license", normalized.license)
-            .put("organizationId", normalized.organizationId)
-            .put("hospital", normalized.hospital)
-            .put("department", normalized.department)
-            .put("specialty", normalized.department)
-            .put("address", normalized.address)
-        return SmartHealthRepository.api.updateMe(body, idempotencyKey)
-    }
+        intent: AccountProfileUpdateIntent,
+    ): AccountProfileUpdateReceipt = SmartHealthRepository.api.updateAccountProfile(intent)
 
-    override suspend fun uploadAvatar(
-        fileName: String,
-        contentType: String,
-        bytes: ByteArray,
-        idempotencyKey: String,
-    ): AuthUser = SmartHealthRepository.api.uploadMyAvatar(
-        fileName = fileName,
-        contentType = contentType,
-        bytes = bytes,
-        idempotencyKey = idempotencyKey,
-    )
+    override suspend fun uploadAvatar(intent: AvatarUploadIntent): AvatarUploadReceipt =
+        SmartHealthRepository.api.uploadMyAvatar(intent)
 
-    override suspend fun deleteAvatar(idempotencyKey: String): AuthUser =
-        SmartHealthRepository.api.deleteMyAvatar(idempotencyKey)
+    override suspend fun deleteAvatar(intent: AvatarDeleteIntent): AvatarDeleteReceipt =
+        SmartHealthRepository.api.deleteMyAvatar(intent)
 
-    override suspend fun downloadAvatar(): ByteArray =
-        SmartHealthRepository.api.downloadMyAvatarBytes()
+    override suspend fun downloadAvatar(intent: AvatarDownloadIntent): ByteArray =
+        SmartHealthRepository.api.downloadMyAvatarBytes(intent)
+
+    override fun isAuthorityCurrent(
+        expectedUserId: String,
+        expectedAuthSessionEpoch: Long,
+    ): Boolean = expectedUserId.isNotBlank() &&
+        SmartHealthRepository.api.currentAuthToken() != null &&
+        SmartHealthRepository.api.currentAuthSessionEpoch() == expectedAuthSessionEpoch
 }
 
 class AccountProfileViewModel(
@@ -211,9 +232,6 @@ class AccountProfileViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountProfileUiState())
     val uiState = _uiState.asStateFlow()
-
-    private val _effects = Channel<AccountProfileEffect>(Channel.BUFFERED)
-    val effects = _effects.receiveAsFlow()
 
     init {
         load()
@@ -236,7 +254,6 @@ class AccountProfileViewModel(
                 it.copy(errorKind = null, requestId = "", confirmation = null)
             }
             is AccountProfileAction.ChangeName -> updateDraft { copy(name = action.value) }
-            is AccountProfileAction.ChangePhone -> updateDraft { copy(phone = action.value) }
             is AccountProfileAction.ChangeLicense -> updateDraft { copy(license = action.value) }
             is AccountProfileAction.ChangeHospital -> updateDraft {
                 copy(organizationId = "", hospital = action.value)
@@ -288,6 +305,12 @@ class AccountProfileViewModel(
     private fun applySnapshot(snapshot: AccountProfileSnapshot) {
         val draft = snapshot.user.toDraft(snapshot.clinics, snapshot.specialties)
         _uiState.update {
+            val hydratedCleanup = snapshot.avatarCleanup
+                .takeIf { cleanup ->
+                    cleanup.userId == snapshot.user.id &&
+                        cleanup.workspaceId == snapshot.user.canonicalWorkspaceId()
+                }
+                ?.toNotice()
             it.copy(
                 loadState = AccountProfileLoadState.Ready,
                 user = snapshot.user,
@@ -302,7 +325,6 @@ class AccountProfileViewModel(
                 showDiscardConfirmation = false,
                 showAvatarDeleteConfirmation = false,
                 nameInvalid = false,
-                phoneInvalid = false,
                 errorKind = if (snapshot.avatarLoadFailed) {
                     AccountProfileErrorKind.AvatarRefresh
                 } else {
@@ -310,8 +332,13 @@ class AccountProfileViewModel(
                 },
                 requestId = "",
                 confirmation = null,
+                avatarCleanupNotice = hydratedCleanup,
                 saveIdempotencyKey = "",
+                authSessionEpoch = snapshot.authSessionEpoch,
+                uploadAvatarIdempotencyKey = "",
+                uploadAvatarFingerprint = "",
                 deleteAvatarIdempotencyKey = "",
+                deleteAvatarFileId = "",
             )
         }
     }
@@ -335,7 +362,6 @@ class AccountProfileViewModel(
             it.copy(
                 draft = transform(it.draft),
                 nameInvalid = false,
-                phoneInvalid = false,
                 errorKind = null,
                 requestId = "",
                 confirmation = null,
@@ -359,21 +385,9 @@ class AccountProfileViewModel(
         if (!state.isEditing || state.isSaving || state.isAvatarBusy) return
         val draft = state.draft.normalized()
         val nameInvalid = draft.name.isBlank()
-        val phoneChanged = draft.phone != state.savedDraft.normalized().phone
-        val phoneInvalid = phoneChanged && !draft.phone.isValidPhone()
-        if (nameInvalid || phoneInvalid) {
+        if (nameInvalid) {
             _uiState.update {
-                it.copy(nameInvalid = nameInvalid, phoneInvalid = phoneInvalid)
-            }
-            return
-        }
-        if (phoneChanged) {
-            viewModelScope.launch {
-                if (state.savedDraft.phone.isBlank()) {
-                    _effects.send(AccountProfileEffect.StartPhoneEnrollment)
-                } else {
-                    _effects.send(AccountProfileEffect.ReverifyPhone(draft.phone))
-                }
+                it.copy(nameInvalid = true)
             }
             return
         }
@@ -381,14 +395,37 @@ class AccountProfileViewModel(
             _uiState.update { it.copy(isEditing = false) }
             return
         }
-
+        val user = state.user ?: run {
+            invalidateAuthority()
+            return
+        }
+        if (!repository.isAuthorityCurrent(user.id, state.authSessionEpoch)) {
+            invalidateAuthority()
+            return
+        }
         val key = state.saveIdempotencyKey.ifBlank(createIdempotencyKey)
+        val intent = AccountProfileUpdateIntent(
+            userId = user.id,
+            name = draft.name,
+            expectedPhone = state.savedDraft.normalized().phone,
+            license = draft.license,
+            hospital = draft.hospital,
+            department = draft.department,
+            specialty = draft.department,
+            address = draft.address,
+            expectedOrganizationId = user.organizationId.trim(),
+            expectedChangedFields = accountProfileChangedFields(
+                saved = state.savedDraft,
+                updated = draft,
+            ),
+            idempotencyKey = key,
+            expectedAuthSessionEpoch = state.authSessionEpoch,
+        )
         _uiState.update {
             it.copy(
                 draft = draft,
                 isSaving = true,
                 nameInvalid = false,
-                phoneInvalid = false,
                 errorKind = null,
                 requestId = "",
                 confirmation = null,
@@ -396,21 +433,30 @@ class AccountProfileViewModel(
             )
         }
         viewModelScope.launch {
-            runCatching { repository.updateProfile(draft, key) }
-                .onSuccess { user ->
-                    if (!user.confirms(draft, state.isProfessionalProfile)) {
-                        _uiState.update {
-                            it.copy(
-                                isSaving = false,
-                                errorKind = AccountProfileErrorKind.ServerUnconfirmed,
-                            )
-                        }
-                        return@onSuccess
+            runCatching {
+                repository.updateProfile(intent).also { receipt ->
+                    if (!receipt.confirms(intent)) {
+                        throw ProfileNotConfirmedException()
                     }
-                    val confirmedDraft = user.toDraft(state.clinics, state.specialties)
+                    requireCurrentAuthority(intent.userId, intent.expectedAuthSessionEpoch)
+                }
+            }
+                .onSuccess { receipt ->
+                    val confirmedUser = user.copy(
+                        name = receipt.user.name,
+                        phone = receipt.user.phone,
+                        license = receipt.user.license,
+                        hospital = receipt.user.hospital,
+                        department = receipt.user.department,
+                        specialty = receipt.user.specialty,
+                        address = receipt.user.address,
+                        organizationId = receipt.user.organizationId,
+                        updatedAt = receipt.user.updatedAt,
+                    )
+                    val confirmedDraft = confirmedUser.toDraft(state.clinics, state.specialties)
                     _uiState.update {
                         it.copy(
-                            user = user,
+                            user = confirmedUser,
                             savedDraft = confirmedDraft,
                             draft = confirmedDraft,
                             isEditing = false,
@@ -423,11 +469,21 @@ class AccountProfileViewModel(
                     }
                 }
                 .onFailure { error ->
+                    if (error.isAuthorityChanged()) {
+                        invalidateAuthority()
+                        return@onFailure
+                    }
+                    val retainOperation = error.shouldRetainProfileOperation()
                     _uiState.update {
                         it.copy(
                             isSaving = false,
-                            errorKind = AccountProfileErrorKind.Save,
+                            errorKind = if (error is ProfileNotConfirmedException) {
+                                AccountProfileErrorKind.ServerUnconfirmed
+                            } else {
+                                AccountProfileErrorKind.Save
+                            },
                             requestId = error.requestId(),
+                            saveIdempotencyKey = if (retainOperation) key else "",
                         )
                     }
                 }
@@ -451,7 +507,6 @@ class AccountProfileViewModel(
                 isEditing = false,
                 showDiscardConfirmation = false,
                 nameInvalid = false,
-                phoneInvalid = false,
                 errorKind = null,
                 requestId = "",
                 confirmation = null,
@@ -475,42 +530,98 @@ class AccountProfileViewModel(
             _uiState.update { it.copy(errorKind = AccountProfileErrorKind.AvatarSize) }
             return
         }
-
-        val key = createIdempotencyKey()
+        val userId = state.user?.id.orEmpty()
+        if (!repository.isAuthorityCurrent(userId, state.authSessionEpoch)) {
+            invalidateAuthority()
+            return
+        }
+        val bytes = action.bytes.copyOf()
+        val sha256 = bytes.sha256()
+        val fingerprint = listOf(
+            action.fileName,
+            action.contentType,
+            bytes.size.toString(),
+            sha256,
+        ).joinToString(separator = "\u0000")
+        val key = if (
+            state.uploadAvatarFingerprint == fingerprint &&
+            state.uploadAvatarIdempotencyKey.isNotBlank()
+        ) {
+            state.uploadAvatarIdempotencyKey
+        } else {
+            createIdempotencyKey()
+        }
+        val intent = AvatarUploadIntent(
+            userId = userId,
+            fileName = action.fileName,
+            contentType = action.contentType,
+            bytes = bytes,
+            sha256 = sha256,
+            idempotencyKey = key,
+            expectedAuthSessionEpoch = state.authSessionEpoch,
+        )
         _uiState.update {
             it.copy(
                 isAvatarBusy = true,
                 errorKind = null,
                 requestId = "",
                 confirmation = null,
+                uploadAvatarIdempotencyKey = key,
+                uploadAvatarFingerprint = fingerprint,
             )
         }
         viewModelScope.launch {
             runCatching {
-                val user = repository.uploadAvatar(
-                    fileName = action.fileName,
-                    contentType = action.contentType,
-                    bytes = action.bytes,
-                    idempotencyKey = key,
-                )
-                if (user.avatarFileId.isBlank() && user.avatarUrl.isBlank()) {
+                val receipt = repository.uploadAvatar(intent)
+                if (!receipt.confirms(intent)) {
                     throw AvatarNotConfirmedException()
                 }
-                val downloaded = runCatching { repository.downloadAvatar() }
+                requireCurrentAuthority(intent.userId, intent.expectedAuthSessionEpoch)
+                val downloadIntent = AvatarDownloadIntent(
+                    userId = intent.userId,
+                    fileId = receipt.avatar.fileId,
+                    sha256 = receipt.avatar.sha256,
+                    expectedAuthSessionEpoch = intent.expectedAuthSessionEpoch,
+                )
+                val downloaded = runCatching { repository.downloadAvatar(downloadIntent) }
                     .getOrElse { throw AvatarDownloadException(it) }
-                user to downloaded
-            }.onSuccess { (user, avatarBytes) ->
+                if (downloaded.sha256() != receipt.avatar.sha256) {
+                    throw AvatarDownloadException(
+                        IllegalStateException("Downloaded avatar digest mismatch"),
+                    )
+                }
+                requireCurrentAuthority(intent.userId, intent.expectedAuthSessionEpoch)
+                receipt to downloaded
+            }.onSuccess { (receipt, avatarBytes) ->
                 _uiState.update {
+                    val user = checkNotNull(it.user).copy(
+                        avatarFileId = receipt.avatar.fileId,
+                        avatarUrl = receipt.avatar.downloadUrl,
+                    )
                     it.copy(
                         user = user,
                         avatarBytes = avatarBytes,
                         isAvatarBusy = false,
                         errorKind = null,
                         requestId = "",
-                        confirmation = AccountProfileConfirmation.AvatarUpdated,
+                        confirmation = if (receipt.cleanup.status.isUnresolved()) {
+                            null
+                        } else {
+                            AccountProfileConfirmation.AvatarUpdated
+                        },
+                        avatarCleanupNotice = receipt.cleanup.status.toNotice(
+                            AccountProfileAvatarCleanup.Upload,
+                        ),
+                        uploadAvatarIdempotencyKey = "",
+                        uploadAvatarFingerprint = "",
                     )
                 }
             }.onFailure { error ->
+                if (error.isAuthorityChanged()) {
+                    invalidateAuthority()
+                    return@onFailure
+                }
+                val retainOperation = error.shouldRetainAvatarOperation()
                 _uiState.update {
                     it.copy(
                         isAvatarBusy = false,
@@ -520,6 +631,8 @@ class AccountProfileViewModel(
                             else -> AccountProfileErrorKind.AvatarUpload
                         },
                         requestId = error.requestId(),
+                        uploadAvatarIdempotencyKey = if (retainOperation) key else "",
+                        uploadAvatarFingerprint = if (retainOperation) fingerprint else "",
                     )
                 }
             }
@@ -542,7 +655,29 @@ class AccountProfileViewModel(
     private fun deleteAvatar() {
         val state = _uiState.value
         if (!state.showAvatarDeleteConfirmation || state.isAvatarBusy || !state.hasAvatar) return
-        val key = state.deleteAvatarIdempotencyKey.ifBlank(createIdempotencyKey)
+        val userId = state.user?.id.orEmpty()
+        val expectedAvatarFileId = state.user?.avatarFileId.orEmpty()
+        if (
+            expectedAvatarFileId.isBlank() ||
+            !repository.isAuthorityCurrent(userId, state.authSessionEpoch)
+        ) {
+            invalidateAuthority()
+            return
+        }
+        val key = if (
+            state.deleteAvatarFileId == expectedAvatarFileId &&
+            state.deleteAvatarIdempotencyKey.isNotBlank()
+        ) {
+            state.deleteAvatarIdempotencyKey
+        } else {
+            createIdempotencyKey()
+        }
+        val intent = AvatarDeleteIntent(
+            userId = userId,
+            expectedAvatarFileId = expectedAvatarFileId,
+            idempotencyKey = key,
+            expectedAuthSessionEpoch = state.authSessionEpoch,
+        )
         _uiState.update {
             it.copy(
                 showAvatarDeleteConfirmation = false,
@@ -551,47 +686,213 @@ class AccountProfileViewModel(
                 requestId = "",
                 confirmation = null,
                 deleteAvatarIdempotencyKey = key,
+                deleteAvatarFileId = expectedAvatarFileId,
             )
         }
         viewModelScope.launch {
-            runCatching { repository.deleteAvatar(key) }
-                .onSuccess { user ->
-                    if (user.avatarFileId.isNotBlank() || user.avatarUrl.isNotBlank()) {
-                        _uiState.update {
-                            it.copy(
-                                isAvatarBusy = false,
-                                errorKind = AccountProfileErrorKind.AvatarDeleteUnconfirmed,
-                            )
-                        }
-                        return@onSuccess
+            runCatching {
+                repository.deleteAvatar(intent).also { receipt ->
+                    if (!receipt.confirms(intent)) {
+                        throw AvatarNotConfirmedException()
                     }
+                    requireCurrentAuthority(intent.userId, intent.expectedAuthSessionEpoch)
+                }
+            }
+                .onSuccess { receipt ->
                     _uiState.update {
+                        val user = checkNotNull(it.user).copy(
+                            avatarFileId = "",
+                            avatarUrl = "",
+                        )
                         it.copy(
                             user = user,
                             avatarBytes = null,
                             isAvatarBusy = false,
                             errorKind = null,
                             requestId = "",
-                            confirmation = AccountProfileConfirmation.AvatarDeleted,
+                            confirmation = if (receipt.cleanup.status.isUnresolved()) {
+                                null
+                            } else {
+                                AccountProfileConfirmation.AvatarDeleted
+                            },
+                            avatarCleanupNotice = receipt.cleanup.status.toNotice(
+                                AccountProfileAvatarCleanup.Delete,
+                            ),
                             deleteAvatarIdempotencyKey = "",
+                            deleteAvatarFileId = "",
                         )
                     }
                 }
                 .onFailure { error ->
+                    if (error.isAuthorityChanged()) {
+                        invalidateAuthority()
+                        return@onFailure
+                    }
+                    val retainOperation = error.shouldRetainAvatarOperation()
                     _uiState.update {
                         it.copy(
                             isAvatarBusy = false,
-                            errorKind = AccountProfileErrorKind.AvatarDelete,
+                            errorKind = if (error is AvatarNotConfirmedException) {
+                                AccountProfileErrorKind.AvatarDeleteUnconfirmed
+                            } else {
+                                AccountProfileErrorKind.AvatarDelete
+                            },
                             requestId = error.requestId(),
+                            deleteAvatarIdempotencyKey = if (retainOperation) key else "",
+                            deleteAvatarFileId = if (retainOperation) expectedAvatarFileId else "",
                         )
                     }
                 }
         }
     }
+
+    private fun requireCurrentAuthority(userId: String, authSessionEpoch: Long) {
+        if (!repository.isAuthorityCurrent(userId, authSessionEpoch)) {
+            throw authorityChangedException()
+        }
+    }
+
+    private fun invalidateAuthority() {
+        _uiState.update {
+            AccountProfileUiState(
+                loadState = AccountProfileLoadState.PermissionDenied,
+                errorKind = AccountProfileErrorKind.Load,
+            )
+        }
+    }
 }
 
+private class ProfileNotConfirmedException : IllegalStateException()
 private class AvatarNotConfirmedException : IllegalStateException()
 private class AvatarDownloadException(cause: Throwable) : IllegalStateException(cause)
+
+private fun authorityChangedException() = SmartHealthApiException(
+    statusCode = 409,
+    code = "AUTH_SESSION_REPLACED",
+    message = "Authentication session changed while account profile data was in flight",
+)
+
+private fun AvatarCleanupStatus.isUnresolved(): Boolean =
+    this == AvatarCleanupStatus.Pending || this == AvatarCleanupStatus.DeadLetter
+
+private fun AvatarCleanupStatus.toNotice(
+    action: AccountProfileAvatarCleanup,
+): AccountProfileAvatarCleanupNotice? = if (isUnresolved()) {
+    AccountProfileAvatarCleanupNotice(action = action, status = this)
+} else {
+    null
+}
+
+private fun AvatarCleanupStatusSnapshot.toNotice(): AccountProfileAvatarCleanupNotice? {
+    val profileAction = when (action) {
+        AvatarCleanupAction.None -> return null
+        AvatarCleanupAction.Upload -> AccountProfileAvatarCleanup.Upload
+        AvatarCleanupAction.Delete -> AccountProfileAvatarCleanup.Delete
+        AvatarCleanupAction.OrphanUpload -> AccountProfileAvatarCleanup.OrphanUpload
+    }
+    return status.toNotice(profileAction)
+}
+
+private fun accountProfileChangedFields(
+    saved: AccountProfileDraft,
+    updated: AccountProfileDraft,
+): List<String> {
+    val previous = saved.normalized()
+    val next = updated.normalized()
+    return buildSet {
+        if (previous.name != next.name) add("name")
+        if (previous.license != next.license) add("license")
+        if (previous.hospital != next.hospital) add("hospital")
+        if (previous.department != next.department) {
+            add("department")
+            add("specialty")
+        }
+        if (previous.address != next.address) add("address")
+    }.sorted()
+}
+
+private fun AccountProfileUpdateReceipt.confirms(intent: AccountProfileUpdateIntent): Boolean =
+    userId == intent.userId &&
+        this.intent == "profile_update" &&
+        changedFields == intent.expectedChangedFields &&
+        changedFields == changedFields.sorted() &&
+        changedFields.toSet().size == changedFields.size &&
+        user.id == intent.userId &&
+        user.name == intent.name &&
+        user.title.length <= 160 &&
+        user.title == user.title.trim() &&
+        user.phone == intent.expectedPhone &&
+        user.license == intent.license &&
+        user.hospital == intent.hospital &&
+        user.department == intent.department &&
+        user.specialty == intent.specialty &&
+        user.address == intent.address &&
+        user.organizationId == intent.expectedOrganizationId &&
+        user.updatedAt.isCanonicalInstant()
+
+private fun AvatarUploadReceipt.confirms(intent: AvatarUploadIntent): Boolean =
+    avatar.fileId.isNotBlank() &&
+        avatar.ownerUserId == intent.userId &&
+        avatar.name == intent.fileName &&
+        avatar.contentType == intent.contentType &&
+        avatar.byteSize == intent.bytes.size &&
+        avatar.sha256 == intent.sha256 &&
+        avatar.downloadUrl == "/api/v1/me/avatar" &&
+        avatar.uploadedAt.isCanonicalInstant() &&
+        cleanup.previousFileId.length <= 160 &&
+        operationId.isNotBlank()
+
+private fun AvatarDeleteReceipt.confirms(intent: AvatarDeleteIntent): Boolean =
+    deleted &&
+        avatar.fileId == intent.expectedAvatarFileId &&
+        avatar.ownerUserId == intent.userId &&
+        avatar.deletedAt.isCanonicalInstant() &&
+        cleanup.previousFileId == intent.expectedAvatarFileId &&
+        operationId.isNotBlank()
+
+private fun String.isCanonicalInstant(): Boolean =
+    isNotBlank() && this == trim() && runCatching { Instant.parse(this) }.isSuccess
+
+private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
+    .digest(this)
+    .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+private fun Throwable.isAuthorityChanged(): Boolean = generateSequence(this) { it.cause }
+    .filterIsInstance<SmartHealthApiException>()
+    .any { it.code == "AUTH_SESSION_REPLACED" }
+
+private fun Throwable.shouldRetainAvatarOperation(): Boolean {
+    if (this is AvatarNotConfirmedException || this is AvatarDownloadException) return true
+    val apiError = generateSequence(this) { it.cause }
+        .filterIsInstance<SmartHealthApiException>()
+        .firstOrNull()
+    if (apiError != null) {
+        if (apiError.code == "AUTH_SESSION_REPLACED") return false
+        if (
+            apiError.code in setOf(
+                "AVATAR_UPLOAD_STAGE_IN_PROGRESS",
+                "AVATAR_UPLOAD_STAGE_CLEANUP_IN_PROGRESS",
+                "AVATAR_UPLOAD_STAGE_FENCE_LOST",
+            )
+        ) {
+            return true
+        }
+        return apiError.statusCode >= 500 || apiError.statusCode in setOf(408, 429)
+    }
+    return this is IOException
+}
+
+private fun Throwable.shouldRetainProfileOperation(): Boolean {
+    if (this is ProfileNotConfirmedException) return true
+    val apiError = generateSequence(this) { it.cause }
+        .filterIsInstance<SmartHealthApiException>()
+        .firstOrNull()
+    if (apiError != null) {
+        if (apiError.code == "AUTH_SESSION_REPLACED") return false
+        return apiError.statusCode >= 500 || apiError.statusCode in setOf(408, 429)
+    }
+    return this is IOException
+}
 
 private fun AuthUser.toDraft(
     clinics: List<ClinicOption>,
@@ -615,24 +916,7 @@ private fun AuthUser.toDraft(
     ).normalized()
 }
 
-private fun AuthUser.confirms(draft: AccountProfileDraft, professional: Boolean): Boolean {
-    val normalized = draft.normalized()
-    if (name.trim() != normalized.name || address.trim() != normalized.address) return false
-    if (!professional) return true
-    val returnedDepartment = department.ifBlank { specialty }.trim()
-    return license.trim() == normalized.license &&
-        organizationId.trim() == normalized.organizationId &&
-        hospital.trim() == normalized.hospital &&
-        returnedDepartment == normalized.department
-}
-
-private fun String.isValidPhone(): Boolean {
-    if (isBlank()) return false
-    val digits = count(Char::isDigit)
-    return digits in 8..15 && all { it.isDigit() || it in "+ -()." }
-}
-
 private fun Throwable.requestId(): String = (this as? SmartHealthApiException)?.requestId.orEmpty()
 
 private val SUPPORTED_AVATAR_TYPES = setOf("image/jpeg", "image/png", "image/webp")
-private const val MAX_AVATAR_BYTES = 5 * 1024 * 1024
+private const val MAX_AVATAR_BYTES = 2 * 1024 * 1024

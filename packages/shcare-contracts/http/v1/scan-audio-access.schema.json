@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/scan-audio-access.schema.json",
+  "title": "Shcare scan audio access response",
+  "description": "Short-lived, tenant-authorized access metadata for one scan recording. A relative URL uses the current authenticated session; an absolute provider URL must be HTTPS and must not receive the backend bearer token.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url", "expiresInSeconds", "contentType", "fileName"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "expiresInSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    },
+    "contentType": {
+      "const": "audio/wav"
+    },
+    "fileName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\\\]+\\.wav$"
+    },
+    "objectKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "deprecated": true,
+      "description": "Compatibility-only server field. New clients must neither persist nor display it."
+    }
+  }
+}

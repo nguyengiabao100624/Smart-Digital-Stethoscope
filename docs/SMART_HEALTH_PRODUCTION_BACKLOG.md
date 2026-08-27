@@ -28,6 +28,155 @@ This backlog is ordered to reduce rework. Keep it updated after implementation s
 - The remaining physical boundary is intentionally secure: the target Wi-Fi password must be entered only in the foreground Shcare App. MIUI denies ADB input injection, and the password must never enter shell, source, logs, environment variables or test arguments.
 - After that boundary, automatically collect ESP association, authenticated WSS, `wifi.setup.open` command ACK, two-mic audio-v2, durable scan, signed OTA and forced-failure rollback. Do not treat wireless-ADB loss during a network change as a product failure or success. G3 remains open and G4 remains pending.
 
+## 2026-08-27 full verification checkpoint
+
+- [x] Run candidate automated gates across backend, Web Portal, Web Admin, Android and ESP32 production/OTA builds.
+- [x] Upload and hash-verify the current production firmware on COM9.
+- [x] Deploy RC2 Portal/Admin bundles to reversible Firebase Hosting preview channels and verify both public URLs return HTTP 200.
+- [ ] Bind production PostgreSQL, S3/object storage, PHI/HMAC/2FA and OTA-signing secrets through the approved secret manager.
+- [ ] Deploy the RC2 backend and both Firebase Hosting lanes only after G3 physical/provider gates pass; current live backend remains the older revision.
+- [ ] Freeze a clean candidate commit/manifest (current RC2 worktree still contains 95 tracked/untracked entries).
+- [x] Run live public and authenticated read-only deployment smoke; old live backend remains healthy but is not the RC2 candidate.
+- [x] Verify Firebase CLI can see the production project.
+- [ ] Obtain/bind approved Supabase and Render deployment sessions through the secret manager; never place tokens in repo or shell history.
+
+## Authorization follow-up — 2026-08-27
+
+- [x] Add workspace Portal role adjustment with tenant binding, idempotency and audit.
+- [x] Keep Platform Admin account/role management on the separate `/admin` surface.
+- [ ] Run authenticated browser smoke against the deployed Portal role dialog and verify a fresh Android session receives the updated `workspace.devices.manage` capability.
+- [ ] Repeat the same contract on Postgres candidate and capture production-provider evidence before G3 closure; G4 remains blocked until all G3 gates pass.
+
+> 2026-08-27 device-flow update: fixed the slow ESPTouch step with concurrent presence polling, added canonical online-success navigation, and replaced failing disconnect/delete actions with tenant-scoped idempotent `POST /api/v1/devices/{id}/release` (history retained). OpenAPI/shared fixtures cover ESPTouch V2 setup-session and release. Local/HIL evidence is in the active checkpoint; provider, migration, accessibility and final-candidate G3 gates still block G4.
+
+## 2026-08-27 cross-surface local release gate
+
+- Portal and Platform Admin lint, contract tests and production builds pass. Backend source precheck, exact-origin CORS contract (`4/4`), release/runtime/security and identity migration contracts (`11/11`) pass.
+- This is pre-release source evidence only. It does not authorize a production deploy, because real ESPTouch association/DHCP, release Android foreground/accessibility proof and provider/live migration, Firebase and Portal WSS evidence are still open.
+- The official diff-security helper cannot start on this host until its Python dependency `tomli` is available; it is recorded as an evidence gap, not a clean security result.
+
+## 2026-08-27 Android gate update
+
+- Local-demo debug artifact is rebuilt, lint-clean and installed on Xiaomi. The remaining Android physical gate is not a source/build defect: MIUI keyguard prevents foreground accessibility/UI HIL. Resume only after normal unlock, keeping the real Wi-Fi password in the secure app field and out of tools.
+
+## 2026-08-27 G3 physical OTA rollback: closed
+
+- COM9 read-only probe confirms 16 MB flash; the PlatformIO board banner is not authoritative hardware evidence. Firmware now overrides Arduino's eager `verifyOta()` path with `verifyRollbackLater()` so Shcare's WSS/durable boot-health state machine owns confirmation.
+- Forced invalid-credential OTA `1.0.3` physically returned to stable `1.0.2`; backend recorded `rolled_back` and command `OTA_ROLLED_BACK`. Keep this evidence with the candidate artifact hash `168A598A8EA502B004A28DABF598CDF64259A0C3A04011410B203BD6C18ABBBB`.
+- G4 remains blocked by the other G3 gates: real secure-field ESPTouch association/DHCP, release Android accessibility/lifecycle proof, provider/migration/CORS/Firebase/Portal WSS gates and final candidate evidence bundle.
+
+> 2026-08-26 G3 transport evidence update: Xiaomi -> ESPTouch V2 RF/AES/exact-device binding is physically PASS on COM9. Targeted no-secret HIL passed `OK (1)` in `64.657 s`; serial confirmed both signal detection and successful decrypt/binding acceptance. This uses current-active-AP BSSID metadata and the AES-protected ASCII-safe `v2:` binding form. It is intentionally not association/WSS proof. Continue only from the foreground app after normal precise-Location consent and real secure-field password entry, then require association/DHCP, authenticated WSS/Online, command ACK, two-mic audio-v2, durable scan, signed OTA and forced rollback. Do not begin G4.
+
+> 2026-08-26 G3 physical state update: physical Xiaomi now passes guarded direct ESPTouch start and Device Management → secure Wi-Fi form gates; COM9 serial confirms the listener is alive. Continue the real HIL only from the secure password field. A fake-credential broadcast is evidence that Android starts the transport, not evidence of ESP provisioning. Preserve the no-secret tooling boundary and do not begin G4.
+
+> 2026-08-26 current G3 dual-band gate: the MIUI-rejected `WifiNetworkSpecifier` handover has been eliminated from the production Android path. The installed Xiaomi APK `7A1C18FBFC77846CBFA2FE4B612D5F6A988ADB0826B43B4C020CD40A1E9A38C0` uses direct ESPTouch V2 Broadcast on the current router connection and encodes a same-SSID 2.4 GHz BSSID when scan data is available. This is not a temporary ESP connection and must not create a system network chooser. Source/build/lint gates pass; the remaining physical evidence is secure-field Broadcast, ESP listener/association/DHCP, authenticated WSS, command ACK, two-mic audio-v2, durable scan, signed OTA and forced rollback. COM9 is currently absent and the no-secret broadcaster HIL was backgrounded by MIUI before SSID access, so no physical completion is claimed. Do not begin G4.
+
+> 2026-08-26 closed local-startup repair: rebuild and install the Android demo APK only with `assembleLocalDemoDebug`; its fixed LAN API/Firebase-emulator settings prevent accidental use of the default Render debug artifact with the local demo session. APK `59EE3111045AFBA2AE3EA64EE28FB70C0D67F55583CD4EDA1F6A1C83AA480E4B` starts successfully on Xiaomi after ADB reverse restoration and reaches Dashboard. This eliminates the current generic connection-screen regression; it does not authorize deployment or close any G3 radio/WSS/HIL gate.
+
+> 2026-08-26 active G3 radio gate: Xiaomi foreground HIL proves the current phone connection is 5 GHz, so ESPTouch has correctly not sent any credentials to ESP32-S3. The shipped APK now explains this exact condition and no longer marks a 2.4 GHz check complete prematurely. The next physical prerequisite is a 2.4 GHz connection for the same target router; only then run the safe broadcaster HIL and the real secure-field flow. ESP association/DHCP, WSS/auth, ACK, audio-v2, scan, OTA and rollback remain open. Do not begin G4.
+
+> 2026-08-26 active G3 provisioning gate: Android now handles ESPTouch V2's no-direct-UDP-response completion correctly by continuing to authenticated presence polling, not showing a false broadcast error. The new Xiaomi APK is `7FAD70770FFAC046EA8AAEC1F99B2EE6AFF67E3D28D1D6A99D2D40FD212CAC9C`; source regression, AndroidTest Kotlin compilation and lint are green. The remaining evidence is still physical: listener receives/binds the broadcast, ESP associates and gets DHCP, then authenticates WSS with the intended Device ID. Preserve the secure password boundary and do not begin G4.
+
+> 2026-08-26 latest G3 hardware state: ESPTouch V2 firmware is flashed to COM9 and the current APK is installed on Xiaomi. Boot serial proves listener startup only. The remaining gate is an on-device secure-field Broadcast followed by association/DHCP, authenticated WSS, ACK, two-mic audio-v2, durable scan, signed OTA and forced rollback. MIUI keyguard blocks the foreground step; no deployment or G4 work is authorized.
+
+> 2026-08-26 G3 transport cutover gate: finish and verify the ESPTouch V2 migration before any deployment. Required next evidence is OTA-profile firmware build, Android lint/assembly/instrumented route test, exact APK/firmware hashes, then COM9 flash and Xiaomi secure-field ESPTouch Broadcast → association/DHCP → authenticated WSS. Do not reuse old SoftAP HIL evidence, deploy, or begin G4; no real Wi-Fi credential may enter tooling or logs.
+
+> 2026-08-26 active G3 next gate: source/build/security and the Xiaomi secure-input HIL are green. The app now opens SSID/password without a system permission overlay; its optional current-SSID action is the only place that requests the related runtime permission. COM9 firmware is freshly uploaded and hash-verified. Continue only with target Wi-Fi entry in the foreground secure field, then automatically collect ESP association, authenticated WSS, command ACK, two-mic audio-v2, durable scan, signed OTA and forced-failure rollback. Do not treat the password boundary as PASS, deploy, or G4 authorization.
+
+> 2026-08-26 current G3 state: source/build/device-navigation gates are green, but physical completion is not. The LAN APK `D1C0A52C895C1C3F9793C371DC1EB4CB1985109A623273EF0C1DBBF6A18484FE` is installed on Xiaomi. Resume only at Device Management -> **Kết nối Wi-Fi** -> secure on-device target Wi-Fi input, then collect ESP association, authenticated WSS, command ACK, two-mic audio-v2, durable scan, signed OTA and forced-failure rollback. The latest guarded HIL stopped at Android system UI before the password boundary and no ESP serial port is present; it is BLOCKED, not PASS. Do not deploy or start G4.
+
+> 2026-08-26 completed startup gate: the current demo APK no longer stops at the generic connection-error screen. Versioned API routing and rejected-session recovery are covered by regression tests and the installed Xiaomi app reaches the device flow. Resume G3 physical provisioning at the App-only Wi-Fi setup sequence; target-network association and authenticated WSS remain open.
+
+> 2026-08-26 latest G3 hardware update: COM9 is attached and the SoftAP auto-start firmware is deployed. ESP boot diagnostics confirm its protected setup portal and local server are active. The next open proof is the normal App-only target-password submission, then ESP association and authenticated WSS; do not use a browser/IP workflow or put credentials into tooling.
+
+> 2026-08-26 immediate G3 gate: attach the ESP32-S3 so its serial port becomes visible, then upload the build that auto-starts the protected SoftAP for an unconfigured device. The App APK with the privacy-safe five-step trace is installed and its physical Compose test passes. After upload, prove the real sequence SoftAP discovery → local API POST → ESP target-network association → authenticated WSS. Until then, the firmware repair is not hardware-deployed.
+
+> 2026-08-26 final SoftAP checkpoint: Xiaomi now reaches the native target-Wi-Fi input using the deployed SoftAP-only App/firmware (`OK (1 test)`, `25.791s`). The sole next transport step is secure on-device target-password entry followed by ESP association and authenticated WSS; no BLE work remains.
+
+> 2026-08-26 hardware update: the SoftAP-only firmware has been uploaded and hash-verified on COM9. The remaining physical gate begins after the Xiaomi keyguard is cleared: native target-Wi-Fi entry, ESP association and authenticated WSS.
+
+> 2026-08-26 superseding transport decision: G3 provisioning is SoftAP-only, not BLE. Keep only the App → ESP SoftAP → local HTTP API → ESP target-network association → authenticated WSS chain. The next Xiaomi HIL is blocked by the current keyguard, not a SoftAP failure.
+
+> 2026-08-26 update: fixed and physically verified the guarded Device Settings → Wi-Fi setup route through the on-device input boundary. Keep target-network association, authenticated WSS presence, command ACK, audio-v2/durable scan and signed OTA/rollback open; none may be marked complete before physical evidence exists.
+
+Last updated: 2026-08-26
+
+## Historical G3 runtime record — BLE superseded by SoftAP-only provisioning
+
+- [x] Xiaomi canonical QR/manual claim HIL `1/1` and current-Wi-Fi SSID HIL `1/1`; focused pairing/BLE-contract JVM `38/38`, current LAN debug/test APKs assembled and installed.
+- [x] Reconfirm firmware target before another flash: production build passes and COM9 physical read-only probe reports ESP32-S3 rev v0.2 with 16 MB flash. Keep the custom 16-MB dual-OTA partition table; do not infer hardware size from the generic PlatformIO banner.
+- [x] Fine Location, Nearby Wi-Fi and Nearby Bluetooth are granted through Android's normal consent UI. Future requests remain App-triggered; do not bypass MIUI policy with shell or UiAutomation.
+- [x] Corrected primary-packet advertisement is physically detected on Xiaomi. The opaque discriminator diagnostic matches, and the full BLE service/characteristic discovery HIL passes a real, non-skipped `1/1`.
+- [x] Authenticated claim/recovery passes `1/1`; backend state is claimed/offline and the App reaches `SetupReady` even after the one-time claim code is consumed.
+- [ ] From the App only, perform encrypted BLE Wi-Fi transfer with the target password entered in the UI; then prove ESP association, authenticated WSS presence, command ACK, audio-v2/durable scan and OTA recovery. G3/G4 state does not change until those gates have real evidence.
+
+## Immediate G3 runtime backlog — QR image pairing
+
+- [x] Add Android system photo-picker QR input that remains local, QR-only and bounded; preserve the camera/manual flows and backend claim contract.
+- [x] Source gates: fresh pairing JVM `33/33`, AndroidTest compile/assemble, lint and debug assemble; retained aggregate JVM gate `852/852`. The current LAN debug artifact is installed on Xiaomi.
+- [ ] User resolves the system Google-account confirmation that appeared after the `1/1` integrated-login smoke; never automate this account decision. Then keep Xiaomi awake and verify photo picker opening, successful QR image selection and no-QR error on the physical display. MIUI blocks ADB input injection, so this remains an explicit device interaction gate.
+- [ ] Continue only after that with target Wi-Fi entry, authenticated WSS, ACK, audio-v2, durable scan and OTA rollback. G3/G4 state does not change.
+
+This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
+
+## Active plan row — Phase 4 Device Provisioning/Command
+
+The governing plan is **“Kế hoạch tái thiết toàn diện Shcare Web, Portal,
+Platform Admin, Android và firmware”**. Phase 0–3 are complete, Phase 4 is in
+progress and Phase 5–8 are pending.
+
+Phase 3 is closed with final independent P0/P1 PASS. Do not reopen it without a
+current reproduced regression. The current Phase 4 candidate gates are shared
+`44/44`; backend check and device-security `42/42`; Web contracts `122/122`,
+claim `10/10`, device-route subset `8/8`; Admin `183/183`; Android `108` suites /
+`781` tests and devices `48/48` plus compile/lint/assemble. Android APK SHA-256:
+`F32C7C3A85E40A217ACC8AEEC2DDF6DD0DA6694FA69B53BC4AF94263DD6828FE`.
+
+Firmware source-contract, MCU compile-only (`0` executed), normal and OTA builds
+pass. Both images are `1,104,640` bytes; hashes are
+`CB2B0A8749697FEEB14F4720E64A0CF8629109CDF6377784B7DB7F6CB2BAA7B5` and
+`CA79DE814DAC8D6BB3A48EB87F80E6ADDF331C62009129C013C250F30A074801`.
+Independent re-review found no remaining blocker in the four-item firmware
+remediation scope. Earlier firmware hashes are superseded pre-remediation proof.
+
+The cross-surface exit review reopened five P1 software blockers. Complete them
+before rerunning the candidate review:
+
+1. Exclude specialized revoke/rotate/OTA/audio lifecycle types from generic
+   Admin command.
+2. Make SQL pair share the ownership lock and current row.
+3. Require exact active workspace in the pair contract, Portal and Android, and
+   verify receipt/poll authority.
+4. Give Admin revoke one stable `Idempotency-Key` across ambiguous retry.
+5. Add exact shared/OpenAPI command/revoke/rotate/OTA contracts.
+6. Rerun the affected source/build/local gates and independent cross-surface
+   exit review; only then evaluate remaining non-hardware Phase 4 debt.
+
+Native C++ execution is unavailable because no `gcc/g++` or equivalent host
+compiler exists. Hardware-only HIL/flash/serial/I2S/WSS/rollback/16 MB proof is
+`DEFERRED — chờ phần cứng`; this does not defer the five software blockers and
+Phase 4 remains in progress.
+
+## Closed plan row — Phase 3 Identity/Profile/Security (historical)
+
+Phase 2 source/build/local is closed. Do not reopen it without a reproduced
+regression. Finish Phase 3 software gaps in this order:
+
+1. Close the three in-flight slices: Android Forgot Password architecture,
+   Android Family CRUD exact receipt/stable retry and Web/backend Workspace
+   Settings atomic audit/idempotency.
+2. Make 2FA verification response-loss safe without persisting/logging plaintext
+   recovery codes; add delivery/ack and stable-key tests.
+3. Make avatar upload/delete transactional with deterministic provider cleanup;
+   require profile stable idempotency; deny inactive Firebase accounts before
+   any auth-session touch.
+4. Remove or fully implement phone OTP source path; add biometric local unlock;
+   close OpenAPI 2FA parity and Phase 3 Compose/golden coverage when runtime is
+   available.
+
+Live/provider/emulator proof remains `BLOCKED`; firmware hardware proof remains
+`DEFERRED — chờ phần cứng` and does not stop source work on later rows.
+
 ## Production Direction Already Chosen
 
 - Smart Health is one connected product workspace under `D:\Study\KLTN`, spanning `smart-health-embedded`, `smart-health-android`, `smart-health-admin`, `smart-health-web`, Firebase, Render, Supabase/Postgres/storage, firmware, smoke tooling, deploy automation, and handoff docs. Do not treat future work as done in only one folder when the workflow crosses surfaces.
@@ -1681,3 +1830,759 @@ Still open:
   TalkBack, permission, lifecycle and FCM proof.
 - Resolve the physical 8 MiB board-metadata versus 16 MiB partition question
   and run ESP32-S3 flash, serial, I2S, WSS, command and forced OTA rollback.
+
+## 2026-07-26 master-plan Phase 2 Android foundation update
+
+Closed for source/build/emulator scope:
+
+- Typed mobile route/capability authority with distinct backend/Firebase identities, active account/membership/workspace checks and stale back-stack eviction.
+- First-frame, foreground, retained TTL and configuration-replacement reauthorization without PHI composition during refresh.
+- Exact authority/API-session ownership around `/me`, atomic replacement-safe invalidation and stale-token terminal-event suppression.
+- Account/workspace-specific notification teardown and bounded terminal-event replay until acknowledgement, including overflow preservation.
+- Missing reauthorization runtime fails closed. Fresh gates are `279/279` unit and `25/25` API-35 connected tests plus debug assemble; final independent review has no remaining P0/P1/P2 in the reviewed change.
+
+Still open in Phase 2 and release proof:
+
+- Implement and verify native adaptive `ShcareScaffold`, patient/doctor compact bottom navigation, tablet/foldable rail/two-pane behavior, TalkBack, font 200%, rotation and offline/back-stack runtime states. Do not copy the Web shell into Compose.
+- Run real Firebase/FCM registration, display, deep-link, permission and cross-account suppression with `google-services.json` and a provider-backed test account/device. The current debug build intentionally lacked Firebase runtime configuration.
+- Run authenticated live backend/PostgreSQL authority changes, physical Android device QA and production signing/distribution. Emulator proof does not close these gates.
+- Keep firmware HIL/board/OTA and live/provider promotion separately `BLOCKED`. Do not advance the global plan beyond Phase 2 from this Android authority checkpoint alone.
+
+## 2026-07-27 master-plan Phase 2 adaptive/notification update
+
+Closed for source/build/local/emulator scope:
+
+- Independent Android compact bottom-navigation/navigation-rail scaffold, typed authority/capability routing, native motion and accessible dashboard/settings actions.
+- Backend-derived notification token ownership across user/workspace/auth session, bounded registration/retry, exact ACK validation and workspace/logout invalidation.
+- Data-only FCM wake-up protocol v2; no provider title/body, clinical/entity metadata or deep link can bypass the Android delivery gate.
+- Android rejects missing/unsupported protocol and mismatched workspace aliases, then displays only generic local copy with a signed owner/workspace/generation intent.
+- Backend and shared-contract tests are green; notification push is `9/9` including backend-to-schema parity. Android is `304/304` unit, `33/33` connected, assemble and zero-error lint. Backend `npm audit` is now clean after the compatible `google-gax@5.0.4` override.
+
+Still open in Phase 2:
+
+- Implement real clinical Patients/Alerts native destinations before exposing them in persistent navigation.
+- Complete screen-by-screen light/dark semantic tokens, 840 dp two-pane/foldable behavior, 412 dp golden proof, edge-to-edge/IME, font 200%, TalkBack and system Remove Animations runtime checks.
+- Complete the remaining Web/Admin UI-foundation matrix without copying layouts between Web and Android.
+- Run migration 044 on candidate PostgreSQL and provider-backed Firebase/FCM registration/display/deep-link/account-switch proof. `google-services.json` is absent locally.
+- Keep production signing, physical Android device, firmware HIL and live deployment as separate `BLOCKED` gates.
+- Deep Security Scan `1b48646c-c3fe-4835-9526-92177be380ae` remains running at preflight and awaits an explicit remediation choice; do not mark it passed or failed.
+
+## 2026-07-27 master-plan Phase 2 semantic-theme update
+
+Closed for source/build/emulator scope:
+
+- Migrate the doctor dashboard, patient dashboard, Settings, Medical Records and New Scan to Android-native Material/Shcare semantic colors for both light and dark themes.
+- Add distinct mobile brand-header roles, paired status container/content colors and auto-mirrored navigation/action icons without importing Web UI tokens or components.
+- Add source regression checks plus runtime light/dark palette assertions. Current proof is `307/307` unit, `35/35` connected API-35 tests, assemble and zero-error lint.
+
+Still open in Phase 2:
+
+- Migrate every remaining production Compose screen and remove the legacy `Color.kt` compatibility palette only after its last canonical consumer is gone.
+- Implement the real clinical Patients/Alerts destinations and complete 412/600/840 dp golden, two-pane/foldable, IME, edge-to-edge, font-200%, manual TalkBack and Remove Animations proof.
+- Finish the Web/Admin UI-foundation matrix independently. Keep provider/live, production signing, physical-device, PostgreSQL migration and firmware HIL gates separate and explicitly `BLOCKED` until proven.
+
+## 2026-07-27 master-plan Phase 2 Android Auth update
+
+Closed for source/build/emulator scope:
+
+- Migrate Signup, real email verification and doctor approval to the native Android semantic theme with insets, accessible state announcements, 48 dp actions, retry/error states and unsaved-form protection.
+- Remove fake manual OTP and phone/contact success paths; remove contact PII from the verification route.
+- Collapse doctor resubmission to the complete backend role-request mutation and require matching user/lifecycle confirmation before success copy.
+- Add source/API regression coverage. Current proof is `315/315` JVM tests, `35/35` connected API-35 tests, assemble, zero-error lint and clean diff check.
+
+Still open in Phase 2:
+
+- Migrate the remaining canonical screens headed by device settings/pairing, record detail, storage and notification settings; do not delete the legacy palette until the final consumer is gone.
+- Add real Patients/Alerts, two-pane/foldable/golden/IME/font-200%/manual TalkBack proof and finish the independent Web/Admin foundation.
+- Run real provider-backed email/Firebase/FCM verification, production signing, physical-device and live backend/PostgreSQL checks. Firmware HIL and deployment remain separate gates.
+
+## 2026-07-27 master-plan Phase 2 canonical device UI update
+
+Closed for source/build/emulator scope:
+
+- Archive the zero-caller fake Bluetooth/QR demo outside Android source sets with checksum provenance and keep only a compatibility URL alias to `DevicePairingScreen`.
+- Replace Stethoscope Settings direct API/local state with repository/ViewModel loading, empty, error, stale, retry and confirmed device status.
+- Remove controls with no Android/firmware consumer and remove calibration while backend returns `DEVICE_CALIBRATION_UNAVAILABLE`.
+- Add source, ViewModel and Compose runtime regression coverage. Current proof is `322/322` JVM, `37/37` connected, assemble and zero-error lint.
+
+Still open:
+
+- Prove QR claim plus secure setup AP and authenticated WSS presence on a physical device/ESP32-S3. BLE/GATT and calibration are not release features.
+- Migrate Record Detail, Data Storage, Notification Settings and remaining production screens; complete real Patients/Alerts, adaptive/golden/TalkBack and Web/Admin foundation work.
+- Keep live PostgreSQL/provider, production signing, firmware ACK/OTA/HIL and deployment gates explicitly separate.
+
+## 2026-07-27 master-plan Phase 2 Record/audio update
+
+Closed for source/build/local/emulator scope:
+
+- Replace the fake Record Detail waveform/direct composable networking with repository/ViewModel state and backend-confirmed artifact data.
+- Add tenant-scoped, audited waveform access with exact scan binding, bounded storage reads and latest AI-result selection.
+- Add short-lived audio access, same-origin authorization ownership, bounded progress download, lifecycle/audio-focus playback, system document save and Android Sharesheet.
+- Restrict temporary raw audio to an app-private, bounded, logout-purged FileProvider cache; prevent bearer forwarding to foreign provider origins.
+- Publish shared HTTP v1 schemas/fixtures. Current proof is contracts `16/16`, the integrated backend/OpenAPI gates, Android `339/339` JVM plus `40/40` connected tests, assemble and zero-error lint.
+
+Still open in Phase 2:
+
+- Migrate Data Storage, Notification Settings and remaining production screens; implement real Patients/Alerts and finish the independent Web/Admin foundation.
+- Complete 360/412/600/840 dp golden, two-pane/foldable, IME, rotation, font-200%, manual TalkBack and system Remove Animations proof.
+- Run live PostgreSQL/S3 and provider-backed Firebase/FCM/audio access, production signing and physical-device QA. Firmware is `N/A` for this contract-compatible UI slice; existing firmware HIL/OTA gates remain separately `BLOCKED`.
+
+## 2026-07-27 master-plan Phase 2 storage/export update
+
+Closed for source/build/local/emulator scope:
+
+- Replace seeded storage usage/quota/sync/backup state with tenant-scoped backend file/byte measurements plus Android app-private cache measurement.
+- Give Data Storage immutable ViewModel state, explicit loading/empty/stale/offline/permission/retry/failure behavior, native adaptive phone/font-200% layout and offline local-cache cleanup with confirmed outcome.
+- Remove the platform-wide delete screen and `/data/all` client path from the production Android app; preserve the unchanged legacy source outside source sets with checksum provenance.
+- Capability-gate storage/export and implement PDF/CSV/XLSX/JSON export as create → owner/workspace/renderer/size/SHA validation → same-origin bounded download → MIME-specific system document write. Do not report success at job creation or download.
+- Publish versioned storage/export HTTP schemas and fixtures. Current proof is contracts `18/18`, integrated backend/OpenAPI gates, Android `356/356` JVM plus `44/44` connected tests, assemble and zero-error lint.
+
+Still open in Phase 2:
+
+- Migrate Notification Settings and remaining Android production screens; implement real Patients/Alerts and finish the independent Web/Admin UI foundation.
+- Complete 360/412/600/840 dp golden, foldable/two-pane, IME, rotation, manual TalkBack and system Remove Animations proof.
+- Prove live PostgreSQL/S3/provider export and cleanup, production signing and physical-device document flow. Firmware is `N/A` for this slice; existing firmware HIL/OTA gates remain separately `BLOCKED`.
+
+## 2026-07-28 master-plan Phase 2 notification-preferences update
+
+Closed for source/build/local/emulator scope:
+
+- Publish and consume one owner/workspace-bound notification snapshot plus an idempotent single-field PATCH, with atomic audit/replay/rollback behavior.
+- Prevent Portal from overwriting Android changes with a stale whole-map save; validate each confirmed field and retain its key across ambiguous retry.
+- Replace fake Android-local sound/vibration controls with honest Android channel settings, stable IDs and separate runtime permission/app/channel/encrypted-session readiness.
+- Reauthorize account, workspace membership, token and auth session on push retry; recompute campaign opt-outs without changing recipient/workspace ownership.
+- Current proof: contracts `20/20`; backend `18/18`, `9/9`, `8/8`; Web lint + `109/109` + `63/63` + build; Android `373/373` JVM + `46/46` connected + assemble + zero-error lint.
+
+Still open in Phase 2:
+
+- Finish remaining Android semantic/adaptive screens and implement real Patients/Alerts destinations.
+- Finish the independent Web/Admin brand, primitive, route-state, responsive, accessibility, browser and visual acceptance matrix; do not copy Web layout into Compose.
+- Prove live Firebase/FCM/email/PostgreSQL behavior, production signing, physical-device/manual TalkBack/golden/IME/rotation behavior, firmware HIL and deployment. The Web dependency audit also needs an intentional lockfile/release install policy; `ENOLOCK` is not a clean-audit claim.
+
+## 2026-07-29 master-plan Phase 2 native Patients/Alerts update
+
+Closed for source/build/local scope:
+
+- Replace hidden Android clinical placeholders with typed, capability/workspace-gated Patients and Alerts destinations backed by the real shared/backend contract.
+- Add native compact and 840 dp two-pane layouts, lazy worklists, search/filter/detail, dark and large-font behavior, 48 dp targets, TalkBack semantics and explicit loading/empty/stale/offline/permission/error/retry states.
+- Require exact workspace and mutation confirmation. Preserve idempotency only for ambiguous transport retry; on optimistic-version `409`, discard stale intent, reload and never show an acknowledge/resolve success.
+- Current proof: contracts `23/23`; backend check, clinical workflow `8/8`, workspace/repository smokes; Android `395/395` JVM tests across `68` suites, AndroidTest compilation, assemble, zero-error lint and clean diff check.
+
+Still open in Phase 2:
+
+- Execute the new Patients/Alerts Compose tests on a healthy emulator/device. The only current AVD remained ADB-offline, so runtime proof for this slice is `BLOCKED`, not inherited from older connected-test runs.
+- Complete the remaining Android 360/412/600/840 dp golden, foldable/two-pane, IME, rotation, manual TalkBack and Remove Animations matrix.
+- Finish the independent Web/Admin brand, primitives, route-state, responsive, accessibility, browser and visual acceptance work. Live Firebase/FCM/PostgreSQL, production signing, physical device, firmware HIL and deployment remain separate gates.
+
+## 2026-07-29 master-plan Phase 2 personal Notification Inbox update
+
+Closed for source/build/local scope:
+
+- Publish one owner/current-workspace list and mutation snapshot for personal notifications; require idempotency and atomic audit for read, read-all and delete.
+- Replace Portal local/fake inbox state with exact backend confirmation and add a responsive canonical UI. Keep Android native through repository/ViewModel/Compose rather than porting the Web layout.
+- Fail closed for account/workspace mismatch, wrong action or incomplete receipt. Localize Android progress semantics and retain explicit loading/empty/stale/offline/permission/error/retry/destructive states.
+- Add OpenAPI, shared fixtures, backend package gates, PostgreSQL transaction/rollback proof, Portal component/API coverage and a local Chromium smoke. Current proof is contracts `25/25`; backend inbox `8/8` plus integrated gates; Portal `117/117`, `63/63`, lint/build and browser `66` checks; Android `407/407`, AndroidTest compilation, assemble and zero-error lint.
+
+Still open in Phase 2:
+
+- Run the new Notification Inbox Compose instrumentation on a healthy emulator or physical Android device; no connected runtime proof is inherited from earlier slices.
+- Finish the independent Web/Admin brand/primitives/route-state/responsive/accessibility/browser/visual matrix and the remaining Android 360/412/600/840 dp golden, foldable/two-pane, IME, rotation, manual TalkBack and Remove Animations matrix.
+- Prove live Firebase/FCM/PostgreSQL delivery, production signing and deployment. Firmware is `N/A` for this inbox slice; existing firmware HIL gates remain separately open.
+
+## 2026-07-29 master-plan Phase 2 canonical Web primitive update
+
+Closed for source/build/local-browser scope:
+
+- Resolve every Web UI import and migrate the final Audit, Reports, Permission Denied, Portal state and export-dialog consumers to `src/components/ui`.
+- Remove all 48 files in `src/app/components/ui` and add a contract that rejects the duplicate path or any relative/alias import resolving into it.
+- Restore one semantic route `h1` on Permission Denied after Chromium exposed the visual-only `CardTitle` mismatch.
+- Verify contracts `64/64`, Auth/UI `117/117`, lint/build, UI browser `123/123` and Notification Inbox browser `66/66`. Duplicate CSS removal reduced client CSS to `60.44 KB` gzip.
+
+Still open in Phase 2:
+
+- Inventory and migrate only remaining reproduced legacy Web CSS/route classes; complete the route visual acceptance matrix without adding another override layer.
+- Run the Firebase build only with the real six `VITE_FIREBASE_*` public configuration values. Current production-build proof is `BLOCKED`, not passed.
+- Continue the separate Android adaptive/golden/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Backend and firmware are `N/A` for this primitive-only slice.
+
+## 2026-07-29 master-plan Phase 2 Portal device-assignment update
+
+Closed for source/build/local-browser scope:
+
+- Migrate `/portal/devices/assign` from glass/gradient/premium demo CSS to canonical Web primitives with responsive, theme-safe, accessible controls and explicit loading/empty/error/retry/offline behavior.
+- Scope eligible patient/device data to the active workspace and reject revoked, already assigned or cross-workspace records.
+- Require an intent-stable key on canonical v1, verify an exact backend receipt before success and atomically persist ownership, audit and replay receipt in both JSON and PostgreSQL repositories.
+- Preserve backend-first compatibility through the legacy unversioned alias while new Web uses `/api/v1`; publish shared schemas/fixtures and OpenAPI. Current proof is focused Web `6/6`, repository `36/36`, HTTP `19/19`, Web `123/123` plus `64/64`, browser `189`, backend integrated gates and OpenAPI `69` paths.
+
+Still open in Phase 2:
+
+- Select and migrate the next reproduced legacy Portal route/CSS gap; do not perform a blind stylesheet rewrite or add another override layer.
+- Finish the independent Android adaptive/golden/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Device assignment is Web-first `N/A` on Android; its native claim/provision/status flow remains separate.
+- Run Firebase production/live/provider/deploy gates only with real configuration. Physical device and firmware HIL remain separate proof; no such completion is claimed here.
+
+## 2026-07-29 master-plan Phase 2 Portal Billing Summary update
+
+Closed for source/build/local-browser scope:
+
+- Replace legacy Billing presentation with canonical Shcare primitives, responsive/theme-safe structure, 44 px controls and explicit loading, empty-package, empty-usage, error/retry and offline states.
+- Read canonical `/api/v1/portal/billing`, bind the response to the active workspace and reject malformed/contradictory usage, package/charge drift or any unsupported online-payment claim.
+- Publish the shared HTTP schema/fixture and OpenAPI route while retaining the old read alias for backend-first compatibility. Keep billing honestly manual; do not add fake invoices, checkout, zero charges or unlimited quota.
+- Current proof is focused Billing `6/6`, shared HTTP `20/20`, total contracts `27/27`, Web `129/129` plus `64/64`, browser `246`, backend integrated gates, OpenAPI `70` paths and clean diff check.
+
+Still open in Phase 2:
+
+- Reproduce and close the next Portal UI-foundation gap, starting with Dashboard partial/error truthfulness and legacy styling only if current evidence confirms it. Do not reopen Billing, Device Assignment, canonical primitives or older slices without a reproduced regression.
+- Continue the independent Android adaptive/golden/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Billing is Web-first; Android may later expose only a native read-only plan status where actor needs justify it.
+- Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Interruption recovery always starts from the latest handoff/ledger plus the current diff; rerun a narrow drift gate and continue the first open row instead of rebuilding completed work.
+
+## 2026-07-29 master-plan Phase 2 Portal Dashboard update
+
+Closed for source/build/local-browser scope:
+
+- Replace legacy Dashboard presentation with canonical Shcare primitives/tokens, responsive one-heading structure, 44 px controls and loading/error/retry/offline/partial/empty/permission states.
+- Read canonical `/api/v1/portal/overview` with explicit local range/timezone, bind it to the active workspace and reject missing or contradictory patient/scan/device/AI totals instead of showing fallback zeros.
+- Keep recent scans as a capability-gated, workspace-bound supplemental panel. Preserve confirmed KPIs on supplemental failure and stop deriving review counts from a five-row `aiLabel` sample.
+- Retain the legacy read alias for backend-first compatibility. Current proof is focused Dashboard `7/7`, shared HTTP `21/21`, total contracts `28/28`, Web `136/136` plus `64/64`, browser `306`, backend overview `4/4` plus integrated gates, OpenAPI `70` paths/`345` resolved references and clean diff check.
+
+Still open in Phase 2:
+
+- Reproduce and close the next remaining Portal UI-foundation/route-state gap; do not reopen Dashboard, Billing, Device Assignment, canonical primitives or older slices without a current failing gate or concrete regression.
+- Continue the independent Android 360/412/600/840 dp golden, foldable/two-pane, IME, rotation, manual TalkBack, Remove Animations and runtime matrix. Android dashboards remain native and are not expected to match Portal pixels.
+- Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- After quota loss, compaction or power-off, resume from the latest handoff/ledger and current diff, rerun one narrow drift gate and continue the first open item rather than rebuilding completed work.
+
+## 2026-07-29 master-plan Phase 2 Portal Onboarding update
+
+Closed for source/build/local-browser scope:
+
+- Replace legacy glass/gradient/neon onboarding with canonical Shcare primitives, responsive cards, 44 px controls, reduced-motion-safe progress and explicit loading/incomplete/unknown/error/retry/offline states.
+- Build only role-relevant steps. Bind `/me` membership, patient/device lists and Billing to the active workspace; omit unauthorized reads and fail closed on missing/cross-workspace identities.
+- Keep failed or offline reads as `Chưa xác minh` rather than counting them as user-incomplete setup. Require backend `online=true` for the device-online step and allow narrow per-dataset retry.
+- Current proof is focused Onboarding `4/4` after a recorded red baseline, contracts `28/28`, Web `140/140` plus `64/64`, browser `363`, lint/build, same-checkpoint backend/OpenAPI gates, clean legacy/raw-style scan and clean diff check.
+
+Still open in Phase 2:
+
+- Close the next reproduced Portal UI-foundation gap, currently Help/support styling, form state and exact mutation confirmation. Do not reopen Onboarding, Dashboard, Billing, Device Assignment or older slices without concrete regression evidence.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Android first-run UI remains native and separate.
+- Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger and current diff; use a narrow drift gate and continue the first open row.
+
+## 2026-07-29 master-plan Phase 2 Portal Help/support update
+
+Closed for source/build/local-browser scope:
+
+- Replace legacy Help demo styling with canonical Shcare primitives/tokens, responsive guide/search/form/receipt layout, 44 px controls and validation/offline/submitting/retry/unsaved/confirmed states.
+- Remove invented support contacts and SLA copy. Replace toast-only/self-notification behavior with a real tenant support ledger and exact requester/workspace receipt.
+- Require an intent-stable `Idempotency-Key` on `/api/v1/portal/support`; derive authority at the backend and commit ticket, audit and replay receipt atomically in JSON and PostgreSQL paths. Preserve `/api/portal/support` only for the compatibility window.
+- Add migration `045`, JSON import, shared schemas/fixtures, OpenAPI, negative workspace/authority/replay tests and local browser mutation proof. Current evidence is focused `7/7`, support repository `4/4`, contracts `29/29`, Web `147/147` plus `64/64`, browser `420`, backend integrated gates, OpenAPI `71` paths / `353` resolved references and clean diff check.
+
+Still open in Phase 2:
+
+- Reproduce and close the next remaining Portal UI-foundation/route-state gap. Do not reopen Help, Onboarding, Dashboard, Billing, Device Assignment, canonical primitives or older slices without a current failing gate.
+- Design a requester withdrawal/cleanup contract before enabling support-ticket creation in provider/live mutation smoke. Until then, provider/live support proof remains `BLOCKED`; explicit opt-in may retain a test ticket but must not claim cleanup.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. The workspace Portal Help form has no actor-equivalent Android screen and is `N/A`, not a pixel-parity task.
+- Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger and current diff; run only the Help narrow drift gate if necessary, then continue the first open row.
+
+## 2026-07-29 master-plan Phase 2 Portal workspace selection update
+
+Closed for source/build/local-browser scope:
+
+- Replace legacy workspace cards with canonical Shcare primitives/tokens, one route heading, responsive 44 px interaction and complete loading/session-denied/empty/offline/error/retry/switching/active/disabled/unavailable-metric states.
+- Stop mapping absent backend summaries to zero. Keep non-operational membership visible for status explanation but deny selection.
+- Publish the shared exact `{ organizationId }` request contract. Add caller-owned stable idempotency on Web, exact server confirmation, ambiguous-response `/me` reconciliation and PHI cache isolation before authority changes.
+- Confirm the existing independent Android API/ViewModel still obeys the same contract; do not copy the Portal composition into Compose.
+- Current proof is focused Web `10/10`, contracts `30/30`, Web `153/153` plus `64/64`, TypeScript/lint/build, Chromium `459`, backend check/workspace-access, focused Android workspace tests and clean diff check.
+
+Still open in Phase 2:
+
+- Migrate the reproduced legacy Workspace Settings route and its account/workspace/security state without reopening Workspace Switcher, Help or older closed slices unless a current regression is reproduced.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Native Workspace Switcher remains separate from the Portal UI.
+- Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from this latest handoff/ledger and the current diff; a narrow gate checks drift but does not authorize rebuilding completed work.
+
+## 2026-07-29 master-plan Phase 2 Portal Workspace Settings update
+
+Closed for source/build/local-browser UI-foundation scope:
+
+- Replace legacy settings styling and custom tabs with canonical Shcare primitives/tokens, one route heading, responsive accessible tabs and 44 px interactions.
+- Load only `/me` on the initial Profile tab; defer Security, Notifications and Workspace reads until selected, and reject account/workspace snapshots that do not match current authenticated authority.
+- Cover loading, denied, offline, validation, submitting, retry, unsaved and confirmed states. Protect Profile, Workspace, Password and Notification drafts with a shared unload guard.
+- Current proof is focused `12/12`, Web Auth/UI `157/157`, route contracts `64/64`, TypeScript/lint/client+SSR build and Chromium `525` across ten routes × three viewport/theme cases.
+
+Still open:
+
+- In Phase 2, inventory and close only the next reproduced Web/Admin UI-foundation gap; continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix.
+- In Phase 3, add stable retry idempotency and transaction/audit parity for legacy profile, workspace, avatar and password mutations. Do not call the settings lifecycle complete before those backend/client gates pass.
+- Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger/current diff. A narrow Workspace Settings gate may detect drift but does not authorize rebuilding this or earlier closed slices.
+
+## 2026-07-29 master-plan Phase 2 Portal Patients list/detail update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Scope patient list/detail caches to the active workspace and reject patient snapshots that do not carry the exact workspace identity.
+- Bind Patient Detail scan history to exact `workspaceId + patientId`, reject missing/foreign/duplicate source identities, and render a retryable failure without leaking a foreign scan row.
+- Protect dirty create drafts on unload, keep canonical IDs distinct from display codes, use canonical Web primitives, and hide mutation controls from view-only roles.
+- Current proof is focused Patient UI `6/6`, focused contract/static `12/12`, Web Auth/UI `160/160`, route contracts `66/66`, TypeScript/lint/client+SSR build and Chromium `624` across twelve routes × three viewport/theme cases.
+
+Still open:
+
+- Continue Phase 2 with Portal Patient Import UI-foundation/browser acceptance. Preserve the existing tenant-scoped, idempotent, atomic `validate → preview → commit` backend closure; do not reimplement it unless a regression is reproduced.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Android Patient/Family UI remains native and separate from Web.
+- Phase 3 legacy settings mutation parity, Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger/current diff. A narrow Patients gate may detect drift but does not authorize rebuilding Patients or any earlier closed slice.
+
+## 2026-07-29 master-plan Phase 2 Portal Patient Import update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Bind validation to exact active workspace plus selected file name/size; bind detail and commit to exact workspace/batch/version, reject stale results and require a strictly advancing committed receipt.
+- Invalidate operation epochs and clear file/batch/idempotency state on workspace/reset changes; ignore late old-workspace responses and mutually exclude validate, refresh and commit.
+- Invalidate only the active-workspace Patient query family after success. Preserve the already closed atomic and idempotent backend `validate → preview → commit` lifecycle.
+- Use canonical responsive Web primitives/tokens with permission heading, accessible table caption, focus-visible upload control, 44 px actions and explicit validation/preview/busy/retry/confirmed states.
+- Current proof is parser `5/5`, Patient UI `9/9`, focused contract/static `10/10`, Web Auth/UI `163/163`, route/contracts `68/68`, TypeScript/lint/client+SSR build and Chromium `702` across thirteen routes × three viewport/theme cases.
+
+Still open:
+
+- Continue Phase 2 by inventorying Appointments as the next row in the original plan order. Do not assume it needs a rewrite; reproduce current gaps first and preserve already verified behavior.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Batch Patient Import is explicitly Web/Admin-only; Android keeps its separate Patient/Family UX.
+- Phase 3 legacy settings mutation parity, Firebase production/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger/current diff. A narrow Patient Import gate may detect drift but does not authorize rebuilding it or any earlier closed slice.
+
+## 2026-07-29 master-plan Phase 2 Portal Appointments update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Require exact active-workspace appointment, patient, doctor, lifecycle and time identities for list/detail/mutation data; use the exact detail endpoint and exact confirmed mutation receipts.
+- Reuse one idempotency key for an unchanged retry intent. Suppress late old-workspace mutation results, close stale PHI/dialog/draft state and protect dirty drafts with unload/discard guards.
+- Keep the staff ledger complete while limiting the assignable-doctor catalog to approved active accounts with active operational doctor membership in the selected workspace. Preserve backend mutation-time authority.
+- Use canonical responsive Web primitives, Table/Caption and semantic tokens with complete loading/empty/offline/permission/partial/retry/busy/destructive/confirmed states. Fix the phone-light contrast and definition-list issues found by Chromium.
+- Current proof is component `7/7`, focused contract/static `9/9`, Web `170/170` plus `73/73`, TypeScript/lint/client+SSR build, Chromium `807` across fourteen routes × three viewport/theme cases, backend check/appointment-workspace smoke, Android appointment `26/26` and `assembleDebug`.
+
+Still open:
+
+- Continue Phase 2 by inventorying Review/Alerts/Live in the original plan order. Preserve the already closed clinical workflow/backend and native Android work unless a current regression is reproduced.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Android Appointment UI remains native and separate from Portal.
+- Shared versioned cross-client appointment fixtures can be consolidated with the Phase 6 whole-system appointment synchronization row; this UI closure does not falsely claim that final release-manifest step.
+- Phase 3 legacy settings mutation parity, Firebase/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger/current diff. A narrow Appointments gate may detect drift but does not authorize rebuilding Appointments or any earlier closed slice.
+
+## 2026-07-29 master-plan Phase 2 Portal Review and Alerts update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Align Review/Alerts menu and direct-route gates with exact backend capabilities; reject missing, malformed, duplicate or foreign workspace/scan/alert/source identities.
+- Require exact backend decision/transition receipts, newer optimistic versions and workspace-bound stable idempotency before success. Suppress late old-workspace outcomes through a synchronous operation epoch.
+- Publish additive Review `workspaceId`, shared v1 list/mutation schemas and OpenAPI paths while preserving legacy read/mutation aliases during the compatibility window.
+- Use canonical responsive Web primitives and semantic tokens with accessible card headings/definition lists, 44 px controls and complete loading/empty/offline/permission/retry/busy/destructive/confirmed states.
+- Current proof is focused Web `21/21`, Web `174/174` plus `77/77`, package contracts `31/31`, TypeScript/lint/build, Chromium `939` over sixteen routes × three cases, backend check/clinical `8/8`/workspace-access, OpenAPI `76` paths / `394` resolved references and Android clinical/alerts `20/20` plus `assembleDebug`.
+
+Still open:
+
+- Continue Phase 2 with **Live Monitoring**. Inventory the current WebSocket/REST behavior before changing it; prove authenticated workspace/device/scan source identity, reconnect/backoff, waveform truthfulness, capability gates and all route states.
+- Preserve Android's independent native Clinical Alerts UI. Portal Review is Web clinician-worklist scope here; native scan/review synchronization remains a later plan row and must not copy Portal composition.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Firebase/live/provider/deploy, physical Android/device proof and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after interruption from the latest handoff/ledger/current diff. A narrow Review/Alerts gate may detect drift but does not authorize rebuilding it, Appointments or any earlier closed slice.
+
+## 2026-07-29 master-plan Phase 2 Portal Live Monitoring update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Make authenticated WSS the only waveform/metric authority and expose canonical `/api/v1/portal/monitoring` solely as a tenant-bound REST fallback with a compatibility alias.
+- Scope and validate snapshot, device, scan, alert and live-source identities to the exact active workspace; reject duplicate, malformed, foreign or secret-bearing data. Derive `online` from an authenticated device socket and never promote legacy `connected`.
+- Remove global connection counts and network ports from authenticated WSS status while preserving source-bound status/session/metrics and protocol-v2 audio isolation.
+- Replace fake zero metrics and raw demo styling with canonical responsive Shcare primitives plus loading, empty, cached-partial, stale/error, offline, 403, reconnect, REST fallback, waiting, active and packet-gap states.
+- Current proof is focused Live API/UI `9/9`, Web `183/183` plus `81/81`, package contracts `32/32`, TypeScript/lint/build, Chromium `987` over seventeen routes × three cases, backend check/workspace/clinical `8/8`/device-security `41/41`/audio-v2 `4/4`, OpenAPI `77` paths / `400` resolved references and Android LiveAudio `13/13` plus `assembleDebug`.
+
+Still open:
+
+- Continue Phase 2 with **Portal Devices/Consent**. Inventory current Device list/detail/status/command and Consent UI/authority first; preserve the already closed Device Assignment, consent repository/API and native Android work unless a current regression is reproduced.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Android Live Monitoring remains native and separate from Portal.
+- Physical authenticated WSS/audio, reconnect under real network loss, Android device/emulator runtime and firmware HIL remain `BLOCKED`; source/build tests are not hardware proof.
+- Firebase/live/provider/deploy and Phase 3 identity/security mutation parity remain separate evidence classes. Resume from the latest handoff/ledger/current diff and do not rebuild Live or an earlier closure merely because quota, compaction or power-off interrupted execution.
+
+## 2026-07-29 master-plan Phase 2 Portal Devices and Consent update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Bind the Portal device projection and every sanitized row to the active workspace; reject duplicates and secret-bearing data; require canonical `online` instead of promoting legacy `connected`.
+- Bind Device command receipts to the exact workspace/device/type/protocol/lifecycle and bind Consent targets, ledgers, authority, recipient, scope, create/revoke receipts and audit to the exact workspace/patient/intent.
+- Publish four shared HTTP v1 schemas/fixtures and one OpenAPI contract reused by native `/patients/...` and Portal `/portal/patients/...` compatibility paths.
+- Replace remaining Device/Consent demo styling with canonical responsive Shcare primitives, semantic status colors, 44 px focus/touch targets and complete loading/empty/stale/offline/permission/retry/busy/destructive/confirmed states.
+- Current proof is focused parsers `7/7`, API `5/5`, pages `17/17`, Web `195/195` plus `88/88`, package contracts `33/33`, TypeScript/lint/build, Chromium `1,128` over nineteen routes × three cases, backend check/KLT/workspace/repositories/device-security `41/41`, OpenAPI `81` paths / `412` references, and Android Device/Consent/LiveAudio regression `59/59` plus `assembleDebug`.
+
+Still open:
+
+- Continue the original Phase 2 sequence by inventorying Portal Staff and Notifications UI-foundation integration. Preserve closed staff invitation/membership, notification inbox/preferences/session binding and native Android behavior; reopen only a reproduced defect.
+- Continue the independent Android golden/foldable/IME/rotation/manual TalkBack/Remove Animations/runtime matrix. Web and Compose presentation remain separate.
+- Firebase/live/provider/database/deploy, physical Android/device provisioning/command ACK, firmware HIL and OTA rollback remain separate open or `BLOCKED` evidence classes.
+- Resume after quota exhaustion, compaction or power-off from the latest handoff, execution ledger and current diff. Devices/Consent and every older row stay closed unless a current regression is reproduced.
+
+## 2026-07-29 master-plan Phase 2 Portal Staff and Notifications update
+
+Closed for source/build/local-browser UI and authority scope:
+
+- Bind Staff snapshots and every operational membership to the exact active workspace; allowlist roles/statuses, reject duplicate or malformed identities and expose only the bounded staff fields required by the Portal.
+- Remove Firebase claims and all 2FA/session/token/secret material from the Staff projection. Publish the exact shared HTTP v1 schema/fixture and OpenAPI models.
+- Bind Notification inbox rows and read/delete receipts to the authenticated owner and current workspace. Preserve backend-confirmed outcomes and the existing data-only FCM wake-up contract.
+- Complete real workspace transitions with reactive settled-authority keys and operation epochs that clear stale drafts/dialogs/intents and suppress late old-workspace results.
+- Use canonical responsive Web primitives/tokens with one route heading, 44 px actions and loading/empty/offline/permission/retry/busy/unsaved/destructive/confirmed states. Fix the reproduced Staff eyebrow and global `select` light-theme contrast defects without adding a CSS override layer.
+- Current proof is focused `14/14`, Web `204/204` plus `95/95`, package contracts `34/34`, TypeScript/lint/build, notification browser `66`, unified Chromium `1,374` over the 21 routes currently registered in the Portal matrix × three cases, backend check/workspace/staff `7/7`/inbox `8/8`/notification/OpenAPI, backend audit `0` and clean diff check.
+
+Still open:
+
+- Compare the remaining Portal RouteContract aliases/details with the 21 registered browser cases, then census Public Web, Auth, Platform Admin and the independent Android adaptive/runtime matrix. Select the first evidence-backed open row; do not invent a route rewrite.
+- Android membership/workspace and Notifications UI remains native and separate. Emulator/device/manual TalkBack, golden/foldable/IME/rotation/Remove Animations and provider delivery proof remain open or `BLOCKED`.
+- Firebase/live database/provider/deploy, physical device, firmware HIL and OTA rollback remain separate proof classes. Staff/Notifications and every older closure stay closed unless a current regression is reproduced.
+- Resume after quota exhaustion, compaction or power-off from the latest handoff, execution ledger and current diff.
+
+## 2026-07-29 master-plan Phase 2 Public Web UI foundation update
+
+Closed for source/build/local-browser UI foundation:
+
+- Route all `22` Public RouteContract entries, including 404/maintenance, through the canonical Shcare Public shell.
+- Replace demo glass/glow/gradient/autoplay presentation and unverified hotline/customer/metric claims with semantic, truthful, responsive Public Web content.
+- Apply light/dark/system themes, one-shot capped opacity/transform motion, authoritative reduced motion, 44 px controls and accessible keyboard/focus/scroll semantics.
+- Add the contract-driven Public browser sweep for 360/390/768/1024/1440 × light/dark/system and fail on axe serious/critical, console/static/API errors, overflow, small targets, forbidden effects, autoplay or infinite animation.
+- Current proof is Pricing `240/240`, final matrix `5,325/5,325`, Web contracts `99/99`, Prettier/TypeScript/ESLint/build, CSS `63.87 KB` gzip, token CSS `1.38 KB` gzip and fonts about `82.57 KB`.
+
+Still open:
+
+- Continue Phase 2 with the shared Auth shell and Auth RouteContract loading/error/recovery/unsaved/accessibility/responsive/theme foundation; then close remaining Platform Admin and independently native Android adaptive/runtime evidence.
+- Consolidate legacy `signal-horizon.css` only as dependent Auth/Portal surfaces migrate, and remove the remaining narrowly scoped precedence/`!important` bridges without creating another override layer.
+- Run Contact mutation proof separately; do not infer it from a read-only Public route sweep.
+- Firebase preview/live, provider/database, field Web Vitals, Android emulator/device/manual TalkBack, physical device and firmware HIL remain separate open or `BLOCKED` evidence classes.
+- Resume after quota exhaustion, compaction or power-off from the latest handoff, execution ledger and current diff. Public and all earlier closures remain closed unless a current regression is reproduced.
+
+## 2026-07-29 master-plan Phase 2 Auth UI/state foundation update
+
+Closed for source/build/local-browser UI foundation:
+
+- Route all `15` Auth RouteContract entries through the canonical Shcare Auth shell with responsive light/dark/system behavior, reduced-motion-safe transitions, 44 px targets and explicit loading/offline/recovery/error states.
+- Replace the incorrect reset-password alias with a dedicated Firebase action-code screen that verifies before editing, masks the email, validates and confirms through Firebase, handles invalid/expired codes, protects unsaved input and never exposes `oobCode`.
+- Stop manufacturing approval status for anonymous visitors and remove outbound-provider implementation detail from verification copy.
+- Add a self-starting Auth browser sweep over 360/390/768/1024/1440 × light/dark/system, including offline-shell, axe, request/console, overflow, target-size and forbidden-effect checks.
+- Current proof is focused `5/5`, Auth/UI `211/211`, Web contracts `104/104`, TypeScript/ESLint/build, Chromium `3,615/3,615`, CSS `63.89 KB` gzip, token CSS `1.38 KB` gzip and clean diff check.
+
+Still open:
+
+- Census and close the remaining Platform Admin UI-foundation gaps, then finish the independently native Android adaptive/runtime matrix. Do not copy Web layout/components into Compose.
+- Continue consolidating legacy CSS only when a current dependent surface migrates; do not create a fifth override layer.
+- Verify Firebase custom action-handler configuration and a real reset-link/provider journey separately. Unit mocks and anonymous browser routes are not live email proof.
+- Firebase preview/live, provider/database runtime, Android emulator/device/manual TalkBack, physical device, firmware HIL and OTA rollback remain separate open or `BLOCKED` evidence classes.
+- Resume after quota exhaustion, compaction or power-off from the latest handoff, execution ledger and current diff. Public/Auth and all earlier closures remain closed unless a current regression is reproduced.
+
+## 2026-07-29 master-plan Phase 2 Platform Admin UI-foundation update
+
+Closed for source/build/local-browser:
+
+- Canonical Shcare Admin shell, light/dark/system theme, command palette, truthful offline/state surfaces, 44 px targets, reduced motion and accessible detail drawers.
+- Account read-only 2FA status plus field-level, idempotent, self-owned notification preference mutation with exact receipt and cleanup.
+- Loading/503/retry/empty/403 proof, real limited-principal direct-route denial and canonical drawer focus trap/Escape/restore.
+- Removal of production demo gradients/glass/loops, stale brand defaults, global mobile `!important` overrides and unsupported success paths.
+- Contracts `169/169`, TypeScript/ESLint/build, Chromium `225/225` visits and critical Firefox/WebKit journeys. Aggregate browser proof: `241` route, `19` Account cleanup, `19` drawer, `25` state and `5` direct-denial checks.
+
+Still open:
+
+- Firebase preview/live promotion, provider/database runtime and deployment rollback proof.
+- Continue independently native Android authority/adaptive work; do not port Admin components or reopen this closure without a reproduced regression.
+- Android emulator/device/manual TalkBack/golden, production signing, physical device, firmware HIL and OTA rollback remain open or `BLOCKED`.
+
+## 2026-07-29 master-plan Phase 2 Android Settings/clinical-status update
+
+Closed for source/build/local proof:
+
+- Android Settings authority/capability/logout convergence, including epoch-safe global invalidation, locked/deleted checks, bounded stale PII and non-duplicated TalkBack semantics.
+- Public health-only status plus authenticated exact-workspace doctor/Portal status, workspace-bound recording selection and Android workspace validation/retry.
+- Backend clinical `4/4`, check and workspace-access gates; Web contracts `105/105`, type/lint/client+SSR build; Android `449/449`, compile/AndroidTest compile/assemble/lint.
+- APK `23,906,757` bytes with SHA-256 `D1611B9E51D4E7DBC39DFE4106D307C58641688040E8CC94BA90CB9A56456BDD`.
+
+Next open Phase 2 row:
+
+- Patient Dashboard authority-bound native foundation: repository/domain/ViewModel state, truthful loading/partial/stale/offline/403/retry behavior, typed navigation, capability-gated actions, removal of fake device progress/AI fallback and adaptive native UI. Do not copy Web layout or components into Compose.
+- Full clinical dashboard UI/stop-scan migration remains Phase 5.
+
+Still `BLOCKED`:
+
+- Firebase build/provider proof in the current session due to six absent `VITE_FIREBASE_*` variables.
+- Android emulator/device/manual TalkBack/golden/FCM/production signing because `google-services.json` and an ADB target are absent.
+- Preview/live/provider/database, physical device, firmware HIL and OTA rollback.
+
+## 2026-07-29 master-plan Phase 2 Patient Dashboard update
+
+Closed for source/build/local proof:
+
+- Pure versioned `GET /api/v1/patient/dashboard` reading the canonical `activePatientId` persisted only by accepted idempotent active-profile PATCH, with owner/account/guardian plus exact-workspace authorization and strict active-profile scan/device isolation.
+- Shared HTTP v1 schema/fixture/OpenAPI plus Android protocol/account/workspace/patient/scan/device validation.
+- Repository/domain/ViewModel state, epoch-safe authority denial, truthful partial/stale/offline/403/retry handling and no direct API/polling in the Compose screen.
+- Independent adaptive native UI at 360/412/600/840 dp, large-font one-column fallback, 48 dp/TalkBack semantics, typed and capability-gated actions, backend-confirmed `online`, nullable battery including `0%`, and no unverified AI CTA.
+- Backend patient-dashboard `7/7`, workspace-access, `check`, `npm test`; contracts `35/35`; Android focused `32/32`, full unit `473/473`, both Kotlin compile gates, AndroidTest compile, assemble and lint. APK `24,001,564` bytes, SHA-256 `BDD617D4E175892660720BD9944F0A6055B200DDE5A1FFD792BB1DD45ACC22AE`.
+
+Remaining:
+
+- Continue the next genuinely open Phase 2 Android-native foundation row from the execution ledger; do not reopen Patient Dashboard or an older closure without a reproduced regression. Phase 2 is still in progress.
+- Phase 5 owns removal of clinical `scanIsNormal` boolean presentation from `DashboardScreen`, `MedicalRecordsScreen` and `RecordDetailScreen`.
+- Emulator/golden/manual TalkBack/FCM/live-provider/physical-device/hardware proof remains `BLOCKED` because `google-services.json` is absent and ADB has no attached target.
+- Deep Security Scan `1b48646c-c3fe-4835-9526-92177be380ae` remains untouched at `running/preflight`.
+
+## 2026-07-29 superseding Phase 2 Patient Dashboard hardening backlog update
+
+Master state under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**:
+
+- Phase 0–1 complete.
+- **Phase 2 in progress.**
+- Phase 3–8 pending.
+
+Closed now at source/build/local level:
+
+- Pure Patient Dashboard GET, pre-acceptance side-effect denial, exact active-profile retry receipt and safe legacy-idempotency compatibility.
+- Closed DTO field/type/range validation across shared contract and Android.
+- Stable Android retry key plus exact subject-authority epoch/back-stack PHI invalidation.
+- Backend Patient Dashboard `9/9`, workspace/check/full/repository smokes; shared `35/35`; Android focused `62/62`, full `487/487`, compile/AndroidTest compile/assemble/lint.
+- APK `24,018,920` bytes, SHA-256 `751A9CDACB18B18D19C8CE88116D24B664451495FDFF2AC68EBD5BD9CF311C20`.
+
+Still open:
+
+- Inventory and select the next genuinely open Phase 2 Android-native foundation row from current source; do not rely on an obsolete internal slice label.
+- Keep Phase 5 `scanIsNormal` migration assigned to Dashboard, Medical Records and Record Detail.
+- Emulator/manual TalkBack/golden/FCM/provider/live/physical-device/hardware proof remains `BLOCKED` without `google-services.json` and an ADB target.
+- After quota exhaustion, compaction or power-off, resume from the latest handoff + ledger + current diff + proof. Do not reopen a closed row without reproducing a regression.
+
+## 2026-07-29 master-plan Phase 2 account password update
+
+Closed for source/build/local proof:
+
+- One versioned password contract across backend, Portal, Platform Admin and Android: client reauthentication only, backend-owned mutation, stable required idempotency, exact untrimmed secrets, active authority and exact owner-bound receipt.
+- Owner-safe Web auth cleanup, native Android epoch/workspace/identity binding, ambiguous-retry handling, receipt-only success and replacement-account-safe logout.
+- Durable backend provider execution, keyed secret fingerprinting, transactional audit/notification/account finalization, exact replay and fail-closed crash-window reconciliation.
+- Operation-aware Firebase confirmation: password changes require `updated: true`; `firebaseAlreadyMissing` can no longer create a false password-change success.
+- Backend `22/22` plus check/test/repositories/workspace/KLT; shared `29/29`; Web `227/227` plus `105/105`, lint/build and Portal browser `1,374/1,374`; Admin `175/175`, lint/build and targeted `/account`; Android `518/518`, compile/AndroidTest compile/assemble/lint. APK `24,066,508` bytes, SHA-256 `5DC07A7E02A0F97FB62C80FBD1201EDBE5E3E2174F71F335FBCA053917DE9FD0`.
+
+Next open Phase 2 work:
+
+- Re-run the canonical direct-API boundary inventory and select the smallest non-clinical Android-native foundation row from the seven tracked legacy screens. Do not move Dashboard, Live Monitoring, Medical Records or New Scan clinical/audio work forward from Phase 5 merely to make the count smaller.
+- Keep Web/Admin and Android UI/UX independent. Share only brand semantics and backend contracts.
+
+Still open or `BLOCKED`:
+
+- Live Firebase/PostgreSQL/provider recovery, Firebase preview/live, complete Admin browser matrix, Android emulator/device/manual TalkBack/Remove Animations/golden, FCM, production signing, physical device, firmware HIL and OTA rollback.
+- Deep Security Scan `1b48646c-c3fe-4835-9526-92177be380ae` remains untouched at `running/preflight`.
+- After interruption, use the latest handoff + ledger + current diff + generated proof as authority. A closed row reopens only for a reproduced current regression.
+
+## 2026-08-01 master-plan Phase 2 registration/role-request update
+
+Closed for source/build/local proof:
+
+- Exact Firebase/backend owner binding, intent/file fingerprints, idempotent role/document receipts and approval authority across Web registration and Approval Pending.
+- Tenant-safe backend role requests, bounded 10 MiB streaming upload, ownership-safe object cleanup and strict JSON→PostgreSQL document-key scope.
+- Native Android workspace/membership coherence, strict notification ACK parsing and replacement-account-safe logout/unregister.
+- Web `288/288` plus contracts/type/lint/build; backend role-document `13/13`, shared `38/38`, check/base/workspace/repositories; Android `579/579`, compile/AndroidTest compile/assemble/lint. Independent final reviews found no remaining P0/P1 in the changed scope.
+
+Next open Phase 2 work:
+
+- Close **Android Doctor Approval architecture-bound native foundation** first: preserve its exact owner/workspace security guard, remove direct API/Firebase/coroutine/local mutable state from the Composable, and close the direct-API boundary with behavioral tests. SignUp is next. Dashboard, Live Monitoring, Medical Records and New Scan stay assigned to Phase 5.
+- Preserve independent Web/Admin and Compose UI/UX; share only brand semantics and backend contracts.
+
+Still open or `BLOCKED`:
+
+- Live PostgreSQL/Firebase/FCM/provider, emulator/device/manual TalkBack/golden, production signing, physical-device and firmware HIL proof. Deep Security remains separately `running/preflight`.
+- Resume from the active checkpoint, newest handoff/ledger, current diff and proof. Do not reopen this or an older row without a reproduced regression.
+
+## 2026-08-02 master-plan Phase 2 Doctor Approval update
+
+- Governing plan remains **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Phase 0–1 are complete, **Phase 2 remains in progress**, and Phase 3–8 remain pending.
+
+Closed for source/build/local proof:
+
+- Native Doctor Approval repository/ViewModel/state/effect architecture and direct-API boundary removal.
+- Exact Firebase/backend/current-workspace/target-workspace binding, realistic personal→clinic nonterminal lifecycle, exact approved membership and owner-bound draft/idempotency restoration.
+- Backend target lock across self-service, Admin approval and active-profile paths; no target-clinic ghost patient; canonical post-membership approval response/replay.
+- Full-owner logout binding including Firebase session epoch; same-UID ABA replacement cannot be terminated.
+- Shared `31/31`; backend check/test/workspace/repositories; Android `95` suites / `611/611`, AndroidTest compile/assemble/lint; APK `25,552,231` bytes, SHA-256 `84D99052B50E91282589F81DF94BDCC8BFF606CD410BC6E4CC84132364B216FA`; independent reviews with no bounded P0/P1.
+
+Next open Phase 2 work:
+
+- Close **Android SignUp architecture-bound native foundation** using RED-first direct-API boundary, account-owner/pending-checkpoint/retry/cleanup tests, repository/ViewModel state and a renderer-only native Compose screen.
+- Preserve the closed registration, Email Verification and Doctor Approval contracts; do not duplicate them inside SignUp.
+
+Still open or `BLOCKED`:
+
+- P2: introduce a dedicated role-request target field, make approval persistence atomic and define rejected-request target unlock/resubmit UX.
+- Firebase/FCM/live PostgreSQL/provider, emulator/device/manual TalkBack/golden, production signing, physical device and firmware HIL. Deep Security remains separately `running/preflight`.
+
+## 2026-08-02 cập nhật backlog Phase 2 auth/session owner
+
+Trạng thái master plan **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**:
+
+- Phase 0–1 đã hoàn tất.
+- **Phase 2 vẫn đang thực hiện.**
+- Phase 3–8 còn pending.
+
+Đã đóng ở mức source/build/local cho các đường được sửa:
+
+- `FirebaseOwnerBinding` chính xác xuyên Splash/Login/SignUp/Verify/Doctor; năm P1 về Verify recapture, Doctor ABA owner, stale termination replacement, reauthorization global clear và workspace/profile stale global teardown đã được sửa.
+- Workspace/profile confirmation bắt buộc khớp đúng snapshot `MobileSessionAuthority` và từ chối same-identity/new-epoch; `AppNav` không còn global clear/terminate.
+- Review độc lập cuối cùng ghi nhận P0/P1/P2 đều không còn trong phạm vi các đường đã sửa.
+- Android `98` suites / `655` tests, failures/errors/skipped đều `0`; build AndroidTest compile + assemble + lint thành công `4m43s` / `56` tasks; lint `43` warnings / `0` errors, không có issue auth/session trong phạm vi; Android diff check sạch.
+- APK `24,172,920` bytes, SHA-256 `CEB6BFC23995B361AD0BD23B24F4F836E0464BCB215105C8A6EDE8BACDAC5F69`.
+
+Vẫn mở hoặc `BLOCKED`:
+
+- P2: bỏ dở một phần tài khoản SignUp hoặc Back có thể để Firebase owner trên Login công khai. Đây là debt riêng, không mâu thuẫn với kết quả review sạch trong các đường đã sửa.
+- Firebase/provider/navigation runtime trên emulator hoặc thiết bị thật vẫn `BLOCKED` vì thiếu `app/google-services.json` và ADB không có target.
+- Việc tiếp theo là kiểm toán hoàn tất foundation Phase 2 trên Web foundation và Android native foundation; không mở lại hàng đã đóng nếu chưa có regression.
+- Dashboard, Live, Medical Records, New Scan và audio vẫn thuộc Phase 5, không được kéo lên trước để coi Phase 2 đã hoàn tất.
+
+## 2026-08-02 backlog sau Web CSS A và Android adaptive shell
+
+Đã đóng ở mức source/build/local:
+
+- Web retire selector demo, Portal opaque/no-blur + semantic mobile title, recursive active CSS graph và `!important` ratchet; contracts `112/112`, TypeScript/build/lint, Chromium Portal `1,374` checks và Public `5,325` checks pass.
+- Android typed compact/rail/two-pane scaffold và Clinical Patients list/detail migration; `660/660` unit tests, AndroidTest compile, assemble/lint pass; APK SHA-256 `AF2E8648AF12B2F360B1AE2FA7DEC59386C52872185D4605001BC353F800F66B`.
+
+Phase 2 vẫn mở:
+
+- Web: giảm có kiểm soát `1,839` legacy `!important`, hợp nhất bốn layer còn active và chạy Firefox/WebKit critical, visual snapshot, performance acceptance.
+- Android: resource extraction cho inline copy, typed external deep link, bind canonical route `testTag`, và geometry/golden proof cho navigation ở font 200%.
+- P2 SignUp abandonment/back vẫn mở; Phase 5 tiếp tục sở hữu Dashboard/Live/Medical Records/New Scan/audio.
+- `google-services.json` và ADB target vắng mặt; Firebase/FCM/emulator/device/manual TalkBack/provider/physical proof vẫn `BLOCKED`. Deep Security vẫn tách riêng ở `running/preflight`.
+
+## 2026-08-06 superseding correction — Phase 2 remains active
+
+Phase 2 **chưa đóng**; các mục sau phải được xử lý hoặc có bằng chứng thật trước
+khi Phase được gọi PASS:
+
+- Web: `1,839` legacy `!important`; public initial graph khoảng `270,304 bytes gzip` vượt mục tiêu 250 KB; canonical composite wrappers; visual snapshot và live LCP/INP/CLS.
+- Android: canonical root route `testTag`; 32 literal ngoài Phase 5; external app links; geometry/golden font 200%; SignUp abandonment/back; sáu API deprecation warnings.
+- Runtime/provider/device: thiếu Firebase config, ADB target và provider/live proof; giữ `BLOCKED` cho đến khi có bằng chứng thật.
+
+**Canonical Session Revocation Receipt** đã được khởi động sớm. Hoàn tất slice
+đang dở để tránh hệ thống nửa tích hợp, nhưng không tính là chuyển Phase:
+
+- Backend additive: `POST /api/v1/auth/sessions/:id/revoke` trả `{session, revoked: true, replayed}`, owner-bound và idempotent; cross-account 404; audit `auth.session.revoke` cùng operation correlation.
+- Shared fixture/schema là nguồn thật cho Web `/portal/settings` và Android `privacy`.
+- Test bắt buộc: replay/key reuse negative, cross-account denial, WSS closure, Web API/component và Android parser/ViewModel.
+- Sau slice này quay lại đóng toàn bộ nghĩa vụ Phase 2. Profile PATCH/avatar idempotency, tách Android profile khỏi workspace switch và 2FA mutation vẫn thuộc Phase 3 pending.
+
+## 2026-08-15 superseding backlog — Phase 5
+
+- Governing plan remains **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 4 software/source/build/local is closed; physical HIL is `DEFERRED — chờ phần cứng`; **Phase 5 is active**.
+- CLOSED Phase 4: private OTA token/command deadline race, atomic OTA-command expiry, malformed legacy expiry, ownership transfer/revoke invalidation, bounded local/S3 artifact reads, stale-failure CAS, firmware replay tombstone/fingerprint, pending-image binding, two-phase confirmation and fail-closed rollback safe mode.
+- OPEN Phase 5 P1: align `shcare_audio_v2` metadata/header/runtime; finalize scan before stop ACK; convert `audio.failed` into terminal `interrupted`; exact start/stop idempotency and fingerprint; recover stranded `created` scans after restart; finish Android live/record repository/ViewModel/runtime boundaries.
+- Evidence still unavailable: native firmware runtime (`gcc/g++` missing), Firebase runtime (`google-services.json` missing), ADB/emulator/device, provider/live and hardware HIL. These stay `BLOCKED` or `DEFERRED`, never silently promoted.
+- Overall release remains NOT PASS until all later phases and required gates close. Deep Security remains independent at `running/preflight`.
+
+## 2026-08-22 superseding backlog — Phase 6
+
+- Governing plan remains **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 5 is closed at software/source/build/local with backend `82/82 + 8/8 + 4/4 + 4/4 + 6/6`, Web `28/28 + 12/12` plus build gates, Android `116/830` plus build/lint, and firmware audio-v2 source/build proof.
+- ACTIVE Phase 6: appointment parity; consent actor/scope/expiry/revoke/audit; alert-notification integration; field-level notification preference PATCH; FCM display/deep-link ownership and stale cross-account suppression; Admin notification persistence.
+- Phase 6 cannot close with toast-only/local-only mutations, provider-supplied clinical text, success before backend/provider confirmation, or missing permission/offline/error/retry states.
+- Runtime provider/ADB evidence remains `BLOCKED`; hardware HIL remains `DEFERRED — chờ phần cứng`. Phase 7–8 remain pending and the overall plan is NOT PASS.
+
+## 2026-08-22 superseding backlog — Phase 7
+
+- Governing plan remains **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 6 is closed at software/source/build/local gates; **Phase 7 is active**; Phase 8 is pending.
+- CLOSED Phase 6: appointment soft delete/idempotency/audit/tenant isolation; consent actor/scope/expiry/revoke; alert ledger; field-level notification preferences; data-only FCM ownership checks; Admin notification persistence and truthful unavailable states.
+- ACTIVE Phase 7: audit Admin Patients, Doctors, Devices, Packages, Storage, Notifications, Audit, Export and Settings for fake data, local-only/toast-only mutations, unsupported claims, missing pagination/filter contracts and missing permission/offline/error/retry states. Billing remains a truthful manual summary only.
+- Source/build baseline: shared contracts `49/49`; Admin `183/183` plus lint/build; Android `830/830` plus build/lint. Runtime/provider/ADB remains `BLOCKED`; HIL remains `DEFERRED — chờ phần cứng`; overall plan NOT PASS.
+
+## 2026-08-22 superseding backlog — Phase 8
+
+- Governing plan remains **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Phase 0–7 are closed at software/source/build/local gates; **Phase 8 is active**.
+- CLOSED Phase 7: real backend list queries for Patients/Doctors/Devices/Packages/Storage; stable pagination headers; compatible unpaged bodies; truthful doctor facets and device/package totals; `50/50` shared and `185/185` Admin tests plus check/lint/build gates.
+- ACTIVE Phase 8: intentional RC inventory, source snapshot/candidate identity, complete product builds, local demo smoke, artifact hashes, compatibility manifest, deploy order, rollback and handoff. No live mutation/deploy without credentials and cleanup authority.
+- OPEN external evidence: Firebase/provider/ADB `BLOCKED`; physical firmware HIL `DEFERRED — chờ phần cứng`; live promotion must remain blocked until its own proof exists.
+
+## 2026-08-22 — Phase 8 RC2 remaining release gates
+
+Closed for local demo/source-build:
+
+- One-command isolated backend/audio/Web/Admin demo with readiness, real Admin and Portal doctor login, port release and temporary-data cleanup proof.
+- Web `390/390 + 123/123`, direct type/lint/build and zero dependency advisories.
+- Admin `186/186`, lint/build, no high/critical dependency advisories and a 72-route Chromium accessibility/permission/mutation matrix with cleanup.
+- Backend check/base/KLT/admin-list/workspace/repository gates and zero dependency advisories.
+- Android `116` suites / `830` tests plus compile/assemble/lint; firmware `1.0.1` production/OTA build.
+
+Still required before production promotion:
+
+- Configure Firebase Admin/service account, public HTTPS backend, candidate PostgreSQL, S3/object storage, PHI and password-HMAC keys, CORS/provider/Redis inputs and OTA artifact signing.
+- Run additive migrations through `054`, concurrency/locking/rollback and cleanup-safe authenticated live mutation proof on disposable candidate infrastructure.
+- Run Web/Admin preview, Firefox/WebKit critical journeys and field performance evidence; back up both live channels before promotion.
+- Produce release-signed Android build and execute Firebase/FCM, ADB/emulator/device, lifecycle, permission, TalkBack and distribution proof.
+- Physical ESP32-S3 target/partition, flash/serial/I2S, authenticated WSS, command ACK and forced-failure OTA rollback remain **`DEFERRED — chờ phần cứng`**.
+
+Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md). The overall plan must remain open until the required non-deferred rows above are green.
+
+## 2026-08-23 superseding Phase 8 backlog
+
+- CLOSED: final secret-free source gates at product revision `c1933d979db69ae8bc105489d1accdec9bfd0fe5`, including the clean-clone identity migration smoke regression, backend/domain gates, Web/Admin builds, Android debug gates and firmware production/OTA builds.
+- READY: push `release/shcare-v1.0.0-rc.2-local-demo`; build Web target `webapp` and Admin target `admin` from retained external production env; deploy separate seven-day Firebase preview channels.
+- BLOCKED before authenticated preview proof: add the exact generated preview origins to backend CORS. Do not use Admin `deploy:firebase:portal`, which collides with the canonical Web target.
+- BLOCKED before `main`/backend/live promotion: verify Render uses `npm start`/`scripts/start.js` rather than Docker `node server.js`, prove migrations `044–054` and rollback/locking, verify current S3/provider behavior, create live-channel backups and complete cleanup-safe mutation smokes.
+- BLOCKED: Android production signing/current FCM-device-TalkBack proof, OTA artifact signing/canary and Deep Security completion. `DEFERRED — chờ phần cứng`: physical ESP32-S3 HIL only.
+
+## 2026-08-24 superseding G3 backlog
+
+- CLOSED: firmware capture/network isolation, bounded WSS timeouts, exact TLS write-byte verification, additive dual-slot/capture-queue telemetry contract, all three PlatformIO builds, final source review and physical ESP32-S3/two-mic I2S/serial HIL.
+- CLOSED hardware subset: production image wired-flashed with hash verification; both mic slots produced only non-zero retained RMS/peak samples and no degraded/reboot marker.
+- P2: take a common atomic snapshot of diagnostic counters if exact intra-projection consistency becomes operationally necessary.
+- BLOCKED secure-device subset: encrypted NVS/device credential/CA provisioning, production WSS authentication, command ACK and forced-failure signed OTA rollback/canary. Do not bypass fail-closed security or burn eFuses without a provisioning runbook.
+- BLOCKED G3 sign-off: durable Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae`. Plugin/tool/context are available; this thread's `Full access` mode maps to `permission_profile=disabled`, while Deep workers require a host-managed profile. Switch the composer to `Ask for approval`, send a new turn and resume the same scan. Preserve it for retry, then freeze candidate SHA/inventory. G4 stays pending.
+
+## 2026-08-24 superseding G3 backlog after Deep Security
+
+- CLOSED: Deep Security scan `1b48646c-c3fe-4835-9526-92177be380ae`; all `8` reportable findings have remediation or explicit already-safe validation with focused tests.
+- CLOSED: affected backend/source gates, Web/Admin production builds, Android unit/compile/lint/debug APK and firmware production/development builds.
+- OPEN G3: run browser smoke after the security diff; verify production env/provider/database migration readiness without exposing secrets; freeze the candidate SHA, hashes and compatibility manifest.
+- BLOCKED runtime proof only: Android instrumentation while no ADB target is online; native PlatformIO tests while host GCC is missing; secure production device WSS/command/OTA until credential, CA and signed OTA provisioning is available. These do not permit a fake G3/G4 PASS.
+- G4 remains pending until G3 candidate proof is reproducible. No production promotion is recorded yet.
+
+## 2026-08-24 G3 Wi-Fi provisioning backlog correction
+
+- CLOSED: Android QR/setup-AP provisioning source, nearby-Wi-Fi permission matrix, device-bound local HTTP codec, ESP session/CSRF JSON endpoints, responsive captive Web UI, Android `838/838`, zero-issue lint, physical ESP `54/54` tests and captive-portal HIL.
+- CLOSED: the board was returned from Unity test firmware to the application HIL firmware; serial confirms setup portal port `80`, AP readiness and both physical mic slots.
+- BLOCKED runtime: attach an Android target and run the system Wi-Fi chooser plus full App claim → provision → authenticated-online journey. Do not replace this with an emulator that cannot join the physical ESP AP.
+- WAITING FOR USER-ENTERED NETWORK MATERIAL: run one successful target-Wi-Fi POST from App or captive Web using a password entered by the user. Never read/export the saved Windows Wi-Fi password and never expose internal HIL JSON as setup instructions.
+- G3 remains open for the prior exact-preview CORS, production provider/migration, secure device WSS/ACK and signed OTA rollback gates. G4 remains pending.
+
+## 2026-08-24 G3 current closure backlog
+
+- CLOSED: current legacy-style Web source gates — Auth `390/390`, contracts `137/137`, TypeScript, lint, Firebase build and public performance budgets; duplicated hero video removed without deleting the real Phase 0–7 workflows.
+- CLOSED: Xiaomi is attached, the current APK installs/launches, ESP captive-portal HIL passes, and both physical mic slots produce live diagnostics.
+- OPEN: user-entered target Wi-Fi followed by authenticated device presence, command ACK, audio-v2 and durable completed scan. Current serial state is `wss=0`; do not infer an online device from captive-portal success.
+- OPEN: two MIUI-blocked notification instrumentation cases, exact-preview backend CORS, additive migration/provider readiness, production signing and forced-failure signed OTA rollback/canary.
+- G3 cannot PASS and G4 cannot promote while these release gates are open. A provider/hardware limitation may be recorded as `BLOCKED`, but it is not a production PASS.
+
+## 2026-08-25 G3 current-Wi-Fi and physical retry backlog
+
+- CLOSED: current phone SSID prefill, fine-location permission request at the provisioning step, unknown/redacted fallback, manual override protection, focused regression tests, full Android unit/build/lint gates and installation on Xiaomi.
+- CLOSED: physical ESP reset/re-detection; application firmware exposes the setup AP whose SSID exactly matches the current QR, and both I2S slots are active.
+- OPEN USER/OS INTERACTION: approve the App's location prompt, scan the QR and enter the Wi-Fi password on-device. MIUI denies shell/UiAutomation permission and input injection, so these actions cannot be truthfully automated from ADB.
+- OPEN AFTER JOIN: run the gated physical SSID test, authenticated WSS presence, command ACK, audio-v2 source binding, durable scan and signed OTA success/forced rollback. G3 and G4 status is unchanged.
+## 2026-08-25 — G3 open runtime gates after SSID/loading fix
+
+- [x] Phân biệt Location services tắt với permission denied/SSID unavailable và thêm recovery một chạm trong Device Pairing.
+- [x] Loại periodic full-screen route reauthorization gây loading chớp tắt; giữ foreground/route/session/workspace fail-closed.
+- [x] Android JVM `850/850`, AndroidTest compile, lint, assemble và cài APK LAN-integrated lên Xiaomi.
+- [ ] Mở khóa Xiaomi, bật Location/chấp thuận quyền trong App rồi chạy lại Compose route test và `CurrentWifiSsidHilTest` không skip.
+- [ ] Hoàn tất QR → local secure provisioning → authenticated WSS → ACK → audio-v2 → durable scan → OTA rollback trước khi đóng G3.
+
+## 2026-08-25 G3 BLE-first runtime backlog
+
+- [x] Separate QR/manual claim from Wi-Fi provisioning; the claimed device has a truthful offline state.
+- [x] Android/ESP BLE is nonce-bound AES-GCM with opaque exact-device scan filtering, firmware acknowledgement and backend-only online state.
+- [x] Android unit/lint/assemble and firmware builds pass; development firmware is flashed and serial confirms BLE and two-microphone runtime.
+- [x] Restore authenticated backend reachability on Xiaomi and complete physical claim/recovery plus primary-packet BLE/GATT discovery.
+- [ ] Complete encrypted BLE Wi-Fi submission with the target password entered only in the App.
+- [ ] Require backend WSS presence, command ACK, audio-v2 binding, durable scan and OTA success/forced rollback. Current App-server and Windows-Bluetooth limitations are blockers, not completion.
+- [x] 2026-08-26: corrected BLE advertisement image is physically discovered on Xiaomi and the canonical GATT contract passes. Continue with BLE Wi-Fi, WSS ACK/audio-v2, durable scan and OTA rollback evidence.
+
+## 2026-08-26 — SoftAP local-demo backlog
+
+- [x] Replace the public QR/manual setup surface with Device-ID-only registration for devices already assigned by the company/account.
+- [x] Add audited, manager-scoped SoftAP setup session; reject unassigned devices and avoid returning secret/hash material.
+- [x] Add **Kết nối Wi-Fi** in Device Settings and route it through Android native `WifiNetworkSpecifier` SoftAP provisioning.
+- [x] Backend device security suite `62/62`, Android focused ViewModel test, Kotlin/test compilation, debug APK assembly and installation.
+- [ ] Run the physical SoftAP target-Wi-Fi submission when the Xiaomi foreground surface is available. Do not record the target password in code, logs, environment variables or documentation.
+- [ ] Complete authenticated WSS presence, command ACK, audio-v2, durable scan and signed OTA success/forced rollback. These gates remain prerequisites for G3 closure and before any G4 promotion.

@@ -1,0 +1,8 @@
+{
+  "name": "Phòng khám Alpha",
+  "address": "1 Đường Sức Khỏe",
+  "phone": "0281234567",
+  "email": "ops@alpha.example",
+  "website": "https://alpha.example",
+  "expectedVersion": 7
+}

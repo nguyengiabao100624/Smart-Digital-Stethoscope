@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-pair-request.schema.json",
+  "title": "Shcare device claim request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "claimCode", "connectionMethod", "organizationId"],
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+    },
+    "claimCode": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,80}$"
+    },
+    "connectionMethod": { "type": "string", "enum": ["QR", "Manual"] },
+    "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 }
+  },
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/devices/pair",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-device-authority": {
+    "actor": "workspace-device-manager-or-personal-device-owner",
+    "workspaceSource": "exact-active-backend-membership-and-factory-record",
+    "workspaceRequestField": "organizationId",
+    "missingWorkspaceOutcome": 400,
+    "crossWorkspaceOutcome": 403,
+    "idempotencyScope": "userId+workspaceId"
+  }
+}

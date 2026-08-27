@@ -4,6 +4,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createRepositories } = require("../src/repositories");
 const {
+  createPasswordIdempotencyFingerprint,
+  serializePasswordFingerprintInput,
+} = require("../src/passwordChangeSecurity");
+const {
+  isPasswordHash,
+  verifyPasswordSecret,
+} = require("../src/passwordHash");
+const {
   EXPORT_ARTIFACT_RENDERER_VERSION,
   buildExportArtifact,
 } = require("../src/exportArtifact");
@@ -117,32 +125,71 @@ const guardChecks = {
   scanPageTenantScope: false,
   scanPageLiteralSearch: false,
   notificationTokenGlobalConflict: false,
+  aiResultLatestQuery: false,
+  accountProfilePartialUpdate: false,
 };
 
 const pool = {
   async query(sql, params = []) {
     const text = String(sql);
+    if (text.includes("FROM ai_results") && text.includes("WHERE scan_id = $1")) {
+      guardChecks.aiResultLatestQuery =
+        text.includes("ORDER BY updated_at DESC, created_at DESC, id DESC") &&
+        text.includes("LIMIT 1");
+      return {
+        rows: rows.ai_results
+          .filter((item) => item.scan_id === params[0])
+          .sort((left, right) =>
+            String(right.updated_at || right.created_at || "").localeCompare(
+              String(left.updated_at || left.created_at || ""),
+            ) || String(right.id || "").localeCompare(String(left.id || "")))
+          .slice(0, 1),
+      };
+    }
     if (text.includes("INSERT INTO notification_devices")) {
       guardChecks.notificationTokenGlobalConflict =
         text.includes("ON CONFLICT (fcm_token)") &&
         text.includes("user_id = EXCLUDED.user_id") &&
+        text.includes("workspace_id = EXCLUDED.workspace_id") &&
+        text.includes("auth_session_id = EXCLUDED.auth_session_id") &&
+        text.includes("notification_protocol_version = EXCLUDED.notification_protocol_version") &&
         text.includes("RETURNING *");
-      const existing = rows.notification_devices.find((item) => item.fcm_token === params[3]);
+      const existing = rows.notification_devices.find((item) => item.fcm_token === params[4]);
       const row = existing || {
         id: params[0],
-        created_at: params[5] || "2026-06-21T00:00:00.000Z",
+        created_at: params[9] || "2026-06-21T00:00:00.000Z",
       };
       row.user_id = params[1];
-      row.platform = params[2];
-      row.fcm_token = params[3];
-      row.enabled = params[4];
-      row.updated_at = params[6] || "2026-06-21T00:00:00.000Z";
+      row.workspace_id = params[2];
+      row.platform = params[3];
+      row.fcm_token = params[4];
+      row.auth_session_id = params[5];
+      row.notification_protocol_version = params[6];
+      row.app_version = params[7];
+      row.enabled = params[8];
+      row.updated_at = params[10] || "2026-06-21T00:00:00.000Z";
       if (!existing) rows.notification_devices.push(row);
       return { rowCount: 1, rows: [row] };
     }
+    if (text.includes("SELECT * FROM notification_devices")) {
+      return {
+        rows: rows.notification_devices.filter(
+          (item) =>
+            item.user_id === params[0] &&
+            item.workspace_id === params[1] &&
+            Number(item.notification_protocol_version || 0) >= Number(params[2] || 2) &&
+            item.enabled !== false,
+        ),
+      };
+    }
     if (text.includes("UPDATE notification_devices") && text.includes("WHERE user_id = $1")) {
       const row = rows.notification_devices.find(
-        (item) => item.user_id === params[0] && item.fcm_token === params[1] && item.enabled !== false,
+        (item) =>
+          item.user_id === params[0] &&
+          item.fcm_token === params[1] &&
+          (!params[2] || item.workspace_id === params[2]) &&
+          (!params[3] || item.auth_session_id === params[3]) &&
+          item.enabled !== false,
       );
       if (!row) return { rowCount: 0, rows: [] };
       row.enabled = false;
@@ -181,7 +228,11 @@ const pool = {
         }],
       };
     }
-    if (text.includes("UPDATE users") && text.includes("jsonb_set")) {
+    if (
+      text.includes("UPDATE users") &&
+      text.includes("jsonb_set") &&
+      text.includes("WHERE id = $1 OR firebase_uid = $1")
+    ) {
       const target = rows.users.find(
         (item) =>
           item.id === params[0] ||
@@ -189,14 +240,22 @@ const pool = {
           String(item.email || "").toLowerCase() === String(params[0] || "").toLowerCase(),
       );
       if (!target) return { rows: [] };
-      const profilePatch = JSON.parse(params[8] || "{}");
-      target.name = params[1];
-      target.phone = params[2];
-      target.license = params[3];
-      target.hospital = params[4];
-      target.department = params[5];
-      target.address = params[6];
-      target.organization_id = params[7] || target.organization_id;
+      guardChecks.accountProfilePartialUpdate =
+        text.includes("name = CASE WHEN $2::boolean THEN $3 ELSE users.name END") &&
+        text.includes("phone = CASE WHEN $4::boolean THEN $5 ELSE users.phone END") &&
+        text.includes("license = CASE WHEN $6::boolean THEN $7 ELSE users.license END") &&
+        text.includes("hospital = CASE WHEN $8::boolean THEN $9 ELSE users.hospital END") &&
+        text.includes("department = CASE WHEN $10::boolean THEN $11 ELSE users.department END") &&
+        text.includes("address = CASE WHEN $12::boolean THEN $13 ELSE users.address END") &&
+        text.includes("organization_id = CASE WHEN $14::boolean THEN $15 ELSE users.organization_id END");
+      const profilePatch = JSON.parse(params[15] || "{}");
+      if (params[1]) target.name = params[2];
+      if (params[3]) target.phone = params[4];
+      if (params[5]) target.license = params[6];
+      if (params[7]) target.hospital = params[8];
+      if (params[9]) target.department = params[10];
+      if (params[11]) target.address = params[12];
+      if (params[13]) target.organization_id = params[14];
       target.firebase_claims = {
         ...(target.firebase_claims || {}),
         profile: {
@@ -382,33 +441,106 @@ async function main() {
   assert.equal(secondInstanceDb.memberships.length, 0);
   assert.deepEqual(db.patients, []);
   assert.deepEqual(db.scans, []);
+  rows.ai_results = [
+    {
+      id: "ai_waveform_old",
+      scan_id: "scan_waveform_contract",
+      model_version: "signal-quality-v1",
+      label: "old",
+      raw_result: { waveformObjectKey: "old-waveform.json" },
+      status: "completed",
+      created_at: "2026-07-27T04:00:00.000Z",
+      updated_at: "2026-07-27T04:00:00.000Z",
+    },
+    {
+      id: "ai_waveform_latest",
+      scan_id: "scan_waveform_contract",
+      model_version: "signal-quality-v1",
+      label: "latest",
+      raw_result: { waveformObjectKey: "waveform.json" },
+      status: "completed",
+      created_at: "2026-07-27T05:00:00.000Z",
+      updated_at: "2026-07-27T05:30:00.000Z",
+    },
+  ];
+  const latestAiResult = await repositories.aiResults.findByScanId(
+    "scan_waveform_contract",
+  );
+  assert.equal(latestAiResult.id, "ai_waveform_latest");
+  assert.equal(latestAiResult.rawResult.waveformObjectKey, "waveform.json");
+  assert.equal(guardChecks.aiResultLatestQuery, true);
+  rows.ai_results = [];
   assert.equal(db.doctorPatientAccess.length, 1);
   assert.equal(db.doctorPatientAccess[0].id, "share_sql");
   assert.deepEqual(db.doctorPatientAccess[0].scanIds, ["scan_sql"]);
   await repositories.notificationDevices.register({
     userId: "user_portal",
+    workspaceId: "org_portal",
     platform: "android",
     fcmToken: "shared-fcm-token",
+    authSessionId: "auth_session_portal",
+    notificationProtocolVersion: 2,
+    appVersion: "1.0.0-rc.2",
   });
   const reboundNotificationDevice = await repositories.notificationDevices.register({
     userId: "user_second",
+    workspaceId: "org_second",
     platform: "android",
     fcmToken: "shared-fcm-token",
+    authSessionId: "auth_session_second",
+    notificationProtocolVersion: 3,
+    appVersion: "1.1.0",
   });
   assert.equal(guardChecks.notificationTokenGlobalConflict, true);
   assert.equal(reboundNotificationDevice.userId, "user_second");
+  assert.equal(reboundNotificationDevice.workspaceId, "org_second");
+  assert.equal(reboundNotificationDevice.authSessionId, "auth_session_second");
+  assert.equal(reboundNotificationDevice.notificationProtocolVersion, 3);
+  assert.equal(reboundNotificationDevice.appVersion, "1.1.0");
   assert.equal(rows.notification_devices.length, 1);
   assert.equal(rows.notification_devices[0].user_id, "user_second");
+  assert.equal(rows.notification_devices[0].workspace_id, "org_second");
+  assert.equal(rows.notification_devices[0].auth_session_id, "auth_session_second");
   assert.equal(db.notificationDevices.length, 1);
   assert.equal(db.notificationDevices[0].userId, "user_second");
+  assert.deepEqual(
+    await repositories.notificationDevices.listForUser("user_portal", "org_portal"),
+    [],
+    "the former user and workspace binding must become ineligible after token reassignment",
+  );
+  assert.deepEqual(
+    (await repositories.notificationDevices.listForUser("user_second", "org_second")).map(
+      (device) => device.id,
+    ),
+    [reboundNotificationDevice.id],
+  );
   assert.equal(
     await repositories.notificationDevices.disableToken("user_portal", "shared-fcm-token"),
     null,
     "the previous token owner must not disable a rebound device",
   );
+  assert.equal(
+    await repositories.notificationDevices.disableToken(
+      "user_second",
+      "shared-fcm-token",
+      { workspaceId: "org_portal", authSessionId: "auth_session_second" },
+    ),
+    null,
+    "a stale workspace binding must not disable the current token",
+  );
+  assert.equal(
+    await repositories.notificationDevices.disableToken(
+      "user_second",
+      "shared-fcm-token",
+      { workspaceId: "org_second", authSessionId: "auth_session_portal" },
+    ),
+    null,
+    "a stale auth session must not disable the current token",
+  );
   const disabledNotificationDevice = await repositories.notificationDevices.disableToken(
     "user_second",
     "shared-fcm-token",
+    { workspaceId: "org_second", authSessionId: "auth_session_second" },
   );
   assert.equal(disabledNotificationDevice.enabled, false);
   assert.equal(db.devices[0].status, "active");
@@ -454,6 +586,44 @@ async function main() {
   assert.equal(accountProfile.specialty, "Cardiology");
   assert.equal(accountProfile.notificationPreferences.messages, false);
   assert.equal(accountProfile.notificationPreferences.aiUpdates, true);
+  const partialAccountProfile = await repositories.users.updateAccountProfile(
+    "user_portal",
+    { phone: "0909999888" },
+  );
+  assert.equal(partialAccountProfile.phone, "0909999888");
+  assert.equal(
+    partialAccountProfile.name,
+    "Updated Portal User",
+    "PostgreSQL partial account profile updates must preserve an omitted name",
+  );
+  assert.equal(
+    partialAccountProfile.license,
+    "LIC-PORTAL",
+    "PostgreSQL partial account profile updates must preserve an omitted license",
+  );
+  assert.equal(
+    partialAccountProfile.hospital,
+    "SQL Hospital",
+    "PostgreSQL partial account profile updates must preserve an omitted hospital",
+  );
+  assert.equal(
+    partialAccountProfile.department,
+    "Remote Care",
+    "PostgreSQL partial account profile updates must preserve an omitted department",
+  );
+  assert.equal(
+    partialAccountProfile.address,
+    "1 SQL Street",
+    "PostgreSQL partial account profile updates must preserve an omitted address",
+  );
+  assert.equal(partialAccountProfile.title, "Operations Director");
+  assert.equal(partialAccountProfile.specialty, "Cardiology");
+  assert.equal(partialAccountProfile.notificationPreferences.messages, false);
+  assert.equal(
+    guardChecks.accountProfilePartialUpdate,
+    true,
+    "PostgreSQL account profile query must gate every mutable column by field presence",
+  );
   await repositories.organizations.upsert({
     id: "org_repo_upsert",
     name: "Repository Upsert Clinic",
@@ -577,18 +747,79 @@ async function main() {
     nowIso: () => "2026-06-21T00:10:00.000Z",
     getPool: () => null,
   });
+  await assert.rejects(
+    () => duplicateSessionRepositories.authSessions.revokeForUser(
+      "user_session_owner",
+      "auth_session_b",
+      { action: "auth.session.revoke" },
+      {
+        scope: "user_session_owner",
+        operation: "auth.session.revoke",
+        key: "x".repeat(161),
+        fingerprint: "auth_session_b",
+      },
+    ),
+    (error) => error && error.code === "IDEMPOTENCY_KEY_TOO_LONG" && error.statusCode === 400,
+  );
+  assert.equal(
+    duplicateSessionDb.authSessions.every((session) => !session.revokedAt),
+    true,
+    "an overlong idempotency key must be rejected before the session binding is mutated",
+  );
+  assert.equal(duplicateSessionDb.auditLogs.length, 0);
   assert.equal(
     await duplicateSessionRepositories.authSessions.isActiveForUser("user_session_owner", "auth_session_a"),
     true,
   );
   assert.equal((await duplicateSessionRepositories.authSessions.listForUser("user_session_owner")).length, 1);
+  await assert.rejects(
+    () => duplicateSessionRepositories.authSessions.revokeForUser(
+      "user_session_owner",
+      "auth_session_b",
+      { action: "auth.session.revoke" },
+      {
+        scope: "user_session_owner",
+        operation: "auth.session.revoke",
+        key: "auth-session-current-alias-denial",
+        fingerprint: "auth_session_b",
+      },
+      {
+        id: "auth_session_a",
+        sessionKey: "stable_firebase_binding",
+      },
+    ),
+    (error) => error && error.code === "AUTH_SESSION_CURRENT" && error.statusCode === 409,
+  );
+  assert.equal(
+    duplicateSessionDb.authSessions.every((session) => !session.revokedAt),
+    true,
+    "a duplicate Firebase row for the current binding must not be revoked",
+  );
+  assert.equal(duplicateSessionDb.auditLogs.length, 0);
+  assert.equal((duplicateSessionDb.idempotencyKeys || []).length, 0);
   const duplicateRevocation = await duplicateSessionRepositories.authSessions.revokeForUser(
     "user_session_owner",
     "auth_session_b",
-    { action: "auth.session.revoke" },
+    {
+      action: "auth.session.revoke",
+      metadata: { operationId: "auth_session_revoke_operation_001" },
+    },
+    {
+      scope: "user_session_owner",
+      operation: "auth.session.revoke",
+      key: "auth-session-revoke-key-001",
+      fingerprint: "auth_session_b",
+    },
   );
   assert.equal(Boolean(duplicateRevocation.session.revokedAt), true);
+  assert.equal(duplicateRevocation.replayed, false);
   assert.equal(duplicateSessionDb.authSessions.every((session) => Boolean(session.revokedAt)), true);
+  assert.equal(duplicateSessionDb.auditLogs.length, 1);
+  assert.equal(duplicateSessionDb.auditLogs[0].action, "auth.session.revoke");
+  assert.equal(
+    duplicateSessionDb.auditLogs[0].metadata.operationId,
+    "auth_session_revoke_operation_001",
+  );
   assert.equal(
     await duplicateSessionRepositories.authSessions.isActiveForUser("user_session_owner", "auth_session_a"),
     false,
@@ -606,11 +837,156 @@ async function main() {
   assert.equal(Boolean(duplicateTombstone.revokedAt), true, "a revoked duplicate binding must fail closed");
   const duplicateReplay = await duplicateSessionRepositories.authSessions.revokeForUser(
     "user_session_owner",
-    "auth_session_a",
-    { action: "auth.session.revoke" },
+    "auth_session_b",
+    {
+      action: "auth.session.revoke",
+      metadata: { operationId: "auth_session_revoke_operation_001" },
+    },
+    {
+      scope: "user_session_owner",
+      operation: "auth.session.revoke",
+      key: "auth-session-revoke-key-001",
+      fingerprint: "auth_session_b",
+    },
   );
   assert.equal(duplicateReplay.replayed, true);
   assert.equal(duplicateReplay.session.revokedAt, duplicateRevocation.session.revokedAt);
+  assert.equal(duplicateSessionDb.auditLogs.length, 1, "an exact replay must not append another audit row");
+  const duplicateFreshKeyAfterRevocation = await duplicateSessionRepositories.authSessions.revokeForUser(
+    "user_session_owner",
+    "auth_session_b",
+    {
+      action: "auth.session.revoke",
+      metadata: { operationId: "auth_session_revoke_operation_003" },
+    },
+    {
+      scope: "user_session_owner",
+      operation: "auth.session.revoke",
+      key: "auth-session-revoke-key-002",
+      fingerprint: "auth_session_b",
+    },
+  );
+  assert.equal(
+    duplicateFreshKeyAfterRevocation.replayed,
+    false,
+    "a fresh key against an already-revoked session is an idempotent no-op, not a replay",
+  );
+  assert.equal(duplicateFreshKeyAfterRevocation.session.revokedAt, duplicateRevocation.session.revokedAt);
+  assert.equal(duplicateSessionDb.auditLogs.length, 1, "a fresh-key no-op must not append another audit row");
+
+  duplicateSessionDb.authSessions.push({
+    id: "auth_session_other_target",
+    userId: "user_session_owner",
+    provider: "firebase",
+    sessionKey: "other_stable_firebase_binding",
+    createdAt: "2026-06-21T00:12:00.000Z",
+    lastSeenAt: "2026-06-21T00:12:00.000Z",
+    revokedAt: null,
+  });
+  await assert.rejects(
+    () => duplicateSessionRepositories.authSessions.revokeForUser(
+      "user_session_owner",
+      "auth_session_other_target",
+      {
+        action: "auth.session.revoke",
+        metadata: { operationId: "auth_session_revoke_operation_002" },
+      },
+      {
+        scope: "user_session_owner",
+        operation: "auth.session.revoke",
+        key: "auth-session-revoke-key-001",
+        fingerprint: "auth_session_other_target",
+      },
+    ),
+    (error) => error && error.code === "IDEMPOTENCY_KEY_REUSED" && error.statusCode === 409,
+  );
+  assert.equal(
+    duplicateSessionDb.authSessions.find((session) => session.id === "auth_session_other_target").revokedAt,
+    null,
+    "key reuse with a different target must not mutate that session",
+  );
+  assert.equal(
+    await duplicateSessionRepositories.authSessions.revokeForUser(
+      "foreign_user",
+      "auth_session_other_target",
+      { action: "auth.session.revoke" },
+      {
+        scope: "foreign_user",
+        operation: "auth.session.revoke",
+        key: "auth-session-revoke-key-001",
+        fingerprint: "auth_session_other_target",
+      },
+    ),
+    null,
+    "cross-account lookup must remain indistinguishable from a missing session",
+  );
+
+  const failingSessionDb = {
+    sessions: [],
+    authSessions: [
+      {
+        id: "auth_session_save_failure",
+        userId: "user_session_save_failure",
+        provider: "firebase",
+        sessionKey: "binding_save_failure",
+        createdAt: "2026-06-21T00:30:00.000Z",
+        lastSeenAt: "2026-06-21T00:30:00.000Z",
+        revokedAt: null,
+      },
+    ],
+    auditLogs: [],
+    idempotencyKeys: [],
+  };
+  let failSessionSave = true;
+  let failingSessionId = 0;
+  const failingSessionRepositories = createRepositories({
+    getDb: () => failingSessionDb,
+    saveDb: async () => {
+      if (failSessionSave) throw new Error("simulated auth-session save failure");
+    },
+    createId: (prefix) => `${prefix}_save_failure_${++failingSessionId}`,
+    nowIso: () => "2026-06-21T00:31:00.000Z",
+    getPool: () => null,
+  });
+  const failingSessionIdempotency = {
+    scope: "user_session_save_failure",
+    operation: "auth.session.revoke",
+    key: "auth-session-save-failure-key",
+    fingerprint: "auth_session_save_failure",
+  };
+  await assert.rejects(
+    () => failingSessionRepositories.authSessions.revokeForUser(
+      "user_session_save_failure",
+      "auth_session_save_failure",
+      { action: "auth.session.revoke" },
+      failingSessionIdempotency,
+    ),
+    /simulated auth-session save failure/,
+  );
+  assert.equal(failingSessionDb.authSessions[0].revokedAt, null);
+  assert.equal(failingSessionDb.auditLogs.length, 0);
+  assert.equal(failingSessionDb.idempotencyKeys.length, 0);
+
+  failSessionSave = false;
+  const recoveredSessionRevocation = await failingSessionRepositories.authSessions.revokeForUser(
+    "user_session_save_failure",
+    "auth_session_save_failure",
+    { action: "auth.session.revoke" },
+    failingSessionIdempotency,
+  );
+  assert.equal(recoveredSessionRevocation.replayed, false);
+  assert.equal(Boolean(recoveredSessionRevocation.session.revokedAt), true);
+  assert.equal(failingSessionDb.auditLogs.length, 1);
+  assert.equal(failingSessionDb.idempotencyKeys.length, 1);
+  const recoveredSessionReplay = await failingSessionRepositories.authSessions.revokeForUser(
+    "user_session_save_failure",
+    "auth_session_save_failure",
+    { action: "auth.session.revoke" },
+    failingSessionIdempotency,
+  );
+  assert.equal(recoveredSessionReplay.replayed, true);
+  assert.equal(failingSessionDb.auditLogs.length, 1);
+  assert.equal(failingSessionDb.idempotencyKeys.length, 1);
 
   const sharedSqlSessions = [
     {
@@ -696,8 +1072,8 @@ async function main() {
 
   const authorizationDb = {
     users: [
-      { id: "user_alpha_doctor", role: "doctor", organizationId: "org_alpha" },
-      { id: "user_family_owner", role: "patient", organizationId: "org_personal" },
+      { id: "user_alpha_doctor", role: "doctor", organizationId: "org_alpha", accountStatus: "active" },
+      { id: "user_family_owner", role: "patient", organizationId: "org_personal", accountStatus: "active" },
     ],
     memberships: [
       { id: "membership_alpha", userId: "user_alpha_doctor", organizationId: "org_alpha", role: "doctor" },
@@ -710,6 +1086,14 @@ async function main() {
     ],
     auditLogs: [],
     idempotencyKeys: [],
+    sessions: [
+      {
+        id: "session_family_authority",
+        userId: "user_family_owner",
+        revokedAt: null,
+      },
+    ],
+    authSessions: [],
   };
   const authorizationRepositories = createRepositories({
     getDb: () => authorizationDb,
@@ -761,6 +1145,9 @@ async function main() {
           actorUserId: "user_family_owner",
           organizationId: "org_personal",
           operation: "update",
+          expectedUserId: "user_family_owner",
+          expectedWorkspaceId: "org_personal",
+          expectedAuthSessionId: "session_family_authority",
         },
       },
     ),
@@ -801,6 +1188,551 @@ async function main() {
   );
   authorizationDb.memberships[0].status = "active";
   assert.equal(authorizationDb.auditLogs.length, 0, "denied mutations must not create audit success records");
+
+  const canonicalFamilyAuthority = {
+    kind: "personal",
+    actorUserId: "user_family_owner",
+    organizationId: "org_personal",
+    expectedUserId: "user_family_owner",
+    expectedWorkspaceId: "org_personal",
+    expectedAuthSessionId: "session_family_authority",
+  };
+  const familyMutationBaseline = () => ({
+    patients: structuredClone(authorizationDb.patients),
+    audits: structuredClone(authorizationDb.auditLogs),
+    idempotency: structuredClone(authorizationDb.idempotencyKeys),
+  });
+  const assertFamilyMutationUnchanged = (baseline, label) => {
+    assert.deepEqual(authorizationDb.patients, baseline.patients, `${label} must not write a patient`);
+    assert.deepEqual(authorizationDb.auditLogs, baseline.audits, `${label} must not write an audit row`);
+    assert.deepEqual(
+      authorizationDb.idempotencyKeys,
+      baseline.idempotency,
+      `${label} must not write an idempotency receipt`,
+    );
+  };
+  const runDeniedFamilyMutation = async ({ intent, authority, suffix }) => {
+    const baseline = familyMutationBaseline();
+    const idempotency = {
+      scope: "user_family_owner:org_personal",
+      operation: intent === "create" ? "patient.create" : `patient.${intent}:patient_other_family`,
+      key: `family-authority-${intent}-${suffix}`,
+      fingerprint: `family-authority-${intent}-${suffix}-fingerprint`,
+    };
+    const auditInput = {
+      action: `patient.${intent}`,
+      actorUserId: "user_family_owner",
+      organizationId: "org_personal",
+      authorization: { ...authority, operation: intent },
+    };
+    const mutation = intent === "delete"
+      ? authorizationRepositories.patients.deleteWithAudit(
+          "patient_other_family",
+          auditInput,
+          { idempotency, responseResource: { patientId: "patient_other_family", deleted: true } },
+        )
+      : authorizationRepositories.patients.saveWithAudit(
+          intent === "create"
+            ? {
+                id: `patient_denied_${suffix}`,
+                organizationId: "org_personal",
+                ownerUserId: "user_family_owner",
+                name: "Denied dependent",
+              }
+            : { ...authorizationDb.patients[2], name: "Denied stale update" },
+          auditInput,
+          idempotency,
+          intent === "create" ? 201 : 200,
+        );
+    await assert.rejects(mutation, (error) => error.code === "PATIENT_MUTATION_AUTHORITY_MISMATCH");
+    assertFamilyMutationUnchanged(baseline, `${intent}/${suffix}`);
+  };
+
+  for (const intent of ["create", "update", "delete"]) {
+    await runDeniedFamilyMutation({
+      intent,
+      authority: { ...canonicalFamilyAuthority, expectedWorkspaceId: "org_previous" },
+      suffix: "workspace-switch",
+    });
+    await runDeniedFamilyMutation({
+      intent,
+      authority: { ...canonicalFamilyAuthority, expectedUserId: "user_previous" },
+      suffix: "account-switch",
+    });
+    await runDeniedFamilyMutation({
+      intent,
+      authority: { ...canonicalFamilyAuthority, expectedAuthSessionId: "session_previous" },
+      suffix: "session-switch",
+    });
+  }
+
+  const roleRequestDb = {
+    users: [
+      {
+        id: "user_role_request",
+        firebaseUid: "firebase_role_request",
+        email: "role-request@example.com",
+        role: "patient",
+        requestedRole: "patient",
+        roleRequestStatus: "approved",
+        accountStatus: "active",
+        organizationId: "org_personal_role_request",
+        name: "Role Request Owner",
+        createdAt: "2026-06-21T00:21:00.000Z",
+        updatedAt: "2026-06-21T00:21:00.000Z",
+      },
+    ],
+    organizations: [
+      {
+        id: "org_alpha",
+        name: "Alpha Clinic",
+        type: "clinic",
+        workspaceType: "clinic",
+        status: "active",
+      },
+      {
+        id: "org_personal_role_request",
+        name: "Role Request Personal",
+        type: "personal",
+        workspaceType: "personal",
+        status: "active",
+      },
+    ],
+    memberships: [],
+    auditLogs: [],
+    idempotencyKeys: [],
+  };
+  let roleRequestId = 0;
+  const roleRequestRepositories = createRepositories({
+    getDb: () => roleRequestDb,
+    saveDb: async () => {},
+    createId: (prefix) => `${prefix}_role_request_${++roleRequestId}`,
+    nowIso: () => "2026-06-21T00:21:30.000Z",
+    getPool: () => null,
+  });
+  const roleRequestPatch = {
+    requestedRole: "doctor",
+    role: "patient",
+    roleRequestStatus: "pending",
+    accountStatus: "active",
+    roleRequestedAt: "2026-06-21T00:21:30.000Z",
+    roleApprovedAt: "",
+    roleRejectedAt: "",
+    roleRejectReason: "",
+    roleInfoRequestAt: "",
+    roleInfoRequestMessage: "",
+    roleInfoRequiredFields: [],
+    organizationId: "org_alpha",
+    name: "Role Request Doctor",
+    phone: "0901234567",
+    license: "ROLE-LIC-001",
+    hospital: "Alpha Clinic",
+    department: "Cardiology",
+    registrationReason: "Remote patient monitoring",
+    workspaceType: "clinic",
+    accountType: "doctor",
+    clinicSuggestion: "",
+  };
+  const roleRequestIdempotency = {
+    scope: "user_role_request",
+    operation: "auth.role.request",
+    key: "role-request-owner-key",
+    fingerprint: "role-request-owner-fingerprint",
+  };
+  const roleRequestAudit = {
+    action: "auth.role.request",
+    actorUserId: "user_role_request",
+    organizationId: "org_alpha",
+    authorization: {
+      kind: "self",
+      actorUserId: "user_role_request",
+      organizationId: "org_alpha",
+    },
+  };
+  const firstRoleRequest = await roleRequestRepositories.users.submitRoleRequestWithAudit(
+    "user_role_request",
+    roleRequestPatch,
+    roleRequestAudit,
+    roleRequestIdempotency,
+  );
+  assert.equal(firstRoleRequest.replayed, false);
+  assert.equal(firstRoleRequest.user.id, "user_role_request");
+  assert.equal(firstRoleRequest.user.requestedRole, "doctor");
+  assert.equal(firstRoleRequest.roleRequest.status, "pending");
+  assert.ok(firstRoleRequest.operationId);
+  const replayedRoleRequest = await roleRequestRepositories.users.submitRoleRequestWithAudit(
+    "user_role_request",
+    roleRequestPatch,
+    roleRequestAudit,
+    roleRequestIdempotency,
+  );
+  assert.equal(replayedRoleRequest.replayed, true);
+  assert.equal(replayedRoleRequest.operationId, firstRoleRequest.operationId);
+  assert.deepEqual(replayedRoleRequest.user, firstRoleRequest.user);
+  assert.deepEqual(replayedRoleRequest.roleRequest, firstRoleRequest.roleRequest);
+  assert.equal(
+    roleRequestDb.auditLogs.filter(
+      (entry) =>
+        entry.action === "auth.role.request" &&
+        entry.resourceId === "user_role_request",
+    ).length,
+    1,
+    "exact role request replay must not append another audit row",
+  );
+  assert.equal(roleRequestDb.idempotencyKeys.length, 1);
+  roleRequestDb.users[0].role = "doctor";
+  const replayAfterApproval =
+    await roleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_role_request",
+      roleRequestPatch,
+      roleRequestAudit,
+      roleRequestIdempotency,
+    );
+  assert.equal(replayAfterApproval.replayed, true);
+  assert.equal(replayAfterApproval.user.role, "patient");
+  assert.equal(
+    replayAfterApproval.operationId,
+    firstRoleRequest.operationId,
+  );
+  roleRequestDb.users[0].role = "patient";
+  roleRequestDb.users[0].accountStatus = "locked";
+  await assert.rejects(
+    roleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_role_request",
+      roleRequestPatch,
+      roleRequestAudit,
+      roleRequestIdempotency,
+    ),
+    (error) => error.code === "ACCOUNT_INACTIVE",
+  );
+  roleRequestDb.users[0].accountStatus = "active";
+  await assert.rejects(
+    roleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_role_request",
+      roleRequestPatch,
+      {
+        ...roleRequestAudit,
+        actorUserId: "user_other",
+        authorization: { kind: "self", actorUserId: "user_other" },
+      },
+      {
+        ...roleRequestIdempotency,
+        key: "role-request-wrong-owner",
+      },
+    ),
+    (error) => error.code === "ROLE_REQUEST_SCOPE_DENIED",
+  );
+  const roleRequestUserBeforeDeniedMutations = structuredClone(
+    roleRequestDb.users[0],
+  );
+  await assert.rejects(
+    roleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_role_request",
+      { ...roleRequestPatch, department: "Neurology" },
+      roleRequestAudit,
+      {
+        ...roleRequestIdempotency,
+        fingerprint: "role-request-different-fingerprint",
+      },
+    ),
+    (error) => error.code === "IDEMPOTENCY_KEY_REUSED",
+  );
+  assert.deepEqual(
+    roleRequestDb.users[0],
+    roleRequestUserBeforeDeniedMutations,
+    "JSON role request conflict must not mutate the canonical account",
+  );
+  await assert.rejects(
+    roleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_role_request",
+      { ...roleRequestPatch, organizationId: "org_beta" },
+      roleRequestAudit,
+      {
+        ...roleRequestIdempotency,
+        key: "role-request-cross-target",
+        fingerprint: "role-request-cross-target-fingerprint",
+      },
+    ),
+    (error) => error.code === "ROLE_REQUEST_WORKSPACE_SCOPE_DENIED",
+  );
+  assert.deepEqual(
+    roleRequestDb.users[0],
+    roleRequestUserBeforeDeniedMutations,
+    "JSON cross-target denial must not mutate the canonical account",
+  );
+
+  const sqlRoleRequestQueries = [];
+  const sqlRoleRequestState = {
+    user: {
+      id: "user_sql_role_request",
+      firebase_uid: "firebase_sql_role_request",
+      email: "sql-role-request@example.com",
+      role: "patient",
+      requested_role: "patient",
+      role_request_status: "approved",
+      account_status: "active",
+      organization_id: "org_personal_sql_role_request",
+      name: "SQL Role Request Owner",
+      firebase_claims: {},
+      created_at: "2026-06-21T00:22:00.000Z",
+      updated_at: "2026-06-21T00:22:00.000Z",
+    },
+    idempotency: null,
+    auditCount: 0,
+    updateCount: 0,
+    workspaceInsertCount: 0,
+  };
+  const sqlRoleRequestClient = {
+    async query(sql, params = []) {
+      const text = String(sql);
+      sqlRoleRequestQueries.push({ text, params });
+      if (
+        ["BEGIN", "COMMIT", "ROLLBACK"].includes(text) ||
+        text.includes("pg_advisory_xact_lock")
+      ) {
+        return { rows: [] };
+      }
+      if (
+        text.includes("SELECT id, role FROM users") &&
+        text.includes("FOR UPDATE")
+      ) {
+        return {
+          rows: [
+            {
+              id: sqlRoleRequestState.user.id,
+              role: sqlRoleRequestState.user.role,
+            },
+          ],
+        };
+      }
+      if (
+        text.includes("FROM mutation_idempotency") &&
+        text.includes("idempotency_key = $3")
+      ) {
+        const receipt = sqlRoleRequestState.idempotency;
+        return {
+          rows:
+            receipt &&
+            receipt.scope === params[0] &&
+            receipt.operation === params[1] &&
+            receipt.idempotency_key === params[2]
+              ? [receipt]
+              : [],
+        };
+      }
+      if (
+        text.includes("SELECT * FROM users") &&
+        text.includes("FOR UPDATE")
+      ) {
+        return { rows: [{ ...sqlRoleRequestState.user }] };
+      }
+      if (text.includes("SELECT id FROM organizations")) {
+        return {
+          rows:
+            params[0] === "org_alpha"
+              ? [{ id: "org_alpha" }]
+              : [],
+        };
+      }
+      if (text.includes("INSERT INTO organizations")) {
+        sqlRoleRequestState.workspaceInsertCount += 1;
+        return { rows: [] };
+      }
+      if (
+        text.includes("UPDATE users") &&
+        text.includes("requested_role = $2")
+      ) {
+        sqlRoleRequestState.updateCount += 1;
+        sqlRoleRequestState.user = {
+          ...sqlRoleRequestState.user,
+          requested_role: params[1],
+          role: params[2],
+          role_request_status: params[3],
+          account_status: params[4],
+          role_requested_at: params[5],
+          role_approved_at: params[6],
+          role_rejected_at: params[7],
+          role_reject_reason: params[8],
+          role_info_request_at: params[9],
+          role_info_request_message: params[10],
+          name: params[11],
+          phone: params[12],
+          license: params[13],
+          hospital: params[14],
+          department: params[15],
+          organization_id: params[16],
+          firebase_claims: JSON.parse(params[17]),
+          updated_at: "2026-06-21T00:22:30.000Z",
+        };
+        return { rows: [{ ...sqlRoleRequestState.user }] };
+      }
+      if (text.includes("INSERT INTO audit_logs")) {
+        sqlRoleRequestState.auditCount += 1;
+        return { rows: [] };
+      }
+      if (text.includes("INSERT INTO mutation_idempotency")) {
+        sqlRoleRequestState.idempotency = {
+          scope: params[1],
+          operation: params[2],
+          idempotency_key: params[3],
+          fingerprint: params[4],
+          resource_type: params[5],
+          resource_id: params[6],
+          response_status: params[7],
+          response_json: JSON.parse(params[8]),
+        };
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected SQL role request query: ${text}`);
+    },
+    release() {},
+  };
+  const sqlRoleRequestRuntimeDb = {
+    users: [
+      {
+        id: "user_sql_role_request",
+        firebaseUid: "firebase_sql_role_request",
+        email: "sql-role-request@example.com",
+        role: "patient",
+        requestedRole: "patient",
+        roleRequestStatus: "approved",
+        accountStatus: "active",
+        organizationId: "org_personal_sql_role_request",
+      },
+    ],
+    organizations: [
+      {
+        id: "org_alpha",
+        name: "Alpha Clinic",
+        type: "clinic",
+        workspaceType: "clinic",
+        status: "active",
+      },
+    ],
+    memberships: [],
+    auditLogs: [],
+    idempotencyKeys: [],
+  };
+  let sqlRoleRequestId = 0;
+  const sqlRoleRequestRepositories = createRepositories({
+    getDb: () => sqlRoleRequestRuntimeDb,
+    saveDb: async () => {},
+    createId: (prefix) => `${prefix}_sql_role_request_${++sqlRoleRequestId}`,
+    nowIso: () => "2026-06-21T00:22:30.000Z",
+    getPool: () => ({ connect: async () => sqlRoleRequestClient }),
+  });
+  const sqlRoleRequestPatch = {
+    ...roleRequestPatch,
+    roleRequestedAt: "2026-06-21T00:22:30.000Z",
+  };
+  const sqlRoleRequestIdempotency = {
+    scope: "user_sql_role_request",
+    operation: "auth.role.request",
+    key: "sql-role-request-owner-key",
+    fingerprint: "sql-role-request-owner-fingerprint",
+  };
+  const sqlRoleRequestAudit = {
+    action: "auth.role.request",
+    actorUserId: "user_sql_role_request",
+    organizationId: "org_alpha",
+    authorization: {
+      kind: "self",
+      actorUserId: "user_sql_role_request",
+      organizationId: "org_alpha",
+    },
+  };
+  const firstSqlRoleRequest =
+    await sqlRoleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_sql_role_request",
+      sqlRoleRequestPatch,
+      sqlRoleRequestAudit,
+      sqlRoleRequestIdempotency,
+      sqlRoleRequestRuntimeDb.organizations[0],
+    );
+  assert.equal(firstSqlRoleRequest.replayed, false);
+  assert.equal(firstSqlRoleRequest.user.requestedRole, "doctor");
+  assert.equal(firstSqlRoleRequest.roleRequest.status, "pending");
+  const replayedSqlRoleRequest =
+    await sqlRoleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_sql_role_request",
+      sqlRoleRequestPatch,
+      sqlRoleRequestAudit,
+      sqlRoleRequestIdempotency,
+      sqlRoleRequestRuntimeDb.organizations[0],
+    );
+  assert.equal(replayedSqlRoleRequest.replayed, true);
+  assert.equal(
+    replayedSqlRoleRequest.operationId,
+    firstSqlRoleRequest.operationId,
+  );
+  assert.deepEqual(
+    replayedSqlRoleRequest.user,
+    firstSqlRoleRequest.user,
+  );
+  assert.equal(sqlRoleRequestState.updateCount, 1);
+  assert.equal(sqlRoleRequestState.auditCount, 1);
+  assert.equal(
+    sqlRoleRequestState.workspaceInsertCount,
+    1,
+    "PostgreSQL must ensure the workspace once inside the successful role request transaction",
+  );
+  assert.ok(
+    sqlRoleRequestQueries.findIndex((query) =>
+      query.text.includes("INSERT INTO organizations"),
+    ) <
+      sqlRoleRequestQueries.findIndex((query) =>
+        query.text.includes("UPDATE users") &&
+        query.text.includes("requested_role = $2"),
+      ),
+    "PostgreSQL must satisfy the workspace foreign key before updating the account",
+  );
+  await assert.rejects(
+    sqlRoleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_sql_role_request",
+      { ...sqlRoleRequestPatch, department: "Neurology" },
+      sqlRoleRequestAudit,
+      {
+        ...sqlRoleRequestIdempotency,
+        fingerprint: "sql-role-request-conflicting-fingerprint",
+      },
+    ),
+    (error) => error.code === "IDEMPOTENCY_KEY_REUSED",
+  );
+  assert.equal(
+    sqlRoleRequestState.updateCount,
+    1,
+    "PostgreSQL role request conflict must be rejected before user mutation",
+  );
+  await assert.rejects(
+    sqlRoleRequestRepositories.users.submitRoleRequestWithAudit(
+      "user_sql_role_request",
+      { ...sqlRoleRequestPatch, organizationId: "org_beta" },
+      sqlRoleRequestAudit,
+      {
+        ...sqlRoleRequestIdempotency,
+        key: "sql-role-request-cross-target",
+        fingerprint: "sql-role-request-cross-target-fingerprint",
+      },
+    ),
+    (error) => error.code === "ROLE_REQUEST_WORKSPACE_SCOPE_DENIED",
+  );
+  assert.equal(
+    sqlRoleRequestState.updateCount,
+    1,
+    "PostgreSQL cross-target denial must be rejected before user mutation",
+  );
+  assert.equal(
+    sqlRoleRequestQueries.filter((query) => query.text === "COMMIT").length,
+    2,
+  );
+  assert.equal(
+    sqlRoleRequestQueries.some(
+      (query) =>
+        query.text.includes("INSERT INTO audit_logs") &&
+        query.text.includes("ON CONFLICT (id) DO NOTHING"),
+    ),
+    true,
+  );
 
   const shareIdentityDb = {
     users: [
@@ -2201,6 +3133,354 @@ async function main() {
   });
   assert.equal(providerRetryReplay.replayed, true);
   assert.equal(providerRetryReplay.deleted, true);
+
+  const passwordSagaDb = {
+    users: [
+      {
+        id: "user_password_saga",
+        role: "patient",
+        accountStatus: "active",
+        password: " ExactOld123 ",
+      },
+      {
+        id: "user_password_other",
+        role: "patient",
+        accountStatus: "active",
+        password: " ExactOld123 ",
+      },
+    ],
+    identityOperations: [],
+    authSessions: [
+      {
+        id: "password_auth_current",
+        userId: "user_password_saga",
+        revokedAt: null,
+      },
+      {
+        id: "password_auth_other",
+        userId: "user_password_saga",
+        revokedAt: null,
+      },
+    ],
+    sessions: [
+      {
+        id: "password_demo_current",
+        userId: "user_password_saga",
+        revokedAt: null,
+      },
+      {
+        id: "password_demo_other",
+        userId: "user_password_saga",
+        revokedAt: null,
+      },
+    ],
+    notifications: [],
+    auditLogs: [],
+  };
+  let passwordSagaId = 0;
+  const passwordSagaRepositories = createRepositories({
+    getDb: () => passwordSagaDb,
+    saveDb: async () => {},
+    createId: (prefix) => `${prefix}_password_${++passwordSagaId}`,
+    nowIso: () => "2026-07-29T08:00:00.000Z",
+    getPool: () => null,
+  });
+  await assert.rejects(
+    passwordSagaRepositories.identityOperations.begin({
+      targetUserId: "user_password_saga",
+      actorUserId: "user_password_saga",
+      operation: "reset_password",
+      idempotencyKey: "password-wrong-current",
+      requestFingerprint: "password-wrong-current-fingerprint",
+      targetState: { provider: "demo" },
+      expectedCurrentPassword: "ExactOld123",
+      requireActiveTarget: true,
+      preserveAccountStatus: true,
+      preserveSessionId: "password_demo_current",
+    }),
+    (error) => error.code === "PASSWORD_CURRENT_INVALID",
+  );
+  assert.equal(passwordSagaDb.identityOperations.length, 0);
+  assert.equal(passwordSagaDb.users[0].accountStatus, "active");
+  assert.equal(passwordSagaDb.sessions[0].revokedAt, null);
+  const passwordFingerprintInput = {
+    operation: "reset_password",
+    targetUserId: "user_password_saga",
+    payload: {
+      currentPassword: " ExactOld123 ",
+      newPassword: " ExactNew456 ",
+    },
+  };
+  const passwordRequestFingerprint = createPasswordIdempotencyFingerprint(
+    passwordFingerprintInput,
+    {
+      PASSWORD_IDEMPOTENCY_HMAC_KEY:
+        "repository-test-password-idempotency-key",
+    },
+  );
+  const passwordIntent = await passwordSagaRepositories.identityOperations.begin({
+    targetUserId: "user_password_saga",
+    actorUserId: "user_password_saga",
+    operation: "reset_password",
+    idempotencyKey: "password-exact-once",
+    requestFingerprint: passwordRequestFingerprint,
+    targetState: { provider: "demo" },
+    expectedCurrentPassword: " ExactOld123 ",
+    requireActiveTarget: true,
+    preserveAccountStatus: true,
+    preserveSessionId: "password_demo_current",
+  });
+  const serializedPasswordIntent = JSON.stringify(
+    passwordIntent.identityOperation,
+  );
+  const unkeyedPasswordDigest = crypto
+    .createHash("sha256")
+    .update(
+      serializePasswordFingerprintInput(passwordFingerprintInput),
+      "utf8",
+    )
+    .digest("hex");
+  assert.equal(serializedPasswordIntent.includes(" ExactOld123 "), false);
+  assert.equal(serializedPasswordIntent.includes(" ExactNew456 "), false);
+  assert.equal(passwordIntent.identityOperation.requestFingerprint, passwordRequestFingerprint);
+  assert.notEqual(
+    passwordIntent.identityOperation.requestFingerprint,
+    unkeyedPasswordDigest,
+  );
+  assert.deepEqual(passwordIntent.identityOperation.targetState, {
+    provider: "demo",
+  });
+  assert.equal(passwordIntent.user.accountStatus, "active");
+  assert.equal(passwordSagaDb.sessions[0].revokedAt, null);
+  assert.equal(
+    passwordSagaDb.sessions[1].revokedAt,
+    "2026-07-29T08:00:00.000Z",
+  );
+  assert.equal(
+    passwordSagaDb.authSessions.every((session) => Boolean(session.revokedAt)),
+    true,
+    "a demo session id cannot preserve an unrelated Firebase auth session",
+  );
+  const passwordIntentReplay =
+    await passwordSagaRepositories.identityOperations.begin({
+      targetUserId: "user_password_saga",
+      actorUserId: "user_password_saga",
+      operation: "reset_password",
+      idempotencyKey: "password-exact-once",
+      requestFingerprint: passwordRequestFingerprint,
+      targetState: { provider: "demo" },
+      expectedCurrentPassword: "wrong-after-reservation",
+      requireActiveTarget: true,
+      preserveAccountStatus: true,
+      preserveSessionId: "password_demo_current",
+    });
+  assert.equal(passwordIntentReplay.replayed, true);
+  assert.equal(
+    passwordIntentReplay.identityOperation.id,
+    passwordIntent.identityOperation.id,
+  );
+  await assert.rejects(
+    passwordSagaRepositories.identityOperations.begin({
+      targetUserId: "user_password_saga",
+      actorUserId: "user_password_saga",
+      operation: "reset_password",
+      idempotencyKey: "password-exact-once",
+      requestFingerprint: "password-different-fingerprint",
+      targetState: { provider: "demo" },
+      expectedCurrentPassword: " ExactOld123 ",
+      requireActiveTarget: true,
+      preserveAccountStatus: true,
+      preserveSessionId: "password_demo_current",
+    }),
+    (error) => error.code === "IDEMPOTENCY_KEY_REUSED",
+  );
+  await passwordSagaRepositories.identityOperations.markProviderApplying({
+    operationId: passwordIntent.identityOperation.id,
+  });
+  await passwordSagaRepositories.users.updatePasswordExact(
+    "user_password_saga",
+    " ExactNew456 ",
+  );
+  assert.equal(isPasswordHash(passwordSagaDb.users[0].password), true);
+  assert.equal(
+    verifyPasswordSecret(
+      " ExactNew456 ",
+      passwordSagaDb.users[0].password,
+    ),
+    true,
+  );
+  await passwordSagaRepositories.identityOperations.markProviderApplied({
+    operationId: passwordIntent.identityOperation.id,
+    providerStatus: "skipped",
+    providerResult: { updated: true, skipped: true },
+  });
+  const completedPasswordIntent =
+    await passwordSagaRepositories.identityOperations.complete({
+      operationId: passwordIntent.identityOperation.id,
+      providerSucceeded: true,
+    });
+  assert.equal(completedPasswordIntent.identityOperation.status, "completed");
+  assert.equal(completedPasswordIntent.user.accountStatus, "active");
+  assert.equal(isPasswordHash(completedPasswordIntent.user.password), true);
+  assert.equal(
+    verifyPasswordSecret(
+      " ExactNew456 ",
+      completedPasswordIntent.user.password,
+    ),
+    true,
+  );
+  const completedPasswordReplay =
+    await passwordSagaRepositories.identityOperations.begin({
+      targetUserId: "user_password_saga",
+      actorUserId: "user_password_saga",
+      operation: "reset_password",
+      idempotencyKey: "password-exact-once",
+      requestFingerprint: passwordRequestFingerprint,
+      targetState: { provider: "firebase" },
+      expectedCurrentPassword: "wrong-after-completion",
+      requireActiveTarget: true,
+      preserveAccountStatus: true,
+      preserveSessionId: "password_demo_current",
+    });
+  assert.equal(completedPasswordReplay.replayed, true);
+  assert.equal(
+    completedPasswordReplay.identityOperation.id,
+    passwordIntent.identityOperation.id,
+  );
+  assert.deepEqual(completedPasswordReplay.identityOperation.targetState, {
+    provider: "demo",
+  });
+
+  const otherPasswordRequestFingerprint =
+    createPasswordIdempotencyFingerprint(
+      {
+        ...passwordFingerprintInput,
+        targetUserId: "user_password_other",
+      },
+      {
+        PASSWORD_IDEMPOTENCY_HMAC_KEY:
+          "repository-test-password-idempotency-key",
+      },
+    );
+  const otherOwnerIntent =
+    await passwordSagaRepositories.identityOperations.begin({
+      targetUserId: "user_password_other",
+      actorUserId: "user_password_other",
+      operation: "reset_password",
+      idempotencyKey: "password-exact-once",
+      requestFingerprint: otherPasswordRequestFingerprint,
+      targetState: { provider: "demo" },
+      expectedCurrentPassword: " ExactOld123 ",
+      requireActiveTarget: true,
+      preserveAccountStatus: true,
+    });
+  assert.notEqual(
+    otherOwnerIntent.identityOperation.id,
+    passwordIntent.identityOperation.id,
+  );
+  assert.equal(
+    otherOwnerIntent.identityOperation.targetUserId,
+    "user_password_other",
+  );
+  const passwordAuditInput = {
+    id: `audit_password_change_${passwordIntent.identityOperation.id}`,
+    action: "account.password.change",
+    actorUserId: "user_password_saga",
+    resourceType: "user",
+    resourceId: "user_password_saga",
+    metadata: { operationId: passwordIntent.identityOperation.id },
+  };
+  await passwordSagaRepositories.auditLogs.append(passwordAuditInput);
+  await passwordSagaRepositories.auditLogs.append(passwordAuditInput);
+  assert.equal(
+    passwordSagaDb.auditLogs.filter((item) => item.id === passwordAuditInput.id)
+      .length,
+    1,
+  );
+  const passwordNotificationInput = {
+    id: `noti_password_change_${passwordIntent.identityOperation.id}`,
+    userId: "user_password_saga",
+    type: "success",
+    title: "Password changed",
+    message: "Your password was changed.",
+    metadata: { operationId: passwordIntent.identityOperation.id },
+  };
+  const firstPasswordNotification =
+    await passwordSagaRepositories.notifications.createOnce(
+      passwordNotificationInput,
+    );
+  const replayedPasswordNotification =
+    await passwordSagaRepositories.notifications.createOnce({
+      ...passwordNotificationInput,
+      title: "Must not replace the durable notification",
+    });
+  assert.equal(firstPasswordNotification.created, true);
+  assert.equal(replayedPasswordNotification.created, false);
+  assert.equal(
+    replayedPasswordNotification.notification.title,
+    "Password changed",
+  );
+  assert.equal(
+    passwordSagaDb.notifications.filter(
+      (item) => item.id === passwordNotificationInput.id,
+    ).length,
+    1,
+  );
+
+  const passwordProviderFailure = await passwordSagaRepositories.identityOperations.begin({
+    targetUserId: "user_password_saga",
+    actorUserId: "user_password_saga",
+    operation: "reset_password",
+    idempotencyKey: "password-provider-failure",
+    requestFingerprint: createPasswordIdempotencyFingerprint({
+      operation: "reset_password",
+      targetUserId: "user_password_saga",
+      payload: {
+        currentPassword: " ExactNew456 ",
+        newPassword: " FailurePass789 ",
+      },
+    }, {
+      PASSWORD_IDEMPOTENCY_HMAC_KEY:
+        "repository-test-password-idempotency-key",
+    }),
+    targetState: { provider: "demo" },
+    expectedCurrentPassword: " ExactNew456 ",
+    requireActiveTarget: true,
+    preserveAccountStatus: true,
+    preserveSessionId: "password_demo_current",
+  });
+  const failedPasswordProvider =
+    await passwordSagaRepositories.identityOperations.complete({
+      operationId: passwordProviderFailure.identityOperation.id,
+      providerSucceeded: false,
+      providerStatus: "failed",
+      errorCode: "TEST_PROVIDER_FAILURE",
+    });
+  assert.equal(failedPasswordProvider.identityOperation.status, "provider_failed");
+  assert.equal(
+    verifyPasswordSecret(
+      " ExactNew456 ",
+      passwordSagaDb.users[0].password,
+    ),
+    true,
+  );
+  assert.equal(
+    passwordSagaDb.auditLogs.filter(
+      (item) =>
+        item.action === "account.password.change" &&
+        item.metadata?.operationId ===
+          passwordProviderFailure.identityOperation.id,
+    ).length,
+    0,
+  );
+  assert.equal(
+    passwordSagaDb.notifications.filter(
+      (item) =>
+        item.metadata?.operationId ===
+        passwordProviderFailure.identityOperation.id,
+    ).length,
+    0,
+  );
 
   const identityRaceDb = {
     users: [

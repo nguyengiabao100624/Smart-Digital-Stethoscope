@@ -1,0 +1,64 @@
+{
+  "workspaceId": "workspace-a",
+  "generatedAt": "2026-07-29T10:00:00.000Z",
+  "staff": [
+    {
+      "id": "doctor-a",
+      "role": "doctor",
+      "name": "BS. Trần Bình",
+      "title": "Bác sĩ",
+      "email": "doctor.a@shcare.test",
+      "phone": "0901234567",
+      "avatarUrl": "",
+      "license": "CCHN-001",
+      "hospital": "Phòng khám Shcare",
+      "department": "Nội tổng quát",
+      "specialty": "Nội tổng quát",
+      "accountStatus": "active",
+      "roleRequestStatus": "approved",
+      "verifiedEmail": true,
+      "workspaceMembership": {
+        "id": "membership-doctor-a",
+        "userId": "doctor-a",
+        "organizationId": "workspace-a",
+        "workspaceId": "workspace-a",
+        "role": "doctor",
+        "status": "active",
+        "operational": true,
+        "suspendedAt": "",
+        "createdAt": "2026-07-20T08:00:00.000Z",
+        "updatedAt": "2026-07-20T08:00:00.000Z"
+      }
+    }
+  ],
+  "doctors": [
+    {
+      "id": "doctor-a",
+      "role": "doctor",
+      "name": "BS. Trần Bình",
+      "title": "Bác sĩ",
+      "email": "doctor.a@shcare.test",
+      "phone": "0901234567",
+      "avatarUrl": "",
+      "license": "CCHN-001",
+      "hospital": "Phòng khám Shcare",
+      "department": "Nội tổng quát",
+      "specialty": "Nội tổng quát",
+      "accountStatus": "active",
+      "roleRequestStatus": "approved",
+      "verifiedEmail": true,
+      "workspaceMembership": {
+        "id": "membership-doctor-a",
+        "userId": "doctor-a",
+        "organizationId": "workspace-a",
+        "workspaceId": "workspace-a",
+        "role": "doctor",
+        "status": "active",
+        "operational": true,
+        "suspendedAt": "",
+        "createdAt": "2026-07-20T08:00:00.000Z",
+        "updatedAt": "2026-07-20T08:00:00.000Z"
+      }
+    }
+  ]
+}

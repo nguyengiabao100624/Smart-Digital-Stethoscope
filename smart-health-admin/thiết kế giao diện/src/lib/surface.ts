@@ -16,11 +16,11 @@ export const PORTAL_WEB_URL = (
   import.meta.env.VITE_SMART_HEALTH_PORTAL_WEB_URL || "https://shcare.web.app"
 ).replace(/\/+$/, "");
 
-export const WEB_SURFACE_TITLE = IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Smart Health Admin";
+export const WEB_SURFACE_TITLE = IS_PORTAL_SURFACE ? "Shcare Web Portal" : "Shcare Platform Admin";
 
 export const WEB_SURFACE_DESCRIPTION = IS_PORTAL_SURFACE
-  ? "Cổng vận hành dành cho bác sĩ và phòng khám/cơ sở y tế Smart Health"
-  : "Platform Admin Console cho quản trị hệ thống Smart Health";
+  ? "Cổng vận hành Shcare dành cho bác sĩ và phòng khám/cơ sở y tế"
+  : "Platform Admin Console cho quản trị hệ thống Shcare";
 
 export function getSurfaceAccessTargetUrl() {
   return IS_PORTAL_SURFACE ? ADMIN_WEB_URL : PORTAL_WEB_URL;
@@ -68,6 +68,6 @@ export function hasCurrentWebSurfaceAccess(
 
 export function getWrongSurfaceMessage() {
   return IS_PORTAL_SURFACE
-    ? "Tài khoản Platform Admin sử dụng Smart Health Admin Console."
+    ? "Tài khoản Platform Admin sử dụng Shcare Platform Admin."
     : "Tài khoản bác sĩ hoặc phòng khám sử dụng Shcare Web Portal.";
 }

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/patient-mutation-response.schema.json",
+  "title": "Shcare patient mutation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "workspaceId", "patientId", "intent", "replayed"],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "patientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "intent": {
+      "type": "string",
+      "enum": ["create", "update", "delete"]
+    },
+    "patient": {
+      "$ref": "#/$defs/patient"
+    },
+    "deleted": {
+      "type": "boolean",
+      "const": true
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["patient"],
+      "properties": {
+        "intent": { "const": "create" }
+      },
+      "not": { "required": ["deleted"] }
+    },
+    {
+      "required": ["patient"],
+      "properties": {
+        "intent": { "const": "update" }
+      },
+      "not": { "required": ["deleted"] }
+    },
+    {
+      "required": ["deleted"],
+      "properties": {
+        "intent": { "const": "delete" },
+        "deleted": { "const": true }
+      },
+      "not": { "required": ["patient"] }
+    }
+  ],
+  "$defs": {
+    "emergencyContact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "phone", "relationship"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "relationship": { "type": "string", "maxLength": 80 }
+      }
+    },
+    "patient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "patientCode",
+        "name",
+        "age",
+        "dateOfBirth",
+        "bloodType",
+        "allergies",
+        "emergencyContact",
+        "gender",
+        "phone",
+        "email",
+        "address",
+        "notes",
+        "organizationId",
+        "ownerUserId",
+        "guardianUserId",
+        "profileType",
+        "relationship",
+        "familyGroupId",
+        "accountUserId",
+        "primaryDoctorId",
+        "doctorName",
+        "createdAt",
+        "updatedAt",
+        "scanCount",
+        "lastScanAt",
+        "lastAiLabel"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "patientCode": { "type": "string", "maxLength": 120 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "age": { "type": ["integer", "null"], "minimum": 0, "maximum": 130 },
+        "dateOfBirth": { "type": "string", "maxLength": 32 },
+        "bloodType": { "type": "string", "maxLength": 20 },
+        "allergies": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 160 }
+        },
+        "emergencyContact": { "$ref": "#/$defs/emergencyContact" },
+        "gender": { "type": "string", "maxLength": 40 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 240 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "ownerUserId": { "type": "string", "maxLength": 120 },
+        "guardianUserId": { "type": "string", "maxLength": 120 },
+        "profileType": { "type": "string", "maxLength": 60 },
+        "relationship": { "type": "string", "maxLength": 80 },
+        "familyGroupId": { "type": "string", "maxLength": 120 },
+        "accountUserId": { "type": "string", "maxLength": 120 },
+        "primaryDoctorId": { "type": "string", "maxLength": 120 },
+        "doctorName": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "scanCount": { "type": "integer", "minimum": 0 },
+        "lastScanAt": { "type": ["string", "null"], "maxLength": 64 },
+        "lastAiLabel": { "type": ["string", "null"], "maxLength": 240 }
+      }
+    }
+  },
+  "x-shcare-http": {
+    "routes": [
+      { "method": "POST", "path": "/v1/patients", "status": 201 },
+      { "method": "PATCH", "path": "/v1/patients/{patientId}", "status": 200 },
+      { "method": "DELETE", "path": "/v1/patients/{patientId}", "status": 200 }
+    ],
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-owner-binding": {
+    "userId": "authenticated-backend-user",
+    "workspaceId": "canonical-patient-workspace",
+    "patientId": "canonical-patient-id",
+    "crossWorkspaceReplayOutcome": 409
+  }
+}

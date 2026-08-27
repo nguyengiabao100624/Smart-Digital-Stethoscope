@@ -107,7 +107,7 @@ export function Overview() {
     currentUser?.workspace?.name ||
     currentUser?.currentMembership?.workspaceName ||
     currentUser?.hospital ||
-    "Smart Health";
+    "Shcare";
 
   const portalModules: PortalModule[] = [
     { label: "Tổng quan", icon: ShieldCheck, path: "/", enabled: true },
@@ -383,8 +383,8 @@ function OverviewDashboard({
         />
       </section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <AnimatedCard className="p-5 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <AnimatedCard className="p-5 xl:col-span-2">
           <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold text-foreground">Lượt đo · {range.label}</h2>
@@ -774,8 +774,8 @@ function OverviewSkeleton() {
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="rounded-xl border border-border bg-card p-5 xl:col-span-2">
           <Skeleton className="h-5 w-52" />
           <Skeleton className="mt-6 h-[300px] w-full rounded-lg" />
         </div>

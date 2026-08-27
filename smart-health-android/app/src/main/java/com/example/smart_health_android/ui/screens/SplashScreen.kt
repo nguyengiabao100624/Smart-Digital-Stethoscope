@@ -1,176 +1,300 @@
 package com.example.smart_health_android.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.FirebaseAuthService
-import com.example.smart_health_android.data.PendingRegistrationStore
-import com.example.smart_health_android.data.SmartHealthPushRegistrar
-import com.example.smart_health_android.data.SmartHealthRepository
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
 import com.example.smart_health_android.data.AuthUser
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.PrimaryTeal
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import com.example.smart_health_android.data.FirebaseOwnerBinding
+import com.example.smart_health_android.startup.DefaultSplashBootstrapGateway
+import com.example.smart_health_android.startup.SplashLoadState
+import com.example.smart_health_android.startup.SplashUiAction
+import com.example.smart_health_android.startup.SplashUiEffect
+import com.example.smart_health_android.startup.SplashViewModel
+import com.example.smart_health_android.startup.SplashViewModelFactory
+import com.example.smart_health_android.ui.components.ShcareRetryButton
+import com.example.smart_health_android.ui.components.ShcareSignalMark
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
 @Composable
 fun SplashScreen(
     onNavigateToLogin: () -> Unit,
-    onNavigateToDoctorDashboard: () -> Unit,
-    onNavigateToPatientDashboard: () -> Unit,
-    onDoctorApprovalPending: () -> Unit,
-    onNavigateToVerifyEmail: (accountType: String) -> Unit
+    onAuthenticated: (user: AuthUser, firebaseOwner: FirebaseOwnerBinding) -> Unit,
+    onDoctorApprovalPending: (firebaseOwner: FirebaseOwnerBinding) -> Unit,
+    onNavigateToVerifyEmail: (
+        accountType: String,
+        firebaseOwner: FirebaseOwnerBinding,
+    ) -> Unit,
 ) {
-    val context = LocalContext.current
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var isChecking by remember { mutableStateOf(true) }
-    var retryKey by remember { mutableIntStateOf(0) }
-
-    fun navigateForUser(user: AuthUser) {
-        val isPendingDoctorApproval =
-            user.requestedRole == "doctor" &&
-                (user.roleRequestStatus == "pending" || user.roleRequestStatus == "needs_info")
-        val opensClinicalDashboard = user.role in setOf(
-            "doctor",
-            "admin",
-            "workspace_admin",
-            "workspace_owner",
-            "nurse",
-            "technician"
-        )
-        when {
-            isPendingDoctorApproval -> onDoctorApprovalPending()
-            opensClinicalDashboard -> onNavigateToDoctorDashboard()
-            else -> onNavigateToPatientDashboard()
-        }
+    val context = LocalContext.current.applicationContext
+    val factory = remember(context) {
+        SplashViewModelFactory(DefaultSplashBootstrapGateway(context))
     }
+    val splashViewModel: SplashViewModel = viewModel(factory = factory)
+    val state by splashViewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(retryKey) {
-        isChecking = true
-        errorMessage = null
-        delay(700)
-        try {
-            val health = SmartHealthRepository.api.getHealth()
-            if (!health.ok) {
-                error("Máy chủ chưa sẵn sàng. Vui lòng thử lại.")
-            }
+    val latestNavigateToLogin by rememberUpdatedState(onNavigateToLogin)
+    val latestAuthenticated by rememberUpdatedState(onAuthenticated)
+    val latestDoctorApprovalPending by rememberUpdatedState(onDoctorApprovalPending)
+    val latestNavigateToVerifyEmail by rememberUpdatedState(onNavigateToVerifyEmail)
 
-            val existingSessionToken = runCatching { FirebaseAuthService.getFreshIdToken(forceRefresh = false) }.getOrNull()
-            if (existingSessionToken.isNullOrBlank()) {
-                onNavigateToLogin()
-                return@LaunchedEffect
-            }
-
-            if (!FirebaseAuthService.reloadCurrentUser()) {
-                val pending = withContext(Dispatchers.IO) {
-                    PendingRegistrationStore.load(context)
+    LaunchedEffect(splashViewModel) {
+        splashViewModel.effects.collect { effect ->
+            when (effect) {
+                SplashUiEffect.NavigateToLogin -> latestNavigateToLogin()
+                is SplashUiEffect.Authenticated -> {
+                    latestAuthenticated(effect.user, effect.firebaseOwner)
                 }
-                onNavigateToVerifyEmail(pending?.accountType ?: "patient")
-                return@LaunchedEffect
+                is SplashUiEffect.NavigateToDoctorApprovalPending -> {
+                    latestDoctorApprovalPending(effect.firebaseOwner)
+                }
+                is SplashUiEffect.NavigateToVerifyEmail -> {
+                    latestNavigateToVerifyEmail(effect.accountType, effect.firebaseOwner)
+                }
             }
-
-            val idToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
-            val result = SmartHealthRepository.api.authenticateFirebase(idToken)
-            runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
-            navigateForUser(result.user)
-        } catch (error: Exception) {
-            errorMessage = error.toVietnameseMessage("Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.")
-        } finally {
-            isChecking = false
         }
     }
+
+    ShcareStartupContent(
+        isChecking = state.loadState == SplashLoadState.Checking,
+        errorMessage = state.errorMessage.takeIf { state.loadState == SplashLoadState.Error },
+        onRetry = { splashViewModel.onAction(SplashUiAction.Retry) },
+    )
+}
+
+@Composable
+fun ShcareStartupContent(
+    isChecking: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    val scrollState = rememberScrollState()
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(
                 Brush.linearGradient(
-                    colors = listOf(PrimaryBlue, PrimaryTeal)
-                )
-            ),
-        contentAlignment = Alignment.Center
+                    colors = listOf(
+                        semanticColors.brandHeaderStart,
+                        semanticColors.brandHeaderEnd,
+                    ),
+                ),
+            )
+            .windowInsetsPadding(WindowInsets.safeDrawing),
+        contentAlignment = Alignment.Center,
     ) {
         Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 480.dp)
+                .verticalScroll(scrollState)
+                .padding(
+                    horizontal = spacing.extraLarge,
+                    vertical = spacing.doubleExtraLarge,
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 28.dp)
+            verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = "Logo",
-                tint = Color.White,
-                modifier = Modifier.size(80.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "SmartHealth",
-                color = Color.White,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Ống nghe điện tử thông minh",
-                color = Color.White.copy(alpha = 0.8f),
-                fontSize = 16.sp
-            )
-            Spacer(modifier = Modifier.height(28.dp))
-            if (isChecking) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Đang kiểm tra kết nối...",
-                    color = Color.White.copy(alpha = 0.86f),
-                    fontSize = 14.sp
-                )
-            }
-            errorMessage?.let { message ->
-                Spacer(modifier = Modifier.height(24.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.14f), androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                        .padding(18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            Column(
+                modifier = Modifier.testTag("splash.brand"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Surface(
+                    modifier = Modifier.size(104.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = semanticColors.onBrandHeader.copy(alpha = 0.12f),
+                    contentColor = semanticColors.onBrandHeader,
+                    border = BorderStroke(
+                        1.dp,
+                        semanticColors.onBrandHeader.copy(alpha = 0.32f),
+                    ),
                 ) {
-                    Text(
-                        text = message,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Button(
-                        onClick = { retryKey += 1 },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = PrimaryBlue)
-                    ) {
-                        Text("Thử lại", fontWeight = FontWeight.SemiBold)
+                    Box(contentAlignment = Alignment.Center) {
+                        ShcareSignalMark(
+                            contentDescription = stringResource(
+                                R.string.splash_logo_content_description,
+                            ),
+                            modifier = Modifier.size(68.dp),
+                            primaryColor = semanticColors.onBrandHeader,
+                            vitalColor = semanticColors.onBrandHeader.copy(alpha = 0.78f),
+                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(spacing.small))
+                Text(
+                    text = stringResource(R.string.splash_brand_name),
+                    modifier = Modifier
+                        .testTag("splash.brand.heading")
+                        .semantics { heading() },
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = semanticColors.onBrandHeader,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = stringResource(R.string.splash_brand_endorsement),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = semanticColors.onBrandHeader.copy(alpha = 0.92f),
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = stringResource(R.string.splash_brand_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = semanticColors.onBrandHeader.copy(alpha = 0.76f),
+                    textAlign = TextAlign.Center,
+                )
             }
+
+            Spacer(modifier = Modifier.height(spacing.doubleExtraLarge))
+            if (isChecking || errorMessage.isNullOrBlank()) {
+                SplashLoadingStatus()
+            } else {
+                SplashErrorStatus(
+                    message = errorMessage,
+                    onRetry = onRetry,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SplashLoadingStatus() {
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    val loadingMessage = stringResource(R.string.splash_loading)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("splash.loading")
+            .semantics(mergeDescendants = true) {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = loadingMessage
+            },
+        shape = MaterialTheme.shapes.medium,
+        color = semanticColors.onBrandHeader.copy(alpha = 0.94f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Row(
+            modifier = Modifier.padding(spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = loadingMessage,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SplashErrorStatus(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val semanticColors = ShcareTheme.colors
+    val title = stringResource(R.string.splash_error_title)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("splash.error")
+            .semantics(mergeDescendants = true) {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = "$title. $message"
+            },
+        shape = MaterialTheme.shapes.large,
+        color = semanticColors.onBrandHeader.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            semanticColors.onBrandHeader.copy(alpha = 0.42f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+        ) {
+            Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Text(
+                text = title,
+                modifier = Modifier
+                    .testTag("splash.error.heading")
+                    .semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+            ShcareRetryButton(
+                onRetry = onRetry,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("splash.retry"),
+            )
         }
     }
 }

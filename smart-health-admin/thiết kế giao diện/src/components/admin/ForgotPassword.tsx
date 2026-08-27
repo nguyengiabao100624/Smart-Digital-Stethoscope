@@ -1,11 +1,14 @@
 ﻿import React, { useState } from "react";
 import { Link } from "@/components/admin/router-shim";
-import { ArrowLeft, CheckCircle2, Mail, Stethoscope } from "lucide-react";
+import { useRef } from "react";
+import { ArrowLeft, CheckCircle2, Mail } from "lucide-react";
 import { sendFirebasePasswordReset } from "@/lib/firebase-client";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { ThemeToggle } from "./ThemeToggle";
+import { ShcareBrand } from "./ShcareBrand";
 
 export function ForgotPassword() {
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -20,6 +23,7 @@ export function ForgotPassword() {
       setIsSuccess(true);
     } catch (err) {
       setError(toVietnameseErrorMessage(err, "Không thể gửi email đặt lại mật khẩu."));
+      window.requestAnimationFrame(() => emailInputRef.current?.focus());
     } finally {
       setIsLoading(false);
     }
@@ -68,9 +72,7 @@ export function ForgotPassword() {
       <div className="relative w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm">
         <ThemeToggle className="absolute right-4 top-4" />
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <Stethoscope className="h-8 w-8 text-primary" />
-          </div>
+          <ShcareBrand compact centered className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Quên mật khẩu?</h1>
           <p className="mt-2 text-muted-foreground">
             Nhập email tài khoản admin để Firebase gửi link đặt lại mật khẩu.
@@ -79,13 +81,24 @@ export function ForgotPassword() {
 
         <form method="post" onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Email quản trị</label>
+            <label htmlFor="admin-reset-email" className="text-sm font-medium text-foreground">
+              Email quản trị
+            </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <input
+                ref={emailInputRef}
+                id="admin-reset-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setError("");
+                }}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "admin-reset-error" : undefined}
                 placeholder="admin@smarthealth.vn"
                 className="min-h-11 w-full rounded-md border border-border py-2 pl-10 pr-4 outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 required
@@ -94,7 +107,12 @@ export function ForgotPassword() {
           </div>
 
           {error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div
+              id="admin-reset-error"
+              role="alert"
+              aria-live="assertive"
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
               {error}
             </div>
           ) : null}

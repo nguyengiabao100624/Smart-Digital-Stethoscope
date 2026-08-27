@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createPatientImportIdempotencyKey,
   parsePatientImportCommitOutcome,
+  parsePatientImportDetail,
   parsePatientImportValidationOutcome,
 } from "../../src/lib/patient-import-operations.ts";
 
@@ -63,11 +64,26 @@ function batch(status: "validated" | "invalid" | "committed" = "validated") {
   };
 }
 
+const validationExpectation = {
+  workspaceId: "org_1",
+  fileName: "patients.csv",
+  fileSizeBytes: 120,
+};
+
+const batchExpectation = {
+  workspaceId: "org_1",
+  batchId: "pimport_1",
+  minimumVersion: 1,
+};
+
 test("strictly parses validation and commit receipts", () => {
-  const validation = parsePatientImportValidationOutcome({
-    batch: batch("validated"),
-    replayed: false,
-  });
+  const validation = parsePatientImportValidationOutcome(
+    {
+      batch: batch("validated"),
+      replayed: false,
+    },
+    validationExpectation,
+  );
   assert.equal(validation.batch.rows[0].patient.id, "pat_1");
   const commit = parsePatientImportCommitOutcome(
     {
@@ -76,7 +92,7 @@ test("strictly parses validation and commit receipts", () => {
       patientIds: ["pat_1"],
       replayed: true,
     },
-    "pimport_1",
+    batchExpectation,
   );
   assert.equal(commit.replayed, true);
 });
@@ -85,13 +101,21 @@ test("rejects contradictory counts, row state and commit identity", () => {
   const wrongCounts = batch("validated");
   wrongCounts.validCount = 0;
   assert.throws(
-    () => parsePatientImportValidationOutcome({ batch: wrongCounts, replayed: false }),
+    () =>
+      parsePatientImportValidationOutcome(
+        { batch: wrongCounts, replayed: false },
+        validationExpectation,
+      ),
     /tổng số dòng mâu thuẫn/,
   );
   const wrongRow = batch("invalid");
   wrongRow.rows[0].issues = [];
   assert.throws(
-    () => parsePatientImportValidationOutcome({ batch: wrongRow, replayed: false }),
+    () =>
+      parsePatientImportValidationOutcome(
+        { batch: wrongRow, replayed: false },
+        validationExpectation,
+      ),
     /Trạng thái dòng import mâu thuẫn/,
   );
   assert.throws(
@@ -103,9 +127,98 @@ test("rejects contradictory counts, row state and commit identity", () => {
           patientIds: ["pat_1"],
           replayed: false,
         },
-        "another_batch",
+        { ...batchExpectation, batchId: "another_batch" },
       ),
     /đúng batch/,
+  );
+});
+
+test("rejects validation receipts for another workspace or selected file", () => {
+  assert.throws(
+    () =>
+      parsePatientImportValidationOutcome(
+        {
+          batch: { ...batch(), organizationId: "org_other" },
+          replayed: false,
+        },
+        validationExpectation,
+      ),
+    /workspace hiện tại/,
+  );
+  assert.throws(
+    () =>
+      parsePatientImportValidationOutcome(
+        {
+          batch: { ...batch(), fileName: "other.csv" },
+          replayed: false,
+        },
+        validationExpectation,
+      ),
+    /file đã chọn/,
+  );
+  assert.throws(
+    () =>
+      parsePatientImportValidationOutcome(
+        {
+          batch: { ...batch(), fileSizeBytes: 121 },
+          replayed: false,
+        },
+        validationExpectation,
+      ),
+    /file đã chọn/,
+  );
+});
+
+test("rejects refresh and commit receipts for another batch, workspace or stale version", () => {
+  assert.throws(
+    () =>
+      parsePatientImportDetail(
+        { batch: { ...batch(), id: "pimport_other" } },
+        batchExpectation,
+      ),
+    /đúng batch/,
+  );
+  assert.throws(
+    () =>
+      parsePatientImportDetail(
+        { batch: { ...batch(), organizationId: "org_other" } },
+        batchExpectation,
+      ),
+    /workspace hiện tại/,
+  );
+  assert.throws(
+    () =>
+      parsePatientImportDetail(
+        { batch: { ...batch(), version: 1 } },
+        { ...batchExpectation, minimumVersion: 2 },
+      ),
+    /version cũ hơn/,
+  );
+  assert.throws(
+    () =>
+      parsePatientImportCommitOutcome(
+        {
+          batch: { ...batch("committed"), organizationId: "org_other" },
+          importedCount: 1,
+          patientIds: ["pat_1"],
+          replayed: false,
+        },
+        batchExpectation,
+      ),
+    /workspace hiện tại/,
+  );
+  assert.throws(
+    () =>
+      parsePatientImportCommitOutcome(
+        {
+          batch: { ...batch("committed"), version: 1 },
+          importedCount: 1,
+          patientIds: ["pat_1"],
+          replayed: false,
+        },
+        batchExpectation,
+      ),
+    /version mới hơn/,
   );
 });
 

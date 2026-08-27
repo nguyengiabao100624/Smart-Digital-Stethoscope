@@ -36,9 +36,9 @@
   --clinical-radius: 12px;
   --clinical-radius-lg: 16px;
   --clinical-content-width: 1360px;
-  --clinical-display: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --clinical-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --clinical-ui:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    "Source Sans 3", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --clinical-data:
     ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
@@ -71,9 +71,9 @@ html.dark {
 
 html,
 body {
-  background-color: var(--clinical-canvas) !important;
-  background-image: none !important;
-  background-attachment: scroll !important;
+  background-color: var(--clinical-canvas);
+  background-image: none;
+  background-attachment: scroll;
   color: var(--clinical-ink);
   font-family: var(--clinical-ui);
 }
@@ -81,7 +81,7 @@ body {
 body::before,
 .portal-ambient,
 .luminous-hero-effects {
-  display: none !important;
+  display: none;
 }
 
 ::selection {
@@ -108,14 +108,14 @@ body::before,
   --shc-primary-strong: var(--clinical-primary-strong);
   --shc-danger: var(--clinical-danger);
   --shc-shadow: var(--clinical-shadow);
-  background: var(--clinical-canvas) !important;
-  color: var(--clinical-ink) !important;
+  background: var(--clinical-canvas);
+  color: var(--clinical-ink);
   font-family: var(--clinical-ui);
 }
 
 .shc-public-layout .shc-announcement {
   min-height: 34px;
-  background: var(--clinical-announcement) !important;
+  background: var(--clinical-announcement);
   color: #ffffff;
   font-size: 0.78rem;
   letter-spacing: 0;
@@ -123,11 +123,11 @@ body::before,
 
 html:not(.dark) .shc-public-layout > .shc-announcement,
 html.dark .shc-public-layout > .shc-announcement {
-  background: var(--clinical-announcement) !important;
+  background: var(--clinical-announcement);
 }
 
 .shc-public-layout .shc-announcement span {
-  color: #ffffff !important;
+  color: #ffffff;
   font-family: var(--clinical-data);
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
@@ -136,21 +136,21 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .shc-public-layout .shc-announcement p,
 .shc-public-layout .shc-announcement a {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 
 .shc-public-layout .shc-header,
 .shc-public-layout .shc-header.is-scrolled {
-  background: transparent !important;
-  border-bottom: 1px solid transparent !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .shc-public-layout .shc-brand,
 .shc-auth-layout .shc-brand {
-  color: var(--clinical-ink) !important;
+  color: var(--clinical-ink);
   font-family: var(--clinical-display);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -165,7 +165,7 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-public-layout .shc-desktop-nav > a,
 .shc-public-layout .shc-nav-group > a,
 .shc-public-layout .shc-login-link {
-  color: var(--clinical-muted) !important;
+  color: var(--clinical-muted);
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -174,29 +174,29 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-public-layout .shc-desktop-nav a:hover,
 .shc-public-layout .shc-desktop-nav a.is-active,
 .shc-public-layout .shc-login-link:hover {
-  color: var(--clinical-primary) !important;
+  color: var(--clinical-primary);
 }
 
 .shc-public-layout .shc-dropdown,
 .shc-public-layout .shc-mobile-menu {
-  background: var(--clinical-surface) !important;
-  border: 1px solid var(--clinical-line) !important;
-  border-radius: var(--clinical-radius) !important;
-  box-shadow: var(--clinical-shadow) !important;
+  background: var(--clinical-surface);
+  border: 1px solid var(--clinical-line);
+  border-radius: var(--clinical-radius);
+  box-shadow: var(--clinical-shadow);
 }
 
 .shc-public-layout .shc-dropdown a,
 .shc-public-layout .shc-mobile-menu > a,
 .shc-public-layout .shc-mobile-menu button {
-  color: var(--clinical-ink) !important;
+  color: var(--clinical-ink);
 }
 
 .shc-button,
 .shc-public-layout .shc-button,
 .shc-auth-layout .shc-button {
   min-height: 42px;
-  border-radius: var(--clinical-radius-sm) !important;
-  box-shadow: none !important;
+  border-radius: var(--clinical-radius-sm);
+  box-shadow: none;
   font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -214,37 +214,37 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-button-primary,
 .shc-public-layout .shc-button-primary,
 .shc-auth-layout .shc-button-primary {
-  background: var(--clinical-action) !important;
-  border-color: var(--clinical-action) !important;
-  color: #ffffff !important;
+  background: var(--clinical-action);
+  border-color: var(--clinical-action);
+  color: #ffffff;
 }
 
 .shc-button-primary:hover,
 .shc-public-layout .shc-button-primary:hover,
 .shc-auth-layout .shc-button-primary:hover {
-  background: var(--clinical-action-hover) !important;
-  border-color: var(--clinical-action-hover) !important;
+  background: var(--clinical-action-hover);
+  border-color: var(--clinical-action-hover);
 }
 
 .shc-button-secondary,
 .shc-public-layout .shc-button-secondary,
 .shc-auth-layout .shc-button-secondary {
-  background: transparent !important;
-  border: 1px solid var(--clinical-line-strong) !important;
-  color: var(--clinical-ink) !important;
+  background: transparent;
+  border: 1px solid var(--clinical-line-strong);
+  color: var(--clinical-ink);
 }
 
 .shc-button-secondary:hover,
 .shc-public-layout .shc-button-secondary:hover,
 .shc-auth-layout .shc-button-secondary:hover {
-  background: var(--clinical-surface-muted) !important;
-  border-color: var(--clinical-primary) !important;
-  color: var(--clinical-primary) !important;
+  background: var(--clinical-surface-muted);
+  border-color: var(--clinical-primary);
+  color: var(--clinical-primary);
 }
 
 .shc-public-layout .shc-page-hero,
 .shc-public-layout .shc-home-hero {
-  background: var(--clinical-canvas) !important;
+  background: var(--clinical-canvas);
   border-bottom: 1px solid var(--clinical-line);
 }
 
@@ -252,7 +252,7 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-public-layout .shc-home-hero h1,
 .shc-public-layout .shc-section h2,
 .shc-public-layout .shc-footer h2 {
-  color: var(--clinical-ink) !important;
+  color: var(--clinical-ink);
   font-family: var(--clinical-display);
   letter-spacing: -0.035em;
   text-wrap: balance;
@@ -266,7 +266,7 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .shc-public-layout .shc-page-hero > div > p,
 .shc-public-layout .shc-section > .shc-container > p {
-  color: var(--clinical-primary) !important;
+  color: var(--clinical-primary);
   font-family: var(--clinical-data);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
@@ -274,7 +274,7 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .shc-public-layout .shc-footer {
-  background: #081a2c !important;
+  background: #081a2c;
   border-top: 1px solid #173958;
 }
 
@@ -282,21 +282,19 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-public-layout .shc-footer .shc-brand,
 .shc-public-layout .shc-footer h2,
 .shc-public-layout .shc-footer a {
-  color: #eaf2f8 !important;
+  color: #eaf2f8;
 }
 
 .shc-public-layout .shc-footer p,
 .shc-public-layout .shc-footer-bottom {
-  color: #aebfd0 !important;
+  color: #aebfd0;
 }
 
-.shc-public-layout .brand-gradient-text,
 .shc-public-layout .hero-gradient-text,
-.shc-auth-layout .brand-gradient-text,
 .shc-auth-layout .hero-gradient-text {
-  background: none !important;
-  -webkit-text-fill-color: currentColor !important;
-  color: var(--clinical-ink) !important;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--clinical-ink);
 }
 
 .shc-auth-layout {
@@ -304,29 +302,29 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .shc-auth-layout .shc-auth-aside {
-  background: #0b3152 !important;
-  color: #eff7fb !important;
-  border-right: 1px solid #17476e !important;
+  background: #0b3152;
+  color: #eff7fb;
+  border-right: 1px solid #17476e;
 }
 
 .shc-auth-layout .shc-auth-aside .shc-brand,
 .shc-auth-layout .shc-auth-aside h2,
 .shc-auth-layout .shc-auth-aside strong,
 .shc-auth-layout .shc-auth-aside a {
-  color: #ffffff !important;
+  color: #ffffff;
 }
 
 .shc-auth-layout .shc-auth-aside p,
 .shc-auth-layout .shc-auth-footnote {
-  color: #c2d4e3 !important;
+  color: #c2d4e3;
 }
 
 .shc-auth-layout .shc-auth-chip,
 .shc-auth-layout .shc-auth-preview-card,
 .shc-auth-layout .shc-auth-facts > div {
-  background: rgba(255, 255, 255, 0.07) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
 }
 
 .shc-auth-layout .shc-auth-access-list {
@@ -354,14 +352,14 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .shc-auth-layout .shc-auth-form-region,
 .shc-auth-layout .shc-auth-form-scroll {
-  background: var(--clinical-canvas) !important;
+  background: var(--clinical-canvas);
 }
 
 .shc-auth-layout .shc-auth-card {
-  background: var(--clinical-surface) !important;
-  border: 1px solid var(--clinical-line) !important;
-  border-radius: var(--clinical-radius-lg) !important;
-  box-shadow: var(--clinical-shadow) !important;
+  background: var(--clinical-surface);
+  border: 1px solid var(--clinical-line);
+  border-radius: var(--clinical-radius-lg);
+  box-shadow: var(--clinical-shadow);
 }
 
 .shc-auth-layout .shc-auth-form-scroll:has(.shc-auth-stepper) {
@@ -371,76 +369,76 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .shc-auth-layout .shc-auth-card h1,
 .shc-auth-layout .shc-auth-card h2 {
-  color: var(--clinical-ink) !important;
+  color: var(--clinical-ink);
   font-family: var(--clinical-display);
   letter-spacing: -0.035em;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 .shc-auth-layout .shc-auth-card p,
 .shc-auth-layout .shc-auth-card [class*="text-white/"],
 .shc-auth-layout .shc-auth-card [class*="text-[#8"] {
-  color: var(--clinical-muted) !important;
+  color: var(--clinical-muted);
 }
 
 .shc-auth-layout .shc-auth-card [class*="text-white"] {
-  color: var(--clinical-ink) !important;
+  color: var(--clinical-ink);
 }
 
 .shc-auth-layout .shc-auth-card [class*="tracking-widest"] {
-  letter-spacing: 0.045em !important;
+  letter-spacing: 0.045em;
 }
 
 .shc-auth-layout .shc-auth-card [class*="shadow-[0_"],
 .shc-auth-layout .shc-auth-card [class*="animate-pulse"] {
-  box-shadow: none !important;
-  animation: none !important;
+  box-shadow: none;
+  animation: none;
 }
 
 .shc-auth-layout .shc-auth-card > div > div.mb-8.text-center > div:first-child {
-  background: var(--clinical-live-soft) !important;
-  border-color: var(--clinical-line) !important;
-  color: var(--clinical-live) !important;
+  background: var(--clinical-live-soft);
+  border-color: var(--clinical-line);
+  color: var(--clinical-live);
 }
 
 .shc-auth-layout .shc-auth-aside .shc-auth-story h2 {
   max-width: 13ch;
   font-family: var(--clinical-display);
-  font-size: clamp(2.45rem, 3.7vw, 4rem) !important;
-  line-height: 0.98 !important;
+  font-size: clamp(2.45rem, 3.7vw, 4rem);
+  line-height: 0.98;
   letter-spacing: -0.055em;
 }
 
 .shc-auth-layout .shc-auth-card button[type="submit"],
 .shc-auth-layout .shc-auth-card a[class*="bg-gradient"] {
   min-height: 46px;
-  border: 1px solid var(--clinical-action) !important;
-  border-radius: 999px !important;
-  background: var(--clinical-action) !important;
-  color: #ffffff !important;
-  box-shadow: none !important;
-  text-transform: none !important;
-  letter-spacing: 0 !important;
+  border: 1px solid var(--clinical-action);
+  border-radius: 999px;
+  background: var(--clinical-action);
+  color: #ffffff;
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .shc-auth-layout .shc-auth-card button[type="submit"]:hover,
 .shc-auth-layout .shc-auth-card a[class*="bg-gradient"]:hover {
-  background: var(--clinical-action-hover) !important;
+  background: var(--clinical-action-hover);
 }
 
 .shc-auth-stepper {
-  display: grid !important;
+  display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start !important;
-  gap: 0.8rem 0.55rem !important;
-  overflow: visible !important;
-  padding-bottom: 0 !important;
+  align-items: start;
+  gap: 0.8rem 0.55rem;
+  overflow: visible;
+  padding-bottom: 0;
 }
 
 .shc-auth-stepper > div {
-  min-width: 0 !important;
-  justify-content: center !important;
-  flex-shrink: 1 !important;
+  min-width: 0;
+  justify-content: center;
+  flex-shrink: 1;
 }
 
 .shc-auth-stepper > div > div:first-child {
@@ -449,44 +447,42 @@ html.dark .shc-public-layout > .shc-announcement {
 }
 
 .shc-auth-stepper > div > div:nth-child(2) {
-  display: none !important;
+  display: none;
 }
 
 .shc-auth-stepper [class*="w-7"][class*="h-7"] {
-  width: 1.8rem !important;
-  height: 1.8rem !important;
-  background: var(--clinical-surface-muted) !important;
-  border: 1px solid var(--clinical-line-strong) !important;
-  color: var(--clinical-primary) !important;
-  box-shadow: none !important;
+  width: 1.8rem;
+  height: 1.8rem;
+  background: var(--clinical-surface-muted);
+  border: 1px solid var(--clinical-line-strong);
+  color: var(--clinical-primary);
+  box-shadow: none;
 }
 
 .shc-auth-stepper span {
   max-width: 6.5rem;
-  color: var(--clinical-muted) !important;
-  font-size: 0.62rem !important;
+  color: var(--clinical-muted);
+  font-size: 0.62rem;
   line-height: 1.12;
-  letter-spacing: 0.035em !important;
+  letter-spacing: 0.035em;
   text-align: center;
-  white-space: normal !important;
+  white-space: normal;
 }
 
 /* Legacy public/auth pages inherit the field system instead of cyber utility colors. */
 .shc-public-layout [class*="bg-gradient"],
 .shc-auth-layout [class*="bg-gradient"],
-.shc-public-layout .glass-panel,
-.shc-auth-layout .glass-panel,
 .shc-public-layout .premium-card,
 .shc-auth-layout .premium-card {
-  background-image: none !important;
-  box-shadow: none !important;
+  background-image: none;
+  box-shadow: none;
 }
 
 .shc-public-layout [class*="text-[#00FFD1]"],
 .shc-auth-layout [class*="text-[#00FFD1]"],
 .shc-public-layout [class*="text-[#7257E8]"],
 .shc-auth-layout [class*="text-[#7257E8]"] {
-  color: var(--clinical-primary) !important;
+  color: var(--clinical-primary);
 }
 
 .shc-auth-layout input,
@@ -495,16 +491,16 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-public-layout input,
 .shc-public-layout select,
 .shc-public-layout textarea {
-  border-color: var(--clinical-line-strong) !important;
-  background: var(--clinical-surface) !important;
-  box-shadow: none !important;
-  color: var(--clinical-ink) !important;
+  border-color: var(--clinical-line-strong);
+  background: var(--clinical-surface);
+  box-shadow: none;
+  color: var(--clinical-ink);
 }
 
 .shc-auth-layout input::placeholder,
 .shc-public-layout input::placeholder,
 .shc-public-layout textarea::placeholder {
-  color: var(--clinical-faint) !important;
+  color: var(--clinical-faint);
 }
 
 .shc-auth-layout input:focus,
@@ -513,8 +509,8 @@ html.dark .shc-public-layout > .shc-announcement {
 .shc-public-layout input:focus,
 .shc-public-layout select:focus,
 .shc-public-layout textarea:focus {
-  border-color: var(--clinical-primary) !important;
-  box-shadow: 0 0 0 3px var(--clinical-focus) !important;
+  border-color: var(--clinical-primary);
+  box-shadow: 0 0 0 3px var(--clinical-focus);
 }
 
 /* Authenticated workspace ------------------------------------------------ */
@@ -523,8 +519,8 @@ html.dark .shc-public-layout > .shc-announcement {
   --background: var(--clinical-canvas);
   --foreground: var(--clinical-ink);
   min-height: 100dvh;
-  background: var(--clinical-canvas) !important;
-  color: var(--clinical-ink) !important;
+  background: var(--clinical-canvas);
+  color: var(--clinical-ink);
   font-family: var(--clinical-ui);
 }
 
@@ -725,7 +721,7 @@ html.dark .shc-public-layout > .shc-announcement {
   gap: 1rem;
   padding: 0.75rem clamp(1rem, 3vw, 2rem);
   border-bottom: 1px solid var(--clinical-line);
-  background: color-mix(in srgb, var(--clinical-surface) 96%, transparent);
+  background: var(--clinical-surface);
   overflow: visible;
 }
 
@@ -733,7 +729,7 @@ html.dark .shc-public-layout > .shc-announcement {
   min-width: 0;
 }
 
-.clinical-topbar-title p {
+.clinical-topbar-title .clinical-topbar-context {
   margin: 0;
   color: var(--clinical-muted);
   font-family: var(--clinical-data);
@@ -742,7 +738,7 @@ html.dark .shc-public-layout > .shc-announcement {
   letter-spacing: 0.02em;
 }
 
-.clinical-topbar-title h1 {
+.clinical-topbar-title .clinical-topbar-page-title {
   margin: 0.15rem 0 0;
   color: var(--clinical-ink);
   font-size: 1.05rem;
@@ -916,81 +912,78 @@ html.dark .shc-public-layout > .shc-announcement {
   --portal-control-radius: var(--clinical-radius-sm);
 }
 
-.clinical-portal .glass-panel,
 .clinical-portal .navy-card,
 .clinical-portal .premium-card,
 .clinical-portal [class*="bg-[#0"],
 .clinical-portal [class*="bg-[#1"] {
-  background: var(--clinical-surface) !important;
-  background-image: none !important;
-  border-color: var(--clinical-line) !important;
-  box-shadow: var(--clinical-shadow-tight) !important;
-  color: var(--clinical-ink) !important;
+  background: var(--clinical-surface);
+  background-image: none;
+  border-color: var(--clinical-line);
+  box-shadow: var(--clinical-shadow-tight);
+  color: var(--clinical-ink);
 }
 
 .clinical-portal [class*="bg-gradient"],
 .clinical-portal [class*="from-[#"],
 .clinical-portal [class*="to-[#"] {
-  background-image: none !important;
+  background-image: none;
 }
 
 .clinical-portal [class*="text-white"],
 .clinical-portal [class*="text-[#eefbff]"],
 .clinical-portal [class*="text-[#c"] {
-  color: var(--clinical-ink) !important;
+  color: var(--clinical-ink);
 }
 
 .clinical-portal [class*="text-[#00FFD1]"],
 .clinical-portal [class*="text-[#4AA4E0]"],
 .clinical-portal [class*="text-[#0B5C9A]"] {
-  color: var(--clinical-primary) !important;
+  color: var(--clinical-primary);
 }
 
-.clinical-portal .brand-gradient-text,
 .clinical-portal .hero-gradient-text {
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   max-width: 100%;
   margin: 0;
-  padding: 0 !important;
-  background: none !important;
-  background-clip: initial !important;
-  -webkit-background-clip: initial !important;
-  filter: none !important;
-  color: var(--clinical-ink) !important;
-  -webkit-text-fill-color: currentColor !important;
-  font-family: var(--clinical-ui) !important;
-  font-size: var(--portal-title-size) !important;
-  font-weight: 760 !important;
-  letter-spacing: -0.02em !important;
-  line-height: 1.22 !important;
-  text-shadow: none !important;
+  padding: 0;
+  background: none;
+  background-clip: initial;
+  -webkit-background-clip: initial;
+  filter: none;
+  color: var(--clinical-ink);
+  -webkit-text-fill-color: currentColor;
+  font-family: var(--clinical-ui);
+  font-size: var(--portal-title-size);
+  font-weight: 760;
+  letter-spacing: -0.02em;
+  line-height: 1.22;
+  text-shadow: none;
   text-wrap: balance;
 }
 
 .clinical-portal h2,
 .clinical-portal [class~="text-lg"] {
-  font-size: var(--portal-section-title-size) !important;
-  line-height: 1.35 !important;
+  font-size: var(--portal-section-title-size);
+  line-height: 1.35;
 }
 
 .clinical-portal [class~="text-xl"] {
-  font-size: 1.12rem !important;
-  line-height: 1.28 !important;
+  font-size: 1.12rem;
+  line-height: 1.28;
 }
 
 .clinical-portal [class~="text-2xl"] {
-  font-size: 1.24rem !important;
-  line-height: 1.25 !important;
+  font-size: 1.24rem;
+  line-height: 1.25;
 }
 
 .clinical-portal [class~="text-3xl"] {
-  font-size: 1.58rem !important;
-  line-height: 1.18 !important;
+  font-size: 1.58rem;
+  line-height: 1.18;
 }
 
-.clinical-portal .brand-gradient-text svg,
 .clinical-portal .hero-gradient-text svg {
   width: 1.12rem;
   height: 1.12rem;
@@ -1000,7 +993,7 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .clinical-portal [class*="border-white"],
 .clinical-portal [class*="border-[#"] {
-  border-color: var(--clinical-line) !important;
+  border-color: var(--clinical-line);
 }
 
 .clinical-portal input,
@@ -1008,10 +1001,10 @@ html.dark .shc-public-layout > .shc-announcement {
 .clinical-portal textarea,
 .portal-input {
   width: 100%;
-  border-color: var(--clinical-line-strong) !important;
-  background: var(--clinical-surface) !important;
-  color: var(--clinical-ink) !important;
-  box-shadow: none !important;
+  border-color: var(--clinical-line-strong);
+  background: var(--clinical-surface);
+  color: var(--clinical-ink);
+  box-shadow: none;
 }
 
 .clinical-portal .portal-input,
@@ -1019,36 +1012,36 @@ html.dark .shc-public-layout > .shc-announcement {
 .clinical-portal select.portal-input,
 .clinical-portal textarea.portal-input {
   min-height: var(--portal-control-height);
-  border: 1px solid var(--clinical-line-strong) !important;
-  border-radius: var(--portal-control-radius) !important;
-  padding: 0 0.86rem !important;
-  font-family: var(--clinical-ui) !important;
-  font-size: 0.875rem !important;
+  border: 1px solid var(--clinical-line-strong);
+  border-radius: var(--portal-control-radius);
+  padding: 0 0.86rem;
+  font-family: var(--clinical-ui);
+  font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.25rem;
 }
 
 .clinical-portal textarea.portal-input {
   min-height: 6rem;
-  padding: 0.74rem 0.86rem !important;
+  padding: 0.74rem 0.86rem;
   line-height: 1.5;
 }
 
 .clinical-portal select.portal-input {
-  padding-right: 2rem !important;
+  padding-right: 2rem;
 }
 
 .clinical-portal input::placeholder,
 .clinical-portal textarea::placeholder {
-  color: var(--clinical-faint) !important;
+  color: var(--clinical-faint);
 }
 
 .clinical-portal input:focus,
 .clinical-portal select:focus,
 .clinical-portal textarea:focus,
 .portal-input:focus {
-  border-color: var(--clinical-primary) !important;
-  box-shadow: 0 0 0 3px var(--clinical-focus) !important;
+  border-color: var(--clinical-primary);
+  box-shadow: 0 0 0 3px var(--clinical-focus);
 }
 
 .clinical-portal .portal-search-field {
@@ -1058,47 +1051,25 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .clinical-portal .portal-search-field svg {
   position: absolute;
-  left: 0.9rem !important;
-  top: 50% !important;
+  left: 0.9rem;
+  top: 50%;
   z-index: 1;
   width: 1rem;
   height: 1rem;
-  transform: translateY(-50%) !important;
-  color: var(--clinical-faint) !important;
+  transform: translateY(-50%);
+  color: var(--clinical-faint);
   pointer-events: none;
 }
 
 .clinical-portal .portal-search-field .portal-input,
 .clinical-portal .portal-input[class~="pl-10"] {
-  padding-left: 2.7rem !important;
-}
-
-.clinical-portal .premium-button {
-  min-height: 2.5rem;
-  border-radius: var(--clinical-radius-sm) !important;
-  padding: 0.58rem 0.95rem !important;
-  background: var(--clinical-action) !important;
-  border: 1px solid var(--clinical-action) !important;
-  color: #ffffff !important;
-  box-shadow: none !important;
-  font-size: 0.84rem !important;
-  font-weight: 720 !important;
-  letter-spacing: 0 !important;
-  line-height: 1.2;
-  text-transform: none !important;
-}
-
-.clinical-portal .premium-button:hover {
-  transform: translateY(-1px) !important;
-  background: var(--clinical-action-hover) !important;
-  border-color: var(--clinical-action-hover) !important;
-  box-shadow: var(--clinical-shadow-tight) !important;
+  padding-left: 2.7rem;
 }
 
 .clinical-portal [class*="shadow-[0_"],
 .clinical-portal [class*="animate-pulse"] {
-  box-shadow: none !important;
-  animation: none !important;
+  box-shadow: none;
+  animation: none;
 }
 
 .clinical-portal table {
@@ -1108,12 +1079,12 @@ html.dark .shc-public-layout > .shc-announcement {
 
 .clinical-portal th,
 .clinical-portal td {
-  padding: 0.82rem 1rem !important;
+  padding: 0.82rem 1rem;
 }
 
 .clinical-portal th {
-  color: var(--clinical-muted) !important;
-  font-size: 0.72rem !important;
+  color: var(--clinical-muted);
+  font-size: 0.72rem;
   font-weight: 740;
   letter-spacing: 0.035em;
 }
@@ -1163,11 +1134,11 @@ html.dark .shc-public-layout > .shc-announcement {
     padding: 0.6rem 0.85rem;
   }
 
-  .clinical-topbar-title p {
+  .clinical-topbar-title .clinical-topbar-context {
     display: none;
   }
 
-  .clinical-topbar-title h1 {
+  .clinical-topbar-title .clinical-topbar-page-title {
     max-width: 13rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1178,8 +1149,7 @@ html.dark .shc-public-layout > .shc-announcement {
     padding: 0.85rem;
   }
 
-  .clinical-user-trigger > svg,
-  .clinical-user-trigger > span {
+  .clinical-user-trigger > svg {
     display: none;
   }
 }
@@ -1219,18 +1189,18 @@ html.dark .shc-public-layout > .shc-announcement {
 html:not(.dark) body,
 html.dark body,
 body {
-  background-color: var(--clinical-canvas) !important;
-  background-image: none !important;
-  background-attachment: scroll !important;
+  background-color: var(--clinical-canvas);
+  background-image: none;
+  background-attachment: scroll;
 }
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
   }
 }

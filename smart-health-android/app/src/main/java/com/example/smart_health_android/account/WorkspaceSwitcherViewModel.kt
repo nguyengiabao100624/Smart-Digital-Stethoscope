@@ -8,8 +8,10 @@ import com.example.smart_health_android.data.SmartHealthRepository
 import com.example.smart_health_android.data.WorkspaceSummary
 import java.io.IOException
 import java.util.UUID
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -38,6 +40,17 @@ sealed interface WorkspaceSwitcherAction {
     data class Switch(val workspaceId: String) : WorkspaceSwitcherAction
 }
 
+sealed interface WorkspaceSwitcherEffect {
+    data class WorkspaceConfirmed(
+        val user: AuthUser,
+        val workspaceId: String,
+    ) : WorkspaceSwitcherEffect
+
+    data class ReauthorizationRequired(
+        val expectedWorkspaceId: String,
+    ) : WorkspaceSwitcherEffect
+}
+
 interface WorkspaceSwitcherRepository {
     suspend fun getCurrentUser(): AuthUser
     suspend fun switchWorkspace(workspaceId: String, idempotencyKey: String): AuthUser
@@ -55,6 +68,9 @@ class WorkspaceSwitcherViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(WorkspaceSwitcherUiState())
     val uiState = _uiState.asStateFlow()
+
+    private val _effects = Channel<WorkspaceSwitcherEffect>(capacity = Channel.BUFFERED)
+    val effects = _effects.receiveAsFlow()
 
     init {
         load()
@@ -120,41 +136,80 @@ class WorkspaceSwitcherViewModel(
             )
         }
         viewModelScope.launch {
-            runCatching { repository.switchWorkspace(workspaceId, key) }
-                .onSuccess { user ->
-                    val confirmedId = user.confirmedWorkspaceId()
-                    if (confirmedId != workspaceId) {
-                        _uiState.update {
-                            it.copy(
-                                switchingWorkspaceId = "",
-                                errorMessage = "Máy chủ chưa xác nhận workspace đã chọn.",
-                            )
-                        }
-                        return@onSuccess
-                    }
-                    val refreshed = user.workspaceOptions()
-                    _uiState.update {
-                        it.copy(
-                            loadState = WorkspaceLoadState.Ready,
-                            workspaces = refreshed.ifEmpty { state.workspaces },
-                            currentWorkspaceId = confirmedId,
-                            switchingWorkspaceId = "",
-                            errorMessage = "",
-                            confirmationMessage = workspace.name.ifBlank { workspace.id },
-                            switchTargetId = "",
-                            switchIdempotencyKey = "",
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            switchingWorkspaceId = "",
-                            errorMessage = error.message.orEmpty(),
-                        )
-                    }
-                }
+            val result = runCatching { repository.switchWorkspace(workspaceId, key) }
+            val responseUser = result.getOrNull()
+            if (responseUser?.confirmedWorkspaceId() == workspaceId) {
+                applyConfirmedSwitch(responseUser, workspace, state)
+                return@launch
+            }
+            reconcileAmbiguousSwitch(
+                expectedWorkspaceId = workspaceId,
+                workspace = workspace,
+                previousState = state,
+                originalError = result.exceptionOrNull(),
+            )
         }
+    }
+
+    private suspend fun reconcileAmbiguousSwitch(
+        expectedWorkspaceId: String,
+        workspace: WorkspaceSummary,
+        previousState: WorkspaceSwitcherUiState,
+        originalError: Throwable?,
+    ) {
+        val reconciledUser = runCatching { repository.getCurrentUser() }.getOrNull()
+        when (reconciledUser?.confirmedWorkspaceId()) {
+            expectedWorkspaceId -> {
+                applyConfirmedSwitch(reconciledUser, workspace, previousState)
+            }
+            previousState.currentWorkspaceId -> {
+                _uiState.update {
+                    it.copy(
+                        switchingWorkspaceId = "",
+                        errorMessage = originalError?.message
+                            ?: "Máy chủ chưa xác nhận workspace đã chọn. Workspace cũ vẫn đang hoạt động.",
+                    )
+                }
+            }
+            else -> {
+                _uiState.update {
+                    it.copy(
+                        switchingWorkspaceId = "",
+                        errorMessage = "Chưa thể xác minh workspace hiện tại. Shcare sẽ xác minh lại phiên trước khi hiển thị dữ liệu.",
+                    )
+                }
+                _effects.trySend(
+                    WorkspaceSwitcherEffect.ReauthorizationRequired(expectedWorkspaceId),
+                )
+            }
+        }
+    }
+
+    private fun applyConfirmedSwitch(
+        user: AuthUser,
+        workspace: WorkspaceSummary,
+        previousState: WorkspaceSwitcherUiState,
+    ) {
+        val confirmedId = user.confirmedWorkspaceId()
+        val refreshed = user.workspaceOptions()
+        _uiState.update {
+            it.copy(
+                loadState = WorkspaceLoadState.Ready,
+                workspaces = refreshed.ifEmpty { previousState.workspaces },
+                currentWorkspaceId = confirmedId,
+                switchingWorkspaceId = "",
+                errorMessage = "",
+                confirmationMessage = workspace.name.ifBlank { workspace.id },
+                switchTargetId = "",
+                switchIdempotencyKey = "",
+            )
+        }
+        _effects.trySend(
+            WorkspaceSwitcherEffect.WorkspaceConfirmed(
+                user = user,
+                workspaceId = confirmedId,
+            ),
+        )
     }
 
     private fun applyUser(user: AuthUser) {

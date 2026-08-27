@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-ota-response.schema.json",
+  "title": "Shcare signed OTA acceptance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "ota", "command", "delivery"],
+  "properties": {
+    "device": { "$ref": "device-operation-common.schema.json#/$defs/publicDevice" },
+    "ota": {
+      "oneOf": [
+        { "$ref": "device-operation-common.schema.json#/$defs/ota" },
+        { "type": "null" }
+      ]
+    },
+    "command": {
+      "allOf": [
+        { "$ref": "device-operation-common.schema.json#/$defs/command" },
+        { "properties": { "type": { "const": "ota.update" } } }
+      ]
+    },
+    "delivery": { "$ref": "device-operation-common.schema.json#/$defs/delivery" },
+    "responseStatus": { "const": 202 },
+    "idempotent": { "const": true }
+  },
+  "oneOf": [
+    { "required": ["responseStatus"], "not": { "required": ["idempotent"] } },
+    { "required": ["idempotent"], "not": { "required": ["responseStatus"] } }
+  ],
+  "x-shcare-success-levels": {
+    "accepted": "signed-manifest-and-command-durably-reserved",
+    "delivered": "command-delivered-to-authenticated-device-transport",
+    "confirmed": "device-authenticated-on-a-new-session-with-requested-version-and-confirmed-boot-health"
+  },
+  "x-shcare-sensitive-fields-excluded": ["url", "downloadUrl", "downloadAuthorization", "signature", "token", "tokenHash", "privateKey"]
+}

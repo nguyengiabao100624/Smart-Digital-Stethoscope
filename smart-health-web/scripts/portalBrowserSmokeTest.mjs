@@ -102,8 +102,20 @@ async function waitSettled(page) {
 
 async function selectRadixOption(page, triggerSelector, optionName) {
   const trigger = page.locator(triggerSelector);
+  const tagName = await trigger.evaluate((element) => element.tagName);
+  if (tagName === "SELECT") {
+    await trigger.selectOption({ label: optionName });
+    return;
+  }
+
   await trigger.click();
-  await page.getByRole("option", { name: optionName, exact: true }).click();
+  // Radix mirrors its values into a visually hidden native <select> so forms
+  // still work. Target the rendered menu item explicitly; getByRole("option")
+  // can otherwise resolve to that hidden native <option> and wait forever.
+  const renderedOption = page
+    .locator('[role="option"]:visible')
+    .filter({ hasText: optionName });
+  await renderedOption.click();
 }
 
 async function assertNoPortalError(page, label) {
@@ -190,6 +202,7 @@ async function verifyPopoverLayer(page, triggerSelector, label) {
       backdropFilter,
       webkitBackdropFilter,
       background: popoverStyle.background,
+      backgroundColor: popoverStyle.backgroundColor,
       topbarZIndex: getComputedStyle(document.querySelector(".clinical-topbar"))
         .zIndex,
       contentZIndex: getComputedStyle(
@@ -203,11 +216,14 @@ async function verifyPopoverLayer(page, triggerSelector, label) {
     throw new Error(`${label}: popover is occluded ${JSON.stringify(result)}`);
   }
   if (
-    !/blur\(/i.test(result.backdropFilter || "") &&
-    !/blur\(/i.test(result.webkitBackdropFilter || "")
+    !result.backgroundColor ||
+    result.backgroundColor === "transparent" ||
+    /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/i.test(
+      result.backgroundColor,
+    )
   ) {
     throw new Error(
-      `${label}: popover is missing backdrop blur ${JSON.stringify(result)}`,
+      `${label}: popover has no readable surface ${JSON.stringify(result)}`,
     );
   }
   await page
@@ -244,6 +260,12 @@ async function verifyWorkspaceSwitcherSurface(page) {
     return cards.map((card) => ({
       id: card.getAttribute("data-workspace-card") || "",
       active: card.getAttribute("data-workspace-active") === "true",
+      operational:
+        card.getAttribute("data-workspace-operational") === "true",
+      metrics:
+        card.querySelector("[data-workspace-metrics]")?.getAttribute(
+          "data-workspace-metrics",
+        ) || "available",
       patientCount:
         card
           .querySelector("[data-workspace-patient-count]")
@@ -262,6 +284,7 @@ async function verifyWorkspaceSwitcherSurface(page) {
     throw new Error("workspace switcher: no workspace cards rendered");
   }
   for (const card of result) {
+    if (!card.operational || card.metrics === "unavailable") continue;
     for (const field of ["patientCount", "deviceOnline", "alertCount"]) {
       if (!/^\d+$/.test(String(card[field]))) {
         throw new Error(
@@ -270,11 +293,22 @@ async function verifyWorkspaceSwitcherSurface(page) {
       }
     }
   }
+  const activeCards = result.filter((card) => card.active);
+  if (
+    activeCards.length !== 1 ||
+    !activeCards[0].operational
+  ) {
+    throw new Error(
+      `workspace switcher: expected one operational active workspace, received ${JSON.stringify(
+        activeCards,
+      )}`,
+    );
+  }
   return {
     label: "workspace switcher summary",
     path: new URL(page.url()).pathname,
     cards: result.length,
-    activeCards: result.filter((card) => card.active).length,
+    activeCards: activeCards.length,
   };
 }
 
@@ -323,7 +357,17 @@ async function verifyConsentSurface(page) {
   await page.waitForSelector("#share-patient-id", { timeout: 20_000 });
   await page.waitForSelector("#share-target-doctor", { timeout: 20_000 });
   await page.waitForSelector("#share-target-workspace", { timeout: 20_000 });
-  await page.waitForSelector("#share-target-id", { timeout: 20_000 });
+  try {
+    await page.waitForSelector("#share-target-id", { timeout: 20_000 });
+  } catch (error) {
+    const alerts = await page
+      .locator('main [role="alert"]')
+      .allInnerTexts()
+      .catch(() => []);
+    throw new Error(
+      `consent target control unavailable: ${JSON.stringify(alerts)}; ${error.message}`,
+    );
+  }
   await page.waitForSelector("#share-scope", { timeout: 20_000 });
   await page.waitForSelector("#share-expires-at", { timeout: 20_000 });
   await page.waitForSelector("#share-create-submit", { timeout: 20_000 });

@@ -1,22 +1,96 @@
 # Smart Health - Project Index
 
-Last updated: 2026-07-23
+## Current G3 provisioning pointer — ESPTouch V2 dual-band router flow
+
+- Android source of truth: `smart-health-android/app/src/main/java/com/example/smart_health_android/devices/DeviceWifiProvisioner.kt`; it selects the exact 2.4 GHz BSSID for the current combined-router SSID with Android `WifiNetworkSpecifier` and broadcasts ESPTouch V2 AES-128. It has no BLE, ESP SoftAP, local HTTP `192.168.4.1`, browser or Settings workflow.
+- Current proof: focused 37 Android tests, `:app:lintDebug`, `:app:assembleLocalDemoDebug`, merged-manifest inspection (no Bluetooth/nearby-device permission) and Xiaomi install passed. Installed APK SHA-256: `30002978605139CA73B8618479DE72CBF2DFBC32E8DF7A9228A83A8EB3696C5D`.
+- Open evidence only: secure on-device password entry/system confirmation, ESPTouch listener, association/DHCP, authenticated WSS, command ACK, audio-v2, durable scan, signed OTA and rollback. Do not close G3 or begin G4.
+
+## Latest ESPTouch V2 hardware checkpoint
+
+- COM9 normal firmware SHA-256 `623072C1A59C05312F318712A99E0570806DBCE1814A7E637236C0C89516B647` is flashed with esptool write verification; its OTA counterpart is `AFAA53C90A3B5F0C13AA8470500AE91FA6AC7ECCF042EF6ACD3EE763F3CFE806`. Boot serial confirms the KDF golden-vector self-test and ESPTouch V2 listener.
+- Xiaomi has LAN APK SHA-256 `CB018EE8815FD0222D8B261B9A34820AE878083298ED01FC471A27C981A4F62C` installed.
+- This is not end-to-end provisioning proof: keyguard blocks the protected Wi-Fi field, therefore Broadcast, association/DHCP and WSS remain open.
+
+## Current integration pointer - G3 ESPTouch V2 Broadcast
+
+- Customer provisioning source: backend `web-monitor/src/deviceSmartConfigSecurity.js`, Android `devices/DeviceWifiProvisioner.kt`, and firmware `MSM261S4030H0/src/main.cpp`.
+- Contract: DeviceManage setup-session emits V2 AES-128 key + reserved Device-ID binding; Android broadcasts it on the current 2.4 GHz Wi-Fi; firmware checks binding, association/DHCP, then WSS presence is final confirmation.
+- Current evidence is source/build only: backend device security `83/83`, Android main/test compile plus focused V2 unit test, and ESP32-S3 normal build. COM9 flash, Xiaomi APK and end-to-end HIL are still open; G3 is active and G4 is pending.
+
+## Current integration pointer - G3 SoftAP physical chain
+
+- Plan: [SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G0-G2 complete, G3 active, G4 pending.
+- Android source: `smart-health-android/app/src/main/java/com/example/smart_health_android/devices/DevicePairingViewModel.kt` and `ui/screens/DevicePairingScreen.kt`. The Wi-Fi form opens SSID/password directly; reading the current SSID is an explicit helper action so no system permission dialog overlays initial entry.
+- Fresh proof: Android unit `856/856`, lint `0` errors / `3` warnings, Xiaomi `PhysicalDeviceProvisioningHilTest` `OK (1 test)`, backend device-security `83/83`, setup security `3/3`, firmware source/normal/OTA builds. LAN APK `00BC681014D3A0CBB73DC6575B1621B9A64A75491359480447A5AF32231EFA3F` is installed.
+- Hardware: COM9 is ESP32-S3 rev 0.2 with 16 MB flash and 8 MB PSRAM. Current SoftAP firmware is flashed with verified writes. Next boundary is target password entered only in the on-device field, followed by physical association/WSS/ACK/audio-v2/durable-scan/OTA rollback evidence.
+
+Last updated: 2026-08-26
+
+## Current integration pointer — G3 physical claim proof
+
+- Plan: [SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G0–G2 complete, G3 active, G4 pending.
+- Latest physical gates: `smart-health-android/.../devices/PhysicalDeviceBleClaimHilTest.kt` (`1/1` canonical claim) and `CurrentWifiSsidHilTest.kt` (`1/1` current SSID); focused JVM pairing/BLE contract proof `38/38`.
+- Firmware identity: `smart-health-embedded/MSM261S4030H0/platformio.ini` uses the checked 16-MB OTA table; a COM9 read-only probe confirms the attached ESP32-S3 rev v0.2 has 16 MB flash. No upload was performed in the verification.
+- Next boundary: normal Android Nearby Bluetooth permission, then encrypted BLE provisioning and server/device evidence. Never place pairing artifact values or a Wi-Fi password in source, commands or handoff notes.
+
+## Current integration pointer — G3 QR gallery input
+
+- Plan: [SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G0–G2 complete, G3 active, G4 pending.
+- Android source: `smart-health-android/app/src/main/java/com/example/smart_health_android/devices/DeviceQrImageDecoder.kt`, `DevicePairingViewModel.kt`, and `ui/screens/DevicePairingScreen.kt`.
+- Resume proof and limits: `SMART_HEALTH_ACTIVE_CHECKPOINT.md`; fresh pairing JVM `33/33`, the current LAN APK hash is `897775F474DB1EC306DED901B9985FC6234860851279322C73944898A558D34F`, and the Xiaomi must be unlocked for physical picker verification. Do not use `setup-access.json` or any Wi-Fi password as a user workflow.
 
 This is the fastest navigation file for `D:\Study\KLTN`. Read it before opening broad folders or scanning the whole workspace.
 
+Current master-plan state: Phase 0–3 complete; **Phase 4 — Device provisioning
+và command** in progress. The exact restart row and active remediation list live in
+`docs/SMART_HEALTH_ACTIVE_CHECKPOINT.md`; that file overrides older historical
+status paragraphs but never replaces `docs/SHCARE_REBUILD_MASTER_PLAN.md`.
+
+## Phase 4 Candidate Snapshot
+
+- Current source/build/local evidence: shared `44/44`; backend check and
+  device-security `42/42`; Web contracts `122/122`, claim `10/10`, device-route
+  subset `8/8`; Admin `183/183`; Android `108` suites / `781` tests, devices
+  `48/48`, main/AndroidTest compile, lint and assemble. Android APK SHA-256 is
+  `F32C7C3A85E40A217ACC8AEEC2DDF6DD0DA6694FA69B53BC4AF94263DD6828FE`.
+- Firmware source-contract and MCU compile-only (`0` executed) pass. Normal and
+  OTA images are both `1,104,640` bytes with SHA-256
+  `CB2B0A8749697FEEB14F4720E64A0CF8629109CDF6377784B7DB7F6CB2BAA7B5` and
+  `CA79DE814DAC8D6BB3A48EB87F80E6ADDF331C62009129C013C250F30A074801`.
+  Independent re-review found no remaining blocker in the four-item firmware
+  remediation scope; prior firmware hashes are superseded pre-remediation proof.
+- Phase 4 remains in progress because cross-surface review reopened five P1s:
+  generic Admin command must exclude revoke/rotate/OTA/audio types; SQL pair
+  must share the ownership lock/current row; pair contract + Portal + Android
+  must bind exact active workspace and receipt/poll authority; Admin revoke needs
+  a stable `Idempotency-Key`; shared/OpenAPI needs command/revoke/rotate/OTA
+  contracts.
+- Native C++ execution is unavailable because host `gcc/g++` and equivalents
+  are absent. HIL/flash/serial/I2S/WSS/rollback/16 MB proof remains
+  `DEFERRED — chờ phần cứng`.
+
 ## Start Here
+
+Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform
+Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Restart authority:
+**[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
 
 Read in this order:
 
-1. `docs/SMART_HEALTH_CONTEXT_NEW_CHAT.md` - current state, product direction, latest verified work.
-2. `docs/SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` - accepted rebuild plan execution order, bug ledger, cross-surface impact records, proof classes and current phase evidence.
-3. `docs/SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md` - KLTN/report gate, required evidence, what to finish before more product development.
-4. `docs/khoaluan/README.md` - KLTN contract pack: unified system contract, audio packet/WebSocket contract, demo evidence checklist, and gap/test matrix.
-5. `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` - broad prompt ledger, product invariants, closed slices, blockers, and next non-repeated slice.
-6. `docs/SMART_HEALTH_IMPLEMENTATION_STATUS.md` - what is real, partial, scaffold, or still missing.
-7. `docs/SMART_HEALTH_PRODUCTION_BACKLOG.md` - next production slices in priority order.
-8. `docs/SMART_HEALTH_COMMANDS_GUIDE.md` - commands, envs, smoke tests, deploy notes.
-9. `docs/SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` - Vietnamese operational setup checklist.
+1. `docs/SMART_HEALTH_ACTIVE_CHECKPOINT.md` - current unfinished row and the
+   exact restart point after quota exhaustion, compaction or power-off.
+2. `docs/SHCARE_REBUILD_MASTER_PLAN.md` - the complete, user-approved governing
+   plan; do not replace it with an internal slice label or a narrower plan.
+3. `docs/SMART_HEALTH_CONTEXT_NEW_CHAT.md` - current state, product direction, latest verified work.
+4. `docs/SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` - accepted rebuild plan execution order, bug ledger, cross-surface impact records, proof classes and current phase evidence.
+5. `docs/SMART_HEALTH_KLTN_REPORT_COMPLETION_PLAN.md` - KLTN/report gate, required evidence, what to finish before more product development.
+6. `docs/khoaluan/README.md` - KLTN contract pack: unified system contract, audio packet/WebSocket contract, demo evidence checklist, and gap/test matrix.
+7. `docs/SMART_HEALTH_PROMPT_REQUIREMENTS_HANDOFF.md` - broad prompt ledger, product invariants, closed slices, blockers, and next non-repeated slice.
+8. `docs/SMART_HEALTH_IMPLEMENTATION_STATUS.md` - what is real, partial, scaffold, or still missing.
+9. `docs/SMART_HEALTH_PRODUCTION_BACKLOG.md` - next production slices in priority order.
+10. `docs/SMART_HEALTH_COMMANDS_GUIDE.md` - commands, envs, smoke tests, deploy notes.
+11. `docs/SMART_HEALTH_NEXT_DAY_SETUP_GUIDE.md` - Vietnamese operational setup checklist.
 
 For product decisions, also read:
 
@@ -65,7 +139,19 @@ Backend `smart-health-embedded/web-monitor` now has `npm.cmd run smoke:klt-contr
 
 ## Current Latest State
 
-- The accepted whole-system rebuild has closed Phase 5 and the Phase 6–7 consent/settings, package/storage, staff, Clinics/Workspace, Notifications, Overview D1, Storage D2A, Patient CRUD D2B, Patient Import D2C and Audit/Export D2D slices at source/build/local/targeted-browser level. The bundled JSON tenant mismatch and dangling patient-owner reference are now explicitly remediated and audited; the identity-migration gate passes. Audit/Export still carries an explicitly documented full Portal route-smoke harness gap, while active work continues from the next reproduced Admin/Portal truthfulness gap. Phase 4B plus live PostgreSQL/Redis/provider, Android runtime/device and physical firmware proof remain explicitly `BLOCKED`; no deployment is implied. Use `SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` for exact evidence and blockers.
+- The governing plan is **“Kế hoạch tái thiết toàn diện Shcare Web, Portal,
+  Platform Admin, Android và firmware”**. The only user-visible progress model
+  is Phase 0–8: Phase 0–3 are complete; **Phase 4 is in progress**; Phase 5–8
+  remain pending. Resume the five active P1 remediations in the candidate
+  snapshot; do not reopen earlier phases without a reproduced regression.
+
+- Historical pre-rebaseline slices labeled Phase 5/6–7 in the older ledger are
+  retained as source/build/local evidence only; they do not advance the current
+  master-plan overview beyond Phase 4. Their tenant remediation, contract and
+  targeted-browser proof remains reusable, while live migration/promotion,
+  PostgreSQL/Redis/provider, Android runtime/device and physical firmware proof
+  remain separate. Use `SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` for the exact
+  historical evidence and blockers.
 - Firebase Auth is the identity provider across Android, Web Admin, and Shcare Portal.
 - Current Render backend is `https://smart-health-api-r5is.onrender.com` (`/api` base `https://smart-health-api-r5is.onrender.com/api`). The previous `smart-health-api-xj0a` workspace hit the free outbound bandwidth limit and is no longer the active production URL.
 - Render, Firebase Hosting/Auth, Supabase Postgres, and Supabase S3-compatible storage were already set up earlier; do not ask to recreate Firebase/Supabase from scratch. Render was recreated in the new workspace on 2026-07-09 because Render does not support direct service transfer between workspaces.
@@ -81,7 +167,7 @@ Backend `smart-health-embedded/web-monitor` now has `npm.cmd run smoke:klt-contr
 - Shcare Portal login no longer exposes raw Firebase `auth/invalid-credential` errors. Invalid credentials render safe Vietnamese guidance and platform-admin accounts are directed to `shcare-admin.web.app`.
 - Live authenticated portal API smoke is available through `npm.cmd run smoke:portal-production` after `npm.cmd run smoke:production-roles`; it verifies platform portal rejection plus workspace-admin and doctor read paths against Render.
 - Authenticated Chrome smoke on the deployed `shcare.web.app` confirmed workspace-admin and doctor read routes without runtime console warnings; portal form controls now have stable `id`/`name` attributes.
-- Live `bun run smoke:portal-browser` and `bun run smoke:portal-mutation` pass against `https://shcare.web.app`. Mutation coverage creates/updates/deletes a controlled patient, provisions/claims/assigns/restores/cleans a device, creates/reads/deletes a notification, saves/restores workspace settings and notification preferences, exports CSV, submits/cleans a support ticket, checks expected 404 states, logs out, and logs back in. A custom no-query-leak smoke also confirms pre-hydration/native form submit does not expose credentials in URL query strings.
+- The 2026-07-09 live `bun run smoke:portal-browser` and `bun run smoke:portal-mutation` evidence remains historical for the then-current implementation. Its “support cleanup” deleted a synthetic self-notification and is **not** evidence for the new durable support ledger. The current smoke still covers the other controlled create/restore/delete flows, but support creation is skipped by default until a requester withdrawal/cleanup contract exists; explicit durable-ticket opt-in must report cleanup as blocked. A custom no-query-leak smoke also confirmed pre-hydration/native form submit did not expose credentials in URL query strings.
 - Live `npm.cmd run smoke:admin-mutation` passes from `smart-health-admin\thiết kế giao diện` after refreshing production role credentials. It covers controlled Web Admin workspace/package/patient/device/notification/storage/settings mutations against live Render/Admin and cleans up every created/restored resource.
 - Web Admin lint is warning-free after the Fast Refresh mixed-export cleanup; PDF export font bloat was moved out of TypeScript bundles into `public/fonts/roboto-regular.ttf`.
 - Follow-up on 2026-07-09 filled the Shcare Portal `/portal/settings` gap and is now live on `shcare.web.app`: the route includes profile, avatar, password, 2FA, sessions, notification preferences, and workspace settings backed by `/me/*` and `/auth/sessions`. Verification passed locally with `bunx tsc --noEmit`, `bun run lint`, `bun run build`, `SMOKE_DISABLE_WEB_SECURITY=1 bun run smoke:portal-browser`, and local mutation run `portal-mutation-mrclhqx7`; then `bun run build:firebase`, Firebase Hosting deploy target `webapp`, live `bun run smoke:portal-browser`, and live `bun run smoke:portal-mutation` run `portal-mutation-mrclugrb` passed without the local CORS bypass flag.
@@ -158,7 +244,7 @@ Shcare Web:
 ```powershell
 cd D:\Study\KLTN\smart-health-web
 bun run lint
-bunx tsc --noEmit --pretty false
+.\node_modules\.bin\tsc.cmd --noEmit --pretty false
 bun run test:auth
 bun run test:contracts
 bun run build:firebase
@@ -280,6 +366,37 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - The full Portal route smoke is not claimed green: after obsolete selectors were repaired, the third rerun ended on dev-server timeout/`ERR_CONNECTION_REFUSED` before a product assertion. Portal `bun audit` reports 5 advisories (1 high, 3 moderate, 1 low); this harness/dependency evidence remains visible rather than being called complete.
 - No live migration 043, live database/provider, authenticated preview/live artifact download or deployment is implied. Android workspace/platform audit UI is `N/A`; personal export/access-history is a separate native Settings/Security slice. Firmware is `N/A`.
 
+### 2026-07-29 Phase 2 Public Web UI foundation checkpoint
+
+- Authoritative continuity remains `docs/SMART_HEALTH_CONTEXT_NEW_CHAT.md`,
+  `docs/SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` and the current diff under
+  **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**.
+- All `22` Public RouteContract routes pass the canonical local browser matrix
+  across five viewports and light/dark/system: `5,325/5,325` checks. Web
+  contracts pass `99/99`; Prettier, TypeScript, ESLint and client/SSR build pass.
+- Public source/build/local-browser foundation is closed; Auth, remaining
+  Platform Admin, independent Android adaptive/runtime, preview/live/provider,
+  physical device and firmware-HIL proof remain open or `BLOCKED`.
+- After interruption, resume with Auth shell/RouteContract UI-state foundation.
+  Do not rebuild Public or an older closure without a reproduced regression.
+
+### 2026-07-29 Phase 2 Auth UI/state foundation checkpoint
+
+- Continuity remains the named master plan, the latest handoff, the execution
+  ledger and the current diff. Global status remains **Phase 2 in progress**.
+- All `15` Auth RouteContract routes pass the canonical source/build/local
+  foundation: focused `5/5`, Auth/UI `211/211`, contracts `104/104`,
+  TypeScript/ESLint/build and Chromium `3,615/3,615` over five viewports and
+  light/dark/system.
+- Dedicated password-reset confirmation now verifies and confirms a Firebase
+  action code without exposing it. Anonymous approval and verification-delivery
+  copy no longer invent account/provider facts.
+- Firebase live link/provider/deploy, Android runtime/manual accessibility,
+  physical-device and firmware-HIL proof remain open or `BLOCKED`.
+- After interruption, keep Public/Auth and all older rows closed absent a
+  reproduced regression. Resume with Platform Admin UI-foundation census, then
+  independent Android adaptive/runtime evidence.
+
 ### 2026-07-23 Phase 8B/8C release-candidate checkpoint
 
 - Canonical release record:
@@ -296,3 +413,122 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - Active phase is intentional candidate commit/tag plus clean-worktree
   verification. PostgreSQL/provider preview/live, Android production
   signing/runtime and physical-board proof remain `BLOCKED`.
+
+## 2026-07-29 Phase 2 Platform Admin UI-foundation checkpoint
+
+- Platform Admin source/build/local-browser foundation is closed: Shcare shell/theme, command palette, offline and operational states, 44 px targets, reduced motion, canonical drawers, truthful Account 2FA/preferences and real direct-route permission proof.
+- Final evidence is contracts `169/169`, TypeScript/ESLint/client+SSR build, Chromium `225` visits over fifteen routes × five viewports × three themes, plus critical Firefox/WebKit mobile and desktop journeys. Aggregate browser proof is `241` route, `19` Account cleanup, `19` drawer, `25` state and `5` direct-denial checks.
+- Android remains an independently native track. Access Log source/local work is closed; Settings owner/workspace/capability/logout convergence is the current Phase 2 checkpoint. No Web/Admin layout is copied to Compose.
+- Preview/live/provider/database, Android runtime/manual TalkBack, physical device and firmware HIL are not implied and remain open or `BLOCKED`.
+
+## 2026-07-29 Phase 2 Android Settings and clinical-status checkpoint
+
+- Settings and the bounded clinical-status contract are closed for source/build/local proof. Backend passes clinical `4/4`, check and workspace access; Web passes contracts `105/105`, type/lint/client+SSR build plus notification-inbox browser `66/66` and Portal UI-foundation browser `1,374/1,374`; Android passes `78` suites and `449/449` tests, both Kotlin compile gates, AndroidTest compile, assemble and lint.
+- Android Settings now binds immutable UI state to the exact account/workspace/membership epoch, fails closed on authority changes, bounds stale PII to recoverable failures and clears authority before logout termination. Status endpoints expose health-only public data and exact-workspace authenticated clinical data.
+- APK evidence is `23,906,757` bytes with SHA-256 `D1611B9E51D4E7DBC39DFE4106D307C58641688040E8CC94BA90CB9A56456BDD`.
+- Firebase build/provider proof is `BLOCKED` by six absent `VITE_FIREBASE_*` variables. Android runtime/FCM/manual TalkBack/golden proof is `BLOCKED` because `google-services.json` and an attached ADB target are absent.
+- Continue Phase 2 with Patient Dashboard authority-bound native foundation. Keep full clinical live/stop-scan UI work in Phase 5. Deep Security Scan `1b48646c-c3fe-4835-9526-92177be380ae` remains separately `running/preflight` and untouched.
+
+## 2026-07-29 Phase 2 Patient Dashboard checkpoint
+
+- Patient Dashboard is closed for source/build/local proof under **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**; global status remains **Phase 2 in progress**.
+- Pure versioned `GET /api/v1/patient/dashboard` reads the canonical active-profile identity persisted only by accepted idempotent active-profile PATCH; owner/account/guardian plus exact-workspace access and strict scan/device isolation align through shared schema/fixture/OpenAPI and Android validation.
+- The independent native route uses immutable repository/ViewModel state, exact authority epoch, complete operational states, capability-gated typed actions, truthful presence/battery, adaptive 360/412/600/840 dp behavior and 48 dp/TalkBack semantics.
+- Proof: backend Patient Dashboard `7/7`, workspace-access/check/test; contracts `35/35`; Android focused `32/32`, full unit `473/473`, compile/AndroidTest compile/assemble/lint. APK `24,001,564` bytes, SHA-256 `BDD617D4E175892660720BD9944F0A6055B200DDE5A1FFD792BB1DD45ACC22AE`.
+- `google-services.json` and an ADB target are absent, so emulator/golden/manual TalkBack/FCM/live-provider/physical-device/hardware proof remains `BLOCKED`. Phase 5 owns remaining `scanIsNormal` debt in Dashboard, Medical Records and Record Detail. Deep Security remains untouched at `running/preflight`.
+
+## 2026-07-29 latest restart index — Patient Dashboard hardening
+
+- Governing plan: **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**.
+- Global status: Phase 0–1 complete; **Phase 2 in progress**; Phase 3–8 pending.
+- Canonical restart set: `SMART_HEALTH_CONTEXT_NEW_CHAT.md` latest section, `SMART_HEALTH_REBUILD_EXECUTION_LEDGER.md` latest row, current worktree diff, Android XML results and the current APK hash.
+- Superseding proof: backend Patient Dashboard `9/9` plus workspace/check/full/repository smokes; shared contracts `35/35`; Android focused `62/62`, full `487/487`, compile/AndroidTest compile/assemble/lint; APK `24,018,920` bytes, SHA-256 `751A9CDACB18B18D19C8CE88116D24B664451495FDFF2AC68EBD5BD9CF311C20`.
+- Closed facts: pure dashboard GET, no pre-acceptance profile bootstrap, exact/legacy-safe idempotency receipts, strict Android DTO types, retry-key retention and subject-epoch back-stack invalidation.
+- Resume by inventorying the next genuinely open Phase 2 Android-native foundation row. Do not repeat any closed row without reproducing a regression. Runtime/provider/device evidence remains `BLOCKED`; Deep Security remains untouched at `running/preflight`.
+
+## 2026-07-29 latest restart index — account password workflow closure
+
+- Governing plan remains **“Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware”**. Phase 0–1 are complete, **Phase 2 is in progress**, and Phase 3–8 are pending.
+- The cross-surface account password workflow is closed for source/build/local proof. Web Portal, Platform Admin and Android keep independent UI/UX, but share one versioned contract: client reauthentication only, one backend-owned idempotent mutation, exact untrimmed secrets, active account/workspace authority, an exact account-bound receipt, and logout only after that receipt.
+- Backend confirmation is operation-aware. A Firebase `auth/user-not-found` race after current-password proof cannot be reported as password-change success; `reset_password` requires `updated: true`, while already-missing remains valid only for delete semantics.
+- Fresh proof: backend Firebase/password bundle `22/22`, `check`, full smoke, repositories, workspace-access and KLT contract; shared password contracts `29/29`; Web Auth/UI `227/227` in 52 files, Web contracts `105/105`, lint, client+SSR build and Portal browser `1,374/1,374`; Admin contracts `175/175`, lint, client+SSR build and targeted dark desktop `/account` browser acceptance; Android `86` suites / `518/518`, both Kotlin compile gates, AndroidTest compile, assemble and lint.
+- Debug APK is `24,066,508` bytes, SHA-256 `5DC07A7E02A0F97FB62C80FBD1201EDBE5E3E2174F71F335FBCA053917DE9FD0`.
+- Restart authority is the latest `SMART_HEALTH_CONTEXT_NEW_CHAT.md` section, latest execution-ledger row, current diff and generated proof. Keep this and every earlier closure closed unless a current regression is reproduced. Inventory the seven explicitly tracked legacy direct-API Android screens before choosing the next bounded Phase 2 native row.
+- Live Firebase/PostgreSQL/provider proof, full Admin browser-matrix rerun, Android emulator/device/manual TalkBack/Remove Animations, production signing, physical device and firmware HIL remain open or `BLOCKED`. Deep Security remains separately untouched at `running/preflight`.
+
+## 2026-08-01 latest restart index — registration and role-request closure
+
+- Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**.
+- First restart pointer: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Global status: Phase 0–1 complete; **Phase 2 in progress**; Phase 3–8 pending. Registration/email verification/role request is closed for source/build/local proof and must not be repeated without a current reproduced regression.
+- Proof summary: Web `288/288` plus contracts/type/lint/build; backend role-document `13/13`, shared `38/38`, check/base/workspace/repositories; Android `579/579`, both compile gates, assemble/lint; APK SHA-256 `C0230EB545E4BFA34D9EE68857CC0FE9C6C1C2217783F3874557F08E338FE7E6`. Independent final reviews found no remaining P0/P1 in the changed scope.
+- Provider/runtime/device evidence remains open or `BLOCKED`. Resume from the active checkpoint, newest context/ledger, current diff and generated proof. The next row is Android Doctor Approval architecture-bound native foundation; SignUp follows, while clinical/audio screens remain Phase 5.
+
+## 2026-08-02 latest restart index — Doctor Approval closure
+
+- Governing plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. First restart pointer: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Global status: Phase 0–1 complete; **Phase 2 in progress**; Phase 3–8 pending. Doctor Approval and role-target authority are closed for source/build/local proof and are not to be repeated without a current reproduced regression.
+- Android proof: `95` suites / `611/611`, AndroidTest Kotlin compile, assemble/lint; APK `25,552,231` bytes, SHA-256 `84D99052B50E91282589F81DF94BDCC8BFF606CD410BC6E4CC84132364B216FA`. Shared contracts are `31/31`; backend check/test/workspace/repository gates pass. Independent reviews found no bounded P0/P1.
+- Runtime/provider/device evidence remains open or `BLOCKED`. P2 debt remains for a dedicated doctor-target field and atomic approval persistence.
+- Resume from SignUp in the active checkpoint. Web/Admin and Android UI/UX remain independent; Dashboard/Live/Records/New Scan remain Phase 5; Deep Security stays separate at `running/preflight`.
+
+## 2026-08-02 latest restart index — Android auth/session owner closure
+
+- Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Con trỏ đầu tiên khi restart: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Trạng thái toàn cục: Phase 0–1 đã hoàn tất; **Phase 2 vẫn đang thực hiện**; Phase 3–8 còn pending. Các đường auth/session đã sửa qua Splash/Login/SignUp/Verify/Doctor đóng ở mức source/build/local; không mở lại nếu chưa tái hiện regression.
+- Chốt chức năng: exact `FirebaseOwnerBinding`, năm P1 owner/termination/reauthorization/workspace-profile đã sửa, confirmation dùng đúng snapshot `MobileSessionAuthority`, same-identity/new-epoch bị từ chối và `AppNav` không còn global clear/terminate.
+- Bằng chứng: review độc lập P0/P1/P2 đều không còn trong các đường đã sửa; Android `98` suites / `655` tests, failures/errors/skipped `0`; build `4m43s` / `56` tasks; lint `43` warnings / `0` errors và `0` auth/session issue trong phạm vi; APK `24,172,920` bytes, SHA-256 `CEB6BFC23995B361AD0BD23B24F4F836E0464BCB215105C8A6EDE8BACDAC5F69`; diff check sạch.
+- P2 SignUp abandonment/back còn mở. Firebase/provider/navigation runtime vẫn `BLOCKED` vì thiếu `google-services.json` và ADB target.
+- Resume bằng kiểm toán hoàn tất Phase 2 foundation trên Web foundation và Android native foundation. Dashboard, Live, Medical Records, New Scan và audio vẫn thuộc Phase 5.
+
+## 2026-08-02 latest restart index — Web CSS A và Android adaptive foundation
+
+- Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. Restart đầu tiên tại **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Phase map: Phase 0–1 complete; **Phase 2 in progress**; Phase 3–8 pending.
+- Web evidence: retired selector consumers `0`, Portal opaque/no-blur and mobile-visible semantic `h1`; CSS debt `1,909 → 1,839`; contracts `112/112`, TypeScript/build/lint, Chromium Portal `1,374` checks and Public `5,325` checks pass.
+- Android evidence: typed compact/rail/two-pane shell, reusable Clinical Patients list/detail; `99` suites / `660/660`, AndroidTest compile, assemble/lint; APK SHA-256 `AF2E8648AF12B2F360B1AE2FA7DEC59386C52872185D4605001BC353F800F66B`.
+- Resume only remaining Phase 2 gaps: CSS consolidation plus Firefox/WebKit/visual/performance proof and Android resources/deep-link/testTag/large-font visual proof. Runtime/provider/device remains open or `BLOCKED`; Phase 5 clinical/audio scope is not pulled forward.
+
+## 2026-08-15 latest restart index — Phase 5 active
+
+- Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. First restart pointer: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Current phase map: Phase 0–4 complete at software/source/build/local gates; **Phase 5 in progress**; Phase 6–8 pending. Overall plan remains NOT PASS.
+- Phase 4 exit: OTA/repository `24/24`, private HTTP `8/8`, ownership/storage `67/67`, backend check; Android `109` suites / `793` tests plus build/lint and APK hash `DCEEEC05251FAE3AD475F5C1F4B41CA6D43E9728AC68C961553E57F9BAF47B34`; firmware source/production/OTA builds PASS.
+- Hardware HIL is `DEFERRED — chờ phần cứng`; Firebase/ADB/provider/native-gcc evidence remains separately `BLOCKED`. Do not reopen closed Phase 4 source rows solely because this evidence is unavailable.
+- Resume Phase 5 from canonical audio v2 plus scan stop/failure/idempotency/restart convergence and Android live/record repository/ViewModel boundaries. Five active RED backend tests must become GREEN before Phase 5 closure. Deep Security remains separate at `running/preflight`.
+
+## 2026-08-22 latest restart index — Phase 6 active
+
+- Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. First restart pointer: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Current phase map: Phase 0–5 complete at software/source/build/local; **Phase 6 in progress**; Phase 7–8 pending. Overall plan remains NOT PASS.
+- Latest proof: backend `82/82 + 8/8 + 4/4 + 4/4 + 6/6`; Web `28/28 + 12/12` plus direct TypeScript/lint/build; Android `116/830` plus AndroidTest compile/assemble/lint and APK SHA-256 `BABAAA7BFB7289E33A7BF84A4289282A450C9908A3834E762A11938F0D18F7C7`; firmware audio-v2 SHA-256 `CC53E0084BB699BC4787FC10DD20E1AFEC3454E46A05286DE61B56671F357EF6`.
+- Resume Phase 6 at appointment, consent, alert and notification impact inventory. Runtime/provider/HIL limitations remain separate and do not reopen closed software rows.
+
+## 2026-08-22 latest restart index — Phase 7 active
+
+- Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. First restart pointer: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Current phase map: Phase 0–6 complete at software/source/build/local; **Phase 7 in progress**; Phase 8 pending. Overall plan remains NOT PASS.
+- Phase 6 closure proof: shared contracts `49/49`; backend appointment/consent/alert/notification gates; Web contract/component/type/lint/build; Admin `183/183` plus lint/build; Android `116/830` plus build/lint and APK SHA-256 `BABAAA7BFB7289E33A7BF84A4289282A450C9908A3834E762A11938F0D18F7C7`.
+- Resume Phase 7 at remaining Admin operations and remove fake/local-only behavior. Runtime provider/ADB and physical HIL remain separately blocked/deferred and do not reopen closed software rows.
+
+## 2026-08-22 latest restart index — Phase 8 active
+
+- Master plan: **[Kế hoạch tái thiết toàn diện Shcare Web, Portal, Platform Admin, Android và firmware](SHCARE_REBUILD_MASTER_PLAN.md)**. First restart pointer: **[Shcare Active Restart Checkpoint](SMART_HEALTH_ACTIVE_CHECKPOINT.md)**.
+- Current phase map: Phase 0–7 complete at software/source/build/local; **Phase 8 in progress**. Overall plan remains NOT PASS until the RC/demo and all required non-deferred gates close.
+- Phase 7 closure proof: shared `50/50`; backend check/admin-list `3/3`/workspace/repositories; Admin `185/185` plus lint and build. Five Admin list surfaces now use backend query/pagination and truthful aggregate metadata.
+- Resume Phase 8 at the intentional candidate inventory, local demo artifacts, hashes, compatibility, deploy/rollback record and handoff. External provider/ADB/HIL evidence remains explicitly blocked/deferred.
+
+## 2026-08-22 RC2 demo/candidate index
+
+- Governing plan: [SHCARE_REBUILD_MASTER_PLAN.md](SHCARE_REBUILD_MASTER_PLAN.md).
+- Restart state: [SMART_HEALTH_ACTIVE_CHECKPOINT.md](SMART_HEALTH_ACTIVE_CHECKPOINT.md).
+- RC2 versions, hashes, gate verdicts and rollback: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md).
+- Demo operator checklist: [khoaluan/03-demo-and-evidence-checklist.md](khoaluan/03-demo-and-evidence-checklist.md).
+- Phase 0–7 are closed at source/build/local scope; Phase 8 is active. Local demo is ready, while live/provider/Android-runtime gates remain blocked and hardware HIL remains deferred.
+
+## 2026-08-25 latest restart index — G3 BLE-first pairing active
+
+- Governing plan: [Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md). Restart pointer: [SMART_HEALTH_ACTIVE_CHECKPOINT.md](SMART_HEALTH_ACTIVE_CHECKPOINT.md).
+- Phase map: G0–G2 complete; **G3 active**; G4 pending. This correction does not reopen completed work.
+- Source: Android `devices/DeviceBleProvisioningContract.kt`, `devices/DeviceBleProvisioner.kt`, `devices/DevicePairingViewModel.kt`, `ui/screens/DevicePairingScreen.kt`; firmware `MSM261S4030H0/src/main.cpp`.
+- Latest evidence: Android `119/857`, lint/assemble; firmware development/production build. COM9 reports BLE ready/offline and both microphones; App authenticated HIL and host BLE scan remain blocked. See active checkpoint before release claims.

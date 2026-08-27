@@ -6,7 +6,10 @@ const os = require("node:os");
 const path = require("node:path");
 const nodemailer = require("nodemailer");
 const { createDataStore, resolveBackendFromEnv } = require("./src/dataStore");
+const { resolveCorsOrigin } = require("./src/corsPolicy");
+const { buildReleaseIdentity } = require("./src/releaseIdentity");
 const {
+  getFirebaseIdTokenErrorCode,
   getFirebaseAdmin,
   isFirebaseAuthEnabled,
   isFirebaseProviderMutationConfirmed,
@@ -14,18 +17,55 @@ const {
   verifyFirebaseIdToken,
 } = require("./src/firebaseAuth");
 const {
-  createRecoveryCodeBundle,
+  createCompletedEnrollmentSession,
+  createEnrollmentStartBinding,
+  createEnrollmentRecoveryAcknowledgementBinding,
+  createEnrollmentRecoveryDelivery,
   createTwoFactorToken,
   createTotpEnrollment,
+  getEnrollmentRecoveryDelivery,
   getTwoFactorAvailability,
   hashPrimaryBinding,
   hashTwoFactorToken,
+  isEnrollmentRecoveryDeliveryReplay,
+  materializeTotpEnrollment,
   verifyRecoveryCode,
+  verifyRecoveryAckToken,
   verifyTotpCode,
 } = require("./src/twoFactorAuth");
 const { processAudioFile } = require("./src/audioProcessing");
 const { createAudioQueue } = require("./src/queue");
 const { createRepositories } = require("./src/repositories");
+const {
+  normalizeWorkspaceSettingsUpdate,
+} = require("./src/workspaceLifecycleContract");
+const {
+  MAX_ROLE_REQUEST_DOCUMENT_BYTES,
+  persistRoleRequestDocumentUpload,
+  publicDocument: publicRoleRequestDocument,
+} = require("./src/roleRequestDocumentRepository");
+const {
+  MAX_AVATAR_BYTES,
+  executeAvatarDeleteMutation,
+  executeAvatarUploadMutation,
+  validateAvatarUpload,
+} = require("./src/avatarMutationRepository");
+const { createAvatarCleanupWorker } = require("./src/avatarCleanupWorker");
+const {
+  createPasswordIdempotencyFingerprint,
+} = require("./src/passwordChangeSecurity");
+const {
+  isPasswordHash,
+  normalizePasswordHash,
+  verifyPasswordSecret,
+} = require("./src/passwordHash");
+const {
+  createFirebasePasswordProof,
+} = require("./src/firebasePasswordVerifier");
+const {
+  executeIdentityProviderMutationOnce,
+  reconciliationError,
+} = require("./src/identityProviderExecution");
 const {
   EXPORT_ARTIFACT_RENDERER_VERSION,
   EXPORT_FORMATS,
@@ -33,7 +73,18 @@ const {
   normalizeExportFormat,
 } = require("./src/exportArtifact");
 const { normalizeAuditLogQuery, sanitizeAuditMetadata } = require("./src/auditLogContract");
+const { paginateAdminList } = require("./src/adminListContract");
 const { buildOverviewRangeSnapshot } = require("./src/overviewStatsContract");
+const {
+  buildClinicalDashboardStatus,
+  buildPublicHealthStatus,
+  selectWorkspaceRecording,
+} = require("./src/clinicalDashboardStatus");
+const {
+  assertPatientDashboardAccess,
+  buildPatientDashboardLegacyStats,
+  buildPatientDashboardSnapshot,
+} = require("./src/patientDashboardContract");
 const {
   PATIENT_IMPORT_MAX_BYTES,
   PATIENT_IMPORT_TTL_MS,
@@ -44,7 +95,25 @@ const { createKeyedSerialExecutor } = require("./src/deviceEventQueue");
 const { attachActor, createRequestContext, getRequestContext } = require("./src/requestContext");
 const { createMqttControlPlane } = require("./src/mqttControlPlane");
 const { buildProductionReadiness } = require("./src/productionReadiness");
+const { assertRuntimeSecurity, resolveAuthMode } = require("./src/runtimeSecurity");
+const { postOutboundWebhook } = require("./src/outboundWebhookSecurity");
 const { buildPushNotificationPayload } = require("./src/notificationPushPayload");
+const {
+  resolveEligibleNotificationDevices,
+} = require("./src/notificationDeviceEligibility");
+const {
+  isValidFcmRegistrationToken,
+  selectBoundedNotificationDevices,
+} = require("./src/notificationDeviceLimits");
+const {
+  CLOUD_NOTIFICATION_PREFERENCE_KEYS,
+  mergeNotificationPreferences,
+  mergeNotificationPushStatus,
+  normalizeNotificationPreferences,
+  parseNotificationCampaignType,
+  parseNotificationPreferencePatch,
+  resolveNotificationPreferenceDecision,
+} = require("./src/notificationPreferences");
 const {
   activateManagedAdminProvider,
   assertActiveManagedAdminWorkspace,
@@ -63,9 +132,9 @@ const {
   normalizeAiSettings,
 } = require("./src/aiRuntime");
 const { buildScanObjectKey, createStorageAdapter } = require("./src/storageAdapter");
-const { encryptJson } = require("./src/cryptoPhi");
 const {
   DEVICE_AUTH_CHALLENGE_TTL_MS,
+  assertDeviceAuthenticationFence,
   canonicalDeviceSecretHash,
   containsSensitiveDeviceCredential,
   createDeviceAuthenticator,
@@ -87,10 +156,22 @@ const {
   createDeviceCommandEnvelope,
   createDeviceCommandRecord,
   expireDeviceCommandIfOverdue,
+  getSpecializedDeviceCommandRoute,
+  isGenericSafeDeviceCommandType,
   isSupportedDeviceCommandType,
   publicDeviceCommand,
   transitionDeviceCommand,
 } = require("./src/deviceCommandLifecycle");
+const {
+  createDeviceOtaAuthoritySnapshot,
+  createDeviceOtaOwnershipBinding,
+  isCanonicalDeviceOtaLifecycle,
+  isCanonicalPrivateDeviceOtaGrant,
+  OTA_TERMINAL_STATUSES,
+  normalizeDeviceOtaStatus,
+  sanitizeDeviceOtaLifecycle,
+  transitionDeviceOtaLifecycle,
+} = require("./src/deviceOtaLifecycle");
 const {
   applyDeviceOwnershipTransition,
   inferDeviceOwnershipState,
@@ -101,6 +182,10 @@ const {
   buildSecureSetupQrPayload,
 } = require("./src/deviceSetupSecurity");
 const {
+  SMART_CONFIG_TRANSPORT,
+  buildSmartConfigV2Material,
+} = require("./src/deviceSmartConfigSecurity");
+const {
   STAFF_INVITATION_STATUSES,
   assertStaffInvitationToken,
   generateStaffInvitationToken,
@@ -108,6 +193,9 @@ const {
   normalizeStaffInvitationCreate,
   normalizeStaffInvitationRevoke,
 } = require("./src/staffInvitationContract");
+const {
+  normalizeSupportTicketCreate,
+} = require("./src/supportTicketContract");
 const {
   assertOtaUpgradeVersion,
   buildSignedOtaManifest,
@@ -121,6 +209,10 @@ const SAMPLE_RATE = Number(process.env.SAMPLE_RATE || 16000);
 const CHANNELS = 1;
 const BITS_PER_SAMPLE = 16;
 const HOST = "0.0.0.0";
+const LEGACY_DEFAULT_PLATFORM_NAME = "Smart Health B2B Platform";
+const DEFAULT_PLATFORM_NAME = "Shcare";
+const LEGACY_DEFAULT_DOCTOR_NAME = "Bác sĩ Smart Health";
+const DEFAULT_DOCTOR_NAME = "Bác sĩ Shcare";
 const deviceEventExecutor = createKeyedSerialExecutor();
 const scanAudioFileMutationExecutor = createKeyedSerialExecutor();
 const scanAudioReprocessExecutor = createKeyedSerialExecutor();
@@ -132,14 +224,20 @@ const AUDIO_DIR = path.join(DATA_DIR, "audio");
 const TMP_DIR = path.join(DATA_DIR, "tmp");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const DATA_BACKEND = resolveBackendFromEnv(process.env);
-const AUTH_MODE = String(process.env.AUTH_MODE || "demo").toLowerCase();
+const AUTH_MODE = resolveAuthMode(process.env);
 const FIREBASE_AUTH_ENABLED = isFirebaseAuthEnabled(process.env);
 const ALLOW_DEMO_AUTH = String(process.env.ALLOW_DEMO_AUTH || "").toLowerCase() === "true";
-const SHOULD_SEED_DEMO_DATA = AUTH_MODE !== "production";
+const SHOULD_SEED_DEMO_DATA = AUTH_MODE === "demo";
 
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 100 * 1024 * 1024);
+const MAX_JSON_BODY_BYTES = Math.min(
+  1024 * 1024,
+  Math.max(4 * 1024, Number(process.env.MAX_JSON_BODY_BYTES || 64 * 1024) || 64 * 1024),
+);
 const MAX_WS_BUFFER_BYTES = Number(process.env.MAX_WS_BUFFER_BYTES || 1024 * 1024);
 const MAX_DEVICE_AUDIO_FRAME_BYTES = Number(process.env.MAX_DEVICE_AUDIO_FRAME_BYTES || 4 * 1024);
+const MAX_SCAN_WAVEFORM_BYTES = 256 * 1024;
+const MAX_SCAN_WAVEFORM_POINTS = 512;
 const ALLOW_AUDIO_V1_COMPAT = String(process.env.ALLOW_AUDIO_V1_COMPAT || "true").toLowerCase() === "true";
 const DEVICE_SECRET_ROTATION_TTL_RAW_MS = Number(process.env.DEVICE_SECRET_ROTATION_TTL_MS || 10 * 60 * 1000);
 const DEVICE_SECRET_ROTATION_TTL_MS = Number.isFinite(DEVICE_SECRET_ROTATION_TTL_RAW_MS)
@@ -274,6 +372,30 @@ const ROLE_INFO_FIELDS = new Set([
   "legalName",
   "email",
 ]);
+const ROLE_REQUEST_INPUT_FIELDS = new Set([
+  "expectedUserId",
+  "expectedWorkspaceId",
+  "requestedRole",
+  "role",
+  "accountType",
+  "workspaceType",
+  "organizationId",
+  "clinicId",
+  "clinic",
+  "name",
+  "fullName",
+  "phone",
+  "email",
+  "license",
+  "hospital",
+  "clinicName",
+  "department",
+  "specialty",
+  "reason",
+  "registrationReason",
+  "workspaceName",
+  "address",
+]);
 const WORKSPACE_TYPES = new Set(["hospital", "clinic", "solo_practice", "personal"]);
 const PACKAGE_SEGMENTS = new Set(["organization", "solo_practice", "personal"]);
 
@@ -297,16 +419,24 @@ const deviceRotationSessionKeys = new WeakMap();
 const rateLimitBuckets = new Map();
 const managedAdminCreateInFlight = new Map();
 const scanAudioCompletionInFlight = new Map();
+const scanMutationInFlight = new Map();
 const requestMetrics = {
   startedAt: nowIso(),
   total: 0,
   errors: 0,
+  legacyAuthSessionRevoke: 0,
+  legacyWorkspaceSettingsUpdate: 0,
+  legacyAvatarMutation: 0,
+  legacyAccountProfileUpdate: 0,
+  legacyAccountProfileWorkspaceMix: 0,
+  legacyWorkspaceSwitchAlias: 0,
   byStatus: {},
 };
 
 let dataStore = null;
 let repositories = null;
 let storageAdapter = null;
+let avatarCleanupWorker = null;
 let audioQueue = null;
 let mqttControlPlane = null;
 let pendingSave = Promise.resolve();
@@ -352,6 +482,9 @@ function createEmptyDb() {
     organizations: [],
     memberships: [],
     staffInvitations: [],
+    supportTickets: [],
+    roleRequestDocuments: [],
+    avatarMutationOperations: [],
     doctorPatientAccess: [],
     idempotencyKeys: [],
     deviceClaims: [],
@@ -415,7 +548,18 @@ function normalizeDb(value) {
   normalized.scanAudioCompletions = Array.isArray(normalized.scanAudioCompletions) ? normalized.scanAudioCompletions : [];
   normalized.scanReviews = Array.isArray(normalized.scanReviews) ? normalized.scanReviews : [];
   normalized.clinicalAlerts = Array.isArray(normalized.clinicalAlerts) ? normalized.clinicalAlerts : [];
-  normalized.users = Array.isArray(normalized.users) ? normalized.users : [];
+  normalized.users = (Array.isArray(normalized.users) ? normalized.users : []).map(
+    (user) => {
+      const normalizedUser = { ...user };
+      const passwordHash = normalizePasswordHash(
+        normalizedUser.passwordHash || normalizedUser.password || "",
+      );
+      if (passwordHash) normalizedUser.password = passwordHash;
+      else delete normalizedUser.password;
+      delete normalizedUser.passwordHash;
+      return normalizedUser;
+    },
+  );
   normalized.organizations = (Array.isArray(normalized.organizations) ? normalized.organizations : []).map(
     (organization) => ({
       ...organization,
@@ -435,6 +579,15 @@ function normalizeDb(value) {
   );
   normalized.staffInvitations = Array.isArray(normalized.staffInvitations)
     ? normalized.staffInvitations
+    : [];
+  normalized.supportTickets = Array.isArray(normalized.supportTickets)
+    ? normalized.supportTickets
+    : [];
+  normalized.roleRequestDocuments = Array.isArray(normalized.roleRequestDocuments)
+    ? normalized.roleRequestDocuments
+    : [];
+  normalized.avatarMutationOperations = Array.isArray(normalized.avatarMutationOperations)
+    ? normalized.avatarMutationOperations
     : [];
   normalized.doctorPatientAccess = Array.isArray(normalized.doctorPatientAccess) ? normalized.doctorPatientAccess : [];
   const canonicalDoctorByIdentity = new Map();
@@ -500,10 +653,51 @@ function normalizeDb(value) {
   normalized.accessLogs = Array.isArray(normalized.accessLogs) ? normalized.accessLogs : [];
   normalized.auditLogs = Array.isArray(normalized.auditLogs) ? normalized.auditLogs : [];
   normalized.devices = Array.isArray(normalized.devices)
-    ? normalized.devices.map((device) => normalizeDeviceSecretMaterial(device))
+    ? normalized.devices.map((device) => {
+        const normalizedDevice = normalizeDeviceSecretMaterial(device);
+        const legacyToken = readString(normalizedDevice.ota?.token, 180);
+        const ota = sanitizeDeviceOtaLifecycle({
+          ...normalizedDevice.ota,
+          tokenHash:
+            normalizedDevice.ota?.tokenHash ||
+            (legacyToken ? hashOtaDownloadToken(legacyToken) : ""),
+        });
+        const otaStatus = normalizeDeviceOtaStatus(normalizedDevice.otaStatus || ota.status);
+        if (otaStatus) ota.status = otaStatus;
+        normalizedDevice.ota = ota;
+        normalizedDevice.otaStatus = otaStatus;
+        return normalizedDevice;
+      })
     : [];
   normalized.deviceEvents = Array.isArray(normalized.deviceEvents) ? normalized.deviceEvents : [];
-  normalized.deviceCommands = Array.isArray(normalized.deviceCommands) ? normalized.deviceCommands : [];
+  normalized.deviceCommands = (Array.isArray(normalized.deviceCommands) ? normalized.deviceCommands : []).map(
+    (command) => {
+      const normalizedCommand = { ...command };
+      if (
+        normalizedCommand.type === "ota.update" &&
+        ["acknowledged", "applying"].includes(normalizedCommand.state) &&
+        !normalizedCommand.executionExpiresAt
+      ) {
+        const matchingOta = normalized.devices.find(
+          (device) => device.id === normalizedCommand.deviceId && device.ota?.commandId === normalizedCommand.id,
+        )?.ota;
+        const otaDeadlineMs = Date.parse(matchingOta?.expiresAt || "");
+        const deliveryDeadlineMs = Date.parse(normalizedCommand.expiresAt || "");
+        const updatedAtMs = Date.parse(normalizedCommand.updatedAt || normalizedCommand.issuedAt || "");
+        const compatibilityDeadlineMs = Math.max(
+          Number.isFinite(deliveryDeadlineMs) ? deliveryDeadlineMs : 0,
+          Number.isFinite(updatedAtMs) ? updatedAtMs : 0,
+          Date.now(),
+        ) + 2 * 60 * 60_000;
+        normalizedCommand.executionExpiresAt = new Date(
+          Number.isFinite(otaDeadlineMs) && otaDeadlineMs > deliveryDeadlineMs
+            ? otaDeadlineMs
+            : compatibilityDeadlineMs,
+        ).toISOString();
+      }
+      return normalizedCommand;
+    },
+  );
   normalized.audioFiles = Array.isArray(normalized.audioFiles) ? normalized.audioFiles : [];
   normalized.aiResults = Array.isArray(normalized.aiResults) ? normalized.aiResults : [];
   normalized.storageBuckets = Array.isArray(normalized.storageBuckets) ? normalized.storageBuckets : [];
@@ -584,6 +778,11 @@ function normalizeDb(value) {
     );
     user.twoFactorEnabled = Boolean(credential);
     user.twoFactorMethod = credential ? credential.method || "app" : "";
+    user.firebaseClaims.profile = {
+      ...(user.firebaseClaims.profile || {}),
+      twoFactorEnabled: user.twoFactorEnabled,
+      twoFactorMethod: user.twoFactorMethod,
+    };
 
     // Older admin builds used roleRequestStatus="locked" to mean account lock.
     // Keep approval state and lock state separate so dashboard counts stay consistent.
@@ -713,7 +912,7 @@ async function flushDb() {
 function createDefaultSettings() {
   return {
     system: {
-      name: "Smart Health B2B Platform",
+      name: DEFAULT_PLATFORM_NAME,
       supportEmail: "support@smarthealth.vn",
       supportHotline: "1900 8888",
       timezone: "Asia/Ho_Chi_Minh",
@@ -750,13 +949,13 @@ function createDefaultSettings() {
       thirdParty: false,
     },
     storage: {
-      autoSync: true,
-      cloudBackup: true,
-      localUsedMb: 2450,
-      localTotalMb: 8192,
-      cloudUsedMb: 12800,
-      cloudTotalMb: 51200,
-      cacheMb: 450,
+      autoSync: false,
+      cloudBackup: false,
+      localUsedMb: 0,
+      localTotalMb: 0,
+      cloudUsedMb: 0,
+      cloudTotalMb: 0,
+      cacheMb: 0,
     },
     stethoscope: {
       volume: 75,
@@ -843,6 +1042,22 @@ function ensureAppDefaults() {
   let changed = false;
   const seededDemoUserIds = new Set();
 
+  if (db.settings?.system?.name === LEGACY_DEFAULT_PLATFORM_NAME) {
+    db.settings.system.name = DEFAULT_PLATFORM_NAME;
+    changed = true;
+  }
+
+  const legacyDefaultDoctor = db.users.find(
+    (user) =>
+      user?.id === "usr_doctor_default" &&
+      user?.name === LEGACY_DEFAULT_DOCTOR_NAME,
+  );
+  if (legacyDefaultDoctor) {
+    legacyDefaultDoctor.name = DEFAULT_DOCTOR_NAME;
+    legacyDefaultDoctor.updatedAt = nowIso();
+    changed = true;
+  }
+
   if (SHOULD_SEED_DEMO_DATA && db.users.length === 0) {
     const createdAt = nowIso();
     db.users.push(
@@ -852,7 +1067,7 @@ function ensureAppDefaults() {
         requestedRole: "doctor",
         roleRequestStatus: "approved",
         accountStatus: "active",
-        name: "Bác sĩ Smart Health",
+        name: DEFAULT_DOCTOR_NAME,
         email: "doctor@example.com",
         phone: "0912345678",
         password: "12345678",
@@ -868,6 +1083,7 @@ function ensureAppDefaults() {
       {
         id: "usr_patient_default",
         role: "patient",
+        accountStatus: "active",
         name: "Người dùng Smart Health",
         email: "patient@example.com",
         phone: "0900000000",
@@ -1058,6 +1274,20 @@ function ensureAppDefaults() {
     changed = true;
   }
 
+  for (const user of db.users) {
+    const passwordHash = normalizePasswordHash(
+      user.passwordHash || user.password || "",
+    );
+    if (passwordHash && passwordHash !== user.password) {
+      user.password = passwordHash;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(user, "passwordHash")) {
+      delete user.passwordHash;
+      changed = true;
+    }
+  }
+
   if (changed) {
     saveDb();
   }
@@ -1090,7 +1320,6 @@ function resolveIncomingDeviceId(payload = {}, socket = null) {
   return "";
 }
 
-const notificationEmailDispatchIds = new Set();
 
 function createDemoSecret(prefix = "sk_demo") {
   return `${prefix}_${crypto.randomBytes(18).toString("base64url")}`;
@@ -1107,22 +1336,6 @@ function maskSecret(secret) {
         ? "sk_ws"
         : "sk_demo";
   return `${prefix}_********${value.slice(-4)}`;
-}
-
-function normalizeNotificationPreferences(value = {}) {
-  const current = value && typeof value === "object" ? value : {};
-  return {
-    enabled: current.enabled !== false,
-    sound: current.sound !== false,
-    vibration: current.vibration !== false,
-    doctorRequests: current.doctorRequests !== false,
-    abnormalResults: current.abnormalResults !== false,
-    deviceOffline: current.deviceOffline !== false,
-    appointments: current.appointments !== false,
-    messages: current.messages !== false,
-    aiUpdates: current.aiUpdates === true,
-    newLogin: current.newLogin !== false,
-  };
 }
 
 function sanitizePublicFirebaseClaims(value = {}) {
@@ -1150,6 +1363,7 @@ function publicUser(user) {
     twoFactorSecretPreview,
     twoFactorRecoveryCodes,
     firebaseClaims,
+    roleRequestDocuments,
     ...safeUser
   } = user;
   const organization = isPlatformAdminUser(user) ? null : getClinicById(user.organizationId);
@@ -1181,6 +1395,14 @@ function publicUser(user) {
           : user.role || "");
   return {
     ...safeUser,
+    // Authentication clients must never infer lifecycle defaults. Keep these
+    // fields explicit even for older records that predate lifecycle storage.
+    accountStatus: user.accountStatus || "active",
+    deletedAt: user.deletedAt || null,
+    roleRequestDocuments: (Array.isArray(roleRequestDocuments)
+      ? roleRequestDocuments
+      : []
+    ).map(publicRoleRequestDocument),
     firebaseClaims: sanitizePublicFirebaseClaims(firebaseClaims),
     title: user.title || "",
     avatarFileId: user.avatarFileId || "",
@@ -1232,6 +1454,16 @@ function publicDoctorRoleRequest(user) {
 
 function isApprovedDoctorRole(user) {
   return user && user.requestedRole === "doctor" && user.roleRequestStatus === "approved" && user.role === "doctor";
+}
+
+function isDoctorRoleRequestTargetLocked(user) {
+  return Boolean(
+    user &&
+    readString(user.requestedRole, 40).toLowerCase() === "doctor" &&
+    ["pending", "needs_info", "rejected"].includes(
+      readString(user.roleRequestStatus, 40).toLowerCase(),
+    ),
+  );
 }
 
 function isApprovedActiveDoctorPrincipal(user) {
@@ -1517,6 +1749,7 @@ function getUserWorkspaceContext(user) {
           name: workspace.name,
           type: workspace.type || "",
           workspaceType: workspace.workspaceType || workspace.type || "",
+          status: workspace.status || "active",
           address: workspace.address || "",
           phone: workspace.phone || "",
           email: workspace.email || "",
@@ -1582,9 +1815,18 @@ function getCatalogClinicById(id) {
 }
 
 function getClinicFromPayload(payload) {
-  const requestedId = readString(payload.organizationId || payload.clinicId || payload.clinic, 120);
-  if (requestedId) {
-    const byId = getCatalogClinicById(requestedId);
+  if (Object.prototype.hasOwnProperty.call(payload, "organizationId")) {
+    const requestedId = readString(payload.organizationId, 120);
+    return requestedId ? getCatalogClinicById(requestedId) : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "clinicId")) {
+    const requestedId = readString(payload.clinicId, 120);
+    return requestedId ? getCatalogClinicById(requestedId) : null;
+  }
+
+  const legacyClinic = readString(payload.clinic, 120);
+  if (legacyClinic) {
+    const byId = getCatalogClinicById(legacyClinic);
     if (byId) return byId;
   }
 
@@ -1617,7 +1859,28 @@ function hasExplicitWorkspaceSelection(payload = {}) {
 }
 
 function getRequestedWorkspaceId(payload = {}) {
-  return readString(payload.organizationId || payload.clinicId || payload.clinic, 120);
+  for (const key of ["organizationId", "clinicId", "clinic"]) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      return readString(payload[key], 120);
+    }
+  }
+  return "";
+}
+
+function assertConsistentWorkspaceSelection(payload = {}) {
+  const selections = ["organizationId", "clinicId", "clinic"]
+    .filter((key) => Object.prototype.hasOwnProperty.call(payload, key))
+    .map((key) => ({ key, value: readString(payload[key], 120) }));
+  if (selections.length <= 1) return selections;
+  const values = new Set(selections.map((selection) => selection.value));
+  if (values.size !== 1 || values.has("")) {
+    throw httpError(
+      400,
+      "Workspace selection aliases must identify the same non-empty workspace",
+      "WORKSPACE_SELECTION_CONFLICT",
+    );
+  }
+  return selections;
 }
 
 function hasWorkspaceMembership(user, organizationId) {
@@ -1664,40 +1927,45 @@ function ensureOrganizationFromCatalog(clinic) {
   return organization;
 }
 
-function ensurePersonalWorkspaceForUser(user) {
+function getPersonalWorkspaceCandidate(user) {
   const id = `org_personal_${String(user.id || user.firebaseUid || "user").replace(/[^a-zA-Z0-9_]/g, "_")}`;
-  let workspace = db.organizations.find((item) => item.id === id);
+  const workspace = db.organizations.find((item) => item.id === id);
   if (workspace?.deletedAt) throw httpError(410, "Workspace cá nhân đã được lưu trữ", "WORKSPACE_ARCHIVED");
-  if (!workspace) {
-    const createdAt = nowIso();
-    workspace = {
-      id,
-      name: `Hồ sơ cá nhân - ${user.name || user.email || user.id}`,
-      type: "personal",
-      workspaceType: "personal",
-      status: "active",
-      ownerUserId: user.id,
-      packageId: "pkg_personal_family",
-      subscriptionStatus: "trial",
-      billingCycle: "monthly",
-      createdAt,
-      updatedAt: createdAt,
-    };
-    db.organizations.unshift(workspace);
-  }
-  return workspace;
+  if (workspace) return workspace;
+  const createdAt = nowIso();
+  return {
+    id,
+    name: `Hồ sơ cá nhân - ${user.name || user.email || user.id}`,
+    type: "personal",
+    workspaceType: "personal",
+    status: "active",
+    ownerUserId: user.id,
+    packageId: "pkg_personal_family",
+    subscriptionStatus: "trial",
+    billingCycle: "monthly",
+    createdAt,
+    updatedAt: createdAt,
+  };
 }
 
-function ensureSoloPracticeWorkspaceForUser(user, payload = {}) {
+function ensurePersonalWorkspaceForUser(user) {
+  const candidate = getPersonalWorkspaceCandidate(user);
+  const existing = db.organizations.find((item) => item.id === candidate.id);
+  if (existing) return existing;
+  db.organizations.unshift(candidate);
+  return candidate;
+}
+
+function getSoloPracticeWorkspaceCandidate(user, payload = {}) {
   const id = `org_solo_${String(user.id || user.firebaseUid || "doctor").replace(/[^a-zA-Z0-9_]/g, "_")}`;
-  let workspace = db.organizations.find((item) => item.id === id);
+  const workspace = db.organizations.find((item) => item.id === id);
   if (workspace?.deletedAt) throw httpError(410, "Workspace phòng khám đã được lưu trữ", "WORKSPACE_ARCHIVED");
   const name =
     readString(payload.workspaceName || payload.clinicName || payload.hospital, 160) ||
     `Phòng khám cá nhân - ${user.name || user.email || user.id}`;
   if (!workspace) {
     const createdAt = nowIso();
-    workspace = {
+    return {
       id,
       name,
       type: "solo_practice",
@@ -1714,16 +1982,27 @@ function ensureSoloPracticeWorkspaceForUser(user, payload = {}) {
       createdAt,
       updatedAt: createdAt,
     };
-    db.organizations.unshift(workspace);
-  } else {
-    workspace.name = name || workspace.name;
-    workspace.workspaceType = "solo_practice";
-    workspace.ownerUserId = workspace.ownerUserId || user.id;
-    workspace.packageId = workspace.packageId || "pkg_solo_doctor";
-    workspace.subscriptionStatus = workspace.subscriptionStatus || "trial";
-    workspace.updatedAt = nowIso();
   }
-  return workspace;
+  return {
+    ...workspace,
+    name: name || workspace.name,
+    workspaceType: "solo_practice",
+    ownerUserId: workspace.ownerUserId || user.id,
+    packageId: workspace.packageId || "pkg_solo_doctor",
+    subscriptionStatus: workspace.subscriptionStatus || "trial",
+    updatedAt: nowIso(),
+  };
+}
+
+function ensureSoloPracticeWorkspaceForUser(user, payload = {}) {
+  const candidate = getSoloPracticeWorkspaceCandidate(user, payload);
+  const existing = db.organizations.find((item) => item.id === candidate.id);
+  if (!existing) {
+    db.organizations.unshift(candidate);
+    return candidate;
+  }
+  Object.assign(existing, candidate);
+  return existing;
 }
 
 function publicClinic(org) {
@@ -1763,7 +2042,15 @@ function isDoctorWorkspaceUser(user, organizationId) {
 }
 
 function getWorkspaceLinkSummary(organizationId) {
-  const users = db.users.filter((user) => user.organizationId === organizationId);
+  const workspace = getClinicById(organizationId);
+  const users = db.users.filter((user) =>
+    db.memberships.some(
+      (membership) =>
+        membership.userId === user.id &&
+        membership.organizationId === organizationId &&
+        isOperationalWorkspaceMembership(user, membership, workspace),
+    ),
+  );
   const doctors = users.filter((user) => isDoctorWorkspaceUser(user, organizationId));
   const patients = db.patients.filter((patient) => patient.organizationId === organizationId);
   const devices = db.devices.filter((device) => device.organizationId === organizationId);
@@ -1894,6 +2181,16 @@ function setWorkspacePaginationHeaders(res, pageResult) {
   res.setHeader("X-Page", String(page));
   res.setHeader("X-Page-Limit", String(limit));
   res.setHeader("X-Page-Count", String(pageCount));
+}
+
+function resolveAdminListPage(items, url, options) {
+  try {
+    return paginateAdminList(items, url.searchParams, options);
+  } catch (error) {
+    throw httpError(400, error.message, error.code || "ADMIN_LIST_QUERY_INVALID", {
+      field: error.field || "",
+    });
+  }
 }
 
 async function approveWorkspaceOwnerIdentity(req, actorUser, workspace, payload = {}) {
@@ -2106,7 +2403,7 @@ function buildPortalBillingSummary(user) {
     invoicePolicy: {
       mode: "manual",
       providerConfigured: false,
-      message: "Smart Health đang ghi nhận gói dịch vụ và liên hệ thanh toán ở cấp workspace.",
+      message: "Shcare đang ghi nhận gói dịch vụ và liên hệ thanh toán ở cấp workspace.",
     },
   };
 }
@@ -2160,15 +2457,16 @@ function getCurrentUser() {
 
 function addAccessLog(action, detail = {}) {
   const log = {
-    id: createId("log"),
+    id: readString(detail.id, 160) || createId("log"),
     action,
     device: detail.device || "Ứng dụng Android",
     location: detail.location || "Mạng nội bộ",
     ip: detail.ip || "",
     userId: detail.userId || "",
     organizationId: detail.organizationId || "",
+    operationId: readString(detail.operationId, 160),
     severity: detail.severity || "info",
-    createdAt: nowIso(),
+    createdAt: detail.createdAt || nowIso(),
   };
   db.accessLogs.unshift(log);
   db.accessLogs = db.accessLogs.slice(0, 200);
@@ -2210,8 +2508,34 @@ function sanitizeNotificationMetadata(metadata = {}) {
   return safe;
 }
 
+function applyRuntimeNotificationPreferenceStatuses(notification) {
+  const userId = readString(notification?.userId, 120);
+  if (!userId) return notification;
+  const targetUser = db.users.find((candidate) => candidate.id === userId);
+  const decision = targetUser
+    ? resolveNotificationPreferenceDecision(
+        targetUser.notificationPreferences,
+        notification,
+      )
+    : {
+        allowed: false,
+        reasonCode: "NOTIFICATION_RECIPIENT_UNAVAILABLE",
+      };
+  if (decision.allowed) {
+    if (!notification.inAppStatus) notification.inAppStatus = "ready";
+    if (!notification.pushStatus) notification.pushStatus = "ready";
+    return notification;
+  }
+  notification.inAppStatus = "skipped";
+  notification.emailStatus = "skipped";
+  notification.emailErrorMessage = decision.reasonCode;
+  notification.pushStatus = "skipped";
+  notification.pushErrorMessage = decision.reasonCode;
+  return notification;
+}
+
 function createNotification(type, title, message, metadata = {}) {
-  const notification = {
+  const notification = applyRuntimeNotificationPreferenceStatuses({
     id: createId("noti"),
     type,
     title,
@@ -2224,11 +2548,12 @@ function createNotification(type, title, message, metadata = {}) {
     read: false,
     createdAt: nowIso(),
     updatedAt: nowIso(),
-  };
+  });
   db.notifications.unshift(notification);
   db.notifications = db.notifications.slice(0, 200);
-  queuePlatformAdminNotificationEmail(notification);
-  queueNotificationPush(notification);
+  if (notification.pushStatus !== "skipped") {
+    queueNotificationPush(notification);
+  }
   return notification;
 }
 
@@ -2256,10 +2581,39 @@ async function createBackendNotification(input) {
     };
   }
   if (repositories) {
-    const notification = await repositories.notifications.create({ ...input, metadata: inputMetadata });
-    notification.metadata = inputMetadata;
-    queuePlatformAdminNotificationEmail(notification);
-    queueNotificationPush(notification);
+    const preferenceDecision = await resolveCanonicalNotificationPreferenceDecision({
+      ...input,
+      metadata: inputMetadata,
+    });
+    const preferencePatch =
+      input.userId && !preferenceDecision.allowed
+        ? {
+            inAppStatus: "skipped",
+            emailStatus: "skipped",
+            emailErrorMessage: preferenceDecision.reasonCode,
+            pushStatus: "skipped",
+            pushErrorMessage: preferenceDecision.reasonCode,
+          }
+        : {};
+    const persisted =
+      input.createOnce === true && repositories.notifications.createOnce
+        ? await repositories.notifications.createOnce({
+            ...input,
+            ...preferencePatch,
+            metadata: inputMetadata,
+          })
+        : {
+            notification: await repositories.notifications.create({
+              ...input,
+              ...preferencePatch,
+              metadata: inputMetadata,
+            }),
+            created: true,
+          };
+    const notification = persisted.notification;
+    if (persisted.created && notification.pushStatus === "ready") {
+      queueNotificationPush(notification);
+    }
     return notification;
   }
   return createNotification(input.type, input.title, input.message, input);
@@ -2269,6 +2623,7 @@ async function appendAudit(action, req, detail = {}) {
   const context = getRequestContext(req) || createRequestContext(req);
   const actorUserId = detail.actorUserId || (context.actor ? context.actor.id : "");
   const log = {
+    id: detail.id || "",
     action,
     actorUserId,
     organizationId: detail.organizationId || context.organizationId || "",
@@ -2281,7 +2636,7 @@ async function appendAudit(action, req, detail = {}) {
   if (repositories) {
     return repositories.auditLogs.append(log);
   }
-  log.id = createId("audit");
+  log.id = log.id || createId("audit");
   log.createdAt = nowIso();
   db.auditLogs.unshift(log);
   return log;
@@ -2293,6 +2648,36 @@ async function saveDeviceRecord(device) {
     return;
   }
   saveDb();
+}
+
+async function saveDeviceOtaLifecycleRecord(device, otaInput, options = {}) {
+  const ota = sanitizeDeviceOtaLifecycle(otaInput);
+  const otaStatus = normalizeDeviceOtaStatus(ota.status);
+  if (!device?.id || !ota.id || !ota.commandId || !otaStatus) {
+    throw httpError(
+      500,
+      "Canonical OTA lifecycle persistence is unavailable",
+      "DEVICE_OTA_LIFECYCLE_INVALID",
+    );
+  }
+  ota.status = otaStatus;
+  if (repositories) {
+    if (!repositories.devices?.saveOtaLifecycle) {
+      throw httpError(
+        503,
+        "Durable OTA lifecycle persistence is unavailable",
+        "DEVICE_OTA_REPOSITORY_UNAVAILABLE",
+      );
+    }
+    const result = await repositories.devices.saveOtaLifecycle(device.id, ota, options);
+    if (result?.device) Object.assign(device, result.device);
+    return result;
+  }
+  device.ota = ota;
+  device.otaStatus = otaStatus;
+  device.updatedAt = ota.updatedAt || nowIso();
+  await saveDb();
+  return { device, command: options.command || null };
 }
 
 const ACTIVE_DEVICE_ROTATION_STATES = new Set([
@@ -2318,6 +2703,7 @@ async function appendDeviceRotationAudit(action, device, rotation, metadata = {}
     resourceType: "device",
     resourceId: device.id,
     metadata: sanitizeAuditMetadata({
+      protocolVersion: Number(rotation.protocolVersion || 1),
       rotationId: rotation.id,
       state: rotation.state,
       commandId: rotation.commandId || "",
@@ -2371,6 +2757,7 @@ async function expireDeviceCredentialRotation(device, at = new Date()) {
     resourceType: "device",
     resourceId: device.id,
     metadata: {
+      protocolVersion: Number(command?.protocolVersion || rotation.protocolVersion || 1),
       rotationId: rotation.id,
       commandId: rotation.commandId || "",
       state: rotation.state,
@@ -2394,6 +2781,7 @@ async function expireDeviceCredentialRotation(device, at = new Date()) {
     });
   }
   await appendDeviceEvent(device.id, "credential_rotation.expired", {
+    protocolVersion: Number(command?.protocolVersion || rotation.protocolVersion || 1),
     rotationId: rotation.id,
     commandId: rotation.commandId || "",
     state: rotation.state,
@@ -2443,6 +2831,7 @@ async function updateCredentialRotationFromCommand(deviceId, command) {
     resourceType: "device",
     resourceId: device.id,
     metadata: {
+      protocolVersion: Number(command.protocolVersion || rotation.protocolVersion || 1),
       rotationId: rotation.id,
       commandId: rotation.commandId || "",
       state: rotation.state,
@@ -2510,6 +2899,7 @@ async function confirmDeviceCredentialRotation(device, authResult) {
     resourceType: "device",
     resourceId: device.id,
     metadata: {
+      protocolVersion: Number(command?.protocolVersion || rotation.protocolVersion || 1),
       rotationId: rotation.id,
       commandId: rotation.commandId || "",
       state: rotation.state,
@@ -2536,6 +2926,7 @@ async function confirmDeviceCredentialRotation(device, authResult) {
     );
   }
   await appendDeviceEvent(device.id, "credential_rotation.confirmed", {
+    protocolVersion: Number(command?.protocolVersion || rotation.protocolVersion || 1),
     rotationId: rotation.id,
     commandId: rotation.commandId || "",
     state: rotation.state,
@@ -2663,6 +3054,54 @@ async function runInlineAudioProcessing(scan, wavFilePath) {
   };
 }
 
+function parseScanWaveformArtifact(buffer, scan) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > MAX_SCAN_WAVEFORM_BYTES) {
+    throw httpError(
+      502,
+      "Dữ liệu dạng sóng không hợp lệ",
+      "SCAN_WAVEFORM_ARTIFACT_INVALID",
+    );
+  }
+  let raw;
+  try {
+    raw = JSON.parse(buffer.toString("utf8"));
+  } catch {
+    throw httpError(
+      502,
+      "Dữ liệu dạng sóng không hợp lệ",
+      "SCAN_WAVEFORM_ARTIFACT_INVALID",
+    );
+  }
+  const scanId = readString(raw?.scanId, 120);
+  const sampleRate = Number(raw?.sampleRate);
+  const points = Array.isArray(raw?.points) ? raw.points : [];
+  const generatedAt = readString(raw?.generatedAt, 80);
+  if (
+    !scanId ||
+    scanId !== scan.id ||
+    !Number.isSafeInteger(sampleRate) ||
+    sampleRate < 1 ||
+    sampleRate > 192000 ||
+    points.length < 1 ||
+    points.length > MAX_SCAN_WAVEFORM_POINTS ||
+    points.some((point) => !Number.isFinite(point) || point < 0 || point > 1) ||
+    !generatedAt ||
+    !Number.isFinite(Date.parse(generatedAt))
+  ) {
+    throw httpError(
+      502,
+      "Dữ liệu dạng sóng không hợp lệ",
+      "SCAN_WAVEFORM_ARTIFACT_INVALID",
+    );
+  }
+  return {
+    scanId,
+    sampleRate,
+    points: points.map((point) => Number(point)),
+    generatedAt: new Date(generatedAt).toISOString(),
+  };
+}
+
 async function enqueueAudioProcessing(scan, wavFilePath, processing = {}) {
   if (!audioQueue?.enabled) {
     return false;
@@ -2738,11 +3177,11 @@ async function handleDeviceTelemetry(deviceId, payload = {}) {
   device.battery = readOptionalNumber(payload.battery) ?? device.battery;
   device.connectionMethod = payload.connectionMethod || device.connectionMethod || "MQTT";
   const reportedFirmwareVersion = readString(payload.firmwareVersion || payload.firmware, 80);
+  const reportedOtaBootOutcome = readString(payload.otaBootOutcome, 40);
   device.firmwareVersion = reportedFirmwareVersion || device.firmwareVersion;
   device.ipAddress = readString(payload.ipAddress || payload.ip, 80) || device.ipAddress;
   device.wifiSsid = readString(payload.wifiSsid, 120) || device.wifiSsid;
   device.audioStatus = readString(payload.audioStatus, 80) || device.audioStatus || "ready";
-  device.otaStatus = readString(payload.otaStatus, 80) || device.otaStatus || "";
   device.backendHost = readString(payload.backendHost, 160) || device.backendHost;
   device.backendPort = readOptionalNumber(payload.backendPort) ?? device.backendPort;
   device.lastSeenAt = nowIso();
@@ -2758,43 +3197,68 @@ async function handleDeviceTelemetry(deviceId, payload = {}) {
     device.telemetry = previousTelemetry;
   }
   let confirmedOta = null;
-  const otaCommand = await refreshDeviceCommandExpiry(
-    device.ota?.commandId
-      ? await findDeviceCommand(device.id, device.ota.commandId)
-      : null,
-  );
+  const storedOtaCommand = device.ota?.commandId
+    ? await findDeviceCommand(device.id, device.ota.commandId)
+    : null;
+  // Delivery and execution have separate durable deadlines. Refresh every
+  // nonterminal state so a reconnect cannot confirm an OTA after the bounded
+  // execution window has elapsed.
+  const otaCommand = await refreshDeviceCommandExpiry(storedOtaCommand);
   const authenticatedSocket = getAuthenticatedDeviceSocket(device);
   const authenticatedSessionId = readString(authenticatedSocket?._deviceAuth?.sessionId, 128);
-  if (
+  const otaTelemetryEvidenceValid = Boolean(
     reportedFirmwareVersion &&
     device.ota &&
     device.ota.firmwareVersion === reportedFirmwareVersion &&
-    device.ota.status !== "confirmed" &&
     authenticatedSessionId &&
     device.ota.requestedSessionId &&
     authenticatedSessionId !== device.ota.requestedSessionId &&
+    reportedOtaBootOutcome === "confirmed"
+  );
+  if (otaTelemetryEvidenceValid && otaCommand) {
+    reconcileOtaCommandFromOperationalEvent(otaCommand, "confirmed", device.updatedAt);
+  }
+  if (
+    otaTelemetryEvidenceValid &&
+    device.ota.status !== "confirmed" &&
     otaCommand &&
     ["acknowledged", "applying", "applied"].includes(otaCommand.state)
   ) {
-    device.ota.status = "confirmed";
-    device.ota.confirmedAt = device.updatedAt;
-    device.ota.updatedAt = device.updatedAt;
-    device.otaStatus = "confirmed";
-    confirmedOta = {
-      otaId: device.ota.id,
-      commandId: device.ota.commandId || device.ota.id,
-      correlationId: device.ota.correlationId || "",
-      firmwareVersion: reportedFirmwareVersion,
-      confirmedAt: device.ota.confirmedAt,
-    };
-    if (["acknowledged", "applying"].includes(otaCommand.state)) {
-      transitionDeviceCommand(otaCommand, "applied", {
-        at: device.updatedAt,
-        code: "OTA_VERSION_CONFIRMED",
-        detail: "Device reconnected with the requested firmware version",
+    const transition = transitionDeviceOtaLifecycle(device.ota, "confirmed", {
+      allowConfirmed: true,
+      at: device.updatedAt,
+      metadata: {
+        firmwareVersion: reportedFirmwareVersion,
+        detail: "Device reported boot-health confirmation after rollback cancellation",
+      },
+    });
+    if (transition.changed && transition.ota.status === "confirmed") {
+      device.ota = transition.ota;
+      device.otaStatus = transition.ota.status;
+      confirmedOta = {
+        protocolVersion: Number(otaCommand.protocolVersion || device.ota.protocolVersion || 1),
+        otaId: device.ota.id,
+        commandId: device.ota.commandId || device.ota.id,
+        correlationId: device.ota.correlationId || "",
+        firmwareVersion: reportedFirmwareVersion,
+        otaBootOutcome: reportedOtaBootOutcome,
+        confirmedAt: device.ota.confirmedAt,
+      };
+      if (["acknowledged", "applying"].includes(otaCommand.state)) {
+        transitionDeviceCommand(otaCommand, "applied", {
+          at: device.updatedAt,
+          code: "OTA_BOOT_HEALTH_CONFIRMED",
+          detail: "Device reconnected and reported confirmed boot health for the requested firmware",
+        });
+        device.lastCommand = publicDeviceCommand(otaCommand);
+      }
+      await saveDeviceOtaLifecycleRecord(device, device.ota, {
+        allowConfirmed: true,
+        expectedOtaId: device.ota.id,
+        command: otaCommand,
       });
-      await saveDeviceCommandRecord(otaCommand);
       device.lastCommand = publicDeviceCommand(otaCommand);
+      await syncDeviceLastCommand(otaCommand);
     }
   }
   await saveDeviceRecord(device);
@@ -2802,6 +3266,96 @@ async function handleDeviceTelemetry(deviceId, payload = {}) {
   if (confirmedOta) {
     await appendDeviceEvent(device.id, "ota.confirmed", confirmedOta);
   }
+}
+
+const DEVICE_OTA_EVENT_STATUS_MAP = new Map([
+  ["ota.downloading", new Set(["downloading"])],
+  ["ota.verifying", new Set(["verifying"])],
+  ["ota.rebooting", new Set(["rebooting"])],
+  ["ota.rollback", new Set(["rolling_back", "rolled_back"])],
+  ["ota.confirmed", new Set(["confirmed"])],
+  ["ota.failed", new Set(["failed"])],
+]);
+
+function reconcileOtaCommandFromOperationalEvent(command, nextStatus, at) {
+  if (!command) return false;
+  let changed = false;
+  if (["downloading", "verifying", "rebooting", "rolling_back", "confirmed"].includes(nextStatus)) {
+    if (["accepted", "queued"].includes(command.state)) {
+      changed = transitionDeviceCommand(command, "delivered", {
+        at,
+        code: "OTA_EVENT_DELIVERY_CONFIRMED",
+        detail: "Authenticated correlated OTA progress proved command delivery",
+        delivery: { websocket: true, mqtt: false, delivered: true },
+      }).changed || changed;
+    }
+    if (command.state === "delivered") {
+      changed = transitionDeviceCommand(command, "acknowledged", {
+        at,
+        code: "OTA_EVENT_ACKNOWLEDGED",
+        detail: "Authenticated correlated OTA progress proved command acknowledgement",
+      }).changed || changed;
+    }
+    if (command.state === "acknowledged") {
+      changed = transitionDeviceCommand(command, "applying", {
+        at,
+        code: "OTA_EVENT_APPLYING",
+        detail: "Authenticated correlated OTA progress proved command execution",
+      }).changed || changed;
+    }
+  }
+  return changed;
+}
+
+async function handleAudioFailureEvent(deviceId, device, payload = {}) {
+  const recording = getActiveRecordingForDevice(deviceId);
+  const authenticatedSessionId = readString(
+    deviceSockets.get(deviceId)?._deviceAuth?.sessionId,
+    128,
+  );
+  const reportedScanId = readString(payload.scanId, 120);
+  const reportedSessionId = readString(payload.sessionId || payload.audioSessionId, 128);
+  const bindingMatches = Boolean(
+    recording &&
+    authenticatedSessionId &&
+    recording.deviceSessionId === authenticatedSessionId &&
+    (!reportedScanId || reportedScanId === recording.scanId) &&
+    (!reportedSessionId || reportedSessionId === recording.sessionId)
+  );
+  if (!bindingMatches) {
+    await appendDeviceEvent(deviceId, "audio.failed_rejected", {
+      protocolVersion: Number(payload.protocolVersion || 0),
+      scanId: reportedScanId,
+      sessionId: reportedSessionId,
+      code: recording ? "AUDIO_SESSION_BINDING_MISMATCH" : "AUDIO_SESSION_NOT_ACTIVE",
+    });
+    return {
+      accepted: false,
+      code: recording ? "AUDIO_SESSION_BINDING_MISMATCH" : "AUDIO_SESSION_NOT_ACTIVE",
+    };
+  }
+
+  const failureCode = readString(payload.code || payload.failureCode, 80) || "AUDIO_CAPTURE_FAILED";
+  const detail = readString(payload.detail, 500) || "device audio capture failed";
+  const scan = await interruptRecording(
+    recording,
+    `The audio session was interrupted because the device reported ${failureCode}: ${detail}.`,
+  );
+  if (device) {
+    device.audioStatus = "failed";
+    device.lastSeenAt = nowIso();
+    device.updatedAt = device.lastSeenAt;
+    await saveDeviceRecord(device);
+  }
+  await appendDeviceEvent(deviceId, "audio.failed", {
+    protocolVersion: Number(payload.protocolVersion || 0),
+    scanId: recording.scanId,
+    sessionId: recording.sessionId,
+    code: failureCode,
+    detail,
+    terminalScanStatus: scan?.status || "interrupted",
+  });
+  return { accepted: true, code: "AUDIO_FAILURE_TERMINALIZED" };
 }
 
 async function handleDeviceEvent(deviceId, payload = {}) {
@@ -2812,27 +3366,229 @@ async function handleDeviceEvent(deviceId, payload = {}) {
   let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
   if (device && (device.revokedAt || device.status === "revoked")) {
     await appendDeviceEvent(device.id, "event_rejected", { reason: "revoked", eventType });
-    return;
+    return { accepted: false, code: "DEVICE_REVOKED" };
   }
   if (eventType === "command.status") {
-    await handleDeviceCommandStatus(deviceId, payload);
-    return;
+    const accepted = await handleDeviceCommandStatus(deviceId, payload);
+    return { accepted, code: accepted ? "COMMAND_STATUS_ACCEPTED" : "COMMAND_STATUS_REJECTED" };
   }
+  if (eventType === "audio.failed") {
+    return handleAudioFailureEvent(deviceId, device, payload);
+  }
+  let accepted = !eventType.startsWith("ota.");
+  let resultCode = accepted ? "EVENT_RECORDED" : "DEVICE_OTA_STATUS_INVALID";
   if (device) {
-    if (payload.otaStatus || eventType.startsWith("ota.")) {
-      device.otaStatus = readString(payload.otaStatus || eventType.replace(/^ota\./, ""), 80) || device.otaStatus;
+    if (eventType.startsWith("ota.")) {
+      const activeOta = sanitizeDeviceOtaLifecycle(device.ota);
+      const reportedCommandId = readString(payload.commandId, 128);
+      const reportedCorrelationId = readString(payload.correlationId, 128);
+      const reportedOtaId = readString(payload.otaId, 128);
+      const bindingMatches = Boolean(
+        activeOta.id &&
+        activeOta.commandId &&
+        reportedCommandId === activeOta.commandId &&
+        activeOta.correlationId &&
+        reportedCorrelationId === activeOta.correlationId &&
+        reportedOtaId === activeOta.id,
+      );
+      const nextStatus = normalizeDeviceOtaStatus(payload.otaStatus, eventType);
+      const allowedEventStatuses = DEVICE_OTA_EVENT_STATUS_MAP.get(eventType);
+      let otaCommand = bindingMatches && activeOta.commandId
+        ? await findDeviceCommand(device.id, activeOta.commandId)
+        : null;
+      let rejectionCode = "";
+      if (!bindingMatches) rejectionCode = "DEVICE_OTA_EVENT_BINDING_MISMATCH";
+      else if (!nextStatus) rejectionCode = "DEVICE_OTA_STATUS_INVALID";
+      else if (!allowedEventStatuses || !allowedEventStatuses.has(nextStatus)) {
+        rejectionCode = "DEVICE_OTA_EVENT_STATUS_MISMATCH";
+      } else if (!otaCommand) {
+        rejectionCode = "DEVICE_OTA_COMMAND_MISSING";
+      } else {
+        otaCommand = await refreshDeviceCommandExpiry(otaCommand);
+        if (otaCommand?.state === "expired") {
+          rejectionCode = "DEVICE_OTA_EXECUTION_EXPIRED";
+          const refreshedDevice = repositories?.devices?.findById
+            ? await repositories.devices.findById(device.id)
+            : findDevice(device.id);
+          if (refreshedDevice) Object.assign(device, refreshedDevice);
+        }
+      }
+      if (!rejectionCode && nextStatus === "confirmed") {
+        const reportedFirmwareVersion = readString(payload.firmwareVersion, 80);
+        const reportedBootOutcome = readString(payload.otaBootOutcome, 40);
+        const authenticatedSessionId = readString(
+          getAuthenticatedDeviceSocket(device)?._deviceAuth?.sessionId,
+          128,
+        );
+        const confirmationEvidenceValid = Boolean(
+          reportedFirmwareVersion &&
+          reportedFirmwareVersion === activeOta.firmwareVersion &&
+          reportedBootOutcome === "confirmed" &&
+          authenticatedSessionId &&
+          activeOta.requestedSessionId &&
+          authenticatedSessionId !== activeOta.requestedSessionId
+        );
+        if (confirmationEvidenceValid) {
+          reconcileOtaCommandFromOperationalEvent(otaCommand, "confirmed", nowIso());
+        }
+        const confirmationAuthorized = Boolean(
+          confirmationEvidenceValid &&
+          otaCommand &&
+          ["acknowledged", "applying", "applied"].includes(otaCommand.state),
+        );
+        if (!confirmationAuthorized) {
+          rejectionCode = "DEVICE_OTA_BOOT_HEALTH_PROOF_REQUIRED";
+        } else {
+          const transition = transitionDeviceOtaLifecycle(activeOta, "confirmed", {
+            allowConfirmed: true,
+            at: nowIso(),
+            eventType,
+            metadata: {
+              firmwareVersion: reportedFirmwareVersion,
+              detail: "Device reported confirmed boot health after rollback cancellation",
+            },
+          });
+          if (transition.changed || activeOta.status === "confirmed") {
+            device.ota = transition.ota;
+            device.otaStatus = transition.ota.status;
+            device.firmwareVersion = reportedFirmwareVersion;
+            if (["acknowledged", "applying"].includes(otaCommand.state)) {
+              transitionDeviceCommand(otaCommand, "applied", {
+                at: device.ota.updatedAt,
+                code: "OTA_BOOT_HEALTH_CONFIRMED",
+                detail: "Firmware boot health was confirmed on the authenticated reconnect",
+              });
+            }
+            await saveDeviceOtaLifecycleRecord(device, device.ota, {
+              allowConfirmed: true,
+              expectedOtaId: activeOta.id,
+              command: otaCommand,
+            });
+            device.lastCommand = publicDeviceCommand(otaCommand);
+            await syncDeviceLastCommand(otaCommand);
+            accepted = true;
+            resultCode = "DEVICE_OTA_BOOT_HEALTH_ACCEPTED";
+          }
+        }
+      }
+      if (rejectionCode) {
+        accepted = false;
+        resultCode = rejectionCode;
+        await appendDeviceEvent(deviceId, "ota.status_rejected", {
+          protocolVersion: Number(payload.protocolVersion || activeOta.protocolVersion || 1),
+          eventType,
+          commandId: reportedCommandId,
+          correlationId: reportedCorrelationId,
+          otaId: reportedOtaId,
+          reportedStatus: nextStatus || readString(payload.otaStatus, 80),
+          code: rejectionCode,
+        });
+      } else {
+        const statusAt = nowIso();
+        const otaCommandChanged = reconcileOtaCommandFromOperationalEvent(
+          otaCommand,
+          nextStatus,
+          statusAt,
+        );
+        const transition = nextStatus === "confirmed"
+          ? { ota: device.ota, changed: false }
+          : transitionDeviceOtaLifecycle(activeOta, nextStatus, {
+          at: statusAt,
+          eventType,
+          metadata: {
+            detail: readString(payload.detail, 500),
+            failureCode: nextStatus === "failed"
+              ? readString(payload.code || payload.failureCode, 80)
+              : "",
+          },
+          });
+        if (transition.changed) {
+          device.ota = transition.ota;
+          device.otaStatus = transition.ota.status;
+          if (
+            otaCommand &&
+            ["failed", "rolled_back", "expired"].includes(nextStatus) &&
+            !["applied", "failed", "expired"].includes(otaCommand.state)
+          ) {
+            transitionDeviceCommand(
+              otaCommand,
+              nextStatus === "expired" ? "expired" : "failed",
+              {
+                at: device.ota.updatedAt,
+                code: nextStatus === "rolled_back" ? "OTA_ROLLED_BACK" :
+                  nextStatus === "expired" ? "OTA_EXPIRED" :
+                    readString(payload.code || payload.failureCode, 80) || "OTA_FAILED",
+                detail: readString(payload.detail, 240) || `OTA ${nextStatus}`,
+              },
+            );
+          }
+          await saveDeviceOtaLifecycleRecord(device, device.ota, {
+            expectedOtaId: activeOta.id,
+            command: otaCommand,
+          });
+          if (otaCommand) {
+            device.lastCommand = publicDeviceCommand(otaCommand);
+            await syncDeviceLastCommand(otaCommand);
+          }
+          accepted = true;
+          resultCode = "DEVICE_OTA_STATUS_ACCEPTED";
+        } else if (normalizeDeviceOtaStatus(activeOta.status) === nextStatus) {
+          if (otaCommandChanged) {
+            await saveDeviceOtaLifecycleRecord(device, activeOta, {
+              expectedOtaId: activeOta.id,
+              command: otaCommand,
+            });
+            device.lastCommand = publicDeviceCommand(otaCommand);
+            await syncDeviceLastCommand(otaCommand);
+          }
+          accepted = true;
+          resultCode = "DEVICE_OTA_STATUS_REPLAYED";
+        } else if (nextStatus !== "confirmed") {
+          accepted = false;
+          resultCode = "DEVICE_OTA_TRANSITION_REJECTED";
+          await appendDeviceEvent(deviceId, "ota.status_rejected", {
+            protocolVersion: Number(payload.protocolVersion || activeOta.protocolVersion || 1),
+            eventType,
+            commandId: reportedCommandId,
+            correlationId: reportedCorrelationId,
+            otaId: reportedOtaId,
+            reportedStatus: nextStatus,
+            code: resultCode,
+          });
+        }
+      }
     }
     if (payload.audioStatus) {
       device.audioStatus = readString(payload.audioStatus, 80);
-    }
-    if (payload.firmwareVersion) {
-      device.firmwareVersion = readString(payload.firmwareVersion, 80);
     }
     device.lastSeenAt = nowIso();
     device.updatedAt = nowIso();
     await saveDeviceRecord(device);
   }
   await appendDeviceEvent(deviceId, eventType, payload);
+  return { accepted, code: resultCode };
+}
+
+async function waitForDeviceAuthenticationFenceTestGate(deviceId) {
+  if (
+    process.env.NODE_ENV !== "test" ||
+    readString(process.env.DEVICE_AUTH_FENCE_TEST_DEVICE_ID, 120) !== deviceId
+  ) {
+    return;
+  }
+  const readyPath = readString(process.env.DEVICE_AUTH_FENCE_TEST_READY_FILE, 1000);
+  const releasePath = readString(process.env.DEVICE_AUTH_FENCE_TEST_RELEASE_FILE, 1000);
+  if (!readyPath || !releasePath) return;
+  fs.writeFileSync(readyPath, "ready", "utf8");
+  const deadline = Date.now() + 5_000;
+  while (!fs.existsSync(releasePath)) {
+    if (Date.now() >= deadline) {
+      const error = new Error("Timed out waiting for the device authentication fence test gate");
+      error.code = "DEVICE_AUTH_FENCE_TEST_TIMEOUT";
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 async function authenticateDeviceSocket(socket, payload = {}) {
@@ -2863,38 +3619,74 @@ async function authenticateDeviceSocket(socket, payload = {}) {
     return false;
   }
 
-  const previousSocket = deviceSockets.get(result.deviceId);
-  if (previousSocket && previousSocket !== socket) {
-    closeSocket(
-      previousSocket,
-      1008,
-      confirmedRotation ? "CREDENTIAL_ROTATED" : "SESSION_REPLACED",
+  try {
+    await waitForDeviceAuthenticationFenceTestGate(result.deviceId);
+    if (!repositories?.devices?.withAuthenticationFence) {
+      const error = new Error("Canonical device authentication fence is unavailable");
+      error.code = "DEVICE_AUTH_FENCE_UNAVAILABLE";
+      throw error;
+    }
+    await repositories.devices.withAuthenticationFence(
+      result.deviceId,
+      async (currentDevice) => {
+        assertDeviceAuthenticationFence(currentDevice, result);
+        if (socket._cleanedUp || socket.destroyed || !socket.writable) {
+          const error = new Error("Device socket closed before authentication registration");
+          error.code = "DEVICE_AUTH_SOCKET_CLOSED";
+          throw error;
+        }
+        const previousSocket = deviceSockets.get(result.deviceId);
+        socket._deviceId = result.deviceId;
+        socket._deviceAuth = {
+          protocolVersion: 1,
+          deviceId: result.deviceId,
+          organizationId: currentDevice.organizationId || "",
+          sessionId: result.sessionId,
+          credentialSlot: result.credentialSlot,
+          rotationId: result.rotationId || "",
+        };
+        deviceRotationSessionKeys.set(socket, Buffer.from(result.rotationWrapKey));
+        if (socket._authTimeout) {
+          clearTimeout(socket._authTimeout);
+          socket._authTimeout = null;
+        }
+        espClients.add(socket);
+        deviceSockets.set(result.deviceId, socket);
+        if (previousSocket && previousSocket !== socket) {
+          closeSocket(
+            previousSocket,
+            1008,
+            confirmedRotation ? "CREDENTIAL_ROTATED" : "SESSION_REPLACED",
+          );
+        }
+      },
     );
+  } catch (error) {
+    if (Buffer.isBuffer(result.rotationWrapKey)) result.rotationWrapKey.fill(0);
+    if (!socket._cleanedUp && !socket.destroyed && socket.writable) {
+      sendText(socket, JSON.stringify({
+        type: "auth.rejected",
+        code: error.code || "DEVICE_AUTH_FENCE_REJECTED",
+      }));
+      closeSocket(socket, 1008, error.code || "DEVICE_AUTH_FENCE_REJECTED");
+    }
+    return false;
   }
-
-  socket._deviceId = result.deviceId;
-  socket._deviceAuth = {
-    protocolVersion: 1,
-    deviceId: result.deviceId,
-    organizationId: result.device.organizationId || "",
-    sessionId: result.sessionId,
-    credentialSlot: result.credentialSlot,
-    rotationId: result.rotationId || "",
-  };
-  deviceRotationSessionKeys.set(socket, Buffer.from(result.rotationWrapKey));
   result.rotationWrapKey.fill(0);
-  if (socket._authTimeout) {
-    clearTimeout(socket._authTimeout);
-    socket._authTimeout = null;
-  }
-  espClients.add(socket);
-  deviceSockets.set(result.deviceId, socket);
   await handleDeviceTelemetry(result.deviceId, {
     ...(payload.telemetry || {}),
     connectionMethod: "WSS",
     status: "connected",
     audioStatus: readString(payload?.telemetry?.audioStatus, 80) || "ready",
   });
+  if (
+    socket._cleanedUp ||
+    socket.destroyed ||
+    !socket.writable ||
+    deviceSockets.get(result.deviceId) !== socket
+  ) {
+    return false;
+  }
   sendText(
     socket,
     JSON.stringify({
@@ -2935,6 +3727,27 @@ function publishDeviceCommand(deviceId, command) {
     mqtt = true;
   }
   return { websocket, mqtt, delivered: websocket || mqtt };
+}
+
+function publishDeviceCommandWssOnly(deviceId, command, expectedSessionId = "") {
+  const device = findDevice(deviceId);
+  const socket = deviceSockets.get(deviceId);
+  const sessionId = readString(socket?._deviceAuth?.sessionId, 128);
+  const websocket = Boolean(
+    device &&
+    !device.revokedAt &&
+    device.status !== "revoked" &&
+    socket &&
+    socket._deviceAuth?.deviceId === deviceId &&
+    (!expectedSessionId || sessionId === expectedSessionId) &&
+    socket.writable &&
+    !socket.destroyed &&
+    sendText(socket, JSON.stringify(command))
+  );
+  // The OTA payload may contain a transient download bearer. MQTT is an
+  // optional scaffold whose broker can queue/persist QoS messages, so OTA is
+  // deliberately confined to the authenticated WSS session.
+  return { websocket, mqtt: false, delivered: websocket };
 }
 
 function buildDeviceCommand(type, payload, correlationId, ttlMs = 30_000) {
@@ -2997,10 +3810,61 @@ async function syncDeviceLastCommand(command) {
 async function refreshDeviceCommandExpiry(command) {
   if (!command) return null;
   const result = expireDeviceCommandIfOverdue(command);
+  // OTA delivery may already be acknowledged/applying when the device becomes
+  // unreachable. Unlike a generic command, its signed download authority has
+  // a hard deadline and must not permanently block later safe updates.
+  if (
+    !result.changed &&
+    command.type === "ota.update" &&
+    !["applied", "failed", "expired"].includes(command.state) &&
+    Number.isFinite(Date.parse(command.expiresAt || "")) &&
+    Date.parse(command.expiresAt) <= Date.now()
+  ) {
+    result.changed = transitionDeviceCommand(command, "expired", {
+      at: nowIso(),
+      code: "OTA_EXECUTION_EXPIRED",
+      detail: "OTA did not reach authenticated boot-health confirmation before expiry",
+    }).changed;
+  }
   if (result.changed) {
-    await saveDeviceCommandRecord(command);
+    let commandPersistedWithOta = false;
+    if (command.type === "ota.update" && command.state === "expired") {
+      const device = repositories?.devices?.findById
+        ? await repositories.devices.findById(command.deviceId)
+        : findDevice(command.deviceId);
+      if (
+        device?.ota?.id &&
+        device.ota.commandId === command.id &&
+        !OTA_TERMINAL_STATUSES.has(normalizeDeviceOtaStatus(device.ota.status))
+      ) {
+        const otaTransition = transitionDeviceOtaLifecycle(device.ota, "expired", {
+          at: command.updatedAt,
+          metadata: {
+            failureCode: command.code,
+            detail: command.detail,
+          },
+        });
+        if (otaTransition.changed) {
+          await saveDeviceOtaLifecycleRecord(device, otaTransition.ota, {
+            expectedOtaId: device.ota.id,
+            command,
+          });
+          commandPersistedWithOta = true;
+          await appendDeviceEvent(command.deviceId, "ota.expired", {
+            protocolVersion: command.protocolVersion,
+            otaId: device.ota.id,
+            commandId: command.id,
+            correlationId: command.correlationId,
+            otaStatus: "expired",
+            code: command.code,
+          });
+        }
+      }
+    }
+    if (!commandPersistedWithOta) await saveDeviceCommandRecord(command);
     await syncDeviceLastCommand(command);
     await appendDeviceEvent(command.deviceId, "command.expired", {
+      protocolVersion: command.protocolVersion,
       commandId: command.id,
       correlationId: command.correlationId,
       type: command.type,
@@ -3028,6 +3892,10 @@ async function reconcileAudioSessionCommand(command) {
     }
     return;
   }
+  if (command.state === "applied") {
+    await finalizeRecording(recording);
+    return;
+  }
   if (["failed", "expired"].includes(command.state)) {
     await interruptRecording(
       recording,
@@ -3041,6 +3909,7 @@ async function handleDeviceCommandStatus(deviceId, payload) {
   const command = await findDeviceCommand(deviceId, commandId);
   if (!command) {
     await appendDeviceEvent(deviceId, "command.status_rejected", {
+      protocolVersion: Number(payload.protocolVersion || 0),
       commandId,
       correlationId: readString(payload.correlationId, 128),
       reportedState: readString(payload.state, 40),
@@ -3052,6 +3921,7 @@ async function handleDeviceCommandStatus(deviceId, payload) {
   try {
     if (command.type === "device.rotate_secret" && readString(payload.state, 40) === "applied") {
       await appendDeviceEvent(deviceId, "command.status_rejected", {
+        protocolVersion: command.protocolVersion,
         commandId: command.id,
         correlationId: command.correlationId,
         reportedState: "applied",
@@ -3065,31 +3935,42 @@ async function handleDeviceCommandStatus(deviceId, payload) {
     // `created` recording to concurrent readers.
     await reconcileAudioSessionCommand(command);
     if (transition.changed) {
+      let otaPersisted = false;
       if (command.type === "ota.update") {
-        const device = findDevice(deviceId);
+        const device = repositories
+          ? await repositories.devices.findById(deviceId)
+          : findDevice(deviceId);
         if (device?.ota?.commandId === command.id) {
-          const otaState = command.state === "applied"
+          const otaState = command.state === "applying" && command.code === "OTA_REBOOTING"
             ? "rebooting"
-            : command.state === "applying" && command.code === "OTA_REBOOTING"
-              ? "rebooting"
-              : command.state;
-          device.ota.status = otaState;
-          device.ota.updatedAt = command.updatedAt;
-          device.otaStatus = otaState;
-          device.updatedAt = command.updatedAt;
-          await saveDeviceRecord(device);
+            : normalizeDeviceOtaStatus(command.state);
+          const otaTransition = transitionDeviceOtaLifecycle(device.ota, otaState, {
+            at: command.updatedAt,
+            metadata: {
+              failureCode: command.state === "failed" ? command.code : "",
+              detail: command.detail,
+            },
+          });
+          device.ota = otaTransition.ota;
+          device.otaStatus = otaTransition.ota.status;
+          await saveDeviceOtaLifecycleRecord(device, device.ota, {
+            expectedOtaId: device.ota.id,
+            command,
+          });
+          otaPersisted = true;
         }
       }
       const rotationPersisted =
         command.type === "device.rotate_secret"
           ? await updateCredentialRotationFromCommand(deviceId, command)
           : false;
-      if (!rotationPersisted) {
+      if (!rotationPersisted && !otaPersisted) {
         await saveDeviceCommandRecord(command);
-        await syncDeviceLastCommand(command);
       }
+      if (!rotationPersisted) await syncDeviceLastCommand(command);
     }
     await appendDeviceEvent(deviceId, transition.changed ? `command.${command.state}` : "command.status_replay", {
+      protocolVersion: command.protocolVersion,
       commandId: command.id,
       correlationId: command.correlationId,
       state: command.state,
@@ -3100,6 +3981,7 @@ async function handleDeviceCommandStatus(deviceId, payload) {
     return true;
   } catch (error) {
     await appendDeviceEvent(deviceId, "command.status_rejected", {
+      protocolVersion: Number(command?.protocolVersion || payload.protocolVersion || 0),
       commandId,
       correlationId: readString(payload.correlationId, 128),
       reportedState: readString(payload.state, 40),
@@ -3203,24 +4085,24 @@ function localizeLegacyDbText() {
   }
 }
 
-function markInterruptedRecordings() {
-  let changed = false;
-
-  for (const scan of db.scans) {
-    if (scan.status === "recording") {
-      scan.status = "interrupted";
-      scan.endedAt = scan.endedAt || nowIso();
-      scan.aiLabel = scan.aiLabel || "interrupted";
-      scan.aiSummary =
+async function markInterruptedRecordings() {
+  const recoveredAt = nowIso();
+  const stranded = db.scans.filter((scan) => ["created", "recording"].includes(scan.status));
+  for (const scan of stranded) {
+    Object.assign(scan, {
+      status: "interrupted",
+      processingStatus: "interrupted",
+      endedAt: scan.endedAt || recoveredAt,
+      aiLabel: "interrupted",
+      aiConfidence: null,
+      aiSummary:
         scan.aiSummary ||
-        "Lượt ghi còn mở khi máy chủ khởi động lại. Hãy tạo lượt đo mới để có file WAV hoàn chỉnh.";
-      changed = true;
-    }
+        "Lượt ghi còn mở khi máy chủ khởi động lại. Hãy tạo lượt đo mới để có file WAV hoàn chỉnh.",
+      updatedAt: recoveredAt,
+    });
+    await saveScanRecord(scan);
   }
-
-  if (changed) {
-    saveDb();
-  }
+  return stranded.length;
 }
 
 class BeatDetector {
@@ -3415,18 +4297,34 @@ function getPrimaryActiveRecordingForListener(listener = null) {
   return selected;
 }
 
-function getStatusPayload(listener = null) {
+function getStatusPayload(listener = null, expectedWorkspaceId = "") {
   const espCount = getAudioSourceCount();
-  const visibleRecordings = getActiveRecordingsForListener(listener);
-  const primaryRecording = listener
-    ? getPrimaryActiveRecordingForListener(listener)
-    : visibleRecordings.find((recording) => recording.confirmed) || visibleRecordings[0] || null;
+  const allVisibleRecordings = getActiveRecordingsForListener(listener);
+  const normalizedWorkspaceId =
+    typeof expectedWorkspaceId === "string" ? expectedWorkspaceId.trim() : "";
+  const visibleRecordings = normalizedWorkspaceId
+    ? allVisibleRecordings.filter(
+        (recording) => recording.organizationId === normalizedWorkspaceId,
+      )
+    : allVisibleRecordings;
+  const primaryRecording = normalizedWorkspaceId
+    ? selectWorkspaceRecording(visibleRecordings, normalizedWorkspaceId)
+    : listener
+      ? getPrimaryActiveRecordingForListener(listener)
+      : visibleRecordings.find((recording) => recording.confirmed) ||
+        visibleRecordings[0] ||
+        null;
+  const exposeInfrastructure = !listener?._wsUser;
   return {
     type: "status",
-    esp: espCount,
-    wsEsp: espClients.size,
-    udpEsp: Math.max(0, espCount - espClients.size),
-    listeners: listenClients.size,
+    ...(exposeInfrastructure
+      ? {
+          esp: espCount,
+          wsEsp: espClients.size,
+          udpEsp: Math.max(0, espCount - espClients.size),
+          listeners: listenClients.size,
+        }
+      : {}),
     recording: Boolean(primaryRecording?.confirmed),
     workspaceId: primaryRecording?.confirmed ? primaryRecording.organizationId : null,
     patientId: primaryRecording?.confirmed ? primaryRecording.patientId : null,
@@ -3443,8 +4341,12 @@ function getStatusPayload(listener = null) {
       state: findScan(recording.scanId)?.status || "created",
     })),
     sampleRate: SAMPLE_RATE,
-    udpPort: AUDIO_UDP_PORT,
-    httpPort: PORT,
+    ...(exposeInfrastructure
+      ? {
+          udpPort: AUDIO_UDP_PORT,
+          httpPort: PORT,
+        }
+      : {}),
     updatedAt: nowIso(),
   };
 }
@@ -4008,7 +4910,33 @@ function handleEspText(socket, payload) {
   void deviceEventExecutor.enqueue(
     socket._deviceAuth.deviceId,
     () => handleDeviceEvent(socket._deviceAuth.deviceId, message),
-  ).catch((err) =>
+  ).then((result) => {
+    const eventType = readString(message.type || message.eventType, 120);
+    const otaStatus = normalizeDeviceOtaStatus(message.otaStatus, eventType);
+    const commandId = readString(message.commandId, 128);
+    const correlationId = readString(message.correlationId, 128);
+    const otaId = readString(message.otaId, 128);
+    if (
+      eventType.startsWith("ota.") &&
+      otaStatus &&
+      commandId &&
+      correlationId &&
+      otaId &&
+      (!messageDeviceId || socket._deviceAuth?.deviceId === messageDeviceId)
+    ) {
+      sendText(socket, JSON.stringify({
+        type: result?.accepted === true ? "event.accepted" : "event.rejected",
+        protocolVersion: 1,
+        deviceId: socket._deviceAuth.deviceId,
+        eventType,
+        otaStatus,
+        commandId,
+        correlationId,
+        otaId,
+        code: readString(result?.code, 80) || "DEVICE_EVENT_REJECTED",
+      }));
+    }
+  }).catch((err) =>
     console.error(`Device event error: ${err.message}`)
   );
 }
@@ -4051,10 +4979,27 @@ function handleText(socket, payload) {
 async function handleScanSocketCommand(socket, message) {
   try {
     if (message.type === "start_scan") {
-      const scan = await startRecording(message.payload || message, socket._wsUser || null);
-      sendText(socket, JSON.stringify({ type: "scan_started", scan }));
+      const idempotencyKey = getRequiredScanSocketIdempotencyKey(message, "scan start");
+      const payload = message.payload && typeof message.payload === "object"
+        ? { ...message.payload }
+        : Object.fromEntries(
+          Object.entries(message).filter(([key]) => !["type", "idempotencyKey"].includes(key)),
+        );
+      const outcome = await startScanIdempotently(
+        payload,
+        socket._wsUser || null,
+        idempotencyKey,
+        payload,
+      );
+      sendText(socket, JSON.stringify({
+        type: "scan_started",
+        scan: outcome.resource,
+        idempotent: outcome.replayed,
+      }));
       return;
     }
+
+    const idempotencyKey = getRequiredScanSocketIdempotencyKey(message, "scan stop");
 
     const visibleRecordings = getActiveRecordingsForListener(socket);
     if (!message.scanId && visibleRecordings.length > 1) {
@@ -4070,8 +5015,23 @@ async function handleScanSocketCommand(socket, message) {
     } else if (AUTH_MODE === "production" && !ALLOW_DEMO_AUTH) {
       throw httpError(401, "Realtime authentication is required");
     }
-    const scan = scanId ? await stopRecording(scanId) : await stopActiveRecording(socket._wsUser || null);
-    sendText(socket, JSON.stringify({ type: "scan_stopped", scan }));
+    const outcome = scanId
+      ? await stopScanIdempotently(
+        targetScan,
+        socket._wsUser || null,
+        idempotencyKey,
+        { scanId },
+      )
+      : await stopActiveScanIdempotently(
+        socket._wsUser || null,
+        idempotencyKey,
+        {},
+      );
+    sendText(socket, JSON.stringify({
+      type: "scan_stopped",
+      scan: outcome.resource,
+      idempotent: outcome.replayed,
+    }));
   } catch (err) {
     sendText(
       socket,
@@ -4183,6 +5143,106 @@ function readString(value, maxLength = 200) {
   return value.trim().slice(0, maxLength);
 }
 
+function readAuthSessionRevokeIdempotencyKey(req, { required = true } = {}) {
+  const rawKey = req.headers["idempotency-key"];
+  if (typeof rawKey !== "string" || !rawKey.trim()) {
+    if (!required) return "";
+    throw httpError(
+      400,
+      "Idempotency-Key is required for auth session revocation",
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  if (rawKey.length > 160) {
+    throw httpError(
+      400,
+      "Idempotency-Key exceeds the supported length",
+      "IDEMPOTENCY_KEY_TOO_LONG",
+    );
+  }
+  return rawKey.trim();
+}
+
+function readAuthSessionIdSegment(value) {
+  let sessionId = "";
+  try {
+    sessionId = decodeURIComponent(String(value || ""));
+  } catch {
+    throw httpError(400, "Auth session ID is invalid", "AUTH_SESSION_ID_INVALID");
+  }
+  if (!sessionId || sessionId !== sessionId.trim() || sessionId.length > 160) {
+    throw httpError(400, "Auth session ID is invalid", "AUTH_SESSION_ID_INVALID");
+  }
+  return sessionId;
+}
+
+function createLegacyAuthSessionRevokeIdempotencyKey(userId, sessionId) {
+  const digest = createIdempotencyFingerprint({
+    operation: "auth.session.revoke",
+    userId,
+    sessionId,
+  });
+  return `legacy-auth-session-revoke-${digest.slice(0, 64)}`;
+}
+
+function readPasswordSecret(value, fieldCode) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw httpError(
+      400,
+      "Password fields are required",
+      fieldCode === "current" ? "PASSWORD_CURRENT_REQUIRED" : "PASSWORD_NEW_REQUIRED",
+    );
+  }
+  if (value.length > 200) {
+    throw httpError(400, "Password exceeds the supported length", "PASSWORD_TOO_LONG");
+  }
+  return value;
+}
+
+function assertCanonicalPasswordChangePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(
+      400,
+      "Password change body must be an object",
+      "PASSWORD_CHANGE_REQUEST_INVALID",
+      { fieldErrors: { request: "Expected a JSON object" } },
+    );
+  }
+  const unsupported = Object.keys(payload).filter(
+    (key) => !["currentPassword", "newPassword"].includes(key),
+  );
+  if (unsupported.length > 0) {
+    throw httpError(
+      400,
+      "Password change body contains unsupported fields",
+      "PASSWORD_CHANGE_REQUEST_INVALID",
+      { fieldErrors: { request: "Only currentPassword and newPassword are accepted" } },
+    );
+  }
+}
+
+function assertStrongPasswordSecret(currentPassword, nextPassword) {
+  if (
+    nextPassword.length < 8 ||
+    !/[A-Z]/.test(nextPassword) ||
+    !/[a-z]/.test(nextPassword) ||
+    !/[0-9]/.test(nextPassword)
+  ) {
+    throw httpError(
+      400,
+      "New password must contain at least 8 characters, uppercase, lowercase, and a number",
+      "PASSWORD_TOO_WEAK",
+    );
+  }
+  if (nextPassword === currentPassword) {
+    throw httpError(
+      400,
+      "New password must differ from the current password",
+      "PASSWORD_UNCHANGED",
+    );
+  }
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -4244,15 +5304,6 @@ function hashValue(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
 
-function requireDeviceEnrollmentSecret(payload = {}) {
-  const secret = readString(payload.deviceSecret, 512);
-  const byteLength = Buffer.byteLength(secret, "utf8");
-  if (byteLength < 32 || byteLength > 95) {
-    throw httpError(400, "Device enrollment secret must contain between 32 and 95 bytes");
-  }
-  return secret;
-}
-
 function deriveDeviceClaimCode(device, idempotencyKey, fingerprint) {
   const verificationMaterial = readString(device?.secretHash, 200);
   if (!verificationMaterial) {
@@ -4278,12 +5329,107 @@ function deriveDeviceClaimCode(device, idempotencyKey, fingerprint) {
     .toUpperCase();
 }
 
+const PUBLIC_DEVICE_FIELDS = Object.freeze([
+  "id",
+  "organizationId",
+  "pairedUserId",
+  "ownerUserId",
+  "assignedPatientId",
+  "ownershipState",
+  "revokedByUserId",
+  "name",
+  "type",
+  "manufacturer",
+  "model",
+  "serialNumber",
+  "purchaseDate",
+  "status",
+  "signal",
+  "wifiRssi",
+  "wifiSsid",
+  "ipAddress",
+  "battery",
+  "connected",
+  "connectionMethod",
+  "firmwareVersion",
+  "otaStatus",
+  "audioStatus",
+  "backendHost",
+  "backendPort",
+  "lastSeenAt",
+  "revokedAt",
+  "secretRotatedAt",
+  "createdAt",
+  "updatedAt",
+]);
+
+const PUBLIC_DEVICE_OTA_FIELDS = Object.freeze([
+  "id",
+  "commandId",
+  "correlationId",
+  "firmwareVersion",
+  "checksum",
+  "firmwareFileId",
+  "firmwareFileName",
+  "hardwareTarget",
+  "partitionTarget",
+  "minimumProtocolVersion",
+  "expiresAt",
+  "status",
+  "createdAt",
+  "updatedAt",
+]);
+
+const DEVICE_PROVISION_RECEIPT_FIELDS = Object.freeze([
+  "id",
+  "organizationId",
+  "name",
+  "type",
+  "manufacturer",
+  "model",
+  "serialNumber",
+  "purchaseDate",
+  "ownershipState",
+  "status",
+  "connected",
+  "online",
+  "createdAt",
+  "updatedAt",
+]);
+
+const DEVICE_PAIR_RECEIPT_FIELDS = Object.freeze([
+  "id",
+  "organizationId",
+  "ownerUserId",
+  "pairedUserId",
+  "name",
+  "type",
+  "ownershipState",
+  "status",
+  "connected",
+  "online",
+  "connectionMethod",
+  "updatedAt",
+]);
+
+function copyOwnFields(source, fieldNames) {
+  const result = {};
+  if (!source || typeof source !== "object") return result;
+  for (const field of fieldNames) {
+    if (Object.prototype.hasOwnProperty.call(source, field) && source[field] !== undefined) {
+      result[field] = source[field];
+    }
+  }
+  return result;
+}
+
 function publicDevice(device) {
   if (!device) return null;
-  const { secret, deviceSecret, secretHash, claimCodeHash, ...safeDevice } = device;
-  const privateRotation = sanitizeDeviceCredentialRotation(safeDevice.credentialRotation);
+  const safeDevice = copyOwnFields(device, PUBLIC_DEVICE_FIELDS);
+  const privateRotation = sanitizeDeviceCredentialRotation(device.credentialRotation);
   if (privateRotation.id) {
     safeDevice.credentialRotation = {
+      protocolVersion: privateRotation.protocolVersion,
       id: privateRotation.id,
       state: privateRotation.state,
       commandId: privateRotation.commandId || "",
@@ -4301,20 +5447,50 @@ function publicDevice(device) {
   } else {
     delete safeDevice.credentialRotation;
   }
-  if (safeDevice.telemetry) {
-    safeDevice.telemetry = sanitizeDeviceTelemetry(safeDevice.telemetry);
+  if (device.telemetry) {
+    safeDevice.telemetry = sanitizeDeviceTelemetry(device.telemetry);
   }
-  if (safeDevice.ota && typeof safeDevice.ota === "object") {
-    const { token, tokenHash, signature, requestedSessionId, ...safeOta } = safeDevice.ota;
-    if (safeOta.firmwareFileId) {
-      safeOta.url = "";
-    }
-    safeDevice.ota = safeOta;
+  if (isCanonicalDeviceOtaLifecycle(device.ota)) {
+    const publicOta = copyOwnFields(device.ota, PUBLIC_DEVICE_OTA_FIELDS);
+    safeDevice.ota = {
+      protocolVersion: Number(publicOta.protocolVersion || 1),
+      id: publicOta.id,
+      commandId: publicOta.commandId,
+      correlationId: publicOta.correlationId,
+      firmwareVersion: publicOta.firmwareVersion,
+      checksum: publicOta.checksum,
+      firmwareFileId: publicOta.firmwareFileId || "",
+      firmwareFileName: publicOta.firmwareFileName || "",
+      hardwareTarget: publicOta.hardwareTarget,
+      partitionTarget: publicOta.partitionTarget,
+      minimumProtocolVersion: Number(publicOta.minimumProtocolVersion),
+      expiresAt: publicOta.expiresAt,
+      status: normalizeDeviceOtaStatus(publicOta.status),
+      createdAt: publicOta.createdAt,
+      updatedAt: publicOta.updatedAt,
+    };
+  } else {
+    delete safeDevice.ota;
+    delete safeDevice.otaStatus;
+  }
+  const durableLatestCommand = (Array.isArray(db?.deviceCommands) ? db.deviceCommands : [])
+    .filter((command) => command.deviceId === device.id)
+    .sort((left, right) => String(right.issuedAt || "").localeCompare(String(left.issuedAt || "")))[0];
+  if (durableLatestCommand || device.lastCommand) {
+    safeDevice.lastCommand = publicDeviceCommand(durableLatestCommand || device.lastCommand);
   }
   return {
     ...safeDevice,
     online: Boolean(getAuthenticatedDeviceSocket(device)),
   };
+}
+
+function publicProvisionedDeviceReceipt(device) {
+  return copyOwnFields(publicDevice(device), DEVICE_PROVISION_RECEIPT_FIELDS);
+}
+
+function publicPairedDeviceReceipt(device) {
+  return copyOwnFields(publicDevice(device), DEVICE_PAIR_RECEIPT_FIELDS);
 }
 
 function deviceOwnershipExpectation(device = {}) {
@@ -4371,6 +5547,168 @@ function createDevicePairingState(device) {
 
 function getIdempotencyKey(req, payload = {}) {
   return readString(req.headers["idempotency-key"] || payload.idempotencyKey, 160);
+}
+
+function getRequiredHeaderIdempotencyKey(req, mutationLabel) {
+  const raw = req.headers["idempotency-key"];
+  if (Array.isArray(raw)) {
+    throw httpError(
+      400,
+      `Idempotency-Key must be a single header for ${mutationLabel}`,
+      "IDEMPOTENCY_KEY_INVALID",
+    );
+  }
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) {
+    throw httpError(
+      400,
+      `Idempotency-Key is required for ${mutationLabel}`,
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  if (value.length > 160 || value.includes(",")) {
+    throw httpError(
+      400,
+      `Idempotency-Key is invalid for ${mutationLabel}`,
+      "IDEMPOTENCY_KEY_INVALID",
+    );
+  }
+  return value;
+}
+
+function getRequiredPatientAuthorityHeader(req, headerName, fieldLabel) {
+  const raw = req.headers[headerName];
+  if (Array.isArray(raw)) {
+    throw httpError(
+      400,
+      `Patient mutation ${fieldLabel} must be a single header`,
+      "PATIENT_MUTATION_AUTHORITY_INVALID",
+    );
+  }
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) {
+    throw httpError(
+      400,
+      `Patient mutation ${fieldLabel} is required`,
+      "PATIENT_MUTATION_AUTHORITY_REQUIRED",
+    );
+  }
+  if (value.length > 160 || value.includes(",")) {
+    throw httpError(
+      400,
+      `Patient mutation ${fieldLabel} is invalid`,
+      "PATIENT_MUTATION_AUTHORITY_INVALID",
+    );
+  }
+  return value;
+}
+
+function requirePatientMutationAuthority(req, user) {
+  if (!isPatientUser(user)) return null;
+  const expectedUserId = getRequiredPatientAuthorityHeader(
+    req,
+    "x-shcare-expected-user-id",
+    "account authority",
+  );
+  const expectedWorkspaceId = getRequiredPatientAuthorityHeader(
+    req,
+    "x-shcare-expected-workspace-id",
+    "workspace authority",
+  );
+  const expectedAuthSessionId = getRequiredPatientAuthorityHeader(
+    req,
+    "x-shcare-expected-auth-session-id",
+    "authentication-session authority",
+  );
+  const currentWorkspaceId =
+    getUserWorkspaceContext(user).currentWorkspaceId ||
+    readString(user.organizationId, 120);
+  const currentAuthSessionId = readString(req.authSession?.id, 160);
+  if (
+    expectedUserId !== user.id ||
+    !currentWorkspaceId ||
+    expectedWorkspaceId !== currentWorkspaceId ||
+    !currentAuthSessionId ||
+    expectedAuthSessionId !== currentAuthSessionId
+  ) {
+    throw httpError(
+      409,
+      "Patient mutation authority changed before dispatch",
+      "PATIENT_MUTATION_AUTHORITY_MISMATCH",
+    );
+  }
+  return { expectedUserId, expectedWorkspaceId, expectedAuthSessionId };
+}
+
+function getRequiredAvatarMutationAuthorityHeader(req, headerName) {
+  const raw = req.headers[headerName];
+  if (Array.isArray(raw)) {
+    throw httpError(
+      400,
+      "Avatar mutation authority headers must be singular",
+      "AVATAR_MUTATION_AUTHORITY_INVALID",
+    );
+  }
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) {
+    throw httpError(
+      400,
+      "Avatar mutation requires exact account, workspace and auth-session authority",
+      "AVATAR_MUTATION_AUTHORITY_REQUIRED",
+    );
+  }
+  if (value.length > 160 || value.includes(",")) {
+    throw httpError(
+      400,
+      "Avatar mutation authority is invalid",
+      "AVATAR_MUTATION_AUTHORITY_INVALID",
+    );
+  }
+  return value;
+}
+
+function resolveAvatarMutationAuthority(
+  req,
+  user,
+  organizationId,
+  canonicalRequest,
+) {
+  const userId = readString(user?.id, 160);
+  const workspaceId = readString(organizationId, 160);
+  const authSessionId = readString(req.authSession?.id, 160);
+  if (!userId || !workspaceId || !authSessionId) {
+    throw httpError(
+      409,
+      "Avatar mutation authentication authority is no longer current",
+      "AUTH_SESSION_REPLACED",
+    );
+  }
+  if (canonicalRequest) {
+    const expectedUserId = getRequiredAvatarMutationAuthorityHeader(
+      req,
+      "x-shcare-expected-user-id",
+    );
+    const expectedWorkspaceId = getRequiredAvatarMutationAuthorityHeader(
+      req,
+      "x-shcare-expected-workspace-id",
+    );
+    const expectedAuthSessionId = getRequiredAvatarMutationAuthorityHeader(
+      req,
+      "x-shcare-expected-auth-session-id",
+    );
+    if (
+      expectedUserId !== userId ||
+      expectedWorkspaceId !== workspaceId ||
+      expectedAuthSessionId !== authSessionId
+    ) {
+      throw httpError(
+        409,
+        "Avatar mutation authority changed before dispatch",
+        "AUTH_SESSION_REPLACED",
+      );
+    }
+  }
+  return { userId, workspaceId, authSessionId };
 }
 
 function getIdempotencyScope(user, organizationId = "") {
@@ -4482,6 +5820,102 @@ function rememberIdempotentResource(user, key, operation, resourceType, resource
     lastSeenAt: nowIso(),
   });
   db.idempotencyKeys = db.idempotencyKeys.slice(0, 500);
+}
+
+function getScanMutationWorkspaceId(user, payload = {}, scan = null) {
+  if (scan) return readString(scan.organizationId || getScanOrgId(scan), 120);
+  const workspace = getUserWorkspaceContext(user);
+  return readString(
+    workspace.currentWorkspaceId || payload.organizationId || user?.organizationId,
+    120,
+  );
+}
+
+function createScanMutationFingerprint({ operation, user, organizationId, scanId = "", payload = {} }) {
+  return createIdempotencyFingerprint({
+    contractVersion: 1,
+    operation,
+    actorUserId: readString(user?.id, 120),
+    organizationId: readString(organizationId, 120),
+    scanId: readString(scanId, 120),
+    payload,
+  });
+}
+
+function getRequiredScanSocketIdempotencyKey(message, mutationLabel) {
+  const raw = message?.idempotencyKey;
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) {
+    throw httpError(
+      400,
+      `Idempotency-Key is required for ${mutationLabel}`,
+      "IDEMPOTENCY_KEY_REQUIRED",
+    );
+  }
+  if (value.length > 160 || value.includes(",")) {
+    throw httpError(
+      400,
+      `Idempotency-Key is invalid for ${mutationLabel}`,
+      "IDEMPOTENCY_KEY_INVALID",
+    );
+  }
+  return value;
+}
+
+async function runScanMutationIdempotently({
+  user,
+  idempotencyKey,
+  operation,
+  organizationId,
+  fingerprint,
+  action,
+}) {
+  const replay = findIdempotentResource(user, idempotencyKey, operation, {
+    organizationId,
+    fingerprint,
+  });
+  if (replay) return { resource: replay, replayed: true };
+
+  const inFlightKey = `${getIdempotencyScope(user, organizationId)}:${operation}:${idempotencyKey}`;
+  const active = scanMutationInFlight.get(inFlightKey);
+  if (active) {
+    if (active.fingerprint !== fingerprint) {
+      throw httpError(
+        409,
+        "Idempotency-Key was already used with a different request payload",
+        "IDEMPOTENCY_KEY_REUSED",
+      );
+    }
+    const outcome = await active.promise;
+    return { resource: outcome.resource, replayed: true };
+  }
+
+  const promise = (async () => {
+    const durableReplay = findIdempotentResource(user, idempotencyKey, operation, {
+      organizationId,
+      fingerprint,
+    });
+    if (durableReplay) return { resource: durableReplay, replayed: true };
+    const resource = await action();
+    rememberIdempotentResource(
+      user,
+      idempotencyKey,
+      operation,
+      "scan",
+      resource.id,
+      { organizationId, fingerprint, responseStatus: 200 },
+    );
+    await saveDb();
+    return { resource, replayed: false };
+  })();
+  scanMutationInFlight.set(inFlightKey, { fingerprint, promise });
+  try {
+    return await promise;
+  } finally {
+    if (scanMutationInFlight.get(inFlightKey)?.promise === promise) {
+      scanMutationInFlight.delete(inFlightKey);
+    }
+  }
 }
 
 function normalizeDateOfBirth(payload = {}, currentValue = "") {
@@ -4625,8 +6059,13 @@ function updatePatientRecord(patient, payload = {}, options = {}) {
   return patient;
 }
 
-function getPatientStats(patientId) {
-  const scans = db.scans.filter((scan) => scan.patientId === patientId);
+function getPatientStats(patientId, organizationId = "") {
+  const canonicalWorkspaceId = readString(organizationId, 120);
+  const scans = db.scans.filter(
+    (scan) =>
+      scan.patientId === patientId &&
+      (!canonicalWorkspaceId || getScanOrgId(scan) === canonicalWorkspaceId),
+  );
   const latest = scans.reduce((winner, scan) => {
     const time = scan.startedAt || scan.createdAt || "";
     if (!winner || time > (winner.startedAt || winner.createdAt || "")) {
@@ -4637,7 +6076,7 @@ function getPatientStats(patientId) {
 
   return {
     scanCount: scans.length,
-    lastScanAt: latest ? latest.startedAt : null,
+    lastScanAt: latest ? latest.startedAt || latest.createdAt || null : null,
     lastAiLabel: latest ? latest.aiLabel : null,
   };
 }
@@ -4655,7 +6094,7 @@ function withPatientStats(patient) {
     age: patient.dateOfBirth ? ageFromDateOfBirth(patient.dateOfBirth) : patient.age,
     primaryDoctorId: doctor?.id || readString(patient.primaryDoctorId, 120),
     doctorName: doctor?.name || readString(patient.doctorName, 160),
-    ...getPatientStats(patient.id),
+    ...getPatientStats(patient.id, patient.organizationId),
   };
 }
 
@@ -4732,11 +6171,12 @@ function assertAppointmentCancellationReason(status, cancellationReason) {
 }
 
 function findAppointmentConflict(candidate, appointments = []) {
-  if (!candidate || !APPOINTMENT_ACTIVE_STATUSES.has(candidate.status)) return null;
+  if (!candidate || candidate.deletedAt || !APPOINTMENT_ACTIVE_STATUSES.has(candidate.status)) return null;
   const candidateStart = Date.parse(candidate.startsAt || "");
   const candidateEnd = Date.parse(candidate.endsAt || "");
   return appointments.find((appointment) => {
     if (!appointment || appointment.id === candidate.id) return false;
+    if (appointment.deletedAt) return false;
     if (appointment.organizationId !== candidate.organizationId) return false;
     if (!APPOINTMENT_ACTIVE_STATUSES.has(appointment.status)) return false;
     const samePatient = Boolean(candidate.patientId && appointment.patientId === candidate.patientId);
@@ -4849,8 +6289,11 @@ function updateAppointmentRecord(appointment, payload = {}) {
   return nextAppointment;
 }
 
-function findAppointment(appointmentId) {
-  return db.appointments.find((appointment) => appointment.id === appointmentId);
+function findAppointment(appointmentId, options = {}) {
+  const includeDeleted = options.includeDeleted === true;
+  return db.appointments.find(
+    (appointment) => appointment.id === appointmentId && (includeDeleted || !appointment.deletedAt),
+  );
 }
 
 function publicAppointment(appointment) {
@@ -4859,7 +6302,23 @@ function publicAppointment(appointment) {
     ? db.users.find((user) => user.id === appointment.doctorUserId || user.firebaseUid === appointment.doctorUserId)
     : null;
   return {
-    ...appointment,
+    id: appointment.id,
+    organizationId: appointment.organizationId || "",
+    patientId: appointment.patientId || "",
+    doctorUserId: appointment.doctorUserId || "",
+    type: appointment.type || "remote_consultation",
+    status: appointment.status || "scheduled",
+    startsAt: appointment.startsAt || "",
+    endsAt: appointment.endsAt || "",
+    location: appointment.location || "",
+    channel: appointment.channel || "",
+    reason: appointment.reason || "",
+    notes: appointment.notes || "",
+    cancellationReason: appointment.cancellationReason || "",
+    cancelledAt: appointment.cancelledAt || "",
+    completedAt: appointment.completedAt || "",
+    createdAt: appointment.createdAt || "",
+    updatedAt: appointment.updatedAt || "",
     patient: patient
       ? {
           id: patient.id,
@@ -5053,8 +6512,36 @@ function requireRole(req, roles) {
   return user;
 }
 
-function ensurePatientProfileForUser(user) {
+function canUsePatientProfileAsActive(user, profile, workspaceId = "") {
+  if (!user || !profile || profile.deletedAt) return false;
+  const canonicalWorkspaceId =
+    readString(workspaceId, 120) || readString(user.organizationId, 120);
+  if (
+    !canonicalWorkspaceId ||
+    readString(profile.organizationId, 120) !== canonicalWorkspaceId
+  ) {
+    return false;
+  }
+  return [
+    profile.ownerUserId,
+    profile.accountUserId,
+    profile.guardianUserId,
+  ]
+    .filter(Boolean)
+    .includes(user.id);
+}
+
+function ensurePatientProfileForUser(user, workspaceId = "") {
   if (!isPatientUser(user)) {
+    return null;
+  }
+  const lockedDoctorRequestTarget = isDoctorRoleRequestTargetLocked(user);
+  const canonicalWorkspaceId =
+    readString(workspaceId, 120) ||
+    (lockedDoctorRequestTarget
+      ? readString(getUserWorkspaceContext(user).currentWorkspaceId, 120)
+      : readString(user.organizationId, 120));
+  if (!canonicalWorkspaceId) {
     return null;
   }
 
@@ -5062,6 +6549,8 @@ function ensurePatientProfileForUser(user) {
     const existing = findPatient(user.patientId);
     if (
       existing &&
+      !existing.deletedAt &&
+      readString(existing.organizationId, 120) === canonicalWorkspaceId &&
       (existing.accountUserId === user.id ||
         (existing.ownerUserId === user.id && (existing.profileType === "self" || existing.relationship === "self")) ||
         (!existing.ownerUserId && !existing.accountUserId))
@@ -5071,7 +6560,13 @@ function ensurePatientProfileForUser(user) {
       existing.profileType = "self";
       existing.relationship = "self";
       const selectedProfile = user.activePatientId ? findPatient(user.activePatientId) : null;
-      user.activePatientId = selectedProfile?.ownerUserId === user.id ? selectedProfile.id : existing.id;
+      user.activePatientId = canUsePatientProfileAsActive(
+        user,
+        selectedProfile,
+        canonicalWorkspaceId,
+      )
+        ? selectedProfile.id
+        : existing.id;
       return existing;
     }
   }
@@ -5079,6 +6574,12 @@ function ensurePatientProfileForUser(user) {
   const email = readString(user.email, 160).toLowerCase();
   const phone = readString(user.phone, 40).replace(/\s/g, "");
   let patient = db.patients.find((item) => {
+    if (item.deletedAt) {
+      return false;
+    }
+    if (readString(item.organizationId, 120) !== canonicalWorkspaceId) {
+      return false;
+    }
     if (
       item.accountUserId !== user.id &&
       !(item.ownerUserId === user.id && (item.profileType === "self" || item.relationship === "self"))
@@ -5101,14 +6602,20 @@ function ensurePatientProfileForUser(user) {
       accountUserId: user.id,
       profileType: "self",
       relationship: "self",
-      organizationId: user.organizationId,
+      organizationId: canonicalWorkspaceId,
       notes: "Patient profile created for app account",
     });
   }
 
   user.patientId = patient.id;
   const selectedProfile = user.activePatientId ? findPatient(user.activePatientId) : null;
-  user.activePatientId = selectedProfile?.ownerUserId === user.id ? selectedProfile.id : patient.id;
+  user.activePatientId = canUsePatientProfileAsActive(
+    user,
+    selectedProfile,
+    canonicalWorkspaceId,
+  )
+    ? selectedProfile.id
+    : patient.id;
   patient.ownerUserId = user.id;
   patient.accountUserId = patient.accountUserId || user.id;
   patient.profileType = "self";
@@ -5292,11 +6799,18 @@ function hasDirectPatientAccess(user, patient) {
   if (!user || !patient) {
     return false;
   }
+  if (patient.deletedAt) {
+    return false;
+  }
   if (isPlatformAdminUser(user)) {
     return true;
   }
   if (isPatientUser(user)) {
-    const selfProfile = ensurePatientProfileForUser(user);
+    const workspaceContext = getUserWorkspaceContext(user);
+    const selfProfile = ensurePatientProfileForUser(
+      user,
+      workspaceContext.currentWorkspaceId,
+    );
     return Boolean(
       (selfProfile && selfProfile.id === patient.id) ||
       [patient.ownerUserId, patient.accountUserId, patient.guardianUserId].includes(user.id),
@@ -5426,17 +6940,25 @@ function assertCanAccessScan(user, scan) {
   }
 }
 
-function filterPatientsForUser(user, patients) {
+function filterPatientsForUser(user, patients, workspaceId = "") {
   if (isPlatformAdminUser(user)) {
     return patients;
   }
   if (isPatientUser(user)) {
-    const patient = ensurePatientProfileForUser(user);
+    const canonicalWorkspaceId =
+      readString(workspaceId, 120) ||
+      getUserWorkspaceContext(user).currentWorkspaceId ||
+      readString(user.organizationId, 120);
+    const patient = ensurePatientProfileForUser(user, canonicalWorkspaceId);
     return patient
       ? patients.filter(
           (item) =>
-            item.id === patient.id ||
-            [item.ownerUserId, item.accountUserId, item.guardianUserId].includes(user.id),
+            !item.deletedAt &&
+            readString(item.organizationId, 120) === canonicalWorkspaceId &&
+            (
+              item.id === patient.id ||
+              [item.ownerUserId, item.accountUserId, item.guardianUserId].includes(user.id)
+            ),
         )
       : [];
   }
@@ -5697,13 +7219,23 @@ function canAccessNotification(user, notification) {
   if (isPlatformAdminUser(user)) {
     return true;
   }
+  if (
+    ["skipped", "skipped_preference", "disabled"].includes(
+      readString(notification.inAppStatus, 40),
+    )
+  ) {
+    return false;
+  }
   if (notification.userId && notification.userId === user.id) {
     return !notification.organizationId || hasWorkspaceRelationship(user, notification.organizationId);
   }
   if (notification.organizationId) {
     return hasWorkspaceRelationship(user, notification.organizationId) && hasCapability(user, "notifications.view");
   }
-  return !notification.userId && !notification.organizationId;
+  // There is no safe meaning for an implicit global audience. Platform
+  // administrators are handled above; every other notification must bind to
+  // an account or an operational workspace.
+  return false;
 }
 
 function canTargetNotificationUser(actorUser, targetUser, organizationId = "") {
@@ -5718,10 +7250,63 @@ function canTargetNotificationUser(actorUser, targetUser, organizationId = "") {
 }
 
 function filterNotificationsForUser(user, notifications) {
+  const visibleNotifications = notifications.filter(
+    (notification) =>
+      !["skipped", "skipped_preference", "disabled"].includes(
+        readString(notification?.inAppStatus, 40),
+      ),
+  );
   if (isPlatformAdminUser(user)) {
-    return notifications;
+    return visibleNotifications;
   }
-  return notifications.filter((notification) => canAccessNotification(user, notification));
+  return visibleNotifications.filter((notification) =>
+    canAccessNotification(user, notification),
+  );
+}
+
+function requireNotificationInboxAuthority(user) {
+  if (!user || !isActiveUserAccount(user)) {
+    throw httpError(
+      403,
+      "An active account is required to access the notification inbox",
+      "NOTIFICATION_INBOX_ACCOUNT_UNAVAILABLE",
+    );
+  }
+  const workspaceContext = getUserWorkspaceContext(user);
+  const workspaceId = readString(workspaceContext.currentWorkspaceId, 120);
+  if (
+    !workspaceId ||
+    !workspaceContext.currentMembership?.operational ||
+    !hasWorkspaceMembership(user, workspaceId)
+  ) {
+    throw httpError(
+      403,
+      "An active workspace membership is required to access the notification inbox",
+      "NOTIFICATION_INBOX_WORKSPACE_REQUIRED",
+    );
+  }
+  return {
+    userId: user.id,
+    workspaceId,
+  };
+}
+
+function publicNotificationInboxMutation(result) {
+  return {
+    userId: result.userId,
+    workspaceId: result.workspaceId,
+    action: result.action,
+    notification: result.notification || null,
+    notifications: Array.isArray(result.notifications)
+      ? result.notifications
+      : [],
+    affectedIds: Array.isArray(result.affectedIds)
+      ? result.affectedIds
+      : [],
+    deletedId: result.deletedId || null,
+    updatedAt: result.updatedAt,
+    replayed: Boolean(result.replayed),
+  };
 }
 
 const NOTIFICATION_AUDIENCE_ROLES = [
@@ -5764,6 +7349,97 @@ function getNotificationChannelAvailability() {
           ? ""
           : "PUSH_PROVIDER_UNAVAILABLE",
     },
+  };
+}
+
+function publicNotificationChannelAvailability() {
+  const availability = getNotificationChannelAvailability();
+  const channel = (value = {}) => ({
+    available: Boolean(value.available),
+    status: readString(value.status, 40) || "unavailable",
+    reasonCode: readString(value.reasonCode, 120),
+  });
+  return {
+    inApp: channel(availability.in_app),
+    email: channel(availability.email),
+    push: channel(availability.push),
+  };
+}
+
+function publicCloudNotificationPreferences(value = {}) {
+  const normalized = normalizeNotificationPreferences(value);
+  return Object.fromEntries(
+    CLOUD_NOTIFICATION_PREFERENCE_KEYS.map((key) => [key, Boolean(normalized[key])]),
+  );
+}
+
+function buildNotificationPreferencesResponse(user, replayed = false) {
+  const workspaceContext = getUserWorkspaceContext(user);
+  const workspaceId = readString(workspaceContext.currentWorkspaceId, 120);
+  return {
+    userId: readString(user?.id, 120),
+    workspaceId: workspaceId || null,
+    ownership: {
+      kind: "self",
+      userId: readString(user?.id, 120),
+    },
+    preferences: publicCloudNotificationPreferences(user?.notificationPreferences),
+    channels: publicNotificationChannelAvailability(),
+    updatedAt: readString(user?.updatedAt, 80) || nowIso(),
+    replayed: Boolean(replayed),
+  };
+}
+
+function buildAccountProfilePersistencePatch(user) {
+  return {
+    name: user?.name || "",
+    title: user?.title || "",
+    phone: user?.phone || "",
+    license: user?.license || "",
+    hospital: user?.hospital || "",
+    department: user?.department || "",
+    specialty: user?.specialty || "",
+    address: user?.address || "",
+    avatarFileId: user?.avatarFileId || "",
+    avatarUrl: user?.avatarUrl || "",
+    avatarStorage:
+      user?.avatarStorage && typeof user.avatarStorage === "object"
+        ? user.avatarStorage
+        : {},
+    twoFactorEnabled: Boolean(user?.twoFactorEnabled),
+    twoFactorMethod: user?.twoFactorMethod || "",
+    notificationPreferences: normalizeNotificationPreferences(user?.notificationPreferences),
+    activePatientId: user?.activePatientId || user?.patientId || "",
+    organizationId: user?.organizationId || "",
+  };
+}
+
+async function resolveCanonicalNotificationPreferenceDecision(notification) {
+  const userId = readString(notification?.userId, 120);
+  if (!userId) {
+    return {
+      user: null,
+      allowed: true,
+      preferenceKey: null,
+      reasonCode: "",
+    };
+  }
+  const runtimeUser = db.users.find((candidate) => candidate.id === userId) || { id: userId };
+  const canonicalUser = await refreshAuthenticatedAuthorization(runtimeUser);
+  if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+    return {
+      user: canonicalUser || null,
+      allowed: false,
+      preferenceKey: null,
+      reasonCode: "NOTIFICATION_RECIPIENT_UNAVAILABLE",
+    };
+  }
+  return {
+    user: canonicalUser,
+    ...resolveNotificationPreferenceDecision(
+      canonicalUser.notificationPreferences,
+      notification,
+    ),
   };
 }
 
@@ -5876,7 +7552,7 @@ function normalizeNotificationCampaignRequest(payload = {}) {
     );
   }
   return {
-    type: readString(payload.type, 40) || "info",
+    type: parseNotificationCampaignType(readString(payload.type, 40) || "info"),
     title,
     message,
     channels,
@@ -5928,29 +7604,49 @@ function resolveNotificationCampaignAudience(actor, normalized) {
   return {
     workspace,
     users,
-    recipients: users.map((targetUser) => ({
-      userId: targetUser.id,
-      emailStatus: normalized.channels.includes("email")
-        ? !targetUser.email
-          ? "no_recipient"
-          : channelAvailability.email.available
-            ? "ready"
-            : channelAvailability.email.status
-        : "skipped",
-      emailErrorMessage:
-        normalized.channels.includes("email") && !channelAvailability.email.available
-          ? channelAvailability.email.reasonCode
-          : "",
-      pushStatus: normalized.channels.includes("push")
-        ? channelAvailability.push.available
-          ? "ready"
-          : channelAvailability.push.status
-        : "skipped",
-      pushErrorMessage:
-        normalized.channels.includes("push") && !channelAvailability.push.available
-          ? channelAvailability.push.reasonCode
-          : "",
-    })),
+    recipients: users.map((targetUser) => {
+      const canonicalTarget = db.users.find((candidate) => candidate.id === targetUser.id);
+      const preferenceDecision = resolveNotificationPreferenceDecision(
+        canonicalTarget?.notificationPreferences,
+        { type: normalized.type },
+      );
+      const requestedInApp = normalized.channels.includes("in_app");
+      const requestedEmail = normalized.channels.includes("email");
+      const requestedPush = normalized.channels.includes("push");
+      return {
+        userId: targetUser.id,
+        inAppStatus:
+          requestedInApp && preferenceDecision.allowed ? "ready" : "skipped",
+        emailStatus: requestedEmail
+          ? !preferenceDecision.allowed
+            ? "skipped"
+            : !targetUser.email
+              ? "no_recipient"
+              : channelAvailability.email.available
+                ? "ready"
+                : channelAvailability.email.status
+          : "skipped",
+        emailErrorMessage:
+          requestedEmail && !preferenceDecision.allowed
+            ? preferenceDecision.reasonCode
+            : requestedEmail && !channelAvailability.email.available
+              ? channelAvailability.email.reasonCode
+              : "",
+        pushStatus: requestedPush
+          ? !preferenceDecision.allowed
+            ? "skipped"
+            : channelAvailability.push.available
+              ? "ready"
+              : channelAvailability.push.status
+          : "skipped",
+        pushErrorMessage:
+          requestedPush && !preferenceDecision.allowed
+            ? preferenceDecision.reasonCode
+            : requestedPush && !channelAvailability.push.available
+              ? channelAvailability.push.reasonCode
+              : "",
+      };
+    }),
     channelAvailability,
   };
 }
@@ -6825,7 +8521,84 @@ function scheduleAudioStartExpiry(recording, command) {
   recording.startExpiryTimer.unref?.();
 }
 
-async function startRecording(payload = {}, actorUser = null) {
+function getScanStartOrganizationId(payload, actorUser) {
+  const patientId = readString(payload?.patientId, 120);
+  const patient = patientId ? findPatient(patientId) : null;
+  return readString(
+    patient?.organizationId || getScanMutationWorkspaceId(actorUser, payload),
+    120,
+  );
+}
+
+async function startScanIdempotently(payload, actorUser, idempotencyKey, requestPayload = payload) {
+  const organizationId = getScanStartOrganizationId(payload, actorUser);
+  const fingerprint = createScanMutationFingerprint({
+    operation: "start_scan",
+    user: actorUser,
+    organizationId,
+    payload: requestPayload,
+  });
+  return runScanMutationIdempotently({
+    user: actorUser,
+    idempotencyKey,
+    operation: "start_scan",
+    organizationId,
+    fingerprint,
+    action: () => startRecording(
+      { ...payload, idempotencyKey },
+      actorUser,
+      { idempotencyKey, fingerprint },
+    ),
+  });
+}
+
+async function stopScanIdempotently(scan, actorUser, idempotencyKey, requestPayload = {}) {
+  const organizationId = getScanMutationWorkspaceId(actorUser, {}, scan);
+  const fingerprint = createScanMutationFingerprint({
+    operation: "stop_scan",
+    user: actorUser,
+    organizationId,
+    scanId: scan.id,
+    payload: requestPayload,
+  });
+  return runScanMutationIdempotently({
+    user: actorUser,
+    idempotencyKey,
+    operation: "stop_scan",
+    organizationId,
+    fingerprint,
+    action: () => stopRecording(scan.id, {
+      actorUser,
+      idempotencyKey,
+      requestFingerprint: fingerprint,
+    }),
+  });
+}
+
+async function stopActiveScanIdempotently(actorUser, idempotencyKey, requestPayload = {}) {
+  const organizationId = getScanMutationWorkspaceId(actorUser, requestPayload);
+  const operation = "stop_active_scan";
+  const fingerprint = createScanMutationFingerprint({
+    operation,
+    user: actorUser,
+    organizationId,
+    payload: requestPayload,
+  });
+  return runScanMutationIdempotently({
+    user: actorUser,
+    idempotencyKey,
+    operation,
+    organizationId,
+    fingerprint,
+    action: () => stopActiveRecording(actorUser, {
+      actorUser,
+      idempotencyKey,
+      requestFingerprint: fingerprint,
+    }),
+  });
+}
+
+async function startRecording(payload = {}, actorUser = null, mutation = {}) {
   if (getActiveRecordingForDevice(resolveIncomingDeviceId(payload))) {
     throw httpError(409, "Đang có lượt ghi khác");
   }
@@ -6895,7 +8668,7 @@ async function startRecording(payload = {}, actorUser = null) {
     processingStatus: "created",
     doctorNotes: readString(payload.doctorNotes || payload.notes, 4000),
     createdByUserId: actorUser ? actorUser.id : "",
-    idempotencyKey: readString(payload.idempotencyKey, 160),
+    idempotencyKey: readString(mutation.idempotencyKey || payload.idempotencyKey, 160),
     audioUrl: null,
     wavFile: null,
     createdAt: startedAt,
@@ -6946,6 +8719,7 @@ async function startRecording(payload = {}, actorUser = null) {
       sessionId: recording.sessionId,
       sampleRate: SAMPLE_RATE,
       sampleCount: 128,
+      frameEncoding: "shcare_audio_v2",
       encoding: "pcm_s16le",
     },
     scan.id,
@@ -6955,8 +8729,8 @@ async function startRecording(payload = {}, actorUser = null) {
     deviceId: device.id,
     organizationId: scan.organizationId,
     requestedByUserId: actorUser?.id || "",
-    idempotencyKey: readString(payload.idempotencyKey, 160),
-    requestFingerprint: createIdempotencyFingerprint({
+    idempotencyKey: readString(mutation.idempotencyKey || payload.idempotencyKey, 160),
+    requestFingerprint: readString(mutation.fingerprint, 128) || createIdempotencyFingerprint({
       patientId: scan.patientId,
       deviceId: scan.deviceId,
       mode: scan.mode,
@@ -6980,14 +8754,6 @@ async function startRecording(payload = {}, actorUser = null) {
     throw httpError(503, "Cannot persist audio session before device delivery", "AUDIO_SESSION_PERSIST_FAILED");
   }
 
-  rememberIdempotentResource(
-    actorUser,
-    readString(payload.idempotencyKey, 160),
-    "start_scan",
-    "scan",
-    scan.id,
-    { fingerprint: createIdempotencyFingerprint(payload), responseStatus: 201 },
-  );
   await saveDb();
 
   const publishedDelivery = publishDeviceCommand(device.id, startEnvelope);
@@ -7019,7 +8785,11 @@ async function startRecording(payload = {}, actorUser = null) {
 }
 
 function recordAudioPayload(recording, payload, sourceContext = {}) {
-  if (!recording || !isAudioSourceBoundToRecording(sourceContext, recording)) {
+  if (
+    !recording ||
+    recording.stopping ||
+    !isAudioSourceBoundToRecording(sourceContext, recording)
+  ) {
     return false;
   }
 
@@ -7063,7 +8833,7 @@ function saveActiveRecordingProgress(recording, force) {
   return scan;
 }
 
-async function stopRecording(scanId) {
+async function stopRecording(scanId, options = {}) {
   if (!scanId) {
     throw httpError(400, "Thiếu mã lượt đo");
   }
@@ -7084,7 +8854,24 @@ async function stopRecording(scanId) {
     return scan;
   }
 
+  if (recording.stopPromise) return recording.stopPromise;
+  const operation = stopRecordingSession(recording, scan, options);
+  recording.stopPromise = operation;
+  return operation;
+}
+
+async function stopRecordingSession(recording, scan, options = {}) {
   saveActiveRecordingProgress(recording, true);
+  const stopIdempotencyKey =
+    readString(options.idempotencyKey, 160) || `audio-stop:${recording.scanId}`;
+  const stopRequestFingerprint =
+    readString(options.requestFingerprint, 128) || createIdempotencyFingerprint({
+      scanId: recording.scanId,
+      sessionId: recording.sessionId,
+      type: "audio.session.stop",
+    });
+  recording.stopIdempotencyKey = stopIdempotencyKey;
+  recording.stopRequestFingerprint = stopRequestFingerprint;
   const stopEnvelope = buildDeviceCommand(
     "audio.session.stop",
     {
@@ -7098,13 +8885,9 @@ async function stopRecording(scanId) {
     envelope: stopEnvelope,
     deviceId: recording.deviceId,
     organizationId: recording.organizationId,
-    requestedByUserId: scan.createdByUserId || "",
-    idempotencyKey: `audio-stop:${recording.scanId}`,
-    requestFingerprint: createIdempotencyFingerprint({
-      scanId: recording.scanId,
-      sessionId: recording.sessionId,
-      type: "audio.session.stop",
-    }),
+    requestedByUserId: readString(options.actorUser?.id, 120) || scan.createdByUserId || "",
+    idempotencyKey: stopIdempotencyKey,
+    requestFingerprint: stopRequestFingerprint,
   });
   recording.stopCommandId = stopCommand.id;
   await saveDeviceCommandRecord(stopCommand);
@@ -7136,68 +8919,115 @@ async function stopRecording(scanId) {
       "The audio session ended before the device confirmed and transmitted a valid audio frame.",
     );
   }
-  releaseActiveRecording(recording);
-
-  await finishWriteStream(recording.stream);
-  await writeWavFile(recording.rawFilePath, recording.wavFilePath, recording.bytes);
-  fs.rmSync(recording.rawFilePath, { force: true });
-
-  const summary = recording.metrics.getSummary();
-  const signalReview = buildSignalReview(summary);
-  const processingResult = await runInlineAudioProcessing(scan, recording.wavFilePath);
-  const audioFile = {
-    id: createId("audio"),
-    scanId: scan.id,
-    patientId: scan.patientId,
-    storageProvider: processingResult.audioUpload.provider,
-    objectKey: processingResult.audioObjectKey,
-    contentType: "audio/wav",
-    byteSize: processingResult.audioUpload.byteSize || recording.bytes + 44,
-    sampleRate: SAMPLE_RATE,
-    createdAt: nowIso(),
-  };
-  const aiResult = {
-    id: createId("ai"),
-    scanId: scan.id,
-    modelVersion: SIGNAL_QUALITY_ANALYZER_VERSION,
-    label: processingResult.processed.quality.label || signalReview.label,
-    confidence: processingResult.processed.quality.confidence || signalReview.confidence,
-    summary: processingResult.processed.quality.summary || signalReview.summary,
-    rawResult: buildSignalQualityRawResult({
-      quality: processingResult.processed.quality,
-      waveformObjectKey: processingResult.waveformObjectKey,
-    }),
-    status: "completed",
-    createdAt: nowIso(),
-  };
-  db.audioFiles.unshift(audioFile);
-  db.aiResults.unshift(aiResult);
-  db.audioFiles = db.audioFiles.slice(0, 500);
-  db.aiResults = db.aiResults.slice(0, 500);
-  Object.assign(scan, summary, {
-    status: "completed",
-    processingStatus: "completed",
-    endedAt: nowIso(),
-    audioProtocolVersion: recording.protocolVersion || 1,
-    audioSessionId: recording.sessionId,
-    receivedPackets: recording.receivedPackets,
-    droppedPackets: recording.droppedPackets,
-    aiLabel: aiResult.label,
-    aiConfidence: aiResult.confidence,
-    aiSummary: aiResult.summary,
-    aiResultId: aiResult.id,
-    audioFileId: audioFile.id,
-    audioUrl: `/api/scans/${scan.id}/audio`,
-    wavFile: recording.wavFile,
-    updatedAt: nowIso(),
-  });
-
-  await saveAudioArtifacts(scan, audioFile, aiResult);
-  broadcastScanEvent("scan_stopped", scan);
-  return scan;
+  return finalizeRecording(recording);
 }
 
-async function stopActiveRecording(actorUser = null) {
+async function waitForScanStopFinalizeTestGate(recording) {
+  if (
+    process.env.NODE_ENV !== "test" ||
+    readString(process.env.SCAN_STOP_FINALIZE_TEST_IDEMPOTENCY_KEY, 160) !==
+      recording.stopIdempotencyKey
+  ) {
+    return;
+  }
+  const readyPath = readString(process.env.SCAN_STOP_FINALIZE_TEST_READY_FILE, 1000);
+  const releasePath = readString(process.env.SCAN_STOP_FINALIZE_TEST_RELEASE_FILE, 1000);
+  if (!readyPath || !releasePath) return;
+  fs.writeFileSync(readyPath, recording.scanId, "utf8");
+  const deadline = Date.now() + 5_000;
+  while (!fs.existsSync(releasePath)) {
+    if (Date.now() >= deadline) {
+      const error = new Error("Timed out waiting for scan stop finalization test gate");
+      error.code = "SCAN_STOP_FINALIZE_TEST_TIMEOUT";
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+async function finalizeRecording(recording) {
+  if (!recording) return null;
+  if (recording.finalizePromise) return recording.finalizePromise;
+  recording.stopping = true;
+  recording.finalizePromise = (async () => {
+    const scan = findScan(recording.scanId);
+    if (!scan) {
+      throw httpError(404, "Không tìm thấy lượt đo", "SCAN_NOT_FOUND");
+    }
+    if (scan.status === "completed") {
+      releaseActiveRecording(recording);
+      return scan;
+    }
+    await waitForScanStopFinalizeTestGate(recording);
+    await finishWriteStream(recording.stream);
+    await writeWavFile(recording.rawFilePath, recording.wavFilePath, recording.bytes);
+    await fs.promises.rm(recording.rawFilePath, { force: true });
+
+    const summary = recording.metrics.getSummary();
+    const signalReview = buildSignalReview(summary);
+    const processingResult = await runInlineAudioProcessing(scan, recording.wavFilePath);
+    const audioFile = {
+      id: createId("audio"),
+      scanId: scan.id,
+      patientId: scan.patientId,
+      storageProvider: processingResult.audioUpload.provider,
+      objectKey: processingResult.audioObjectKey,
+      contentType: "audio/wav",
+      byteSize: processingResult.audioUpload.byteSize || recording.bytes + 44,
+      sampleRate: SAMPLE_RATE,
+      createdAt: nowIso(),
+    };
+    const aiResult = {
+      id: createId("ai"),
+      scanId: scan.id,
+      modelVersion: SIGNAL_QUALITY_ANALYZER_VERSION,
+      label: processingResult.processed.quality.label || signalReview.label,
+      confidence: processingResult.processed.quality.confidence || signalReview.confidence,
+      summary: processingResult.processed.quality.summary || signalReview.summary,
+      rawResult: buildSignalQualityRawResult({
+        quality: processingResult.processed.quality,
+        waveformObjectKey: processingResult.waveformObjectKey,
+      }),
+      status: "completed",
+      createdAt: nowIso(),
+    };
+    db.audioFiles.unshift(audioFile);
+    db.aiResults.unshift(aiResult);
+    db.audioFiles = db.audioFiles.slice(0, 500);
+    db.aiResults = db.aiResults.slice(0, 500);
+    Object.assign(scan, summary, {
+      status: "completed",
+      processingStatus: "completed",
+      endedAt: nowIso(),
+      audioProtocolVersion: recording.protocolVersion || 1,
+      audioSessionId: recording.sessionId,
+      receivedPackets: recording.receivedPackets,
+      droppedPackets: recording.droppedPackets,
+      aiLabel: aiResult.label,
+      aiConfidence: aiResult.confidence,
+      aiSummary: aiResult.summary,
+      aiResultId: aiResult.id,
+      audioFileId: audioFile.id,
+      audioUrl: `/api/scans/${scan.id}/audio`,
+      wavFile: recording.wavFile,
+      updatedAt: nowIso(),
+    });
+
+    await saveAudioArtifacts(scan, audioFile, aiResult);
+    releaseActiveRecording(recording);
+    broadcastScanEvent("scan_stopped", scan);
+    return scan;
+  })().catch(async (error) => {
+    await interruptRecording(
+      recording,
+      `The audio session was interrupted because backend finalization failed: ${error.code || error.message}.`,
+    );
+    throw error;
+  });
+  return recording.finalizePromise;
+}
+
+async function stopActiveRecording(actorUser = null, options = {}) {
   const candidates = listActiveRecordings().filter((recording) => {
     if (!actorUser) return true;
     return canAccessScan(actorUser, findScan(recording.scanId));
@@ -7206,7 +9036,7 @@ async function stopActiveRecording(actorUser = null) {
     throw httpError(409, "scanId is required when more than one recording is active", "ACTIVE_SCAN_AMBIGUOUS");
   }
   if (candidates.length === 1) {
-    return stopRecording(candidates[0].scanId);
+    return stopRecording(candidates[0].scanId, options);
   }
 
   const staleScan = db.scans.find(
@@ -7281,6 +9111,10 @@ async function markRecordingInterrupted(scan, summary) {
 
 function finishWriteStream(stream) {
   return new Promise((resolve, reject) => {
+    if (!stream || stream.writableFinished || stream.destroyed) {
+      resolve();
+      return;
+    }
     let settled = false;
 
     const settle = (err) => {
@@ -7399,41 +9233,22 @@ function httpError(statusCode, message, code, details) {
   return err;
 }
 
-function getConfiguredCorsOrigins() {
-  const raw = readString(process.env.CORS_ORIGIN, 2000) || "*";
-  if (raw === "*") return ["*"];
-  return raw
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
-function resolveCorsOrigin(req) {
-  const configured = getConfiguredCorsOrigins();
-  if (!configured.length || configured.includes("*")) {
-    return "*";
-  }
-  const requestOrigin = req && typeof req.headers.origin === "string" ? req.headers.origin.trim() : "";
-  if (requestOrigin && configured.includes(requestOrigin)) {
-    return requestOrigin;
-  }
-  return configured[0];
-}
-
 function setCommonHeaders(res, req = res.__smartHealthRequest) {
-  const corsOrigin = resolveCorsOrigin(req);
-  res.setHeader("Access-Control-Allow-Origin", corsOrigin);
-  if (corsOrigin !== "*") {
+  const corsOrigin = resolveCorsOrigin(req?.headers || {});
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+  }
+  if (corsOrigin && corsOrigin !== "*") {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, Idempotency-Key, X-Chunk-Sequence, X-Chunk-SHA256, X-Shcare-2FA-Token, X-File-Name, X-Smart-Health-Surface, X-Smart-Health-Client",
+    "Content-Type, Authorization, Idempotency-Key, X-Chunk-Sequence, X-Chunk-SHA256, X-Shcare-2FA-Token, X-Shcare-Expected-User-Id, X-Shcare-Expected-Workspace-Id, X-Shcare-Expected-Auth-Session-Id, X-File-Name, X-Smart-Health-Surface, X-Smart-Health-Client",
   );
   res.setHeader(
     "Access-Control-Expose-Headers",
-    "Content-Disposition, Idempotency-Replayed, X-Total-Count, X-Pagination-Total, X-Page, X-Page-Limit, X-Page-Count, X-Shcare-Artifact-SHA256, X-Shcare-Renderer-Version",
+    "Content-Disposition, Deprecation, Idempotency-Replayed, X-Total-Count, X-Pagination-Total, X-Page, X-Page-Limit, X-Page-Count, X-Shcare-Artifact-SHA256, X-Shcare-Compatibility-Alias, X-Shcare-Renderer-Version",
   );
   res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -7467,6 +9282,30 @@ function assertRateLimit(req) {
   }
 }
 
+function assertDeviceSetupRateLimit(req, userId, deviceId) {
+  const limit = Number(process.env.DEVICE_SETUP_RATE_LIMIT_PER_MINUTE || 10);
+  if (!limit || limit <= 0) return;
+  const context = getRequestContext(req) || createRequestContext(req);
+  const minute = Math.floor(Date.now() / 60000);
+  const scopes = [
+    `device-setup:ip:${context.ip || "unknown"}:${minute}`,
+    `device-setup:user:${userId || "unknown"}:${minute}`,
+    `device-setup:device:${deviceId || "unknown"}:${minute}`,
+  ];
+  const counts = scopes.map((key) => (rateLimitBuckets.get(key) || 0) + 1);
+  scopes.forEach((key, index) => rateLimitBuckets.set(key, counts[index]));
+  if (rateLimitBuckets.size > 2000) {
+    for (const itemKey of rateLimitBuckets.keys()) {
+      if (itemKey.startsWith("device-setup:") && !itemKey.endsWith(`:${minute}`)) {
+        rateLimitBuckets.delete(itemKey);
+      }
+    }
+  }
+  if (counts.some((count) => count > limit)) {
+    throw httpError(429, "Too many Wi-Fi setup requests. Please try again shortly.", "DEVICE_WIFI_SETUP_RATE_LIMITED");
+  }
+}
+
 function getMetricsText() {
   const lines = [
     "# HELP smart_health_requests_total Total HTTP JSON responses.",
@@ -7475,6 +9314,21 @@ function getMetricsText() {
     "# HELP smart_health_request_errors_total Total HTTP JSON error responses.",
     "# TYPE smart_health_request_errors_total counter",
     `smart_health_request_errors_total ${requestMetrics.errors}`,
+    "# HELP smart_health_legacy_auth_session_revoke_total Legacy auth session revoke compatibility requests.",
+    "# TYPE smart_health_legacy_auth_session_revoke_total counter",
+    `smart_health_legacy_auth_session_revoke_total ${requestMetrics.legacyAuthSessionRevoke}`,
+    "# HELP smart_health_legacy_workspace_settings_update_total Legacy workspace settings update compatibility requests.",
+    "# TYPE smart_health_legacy_workspace_settings_update_total counter",
+    `smart_health_legacy_workspace_settings_update_total ${requestMetrics.legacyWorkspaceSettingsUpdate}`,
+    "# HELP smart_health_legacy_account_profile_update_total Legacy account profile path compatibility requests.",
+    "# TYPE smart_health_legacy_account_profile_update_total counter",
+    `smart_health_legacy_account_profile_update_total ${requestMetrics.legacyAccountProfileUpdate}`,
+    "# HELP smart_health_legacy_account_profile_workspace_mix_total Mixed profile and workspace compatibility requests.",
+    "# TYPE smart_health_legacy_account_profile_workspace_mix_total counter",
+    `smart_health_legacy_account_profile_workspace_mix_total ${requestMetrics.legacyAccountProfileWorkspaceMix}`,
+    "# HELP smart_health_legacy_workspace_switch_alias_total Legacy workspace field compatibility requests.",
+    "# TYPE smart_health_legacy_workspace_switch_alias_total counter",
+    `smart_health_legacy_workspace_switch_alias_total ${requestMetrics.legacyWorkspaceSwitchAlias}`,
     "# HELP smart_health_active_recording Active recording flag.",
     "# TYPE smart_health_active_recording gauge",
     `smart_health_active_recording ${activeRecordingsByScanId.size}`,
@@ -7547,19 +9401,50 @@ function auditForbiddenError(req, err, statusCode, code) {
     });
 }
 
+function isCanonicalPasswordChangeRequest(req) {
+  const { pathname } = parseRequestPath(req);
+  return (
+    String(req?.method || "GET").toUpperCase() === "POST" &&
+    pathname === "/api/v1/me/password"
+  );
+}
+
+function sanitizePasswordFieldErrors(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const fieldErrors = {};
+  for (const [field, message] of Object.entries(value)) {
+    if (!/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(field)) continue;
+    if (typeof message !== "string" || message.length === 0) continue;
+    fieldErrors[field] = message.slice(0, 500);
+  }
+  return Object.keys(fieldErrors).length > 0 ? fieldErrors : null;
+}
+
 function sendError(req, res, err) {
   const requestedStatus = Number(err?.statusCode ?? err?.status);
   const statusCode = Number.isInteger(requestedStatus) && requestedStatus >= 400 && requestedStatus <= 599
     ? requestedStatus
     : 500;
   const message = statusCode >= 500 ? "Internal server error" : err.message;
-  const context = getRequestContext(req);
-  const requestId = context ? context.requestId : "";
-  const code = normalizeErrorCode(err.code, statusCode);
+  const context = getRequestContext(req) || createRequestContext(req);
+  const requestId = readString(context.requestId, 160);
+  const code = normalizeErrorCode(err.code, statusCode).slice(0, 120);
   if (statusCode >= 500) {
     console.error({ requestId, err });
   }
   auditForbiddenError(req, err, statusCode, code);
+  if (isCanonicalPasswordChangeRequest(req)) {
+    const fieldErrors = sanitizePasswordFieldErrors(
+      err?.fieldErrors || err?.details?.fieldErrors,
+    );
+    sendJson(res, statusCode, {
+      code,
+      message: String(message || "Request failed").slice(0, 500),
+      ...(fieldErrors ? { fieldErrors } : {}),
+      requestId,
+    });
+    return;
+  }
   sendJson(res, statusCode, {
     error: {
       code,
@@ -7588,8 +9473,8 @@ function sendBuffer(res, statusCode, buffer, headers = {}) {
   res.end(buffer);
 }
 
-async function readRequestBody(req) {
-  const buffer = await readRequestBuffer(req);
+async function readRequestBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
+  const buffer = await readRequestBuffer(req, maxBytes);
   return buffer.toString("utf8");
 }
 
@@ -7612,8 +9497,8 @@ async function readRequestBuffer(req, maxBytes = MAX_BODY_BYTES) {
   return Buffer.concat(chunks);
 }
 
-async function readJsonBody(req) {
-  const text = await readRequestBody(req);
+async function readJsonBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
+  const text = await readRequestBody(req, maxBytes);
   if (!text.trim()) {
     return {};
   }
@@ -8079,9 +9964,14 @@ async function authenticateRequest(req) {
   try {
     decodedToken = await verifyFirebaseIdToken(token, process.env);
   } catch (err) {
-    const authErr = httpError(401, "Invalid Firebase ID token");
-    authErr.code = "invalid_firebase_token";
-    throw authErr;
+    const code = getFirebaseIdTokenErrorCode(err);
+    const message =
+      code === "FIREBASE_ID_TOKEN_REVOKED"
+        ? "Firebase ID token was revoked; sign in again before retrying"
+        : code === "FIREBASE_ID_TOKEN_EXPIRED"
+          ? "Firebase ID token expired; sign in again before retrying"
+          : "Invalid Firebase ID token";
+    throw httpError(401, message, code);
   }
 
   if (!decodedToken) {
@@ -8095,6 +9985,7 @@ async function authenticateRequest(req) {
   if (!req.authUser) {
     throw httpError(401, "Account no longer exists", "ACCOUNT_NOT_FOUND");
   }
+  assertUserAccountActive(req.authUser);
   attachActor(req, req.authUser);
   req.authSession = await rememberAuthSession(req.authUser, decodedToken, req);
   await prepareTwoFactorAccess(req, req.authUser);
@@ -8136,6 +10027,7 @@ function requirePrimarySessionUser(req) {
   }
   assertUserAccountActive(req.authUser);
   attachActor(req, req.authUser);
+  if (isTwoFactorBootstrapRequest(req)) return req.authUser;
   return assertTwoFactorAccess(req, req.authUser);
 }
 
@@ -8285,7 +10177,12 @@ function getTwoFactorPrimaryBinding(req, user) {
 
 function isTwoFactorBootstrapRequest(req) {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
-  return /\/auth\/2fa\/challenge$/.test(pathname);
+  const method = String(req.method || "GET").toUpperCase();
+  return (
+    /\/auth\/2fa\/challenge$/.test(pathname) ||
+    (method === "POST" && /\/me\/2fa\/verify$/.test(pathname)) ||
+    (method === "POST" && /\/me\/2fa\/recovery-codes\/ack$/.test(pathname))
+  );
 }
 
 async function createTwoFactorChallenge(user, primaryAuthSource, primaryBinding) {
@@ -9242,34 +11139,6 @@ async function sendNotificationEmailToPlatformAdmins(notification) {
   return result;
 }
 
-function queuePlatformAdminNotificationEmail(notification) {
-  if (!isNotificationEmailEnabled() || !notification || !notification.id) {
-    return;
-  }
-  if (notificationEmailDispatchIds.has(notification.id)) {
-    return;
-  }
-  notificationEmailDispatchIds.add(notification.id);
-  if (notificationEmailDispatchIds.size > 1000) {
-    const stale = Array.from(notificationEmailDispatchIds).slice(0, 300);
-    for (const id of stale) notificationEmailDispatchIds.delete(id);
-  }
-
-  setTimeout(() => {
-    sendNotificationEmailToPlatformAdmins(notification).catch((error) => {
-      notification.deliveryStatus = "email_failed";
-      notification.failedAt = nowIso();
-      notification.errorMessage = readString(error && error.message ? error.message : String(error), 500);
-      addAccessLog("Không gửi được email thông báo tới quản trị viên toàn hệ thống", {
-        severity: "warning",
-        organizationId: notification.organizationId || "",
-      });
-      void saveDb();
-      console.error(`Notification email failed (${notification.id}): ${notification.errorMessage}`);
-    });
-  }, 0);
-}
-
 const notificationCampaignEmailDispatchIds = new Set();
 
 function getDirectNotificationActionUrl(notification) {
@@ -9320,25 +11189,58 @@ function buildDirectNotificationEmail(notification, recipient) {
 }
 
 async function saveNotificationEmailStatus(notification, patch) {
-  Object.assign(notification, patch, {
+  const next = {
+    ...notification,
+    ...patch,
     deliveryStatus: patch.emailStatus || notification.emailStatus || notification.deliveryStatus,
     updatedAt: nowIso(),
-  });
-  if (repositories?.notifications) {
-    await repositories.notifications.create(notification);
+  };
+  if (repositories?.notifications?.updateDeliveryStatus) {
+    const persisted = await repositories.notifications.updateDeliveryStatus(next);
+    if (!persisted) {
+      throw httpError(
+        404,
+        "Notification delivery ledger row was not found",
+        "NOTIFICATION_DELIVERY_NOT_FOUND",
+      );
+    }
+    Object.assign(notification, persisted);
     return;
   }
+  Object.assign(notification, next);
   const existing = db.notifications.find((item) => item.id === notification.id);
   if (existing) Object.assign(existing, notification);
   await saveDb();
 }
 
 async function sendDirectNotificationEmail(notification) {
-  const recipient = db.users.find((candidate) => candidate.id === notification.userId);
-  if (!recipient || !isActiveUserAccount(recipient) || !isValidEmailAddress(recipient.email)) {
+  const preferenceDecision =
+    await resolveCanonicalNotificationPreferenceDecision(notification);
+  if (!preferenceDecision.allowed) {
+    await saveNotificationEmailStatus(notification, {
+      emailStatus: "skipped",
+      emailErrorMessage:
+        preferenceDecision.reasonCode || "NOTIFICATION_EMAIL_RECIPIENT_UNAVAILABLE",
+    });
+    return null;
+  }
+  const recipient = preferenceDecision.user;
+  const workspaceId = readString(notification.organizationId, 120);
+  const workspaceAuthorized =
+    !workspaceId ||
+    isPlatformAdminUser(recipient) ||
+    hasWorkspaceRelationship(recipient, workspaceId);
+  if (
+    !recipient ||
+    !isActiveUserAccount(recipient) ||
+    !workspaceAuthorized ||
+    !isValidEmailAddress(recipient.email)
+  ) {
     await saveNotificationEmailStatus(notification, {
       emailStatus: "no_recipient",
-      emailErrorMessage: "NOTIFICATION_EMAIL_RECIPIENT_UNAVAILABLE",
+      emailErrorMessage: workspaceAuthorized
+        ? "NOTIFICATION_EMAIL_RECIPIENT_UNAVAILABLE"
+        : "NOTIFICATION_EMAIL_WORKSPACE_ACCESS_REVOKED",
     });
     return null;
   }
@@ -9453,14 +11355,55 @@ function appendNotificationPushAttempts(notification, attempts = []) {
 }
 
 async function saveNotificationPushStatus(notification, patch) {
-  Object.assign(notification, patch, { updatedAt: nowIso() });
-  if (repositories && repositories.notifications) {
-    await repositories.notifications.create(notification);
+  const next = { ...notification, ...patch, updatedAt: nowIso() };
+  if (repositories?.notifications?.updateDeliveryStatus) {
+    const persisted = await repositories.notifications.updateDeliveryStatus(next);
+    if (!persisted) {
+      throw httpError(
+        404,
+        "Notification delivery ledger row was not found",
+        "NOTIFICATION_DELIVERY_NOT_FOUND",
+      );
+    }
+    Object.assign(notification, persisted);
   } else {
+    Object.assign(notification, next);
     const existing = db.notifications.find((item) => item.id === notification.id);
     if (existing) Object.assign(existing, notification);
     await saveDb();
   }
+}
+
+async function listEligibleNotificationDevices(notification, options = {}) {
+  return resolveEligibleNotificationDevices({
+    notification,
+    deviceIds: options.deviceIds,
+    loadCanonicalUser: (userId) =>
+      refreshAuthenticatedAuthorization({ id: userId }),
+    isUserActive: isActiveUserAccount,
+    hasWorkspaceAccess: hasWorkspaceMembership,
+    listDevices: (userId, workspaceId) =>
+      repositories?.notificationDevices
+        ? repositories.notificationDevices.listForUser(userId, workspaceId, {
+            minimumProtocolVersion: 2,
+          })
+        : (db.notificationDevices || []).filter(
+            (device) =>
+              device.userId === userId &&
+              device.workspaceId === workspaceId &&
+              Number(device.notificationProtocolVersion || 0) >= 2 &&
+              device.enabled !== false,
+          ),
+    isSessionActive: (userId, authSessionId) =>
+      repositories?.authSessions?.isActiveForUser
+        ? repositories.authSessions.isActiveForUser(userId, authSessionId)
+        : [...(db.sessions || []), ...(db.authSessions || [])].some(
+            (session) =>
+              session.id === authSessionId &&
+              session.userId === userId &&
+              !session.revokedAt,
+          ),
+  });
 }
 
 async function sendNotificationPush(notification, options = {}) {
@@ -9470,17 +11413,42 @@ async function sendNotificationPush(notification, options = {}) {
   const attemptNumber = Number.isFinite(Number(options.attemptNumber))
     ? Math.max(1, Math.trunc(Number(options.attemptNumber)))
     : 1;
+  const preferenceDecision =
+    await resolveCanonicalNotificationPreferenceDecision(notification);
+  if (!preferenceDecision.allowed) {
+    const attempts = [
+      buildNotificationPushAttempt(notification, {
+        attemptNumber,
+        status: "skipped",
+        errorMessage:
+          preferenceDecision.reasonCode || "NOTIFICATION_RECIPIENT_UNAVAILABLE",
+      }),
+    ];
+    await saveNotificationPushStatus(notification, {
+      pushStatus: mergeNotificationPushStatus(
+        notification.pushStatus,
+        "skipped",
+      ),
+      pushErrorMessage:
+        preferenceDecision.reasonCode || "NOTIFICATION_RECIPIENT_UNAVAILABLE",
+      pushAttempts: appendNotificationPushAttempts(notification, attempts),
+    });
+    return null;
+  }
   if (!isPushNotificationEnabled()) {
     const attempts = [
       buildNotificationPushAttempt(notification, {
         attemptNumber,
         status: "disabled",
-        errorMessage: "",
+        errorMessage: "PUSH_NOTIFICATIONS_DISABLED",
       }),
     ];
     await saveNotificationPushStatus(notification, {
-      pushStatus: "disabled",
-      pushErrorMessage: "",
+      pushStatus: mergeNotificationPushStatus(
+        notification.pushStatus,
+        "disabled",
+      ),
+      pushErrorMessage: "PUSH_NOTIFICATIONS_DISABLED",
       pushAttempts: appendNotificationPushAttempts(notification, attempts),
     });
     return null;
@@ -9496,33 +11464,34 @@ async function sendNotificationPush(notification, options = {}) {
       }),
     ];
     await saveNotificationPushStatus(notification, {
-      pushStatus: "skipped",
+      pushStatus: mergeNotificationPushStatus(
+        notification.pushStatus,
+        "skipped",
+      ),
       pushErrorMessage: errorMessage,
       pushAttempts: appendNotificationPushAttempts(notification, attempts),
     });
     return null;
   }
-  let tokens = Array.isArray(options.tokens)
-    ? options.tokens.map((token) => readString(token, 4096)).filter(Boolean)
-    : [];
-  if (tokens.length === 0) {
-    const devices = repositories && repositories.notificationDevices
-      ? await repositories.notificationDevices.listForUser(notification.userId)
-      : db.notificationDevices.filter((device) => device.userId === notification.userId && device.enabled !== false);
-    tokens = devices.map((device) => readString(device.fcmToken, 4096)).filter(Boolean);
-  }
-  tokens = Array.from(new Set(tokens));
-  if (tokens.length === 0) {
+  const devices = selectBoundedNotificationDevices(
+    await listEligibleNotificationDevices(notification, {
+      deviceIds: options.deviceIds,
+    }),
+  );
+  if (devices.length === 0) {
     const attempts = [
       buildNotificationPushAttempt(notification, {
         attemptNumber,
         status: "no_devices",
-        errorMessage: "",
+        errorMessage: "PUSH_NOTIFICATION_NO_ELIGIBLE_DEVICES",
       }),
     ];
     await saveNotificationPushStatus(notification, {
-      pushStatus: "no_devices",
-      pushErrorMessage: "",
+      pushStatus: mergeNotificationPushStatus(
+        notification.pushStatus,
+        "no_devices",
+      ),
+      pushErrorMessage: "PUSH_NOTIFICATION_NO_ELIGIBLE_DEVICES",
       pushAttempts: appendNotificationPushAttempts(notification, attempts),
     });
     return null;
@@ -9532,9 +11501,11 @@ async function sendNotificationPush(notification, options = {}) {
   const payload = buildPushNotificationPayload(notification);
   let successCount = 0;
   const failures = [];
-  const retryableFailedTokens = [];
+  const retryableFailedDeviceIds = [];
   const attempts = [];
-  for (const token of tokens) {
+  for (const device of devices) {
+    const token = readString(device.fcmToken, 4096);
+    if (!token) continue;
     try {
       await messaging.send({ ...payload, token });
       successCount += 1;
@@ -9561,9 +11532,12 @@ async function sendNotificationPush(notification, options = {}) {
         })
       );
       if (invalidToken && repositories && repositories.notificationDevices) {
-        await repositories.notificationDevices.disableToken(notification.userId, token);
+        await repositories.notificationDevices.disableToken(notification.userId, token, {
+          workspaceId: device.workspaceId,
+          authSessionId: device.authSessionId,
+        });
       } else if (retryable) {
-        retryableFailedTokens.push(token);
+        retryableFailedDeviceIds.push(device.id);
       }
     }
   }
@@ -9571,7 +11545,10 @@ async function sendNotificationPush(notification, options = {}) {
   const pushAttempts = appendNotificationPushAttempts(notification, attempts);
   if (successCount > 0) {
     await saveNotificationPushStatus(notification, {
-      pushStatus: failures.length ? "partial" : "sent",
+      pushStatus: mergeNotificationPushStatus(
+        notification.pushStatus,
+        failures.length ? "partial" : "sent",
+      ),
       pushSentAt: nowIso(),
       pushFailedAt: failures.length ? nowIso() : "",
       pushErrorMessage: failures.slice(0, 3).join("; "),
@@ -9579,17 +11556,20 @@ async function sendNotificationPush(notification, options = {}) {
     });
   } else {
     await saveNotificationPushStatus(notification, {
-      pushStatus: ["sent", "partial"].includes(notification.pushStatus) ? "partial" : "failed",
+      pushStatus: mergeNotificationPushStatus(
+        notification.pushStatus,
+        "failed",
+      ),
       pushFailedAt: nowIso(),
       pushErrorMessage: failures.slice(0, 3).join("; ") || "FCM send failed",
       pushAttempts,
     });
   }
 
-  if (retryableFailedTokens.length > 0 && attemptNumber <= getPushRetryMax()) {
+  if (retryableFailedDeviceIds.length > 0 && attemptNumber <= getPushRetryMax()) {
     setTimeout(() => {
       sendNotificationPush(notification, {
-        tokens: retryableFailedTokens,
+        deviceIds: retryableFailedDeviceIds,
         attemptNumber: attemptNumber + 1,
       }).catch((error) => {
         const message = readString(error && error.message ? error.message : String(error), 500);
@@ -9676,12 +11656,27 @@ async function sendTestOutbound(payload = {}, user = null) {
       .update(bodyText)
       .digest("hex");
   }
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: bodyText,
-  });
-  const responseText = await response.text();
+  let outboundResult;
+  try {
+    outboundResult = await postOutboundWebhook({
+      url,
+      headers,
+      bodyText,
+      env: process.env,
+      tenantManaged: !process.env.OUTBOUND_WEBHOOK_URL,
+    });
+  } catch (error) {
+    const statusCode = error?.code === "OUTBOUND_WEBHOOK_DESTINATION_NOT_ALLOWED" ? 403 :
+      error?.code === "OUTBOUND_WEBHOOK_DESTINATION_INVALID" ? 422 :
+      error?.code === "OUTBOUND_WEBHOOK_TIMEOUT" ? 504 : 502;
+    throw httpError(
+      statusCode,
+      error?.message || "Outbound webhook request failed",
+      error?.code || "OUTBOUND_WEBHOOK_REQUEST_FAILED",
+      error?.details,
+    );
+  }
+  const { response, responseText } = outboundResult;
   if (!response.ok) {
     throw httpError(502, `Webhook ${channel} tra ve HTTP ${response.status}: ${responseText.slice(0, 300)}`);
   }
@@ -9866,9 +11861,12 @@ async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
     updates.disabled = Boolean(payload.disabled);
   }
   if (Object.prototype.hasOwnProperty.call(payload, "password")) {
-    const password = readString(payload.password, 200);
+    const password = typeof payload.password === "string" ? payload.password : "";
     if (password.length < 8) {
       throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự", "PASSWORD_TOO_SHORT");
+    }
+    if (password.length > 200) {
+      throw httpError(400, "Mật khẩu vượt quá độ dài cho phép", "PASSWORD_TOO_LONG");
     }
     updates.password = password;
   }
@@ -9877,7 +11875,10 @@ async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
     if (Object.keys(updates).length > 0) {
       await firebaseAdminApp.auth().updateUser(firebaseUid, updates);
     }
-    let firebaseTokensRevoked = false;
+    // Firebase revokes refresh tokens as part of a password update. Explicit
+    // revocation remains available for non-password lock flows.
+    let firebaseTokensRevoked =
+      Object.prototype.hasOwnProperty.call(updates, "password");
     if (payload.revokeRefreshTokens) {
       await firebaseAdminApp.auth().revokeRefreshTokens(firebaseUid);
       firebaseTokensRevoked = true;
@@ -9952,6 +11953,36 @@ function sanitizeIdentityProviderResult(result = {}) {
   };
 }
 
+function resolveDurablePasswordProvider(identityOperation = {}) {
+  if (identityOperation.operation !== "reset_password") return "";
+  const providers = new Set();
+  const addProvider = (value) => {
+    const provider = readString(value, 20).toLowerCase();
+    if (["firebase", "demo"].includes(provider)) providers.add(provider);
+  };
+  addProvider(identityOperation.targetState?.provider);
+  const operationId = readString(identityOperation.id, 160);
+  if (operationId) {
+    const audit = (db.auditLogs || []).find(
+      (entry) =>
+        entry.id === `audit_password_change_${operationId}` &&
+        entry.action === "account.password.change",
+    );
+    addProvider(audit?.metadata?.provider);
+    const notification = (db.notifications || []).find(
+      (entry) => entry.id === `noti_password_change_${operationId}`,
+    );
+    addProvider(notification?.metadata?.provider);
+  }
+  if (identityOperation.providerResult?.skipped === true) {
+    providers.add("demo");
+  }
+  if (identityOperation.providerResult?.firebaseTokensRevoked === true) {
+    providers.add("firebase");
+  }
+  return providers.size === 1 ? [...providers][0] : "";
+}
+
 async function runIdentityProviderSaga(
   req,
   actorUser,
@@ -9966,12 +11997,61 @@ async function runIdentityProviderSaga(
   }
   const context = getRequestContext(req) || createRequestContext(req);
   const explicitIdempotencyKey = getIdempotencyKey(req, fingerprintPayload || {});
-  const requestFingerprint = createIdempotencyFingerprint({
+  const fingerprintInput = {
     operation,
     targetUserId: targetUser.id,
     payload: fingerprintPayload || {},
-  });
+  };
+  const requestFingerprint =
+    operation === "reset_password"
+      ? createPasswordIdempotencyFingerprint(fingerprintInput, process.env)
+      : createIdempotencyFingerprint(fingerprintInput);
   const idempotencyKey = explicitIdempotencyKey || `implicit:${requestFingerprint}`;
+  const existing = typeof repositories.identityOperations.findByIntent === "function"
+    ? await repositories.identityOperations.findByIntent({
+        targetUserId: targetUser.id,
+        operation,
+        idempotencyKey,
+        requestFingerprint,
+      })
+    : null;
+  const existingIdentityOperation = existing?.identityOperation || null;
+  if (
+    operation === "reset_password" &&
+    ["pending_provider", "provider_failed"].includes(
+      existingIdentityOperation?.status || "",
+    )
+  ) {
+    const durableProvider = readString(
+      existingIdentityOperation.targetState?.provider,
+      20,
+    ).toLowerCase();
+    const requestedProvider = readString(
+      sagaOptions.targetState?.provider,
+      20,
+    ).toLowerCase();
+    if (
+      existingIdentityOperation.status === "provider_failed" ||
+      !["firebase", "demo"].includes(durableProvider) ||
+      durableProvider !== requestedProvider
+    ) {
+      throw reconciliationError(existingIdentityOperation.id);
+    }
+  }
+  if (
+    existingIdentityOperation?.status === "pending_provider" &&
+    existingIdentityOperation.providerStatus === "applying"
+  ) {
+    throw reconciliationError(existingIdentityOperation.id);
+  }
+  if (
+    !["completed", "provider_applied"].includes(
+      existing?.identityOperation?.status || "",
+    ) &&
+    typeof sagaOptions.beforeBegin === "function"
+  ) {
+    await sagaOptions.beforeBegin();
+  }
   const started = await repositories.identityOperations.begin({
     targetUserId: targetUser.id,
     actorUserId: actorUser.id,
@@ -9980,13 +12060,19 @@ async function runIdentityProviderSaga(
     idempotencyKey,
     requestFingerprint,
     targetState: sagaOptions.targetState || {},
+    expectedCurrentPassword: sagaOptions.expectedCurrentPassword,
+    requireActiveTarget: sagaOptions.requireActiveTarget,
+    preserveAccountStatus: sagaOptions.preserveAccountStatus,
+    preserveSessionId: sagaOptions.preserveSessionId,
     protectLastPlatformAdmin: Object.prototype.hasOwnProperty.call(sagaOptions, "protectLastPlatformAdmin")
       ? Boolean(sagaOptions.protectLastPlatformAdmin)
       : isPlatformAdminUser(targetUser) && ["lock", "delete"].includes(operation),
     ip: context.ip || req.socket.remoteAddress || "",
     userAgent: context.userAgent || readString(req.headers["user-agent"], 240),
   });
-  if (operation !== "unlock") closeRealtimeSocketsForUser(targetUser.id, "AUTH_SESSION_REVOKED");
+  if (operation !== "unlock" && !started.replayed) {
+    closeRealtimeSocketsForUser(targetUser.id, "AUTH_SESSION_REVOKED");
+  }
   if (started.identityOperation.status === "completed") {
     return {
       started,
@@ -10001,47 +12087,26 @@ async function runIdentityProviderSaga(
       idempotencyKeyProvided: Boolean(explicitIdempotencyKey),
     };
   }
+  if (
+    started.identityOperation.status === "pending_provider" &&
+    started.identityOperation.providerStatus === "applying"
+  ) {
+    throw reconciliationError(started.identityOperation.id);
+  }
 
   let providerResult = started.identityOperation.status === "provider_applied"
     ? started.identityOperation.providerResult || {}
     : null;
   if (!providerResult) {
-    try {
-      providerResult = await providerAction();
-    } catch (error) {
-      const errorCode = readString(error?.code || "IDENTITY_PROVIDER_FAILED", 120);
-      await repositories.identityOperations.complete({
-        operationId: started.identityOperation.id,
-        providerSucceeded: false,
-        providerStatus: "failed",
-        providerResult: {},
-        errorCode,
-      });
-      const sagaError = httpError(502, "Identity provider operation failed", "IDENTITY_PROVIDER_FAILED");
-      sagaError.details = { operationId: started.identityOperation.id, providerCode: errorCode };
-      throw sagaError;
-    }
-
-    const sanitizedProviderResult = sanitizeIdentityProviderResult(providerResult);
-    const providerSucceeded = isFirebaseProviderMutationConfirmed(targetUser, providerResult);
-    if (!providerSucceeded) {
-      await repositories.identityOperations.complete({
-        operationId: started.identityOperation.id,
-        providerSucceeded: false,
-        providerStatus: "unavailable",
-        providerResult: sanitizedProviderResult,
-        errorCode: "IDENTITY_PROVIDER_UNAVAILABLE",
-      });
-      const sagaError = httpError(503, "Identity provider is unavailable; the account remains blocked safely", "IDENTITY_PROVIDER_UNAVAILABLE");
-      sagaError.details = { operationId: started.identityOperation.id };
-      throw sagaError;
-    }
-    const applied = await repositories.identityOperations.markProviderApplied({
+    const execution = await executeIdentityProviderMutationOnce({
       operationId: started.identityOperation.id,
-      providerStatus: providerResult?.skipped ? "skipped" : "applied",
-      providerResult: sanitizedProviderResult,
+      identityOperations: repositories.identityOperations,
+      providerAction,
+      sanitizeResult: sanitizeIdentityProviderResult,
+      isConfirmed: (result) =>
+        isFirebaseProviderMutationConfirmed(targetUser, result, operation),
     });
-    providerResult = applied.identityOperation.providerResult || sanitizedProviderResult;
+    providerResult = execution.providerResult;
   }
 
   if (sagaOptions.deferBackendFinalization) {
@@ -10522,32 +12587,56 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
 }
 
 function getStorageSummary() {
-  const audioBytes = fs.existsSync(AUDIO_DIR)
-    ? fs
-        .readdirSync(AUDIO_DIR)
-        .filter((name) => name.endsWith(".wav"))
-        .reduce((total, name) => total + fs.statSync(path.join(AUDIO_DIR, name)).size, 0)
-    : 0;
+  const files = buildStorageFileRecords();
+  const cloudUsedBytes = files.reduce((total, file) => total + Number(file.byteSize || 0), 0);
+  const audioFiles = files.filter((file) =>
+    ["wav", "mp3", "m4a", "flac"].includes(String(file.type || "").toLowerCase()) ||
+    String(file.contentType || "").toLowerCase().startsWith("audio/"));
+  const audioBytes = audioFiles.reduce((total, file) => total + Number(file.byteSize || 0), 0);
   const audioMb = Math.round(audioBytes / 1024 / 1024);
   return {
     ...db.settings.storage,
+    autoSync: false,
+    cloudBackup: false,
+    localUsedMb: 0,
+    localTotalMb: 0,
+    cloudUsedMb: Math.round(cloudUsedBytes / 1024 / 1024),
+    cloudTotalMb: 0,
+    cacheMb: 0,
     scanCount: db.scans.length,
     patientCount: db.patients.length,
-    audioFileCount: db.scans.filter((scan) => scan.wavFile).length,
+    audioFileCount: audioFiles.length,
     audioUsedMb: audioMb,
+    cloudUsedBytes,
+    audioUsedBytes: audioBytes,
+    storageFileCount: files.length,
     updatedAt: nowIso(),
   };
 }
 
 function getStorageSummaryForUser(user) {
   const files = buildStorageFileRecords(user);
-  const audioBytes = files.reduce((total, file) => total + Number(file.byteSize || 0), 0);
+  const cloudUsedBytes = files.reduce((total, file) => total + Number(file.byteSize || 0), 0);
+  const audioFiles = files.filter((file) =>
+    ["wav", "mp3", "m4a", "flac"].includes(String(file.type || "").toLowerCase()) ||
+    String(file.contentType || "").toLowerCase().startsWith("audio/"));
+  const audioBytes = audioFiles.reduce((total, file) => total + Number(file.byteSize || 0), 0);
   return {
     ...db.settings.storage,
+    autoSync: false,
+    cloudBackup: false,
+    localUsedMb: 0,
+    localTotalMb: 0,
+    cloudUsedMb: Math.round(cloudUsedBytes / 1024 / 1024),
+    cloudTotalMb: 0,
+    cacheMb: 0,
     scanCount: filterScansForUser(user, db.scans).length,
     patientCount: filterPatientsForUser(user, db.patients).length,
-    audioFileCount: files.filter((file) => file.type === "wav" || file.bucket === "heart-audio").length,
+    audioFileCount: audioFiles.length,
     audioUsedMb: Math.round(audioBytes / 1024 / 1024),
+    cloudUsedBytes,
+    audioUsedBytes: audioBytes,
+    storageFileCount: files.length,
     updatedAt: nowIso(),
   };
 }
@@ -10782,8 +12871,69 @@ function getBackendPublicBaseUrl(req) {
   return `${proto}://${host}`.replace(/\/+$/, "");
 }
 
-function buildOtaFirmwareDownloadUrl(req, deviceId, otaId, token) {
-  return `${getBackendPublicBaseUrl(req)}/api/v1/devices/${encodeURIComponent(deviceId)}/ota/${encodeURIComponent(otaId)}/firmware?token=${encodeURIComponent(token)}`;
+function buildOtaFirmwareDownloadUrl(req, deviceId, otaId) {
+  return `${getBackendPublicBaseUrl(req)}/api/v1/devices/${encodeURIComponent(deviceId)}/ota/${encodeURIComponent(otaId)}/firmware`;
+}
+
+function getMaxOtaFirmwareBytes() {
+  return Math.max(
+    1024 * 1024,
+    Math.min(
+      32 * 1024 * 1024,
+      Number(process.env.OTA_MAX_FIRMWARE_BYTES) || 16 * 1024 * 1024,
+    ),
+  );
+}
+
+function resolvePrivateFirmwareStorageBinding(firmwareFileIdInput) {
+  const firmwareFileId = readString(firmwareFileIdInput, 120);
+  const record = firmwareFileId ? getStorageRecord(firmwareFileId) : null;
+  if (
+    !record ||
+    record.id !== firmwareFileId ||
+    record.bucket !== "device-firmware"
+  ) {
+    throw httpError(
+      404,
+      "Firmware file not found in device-firmware bucket",
+      "OTA_FIRMWARE_RECORD_UNAVAILABLE",
+    );
+  }
+  const { storageFile } = getStorageFileSource(record);
+  const objectKey = readString(storageFile?.objectKey, 800);
+  const byteSize = Number(storageFile?.byteSize);
+  if (
+    !storageFile ||
+    storageFile.id !== firmwareFileId ||
+    (storageFile.status || "active") !== "active" ||
+    storageFile.bucket !== "device-firmware" ||
+    !objectKey ||
+    !Number.isSafeInteger(byteSize) ||
+    byteSize <= 0
+  ) {
+    throw httpError(
+      404,
+      "Firmware storage binding is unavailable",
+      "OTA_FIRMWARE_BINDING_INVALID",
+    );
+  }
+  if (byteSize > getMaxOtaFirmwareBytes()) {
+    throw httpError(
+      413,
+      "Firmware exceeds the configured OTA size limit",
+      "OTA_FIRMWARE_SIZE_INVALID",
+    );
+  }
+  return {
+    record,
+    storageFile,
+    binding: {
+      firmwareFileId,
+      firmwareStorageBucket: "device-firmware",
+      firmwareObjectKey: objectKey,
+      firmwareByteSize: byteSize,
+    },
+  };
 }
 
 function buildStorageDownloadFilename(record, source = {}) {
@@ -10999,73 +13149,402 @@ async function serveStorageFileDownload(req, res, fileId, options = {}) {
   throw httpError(404, "Không tìm thấy file trên storage");
 }
 
+function privateDeviceOtaAuthoritySnapshot(device, otaInput = device?.ota) {
+  return createDeviceOtaAuthoritySnapshot(
+    {
+      ...device,
+      ownershipState: inferDeviceOwnershipState(device),
+    },
+    otaInput,
+  );
+}
+
+function isPrivateOtaBoundToCurrentOwnership(device, otaInput = device?.ota) {
+  const authority = privateDeviceOtaAuthoritySnapshot(device, otaInput);
+  const expectedBinding = createDeviceOtaOwnershipBinding({
+    organizationId: authority.organizationId,
+    ownerUserId: authority.ownerUserId,
+    ownershipState: authority.ownershipState,
+  });
+  return Boolean(
+    authority.organizationId &&
+    authority.ownershipState &&
+    authority.grantOrganizationId === authority.organizationId &&
+    authority.grantOwnerUserId === authority.ownerUserId &&
+    authority.grantOwnershipState === authority.ownershipState &&
+    authority.ownershipBinding === expectedBinding
+  );
+}
+
+function isPrivateOtaPersistenceRace(error) {
+  return [
+    "DEVICE_OTA_STATE_CHANGED",
+    "DEVICE_OTA_AUTHORITY_CHANGED",
+    "DEVICE_OTA_LIFECYCLE_CHANGED",
+    "DEVICE_OTA_AUTHORIZATION_EXPIRED",
+    "DEVICE_REVOKED",
+  ].includes(error?.code);
+}
+
+async function expirePrivateFirmwareDownload(device, otaInput, expectedAuthority) {
+  const ota = sanitizeDeviceOtaLifecycle(otaInput);
+  const expiredAt = nowIso();
+  const code = "OTA_DOWNLOAD_TOKEN_EXPIRED";
+  const message = "Firmware download authorization expired";
+  const transition = transitionDeviceOtaLifecycle(ota, "expired", {
+    at: expiredAt,
+    metadata: { failureCode: code, error: message, detail: message },
+  });
+  let command = ota.commandId ? await findDeviceCommand(device.id, ota.commandId) : null;
+  command = command ? structuredClone(command) : null;
+  if (command && !["applied", "failed", "expired"].includes(command.state)) {
+    transitionDeviceCommand(command, "expired", {
+      at: expiredAt,
+      code,
+      detail: message,
+    });
+  }
+  let persisted;
+  try {
+    persisted = await saveDeviceOtaLifecycleRecord(device, transition.ota, {
+      expectedOtaId: ota.id,
+      expectedAuthority: expectedAuthority || privateDeviceOtaAuthoritySnapshot(device, ota),
+      allowedCurrentStatuses: ["pending", "delivered", "downloading"],
+      command,
+    });
+  } catch (error) {
+    if (isPrivateOtaPersistenceRace(error)) {
+      throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+    }
+    throw error;
+  }
+  if (persisted?.device) Object.assign(device, persisted.device);
+  const canonicalCommand = persisted?.command || command;
+  if (canonicalCommand) {
+    device.lastCommand = publicDeviceCommand(canonicalCommand);
+    await syncDeviceLastCommand(canonicalCommand);
+  }
+  await appendDeviceEvent(device.id, "ota.download_expired", {
+    protocolVersion: Number(ota.protocolVersion || 1),
+    otaId: ota.id,
+    commandId: ota.commandId || "",
+    correlationId: ota.correlationId || "",
+    code,
+  });
+  throw httpError(410, "Firmware OTA Ä‘Ă£ háº¿t háº¡n", code);
+}
+
+async function failPrivateFirmwareDownload(device, otaInput, failure = {}) {
+  const ota = sanitizeDeviceOtaLifecycle(otaInput);
+  const expectedAuthority = failure.expectedAuthority ||
+    privateDeviceOtaAuthoritySnapshot(device, ota);
+  const expiresAt = Date.parse(ota.expiresAt || "");
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return expirePrivateFirmwareDownload(device, ota, expectedAuthority);
+  }
+  const failedAt = nowIso();
+  const code = readString(failure.code, 80) || "OTA_FIRMWARE_DOWNLOAD_FAILED";
+  const message = readString(failure.message, 240) || "Firmware artifact is unavailable";
+  const transition = transitionDeviceOtaLifecycle(ota, "failed", {
+    at: failedAt,
+    metadata: {
+      failureCode: code,
+      error: message,
+      detail: message,
+    },
+  });
+  let command = ota.commandId ? await findDeviceCommand(device.id, ota.commandId) : null;
+  command = command ? structuredClone(command) : null;
+  if (command && !["applied", "failed", "expired"].includes(command.state)) {
+    transitionDeviceCommand(command, "failed", {
+      at: failedAt,
+      code,
+      detail: message,
+    });
+  }
+  let persisted;
+  try {
+    persisted = await saveDeviceOtaLifecycleRecord(device, transition.ota, {
+      expectedOtaId: ota.id,
+      expectedAuthority,
+      allowedCurrentStatuses: ["pending", "delivered"],
+      requireCanonicalOwnershipBinding: failure.requireCanonicalOwnershipBinding !== false,
+      command,
+    });
+  } catch (error) {
+    if (isPrivateOtaPersistenceRace(error)) {
+      throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+    }
+    throw error;
+  }
+  if (persisted?.device) Object.assign(device, persisted.device);
+  const canonicalCommand = persisted?.command || command;
+  if (canonicalCommand) {
+    device.lastCommand = publicDeviceCommand(canonicalCommand);
+    await syncDeviceLastCommand(canonicalCommand);
+  }
+  await appendDeviceEvent(device.id, "ota.download_failed", {
+    protocolVersion: Number(ota.protocolVersion || 1),
+    otaId: ota.id,
+    commandId: ota.commandId,
+    correlationId: ota.correlationId || "",
+    otaStatus: "failed",
+    code,
+  });
+  throw httpError(Number(failure.statusCode) || 404, message, code);
+}
+
+const PRIVATE_OTA_DOWNLOAD_COMMAND_STATES = new Set([
+  "accepted",
+  "queued",
+  "delivered",
+  "acknowledged",
+  "applying",
+]);
+
+async function refreshPrivateFirmwareDownloadCommandAuthority(deviceId, otaId, options = {}) {
+  if (!repositories?.devices?.refreshOtaDownloadAuthority) {
+    throw httpError(
+      503,
+      "Durable OTA command authorization is unavailable",
+      "DEVICE_OTA_REPOSITORY_UNAVAILABLE",
+    );
+  }
+  let refreshed;
+  try {
+    refreshed = await repositories.devices.refreshOtaDownloadAuthority(
+      deviceId,
+      otaId,
+      options.checkedAt || nowIso(),
+      options,
+    );
+  } catch (error) {
+    if (error?.code === "DEVICE_OTA_AUTHORIZATION_EXPIRED") throw error;
+    if (
+      [
+        "DEVICE_NOT_FOUND",
+        "DEVICE_REVOKED",
+        "DEVICE_OTA_LIFECYCLE_CHANGED",
+        "DEVICE_OTA_COMMAND_MISSING",
+        "DEVICE_OTA_STATE_CHANGED",
+        "DEVICE_OTA_AUTHORITY_CHANGED",
+      ].includes(error?.code)
+    ) {
+      throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+    }
+    throw error;
+  }
+  if (refreshed?.expired || refreshed?.command?.state === "expired") {
+    throw httpError(
+      410,
+      "Firmware OTA command delivery authorization expired",
+      "OTA_DOWNLOAD_COMMAND_EXPIRED",
+    );
+  }
+  if (!PRIVATE_OTA_DOWNLOAD_COMMAND_STATES.has(refreshed?.command?.state)) {
+    throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+  }
+  return refreshed;
+}
+
 async function serveDeviceOtaFirmwareDownload(req, res, url, segments) {
   const deviceId = decodeURIComponent(segments[2] || "");
   const otaId = decodeURIComponent(segments[4] || "");
-  const token = readString(url.searchParams.get("token"), 180);
-  const device = db.devices.find((item) => item.id === deviceId);
-  const ota = device && device.ota && typeof device.ota === "object" ? device.ota : null;
-  const otaTokenHash = ota?.tokenHash || (ota?.token ? hashOtaDownloadToken(ota.token) : "");
+  const authorization = readString(req.headers.authorization, 400);
+  const bearerMatch = authorization.match(/^Bearer ([A-Za-z0-9_-]{32,180})$/);
+  const token = bearerMatch ? bearerMatch[1] : "";
+  if (!repositories?.devices?.withAuthenticationFence) {
+    throw httpError(
+      503,
+      "Durable OTA download authorization is unavailable",
+      "DEVICE_OTA_REPOSITORY_UNAVAILABLE",
+    );
+  }
+  const device = await repositories.devices.withAuthenticationFence(
+    deviceId,
+    async (canonicalDevice) => canonicalDevice,
+  );
+  let ota = sanitizeDeviceOtaLifecycle(device?.ota);
+  const otaTokenHash = ota.tokenHash || "";
+  const downloadStatus = normalizeDeviceOtaStatus(ota.status);
+  const downloadAllowed = new Set(["pending", "delivered", "downloading"]);
 
-  if (!device || !ota || ota.id !== otaId || !verifyOtaDownloadToken(token, otaTokenHash)) {
+  if (
+    !device ||
+    device.revokedAt ||
+    inferDeviceOwnershipState(device) === "revoked" ||
+    !ota.id ||
+    ota.id !== otaId ||
+    !downloadAllowed.has(downloadStatus) ||
+    !verifyOtaDownloadToken(token, otaTokenHash)
+  ) {
     throw httpError(404, "Firmware OTA không hợp lệ hoặc đã hết hạn");
   }
-  if (!ota.tokenHash && ota.token) {
-    ota.tokenHash = otaTokenHash;
-    delete ota.token;
-    device.updatedAt = nowIso();
-    await saveDeviceRecord(device);
+  let downloadAuthority = privateDeviceOtaAuthoritySnapshot(device, ota);
+  const expiresAt = Date.parse(ota.expiresAt || "");
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    await expirePrivateFirmwareDownload(device, ota, downloadAuthority);
   }
-  if (ota.expiresAt && Date.parse(ota.expiresAt) < Date.now()) {
-    device.otaStatus = "failed";
-    device.ota = { ...ota, status: "failed", error: "Firmware download token expired", updatedAt: nowIso() };
-    device.updatedAt = nowIso();
-    await saveDeviceRecord(device);
-    await appendDeviceEvent(device.id, "ota.download_expired", { otaId });
-    throw httpError(410, "Firmware OTA đã hết hạn");
+  if (
+    !isCanonicalPrivateDeviceOtaGrant(ota) ||
+    !isPrivateOtaBoundToCurrentOwnership(device, ota)
+  ) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: 404,
+      code: "OTA_DOWNLOAD_AUTHORITY_INVALID",
+      message: "Private OTA ownership or storage authority is invalid",
+      expectedAuthority: downloadAuthority,
+      requireCanonicalOwnershipBinding: false,
+    });
   }
-
+  const refreshedDownload = await refreshPrivateFirmwareDownloadCommandAuthority(
+    device.id,
+    ota.id,
+  );
+  Object.assign(device, refreshedDownload.device);
+  ota = sanitizeDeviceOtaLifecycle(device.ota);
+  if (
+    !["pending", "delivered", "downloading"].includes(normalizeDeviceOtaStatus(ota.status)) ||
+    !verifyOtaDownloadToken(token, ota.tokenHash || "") ||
+    !isCanonicalPrivateDeviceOtaGrant(ota) ||
+    !isPrivateOtaBoundToCurrentOwnership(device, ota)
+  ) {
+    throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+  }
+  downloadAuthority = privateDeviceOtaAuthoritySnapshot(device, ota);
   const firmwareFileId = readString(ota.firmwareFileId, 120);
-  const record = firmwareFileId ? getStorageRecord(firmwareFileId) : null;
-  if (!record || record.bucket !== "device-firmware") {
-    throw httpError(404, "Không tìm thấy firmware trong bucket device-firmware");
+  let resolvedFirmware;
+  try {
+    resolvedFirmware = resolvePrivateFirmwareStorageBinding(firmwareFileId);
+  } catch (error) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: Number(error?.statusCode) || 404,
+      code: readString(error?.code, 80) || "OTA_FIRMWARE_RECORD_UNAVAILABLE",
+      message: readString(error?.message, 240) || "Firmware storage binding is unavailable",
+    });
+  }
+  const { record, storageFile, binding } = resolvedFirmware;
+  if (
+    ota.firmwareFileId !== binding.firmwareFileId ||
+    ota.firmwareStorageBucket !== binding.firmwareStorageBucket ||
+    ota.firmwareObjectKey !== binding.firmwareObjectKey ||
+    Number(ota.firmwareByteSize) !== binding.firmwareByteSize
+  ) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: 409,
+      code: "OTA_FIRMWARE_BINDING_CHANGED",
+      message: "Firmware storage binding changed after OTA authorization",
+    });
   }
 
-  const { storageFile } = getStorageFileSource(record);
-  if (!storageFile || !storageFile.objectKey) {
-    throw httpError(404, "Không tìm thấy file firmware trên storage");
+  const maxFirmwareBytes = getMaxOtaFirmwareBytes();
+  let firmwareBuffer;
+  try {
+    firmwareBuffer = await storageAdapter.getBuffer(binding.firmwareObjectKey, maxFirmwareBytes);
+  } catch (error) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: error?.code === "STORAGE_OBJECT_TOO_LARGE" ? 413 : 404,
+      code: error?.code === "STORAGE_OBJECT_TOO_LARGE"
+        ? "OTA_FIRMWARE_SIZE_INVALID"
+        : "OTA_FIRMWARE_OBJECT_UNAVAILABLE",
+      message: error?.code === "STORAGE_OBJECT_TOO_LARGE"
+        ? "Firmware exceeds the configured OTA size limit"
+        : "Firmware object is unavailable",
+    });
+  }
+  if (!firmwareBuffer?.length) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: 404,
+      code: "OTA_FIRMWARE_OBJECT_UNAVAILABLE",
+      message: "Firmware object is empty or unavailable",
+    });
+  }
+  if (firmwareBuffer.length !== binding.firmwareByteSize) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: 409,
+      code: "OTA_FIRMWARE_SIZE_MISMATCH",
+      message: "Firmware object size no longer matches the authorized artifact",
+    });
+  }
+  const actualChecksum = crypto.createHash("sha256").update(firmwareBuffer).digest("hex");
+  if (actualChecksum !== ota.checksum) {
+    await failPrivateFirmwareDownload(device, ota, {
+      statusCode: 409,
+      code: "OTA_FIRMWARE_CHECKSUM_MISMATCH",
+      message: "Firmware object checksum no longer matches the signed manifest",
+    });
+  }
+
+  const downloadCheckedAt = nowIso();
+  let canonicalDownload;
+  try {
+    canonicalDownload = await refreshPrivateFirmwareDownloadCommandAuthority(
+      device.id,
+      ota.id,
+      {
+        checkedAt: downloadCheckedAt,
+        expectedAuthority: downloadAuthority,
+        allowedCurrentStatuses: ["pending", "delivered", "downloading"],
+        requireCanonicalOwnershipBinding: true,
+        requireFutureExpiryAt: downloadCheckedAt,
+        transitionToDownloading: true,
+      },
+    );
+  } catch (error) {
+    if (error?.code === "DEVICE_OTA_AUTHORIZATION_EXPIRED") {
+      await expirePrivateFirmwareDownload(device, ota, downloadAuthority);
+    }
+    throw error;
+  }
+  const canonicalDevice = canonicalDownload.device;
+  const canonicalOta = sanitizeDeviceOtaLifecycle(canonicalDevice?.ota);
+  const canonicalAuthority = privateDeviceOtaAuthoritySnapshot(canonicalDevice, canonicalOta);
+  if (
+    !canonicalDevice ||
+    canonicalDevice.revokedAt ||
+    inferDeviceOwnershipState(canonicalDevice) === "revoked" ||
+    canonicalOta.id !== ota.id ||
+    !["pending", "delivered", "downloading"].includes(normalizeDeviceOtaStatus(canonicalOta.status)) ||
+    !verifyOtaDownloadToken(token, canonicalOta.tokenHash || "") ||
+    canonicalOta.firmwareFileId !== binding.firmwareFileId ||
+    canonicalOta.firmwareStorageBucket !== binding.firmwareStorageBucket ||
+    canonicalOta.firmwareObjectKey !== binding.firmwareObjectKey ||
+    Number(canonicalOta.firmwareByteSize) !== binding.firmwareByteSize ||
+    JSON.stringify(canonicalAuthority) !== JSON.stringify(downloadAuthority) ||
+    !isPrivateOtaBoundToCurrentOwnership(canonicalDevice, canonicalOta)
+  ) {
+    throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+  }
+  Object.assign(device, canonicalDevice);
+  ota = canonicalOta;
+  const canonicalExpiresAt = Date.parse(ota.expiresAt || "");
+  if (!Number.isFinite(canonicalExpiresAt) || canonicalExpiresAt <= Date.now()) {
+    await expirePrivateFirmwareDownload(device, ota, canonicalAuthority);
+  }
+  if (!isCanonicalPrivateDeviceOtaGrant(ota)) {
+    throw httpError(404, "Firmware OTA is invalid or expired", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
+  }
+  if (normalizeDeviceOtaStatus(ota.status) !== "downloading") {
+    throw httpError(404, "Firmware OTA is no longer downloadable", "OTA_DOWNLOAD_AUTHORITY_CHANGED");
   }
 
   await appendDeviceEvent(device.id, "ota.download", {
+    protocolVersion: Number(ota.protocolVersion || 1),
     otaId,
     firmwareFileId: record.id,
     firmwareVersion: ota.firmwareVersion || record.firmwareVersion || "",
+    byteSize: firmwareBuffer.length,
   });
-
-  const urlOrPath = await storageAdapter.getSignedUrl(storageFile.objectKey, 900);
-  if (/^https?:\/\//i.test(urlOrPath)) {
-    res.writeHead(302, { Location: urlOrPath, "Cache-Control": "no-store" });
-    res.end();
-    return;
-  }
-
-  const localRoot = path.resolve(process.env.LOCAL_OBJECT_STORAGE_DIR || path.join(DATA_DIR, "objects"));
-  const target = path.join(localRoot, storageFile.objectKey.split("/").map((part) => path.basename(part)).join(path.sep));
-  const resolved = path.resolve(target);
-  if (!resolved.startsWith(localRoot) || !fs.existsSync(resolved)) {
-    throw httpError(404, "Không tìm thấy file firmware trên storage");
-  }
-
-  setCommonHeaders(res);
+  setCommonHeaders(res, req);
   res.writeHead(200, {
     "Content-Type": storageFile.contentType || "application/octet-stream",
-    "Content-Length": fs.statSync(resolved).size,
+    "Content-Length": firmwareBuffer.length,
     "Content-Disposition": `attachment; filename="${path.basename(record.name || "firmware.bin")}"`,
     "Cache-Control": "no-store",
     "X-Smart-Health-Firmware-Version": ota.firmwareVersion || record.firmwareVersion || "",
-    "X-Smart-Health-SHA256": ota.checksum || record.checksum || record.sha256 || "",
+    "X-Smart-Health-SHA256": ota.checksum,
   });
-  fs.createReadStream(resolved).pipe(res);
+  res.end(firmwareBuffer);
 }
 
 function buildStorageBucketSummaries(user = null) {
@@ -11285,38 +13764,135 @@ async function handleAuthApi(req, res, segments) {
 
   if (segments.length === 3 && segments[2] === "role-request-document" && method === "POST") {
     const user = requireSessionUser(req);
-    const originalName = path.basename(readString(req.headers["x-file-name"], 240) || "verification-document.bin");
+    const requestedName = readString(req.headers["x-file-name"], 240);
+    if (!requestedName) {
+      throw httpError(
+        400,
+        "X-File-Name is required for role request document upload",
+        "ROLE_REQUEST_DOCUMENT_NAME_REQUIRED",
+      );
+    }
+    const originalName = path.basename(requestedName);
     const contentType = readString(req.headers["content-type"], 160) || "application/octet-stream";
     if (!new Set(["application/pdf", "image/jpeg", "image/png"]).has(contentType)) {
-      throw httpError(400, "Tài liệu xác minh chỉ hỗ trợ PDF, JPG hoặc PNG");
+      throw httpError(
+        400,
+        "Tài liệu xác minh chỉ hỗ trợ PDF, JPG hoặc PNG",
+        "ROLE_REQUEST_DOCUMENT_TYPE_UNSUPPORTED",
+      );
     }
-    const buffer = await readRequestBuffer(req);
-    if (!buffer.length || buffer.length > 10 * 1024 * 1024) {
-      throw httpError(400, "Tài liệu xác minh phải có dung lượng từ 1 byte đến 10 MB");
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      {},
+      "role request document upload",
+    );
+    const buffer = await readRequestBuffer(
+      req,
+      MAX_ROLE_REQUEST_DOCUMENT_BYTES,
+    );
+    if (!buffer.length) {
+      throw httpError(
+        400,
+        "Tài liệu xác minh phải có dung lượng từ 1 byte đến 10 MB",
+        "ROLE_REQUEST_DOCUMENT_SIZE_INVALID",
+      );
     }
-    const documentId = createId("doctor_doc");
     const organizationId = user.organizationId || "org_default_clinic";
-    const objectKey = `org/${organizationId}/doctor-documents/${user.id}/${documentId}-${originalName}`;
-    const upload = await storageAdapter.putBuffer(objectKey, buffer, contentType);
-    const document = {
-      id: documentId,
+    const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+    const fingerprint = createIdempotencyFingerprint({
+      userId: user.id,
+      organizationId,
       name: originalName,
       contentType,
-      byteSize: upload.byteSize || buffer.length,
-      objectKey,
-      storageProvider: upload.provider,
-      uploadedAt: nowIso(),
-    };
-    user.roleRequestDocuments = [...(Array.isArray(user.roleRequestDocuments) ? user.roleRequestDocuments : []), document].slice(-10);
-    await persistUserRecord(user);
-    await appendAudit("doctor.role_request.document.upload", req, {
-      actorUserId: user.id,
-      organizationId,
-      resourceType: "doctor_document",
-      resourceId: document.id,
-      metadata: { name: document.name, contentType, byteSize: document.byteSize },
+      byteSize: buffer.length,
+      sha256,
     });
-    sendJson(res, 201, { document: { id: document.id, name: document.name, contentType, byteSize: document.byteSize, uploadedAt: document.uploadedAt } });
+    const operation = "auth.role_request.document.upload";
+    const idempotency = {
+      scope: user.id,
+      operation,
+      key: idempotencyKey,
+      fingerprint,
+    };
+    if (!repositories?.roleRequestDocuments) {
+      throw httpError(
+        503,
+        "Role request document repository is unavailable",
+        "ROLE_REQUEST_DOCUMENT_REPOSITORY_UNAVAILABLE",
+      );
+    }
+    const replay = await repositories.roleRequestDocuments.findReplay({
+      userId: user.id,
+      organizationId,
+      idempotency,
+    });
+    if (replay) {
+      res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, 201, replay);
+      return;
+    }
+    const stableIdentity = crypto
+      .createHash("sha256")
+      .update(`${user.id}\n${operation}\n${idempotencyKey}`)
+      .digest("hex")
+      .slice(0, 24);
+    const documentId = `doctor_doc_${stableIdentity}`;
+    const operationId = `role_request_document_${stableIdentity}`;
+    const uploadAttemptId = crypto.randomBytes(12).toString("hex");
+    const objectKey = `org/${organizationId}/doctor-documents/${user.id}/${documentId}-${sha256}-${fingerprint}-${uploadAttemptId}-${originalName}`;
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const result = await persistRoleRequestDocumentUpload({
+      storageAdapter,
+      repository: repositories.roleRequestDocuments,
+      objectKey,
+      objectOwnership: {
+        userId: user.id,
+        organizationId,
+        documentId,
+      },
+      buffer,
+      contentType,
+      createSaveInput: (upload) => ({
+        userId: user.id,
+        organizationId,
+        operationId,
+        document: {
+          id: documentId,
+          userId: user.id,
+          organizationId,
+          name: originalName,
+          contentType,
+          byteSize: upload.byteSize || buffer.length,
+          sha256,
+          objectKey,
+          storageProvider: upload.provider,
+          uploadedAt: nowIso(),
+        },
+        idempotency,
+        audit: {
+          action: "doctor.role_request.document.upload",
+          actorUserId: user.id,
+          organizationId,
+          ip: requestContext.ip || req.socket.remoteAddress || "",
+          userAgent:
+            requestContext.userAgent ||
+            readString(req.headers["user-agent"], 240),
+        },
+      }),
+      onCleanupError: (cleanupError, failedObjectKey) => {
+        console.warn(
+          `[role-request-document] failed to clean uncommitted object ${failedObjectKey}: ${cleanupError.message}`,
+        );
+      },
+    });
+    if (result.replayed) {
+      res.setHeader("Idempotency-Replayed", "true");
+    }
+    sendJson(res, 201, {
+      document: result.document,
+      operationId: result.operationId,
+      replayed: result.replayed,
+    });
     return;
   }
 
@@ -11417,15 +13993,91 @@ async function handleAuthApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "role-request" && method === "POST") {
-    let user = requireSessionUser(req);
-    if (user.role !== "patient") {
+    const user = requireSessionUser(req);
+    const payload = await readJsonBody(req);
+    for (const authorityField of [
+      "userId",
+      "actorUserId",
+      "firebaseUid",
+      "operationId",
+      "replayed",
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(payload, authorityField)) {
+        throw httpError(
+          400,
+          "Role request authority is derived from the authenticated account",
+          "ROLE_REQUEST_AUTHORITY_FIELDS_FORBIDDEN",
+        );
+      }
+    }
+    const idempotencyKey = readString(
+      req.headers["idempotency-key"],
+      160,
+    );
+    if (!idempotencyKey) {
       throw httpError(
-        409,
-        "Tài khoản đang có quyền vận hành không thể tự đổi vai trò; hãy dùng quy trình quản trị có kiểm soát",
-        "ROLE_TRANSITION_REQUIRES_ADMIN",
+        400,
+        "Idempotency-Key is required for role request",
+        "IDEMPOTENCY_KEY_REQUIRED",
       );
     }
-    const payload = await readJsonBody(req);
+    const unsupportedFields = Object.keys(payload).filter(
+      (field) => !ROLE_REQUEST_INPUT_FIELDS.has(field),
+    );
+    if (unsupportedFields.length) {
+      throw httpError(
+        400,
+        "Role request contains fields outside the versioned request contract",
+        "ROLE_REQUEST_FIELDS_UNSUPPORTED",
+        { fields: unsupportedFields.sort() },
+      );
+    }
+    const expectedUserId = readString(payload.expectedUserId, 120);
+    const expectedWorkspaceId = readString(payload.expectedWorkspaceId, 120);
+    for (const [field, value] of [
+      ["expectedUserId", expectedUserId],
+      ["expectedWorkspaceId", expectedWorkspaceId],
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(payload, field) && !value) {
+        throw httpError(
+          400,
+          `${field} must be a non-empty mutation precondition when supplied`,
+          "ROLE_REQUEST_PRECONDITION_INVALID",
+          { field },
+        );
+      }
+    }
+    if (expectedUserId && expectedUserId !== user.id) {
+      throw httpError(
+        409,
+        "The authenticated account no longer matches the role-request screen owner",
+        "ROLE_REQUEST_EXPECTED_USER_MISMATCH",
+      );
+    }
+    const currentWorkspaceId = readString(
+      getUserWorkspaceContext(user).currentWorkspaceId,
+      120,
+    );
+    if (expectedWorkspaceId && expectedWorkspaceId !== currentWorkspaceId) {
+      throw httpError(
+        409,
+        "The authenticated workspace no longer matches the role-request screen owner",
+        "ROLE_REQUEST_EXPECTED_WORKSPACE_MISMATCH",
+      );
+    }
+    const canonicalRequestedRole = readString(payload.requestedRole, 40);
+    const compatibilityRequestedRole = readString(payload.role, 40);
+    if (
+      canonicalRequestedRole &&
+      compatibilityRequestedRole &&
+      canonicalRequestedRole !== compatibilityRequestedRole
+    ) {
+      throw httpError(
+        400,
+        "requestedRole and its compatibility alias role must match",
+        "ROLE_REQUEST_ROLE_MISMATCH",
+      );
+    }
     const requestedRole = readString(payload.requestedRole || payload.role, 40);
     if (!["doctor", "patient"].includes(requestedRole)) {
       throw httpError(400, "Requested role is not supported");
@@ -11441,20 +14093,57 @@ async function handleAuthApi(req, res, segments) {
       payload.workspaceType || payload.accountType,
       payload.accountType === "solo_doctor" ? "solo_practice" : currentWorkspaceType
     );
+    const explicitCanonicalWorkspaceIds = ["organizationId", "clinicId"]
+      .filter((key) => Object.prototype.hasOwnProperty.call(payload, key))
+      .map((key) => readString(payload[key], 120));
+    if (
+      explicitCanonicalWorkspaceIds.length > 1 &&
+      new Set(explicitCanonicalWorkspaceIds).size > 1
+    ) {
+      throw httpError(
+        400,
+        "Role request workspace aliases must identify the same workspace",
+        "ROLE_REQUEST_WORKSPACE_MISMATCH",
+      );
+    }
     let selectedClinic = requestedWorkspaceType === "solo_practice" ? null : getClinicFromPayload(payload);
     if (requestedRole === "patient" && requestedWorkspaceType === "personal") {
-      selectedClinic = ensurePersonalWorkspaceForUser(user);
+      selectedClinic = getPersonalWorkspaceCandidate(user);
     }
     if (requestedRole === "doctor" && requestedWorkspaceType === "solo_practice") {
-      selectedClinic = ensureSoloPracticeWorkspaceForUser(user, payload);
+      selectedClinic = getSoloPracticeWorkspaceCandidate(user, payload);
     }
-    const requestedClinicId = readString(payload.organizationId || payload.clinicId || payload.clinic, 120);
-    if (requestedRole === "doctor" && requestedClinicId && !selectedClinic && requestedWorkspaceType !== "solo_practice") {
-      throw httpError(400, "Clinic is not available");
+    const requestedClinicId = getRequestedWorkspaceId(payload);
+    if (
+      hasExplicitWorkspaceSelection(payload) &&
+      (!selectedClinic ||
+        (["personal", "solo_practice"].includes(requestedWorkspaceType) &&
+          requestedClinicId !== selectedClinic.id))
+    ) {
+      throw httpError(
+        400,
+        selectedClinic
+          ? "Requested workspace is not available for this role request"
+          : "Clinic is not available",
+        selectedClinic
+          ? "ROLE_REQUEST_WORKSPACE_MISMATCH"
+          : "ROLE_REQUEST_WORKSPACE_NOT_FOUND",
+      );
+    }
+    if (
+      requestedRole === "patient" &&
+      requestedWorkspaceType !== "personal" &&
+      selectedClinic &&
+      !hasWorkspaceMembership(user, selectedClinic.id)
+    ) {
+      throw httpError(
+        403,
+        "Patient role requests cannot create access to another workspace",
+        "ROLE_REQUEST_PATIENT_WORKSPACE_DENIED",
+      );
     }
 
-    user.requestedRole = requestedRole;
-    user.accountType =
+    const accountType =
       payload.accountType ||
       (requestedRole === "doctor"
         ? requestedWorkspaceType === "solo_practice"
@@ -11462,119 +14151,265 @@ async function handleAuthApi(req, res, segments) {
           : "doctor"
         : requestedWorkspaceType === "personal"
           ? "personal"
-          : user.accountType || "");
-    user.accountStatus = user.accountStatus || "active";
-    if (requestedRole === "doctor") {
-      user.roleRequestStatus = isApprovedDoctorRole(user) || user.role === "admin" ? "approved" : "pending";
-      if (user.role !== "admin" && user.roleRequestStatus !== "approved") {
-        user.role = "patient";
-      }
-      user.roleInfoRequiredFields = [];
-      user.roleInfoRequestMessage = "";
-    } else {
-      user.role = "patient";
-      user.roleRequestStatus = "approved";
+          : user.accountType || "personal");
+    const roleRequestStatus =
+      requestedRole === "doctor"
+        ? isApprovedDoctorRole(user) || user.role === "admin"
+          ? "approved"
+          : "pending"
+        : "approved";
+    const roleRequestTargetOrganizationId = readString(
+      selectedClinic?.id || user.organizationId,
+      120,
+    );
+    const hasApprovedTargetAuthority = getUserMemberships(user).some(
+      (membership) =>
+        membership.organizationId === roleRequestTargetOrganizationId &&
+        membership.operational === true &&
+        (membership.role === "doctor" ||
+          (user.role === "admin" && membership.role === "platform_admin")),
+    );
+    if (
+      requestedRole === "doctor" &&
+      roleRequestStatus === "approved" &&
+      !hasApprovedTargetAuthority
+    ) {
+      throw httpError(
+        409,
+        "An approved account cannot use role request to grant a new workspace membership",
+        "ROLE_REQUEST_APPROVED_TARGET_DENIED",
+      );
     }
-    user.roleRequestedAt = nowIso();
-    user.name = readString(payload.name || payload.fullName, 160) || user.name;
-    user.phone = readString(payload.phone, 40) || user.phone;
-    user.license = readString(payload.license, 120) || user.license;
+    const nextRole =
+      requestedRole === "doctor" &&
+      user.role !== "admin" &&
+      roleRequestStatus !== "approved"
+        ? "patient"
+        : requestedRole === "patient"
+          ? "patient"
+          : user.role;
+    const roleRequestPatch = {
+      requestedRole,
+      role: nextRole,
+      roleRequestStatus,
+      accountStatus: user.accountStatus || "active",
+      roleRequestedAt: nowIso(),
+      roleApprovedAt:
+        roleRequestStatus === "approved" ? user.roleApprovedAt || "" : "",
+      roleRejectedAt: "",
+      roleRejectReason: "",
+      roleInfoRequestAt: "",
+      roleInfoRequestMessage: "",
+      roleInfoRequiredFields: [],
+      name: readString(payload.name || payload.fullName, 160) || user.name,
+      phone: readString(payload.phone, 40) || user.phone,
+      license: readString(payload.license, 120) || user.license,
+      workspaceType: requestedWorkspaceType,
+      accountType,
+      organizationId:
+        selectedClinic?.id || user.organizationId || "org_default_clinic",
+      hospital:
+        selectedClinic?.name ||
+        readString(payload.hospital || payload.clinicName, 160) ||
+        user.hospital,
+      clinicSuggestion: selectedClinic
+        ? ""
+        : readString(payload.hospital || payload.clinicName, 160),
+      department:
+        readString(payload.department || payload.specialty, 160) ||
+        user.department,
+      registrationReason:
+        readString(payload.reason || payload.registrationReason, 1000) ||
+        user.registrationReason ||
+        "",
+    };
+    if (!repositories?.users?.submitRoleRequestWithAudit) {
+      throw httpError(
+        503,
+        "Role request repository is unavailable",
+        "ROLE_REQUEST_REPOSITORY_UNAVAILABLE",
+      );
+    }
+    const requestContext = getRequestContext(req) || createRequestContext(req);
+    const fingerprintInput = {
+      expectedUserId,
+      expectedWorkspaceId,
+      requestedRole,
+      accountType,
+      workspaceType: requestedWorkspaceType,
+      organizationId: roleRequestPatch.organizationId,
+      explicitWorkspaceSelection: hasExplicitWorkspaceSelection(payload),
+      clinicName: readString(
+        payload.clinicName || payload.hospital || payload.clinic,
+        160,
+      ),
+      name: readString(payload.name || payload.fullName, 160),
+      phone: readString(payload.phone, 40),
+      license: readString(payload.license, 120),
+      department: readString(
+        payload.department || payload.specialty,
+        160,
+      ),
+      registrationReason: readString(
+        payload.reason || payload.registrationReason,
+        1000,
+      ),
+      workspaceName: readString(payload.workspaceName, 160),
+      workspaceAddress: readString(payload.address, 240),
+      workspaceEmail: readString(payload.email, 160).toLowerCase(),
+    };
+    const result = await repositories.users.submitRoleRequestWithAudit(
+      user.id,
+      roleRequestPatch,
+      {
+        action: "auth.role.request",
+        actorUserId: user.id,
+        organizationId: roleRequestPatch.organizationId,
+        ip: requestContext.ip || req.socket.remoteAddress || "",
+        userAgent:
+          requestContext.userAgent ||
+          readString(req.headers["user-agent"], 240),
+        authorization: {
+          kind: "self",
+          actorUserId: user.id,
+          organizationId: roleRequestPatch.organizationId,
+        },
+        metadata: {
+          previousRoleRequestStatus,
+          requestedRole,
+          workspaceType: requestedWorkspaceType,
+          accountType,
+        },
+      },
+      {
+        scope: user.id,
+        operation: "auth.role.request",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint(fingerprintInput),
+      },
+      selectedClinic,
+    );
+    if (!result?.user) {
+      throw httpError(
+        404,
+        "Authenticated account no longer exists",
+        "ACCOUNT_NOT_FOUND",
+      );
+    }
+    if (
+      result.roleRequest.requestedRole !== result.user.requestedRole ||
+      result.roleRequest.status !== result.user.roleRequestStatus ||
+      result.roleRequest.requestedAt !== result.user.roleRequestedAt
+    ) {
+      throw httpError(
+        500,
+        "Role request repository returned an inconsistent receipt",
+        "ROLE_REQUEST_RECEIPT_INVALID",
+      );
+    }
     if (selectedClinic) {
-      ensureOrganizationFromCatalog(selectedClinic);
+      const existingTargetWorkspace = getClinicById(selectedClinic.id);
+      if (!result.replayed || !existingTargetWorkspace) {
+        let materializedWorkspace = null;
+        if (requestedWorkspaceType === "personal") {
+          materializedWorkspace = ensurePersonalWorkspaceForUser(user);
+        } else if (requestedWorkspaceType === "solo_practice") {
+          materializedWorkspace = ensureSoloPracticeWorkspaceForUser(user, payload);
+        } else {
+          materializedWorkspace = ensureOrganizationFromCatalog(selectedClinic);
+        }
+        if (
+          materializedWorkspace &&
+          typeof repositories.organizations?.upsert === "function"
+        ) {
+          await repositories.organizations.upsert(materializedWorkspace);
+        }
+      }
     }
-    user.workspaceType = requestedWorkspaceType;
-    user.organizationId = selectedClinic?.id || user.organizationId || "org_default_clinic";
-    user.hospital = selectedClinic?.name || readString(payload.hospital || payload.clinicName, 160) || user.hospital;
-    user.clinicSuggestion = selectedClinic ? "" : readString(payload.hospital || payload.clinicName, 160);
-    user.department = readString(payload.department || payload.specialty, 160) || user.department;
-    user.registrationReason = readString(payload.reason || payload.registrationReason, 1000) || user.registrationReason || "";
-    user.updatedAt = nowIso();
-    if (repositories && selectedClinic && typeof repositories.organizations?.upsert === "function") {
-      await repositories.organizations.upsert(selectedClinic);
+    if (result.roleRequest.status === "approved") {
+      const membershipUser =
+        db.users.find((candidate) => candidate.id === result.user.id) ||
+        result.user;
+      ensureMembershipForUser(membershipUser);
+      await repositories.memberships.ensureForUser(membershipUser);
     }
-    ensureMembershipForUser(user);
 
     if (
-      repositories &&
-      requestedRole === "doctor" &&
-      user.roleRequestStatus === "pending" &&
-      typeof repositories.users.resubmitDoctorRequest === "function"
+      result.roleRequest.requestedRole === "doctor" &&
+      result.user.role !== "doctor" &&
+      result.user.role !== "admin"
     ) {
-      const persistedUser = await repositories.users.resubmitDoctorRequest(user.id, {
-        role: user.role,
-        roleRequestedAt: user.roleRequestedAt,
-        name: user.name,
-        phone: user.phone,
-        license: user.license,
-        hospital: user.hospital,
-        department: user.department,
-        organizationId: user.organizationId,
-        registrationReason: user.registrationReason,
-        workspaceType: user.workspaceType,
-        accountType: user.accountType,
-        clinicSuggestion: user.clinicSuggestion,
-      });
-      if (
-        !persistedUser ||
-        persistedUser.roleRequestStatus !== "pending" ||
-        normalizeRoleInfoFields(persistedUser.roleInfoRequiredFields).length > 0 ||
-        (persistedUser.roleInfoRequestMessage || "")
-      ) {
-        throw httpError(500, "Không thể gửi lại hồ sơ bác sĩ vào trạng thái chờ duyệt.");
-      }
-      user = persistedUser;
-      ensureMembershipForUser(user);
-      await repositories.memberships.ensureForUser(user);
-    } else if (repositories) {
-      await repositories.users.save(user);
-      await repositories.memberships.ensureForUser(user);
-    }
-
-    if (requestedRole === "doctor" && user.role !== "doctor" && user.role !== "admin") {
       const wasNeedsInfo = previousRoleRequestStatus === "needs_info";
-      const registrationReason = user.registrationReason || "";
+      const registrationReason = result.user.registrationReason || "";
       const doctorRequestTitle = wasNeedsInfo ? "Bác sĩ đã gửi lại hồ sơ" : "Yêu cầu duyệt bác sĩ";
       const doctorRequestMessage = [
         wasNeedsInfo
-          ? `${user.name || user.email || user.id} đã bổ sung hồ sơ và đang chờ admin duyệt lại.`
-          : `${user.name || user.email || user.id} đang chờ admin cấp quyền bác sĩ.`,
+          ? `${result.user.name || result.user.email || result.user.id} đã bổ sung hồ sơ và đang chờ admin duyệt lại.`
+          : `${result.user.name || result.user.email || result.user.id} đang chờ admin cấp quyền bác sĩ.`,
         registrationReason ? `Lý do đăng ký: ${registrationReason}` : "",
       ].filter(Boolean).join("\n");
+      const roleRequestReviewer = db.users.find(
+        (candidate) =>
+          isActiveUserAccount(candidate) &&
+          ["admin", "platform_admin"].includes(
+            readString(candidate.role, 40).toLowerCase(),
+          ),
+      );
       await createBackendNotification({
+        id: `noti_${result.operationId}`,
+        createOnce: true,
         type: "info",
-        userId: user.id,
-        organizationId: user.organizationId || "",
+        userId: roleRequestReviewer?.id || "",
+        // Keep clinical application details out of the requested workspace's
+        // shared notification audience. Platform admins can still resolve the
+        // target through the metadata below.
+        organizationId: "",
         title: doctorRequestTitle,
         message: doctorRequestMessage,
         metadata: {
           actionPath: "/doctor-approval",
-          doctorName: user.name || "",
-          doctorEmail: user.email || "",
-          doctorPhone: user.phone || "",
-          clinicName: user.hospital || getClinicById(user.organizationId)?.name || "",
-          specialty: user.department || user.specialty || "",
-          license: user.license || "",
+          operationId: result.operationId,
+          doctorName: result.user.name || "",
+          doctorEmail: result.user.email || "",
+          doctorPhone: result.user.phone || "",
+          clinicName:
+            result.user.hospital ||
+            getClinicById(result.user.organizationId)?.name ||
+            "",
+          specialty:
+            result.user.department || result.user.specialty || "",
+          license: result.user.license || "",
           registrationReason,
-          workspaceType: user.workspaceType || getClinicById(user.organizationId)?.workspaceType || "",
-          accountType: user.accountType || "",
-          roleRequestStatus: user.roleRequestStatus || "",
+          workspaceType:
+            result.user.workspaceType ||
+            getClinicById(result.user.organizationId)?.workspaceType ||
+            "",
+          accountType: result.user.accountType || "",
+          roleRequestStatus: result.user.roleRequestStatus || "",
           previousRoleRequestStatus,
         },
       });
-      addAccessLog("Doctor role approval requested", {
-        ip: req.socket.remoteAddress || "",
-        previousRoleRequestStatus,
-      });
+      if (!result.replayed) {
+        addAccessLog("Doctor role approval requested", {
+          id: `log_${result.operationId}`,
+          operationId: result.operationId,
+          userId: result.user.id,
+          organizationId: result.user.organizationId || "",
+          ip: req.socket.remoteAddress || "",
+          previousRoleRequestStatus,
+        });
+      }
     }
 
     await saveDb();
+    if (result.replayed) {
+      res.setHeader("Idempotency-Replayed", "true");
+    }
     sendJson(res, 200, {
-      user: publicUser(user),
-      roleRequest: {
-        requestedRole: user.requestedRole,
-        status: user.roleRequestStatus,
-        requestedAt: user.roleRequestedAt,
-      },
+      user: result.user,
+      roleRequest: result.roleRequest,
+      operationId: result.operationId,
+      replayed: result.replayed === true,
     });
     return;
   }
@@ -11583,12 +14418,24 @@ async function handleAuthApi(req, res, segments) {
     assertDemoAuthAllowed();
     const payload = await readJsonBody(req);
     const user = findUserByLogin(payload.email || payload.phone || payload.login);
-    if (!user || user.password !== readString(payload.password, 200)) {
+    const password =
+      typeof payload.password === "string" && payload.password.length <= 200
+        ? payload.password
+        : "";
+    if (!user || !verifyPasswordSecret(password, user.password)) {
       addAccessLog("Đăng nhập thất bại", { severity: "warning", ip: req.socket.remoteAddress || "" });
       saveDb();
       throw httpError(401, "Email/số điện thoại hoặc mật khẩu không đúng");
     }
     assertUserAccountActive(user);
+    if (!isPasswordHash(user.password)) {
+      if (repositories?.users?.updatePasswordExact) {
+        await repositories.users.updatePasswordExact(user.id, password);
+      } else {
+        user.password = normalizePasswordHash(password);
+        await saveDb();
+      }
+    }
     if (payload.role && user.role !== payload.role) {
       throw httpError(403, "Tài khoản không đúng vai trò đăng nhập");
     }
@@ -11665,7 +14512,15 @@ async function handleAuthApi(req, res, segments) {
       }
     }
     const session = createSession(user, req);
-    createNotification("success", "Tạo tài khoản thành công", "Tài khoản Smart Health đã được tạo.");
+    createNotification(
+      "success",
+      "Tạo tài khoản thành công",
+      "Tài khoản Smart Health đã được tạo.",
+      {
+        userId: user.id,
+        organizationId: user.organizationId || "",
+      },
+    );
     addAccessLog("Tạo tài khoản mới", { ip: req.socket.remoteAddress || "" });
     await saveDb();
     sendJson(res, 201, { token: session.token, user: publicUser(user) });
@@ -11723,21 +14578,64 @@ async function handleAuthApi(req, res, segments) {
 
   if (segments.length === 5 && segments[2] === "sessions" && segments[4] === "revoke" && method === "POST") {
     const user = requireSessionUser(req);
-    const sessionId = decodeURIComponent(segments[3]);
+    if (!req.authSession?.id) {
+      throw httpError(
+        401,
+        "The current auth session binding is unavailable",
+        "AUTH_SESSION_BINDING_MISSING",
+      );
+    }
+    const sessionId = readAuthSessionIdSegment(segments[3]);
+    const requestPath = parseRequestPath(req).pathname;
+    const isCanonicalV1Request = requestPath.startsWith("/api/v1/");
+    const isLegacyCompatibilityRequest = /^\/api\/auth\/sessions\/[^/]+\/revoke$/.test(requestPath);
+    const suppliedIdempotencyKey = readAuthSessionRevokeIdempotencyKey(req, {
+      required: isCanonicalV1Request,
+    });
+    const idempotencyKey = suppliedIdempotencyKey || createLegacyAuthSessionRevokeIdempotencyKey(
+      user.id,
+      sessionId,
+    );
+    if (isLegacyCompatibilityRequest) {
+      requestMetrics.legacyAuthSessionRevoke += 1;
+      res.setHeader("Deprecation", "true");
+      res.setHeader("X-Shcare-Compatibility-Alias", "auth-session-revoke");
+    }
+    const operation = "auth.session.revoke";
+    const idempotency = {
+      scope: user.id,
+      operation,
+      key: idempotencyKey,
+      fingerprint: createIdempotencyFingerprint({ sessionId }),
+    };
+    const operationId = `auth_session_revoke_${createIdempotencyFingerprint({
+      userId: user.id,
+      operation,
+      key: idempotencyKey,
+    }).slice(0, 24)}`;
     const context = getRequestContext(req) || createRequestContext(req);
     const revoked = repositories?.authSessions
       ? await repositories.authSessions.revokeForUser(user.id, sessionId, {
-          action: "auth.session.revoke",
+          action: operation,
           organizationId: user.organizationId || "",
           ip: context.ip || "",
           userAgent: context.userAgent || "",
+          metadata: { operationId },
+        }, idempotency, {
+          id: req.authSession.id,
+          sessionKey: req.authSession.sessionKey || "",
         })
       : null;
     if (!revoked) throw httpError(404, "Session not found", "AUTH_SESSION_NOT_FOUND");
     closeRealtimeSocketsForSession(user.id, revoked.session);
     addAccessLog("Revoke auth session", { severity: "warning" });
     await saveDb();
-    sendJson(res, 200, { session: publicAuthSession(revoked.session, false), replayed: Boolean(revoked.replayed) });
+    if (revoked.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, {
+      session: publicAuthSession(revoked.session, false),
+      revoked: true,
+      replayed: Boolean(revoked.replayed),
+    });
     return;
   }
 
@@ -12250,12 +15148,14 @@ async function handleAdminApi(req, res, url, segments) {
 
     sendJson(res, 200, {
       generatedAt: overviewSnapshot.generatedAt,
+      workspaceId,
       range: overviewSnapshot.range,
       stats: {
         clinics: isPlatformAdminUser(adminUser) ? db.organizations.length : workspaceId ? 1 : 0,
         workspaces: isPlatformAdminUser(adminUser) ? db.organizations.length : workspaceId ? 1 : 0,
         patientsCount: scopedPatients.length,
         pendingDoctors,
+        devicesCount: scopedDevices.length,
         devicesOnline,
         scansCount,
         aiJobsFailed,
@@ -12539,7 +15439,34 @@ async function handleAdminApi(req, res, url, segments) {
 
   if (segments[2] === "storage-files" && segments.length === 3 && method === "GET") {
     requireAnyCapability(adminUser, STORAGE_READ_CAPABILITIES, "Không có quyền xem tệp storage");
-    sendJson(res, 200, { files: buildStorageFileRecords(adminUser) });
+    const bucketFilter = readString(url.searchParams.get("bucket"), 120);
+    const typeFilter = readString(url.searchParams.get("type"), 80).toLowerCase();
+    const storageSource = buildStorageFileRecords(adminUser).filter(
+      (item) =>
+        (!bucketFilter || bucketFilter === "all" || item.bucket === bucketFilter) &&
+        (!typeFilter || typeFilter === "all" || String(item.type || "").toLowerCase() === typeFilter),
+    );
+    const pageResult = resolveAdminListPage(storageSource, url, {
+      searchFields: [
+        (item) => item.id,
+        (item) => item.name,
+        (item) => item.bucket,
+        (item) => item.type,
+        (item) => item.uploader,
+        (item) => item.organizationId,
+        (item) => Array.isArray(item.tags) ? item.tags.join(" ") : "",
+      ],
+      sortFields: {
+        name: (item) => item.name,
+        createdAt: (item) => item.createdAt || item.uploadedAt,
+        byteSize: (item) => item.byteSize,
+        bucket: (item) => item.bucket,
+        type: (item) => item.type,
+      },
+      defaultSort: "createdAt:desc",
+    });
+    setWorkspacePaginationHeaders(res, pageResult);
+    sendJson(res, 200, { files: pageResult.items });
     return;
   }
 
@@ -12986,6 +15913,7 @@ async function handleAdminApi(req, res, url, segments) {
     if (nextPassword.length < 8) {
       throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự");
     }
+    const passwordProvider = FIREBASE_AUTH_ENABLED ? "firebase" : "demo";
     const saga = await runIdentityProviderSaga(
       req,
       adminUser,
@@ -12995,7 +15923,10 @@ async function handleAdminApi(req, res, url, segments) {
       async () => {
         if (!FIREBASE_AUTH_ENABLED) {
           assertDemoAuthAllowed();
-          targetUser.password = nextPassword;
+          await repositories.users.updatePasswordExact(
+            targetUser.id,
+            nextPassword,
+          );
           return { updated: true, skipped: true };
         }
         if (!targetUser.firebaseUid) {
@@ -13010,15 +15941,13 @@ async function handleAdminApi(req, res, url, segments) {
           throw error;
         }
         await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, { password: nextPassword, disabled: false });
-        await firebaseAdminApp.auth().revokeRefreshTokens(targetUser.firebaseUid);
         return { updated: true, firebaseDisabled: false, firebaseTokensRevoked: true };
+      },
+      {
+        targetState: { provider: passwordProvider },
       },
     );
     Object.assign(targetUser, saga.completed.user || { accountStatus: "active" });
-    if (!FIREBASE_AUTH_ENABLED) {
-      targetUser.password = nextPassword;
-      await persistUserRecord(targetUser);
-    }
     createNotification("warning", "Mật khẩu admin đã được đặt lại", `Tài khoản ${targetUser.email} vừa được cấp mật khẩu mới.`, {
       userId: adminUser.id,
       organizationId: targetUser.organizationId || "",
@@ -13497,7 +16426,48 @@ async function handleAdminApi(req, res, url, segments) {
 
     if (segments.length === 3 && method === "GET") {
       requireAnyCapability(adminUser, ["platform.packages.manage"], "Không có quyền xem gói dịch vụ hệ thống");
-      sendJson(res, 200, { packages: await repositories.servicePackages.list() });
+      const allPackages = await repositories.servicePackages.list();
+      const packageSummary = allPackages.reduce(
+        (summary, item) => {
+          summary.total += 1;
+          if (item.status === "archived") summary.archived += 1;
+          else summary.active += 1;
+          return summary;
+        },
+        { total: 0, active: 0, archived: 0 },
+      );
+      const assignedByPackage = db.organizations.reduce((counts, workspace) => {
+        const packageId = readString(workspace.packageId, 120);
+        if (packageId && !workspace.deletedAt) counts[packageId] = (counts[packageId] || 0) + 1;
+        return counts;
+      }, {});
+      packageSummary.assignedByPackage = assignedByPackage;
+      packageSummary.assignedWorkspaceCount = Object.values(assignedByPackage).reduce(
+        (total, count) => total + Number(count || 0),
+        0,
+      );
+      const packageStatus = readString(url.searchParams.get("status"), 40).toLowerCase();
+      const packageSource = allPackages.filter(
+        (item) => !packageStatus || packageStatus === "all" ||
+          (packageStatus === "active" ? item.status !== "archived" : item.status === packageStatus),
+      );
+      const pageResult = resolveAdminListPage(packageSource, url, {
+        searchFields: [
+          (item) => item.id,
+          (item) => item.name,
+          (item) => item.type,
+          (item) => item.segment,
+        ],
+        sortFields: {
+          name: (item) => item.name,
+          createdAt: (item) => item.createdAt,
+          updatedAt: (item) => item.updatedAt,
+          status: (item) => item.status,
+        },
+        defaultSort: "updatedAt:desc",
+      });
+      setWorkspacePaginationHeaders(res, pageResult);
+      sendJson(res, 200, { packages: pageResult.items, summary: packageSummary });
       return;
     }
 
@@ -13622,7 +16592,32 @@ async function handleAdminApi(req, res, url, segments) {
 
     if (segments[4] === "approve" && method === "POST") {
       const payload = await readJsonBody(req);
-      const organizationId = readString(payload.organizationId, 120) || targetUser.organizationId || "org_default_clinic";
+      const persistedTargetOrganizationId = readString(
+        targetUser.organizationId,
+        120,
+      );
+      const requestedApprovalOrganizationId = readString(
+        payload.organizationId,
+        120,
+      );
+      if (!persistedTargetOrganizationId) {
+        throw httpError(
+          409,
+          "The doctor request does not have a persisted target workspace",
+          "DOCTOR_REQUEST_TARGET_REQUIRED",
+        );
+      }
+      if (
+        requestedApprovalOrganizationId &&
+        requestedApprovalOrganizationId !== persistedTargetOrganizationId
+      ) {
+        throw httpError(
+          409,
+          "The approval workspace must match the persisted doctor-request target",
+          "DOCTOR_REQUEST_TARGET_MISMATCH",
+        );
+      }
+      const organizationId = persistedTargetOrganizationId;
       const organization = getClinicById(organizationId);
       if (!organization) {
         throw httpError(404, "Không tìm thấy workspace để cấp quyền bác sĩ", "WORKSPACE_NOT_FOUND");
@@ -13700,12 +16695,11 @@ async function handleAdminApi(req, res, url, segments) {
       } else if (repositories) {
         await repositories.users.save(targetUser);
       }
+      ensureMembershipForUser(targetUser);
+      if (repositories?.memberships?.ensureForUser) {
+        await repositories.memberships.ensureForUser(targetUser);
+      }
       if (!approvalSaga.replayed) {
-        createNotification(
-          "success",
-          "Tài khoản bác sĩ đã được phê duyệt",
-          `${targetUser.name || targetUser.email || targetUser.id} đã được cấp quyền bác sĩ.`,
-        );
         addAccessLog("Doctor role request approved", {
           severity: "success",
           userId: adminUser.id,
@@ -13792,11 +16786,6 @@ async function handleAdminApi(req, res, url, segments) {
       } else if (repositories) {
         await repositories.users.save(targetUser);
       }
-      createNotification(
-        "warning",
-        "Yêu cầu bác sĩ đã bị từ chối",
-        `${targetUser.name || targetUser.email || targetUser.id}: ${reason}`
-      );
       addAccessLog("Doctor role request rejected", {
         severity: "warning",
         userId: adminUser.id,
@@ -13807,7 +16796,8 @@ async function handleAdminApi(req, res, url, segments) {
         title: "Yêu cầu bác sĩ đã bị từ chối",
         message: `${targetUser.name || targetUser.email || targetUser.id}: ${reason}`,
         userId: targetUser.id,
-        organizationId: targetUser.organizationId || "",
+        organizationId:
+          getUserWorkspaceContext(targetUser).currentWorkspaceId || "",
       });
       await appendAudit("doctor.reject", req, {
         actorUserId: adminUser.id,
@@ -13871,11 +16861,6 @@ async function handleAdminApi(req, res, url, segments) {
       } else if (repositories) {
         await repositories.users.save(targetUser);
       }
-      createNotification(
-        "warning",
-        "Yêu cầu bổ sung hồ sơ bác sĩ",
-        `${targetUser.name || targetUser.email || targetUser.id}: ${message}`
-      );
       addAccessLog("Doctor role request needs additional information", {
         severity: "warning",
         userId: adminUser.id,
@@ -13886,7 +16871,8 @@ async function handleAdminApi(req, res, url, segments) {
         title: "Yêu cầu bổ sung hồ sơ bác sĩ",
         message: `${targetUser.name || targetUser.email || targetUser.id}: ${message}`,
         userId: targetUser.id,
-        organizationId: targetUser.organizationId || "",
+        organizationId:
+          getUserWorkspaceContext(targetUser).currentWorkspaceId || "",
         metadata: {
           roleRequestStatus: targetUser.roleRequestStatus,
           requiredFields,
@@ -13923,9 +16909,46 @@ async function handleAdminApi(req, res, url, segments) {
           ),
       )
       .sort((a, b) => String(b.roleApprovedAt || b.updatedAt || "").localeCompare(String(a.roleApprovedAt || a.updatedAt || "")));
-    const doctors = users.map(publicUser);
-
-    sendJson(res, 200, { doctors });
+    const statusFilter = readString(url.searchParams.get("status"), 40).toLowerCase();
+    const specialtyFilter = readString(url.searchParams.get("specialty"), 160);
+    const clinicFilter = readString(url.searchParams.get("clinic"), 160);
+    const doctorSource = users.filter((item) => {
+      const status = item.accountStatus === "locked" ? "inactive" :
+        item.accountStatus === "active" ? "active" : "unknown";
+      const specialty = readString(item.department || item.specialty, 160);
+      const clinic = readString(item.hospital || item.clinicName, 160);
+      return (
+        (!statusFilter || statusFilter === "all" || status === statusFilter) &&
+        (!specialtyFilter || specialtyFilter === "all" || specialty === specialtyFilter) &&
+        (!clinicFilter || clinicFilter === "all" || clinic === clinicFilter)
+      );
+    });
+    const pageResult = resolveAdminListPage(doctorSource, url, {
+      searchFields: [
+        (item) => item.id,
+        (item) => item.name,
+        (item) => item.email,
+        (item) => item.phone,
+        (item) => item.specialty,
+        (item) => item.organizationId,
+      ],
+      sortFields: {
+        name: (item) => item.name,
+        createdAt: (item) => item.createdAt,
+        updatedAt: (item) => item.updatedAt,
+        roleApprovedAt: (item) => item.roleApprovedAt,
+        status: (item) => item.accountStatus,
+      },
+      defaultSort: "roleApprovedAt:desc",
+    });
+    setWorkspacePaginationHeaders(res, pageResult);
+    sendJson(res, 200, {
+      doctors: pageResult.items.map(publicUser),
+      facets: {
+        specialties: [...new Set(users.map((item) => readString(item.department || item.specialty, 160)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")),
+        clinics: [...new Set(users.map((item) => readString(item.hospital || item.clinicName, 160)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")),
+      },
+    });
     return;
   }
 
@@ -14099,8 +17122,102 @@ async function handleAdminApi(req, res, url, segments) {
 async function handleMeApi(req, res, segments) {
   const method = req.method || "GET";
   const user = segments[2] === "2fa" ? requirePrimarySessionUser(req) : requireUser(req);
-  if (isPatientUser(user)) {
+  const isActiveProfileMutation =
+    segments.length === 3 &&
+    segments[2] === "active-profile" &&
+    method === "PATCH";
+  if (isPatientUser(user) && !isActiveProfileMutation) {
     ensurePatientProfileForUser(user);
+  }
+
+  if (
+    segments.length === 3 &&
+    segments[2] === "notification-preferences" &&
+    method === "GET"
+  ) {
+    const canonicalUser = await refreshAuthenticatedAuthorization(user);
+    if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+      throw httpError(
+        401,
+        "Notification preferences require an active account",
+        "NOTIFICATION_PREFERENCE_ACCOUNT_UNAVAILABLE",
+      );
+    }
+    sendJson(res, 200, buildNotificationPreferencesResponse(canonicalUser));
+    return;
+  }
+
+  if (
+    segments.length === 3 &&
+    segments[2] === "notification-preferences" &&
+    method === "PATCH"
+  ) {
+    const payload = await readJsonBody(req);
+    const preferencePatch = parseNotificationPreferencePatch(payload);
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      {},
+      "notification preference mutation",
+    );
+    const canonicalUser = await refreshAuthenticatedAuthorization(user);
+    if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+      throw httpError(
+        401,
+        "Notification preferences require an active account",
+        "NOTIFICATION_PREFERENCE_ACCOUNT_UNAVAILABLE",
+      );
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = repositories?.users.patchNotificationPreferenceWithAudit
+      ? await repositories.users.patchNotificationPreferenceWithAudit(
+          canonicalUser.id,
+          preferencePatch.key,
+          preferencePatch.enabled,
+          {
+            action: "notification.preferences.patch",
+            actorUserId: canonicalUser.id,
+            organizationId: getUserWorkspaceContext(canonicalUser).currentWorkspaceId || "",
+            authorization: {
+              kind: "account_owner",
+              actorUserId: canonicalUser.id,
+            },
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: {
+              field: preferencePatch.key,
+              enabled: preferencePatch.enabled,
+            },
+          },
+          {
+            scope: getIdempotencyScope(canonicalUser, ""),
+            operation: "notification.preferences.patch",
+            key: idempotencyKey,
+            fingerprint: createIdempotencyFingerprint(preferencePatch),
+          },
+        )
+      : null;
+    if (!persisted?.user) {
+      throw httpError(
+        503,
+        "Cannot persist notification preferences",
+        "NOTIFICATION_PREFERENCE_STORAGE_UNAVAILABLE",
+      );
+    }
+    const confirmed = normalizeNotificationPreferences(persisted.preferences);
+    if (confirmed[preferencePatch.key] !== preferencePatch.enabled) {
+      throw httpError(
+        503,
+        "Notification preference persistence was not confirmed",
+        "NOTIFICATION_PREFERENCE_CONFIRMATION_FAILED",
+      );
+    }
+    const receiptUser = {
+      ...persisted.user,
+      notificationPreferences: confirmed,
+      updatedAt: persisted.updatedAt || persisted.user.updatedAt,
+    };
+    sendJson(res, 200, buildNotificationPreferencesResponse(receiptUser, persisted.replayed));
+    return;
   }
 
   if (segments.length === 3 && segments[2] === "2fa" && method === "GET") {
@@ -14127,6 +17244,7 @@ async function handleMeApi(req, res, segments) {
 
   if (segments.length === 4 && segments[2] === "2fa" && segments[3] === "enroll" && method === "POST") {
     const payload = await readJsonBody(req);
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "2FA enrollment start");
     const methodName = readString(payload.method, 40) || "app";
     if (methodName !== "app") {
       throw httpError(
@@ -14145,28 +17263,52 @@ async function handleMeApi(req, res, segments) {
         { availability },
       );
     }
+    if (!repositories?.twoFactor?.createEnrollment) {
+      throw httpError(
+        503,
+        "2FA enrollment storage is unavailable.",
+        "TWO_FACTOR_STORAGE_UNAVAILABLE",
+      );
+    }
+    const primaryBinding = getTwoFactorPrimaryBinding(req, user);
+    const startIntent = createEnrollmentStartBinding({
+      userId: user.id,
+      idempotencyKey,
+      primaryBinding,
+      method: methodName,
+    });
     const enrollmentId = createId("2fa_enroll");
     const enrollment = await createTotpEnrollment({
       id: enrollmentId,
       userId: user.id,
-      accountLabel: user.email || user.phone || user.id,
+      accountLabel: user.id,
     });
-    const persisted = repositories?.twoFactor
-      ? await repositories.twoFactor.createEnrollment(enrollment.record)
-      : enrollment.record;
-    if (!repositories?.twoFactor) {
-      db.twoFactorEnrollments.push(persisted);
-      await saveDb();
-    }
-    sendJson(res, 201, {
-      twoFactor: { enabled: false, method: "" },
-      enrollment: {
-        id: persisted.id,
-        method: "app",
-        manualKey: enrollment.manualKey,
-        otpauthUri: enrollment.otpauthUri,
-        expiresAt: persisted.expiresAt,
+    enrollment.record.startIntent = startIntent;
+    const persisted = await repositories.twoFactor.createEnrollment(enrollment.record, {
+      auditInput: {
+        actorUserId: user.id,
+        organizationId: user.organizationId || "",
+        ip: (getRequestContext(req) || createRequestContext(req)).ip || req.socket.remoteAddress || "",
+        userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+        metadata: { method: methodName },
       },
+    });
+    const bootstrap = await materializeTotpEnrollment(
+      persisted.enrollment,
+      { accountLabel: user.id },
+    );
+    sendJson(res, 201, {
+      userId: user.id,
+      twoFactor: { enabled: false, method: "", enrollmentPending: true },
+      enrollment: {
+        id: persisted.enrollment.id,
+        method: "app",
+        manualKey: bootstrap.manualKey,
+        otpauthUri: bootstrap.otpauthUri,
+        expiresAt: persisted.enrollment.expiresAt,
+      },
+      replayed: persisted.replayed,
+      superseded: persisted.superseded,
     });
     return;
   }
@@ -14177,8 +17319,10 @@ async function handleMeApi(req, res, segments) {
       throw httpError(503, "2FA chưa sẵn sàng.", "TWO_FACTOR_UNAVAILABLE", { availability });
     }
     const payload = await readJsonBody(req);
+    const idempotencyKey = getRequiredIdempotencyKey(req, {}, "2FA enrollment verification");
     const enrollmentId = readString(payload.enrollmentId, 200);
     const otp = readString(payload.otp || payload.code, 20);
+    const primaryBinding = getTwoFactorPrimaryBinding(req, user);
     if (!enrollmentId) {
       throw httpError(400, "Thiếu enrollmentId.", "TWO_FACTOR_ENROLLMENT_ID_REQUIRED");
     }
@@ -14188,8 +17332,67 @@ async function handleMeApi(req, res, segments) {
     if (!enrollment) {
       throw httpError(404, "Không tìm thấy enrollment.", "TWO_FACTOR_ENROLLMENT_NOT_FOUND");
     }
+    const enrollmentPrimaryBindingHash = readString(
+      enrollment.startIntent?.primaryBindingHash,
+      100,
+    );
+    if (
+      !enrollmentPrimaryBindingHash ||
+      enrollmentPrimaryBindingHash !== hashPrimaryBinding(primaryBinding)
+    ) {
+      throw httpError(
+        409,
+        "Enrollment start belongs to a different primary session.",
+        "TWO_FACTOR_ENROLLMENT_SCOPE_MISMATCH",
+      );
+    }
+    const credentialId = `2fa_credential_${user.id}`;
+    if (enrollment.pendingActivation) {
+      const replay = createEnrollmentRecoveryDelivery({
+        userId: user.id,
+        credentialId,
+        enrollmentId,
+        idempotencyKey,
+        primaryBinding,
+        verificationCode: otp,
+        verifiedAtMs: Date.parse(enrollment.pendingActivation.verifiedAt || ""),
+      });
+      if (!isEnrollmentRecoveryDeliveryReplay(enrollment.pendingActivation, replay)) {
+        throw httpError(
+          409,
+          "Idempotency-Key was reused for a different enrollment verification intent.",
+          "IDEMPOTENCY_KEY_REUSED",
+        );
+      }
+      const delivery = getEnrollmentRecoveryDelivery(enrollment.pendingActivation);
+      if (!delivery || Date.parse(delivery.expiresAt) <= Date.now()) {
+        throw httpError(
+          410,
+          "Recovery-code delivery acknowledgement window has expired.",
+          "TWO_FACTOR_DELIVERY_EXPIRED",
+        );
+      }
+      sendJson(res, 200, {
+        userId: user.id,
+        enrollmentId,
+        twoFactor: { enabled: false, method: "", enrollmentPending: true },
+        recoveryCodes: replay.codes,
+        recoveryDelivery: {
+          id: delivery.id,
+          expiresAt: delivery.expiresAt,
+          acknowledged: false,
+        },
+        recoveryAckToken: replay.recoveryAckToken,
+        replayed: true,
+      });
+      return;
+    }
     if (enrollment.consumedAt) {
-      throw httpError(409, "Enrollment đã được sử dụng.", "TWO_FACTOR_ENROLLMENT_ALREADY_USED");
+      throw httpError(
+        410,
+        "Enrollment is no longer available for recovery-code delivery.",
+        "TWO_FACTOR_ENROLLMENT_ALREADY_USED",
+      );
     }
     if (Date.parse(enrollment.expiresAt || "") <= Date.now()) {
       throw httpError(410, "Enrollment đã hết hạn.", "TWO_FACTOR_ENROLLMENT_EXPIRED");
@@ -14214,56 +17417,173 @@ async function handleMeApi(req, res, segments) {
         { attemptsRemaining },
       );
     }
-    const enabledAt = nowIso();
-    const credentialId = `2fa_credential_${user.id}`;
-    const recovery = createRecoveryCodeBundle(user.id, credentialId);
-    const credential = {
-      id: credentialId,
+    const verifiedAt = nowIso();
+    const pendingRecovery = createEnrollmentRecoveryDelivery({
       userId: user.id,
-      method: "app",
-      enrollmentId: enrollment.id,
-      secretCiphertext: enrollment.secretCiphertext,
-      secretIv: enrollment.secretIv,
-      secretTag: enrollment.secretTag,
-      secretVersion: Number(enrollment.secretVersion || 1),
-      recoverySalt: recovery.recoverySalt,
-      recoveryCodes: recovery.recoveryCodes,
-      lastUsedTimeStep: verification.timeStep,
-      disableAttempts: 0,
-      disableLockedUntil: null,
-      enabledAt,
-      updatedAt: enabledAt,
-      disabledAt: null,
-      version: 1,
-    };
-    const issuedToken = createTwoFactorToken({
-      id: createId("2fa_token"),
-      userId: user.id,
-      primaryBinding: getTwoFactorPrimaryBinding(req, user),
+      credentialId,
+      enrollmentId,
+      idempotencyKey,
+      primaryBinding,
+      verificationCode: otp,
+      verifiedAtMs: Date.parse(verifiedAt),
     });
-    if (repositories?.twoFactor) {
-      await repositories.twoFactor.confirmEnrollment({
-        userId: user.id,
-        enrollmentId,
-        credential,
-        tokenRecord: issuedToken.record,
-        auditInput: {
-          organizationId: user.organizationId || "",
-          ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
-          userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
-          metadata: { method: "app" },
-        },
-      });
-    } else {
+    const pendingActivation = {
+      version: 1,
+      userId: user.id,
+      credentialId,
+      enrollmentId,
+      recoverySalt: pendingRecovery.recoverySalt,
+      recoveryCodes: pendingRecovery.recoveryCodes,
+      recoveryAckTokenHash: pendingRecovery.recoveryAckTokenHash,
+      lastUsedTimeStep: verification.timeStep,
+      verifiedAt,
+      delivery: pendingRecovery.delivery,
+    };
+    if (!repositories?.twoFactor) {
+      throw httpError(503, "2FA storage is unavailable.", "TWO_FACTOR_STORAGE_UNAVAILABLE");
+    }
+    const staged = await repositories.twoFactor.stageEnrollmentVerification({
+      userId: user.id,
+      enrollmentId,
+      pendingActivation,
+      auditInput: {
+        organizationId: user.organizationId || "",
+        ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+        userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+        metadata: { method: "app", state: "recovery_ack_pending" },
+      },
+    });
+    sendJson(res, 200, {
+      userId: user.id,
+      enrollmentId,
+      twoFactor: { enabled: false, method: "", enrollmentPending: true },
+      recoveryCodes: pendingRecovery.codes,
+      recoveryDelivery: {
+        id: pendingRecovery.delivery.id,
+        expiresAt: pendingRecovery.delivery.expiresAt,
+        acknowledged: false,
+      },
+      recoveryAckToken: pendingRecovery.recoveryAckToken,
+      replayed: staged.replayed,
+    });
+    return;
+  }
+
+  if (
+    segments.length === 5 &&
+    segments[2] === "2fa" &&
+    segments[3] === "recovery-codes" &&
+    segments[4] === "ack" &&
+    method === "POST"
+  ) {
+    const availability = getTwoFactorAvailability();
+    if (!availability.available) {
+      throw httpError(503, "2FA chưa sẵn sàng.", "TWO_FACTOR_UNAVAILABLE", { availability });
+    }
+    if (!repositories?.twoFactor) {
       throw httpError(503, "Kho lưu trữ 2FA chưa sẵn sàng.", "TWO_FACTOR_STORAGE_UNAVAILABLE");
     }
+    const payload = await readJsonBody(req);
+    const idempotencyKey = getRequiredIdempotencyKey(req, {}, "2FA recovery-code acknowledgement");
+    const deliveryId = readString(payload.deliveryId, 200);
+    const recoveryAckToken = readString(payload.recoveryAckToken, 1024);
+    if (!deliveryId) {
+      throw httpError(400, "Thiếu deliveryId.", "TWO_FACTOR_DELIVERY_ID_REQUIRED");
+    }
+    if (!recoveryAckToken || !/^[A-Za-z0-9_-]+$/.test(recoveryAckToken)) {
+      throw httpError(
+        400,
+        "A bounded recovery acknowledgement token is required.",
+        "TWO_FACTOR_RECOVERY_ACK_TOKEN_REQUIRED",
+      );
+    }
+    const ackPendingEnrollment = await repositories.twoFactor.getEnrollmentByRecoveryDelivery(
+      user.id,
+      deliveryId,
+    );
+    const ackCredential = ackPendingEnrollment
+      ? null
+      : await repositories.twoFactor.getCredential(user.id);
+    const ackRecord = ackPendingEnrollment?.pendingActivation || ackCredential;
+    const ackDelivery = getEnrollmentRecoveryDelivery(ackRecord);
+    const ackEnrollmentId = String(
+      ackPendingEnrollment?.id || ackCredential?.enrollmentId || "",
+    );
+    const ackCredentialId = String(
+      ackPendingEnrollment?.pendingActivation?.credentialId ||
+        ackCredential?.id ||
+        `2fa_credential_${user.id}`,
+    );
+    if (
+      !ackRecord ||
+      !ackDelivery ||
+      ackDelivery.id !== deliveryId ||
+      !ackEnrollmentId ||
+      !verifyRecoveryAckToken(ackRecord, recoveryAckToken)
+    ) {
+      throw httpError(
+        409,
+        "Recovery acknowledgement proof does not match this account delivery.",
+        "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH",
+      );
+    }
+    const ackBinding = createEnrollmentRecoveryAcknowledgementBinding({
+      userId: user.id,
+      credentialId: ackCredentialId,
+      enrollmentId: ackEnrollmentId,
+      idempotencyKey,
+      primaryBinding: getTwoFactorPrimaryBinding(req, user),
+    });
+    if (
+      ackDelivery.primaryBindingHash !== ackBinding.primaryBindingHash ||
+      ackDelivery.acknowledgementKeyHash !== ackBinding.acknowledgementKeyHash
+    ) {
+      throw httpError(
+        409,
+        "Recovery acknowledgement key or primary session changed.",
+        "TWO_FACTOR_DELIVERY_SCOPE_MISMATCH",
+      );
+    }
+    const completedSession = createCompletedEnrollmentSession({
+      userId: user.id,
+      credentialId: ackCredentialId,
+      enrollmentId: ackEnrollmentId,
+      recoveryAckToken,
+      primaryBindingHash: ackBinding.primaryBindingHash,
+      verifiedAt: ackRecord.verifiedAt || ackCredential?.enabledAt,
+      deliveryExpiresAt: ackDelivery.expiresAt,
+    });
+    const activated = await repositories.twoFactor.activateEnrollmentFromRecoveryAck({
+      userId: user.id,
+      enrollmentId: ackEnrollmentId,
+      deliveryId,
+      operationHash: ackDelivery.operationHash,
+      primaryBindingHash: ackBinding.primaryBindingHash,
+      acknowledgementKeyHash: ackBinding.acknowledgementKeyHash,
+      recoveryAckTokenHash: ackDelivery.recoveryAckTokenHash,
+      tokenRecord: completedSession.record,
+      auditInput: {
+        organizationId: user.organizationId || "",
+        ip: (getRequestContext(req) || createRequestContext(req)).ip || "",
+        userAgent: (getRequestContext(req) || createRequestContext(req)).userAgent || "",
+        metadata: { method: "app", recoveryDeliveryAcknowledged: true },
+      },
+    });
     user.twoFactorEnabled = true;
     user.twoFactorMethod = "app";
     sendJson(res, 200, {
-      twoFactor: { enabled: true, method: "app" },
-      recoveryCodes: recovery.codes,
-      twoFactorToken: issuedToken.token,
-      tokenExpiresAt: issuedToken.record.expiresAt,
+      userId: user.id,
+      enrollmentId: ackEnrollmentId,
+      twoFactor: { enabled: true, method: "app", enrollmentPending: false },
+      recoveryDelivery: {
+        id: activated.delivery.id,
+        expiresAt: activated.delivery.expiresAt,
+        acknowledged: true,
+        acknowledgedAt: activated.delivery.acknowledgedAt,
+      },
+      twoFactorToken: completedSession.token,
+      tokenExpiresAt: completedSession.record.expiresAt,
+      replayed: activated.replayed,
     });
     return;
   }
@@ -14306,7 +17626,7 @@ async function handleMeApi(req, res, segments) {
     });
     user.twoFactorEnabled = false;
     user.twoFactorMethod = "";
-    sendJson(res, 200, { twoFactor: { enabled: false, method: "" } });
+    sendJson(res, 200, { twoFactor: { enabled: false, method: "", enrollmentPending: false } });
     return;
   }
 
@@ -14324,16 +17644,52 @@ async function handleMeApi(req, res, segments) {
     if (!patientId) throw httpError(400, "Thiếu patientId", "ACTIVE_PROFILE_REQUIRED");
     const activePatient = repositories ? await repositories.patients.findById(patientId) : findPatient(patientId);
     if (!activePatient) throw httpError(404, "Không tìm thấy hồ sơ sức khỏe", "PROFILE_NOT_FOUND");
-    const selfProfile = ensurePatientProfileForUser(user);
-    if (activePatient.ownerUserId !== user.id && activePatient.id !== selfProfile?.id) {
+    if (activePatient.deletedAt) {
+      throw httpError(404, "Hồ sơ sức khỏe không còn hoạt động", "PROFILE_NOT_FOUND");
+    }
+    const workspaceContext = getUserWorkspaceContext(user);
+    const patientPrincipalIds = new Set(
+      [
+        activePatient.ownerUserId,
+        activePatient.accountUserId,
+        activePatient.guardianUserId,
+      ].filter(Boolean),
+    );
+    const isLegacySelfProfile = Boolean(
+      activePatient.id === user.patientId &&
+      patientPrincipalIds.size === 0 &&
+      (activePatient.profileType === "self" || activePatient.relationship === "self"),
+    );
+    if (!patientPrincipalIds.has(user.id) && !isLegacySelfProfile) {
       throw httpError(403, "Hồ sơ nằm ngoài phạm vi gia đình hiện tại", "PROFILE_SCOPE_DENIED");
     }
-    const idempotencyKey = getIdempotencyKey(req, payload);
-    if (user.activePatientId === activePatient.id && !idempotencyKey) {
-      sendJson(res, 200, { user: publicUser(user), activePatient: withPatientStats(activePatient), replayed: true });
-      return;
+    if (
+      !workspaceContext.currentWorkspaceId ||
+      activePatient.organizationId !== workspaceContext.currentWorkspaceId
+    ) {
+      throw httpError(
+        409,
+        "Hồ sơ không thuộc workspace đang hoạt động",
+        "PROFILE_WORKSPACE_MISMATCH",
+      );
     }
-    const nextUser = { ...user, activePatientId: activePatient.id, updatedAt: nowIso() };
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key là bắt buộc khi chuyển hồ sơ đang hoạt động",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    const preserveDoctorRequestTarget = isDoctorRoleRequestTargetLocked(user);
+    const nextUser = {
+      ...user,
+      organizationId: preserveDoctorRequestTarget
+        ? user.organizationId
+        : workspaceContext.currentWorkspaceId,
+      activePatientId: activePatient.id,
+      updatedAt: nowIso(),
+    };
     const context = getRequestContext(req) || createRequestContext(req);
     const persisted = repositories?.users.updateAccountProfileWithAudit
       ? await repositories.users.updateAccountProfileWithAudit(
@@ -14359,22 +17715,32 @@ async function handleMeApi(req, res, segments) {
           {
             action: "profile.active.switch",
             actorUserId: user.id,
-            organizationId: user.organizationId || "",
+            organizationId: workspaceContext.currentWorkspaceId,
             authorization: {
               kind: "active_profile",
               actorUserId: user.id,
               patientId: activePatient.id,
+              organizationId: workspaceContext.currentWorkspaceId,
             },
             ip: context.ip || "",
             userAgent: context.userAgent || "",
-            metadata: { previousPatientId: user.activePatientId || user.patientId || "", patientId: activePatient.id },
+            metadata: {
+              previousPatientId: user.activePatientId || user.patientId || "",
+              patientId: activePatient.id,
+              previousOrganizationId: user.organizationId || "",
+              organizationId: nextUser.organizationId || "",
+              profileWorkspaceId: workspaceContext.currentWorkspaceId,
+            },
           },
           idempotencyKey
             ? {
-                scope: getIdempotencyScope(user, user.organizationId || ""),
+                scope: getIdempotencyScope(user, workspaceContext.currentWorkspaceId),
                 operation: "profile.active.switch",
                 key: idempotencyKey,
-                fingerprint: createIdempotencyFingerprint({ patientId: activePatient.id }),
+                fingerprint: createIdempotencyFingerprint({
+                  patientId: activePatient.id,
+                  organizationId: workspaceContext.currentWorkspaceId,
+                }),
               }
             : null,
         )
@@ -14390,6 +17756,51 @@ async function handleMeApi(req, res, segments) {
 
   if (segments.length === 2 && method === "PATCH") {
     const payload = await readJsonBody(req);
+    const requestPath = parseRequestPath(req).pathname;
+    const canonicalProfilePath = requestPath === "/api/v1/me";
+    const legacyProfilePath = requestPath === "/api/me";
+    const workspaceSelections = assertConsistentWorkspaceSelection(payload);
+    const workspaceSelectionRequested = workspaceSelections.length > 0;
+    const legacyWorkspaceAliasUsed = workspaceSelections.some(
+      (selection) => selection.key !== "organizationId",
+    );
+    const canonicalProfileFields = [
+      "name",
+      "title",
+      "phone",
+      "license",
+      "hospital",
+      "department",
+      "specialty",
+      "address",
+    ];
+    const suppliedProfileFields = canonicalProfileFields.filter((field) =>
+      Object.prototype.hasOwnProperty.call(payload, field),
+    );
+    const mixedProfileWorkspaceMutation =
+      workspaceSelectionRequested && suppliedProfileFields.length > 0;
+    if (canonicalProfilePath) {
+      if (!workspaceSelectionRequested || mixedProfileWorkspaceMutation) {
+        getRequiredHeaderIdempotencyKey(req, "account profile update");
+      }
+      const supportedFields = new Set([
+        ...canonicalProfileFields,
+        ...(workspaceSelectionRequested
+          ? ["organizationId", "clinicId", "clinic"]
+          : []),
+      ]);
+      const unsupportedField = Object.keys(payload).find(
+        (field) => !supportedFields.has(field),
+      );
+      if (unsupportedField) {
+        throw httpError(
+          400,
+          `Account profile field is owned by another mutation route: ${unsupportedField}`,
+          "ACCOUNT_PROFILE_FIELD_UNSUPPORTED",
+          { field: unsupportedField },
+        );
+      }
+    }
     const approvalEvidenceFields = ["license", "hospital", "department", "specialty"];
     if (isApprovedDoctorRole(user) && approvalEvidenceFields.some(
       (field) => Object.prototype.hasOwnProperty.call(payload, field),
@@ -14400,10 +17811,20 @@ async function handleMeApi(req, res, segments) {
         "APPROVAL_EVIDENCE_IMMUTABLE",
       );
     }
-    const workspaceSelectionRequested = hasExplicitWorkspaceSelection(payload);
     const requestedWorkspaceId = getRequestedWorkspaceId(payload);
     if (workspaceSelectionRequested && !requestedWorkspaceId) {
       throw httpError(400, "Thiếu workspace cần chuyển", "WORKSPACE_REQUIRED");
+    }
+    if (
+      workspaceSelectionRequested &&
+      isDoctorRoleRequestTargetLocked(user)
+    ) {
+      throw httpError(
+        409,
+        "The doctor-request target cannot change before the request is approved",
+        "ROLE_REQUEST_TARGET_LOCKED",
+        { targetWorkspaceId: readString(user.organizationId, 120) },
+      );
     }
     const selectedClinic = workspaceSelectionRequested ? getExplicitWorkspaceSelectionFromPayload(payload) : null;
     if (workspaceSelectionRequested && !selectedClinic) {
@@ -14411,33 +17832,39 @@ async function handleMeApi(req, res, segments) {
     }
     const previousOrganizationId = user.organizationId || "";
     const nextUser = { ...user };
-    for (const field of [
-      "name",
-      "title",
-      "phone",
-      "license",
-      "hospital",
-      "department",
-      "address",
-      "avatarFileId",
-      "avatarUrl",
-    ]) {
+    const mutationPatch = {};
+    const profileFieldsForPath = legacyProfilePath
+      ? [...canonicalProfileFields, "avatarFileId", "avatarUrl"]
+      : canonicalProfileFields;
+    for (const field of profileFieldsForPath.filter((item) => item !== "specialty")) {
       if (Object.prototype.hasOwnProperty.call(payload, field)) {
         const maxLength = field === "address" || field === "avatarUrl" ? 1000 : 160;
         nextUser[field] = readString(payload[field], maxLength);
+        mutationPatch[field] = nextUser[field];
       }
     }
     if (Object.prototype.hasOwnProperty.call(payload, "specialty")) {
       nextUser.specialty = readString(payload.specialty, 160);
+      mutationPatch.specialty = nextUser.specialty;
       if (
         !Object.prototype.hasOwnProperty.call(payload, "department") &&
         !readString(nextUser.department, 160)
       ) {
         nextUser.department = nextUser.specialty;
+        mutationPatch.department = nextUser.department;
       }
     }
-    if (Object.prototype.hasOwnProperty.call(payload, "notificationPreferences")) {
-      nextUser.notificationPreferences = normalizeNotificationPreferences(payload.notificationPreferences);
+    if (
+      legacyProfilePath &&
+      Object.prototype.hasOwnProperty.call(payload, "notificationPreferences")
+    ) {
+      nextUser.notificationPreferences = mergeNotificationPreferences(
+        user.notificationPreferences,
+        payload.notificationPreferences,
+      );
+      mutationPatch.notificationPreferences = normalizeNotificationPreferences(
+        nextUser.notificationPreferences,
+      );
     }
     if (selectedClinic) {
       if (!isPlatformAdminUser(user) && !hasWorkspaceMembership(user, selectedClinic.id)) {
@@ -14445,35 +17872,38 @@ async function handleMeApi(req, res, segments) {
       }
       nextUser.organizationId = selectedClinic.id;
       nextUser.hospital = selectedClinic.name;
+      mutationPatch.organizationId = nextUser.organizationId;
+      mutationPatch.hospital = nextUser.hospital;
       if (repositories && typeof repositories.organizations?.upsert === "function") {
         await repositories.organizations.upsert(ensureOrganizationFromCatalog(selectedClinic) || selectedClinic);
       }
     }
-    nextUser.updatedAt = nowIso();
-    addAccessLog("Cập nhật thông tin cá nhân");
+    if (legacyProfilePath) {
+      requestMetrics.legacyAccountProfileUpdate += 1;
+      res.setHeader("Deprecation", "true");
+      res.setHeader("X-Shcare-Compatibility-Alias", "account-profile-update");
+    } else if (mixedProfileWorkspaceMutation) {
+      requestMetrics.legacyAccountProfileWorkspaceMix += 1;
+      res.setHeader("Deprecation", "true");
+      res.setHeader(
+        "X-Shcare-Compatibility-Alias",
+        "account-profile-workspace-mix",
+      );
+    } else if (legacyWorkspaceAliasUsed) {
+      requestMetrics.legacyWorkspaceSwitchAlias += 1;
+      res.setHeader("Deprecation", "true");
+      res.setHeader("X-Shcare-Compatibility-Alias", "workspace-switch-alias");
+    }
     const context = getRequestContext(req) || createRequestContext(req);
-    const idempotencyKey = getIdempotencyKey(req, payload);
+    const idempotencyKey = canonicalProfilePath
+      ? workspaceSelectionRequested && !mixedProfileWorkspaceMutation
+        ? getIdempotencyKey(req, {}) || createId("workspace_switch")
+        : getRequiredHeaderIdempotencyKey(req, "account profile update")
+      : getIdempotencyKey(req, payload) || createId("legacy_account_profile");
     const persisted = repositories?.users.updateAccountProfileWithAudit
       ? await repositories.users.updateAccountProfileWithAudit(
           user.id,
-          {
-            name: nextUser.name || "",
-            title: nextUser.title || "",
-            phone: nextUser.phone || "",
-            license: nextUser.license || "",
-            hospital: nextUser.hospital || "",
-            department: nextUser.department || "",
-            specialty: nextUser.specialty || "",
-            address: nextUser.address || "",
-            avatarFileId: nextUser.avatarFileId || "",
-            avatarUrl: nextUser.avatarUrl || "",
-            avatarStorage: nextUser.avatarStorage && typeof nextUser.avatarStorage === "object" ? nextUser.avatarStorage : {},
-            twoFactorEnabled: Boolean(nextUser.twoFactorEnabled),
-            twoFactorMethod: nextUser.twoFactorMethod || "",
-            notificationPreferences: normalizeNotificationPreferences(nextUser.notificationPreferences),
-            activePatientId: nextUser.activePatientId || nextUser.patientId || "",
-            organizationId: nextUser.organizationId || "",
-          },
+          mutationPatch,
           {
             action: workspaceSelectionRequested ? "workspace.switch" : "account.profile.update",
             actorUserId: user.id,
@@ -14490,23 +17920,90 @@ async function handleMeApi(req, res, segments) {
             ip: context.ip || "",
             userAgent: context.userAgent || "",
             metadata: workspaceSelectionRequested
-              ? { previousOrganizationId, organizationId: nextUser.organizationId || "" }
-              : { fields: Object.keys(payload).filter((key) => key !== "idempotencyKey") },
+              ? {
+                  previousOrganizationId,
+                  organizationId: nextUser.organizationId || "",
+                  ...(mixedProfileWorkspaceMutation
+                    ? { compatibilityProfileFields: [...suppliedProfileFields].sort() }
+                    : {}),
+                }
+              : { fields: [...suppliedProfileFields].sort() },
           },
-          idempotencyKey
-            ? {
-                scope: getIdempotencyScope(user, ""),
-                operation: workspaceSelectionRequested ? "workspace.switch" : "account.profile.update",
-                key: idempotencyKey,
-                fingerprint: createIdempotencyFingerprint(payload),
-              }
-            : null,
+          {
+            scope: getIdempotencyScope(user, ""),
+            operation: workspaceSelectionRequested ? "workspace.switch" : "account.profile.update",
+            key: idempotencyKey,
+            fingerprint: createIdempotencyFingerprint(payload),
+          },
         )
       : null;
     if (!persisted?.user) {
       throw httpError(503, "Cannot persist account profile to database", "ACCOUNT_STORAGE_UNAVAILABLE");
     }
+    if (!persisted.replayed) {
+      addAccessLog("Cập nhật thông tin cá nhân");
+    }
+    res.setHeader("Idempotency-Replayed", String(Boolean(persisted.replayed)));
+    if (canonicalProfilePath && !workspaceSelectionRequested) {
+      const receipt = persisted.responseSnapshot;
+      if (
+        !receipt ||
+        String(receipt.userId || "") !== String(user.id) ||
+        String(receipt.user?.id || "") !== String(user.id) ||
+        receipt.intent !== "profile_update"
+      ) {
+        throw httpError(
+          503,
+          "Cannot verify the account profile mutation receipt",
+          "ACCOUNT_PROFILE_RECEIPT_UNAVAILABLE",
+        );
+      }
+      sendJson(res, 200, {
+        ...receipt,
+        replayed: Boolean(persisted.replayed),
+      });
+      return;
+    }
     sendJson(res, 200, { user: publicUser(persisted.user), replayed: Boolean(persisted.replayed) });
+    return;
+  }
+
+  if (
+    segments.length === 4 &&
+    segments[2] === "avatar" &&
+    segments[3] === "cleanup" &&
+    method === "GET"
+  ) {
+    if (!repositories?.avatarMutations?.getCleanupStatus) {
+      throw httpError(
+        503,
+        "Avatar cleanup status is unavailable",
+        "AVATAR_CLEANUP_STATUS_UNAVAILABLE",
+      );
+    }
+    const canonicalUser = await refreshAuthenticatedAuthorization(user);
+    if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+      throw httpError(
+        403,
+        "Avatar cleanup status requires an active account",
+        "ACCOUNT_INACTIVE",
+      );
+    }
+    const organizationId =
+      getUserWorkspaceContext(canonicalUser).currentWorkspaceId ||
+      canonicalUser.organizationId;
+    if (!organizationId || !hasWorkspaceMembership(canonicalUser, organizationId)) {
+      throw httpError(
+        403,
+        "Avatar cleanup status requires an active workspace membership",
+        "WORKSPACE_MEMBERSHIP_REQUIRED",
+      );
+    }
+    const cleanup = await repositories.avatarMutations.getCleanupStatus({
+      userId: canonicalUser.id,
+      organizationId,
+    });
+    sendJson(res, 200, cleanup);
     return;
   }
 
@@ -14536,180 +18033,442 @@ async function handleMeApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "avatar" && method === "POST") {
-    const bucket = getStorageBucket("avatars");
-    if (!bucket) {
-      throw httpError(500, "Bucket avatars chưa sẵn sàng");
+    if (!repositories?.avatarMutations) {
+      throw httpError(503, "Avatar mutation storage is unavailable", "AVATAR_STORAGE_UNAVAILABLE");
     }
-    const originalName = readString(req.headers["x-file-name"], 240) || `${user.id || "avatar"}.png`;
-    const contentType = readString(req.headers["content-type"], 160) || "application/octet-stream";
-    const buffer = await readRequestBuffer(req);
-    if (!buffer.length) {
-      throw httpError(400, "File ảnh đại diện đang rỗng");
+    const requestPath = parseRequestPath(req).pathname;
+    const canonicalRequest = requestPath === "/api/v1/me/avatar";
+    if (!canonicalRequest) {
+      requestMetrics.legacyAvatarMutation += 1;
+      res.setHeader("Deprecation", "true");
+      res.setHeader("X-Shcare-Compatibility-Alias", "account-avatar");
     }
-    assertStorageUploadAllowed(bucket, originalName, contentType, buffer.length);
+    const canonicalUser = await refreshAuthenticatedAuthorization(user);
+    if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+      throw httpError(403, "Avatar upload requires an active account", "ACCOUNT_INACTIVE");
+    }
+    const organizationId = canonicalUser.organizationId || getUserWorkspaceContext(canonicalUser).currentWorkspaceId;
+    if (!organizationId) {
+      throw httpError(403, "Avatar upload requires an active workspace", "AVATAR_WORKSPACE_SCOPE_DENIED");
+    }
+    const authority = resolveAvatarMutationAuthority(
+      req,
+      canonicalUser,
+      organizationId,
+      canonicalRequest,
+    );
+    const requestedName = readString(req.headers["x-file-name"], 240);
+    if (canonicalRequest && (!requestedName || requestedName !== path.basename(requestedName))) {
+      throw httpError(400, "X-File-Name must contain one safe file name", "AVATAR_FILE_NAME_INVALID");
+    }
+    const originalName = path.basename(requestedName || `${canonicalUser.id || "avatar"}.png`);
+    const contentType = readString(req.headers["content-type"], 160).toLowerCase();
+    const buffer = await readRequestBuffer(req, MAX_AVATAR_BYTES);
+    const validatedFile = validateAvatarUpload({ buffer, contentType, fileName: originalName });
     const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
-    const fileId = createId("file");
-    const organizationId = user.organizationId || getUserWorkspaceContext(user).currentWorkspaceId || "org_default_clinic";
-    const objectKey = buildStorageObjectKey(organizationId, bucket.id, fileId, originalName);
-    const upload = await storageAdapter.putBuffer(objectKey, buffer, contentType);
-    const storageFile = {
-      id: fileId,
-      bucket: bucket.id,
-      name: path.basename(originalName),
-      objectKey,
-      storageProvider: upload.provider,
-      contentType,
-      type: getStorageFileType(originalName, contentType),
-      byteSize: upload.byteSize || buffer.length,
-      checksum,
+    const fingerprint = createIdempotencyFingerprint({
+      userId: authority.userId,
+      organizationId: authority.workspaceId,
+      authSessionId: authority.authSessionId,
+      name: validatedFile.name,
+      contentType: validatedFile.contentType,
+      byteSize: buffer.length,
       sha256: checksum,
-      firmwareVersion: "",
-      visibility: "public",
-      tags: ["avatar", "account"],
-      uploader: user.name || user.email || "Tài khoản Smart Health",
-      createdByUserId: user.id,
-      organizationId,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-    db.storageFiles.unshift(storageFile);
-    db.storageFiles = db.storageFiles.slice(0, 1000);
-    const previousAvatarFileId = readString(user.avatarFileId, 160);
-    const previousAvatarStorage =
-      user.avatarStorage && typeof user.avatarStorage === "object" && !Array.isArray(user.avatarStorage)
-        ? user.avatarStorage
-        : {};
-    user.avatarFileId = storageFile.id;
-    user.avatarUrl = "/api/me/avatar";
-    user.avatarStorage = {
-      objectKey: storageFile.objectKey,
-      storageProvider: storageFile.storageProvider,
-      contentType: storageFile.contentType,
-      name: storageFile.name,
-      byteSize: storageFile.byteSize,
-      checksum: storageFile.checksum,
-      uploadedAt: storageFile.createdAt,
-    };
-    await persistUserRecord(user);
-    if (previousAvatarStorage.objectKey && previousAvatarStorage.objectKey !== storageFile.objectKey) {
-      storageAdapter.deleteObject(previousAvatarStorage.objectKey).catch(() => {});
-    }
-    if (previousAvatarFileId && previousAvatarFileId !== storageFile.id) {
-      db.storageFiles = db.storageFiles.filter((file) => file.id !== previousAvatarFileId);
-    }
-    await appendAudit("account.avatar.update", req, {
-      actorUserId: user.id,
-      organizationId,
-      resourceType: "storage_file",
-      resourceId: storageFile.id,
     });
-    await saveDb();
-    const file = buildStorageFileRecords(user).find((item) => item.id === storageFile.id) || {
-      id: storageFile.id,
-      bucket: storageFile.bucket,
-      name: storageFile.name,
-      downloadUrl: "/api/me/avatar",
-    };
-    sendJson(res, 201, { user: publicUser(user), file: { ...file, downloadUrl: "/api/me/avatar" } });
+    const suppliedIdempotencyKey = getIdempotencyKey(req, {});
+    if (canonicalRequest && !suppliedIdempotencyKey) {
+      getRequiredIdempotencyKey(req, {}, "avatar upload");
+    }
+    const idempotencyKey = suppliedIdempotencyKey || `legacy-avatar-upload-${createId("idem")}`;
+    const operationId = `avatar_upload_${createIdempotencyFingerprint({
+      userId: authority.userId,
+      authSessionId: authority.authSessionId,
+      operation: "account.avatar.upload",
+      key: idempotencyKey,
+    }).slice(0, 24)}`;
+    const fileId = `file_avatar_${createIdempotencyFingerprint({ operationId, fingerprint }).slice(0, 32)}`;
+    const objectKey = `org/${authority.workspaceId}/avatars/${authority.userId}/${fileId}-${validatedFile.name}`;
+    if (!storageAdapter) {
+      storageAdapter = createStorageAdapter({ dataDir: DATA_DIR, env: process.env });
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const receipt = await executeAvatarUploadMutation({
+      repository: repositories.avatarMutations,
+      storageAdapter,
+      buffer,
+      contentType: validatedFile.contentType,
+      input: {
+        userId: authority.userId,
+        organizationId: authority.workspaceId,
+        authSessionId: authority.authSessionId,
+        operationId,
+        avatar: {
+          id: fileId,
+          ownerUserId: authority.userId,
+          organizationId: authority.workspaceId,
+          name: validatedFile.name,
+          objectKey,
+          storageProvider: storageAdapter.provider,
+          contentType: validatedFile.contentType,
+          type: validatedFile.type,
+          byteSize: buffer.length,
+          sha256: checksum,
+          uploadedAt: nowIso(),
+        },
+        idempotency: {
+          scope: authority.userId,
+          operation: "account.avatar.upload",
+          key: idempotencyKey,
+          fingerprint,
+        },
+        audit: {
+          actorUserId: authority.userId,
+          organizationId: authority.workspaceId,
+          action: "account.avatar.update",
+          ip: context.ip || req.socket.remoteAddress || "",
+          userAgent: context.userAgent || readString(req.headers["user-agent"], 240),
+          metadata: {
+            contentType: validatedFile.contentType,
+            byteSize: buffer.length,
+            sha256: checksum,
+          },
+        },
+      },
+    });
+    if (receipt.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, receipt.replayed ? 200 : 201, receipt);
     return;
   }
 
   if (segments.length === 3 && segments[2] === "avatar" && method === "DELETE") {
-    const avatarFileId = readString(user.avatarFileId, 160);
-    const avatarStorage =
-      user.avatarStorage && typeof user.avatarStorage === "object" && !Array.isArray(user.avatarStorage)
-        ? user.avatarStorage
-        : {};
-    if (avatarStorage.objectKey) {
-      await storageAdapter.deleteObject(avatarStorage.objectKey).catch(() => {});
+    if (!repositories?.avatarMutations) {
+      throw httpError(503, "Avatar mutation storage is unavailable", "AVATAR_STORAGE_UNAVAILABLE");
     }
-    if (avatarFileId) {
-      db.storageFiles = db.storageFiles.filter((file) => file.id !== avatarFileId);
+    const requestPath = parseRequestPath(req).pathname;
+    const canonicalRequest = requestPath === "/api/v1/me/avatar";
+    if (!canonicalRequest) {
+      requestMetrics.legacyAvatarMutation += 1;
+      res.setHeader("Deprecation", "true");
+      res.setHeader("X-Shcare-Compatibility-Alias", "account-avatar");
     }
-    user.avatarFileId = "";
-    user.avatarUrl = "";
-    user.avatarStorage = {};
-    await persistUserRecord(user);
-    await appendAudit("account.avatar.delete", req, {
-      actorUserId: user.id,
-      organizationId: user.organizationId || "",
-      resourceType: "user",
-      resourceId: user.id,
+    const canonicalUser = await refreshAuthenticatedAuthorization(user);
+    if (!canonicalUser || !isActiveUserAccount(canonicalUser)) {
+      throw httpError(403, "Avatar deletion requires an active account", "ACCOUNT_INACTIVE");
+    }
+    const organizationId = canonicalUser.organizationId || getUserWorkspaceContext(canonicalUser).currentWorkspaceId;
+    if (!organizationId) {
+      throw httpError(403, "Avatar deletion requires an active workspace", "AVATAR_WORKSPACE_SCOPE_DENIED");
+    }
+    const authority = resolveAvatarMutationAuthority(
+      req,
+      canonicalUser,
+      organizationId,
+      canonicalRequest,
+    );
+    let expectedAvatarFileId = readString(canonicalUser.avatarFileId, 160);
+    if (canonicalRequest) {
+      const payload = await readJsonBody(req);
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        Array.isArray(payload) ||
+        Object.keys(payload).length !== 1 ||
+        !Object.prototype.hasOwnProperty.call(payload, "expectedAvatarFileId")
+      ) {
+        throw httpError(400, "Avatar deletion accepts only expectedAvatarFileId", "AVATAR_DELETE_PAYLOAD_INVALID");
+      }
+      expectedAvatarFileId = readString(payload.expectedAvatarFileId, 160);
+    }
+    if (!expectedAvatarFileId) {
+      throw httpError(400, "Active avatar identity is required", "AVATAR_PRECONDITION_REQUIRED");
+    }
+    const suppliedIdempotencyKey = getIdempotencyKey(req, {});
+    if (canonicalRequest && !suppliedIdempotencyKey) {
+      getRequiredIdempotencyKey(req, {}, "avatar deletion");
+    }
+    const idempotencyKey = suppliedIdempotencyKey || `legacy-avatar-delete-${createId("idem")}`;
+    const fingerprint = createIdempotencyFingerprint({
+      userId: authority.userId,
+      organizationId: authority.workspaceId,
+      authSessionId: authority.authSessionId,
+      expectedAvatarFileId,
     });
-    sendJson(res, 200, { user: publicUser(user) });
+    const operationId = `avatar_delete_${createIdempotencyFingerprint({
+      userId: authority.userId,
+      authSessionId: authority.authSessionId,
+      operation: "account.avatar.delete",
+      key: idempotencyKey,
+    }).slice(0, 24)}`;
+    if (!storageAdapter) {
+      storageAdapter = createStorageAdapter({ dataDir: DATA_DIR, env: process.env });
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const receipt = await executeAvatarDeleteMutation({
+      repository: repositories.avatarMutations,
+      storageAdapter,
+      input: {
+        userId: authority.userId,
+        organizationId: authority.workspaceId,
+        authSessionId: authority.authSessionId,
+        operationId,
+        expectedAvatarFileId,
+        idempotency: {
+          scope: authority.userId,
+          operation: "account.avatar.delete",
+          key: idempotencyKey,
+          fingerprint,
+        },
+        audit: {
+          actorUserId: authority.userId,
+          organizationId: authority.workspaceId,
+          action: "account.avatar.delete",
+          ip: context.ip || req.socket.remoteAddress || "",
+          userAgent: context.userAgent || readString(req.headers["user-agent"], 240),
+        },
+      },
+    });
+    if (receipt.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, receipt);
     return;
   }
 
   if (segments.length === 3 && segments[2] === "password" && method === "POST") {
     const payload = await readJsonBody(req);
-    if (FIREBASE_AUTH_ENABLED && user.firebaseUid) {
-      if (req.authSource !== "firebase" || !req.firebaseToken) {
-        throw httpError(401, "Đổi mật khẩu Firebase cần phiên Firebase đã xác thực", "FIREBASE_REAUTH_REQUIRED");
-      }
-      const authenticatedAt = Number(getFirebaseAuthenticationTime(req.firebaseToken));
-      if (!Number.isFinite(authenticatedAt) || Date.now() / 1000 - authenticatedAt > 300) {
-        throw httpError(
-          401,
-          "Hãy xác thực lại tài khoản Firebase trước khi đổi mật khẩu",
-          "FIREBASE_RECENT_LOGIN_REQUIRED",
-        );
-      }
-      const nextPassword = readString(payload.newPassword || payload.password, 200);
-      if (nextPassword.length < 8) {
-        throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự", "PASSWORD_TOO_SHORT");
-      }
-      const saga = await runIdentityProviderSaga(
-        req,
-        user,
-        user,
-        "reset_password",
-        { password: nextPassword },
-        () => updateFirebaseLinkedAccount(user, {
-          password: nextPassword,
-          revokeRefreshTokens: true,
-        }),
+    getRequiredIdempotencyKey(req, {}, "password change");
+    const canonicalPasswordRoute = isCanonicalPasswordChangeRequest(req);
+    if (canonicalPasswordRoute) {
+      assertCanonicalPasswordChangePayload(payload);
+    }
+    const currentPassword = readPasswordSecret(payload.currentPassword, "current");
+    const nextPassword = readPasswordSecret(
+      canonicalPasswordRoute ||
+        Object.prototype.hasOwnProperty.call(payload, "newPassword")
+        ? payload.newPassword
+        : payload.password,
+      "new",
+    );
+    assertStrongPasswordSecret(currentPassword, nextPassword);
+
+    const canonicalUser = await refreshAuthenticatedAuthorization(user);
+    if (
+      !canonicalUser ||
+      canonicalUser.id !== user.id ||
+      !isActiveUserAccount(canonicalUser)
+    ) {
+      throw httpError(
+        403,
+        "Password changes require the same active account that opened the screen",
+        "PASSWORD_CHANGE_AUTHORITY_STALE",
       );
-      if (!saga.replayed) {
-        await appendAudit("account.password.change", req, {
-          actorUserId: user.id,
-          organizationId: user.organizationId || "",
-          resourceType: "user",
-          resourceId: user.id,
-          metadata: { operationId: saga.completed.identityOperation.id, provider: "firebase" },
-        });
-        createNotification("success", "Đã đổi mật khẩu", "Mật khẩu Firebase của tài khoản vừa được cập nhật.", {
-          userId: user.id,
-          organizationId: user.organizationId || "",
-        });
-        await saveDb();
-      }
-      sendJson(res, 200, {
-        ok: true,
-        provider: "firebase",
-        operationId: saga.completed.identityOperation.id,
-        replayed: saga.replayed,
-      });
-      return;
     }
 
-    assertDemoAuthAllowed();
-    if (user.password !== readString(payload.currentPassword, 200)) {
-      throw httpError(400, "Mật khẩu hiện tại không đúng");
+    const provider =
+      FIREBASE_AUTH_ENABLED && canonicalUser.firebaseUid ? "firebase" : "demo";
+    let firebasePasswordProof = null;
+
+    const saga = await runIdentityProviderSaga(
+      req,
+      canonicalUser,
+      canonicalUser,
+      "reset_password",
+      { currentPassword, newPassword: nextPassword },
+      provider === "firebase"
+        ? () => {
+            if (!firebasePasswordProof) {
+              throw httpError(
+                503,
+                "Firebase current-password proof is unavailable",
+                "FIREBASE_PASSWORD_VERIFIER_UNAVAILABLE",
+              );
+            }
+            return updateFirebaseLinkedAccount(canonicalUser, {
+              password: nextPassword,
+            });
+          }
+        : async () => {
+            await repositories.users.updatePasswordExact(
+              canonicalUser.id,
+              nextPassword,
+            );
+            return { updated: true, skipped: true };
+          },
+      {
+        targetState: { provider },
+        requireActiveTarget: true,
+        preserveAccountStatus: true,
+        ...(provider === "demo"
+          ? { expectedCurrentPassword: currentPassword }
+          : {}),
+        preserveSessionId: req.authSession?.id || "",
+        beforeBegin:
+          provider === "firebase"
+            ? async () => {
+                if (req.authSource !== "firebase" || !req.firebaseToken) {
+                  throw httpError(
+                    401,
+                    "Đổi mật khẩu Firebase cần phiên Firebase đã xác thực",
+                    "FIREBASE_REAUTH_REQUIRED",
+                  );
+                }
+                const authenticatedFirebaseUid = readString(
+                  req.firebaseToken.uid || req.firebaseToken.sub,
+                  160,
+                );
+                if (
+                  !authenticatedFirebaseUid ||
+                  authenticatedFirebaseUid !== canonicalUser.firebaseUid
+                ) {
+                  throw httpError(
+                    403,
+                    "Firebase password proof belongs to another account",
+                    "FIREBASE_PASSWORD_PROOF_ACCOUNT_MISMATCH",
+                  );
+                }
+                const authenticatedAt = Number(
+                  getFirebaseAuthenticationTime(req.firebaseToken),
+                );
+                if (
+                  !Number.isFinite(authenticatedAt) ||
+                  Date.now() / 1000 - authenticatedAt > 300
+                ) {
+                  throw httpError(
+                    401,
+                    "Hãy xác thực lại tài khoản Firebase trước khi đổi mật khẩu",
+                    "FIREBASE_RECENT_LOGIN_REQUIRED",
+                  );
+                }
+                const firebaseAdminApp = getFirebaseAdmin(process.env);
+                if (!firebaseAdminApp) {
+                  throw httpError(
+                    503,
+                    "Firebase current-password verification is unavailable",
+                    "FIREBASE_PASSWORD_VERIFIER_UNAVAILABLE",
+                  );
+                }
+                firebasePasswordProof = await createFirebasePasswordProof({
+                  targetUser: canonicalUser,
+                  authenticatedFirebaseUid,
+                  currentPassword,
+                  env: process.env,
+                  verifyIdToken: (idToken) =>
+                    firebaseAdminApp.auth().verifyIdToken(idToken, true),
+                });
+                firebasePasswordProof.consume(canonicalUser);
+              }
+            : async () => {
+                assertDemoAuthAllowed();
+              },
+      },
+    );
+    const receiptUser = saga.completed.user;
+    if (
+      !receiptUser ||
+      receiptUser.id !== canonicalUser.id ||
+      !isActiveUserAccount(receiptUser)
+    ) {
+      throw httpError(
+        409,
+        "Password change receipt does not match an active account",
+        "PASSWORD_CHANGE_RECEIPT_INVALID",
+      );
     }
-    const nextPassword = readString(payload.newPassword, 200);
-    if (nextPassword.length < 8) {
-      throw httpError(400, "Mật khẩu mới cần tối thiểu 8 ký tự");
+    let identityOperation = saga.completed.identityOperation;
+    const operationId = identityOperation.id;
+    const receiptProvider = resolveDurablePasswordProvider(
+      identityOperation,
+    );
+    if (!["firebase", "demo"].includes(receiptProvider)) {
+      throw httpError(
+        409,
+        "Password change receipt is missing its durable identity provider",
+        "PASSWORD_CHANGE_RECEIPT_INVALID",
+      );
     }
-    user.password = nextPassword;
-    user.updatedAt = nowIso();
-    db.settings.privacy.passwordUpdatedAt = nowIso();
-    addAccessLog("Đổi mật khẩu tài khoản");
-    createNotification("success", "Đã đổi mật khẩu", "Mật khẩu tài khoản vừa được cập nhật.", {
-      userId: user.id,
-      organizationId: user.organizationId || "",
+    if (!readString(identityOperation.targetState?.provider, 20)) {
+      if (
+        typeof repositories.identityOperations.backfillPasswordProvider !==
+        "function"
+      ) {
+        throw httpError(
+          503,
+          "Password provider receipt repair is unavailable",
+          "IDENTITY_OPERATION_STORAGE_UNAVAILABLE",
+        );
+      }
+      const repaired =
+        await repositories.identityOperations.backfillPasswordProvider({
+          operationId,
+          provider: receiptProvider,
+        });
+      identityOperation = repaired.identityOperation;
+    }
+    await appendAudit("account.password.change", req, {
+      id: `audit_password_change_${operationId}`,
+      actorUserId: receiptUser.id,
+      organizationId: receiptUser.organizationId || "",
+      resourceType: "user",
+      resourceId: receiptUser.id,
+      metadata: { operationId, provider: receiptProvider },
     });
-    await saveDb();
-    sendJson(res, 200, { ok: true });
+    await createBackendNotification({
+      id: `noti_password_change_${operationId}`,
+      createOnce: true,
+      type: "success",
+      title: "Đã đổi mật khẩu",
+      message:
+        receiptProvider === "firebase"
+          ? "Mật khẩu Firebase của tài khoản vừa được cập nhật."
+          : "Mật khẩu tài khoản vừa được cập nhật.",
+      userId: receiptUser.id,
+      organizationId: receiptUser.organizationId || "",
+      metadata: {
+        operationId,
+        provider: receiptProvider,
+        destination: "security_settings",
+      },
+    });
+    const completedAt = identityOperation.completedAt || nowIso();
+    let ancillaryChanged = false;
+    const priorPasswordUpdatedAt = Date.parse(
+      db.settings.privacy.passwordUpdatedAt || "",
+    );
+    const completedAtMs = Date.parse(completedAt);
+    if (
+      !Number.isFinite(priorPasswordUpdatedAt) ||
+      (Number.isFinite(completedAtMs) &&
+        completedAtMs > priorPasswordUpdatedAt)
+    ) {
+      db.settings.privacy.passwordUpdatedAt = completedAt;
+      ancillaryChanged = true;
+    }
+    const accessLogId = `log_password_change_${operationId}`;
+    if (
+      !db.accessLogs.some(
+        (entry) =>
+          entry.id === accessLogId ||
+          (entry.operationId === operationId &&
+            entry.userId === receiptUser.id),
+      )
+    ) {
+      addAccessLog("Đổi mật khẩu tài khoản", {
+        id: accessLogId,
+        severity: "success",
+        userId: receiptUser.id,
+        operationId,
+        createdAt: completedAt,
+      });
+      ancillaryChanged = true;
+    }
+    if (ancillaryChanged) {
+      await saveDb();
+    }
+    sendJson(res, 200, {
+      ok: true,
+      user: { id: receiptUser.id },
+      provider: receiptProvider,
+      operationId,
+      replayed: Boolean(saga.replayed),
+    });
     return;
   }
 
@@ -14948,6 +18707,167 @@ async function handleNotificationsApi(req, res, segments) {
   const user = requireUser(req);
   const context = getRequestContext(req) || createRequestContext(req);
 
+  if (
+    segments.length === 3 &&
+    segments[2] === "inbox" &&
+    method === "GET"
+  ) {
+    const authority = requireNotificationInboxAuthority(user);
+    const notifications = await repositories.notifications.listInbox(authority);
+    sendJson(res, 200, {
+      ...authority,
+      notifications,
+      updatedAt: nowIso(),
+    });
+    return;
+  }
+
+  if (
+    segments.length === 4 &&
+    segments[2] === "inbox" &&
+    segments[3] === "read-all" &&
+    method === "POST"
+  ) {
+    const authority = requireNotificationInboxAuthority(user);
+    const payload = await readJsonBody(req);
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      payload,
+      "notification inbox read-all",
+    );
+    const action = "read_all";
+    const result = await repositories.notifications.mutateInboxWithAudit(
+      {
+        ...authority,
+        action,
+      },
+      {
+        actorUserId: user.id,
+        organizationId: authority.workspaceId,
+        authorization: {
+          kind: "self",
+          actorUserId: user.id,
+        },
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      },
+      {
+        scope: `${authority.userId}:${authority.workspaceId}`,
+        operation: `notification.inbox.${action}`,
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          ...authority,
+          action,
+          notificationId: "",
+        }),
+      },
+    );
+    sendJson(
+      res,
+      result.responseStatus || 200,
+      publicNotificationInboxMutation(result),
+    );
+    return;
+  }
+
+  if (
+    segments.length === 5 &&
+    segments[2] === "inbox" &&
+    segments[4] === "read" &&
+    method === "POST"
+  ) {
+    const authority = requireNotificationInboxAuthority(user);
+    const notificationId = decodeURIComponent(segments[3]);
+    const payload = await readJsonBody(req);
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      payload,
+      "notification inbox read",
+    );
+    const action = "read";
+    const result = await repositories.notifications.mutateInboxWithAudit(
+      {
+        ...authority,
+        action,
+        notificationId,
+      },
+      {
+        actorUserId: user.id,
+        organizationId: authority.workspaceId,
+        authorization: {
+          kind: "self",
+          actorUserId: user.id,
+        },
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      },
+      {
+        scope: `${authority.userId}:${authority.workspaceId}`,
+        operation: `notification.inbox.${action}`,
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          ...authority,
+          action,
+          notificationId,
+        }),
+      },
+    );
+    sendJson(
+      res,
+      result.responseStatus || 200,
+      publicNotificationInboxMutation(result),
+    );
+    return;
+  }
+
+  if (
+    segments.length === 4 &&
+    segments[2] === "inbox" &&
+    method === "DELETE"
+  ) {
+    const authority = requireNotificationInboxAuthority(user);
+    const notificationId = decodeURIComponent(segments[3]);
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      {},
+      "notification inbox delete",
+    );
+    const action = "delete";
+    const result = await repositories.notifications.mutateInboxWithAudit(
+      {
+        ...authority,
+        action,
+        notificationId,
+      },
+      {
+        actorUserId: user.id,
+        organizationId: authority.workspaceId,
+        authorization: {
+          kind: "self",
+          actorUserId: user.id,
+        },
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      },
+      {
+        scope: `${authority.userId}:${authority.workspaceId}`,
+        operation: `notification.inbox.${action}`,
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          ...authority,
+          action,
+          notificationId,
+        }),
+      },
+    );
+    sendJson(
+      res,
+      result.responseStatus || 200,
+      publicNotificationInboxMutation(result),
+    );
+    return;
+  }
+
   if (segments.length === 3 && segments[2] === "options" && method === "GET") {
     requireAnyCapability(
       user,
@@ -15072,38 +18992,154 @@ async function handleNotificationsApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "register-device" && method === "POST") {
-    const user = requireUser(req);
+    const sessionUser = requirePrimarySessionUser(req);
     const payload = await readJsonBody(req);
     const fcmToken = readString(payload.fcmToken, 4096);
-    if (!fcmToken) {
-      throw httpError(400, "FCM token is required");
+    if (!isValidFcmRegistrationToken(fcmToken)) {
+      throw httpError(
+        400,
+        "FCM token has an invalid format",
+        "INVALID_NOTIFICATION_DEVICE_TOKEN",
+      );
+    }
+    const authSessionId = readString(req.authSession?.id, 160);
+    if (!authSessionId) {
+      throw httpError(
+        401,
+        "Notification registration requires a current authenticated session",
+        "AUTH_SESSION_BINDING_MISSING",
+      );
+    }
+    const authSessionActive = await repositories.authSessions.isActiveForUser(
+      sessionUser.id,
+      authSessionId,
+    );
+    if (!authSessionActive) {
+      throw httpError(401, "Authentication session has been revoked", "AUTH_SESSION_REVOKED");
+    }
+    const workspaceContext = getUserWorkspaceContext(sessionUser);
+    const workspaceId = readString(workspaceContext.currentWorkspaceId, 120);
+    if (
+      !workspaceId ||
+      !workspaceContext.currentMembership?.operational ||
+      !hasWorkspaceMembership(sessionUser, workspaceId)
+    ) {
+      throw httpError(
+        403,
+        "An active workspace membership is required to register notifications",
+        "WORKSPACE_ACCESS_REQUIRED",
+      );
+    }
+    const notificationProtocolVersion = Number(
+      payload.notificationProtocolVersion ?? payload.protocolVersion,
+    );
+    if (
+      !Number.isInteger(notificationProtocolVersion) ||
+      notificationProtocolVersion < 2
+    ) {
+      throw httpError(
+        400,
+        "Notification protocol version 2 or newer is required",
+        "NOTIFICATION_PROTOCOL_UNSUPPORTED",
+      );
     }
     const device = await repositories.notificationDevices.register({
-      userId: user.id,
+      userId: sessionUser.id,
+      workspaceId,
       platform: readString(payload.platform, 40) || "android",
       fcmToken,
+      authSessionId,
+      notificationProtocolVersion,
+      appVersion: readString(payload.appVersion, 80),
       enabled: payload.enabled !== false,
     });
-    sendJson(res, 200, { device });
+    const [sessionStillActive, canonicalUser] = await Promise.all([
+      repositories.authSessions.isActiveForUser(sessionUser.id, authSessionId),
+      refreshAuthenticatedAuthorization(sessionUser),
+    ]);
+    const canonicalWorkspaceId = canonicalUser
+      ? getUserWorkspaceContext(canonicalUser).currentWorkspaceId || ""
+      : "";
+    if (
+      !sessionStillActive ||
+      !canonicalUser ||
+      !isActiveUserAccount(canonicalUser) ||
+      canonicalWorkspaceId !== workspaceId ||
+      !hasWorkspaceMembership(canonicalUser, workspaceId)
+    ) {
+      await repositories.notificationDevices.disableToken(sessionUser.id, fcmToken, {
+        workspaceId,
+        authSessionId,
+      });
+      if (!sessionStillActive || !canonicalUser || !isActiveUserAccount(canonicalUser)) {
+        throw httpError(
+          401,
+          "Notification registration lost its authenticated account binding",
+          "NOTIFICATION_REGISTRATION_REAUTH_REQUIRED",
+        );
+      }
+      throw httpError(
+        409,
+        "The active workspace changed while registering notifications",
+        "NOTIFICATION_WORKSPACE_BINDING_CHANGED",
+      );
+    }
+    let acknowledgedDevice = device;
+    if (device.enabled !== false) {
+      acknowledgedDevice = (
+        await repositories.notificationDevices.listForUser(sessionUser.id, workspaceId, {
+          minimumProtocolVersion: notificationProtocolVersion,
+        })
+      ).find(
+        (candidate) =>
+          candidate.id === device.id &&
+          candidate.fcmToken === fcmToken &&
+          candidate.authSessionId === authSessionId,
+      );
+      if (!acknowledgedDevice) {
+        throw httpError(
+          409,
+          "The notification token binding changed before registration was acknowledged",
+          "NOTIFICATION_TOKEN_BINDING_CHANGED",
+        );
+      }
+    }
+    sendJson(res, 200, { device: acknowledgedDevice });
     return;
   }
 
   if (segments.length === 3 && segments[2] === "unregister-device" && method === "POST") {
+    const sessionUser = requirePrimarySessionUser(req);
     const payload = await readJsonBody(req);
     const fcmToken = readString(payload.fcmToken, 4096);
     if (!fcmToken) {
       throw httpError(400, "FCM token is required");
     }
-    const device = await repositories.notificationDevices.disableToken(user.id, fcmToken);
+    const workspaceId = getUserWorkspaceContext(sessionUser).currentWorkspaceId || "";
+    const authSessionId = readString(req.authSession?.id, 160);
+    if (!workspaceId || !authSessionId) {
+      throw httpError(
+        401,
+        "Notification unregistration requires the current workspace session",
+        "AUTH_SESSION_BINDING_MISSING",
+      );
+    }
+    const device = await repositories.notificationDevices.disableToken(
+      sessionUser.id,
+      fcmToken,
+      { workspaceId, authSessionId },
+    );
     sendJson(res, 200, { unregistered: Boolean(device) });
     return;
   }
 
-  if (repositories) {
-    await repositories.notifications.list();
-  }
+  const notificationSource = repositories
+    ? await repositories.notifications.list()
+    : db.notifications;
   const notification = segments[2]
-    ? filterNotificationsForUser(user, db.notifications).find((item) => item.id === decodeURIComponent(segments[2]))
+    ? filterNotificationsForUser(user, notificationSource).find(
+        (item) => item.id === decodeURIComponent(segments[2]),
+      )
     : null;
   if (!notification) {
     throw httpError(404, "Không tìm thấy thông báo");
@@ -15256,16 +19292,68 @@ async function handleAuditLogsApi(req, res, url, segments) {
   sendJson(res, 404, { error: "Audit log route not found" });
 }
 
-async function handleDevicesApi(req, res, segments) {
+async function handleDevicesApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
+  const requestPath = String(req.url || "").split("?", 1)[0];
+  if (/^\/api\/devices(?:\/|$)/.test(requestPath)) {
+    res.setHeader("Deprecation", "true");
+    res.setHeader("X-Shcare-Compatibility-Alias", "/api/v1/devices");
+  }
 
   if (segments.length === 2 && method === "GET") {
     if (repositories) {
       await repositories.devices.list();
     }
     refreshDevicePresence();
-    sendJson(res, 200, { devices: publicDevices(filterDevicesForUser(user, db.devices)) });
+    const deviceStatus = readString(url.searchParams.get("status"), 40).toLowerCase();
+    const scopedDevices = filterDevicesForUser(user, db.devices);
+    const deviceSummary = scopedDevices.reduce(
+      (summary, item) => {
+        const online = Boolean(getAuthenticatedDeviceSocket(item));
+        summary.total += 1;
+        summary.online += online ? 1 : 0;
+        summary.offline += online ? 0 : 1;
+        summary.revoked += item.status === "revoked" || item.revokedAt ? 1 : 0;
+        const otaStatus = item.ota ? normalizeDeviceOtaStatus(item.ota.status) : "";
+        if (otaStatus && !["confirmed", "rolled_back", "failed"].includes(otaStatus)) {
+          summary.otaPending += 1;
+        }
+        return summary;
+      },
+      { total: 0, online: 0, offline: 0, revoked: 0, otaPending: 0 },
+    );
+    const deviceSource = scopedDevices.filter((item) => {
+      const online = Boolean(getAuthenticatedDeviceSocket(item));
+      const matchesStatus =
+        !deviceStatus ||
+        deviceStatus === "all" ||
+        (deviceStatus === "online" && online) ||
+        (deviceStatus === "offline" && !online) ||
+        (deviceStatus === "revoked" && (item.status === "revoked" || Boolean(item.revokedAt)));
+      return matchesStatus;
+    });
+    const pageResult = resolveAdminListPage(deviceSource, url, {
+      searchFields: [
+        (item) => item.id,
+        (item) => item.name,
+        (item) => item.serialNumber,
+        (item) => item.firmwareVersion,
+        (item) => item.wifiSsid,
+        (item) => item.ipAddress || item.ip,
+        (item) => item.organizationId,
+      ],
+      sortFields: {
+        name: (item) => item.name,
+        createdAt: (item) => item.createdAt,
+        updatedAt: (item) => item.updatedAt,
+        lastSeenAt: (item) => item.lastSeenAt,
+        status: (item) => item.presenceStatus || item.status,
+      },
+      defaultSort: "lastSeenAt:desc",
+    });
+    setWorkspacePaginationHeaders(res, pageResult);
+    sendJson(res, 200, { devices: publicDevices(pageResult.items), summary: deviceSummary });
     return;
   }
 
@@ -15281,16 +19369,64 @@ async function handleDevicesApi(req, res, segments) {
   }
 
   if (segments.length === 3 && segments[2] === "provision-qr" && method === "POST") {
-    requireAnyCapability(user, ["platform.devices.manage", "workspace.devices.manage", "personal.devices.manage"]);
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(
+        403,
+        "Only a platform device administrator can provision device identity and claim material",
+        "DEVICE_PROVISION_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
     const payload = await readJsonBody(req);
-    const deviceId = assertCanonicalDeviceId(
-      Object.prototype.hasOwnProperty.call(payload, "deviceId")
-        ? payload.deviceId
-        : createId("dev"),
+    const allowedProvisionFields = new Set([
+      "deviceId",
+      "organizationId",
+      "name",
+      "type",
+      "manufacturer",
+      "model",
+      "serialNumber",
+      "purchaseDate",
+      "idempotencyKey",
+    ]);
+    const forbiddenProvisionField = Object.keys(payload).find(
+      (field) => !allowedProvisionFields.has(field),
     );
+    if (forbiddenProvisionField) {
+      const isCredentialField = [
+        "deviceSecret",
+        "secret",
+        "secretHash",
+        "enrollmentSecret",
+      ].includes(forbiddenProvisionField);
+      throw httpError(
+        400,
+        isCredentialField
+          ? "Device credentials can only be installed by the factory-enrollment channel"
+          : `Field ${forbiddenProvisionField} cannot be supplied while provisioning claim material`,
+        isCredentialField
+          ? "DEVICE_PROVISION_CREDENTIAL_FIELD_FORBIDDEN"
+          : "DEVICE_PROVISION_FIELD_FORBIDDEN",
+        { field: forbiddenProvisionField },
+      );
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, "deviceId")) {
+      throw httpError(
+        400,
+        "An existing factory-enrolled device id is required for claim provisioning",
+        "DEVICE_ID_REQUIRED",
+      );
+    }
+    const deviceId = assertCanonicalDeviceId(payload.deviceId);
     const idempotencyKey = getIdempotencyKey(req, payload);
     const idempotencyOperation = "device.provision";
     const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device provisioning",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const requestedType = readString(payload.type, 40);
     if (requestedType && !["stethoscope", "respiratory", "other"].includes(requestedType)) {
       throw httpError(400, "Device type is unsupported", "DEVICE_TYPE_UNSUPPORTED");
@@ -15310,50 +19446,45 @@ async function handleDevicesApi(req, res, segments) {
       ? await repositories.devices.findById(deviceId)
       : db.devices.find((item) => item.id === deviceId);
     const requestedOrganizationId = readString(payload.organizationId, 120);
-    if (existingDevice) {
-      assertCanAccessDevice(user, existingDevice);
-      if (inferDeviceOwnershipState(existingDevice) !== "provisioned") {
-        throw httpError(
-          409,
-          "An owned or revoked device cannot be reprovisioned; use the audited transfer or revoke workflow",
-          "DEVICE_ALREADY_OWNED",
-        );
-      }
-      if (
-        requestedOrganizationId &&
-        existingDevice.organizationId &&
-        requestedOrganizationId !== existingDevice.organizationId
-      ) {
-        throw httpError(403, "Use the platform transfer endpoint to change a device workspace");
-      }
-    }
-    let device;
     if (!existingDevice) {
-      const enrollmentSecret = requireDeviceEnrollmentSecret(payload);
-      device = {
-        id: deviceId,
-        name: readString(payload.name, 120) || "Ống nghe Smart Health",
-        type: "stethoscope",
-        status: "unclaimed",
-        signal: -60,
-        battery: 0,
-        connected: false,
-        ownershipState: "provisioned",
-        secretHash: canonicalDeviceSecretHash(enrollmentSecret),
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-    } else {
-      // Keep the hydrated runtime row unchanged until the audited mutation
-      // commits, so a storage failure cannot leave a partial provision.
-      device = { ...existingDevice };
+      throw httpError(
+        404,
+        "The device must be enrolled by the factory channel before claim material can be provisioned",
+        "DEVICE_FACTORY_ENROLLMENT_REQUIRED",
+      );
     }
+    assertCanAccessDevice(user, existingDevice);
+    if (inferDeviceOwnershipState(existingDevice) !== "provisioned") {
+      throw httpError(
+        409,
+        "An owned or revoked device cannot be reprovisioned; use the audited transfer or revoke workflow",
+        "DEVICE_ALREADY_OWNED",
+      );
+    }
+    if (
+      requestedOrganizationId &&
+      existingDevice.organizationId &&
+      requestedOrganizationId !== existingDevice.organizationId
+    ) {
+      throw httpError(
+        403,
+        "Use the platform transfer endpoint to change a device workspace",
+        "DEVICE_PROVISION_WORKSPACE_TRANSFER_REQUIRED",
+      );
+    }
+    // Keep the hydrated runtime row unchanged until the audited mutation
+    // commits, so a storage failure cannot leave a partial provision.
+    const device = { ...existingDevice };
     if (!device.secretHash && device.secret) {
       device.secretHash = canonicalDeviceSecretHash(device.secret);
       delete device.secret;
     }
     if (!device.secretHash) {
-      device.secretHash = canonicalDeviceSecretHash(requireDeviceEnrollmentSecret(payload));
+      throw httpError(
+        503,
+        "The factory-enrolled device has no credential verification material",
+        "DEVICE_FACTORY_CREDENTIAL_UNAVAILABLE",
+      );
     }
 
     device.name = readString(payload.name, 120) || device.name;
@@ -15372,13 +19503,6 @@ async function handleDevicesApi(req, res, segments) {
     }
     device.organizationId =
       device.organizationId || getWritableWorkspaceIdForUser(user, requestedOrganizationId || device.organizationId);
-    if (!idempotencyKey) {
-      throw httpError(
-        400,
-        "Idempotency-Key is required for device provisioning",
-        "IDEMPOTENCY_KEY_REQUIRED",
-      );
-    }
     const claimCode = deriveDeviceClaimCode(device, idempotencyKey, idempotencyFingerprint);
     device.claimCodeHash = hashValue(`${device.id}:${claimCode}`);
     device.claimCodeExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -15426,7 +19550,7 @@ async function handleDevicesApi(req, res, segments) {
       },
     };
     const safeResponseBody = {
-      device: publicDevice(device),
+      device: publicProvisionedDeviceReceipt(device),
       claim: {
         deviceId: device.id,
         expiresAt: device.claimCodeExpiresAt,
@@ -15498,63 +19622,145 @@ async function handleDevicesApi(req, res, segments) {
 
   if (segments.length === 3 && segments[2] === "pair" && method === "POST") {
     const payload = await readJsonBody(req);
-    const deviceId = assertCanonicalDeviceId(
-      Object.prototype.hasOwnProperty.call(payload, "deviceId")
-        ? payload.deviceId
-        : createId("dev"),
+    const allowedPairingFields = new Set([
+      "deviceId",
+      "claimCode",
+      "connectionMethod",
+      "organizationId",
+      "idempotencyKey",
+    ]);
+    const forbiddenPairingField = Object.keys(payload).find(
+      (field) => !allowedPairingFields.has(field),
     );
+    if (forbiddenPairingField) {
+      throw httpError(
+        400,
+        `Field ${forbiddenPairingField} cannot be supplied while claiming a provisioned device`,
+        "DEVICE_PAIRING_FIELD_FORBIDDEN",
+        { field: forbiddenPairingField },
+      );
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, "deviceId")) {
+      throw httpError(
+        400,
+        "A provisioned device id is required for device claim",
+        "DEVICE_ID_REQUIRED",
+      );
+    }
+    const deviceId = assertCanonicalDeviceId(payload.deviceId);
     const claimCode = readString(payload.claimCode, 80);
+    if (!claimCode) {
+      throw httpError(
+        400,
+        "A one-time claim code is required for device claim",
+        "DEVICE_CLAIM_REQUIRED",
+      );
+    }
     const connectionMethod = normalizeDevicePairingMethod(payload.connectionMethod, Boolean(claimCode));
     const requestedOrganizationId = readString(payload.organizationId, 120);
+    if (!requestedOrganizationId) {
+      throw httpError(
+        400,
+        "The active workspace organizationId is required for device claim",
+        "DEVICE_CLAIM_WORKSPACE_REQUIRED",
+        { field: "organizationId" },
+      );
+    }
+    if (!isPlatformAdminUser(user)) {
+      const workspaceContext = getUserWorkspaceContext(user);
+      const currentWorkspaceId = readString(workspaceContext.currentWorkspaceId, 120);
+      if (
+        !currentWorkspaceId ||
+        !workspaceContext.currentMembership?.operational
+      ) {
+        throw httpError(
+          403,
+          "An active exact workspace membership is required for device claim",
+          "DEVICE_CLAIM_ACTIVE_WORKSPACE_REQUIRED",
+        );
+      }
+      if (requestedOrganizationId !== currentWorkspaceId) {
+        throw httpError(
+          403,
+          "Switch to the requested workspace before claiming this device",
+          "DEVICE_CLAIM_ACTIVE_WORKSPACE_MISMATCH",
+          {
+            requestedOrganizationId,
+            currentWorkspaceId,
+          },
+        );
+      }
+      const exactActiveMembership = workspaceContext.memberships.find(
+        (membership) =>
+          membership.workspaceId === requestedOrganizationId &&
+          membership.operational === true,
+      );
+      if (!exactActiveMembership) {
+        throw httpError(
+          403,
+          "An active exact workspace membership is required for device claim",
+          "DEVICE_CLAIM_ACTIVE_WORKSPACE_REQUIRED",
+        );
+      }
+    }
     const idempotencyKey = getIdempotencyKey(req, payload);
     const idempotencyOperation = "device.pair";
-    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
-    const canManageDevices = hasAnyCapability(user, [
-      "platform.devices.manage",
-      "workspace.devices.manage",
-      "personal.devices.manage",
-    ]);
-    const canClaimDevice = hasAnyCapability(user, [
-      "platform.devices.manage",
-      "workspace.devices.manage",
-      "workspace.devices.view",
-      "personal.devices.manage",
-    ]);
+    const idempotencyFingerprint = createIdempotencyFingerprint({
+      deviceId,
+      organizationId: requestedOrganizationId,
+      claimCode,
+      connectionMethod,
+    });
     let device = repositories ? await repositories.devices.findById(deviceId) : db.devices.find((item) => item.id === deviceId);
-    const deviceAlreadyExists = Boolean(device);
     if (!device) {
-      if (claimCode) {
-        throw httpError(404, "Không tìm thấy thiết bị để claim");
-      }
-      if (!canManageDevices) {
-        throw httpError(403, "Không có quyền tạo thiết bị mới trong workspace này");
-      }
-      const enrollmentSecret = requireDeviceEnrollmentSecret(payload);
-      device = {
-        id: deviceId,
-        name: readString(payload.name, 120) || "Ống nghe Smart Health",
-        type: "stethoscope",
-        status: "available",
-        organizationId: getWritableWorkspaceIdForUser(user, requestedOrganizationId),
-        signal: readOptionalNumber(payload.signal) || -55,
-        battery: readOptionalNumber(payload.battery) || 85,
-        connected: false,
-        ownershipState: "provisioned",
-        secretHash: canonicalDeviceSecretHash(enrollmentSecret),
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-    } else {
-      // Keep the hydrated projection unchanged until the audited transaction
-      // consumes the claim and commits the ownership state.
-      device = { ...device };
+      throw httpError(
+        404,
+        "The device must be provisioned by a platform administrator before it can be claimed",
+        "DEVICE_NOT_PROVISIONED",
+      );
     }
-    if (device.revokedAt) {
-      throw httpError(403, "Thiết bị đã bị thu hồi");
+    // Keep the hydrated projection unchanged until the audited transaction
+    // consumes the claim and commits the ownership state.
+    device = { ...device };
+    if (inferDeviceOwnershipState(device) === "revoked") {
+      throw httpError(
+        403,
+        "Thiết bị đã bị thu hồi",
+        "DEVICE_CLAIM_REVOKED",
+      );
     }
-
-    device.organizationId = device.organizationId || getWritableWorkspaceIdForUser(user, requestedOrganizationId);
-    assertCanAccessDevice(user, device);
+    if (!device.organizationId) {
+      throw httpError(
+        403,
+        "The provisioned device is not bound to a workspace",
+        "DEVICE_CLAIM_WORKSPACE_UNBOUND",
+      );
+    }
+    if (requestedOrganizationId !== device.organizationId) {
+      throw httpError(
+        403,
+        "The device claim belongs to a different workspace",
+        "DEVICE_CLAIM_WORKSPACE_MISMATCH",
+      );
+    }
+    const deviceWorkspaceId = getDeviceWorkspaceId(device);
+    const isWorkspaceDeviceManager = hasWorkspaceDeviceCapability(
+      user,
+      deviceWorkspaceId,
+      ["workspace.devices.manage"],
+    );
+    const isPersonalDeviceClaimant = Boolean(
+      isPatientUser(user) &&
+      isActiveUserAccount(user) &&
+      hasWorkspaceDeviceCapability(user, deviceWorkspaceId, ["personal.devices.manage"]),
+    );
+    if (!isPlatformAdminUser(user) && !isWorkspaceDeviceManager && !isPersonalDeviceClaimant) {
+      throw httpError(
+        403,
+        "The current actor cannot claim devices in this workspace",
+        "DEVICE_CLAIM_CAPABILITY_REQUIRED",
+      );
+    }
     if (!idempotencyKey) {
       throw httpError(
         400,
@@ -15562,49 +19768,40 @@ async function handleDevicesApi(req, res, segments) {
         "IDEMPOTENCY_KEY_REQUIRED",
       );
     }
-    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
+    const initialOwnershipState = inferDeviceOwnershipState(device);
+    if (!device.secretHash && device.secret) {
+      device.secretHash = canonicalDeviceSecretHash(device.secret);
+      delete device.secret;
+    }
+    if (!device.secretHash) {
+      throw httpError(
+        503,
+        "The provisioned device has no verification material",
+        "DEVICE_CLAIM_MATERIAL_UNAVAILABLE",
+      );
+    }
+
+    const claimMutation = {
       organizationId: device.organizationId,
-      fingerprint: idempotencyFingerprint,
-    });
-    if (replayedResponse) {
-      sendJson(res, 200, { ...replayedResponse, idempotent: true });
-      await saveDb();
-      return;
-    }
-    if (!device.secretHash && !device.secret) {
-      device.secretHash = canonicalDeviceSecretHash(requireDeviceEnrollmentSecret(payload));
-    }
+      claimCodeHash: hashValue(`${device.id}:${claimCode}`),
+      claimedByUserId: user.id,
+      at: nowIso(),
+    };
 
-    let claimMutation = null;
-    if (claimCode) {
-      if (!canClaimDevice) {
-        throw httpError(403, "Không có quyền claim thiết bị trong workspace này");
-      }
-      assertCanAccessDevice(user, device);
-      claimMutation = {
-        organizationId: device.organizationId,
-        claimCodeHash: hashValue(`${device.id}:${claimCode}`),
-        claimedByUserId: user.id,
-        at: nowIso(),
-      };
-    } else {
-      assertCanManageDevice(user, device);
-      if (deviceAlreadyExists && inferDeviceOwnershipState(device) === "provisioned") {
-        throw httpError(
-          409,
-          "A one-time claim code is required before adopting this provisioned device",
-          "DEVICE_CLAIM_REQUIRED",
-        );
-      }
+    // The repository owns the idempotency receipt lookup and the canonical
+    // ownership check under the same per-device lock/SQL transaction. A
+    // claimed/assigned projection can therefore reach the repository only so
+    // it can decide whether this is an authorized replay; a fresh mutation is
+    // still accepted exclusively from the provisioned state there.
+    if (initialOwnershipState === "provisioned") {
+      Object.assign(
+        device,
+        applyDeviceOwnershipTransition(device, "claimed", {
+          ownerUserId: user.id,
+          at: claimMutation?.at || nowIso(),
+        }),
+      );
     }
-
-    Object.assign(
-      device,
-      applyDeviceOwnershipTransition(device, "claimed", {
-        ownerUserId: user.id,
-        at: claimMutation?.at || nowIso(),
-      }),
-    );
     const pairing = createDevicePairingState(device);
     device.connected = pairing.onlineConfirmed;
     device.status = device.connected ? "connected" : "available";
@@ -15612,7 +19809,7 @@ async function handleDevicesApi(req, res, segments) {
     device.updatedAt = nowIso();
     const responseBody = {
       device: {
-        ...publicDevice(device),
+        ...publicPairedDeviceReceipt(device),
         connected: pairing.onlineConfirmed,
         online: pairing.onlineConfirmed,
       },
@@ -15654,60 +19851,27 @@ async function handleDevicesApi(req, res, segments) {
         connectionMethod,
       }),
     };
-    let persistenceResult;
-    if (repositories && typeof repositories.devices.savePairingWithAudit === "function") {
-      persistenceResult = await repositories.devices.savePairingWithAudit(
-        device,
-        auditInput,
-        notificationInput,
-        idempotencyKey
-          ? {
-              scope: getIdempotencyScope(user, device.organizationId),
-              operation: idempotencyOperation,
-              key: idempotencyKey,
-              fingerprint: idempotencyFingerprint,
-            }
-          : null,
-        responseBody,
-        200,
-        claimMutation,
+    if (!repositories || typeof repositories.devices.savePairingWithAudit !== "function") {
+      throw httpError(
+        503,
+        "The transactional device pairing repository is unavailable",
+        "DEVICE_PAIRING_REPOSITORY_UNAVAILABLE",
       );
-    } else {
-      if (claimMutation) {
-        const claim = db.deviceClaims.find(
-          (item) =>
-            item.deviceId === device.id &&
-            item.claimCodeHash === claimMutation.claimCodeHash,
-        );
-        validateActiveDeviceClaim(claim, {
-          deviceId: device.id,
-          organizationId: device.organizationId,
-          claimCodeHash: claimMutation.claimCodeHash,
-          now: Date.parse(claimMutation.at),
-        });
-        claim.claimedByUserId = user.id;
-        claim.claimedAt = claimMutation.at;
-        claim.updatedAt = claimMutation.at;
-      }
-      if (!db.devices.some((item) => item.id === device.id)) {
-        db.devices.unshift(device);
-      }
-      await saveDeviceRecord(device);
-      await appendAudit("device.pair", req, auditInput);
-      const notification = await createBackendNotification(notificationInput);
-      rememberIdempotentResource(user, idempotencyKey, idempotencyOperation, "device_pairing", device.id, {
-        organizationId: device.organizationId,
-        fingerprint: idempotencyFingerprint,
-        responseStatus: 200,
-        responseResource: responseBody,
-      });
-      persistenceResult = {
-        responseBody,
-        responseStatus: 200,
-        replayed: false,
-        notification,
-      };
     }
+    const persistenceResult = await repositories.devices.savePairingWithAudit(
+      device,
+      auditInput,
+      notificationInput,
+      {
+        scope: getIdempotencyScope(user, device.organizationId),
+        operation: idempotencyOperation,
+        key: idempotencyKey,
+        fingerprint: idempotencyFingerprint,
+      },
+      responseBody,
+      200,
+      claimMutation,
+    );
     if (!persistenceResult.replayed) {
       addAccessLog(`Ghép nối thiết bị ${device.name}`, {
         userId: user.id,
@@ -15716,7 +19880,6 @@ async function handleDevicesApi(req, res, segments) {
         severity: pairing.onlineConfirmed ? "success" : "info",
       });
       if (persistenceResult.notification && repositories?.devices?.savePairingWithAudit) {
-        queuePlatformAdminNotificationEmail(persistenceResult.notification);
         queueNotificationPush(persistenceResult.notification);
       }
       await saveDb();
@@ -15735,6 +19898,149 @@ async function handleDevicesApi(req, res, segments) {
     : null;
   if (!device) {
     throw httpError(404, "Không tìm thấy thiết bị");
+  }
+
+  if (segments.length === 4 && segments[3] === "setup-session" && method === "POST") {
+    // Device assignment and DeviceManage remain the boundary before an app may
+    // open an encrypted SmartConfig session for this tenant-scoped device.
+    assertCanManageDevice(user, device);
+    const payload = await readJsonBody(req);
+    const requestedTransports = Array.isArray(payload.supportedTransports)
+      ? payload.supportedTransports.map((item) => readString(item, 80))
+      : [];
+    if (!requestedTransports.includes(SMART_CONFIG_TRANSPORT)) {
+      throw httpError(
+        426,
+        "This app version does not support encrypted ESPTouch V2. Update the app and try again.",
+        "DEVICE_WIFI_SETUP_TRANSPORT_UPGRADE_REQUIRED",
+      );
+    }
+    assertDeviceSetupRateLimit(req, user.id, device.id);
+    if (inferDeviceOwnershipState(device) !== "claimed") {
+      throw httpError(
+        409,
+        "The device must be assigned before Wi-Fi setup can be opened",
+        "DEVICE_WIFI_SETUP_NOT_ASSIGNED",
+      );
+    }
+    if (!device.secretHash && device.secret) {
+      device.secretHash = canonicalDeviceSecretHash(device.secret);
+      delete device.secret;
+    }
+    if (!device.secretHash) {
+      throw httpError(
+        503,
+        "The device has no SmartConfig verification material",
+        "DEVICE_WIFI_SETUP_MATERIAL_UNAVAILABLE",
+      );
+    }
+    const setupMaterial = buildSmartConfigV2Material({
+      deviceId: device.id,
+      secretHash: device.secretHash,
+    });
+    const context = getRequestContext(req) || createRequestContext(req);
+    let activation = {
+      requested: false,
+      state: "device_offline",
+    };
+    const authenticatedDeviceSocket = getAuthenticatedDeviceSocket(device);
+    if (authenticatedDeviceSocket) {
+      if (!repositories?.deviceCommands?.reserve) {
+        throw httpError(
+          503,
+          "Durable device command reservation is unavailable",
+          "DEVICE_COMMAND_RESERVATION_UNAVAILABLE",
+        );
+      }
+      const activationRequest = {
+        type: "wifi.setup.open",
+        deviceId: device.id,
+      };
+      const activationIdempotency = {
+        scope: getIdempotencyScope(user, device.organizationId),
+        operation: `device.wifi_setup.open:${device.id}`,
+        key: createId("wifi_setup_open"),
+        fingerprint: createIdempotencyFingerprint(activationRequest),
+      };
+      const envelope = buildDeviceCommand(
+        "wifi.setup.open",
+        {},
+        `wifi-setup-${createId("activation")}`,
+        60_000,
+      );
+      let command = createDeviceCommandRecord({
+        envelope,
+        deviceId: device.id,
+        organizationId: device.organizationId || "",
+        requestedByUserId: user.id,
+        idempotencyKey: activationIdempotency.key,
+        requestFingerprint: activationIdempotency.fingerprint,
+      });
+      const reservation = await repositories.deviceCommands.reserve(
+        command,
+        activationIdempotency,
+        {
+          action: "device.wifi_setup.open",
+          actorUserId: user.id,
+          organizationId: device.organizationId || "",
+          ip: context.ip || "",
+          userAgent: context.userAgent || "",
+          metadata: {
+            protocolVersion: command.protocolVersion,
+            commandId: command.id,
+            correlationId: command.correlationId,
+            type: command.type,
+            state: command.state,
+          },
+        },
+      );
+      command = reservation.command;
+      if (!reservation.replayed) {
+        await appendDeviceEvent(device.id, "command.accepted", {
+          protocolVersion: command.protocolVersion,
+          commandId: command.id,
+          correlationId: command.correlationId,
+          type: command.type,
+          state: command.state,
+          expiresAt: command.expiresAt,
+        });
+        const delivery = publishDeviceCommand(device.id, envelope);
+        applyDeviceCommandDelivery(command, delivery);
+        await saveDeviceCommandRecord(command);
+        await syncDeviceLastCommand(command);
+        await appendDeviceEvent(device.id, `command.${command.state}`, {
+          protocolVersion: command.protocolVersion,
+          commandId: command.id,
+          correlationId: command.correlationId,
+          type: command.type,
+          state: command.state,
+          delivery: command.delivery,
+        });
+      }
+      activation = {
+        requested: true,
+        commandId: command.id,
+        state: command.state,
+        delivery: command.delivery || {},
+      };
+    }
+    addAccessLog(`Opened Wi-Fi setup session for device ${device.name}`, {
+      userId: user.id,
+      organizationId: device.organizationId,
+      ip: context.ip || "",
+      severity: "info",
+    });
+    await saveDb();
+    res.setHeader("Cache-Control", "no-store");
+    sendJson(res, 200, {
+      device: publicPairedDeviceReceipt(device),
+      setup: {
+        ...setupMaterial,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        activation,
+      },
+    });
+    return;
   }
 
   if (segments.length === 4 && segments[3] === "events" && method === "GET") {
@@ -15781,6 +20087,93 @@ async function handleDevicesApi(req, res, segments) {
     return;
   }
 
+  if (segments.length === 4 && segments[3] === "release" && method === "POST") {
+    const ownershipState = inferDeviceOwnershipState(device);
+    const ownerUserId = readString(device.ownerUserId || device.pairedUserId, 120);
+    const workspaceId = getDeviceWorkspaceId(device);
+    const workspaceContext = getUserWorkspaceContext(user);
+    const mayReplayReleasedReceipt = Boolean(
+      ownershipState === "provisioned" &&
+      !ownerUserId &&
+      workspaceContext.currentWorkspaceId === workspaceId &&
+      hasWorkspaceDeviceCapability(user, workspaceId, [
+        "personal.devices.manage",
+        "workspace.devices.manage",
+      ]),
+    );
+    if (!canManageDevice(user, device) && !mayReplayReleasedReceipt) {
+      throw httpError(403, "Device is outside current user management scope");
+    }
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device account release",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    if (!repositories?.devices?.saveOwnershipMutationWithAudit) {
+      throw httpError(
+        503,
+        "Audited device ownership storage is unavailable",
+        "DEVICE_OWNERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const at = nowIso();
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = await repositories.devices.saveOwnershipMutationWithAudit(
+      {
+        deviceId: device.id,
+        operation: "release",
+        expected: deviceOwnershipExpectation(device),
+        actorUserId: user.id,
+        at,
+        revokeOpenClaims: true,
+        claimOrganizationId: device.organizationId || "",
+        idempotency: {
+          scope: getIdempotencyScope(user, device.organizationId),
+          operation: `device.release:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            deviceId: device.id,
+            operation: "release",
+          }),
+        },
+      },
+      [{
+        action: "device.release",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        resourceType: "device",
+        resourceId: device.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: {
+          previousOwnershipState: ownershipState,
+          historyRetained: true,
+        },
+      }],
+    );
+    if (!persisted.replayed) {
+      const activeDeviceSocket = deviceSockets.get(device.id);
+      if (activeDeviceSocket) closeSocket(activeDeviceSocket, 1008, "OWNERSHIP_RELEASED");
+      await appendDeviceEvent(device.id, "ownership.release", { actorUserId: user.id });
+      await interruptRecordingForDevice(
+        device.id,
+        "Lượt ghi bị ngắt vì thiết bị đã được gỡ khỏi tài khoản.",
+      );
+    }
+    sendJson(res, 200, {
+      release: {
+        deviceId: persisted.device.id,
+        released: inferDeviceOwnershipState(persisted.device) === "provisioned",
+        historyRetained: true,
+      },
+      replayed: Boolean(persisted.replayed),
+    });
+    return;
+  }
+
   assertCanManageDevice(user, device);
 
   if (segments.length === 3 && method === "DELETE") {
@@ -15793,6 +20186,14 @@ async function handleDevicesApi(req, res, segments) {
 
   if (segments.length === 3 && method === "PATCH") {
     const payload = await readJsonBody(req);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device ownership mutations",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const devicePatch = {};
     const operatorUpdatedFields = [];
     const auditInputs = [];
@@ -15872,10 +20273,23 @@ async function handleDevicesApi(req, res, segments) {
         assignedPatientId,
         actorUserId: user.id,
         at: mutationAt,
+        idempotency: {
+          scope: getIdempotencyScope(user, auditOrganizationId),
+          operation: `device.ownership.update:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            deviceId: device.id,
+            assignedPatientId,
+            patch: devicePatch,
+          }),
+        },
       },
       auditInputs,
     );
-    sendJson(res, 200, { device: publicDevice(persisted.device) });
+    sendJson(res, 200, {
+      device: publicDevice(persisted.device),
+      replayed: Boolean(persisted.replayed),
+    });
     return;
   }
 
@@ -15912,9 +20326,20 @@ async function handleDevicesApi(req, res, segments) {
   }
 
   if (segments.length === 4 && segments[3] === "revoke" && method === "POST") {
-    if (inferDeviceOwnershipState(device) === "revoked") {
-      sendJson(res, 200, { device: publicDevice(device), idempotent: true });
-      return;
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(
+        403,
+        "Only a platform device administrator can revoke a device",
+        "DEVICE_REVOKE_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device revocation",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
     }
     const at = nowIso();
     const context = getRequestContext(req) || createRequestContext(req);
@@ -15933,6 +20358,12 @@ async function handleDevicesApi(req, res, segments) {
         actorUserId: user.id,
         at,
         revokeOpenClaims: true,
+        idempotency: {
+          scope: getIdempotencyScope(user, device.organizationId),
+          operation: `device.revoke:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({ deviceId: device.id, operation: "revoke" }),
+        },
       },
       [{
         action: "device.revoke",
@@ -15945,18 +20376,30 @@ async function handleDevicesApi(req, res, segments) {
         metadata: { previousOwnershipState: inferDeviceOwnershipState(device) },
       }],
     );
-    addAccessLog(`Thu hồi thiết bị ${device.name}`, { severity: "warning" });
-    const activeDeviceSocket = deviceSockets.get(device.id);
-    if (activeDeviceSocket) {
-      closeSocket(activeDeviceSocket, 1008, "REVOKED");
+    if (!persisted.replayed) {
+      addAccessLog(`Thu hồi thiết bị ${device.name}`, { severity: "warning" });
+      const activeDeviceSocket = deviceSockets.get(device.id);
+      if (activeDeviceSocket) {
+        closeSocket(activeDeviceSocket, 1008, "REVOKED");
+      }
+      await appendDeviceEvent(device.id, "revoke", { actorUserId: user.id });
+      await interruptRecordingForDevice(device.id, "Lượt ghi bị ngắt vì thiết bị đã được thu hồi.");
     }
-    await appendDeviceEvent(device.id, "revoke", { actorUserId: user.id });
-    await interruptRecordingForDevice(device.id, "Lượt ghi bị ngắt vì thiết bị đã được thu hồi.");
-    sendJson(res, 200, { device: publicDevice(persisted.device) });
+    sendJson(res, 200, {
+      device: publicDevice(persisted.device),
+      replayed: Boolean(persisted.replayed),
+    });
     return;
   }
 
   if (segments.length === 4 && segments[3] === "rotate-secret" && method === "POST") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(
+        403,
+        "Only a platform device administrator can rotate device credentials",
+        "DEVICE_SECRET_ROTATION_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
     const payload = await readJsonBody(req);
     if (Object.keys(payload).some((field) => field !== "idempotencyKey")) {
       throw httpError(
@@ -16065,6 +20508,7 @@ async function handleDevicesApi(req, res, segments) {
       requestFingerprint: idempotencyFingerprint,
     });
     const rotation = {
+      protocolVersion: command.protocolVersion,
       id: rotationId,
       state: "initiated",
       nextSecretHash,
@@ -16090,6 +20534,7 @@ async function handleDevicesApi(req, res, segments) {
       ip: requestContext.ip || "",
       userAgent: requestContext.userAgent || "",
       metadata: {
+        protocolVersion: command.protocolVersion,
         rotationId,
         commandId: command.id,
         state: rotation.state,
@@ -16132,6 +20577,7 @@ async function handleDevicesApi(req, res, segments) {
       await appendAudit("device.secret_rotation.initiated", req, rotationAuditInput);
     }
     await appendDeviceEvent(device.id, "credential_rotation.initiated", {
+      protocolVersion: command.protocolVersion,
       rotationId,
       commandId: command.id,
       state: rotation.state,
@@ -16165,6 +20611,7 @@ async function handleDevicesApi(req, res, segments) {
       resourceType: "device",
       resourceId: device.id,
       metadata: {
+        protocolVersion: command.protocolVersion,
         rotationId,
         commandId: command.id,
         state: rotation.state,
@@ -16190,6 +20637,7 @@ async function handleDevicesApi(req, res, segments) {
       await appendAudit(deliveryAuditInput.action, req, deliveryAuditInput);
     }
     await appendDeviceEvent(device.id, `credential_rotation.${rotation.state}`, {
+      protocolVersion: command.protocolVersion,
       rotationId,
       commandId: command.id,
       state: rotation.state,
@@ -16208,6 +20656,14 @@ async function handleDevicesApi(req, res, segments) {
       throw httpError(403, "Only platform admin can transfer devices between workspaces");
     }
     const payload = await readJsonBody(req);
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device transfer",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const nextOrganizationId = readString(payload.organizationId, 120);
     const nextOwnerUserId = readString(payload.ownerUserId, 120);
     let nextOwner = null;
@@ -16294,49 +20750,91 @@ async function handleDevicesApi(req, res, segments) {
         at,
         revokeOpenClaims: previousOrganizationId !== transferOrganizationId,
         claimOrganizationId: previousOrganizationId,
+        idempotency: {
+          scope: getIdempotencyScope(user),
+          operation: `device.transfer:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            deviceId: device.id,
+            organizationId: transferOrganizationId,
+            ownerUserId: nextOwner?.id || "",
+          }),
+        },
       },
       transferAuditInputs,
     );
     const transferredDevice = persisted.device;
-    const activeDeviceSocket = deviceSockets.get(device.id);
-    if (activeDeviceSocket) {
-      closeSocket(activeDeviceSocket, 1008, "WORKSPACE_TRANSFERRED");
+    if (!persisted.replayed) {
+      const activeDeviceSocket = deviceSockets.get(device.id);
+      if (activeDeviceSocket) {
+        closeSocket(activeDeviceSocket, 1008, "WORKSPACE_TRANSFERRED");
+      }
+      await interruptRecordingForDevice(device.id, "Lượt ghi bị ngắt vì thiết bị đã được chuyển workspace.");
+      await appendDeviceEvent(device.id, "transfer", {
+        previousOrganizationId,
+        organizationId: transferredDevice.organizationId,
+        ownerUserId: transferredDevice.ownerUserId || transferredDevice.pairedUserId,
+      });
     }
-    await interruptRecordingForDevice(device.id, "Lượt ghi bị ngắt vì thiết bị đã được chuyển workspace.");
-    await appendDeviceEvent(device.id, "transfer", {
-      previousOrganizationId,
-      organizationId: transferredDevice.organizationId,
-      ownerUserId: transferredDevice.ownerUserId || transferredDevice.pairedUserId,
+    sendJson(res, 200, {
+      device: publicDevice(transferredDevice),
+      replayed: Boolean(persisted.replayed),
     });
-    sendJson(res, 200, { device: publicDevice(transferredDevice) });
     return;
   }
 
   if (segments.length === 4 && segments[3] === "commands" && method === "POST") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(
+        403,
+        "Only a platform device administrator can issue generic fleet commands",
+        "DEVICE_COMMAND_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
     const payload = await readJsonBody(req);
     const commandType = readString(payload.type, 80);
     if (!isSupportedDeviceCommandType(commandType)) {
       throw httpError(400, "Device command type is unsupported", "DEVICE_COMMAND_TYPE_UNSUPPORTED");
     }
+    if (commandType === "wifi.update") {
+      throw httpError(
+        409,
+        "Wi-Fi credentials must be configured through the device-local secure setup AP",
+        "DEVICE_WIFI_UPDATE_LOCAL_SETUP_REQUIRED",
+        {
+          commandType,
+          setupFlow: "secure_setup_ap",
+        },
+      );
+    }
+    if (!isGenericSafeDeviceCommandType(commandType)) {
+      const specializedRoute = getSpecializedDeviceCommandRoute(commandType);
+      throw httpError(
+        409,
+        `Device command ${commandType} must use its specialized audited workflow`,
+        "DEVICE_COMMAND_SPECIALIZED_ROUTE_REQUIRED",
+        {
+          commandType,
+          specializedRoute,
+        },
+      );
+    }
     const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device commands",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const idempotencyOperation = `device.command:${device.id}`;
     const idempotencyFingerprint = createIdempotencyFingerprint(payload);
-    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
-      organizationId: device.organizationId,
+    const commandIdempotency = {
+      scope: getIdempotencyScope(user, device.organizationId),
+      operation: idempotencyOperation,
+      key: idempotencyKey,
       fingerprint: idempotencyFingerprint,
-    });
-    if (replayedResponse?.command?.id) {
-      const currentCommand = await refreshDeviceCommandExpiry(
-        await findDeviceCommand(device.id, replayedResponse.command.id),
-      );
-      sendJson(res, Number(replayedResponse.responseStatus || 202), {
-        ...replayedResponse,
-        command: publicDeviceCommand(currentCommand) || replayedResponse.command,
-        idempotent: true,
-      });
-      await saveDb();
-      return;
-    }
+    };
     const authenticatedDeviceSocket = getAuthenticatedDeviceSocket(device);
     if (!authenticatedDeviceSocket) {
       throw httpError(
@@ -16352,7 +20850,7 @@ async function handleDevicesApi(req, res, segments) {
       payload.correlationId,
       readOptionalNumber(payload.ttlMs) || 30_000,
     );
-    const command = createDeviceCommandRecord({
+    let command = createDeviceCommandRecord({
       envelope,
       deviceId: device.id,
       organizationId: device.organizationId || "",
@@ -16360,8 +20858,46 @@ async function handleDevicesApi(req, res, segments) {
       idempotencyKey,
       requestFingerprint: idempotencyFingerprint,
     });
-    await saveDeviceCommandRecord(command);
+    if (!repositories?.deviceCommands?.reserve) {
+      throw httpError(
+        503,
+        "Durable device command reservation is unavailable",
+        "DEVICE_COMMAND_RESERVATION_UNAVAILABLE",
+      );
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const reservation = await repositories.deviceCommands.reserve(
+      command,
+      commandIdempotency,
+      {
+        action: "device.command",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: {
+          protocolVersion: command.protocolVersion,
+          commandId: command.id,
+          correlationId: command.correlationId,
+          type: command.type,
+          state: command.state,
+        },
+      },
+    );
+    command = reservation.command;
+    if (reservation.replayed) {
+      const currentCommand = await refreshDeviceCommandExpiry(command);
+      res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, Number(reservation.responseStatus || 202), {
+        device: publicDevice(device),
+        command: publicDeviceCommand(currentCommand),
+        delivery: currentCommand?.delivery || {},
+        idempotent: true,
+      });
+      return;
+    }
     await appendDeviceEvent(device.id, "command.accepted", {
+      protocolVersion: command.protocolVersion,
       commandId: command.id,
       correlationId: command.correlationId,
       type: command.type,
@@ -16373,23 +20909,12 @@ async function handleDevicesApi(req, res, segments) {
     await saveDeviceCommandRecord(command);
     await syncDeviceLastCommand(command);
     await appendDeviceEvent(device.id, `command.${command.state}`, {
+      protocolVersion: command.protocolVersion,
       commandId: command.id,
       correlationId: command.correlationId,
       type: command.type,
       state: command.state,
       delivery: command.delivery,
-    });
-    await appendAudit("device.command", req, {
-      resourceType: "device",
-      resourceId: device.id,
-      organizationId: device.organizationId || "",
-      metadata: {
-        commandId: command.id,
-        correlationId: command.correlationId,
-        type: command.type,
-        state: command.state,
-        delivery: command.delivery,
-      },
     });
     const responseBody = {
       device: publicDevice(device),
@@ -16397,19 +20922,6 @@ async function handleDevicesApi(req, res, segments) {
       delivery: command.delivery,
       responseStatus: 202,
     };
-    rememberIdempotentResource(
-      user,
-      idempotencyKey,
-      idempotencyOperation,
-      "device_command",
-      command.id,
-      {
-        organizationId: device.organizationId,
-        fingerprint: idempotencyFingerprint,
-        responseStatus: 202,
-        responseResource: responseBody,
-      },
-    );
     await saveDb();
     sendJson(res, 202, responseBody);
     return;
@@ -16421,23 +20933,62 @@ async function handleDevicesApi(req, res, segments) {
     }
     const payload = await readJsonBody(req);
     const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for OTA commands",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
     const idempotencyOperation = `device.ota:${device.id}`;
     const idempotencyFingerprint = createIdempotencyFingerprint(payload);
-    const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
-      organizationId: device.organizationId,
+    const otaIdempotency = {
+      scope: getIdempotencyScope(user, device.organizationId),
+      operation: idempotencyOperation,
+      key: idempotencyKey,
       fingerprint: idempotencyFingerprint,
-    });
-    if (replayedResponse?.command?.id) {
-      const currentCommand = await refreshDeviceCommandExpiry(
-        await findDeviceCommand(device.id, replayedResponse.command.id),
+    };
+    if (!repositories?.deviceCommands?.findAuthorizedReservation) {
+      throw httpError(
+        503,
+        "Durable OTA replay authorization is unavailable",
+        "DEVICE_OTA_REPOSITORY_UNAVAILABLE",
       );
-      sendJson(res, Number(replayedResponse.responseStatus || 202), {
-        ...replayedResponse,
-        command: publicDeviceCommand(currentCommand) || replayedResponse.command,
+    }
+    const authorizedReplay = await repositories.deviceCommands.findAuthorizedReservation(
+      otaIdempotency,
+      {
+        deviceId: device.id,
+        organizationId: device.organizationId || "",
+        requestedByUserId: user.id,
+        commandType: "ota.update",
+      },
+    );
+    if (authorizedReplay) {
+      const currentCommand = await refreshDeviceCommandExpiry(
+        authorizedReplay.command,
+      );
+      const replayCanonicalDevice = repositories?.devices?.findById
+        ? await repositories.devices.findById(device.id)
+        : findDevice(device.id);
+      const replayDevice = publicDevice(replayCanonicalDevice || authorizedReplay.device);
+      res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, Number(authorizedReplay.responseStatus || 202), {
+        device: replayDevice,
+        ota: replayDevice.ota || authorizedReplay.responseResource?.ota || null,
+        command: publicDeviceCommand(currentCommand),
+        delivery: currentCommand?.delivery || {},
         idempotent: true,
       });
-      await saveDb();
       return;
+    }
+    if (device.ota?.commandId) {
+      const activeOtaCommand = await findDeviceCommand(device.id, device.ota.commandId);
+      await refreshDeviceCommandExpiry(activeOtaCommand);
+      const reconciledDevice = repositories?.devices?.findById
+        ? await repositories.devices.findById(device.id)
+        : findDevice(device.id);
+      if (reconciledDevice) Object.assign(device, reconciledDevice);
     }
     const otaDeviceSocket = getAuthenticatedDeviceSocket(device);
     if (!otaDeviceSocket) {
@@ -16450,17 +21001,17 @@ async function handleDevicesApi(req, res, segments) {
 
     const firmwareFileId = readString(payload.firmwareFileId || payload.fileId, 120);
     let firmwareRecord = null;
+    let firmwareStorageBinding = null;
     if (firmwareFileId) {
-      firmwareRecord = getStorageRecord(firmwareFileId);
-      if (!firmwareRecord || firmwareRecord.bucket !== "device-firmware") {
-        throw httpError(404, "Firmware file not found in device-firmware bucket");
-      }
+      const resolvedFirmware = resolvePrivateFirmwareStorageBinding(firmwareFileId);
+      firmwareRecord = resolvedFirmware.record;
+      firmwareStorageBinding = resolvedFirmware.binding;
       assertCanAccessStorageRecord(user, firmwareRecord);
     }
     const otaId = createId("cmd");
     const token = firmwareFileId ? crypto.randomBytes(32).toString("base64url") : "";
     const firmwareUrl = firmwareFileId
-      ? buildOtaFirmwareDownloadUrl(req, device.id, otaId, token)
+      ? buildOtaFirmwareDownloadUrl(req, device.id, otaId)
       : readString(payload.url || payload.downloadUrl, 800);
     const firmwareVersion =
       readString(payload.firmwareVersion, 80) ||
@@ -16480,6 +21031,7 @@ async function handleDevicesApi(req, res, segments) {
         partitionTarget: payload.partitionTarget,
         minimumProtocolVersion: payload.minimumProtocolVersion,
       });
+      if (token) manifest.downloadAuthorization = token;
     } catch (error) {
       const statusCode = ["OTA_SIGNER_UNAVAILABLE", "OTA_SIGNER_INVALID"].includes(error.code)
         ? 503
@@ -16488,6 +21040,14 @@ async function handleDevicesApi(req, res, segments) {
           : 400;
       throw httpError(statusCode, error.message || "OTA manifest is invalid", error.code || "OTA_MANIFEST_INVALID");
     }
+    const otaExecutionTtlMs = Math.max(
+      10 * 60_000,
+      Math.min(
+        24 * 60 * 60_000,
+        Number(process.env.OTA_EXECUTION_TTL_MS) || 2 * 60 * 60_000,
+      ),
+    );
+    const executionExpiresAt = new Date(Date.now() + otaExecutionTtlMs).toISOString();
     const envelope = createDeviceCommandEnvelope({
       id: otaId,
       type: "ota.update",
@@ -16495,36 +21055,131 @@ async function handleDevicesApi(req, res, segments) {
       correlationId: readString(payload.correlationId, 128) || createId("correlation"),
       ttlMs: Math.max(30_000, Math.min(10 * 60_000, Number(payload.ttlMs) || 5 * 60_000)),
     });
-    const command = createDeviceCommandRecord({
+    let command = createDeviceCommandRecord({
       envelope,
       deviceId: device.id,
       organizationId: device.organizationId || "",
       requestedByUserId: user.id,
       idempotencyKey,
       requestFingerprint: idempotencyFingerprint,
+      executionExpiresAt,
     });
+    const otaOwnershipAuthority = {
+      organizationId: readString(device.organizationId, 120),
+      ownerUserId: readString(device.ownerUserId || device.pairedUserId, 160),
+      ownershipState: inferDeviceOwnershipState(device),
+    };
     const ota = {
+      protocolVersion: command.protocolVersion,
       id: otaId,
       commandId: otaId,
       correlationId: envelope.correlationId,
-      ...manifest,
+      firmwareVersion: manifest.firmwareVersion,
+      checksum: manifest.checksum,
+      hardwareTarget: manifest.hardwareTarget,
+      partitionTarget: manifest.partitionTarget,
+      minimumProtocolVersion: manifest.minimumProtocolVersion,
       firmwareFileId,
       firmwareFileName: firmwareRecord?.name || "",
+      firmwareStorageBucket: firmwareStorageBinding?.firmwareStorageBucket || "",
+      firmwareObjectKey: firmwareStorageBinding?.firmwareObjectKey || "",
+      firmwareByteSize: firmwareStorageBinding?.firmwareByteSize,
       tokenHash: token ? hashOtaDownloadToken(token) : "",
-      expiresAt: firmwareFileId ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : "",
-      status: "accepted",
+      expiresAt: executionExpiresAt,
+      status: "pending",
       requestedByUserId: user.id,
+      ...otaOwnershipAuthority,
+      ownershipBinding: createDeviceOtaOwnershipBinding(otaOwnershipAuthority),
       createdAt: envelope.issuedAt,
       updatedAt: envelope.issuedAt,
       requestedSessionId: readString(otaDeviceSocket._deviceAuth?.sessionId, 128),
     };
-    device.ota = ota;
-    device.otaStatus = "accepted";
+    if (!repositories?.deviceCommands?.reserve || !repositories?.devices?.saveOtaLifecycle) {
+      throw httpError(
+        503,
+        "Durable OTA command and lifecycle persistence is unavailable",
+        "DEVICE_OTA_REPOSITORY_UNAVAILABLE",
+      );
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const safeOtaReceipt = {
+      protocolVersion: ota.protocolVersion,
+      id: ota.id,
+      commandId: ota.commandId,
+      correlationId: ota.correlationId,
+      firmwareVersion: ota.firmwareVersion,
+      checksum: ota.checksum,
+      hardwareTarget: ota.hardwareTarget,
+      partitionTarget: ota.partitionTarget,
+      minimumProtocolVersion: ota.minimumProtocolVersion,
+      firmwareFileId: ota.firmwareFileId,
+      firmwareFileName: ota.firmwareFileName,
+      expiresAt: ota.expiresAt,
+      status: ota.status,
+      requestedByUserId: ota.requestedByUserId,
+      createdAt: ota.createdAt,
+      updatedAt: ota.updatedAt,
+    };
+    const reservation = await repositories.deviceCommands.reserve(
+      command,
+      otaIdempotency,
+      {
+        action: "device.ota",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: {
+          protocolVersion: command.protocolVersion,
+          commandId: command.id,
+          correlationId: command.correlationId,
+          firmwareVersion: ota.firmwareVersion,
+          checksum: ota.checksum,
+          hardwareTarget: ota.hardwareTarget,
+          partitionTarget: ota.partitionTarget,
+          minimumProtocolVersion: ota.minimumProtocolVersion,
+          state: command.state,
+        },
+      },
+      { ota: safeOtaReceipt },
+      { ota },
+    );
+    command = reservation.command;
+    if (reservation.replayed) {
+      const currentCommand = await refreshDeviceCommandExpiry(command);
+      const replayDevice = publicDevice(device);
+      res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, Number(reservation.responseStatus || 202), {
+        device: replayDevice,
+        ota: reservation.responseResource?.ota || replayDevice.ota || null,
+        command: publicDeviceCommand(currentCommand),
+        delivery: currentCommand?.delivery || {},
+        idempotent: true,
+      });
+      return;
+    }
+    if (!reservation.device) {
+      throw httpError(
+        500,
+        "The OTA lifecycle reservation did not return a canonical device",
+        "DEVICE_OTA_RESERVATION_INVALID",
+      );
+    }
+    Object.assign(device, reservation.device);
     device.lastCommand = publicDeviceCommand(command);
-    device.updatedAt = nowIso();
-    await saveDeviceCommandRecord(command);
-    await saveDeviceRecord(device);
-    const delivery = publishDeviceCommand(device.id, envelope);
+    await appendDeviceEvent(device.id, "command.accepted", {
+      protocolVersion: command.protocolVersion,
+      commandId: command.id,
+      correlationId: command.correlationId,
+      type: command.type,
+      state: command.state,
+      expiresAt: command.expiresAt,
+    });
+    const delivery = publishDeviceCommandWssOnly(
+      device.id,
+      envelope,
+      ota.requestedSessionId,
+    );
     if (delivery.delivered) {
       applyDeviceCommandDelivery(command, delivery);
     } else {
@@ -16534,13 +21189,23 @@ async function handleDevicesApi(req, res, segments) {
         delivery,
       });
     }
-    ota.status = command.state;
-    ota.updatedAt = command.updatedAt;
-    device.otaStatus = command.state;
+    const otaTransition = transitionDeviceOtaLifecycle(device.ota, command.state, {
+      at: command.updatedAt,
+      metadata: {
+        failureCode: command.state === "failed" ? command.code : "",
+        detail: command.detail,
+      },
+    });
+    device.ota = otaTransition.ota;
+    device.otaStatus = otaTransition.ota.status;
     device.lastCommand = publicDeviceCommand(command);
-    await saveDeviceCommandRecord(command);
-    await saveDeviceRecord(device);
+    await saveDeviceOtaLifecycleRecord(device, device.ota, {
+      expectedOtaId: ota.id,
+      command,
+    });
+    await syncDeviceLastCommand(command);
     await appendDeviceEvent(device.id, "ota.requested", {
+      protocolVersion: command.protocolVersion,
       otaId,
       commandId: command.id,
       correlationId: command.correlationId,
@@ -16552,22 +21217,6 @@ async function handleDevicesApi(req, res, segments) {
       state: command.state,
       delivery: command.delivery,
     });
-    await appendAudit("device.ota", req, {
-      resourceType: "device",
-      resourceId: device.id,
-      organizationId: device.organizationId || "",
-      metadata: {
-        commandId: command.id,
-        correlationId: command.correlationId,
-        firmwareVersion: ota.firmwareVersion,
-        checksum: ota.checksum,
-        hardwareTarget: ota.hardwareTarget,
-        partitionTarget: ota.partitionTarget,
-        minimumProtocolVersion: ota.minimumProtocolVersion,
-        state: command.state,
-        delivery: command.delivery,
-      },
-    });
     const safeDevice = publicDevice(device);
     const responseBody = {
       device: safeDevice,
@@ -16576,12 +21225,6 @@ async function handleDevicesApi(req, res, segments) {
       delivery: command.delivery,
       responseStatus: 202,
     };
-    rememberIdempotentResource(user, idempotencyKey, idempotencyOperation, "device_command", command.id, {
-      organizationId: device.organizationId,
-      fingerprint: idempotencyFingerprint,
-      responseStatus: 202,
-      responseResource: responseBody,
-    });
     await saveDb();
     sendJson(res, 202, responseBody);
     return;
@@ -17111,7 +21754,15 @@ async function handleDataApi(req, res, segments) {
       }
     }
     addAccessLog("Xóa toàn bộ dữ liệu y tế", { severity: "warning" });
-    createNotification("warning", "Đã xóa dữ liệu", "Toàn bộ hồ sơ và bản ghi âm đã được xóa theo yêu cầu.");
+    createNotification(
+      "warning",
+      "Đã xóa dữ liệu",
+      "Toàn bộ hồ sơ và bản ghi âm đã được xóa theo yêu cầu.",
+      {
+        userId: user.id,
+        organizationId: getUserWorkspaceContext(user).currentWorkspaceId || "",
+      },
+    );
     saveDb();
     sendJson(res, 200, { deleted: true, storage: getStorageSummary() });
     return;
@@ -17123,23 +21774,102 @@ async function handleDataApi(req, res, segments) {
 async function handlePatientPortalApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireRole(req, ["patient"]);
-  const patient = ensurePatientProfileForUser(user);
-  const accessibleProfileIds = new Set(filterPatientsForUser(user, db.patients).map((item) => item.id));
+  const isDashboardRead =
+    segments.length === 3 &&
+    segments[2] === "dashboard" &&
+    method === "GET";
+  let preauthorizedDashboardAccess = null;
+  if (isDashboardRead) {
+    try {
+      preauthorizedDashboardAccess = assertPatientDashboardAccess({
+        userId: user.id,
+        role: user.role,
+        workspaceContext: getUserWorkspaceContext(user),
+      });
+    } catch (error) {
+      throw httpError(403, error.message, error.code || "PATIENT_DASHBOARD_ACCESS_DENIED");
+    }
+  }
+  const dashboardWorkspaceId = preauthorizedDashboardAccess?.workspaceId || "";
+  const dashboardProfiles = isDashboardRead
+    ? db.patients.filter(
+        (item) =>
+          !item.deletedAt &&
+          readString(item.organizationId, 120) === dashboardWorkspaceId &&
+          [item.ownerUserId, item.accountUserId, item.guardianUserId].includes(user.id),
+      )
+    : null;
+  const patient = isDashboardRead
+    ? (
+        dashboardProfiles.find((item) => item.id === user.patientId) ||
+        dashboardProfiles.find(
+          (item) =>
+            item.accountUserId === user.id &&
+            (item.profileType === "self" || item.relationship === "self"),
+        ) ||
+        null
+      )
+    : ensurePatientProfileForUser(user);
+  const accessibleProfileIds = new Set(
+    (isDashboardRead
+      ? dashboardProfiles
+      : filterPatientsForUser(user, db.patients)
+    ).map((item) => item.id),
+  );
   const ownScans = db.scans.filter((scan) => accessibleProfileIds.has(scan.patientId));
 
-  if (segments.length === 3 && segments[2] === "dashboard" && method === "GET") {
-    const recentScans = ownScans.slice(0, 5);
-    sendJson(res, 200, {
-      patient: withPatientStats(patient),
-      stats: {
-        scanCount: ownScans.length,
-        completedCount: ownScans.filter((scan) => scan.status === "completed").length,
-        recordingCount: ownScans.filter((scan) => scan.status === "recording").length,
-        abnormalCount: ownScans.filter((scan) => scan.aiLabel && !["captured", "recording"].includes(scan.aiLabel)).length,
-      },
-      recentScans,
+  if (isDashboardRead) {
+    const dashboardAccess = preauthorizedDashboardAccess;
+    const { workspaceId } = dashboardAccess;
+
+    const activePatient = findPatient(user.activePatientId || patient?.id);
+    if (
+      !activePatient ||
+      activePatient.deletedAt ||
+      !accessibleProfileIds.has(activePatient.id)
+    ) {
+      throw httpError(
+        403,
+        "Hồ sơ đang chọn không thuộc tài khoản hiện tại",
+        "PATIENT_DASHBOARD_PROFILE_SCOPE_DENIED",
+      );
+    }
+    if (readString(activePatient.organizationId, 120) !== workspaceId) {
+      throw httpError(
+        409,
+        "Hồ sơ đang chọn không thuộc workspace hiện tại",
+        "PATIENT_DASHBOARD_PROFILE_WORKSPACE_MISMATCH",
+      );
+    }
+
+    const activeScans = db.scans
+      .filter(
+        (scan) =>
+          scan.patientId === activePatient.id &&
+          getScanOrgId(scan) === workspaceId,
+      )
+      .map((scan) => ({
+        ...scan,
+        organizationId: getScanOrgId(scan),
+      }));
+    const dashboard = buildPatientDashboardSnapshot({
+      userId: user.id,
+      workspaceId,
+      activePatient: withPatientStats(activePatient),
+      scans: activeScans,
+      devices: publicDevices(db.devices),
+      canViewScans: dashboardAccess.canViewScans,
+      canViewDevices: dashboardAccess.canViewDevices,
     });
-    saveDb();
+    sendJson(res, 200, {
+      dashboard,
+      patient: dashboard.patient,
+      stats: buildPatientDashboardLegacyStats(
+        activeScans,
+        dashboardAccess.canViewScans,
+      ),
+      recentScans: dashboard.recentScans,
+    });
     return;
   }
 
@@ -17162,22 +21892,19 @@ async function handlePatientPortalApi(req, res, url, segments) {
 
   if (segments.length === 4 && segments[2] === "scans" && segments[3] === "start" && method === "POST") {
     const payload = await readJsonBody(req);
-    const idempotencyKey = getIdempotencyKey(req, payload);
-    const existingScan = findIdempotentResource(user, idempotencyKey, "start_scan");
-    if (existingScan) {
-      sendJson(res, 200, { scan: existingScan, idempotent: true });
-      saveDb();
-      return;
-    }
+    const requestPayload = { ...payload };
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "scan start");
     delete payload.patient;
     delete payload.patientName;
     delete payload.patientCode;
     delete payload.doctorNotes;
     delete payload.notes;
-    const scan = await startRecording({ ...payload, idempotencyKey }, user);
-    rememberIdempotentResource(user, idempotencyKey, "start_scan", "scan", scan.id);
-    saveDb();
-    sendJson(res, 201, { scan });
+    const outcome = await startScanIdempotently(payload, user, idempotencyKey, requestPayload);
+    sendJson(
+      res,
+      outcome.replayed ? 200 : 201,
+      { scan: outcome.resource, ...(outcome.replayed ? { idempotent: true } : {}) },
+    );
     return;
   }
 
@@ -17194,8 +21921,12 @@ async function handlePatientPortalApi(req, res, url, segments) {
     }
 
     if (segments.length === 5 && segments[4] === "stop" && method === "POST") {
-      const stopped = await stopRecording(scan.id);
-      sendJson(res, 200, { scan: stopped });
+      const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "scan stop");
+      const outcome = await stopScanIdempotently(scan, user, idempotencyKey);
+      sendJson(res, 200, {
+        scan: outcome.resource,
+        ...(outcome.replayed ? { idempotent: true } : {}),
+      });
       return;
     }
 
@@ -17213,19 +21944,88 @@ async function handleDoctorPortalApi(req, res, url, segments) {
   const method = req.method || "GET";
   const user = requireRole(req, ["doctor", "admin"]);
 
+  if (segments.length === 3 && segments[2] === "status" && method === "GET") {
+    requireAnyCapability(user, [
+      "platform.dashboard.view",
+      "workspace.dashboard.view",
+    ]);
+    const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+    if (!workspaceId) {
+      throw httpError(
+        403,
+        "An operational workspace is required",
+        "WORKSPACE_MEMBERSHIP_REQUIRED",
+      );
+    }
+    const devices = filterDevicesForUser(user, db.devices).filter(
+      (device) => getDeviceWorkspaceId(device) === workspaceId,
+    );
+    const devicesOnline = devices.filter(
+      (device) => publicDevice(device).online,
+    ).length;
+    sendJson(
+      res,
+      200,
+      buildClinicalDashboardStatus({
+        workspaceId,
+        devicesCount: devices.length,
+        devicesOnline,
+        realtimeStatus: getStatusPayload({ _wsUser: user }, workspaceId),
+        updatedAt: nowIso(),
+      }),
+    );
+    return;
+  }
+
   if (segments.length === 3 && segments[2] === "dashboard" && method === "GET") {
+    requireAnyCapability(user, [
+      "platform.dashboard.view",
+      "workspace.dashboard.view",
+    ]);
+    const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+    if (!workspaceId) {
+      throw httpError(
+        403,
+        "An operational workspace is required",
+        "WORKSPACE_MEMBERSHIP_REQUIRED",
+      );
+    }
+    const devices = filterDevicesForUser(user, db.devices).filter(
+      (device) => getDeviceWorkspaceId(device) === workspaceId,
+    );
+    const devicesOnline = devices.filter(
+      (device) => publicDevice(device).online,
+    ).length;
     const activeScans = listActiveRecordings()
       .map((recording) => findScan(recording.scanId))
-      .filter((scan) => scan && canAccessScan(user, scan));
+      .filter(
+        (scan) =>
+          scan &&
+          getScanOrgId(scan) === workspaceId &&
+          canAccessScan(user, scan),
+      );
     sendJson(res, 200, {
-      status: getStatusPayload(),
+      workspaceId,
+      status: buildClinicalDashboardStatus({
+        workspaceId,
+        devicesCount: devices.length,
+        devicesOnline,
+        realtimeStatus: getStatusPayload({ _wsUser: user }, workspaceId),
+        updatedAt: nowIso(),
+      }),
       stats: {
-        patientCount: filterPatientsForUser(user, db.patients).length,
-        scanCount: filterScansForUser(user, db.scans).length,
+        patientCount: filterPatientsForUser(user, db.patients).filter(
+          (patient) => patient.organizationId === workspaceId,
+        ).length,
+        scanCount: filterScansForUser(user, db.scans).filter(
+          (scan) => getScanOrgId(scan) === workspaceId,
+        ).length,
         activeScanId: activeScans[0]?.id || null,
         activeScanIds: activeScans.map((scan) => scan.id),
       },
-      recentScans: filterScansForUser(user, db.scans).slice(0, 5),
+      recentScans: filterScansForUser(user, db.scans)
+        .filter((scan) => getScanOrgId(scan) === workspaceId)
+        .slice(0, 5),
     });
     return;
   }
@@ -17332,7 +22132,11 @@ async function handlePortalReviewQueueApi(req, res, url, segments, user) {
         }),
       )
     ).filter(Boolean);
-    sendJson(res, 200, { reviews: scopedReviews, reviewQueue: scopedReviews });
+    sendJson(res, 200, {
+      workspaceId,
+      reviews: scopedReviews,
+      reviewQueue: scopedReviews,
+    });
     return;
   }
 
@@ -17358,7 +22162,7 @@ async function handlePortalReviewQueueApi(req, res, url, segments, user) {
       audit: clinicalWorkflowAuditInput(req, user),
     });
     if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
-    sendJson(res, 200, { review: result.review });
+    sendJson(res, 200, { workspaceId, review: result.review });
     return;
   }
 
@@ -17389,7 +22193,7 @@ async function handlePortalAlertsApi(req, res, url, segments, user) {
         }),
       )
     ).filter(Boolean);
-    sendJson(res, 200, { alerts: scopedAlerts });
+    sendJson(res, 200, { workspaceId, alerts: scopedAlerts });
     return;
   }
 
@@ -17437,6 +22241,7 @@ async function handlePortalAlertsApi(req, res, url, segments, user) {
     });
     if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
     sendJson(res, result.deduplicated || result.replayed ? 200 : 201, {
+      workspaceId,
       alert: result.alert,
       deduplicated: result.deduplicated,
     });
@@ -17463,7 +22268,7 @@ async function handlePortalAlertsApi(req, res, url, segments, user) {
       audit: clinicalWorkflowAuditInput(req, user),
     });
     if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
-    sendJson(res, 200, { alert: result.alert });
+    sendJson(res, 200, { workspaceId, alert: result.alert });
     return;
   }
 
@@ -17479,6 +22284,7 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
     if (!workspaceId || !hasWorkspaceMembership(user, workspaceId)) {
       throw httpError(403, "An operational workspace membership is required", "WORKSPACE_MEMBERSHIP_REQUIRED");
     }
+    const workspace = getClinicById(workspaceId);
     const workspaceMemberships = db.memberships
       .filter(
         (membership) =>
@@ -17490,13 +22296,43 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
       .map((membership) => {
         const account = db.users.find((candidate) => candidate.id === membership.userId);
         if (!account) return null;
+        const membershipRole = normalizeWorkspaceRole(membership.role || "viewer");
+        const membershipStatus =
+          readString(membership.status || "active", 40).toLowerCase() ||
+          "active";
         return {
-          ...publicUser(account),
+          id: account.id,
+          role:
+            account.role === "admin"
+              ? "platform_admin"
+              : normalizeWorkspaceRole(account.role || membershipRole),
+          name: readString(account.name, 240),
+          title: readString(account.title, 160),
+          email: readString(account.email, 320).toLowerCase(),
+          phone: readString(account.phone, 80),
+          avatarUrl: readString(account.avatarUrl, 500),
+          license: readString(account.license, 160),
+          hospital: readString(account.hospital || workspace?.name, 240),
+          department: readString(account.department, 160),
+          specialty: readString(
+            account.specialty || account.department,
+            160,
+          ),
+          accountStatus:
+            readString(account.accountStatus || "active", 40).toLowerCase() ||
+            "active",
+          roleRequestStatus:
+            readString(account.roleRequestStatus || "pending", 40).toLowerCase() ||
+            "pending",
+          verifiedEmail: Boolean(account.verifiedEmail),
           workspaceMembership: {
             id: membership.id,
+            userId: account.id,
             organizationId: membership.organizationId,
-            role: normalizeWorkspaceRole(membership.role || "viewer"),
-            status: readString(membership.status || "active", 40).toLowerCase() || "active",
+            workspaceId: membership.organizationId,
+            role: membershipRole,
+            status: membershipStatus,
+            operational: isOperationalWorkspaceMembership(account, membership, workspace),
             suspendedAt: membership.suspendedAt || "",
             createdAt: membership.createdAt || "",
             updatedAt: membership.updatedAt || membership.createdAt || "",
@@ -17505,9 +22341,13 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
       })
       .filter(Boolean);
     sendJson(res, 200, {
+      workspaceId,
+      generatedAt: nowIso(),
       staff,
       doctors: staff.filter(
-        (member) => member.role === "doctor" || member.requestedRole === "doctor",
+        (member) =>
+          member.workspaceMembership?.role === "doctor" &&
+          member.workspaceMembership?.operational === true,
       ),
     });
     return;
@@ -17524,6 +22364,7 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
   if (method === "DELETE" && segments.length === 4) action = "revoke";
   if (method === "PATCH" && ["lock", "suspend"].includes(rawAction)) action = "suspend";
   if (method === "PATCH" && ["unlock", "reactivate"].includes(rawAction)) action = "reactivate";
+  if (method === "PATCH" && rawAction === "role") action = "change_role";
   if (!action || !targetUserId) {
     throw httpError(404, "Workspace staff route not found", "WORKSPACE_STAFF_ROUTE_NOT_FOUND");
   }
@@ -17538,6 +22379,89 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
     : db.users.find((item) => item.id === targetUserId || item.firebaseUid === targetUserId);
   if (!targetUser) {
     throw httpError(404, "Workspace staff account was not found", "WORKSPACE_STAFF_NOT_FOUND");
+  }
+
+  if (action === "change_role") {
+    if (targetUser.id === user.id) {
+      throw httpError(
+        409,
+        "The current actor cannot change their own workspace role",
+        "MEMBERSHIP_ROLE_SELF_CHANGE_DENIED",
+      );
+    }
+    const payload = await readJsonBody(req);
+    const role = readString(payload.role, 40).toLowerCase();
+    const allowedRoles = new Set([
+      "workspace_admin",
+      "doctor",
+      "nurse",
+      "technician",
+      "billing",
+      "viewer",
+    ]);
+    if (!allowedRoles.has(role)) {
+      throw httpError(
+        400,
+        "A valid workspace staff role is required",
+        "MEMBERSHIP_ROLE_INVALID",
+      );
+    }
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for workspace membership mutations",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    if (!repositories?.memberships?.changeRole) {
+      throw httpError(
+        503,
+        "Workspace membership storage is unavailable",
+        "MEMBERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const operation = `workspace.membership.${action}`;
+    const fingerprint = createIdempotencyFingerprint({
+      action,
+      organizationId: workspaceId,
+      targetUserId: targetUser.id,
+      role,
+    });
+    const result = await repositories.memberships.changeRole({
+      organizationId: workspaceId,
+      targetUserId: targetUser.id,
+      role,
+      actorUserId: user.id,
+      idempotency: {
+        scope: getIdempotencyScope(user, workspaceId),
+        operation: `${operation}:${targetUser.id}`,
+        key: idempotencyKey,
+        fingerprint,
+      },
+      audit: {
+        actorUserId: user.id,
+        organizationId: workspaceId,
+        action: operation,
+        resourceType: "membership",
+        ip: req.socket.remoteAddress || "",
+        userAgent: readString(req.headers["user-agent"], 240),
+        metadata: {
+          action,
+          targetUserId: targetUser.id,
+          role,
+          globalIdentityChanged: false,
+        },
+      },
+    });
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, {
+      action,
+      membership: result.membership,
+      replayed: result.replayed,
+      user: publicUser(targetUser),
+    });
+    return;
   }
 
   const idempotencyKey = getIdempotencyKey(req);
@@ -17607,9 +22531,15 @@ async function handlePortalApi(req, res, url, segments) {
     const workspaceContext = getUserWorkspaceContext(user);
     const currentWorkspaceId = workspaceContext.currentWorkspaceId || user.organizationId || "";
     const workspace = getClinicById(currentWorkspaceId);
-    const patients = filterPatientsForUser(user, db.patients);
-    const devices = filterDevicesForUser(user, db.devices);
-    const scans = filterScansForUser(user, db.scans);
+    const patients = filterPatientsForUser(user, db.patients).filter(
+      (patient) => patient.organizationId === currentWorkspaceId,
+    );
+    const devices = filterDevicesForUser(user, db.devices).filter(
+      (device) => getDeviceWorkspaceId(device) === currentWorkspaceId,
+    );
+    const scans = filterScansForUser(user, db.scans).filter(
+      (scan) => getScanOrgId(scan) === currentWorkspaceId,
+    );
     const onlineDevices = devices.filter((device) => publicDevice(device).online);
     const alertsCount = devices.filter((device) => {
       const status = String(device.status || "").toLowerCase();
@@ -17619,11 +22549,6 @@ async function handlePortalApi(req, res, url, segments) {
       ok: true,
       service: "smart-health-backend",
       now: nowIso(),
-      mode: {
-        authMode: AUTH_MODE,
-        dataBackend: DATA_BACKEND,
-        firebaseAuth: Boolean(FIREBASE_AUTH_ENABLED),
-      },
       workspace: {
         id: currentWorkspaceId,
         name: workspace?.name || user.currentWorkspace?.name || currentWorkspaceId || "Workspace",
@@ -17636,7 +22561,13 @@ async function handlePortalApi(req, res, url, segments) {
         scansCount: scans.length,
         alertsCount,
       },
-      status: getStatusPayload(),
+      status: buildClinicalDashboardStatus({
+        workspaceId: currentWorkspaceId,
+        devicesCount: devices.length,
+        devicesOnline: onlineDevices.length,
+        realtimeStatus: getStatusPayload({ _wsUser: user }, currentWorkspaceId),
+        updatedAt: nowIso(),
+      }),
     });
     return;
   }
@@ -17667,22 +22598,72 @@ async function handlePortalApi(req, res, url, segments) {
   }
 
   if (resource === "devices") {
-    await handleDevicesApi(req, res, ["api", ...segments.slice(2)]);
+    if (segments.length === 3 && method === "GET") {
+      requireAnyCapability(user, [
+        "workspace.devices.view",
+        "workspace.devices.manage",
+        "platform.devices.view",
+        "platform.devices.manage",
+        "personal.devices.manage",
+      ]);
+      const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+      if (!workspaceId) {
+        throw httpError(
+          403,
+          "An operational workspace is required",
+          "WORKSPACE_MEMBERSHIP_REQUIRED",
+        );
+      }
+      if (repositories) {
+        await repositories.devices.list();
+      }
+      refreshDevicePresence();
+      const devices = publicDevices(
+        filterDevicesForUser(user, db.devices).filter(
+          (device) => getDeviceWorkspaceId(device) === workspaceId,
+        ),
+      );
+      sendJson(res, 200, {
+        generatedAt: nowIso(),
+        workspaceId,
+        devices,
+      });
+      return;
+    }
+    await handleDevicesApi(req, res, url, ["api", ...segments.slice(2)]);
     return;
   }
 
   if (resource === "scans" || resource === "monitoring") {
     if (resource === "monitoring" && segments.length === 3 && method === "GET") {
       requireAnyCapability(user, ["workspace.dashboard.view", "workspace.devices.view", "workspace.scans.view"]);
-      const devices = filterDevicesForUser(user, db.devices);
-      const scans = filterScansForUser(user, db.scans).slice(0, 50);
+      const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+      if (!workspaceId) {
+        throw httpError(
+          403,
+          "An operational workspace is required",
+          "WORKSPACE_MEMBERSHIP_REQUIRED",
+        );
+      }
+      const devices = publicDevices(
+        filterDevicesForUser(user, db.devices).filter(
+          (device) => getDeviceWorkspaceId(device) === workspaceId,
+        ),
+      );
+      const scans = filterScansForUser(user, db.scans)
+        .filter((scan) => getScanOrgId(scan) === workspaceId)
+        .slice(0, 50)
+        .map((scan) => ({
+          ...scan,
+          organizationId: getScanOrgId(scan),
+        }));
       const attentionDevices = devices.filter((device) => {
         const status = String(device.status || "").toLowerCase();
-        return device.connected === false || status.includes("offline") || status.includes("error") || status.includes("fail");
+        return !device.online || status.includes("offline") || status.includes("error") || status.includes("fail");
       });
       const ledgerAlerts = repositories?.clinicalAlerts
         ? await repositories.clinicalAlerts.list({
-            organizationId: getUserWorkspaceContext(user).currentWorkspaceId,
+            organizationId: workspaceId,
             limit: 50,
           })
         : [];
@@ -17698,12 +22679,26 @@ async function handlePortalApi(req, res, url, segments) {
           }),
         )
       ).filter(Boolean);
-      sendJson(res, 200, {
-        status: getStatusPayload(),
+      const scopedRealtimeStatus = getStatusPayload({ _wsUser: user }, workspaceId);
+      const response = {
+        generatedAt: nowIso(),
+        workspaceId,
+        status: {
+          type: "status",
+          recording: scopedRealtimeStatus.recording,
+          workspaceId: scopedRealtimeStatus.workspaceId,
+          patientId: scopedRealtimeStatus.patientId,
+          deviceId: scopedRealtimeStatus.deviceId,
+          scanId: scopedRealtimeStatus.scanId,
+          sessionId: scopedRealtimeStatus.sessionId,
+          updatedAt: scopedRealtimeStatus.updatedAt,
+        },
         devices,
         scans,
         alerts: scopedLedgerAlerts,
-        attentionSignals: attentionDevices.map((device) => ({
+      };
+      if (!url.pathname.startsWith("/api/v1/")) {
+        response.attentionSignals = attentionDevices.map((device) => ({
           id: device.id,
           type: "device",
           severity: "warning",
@@ -17711,8 +22706,9 @@ async function handlePortalApi(req, res, url, segments) {
           message: `${device.name || device.id} đang mất kết nối hoặc có trạng thái bất thường.`,
           deviceId: device.id,
           createdAt: device.lastSeenAt || device.updatedAt || nowIso(),
-        })),
-      });
+        }));
+      }
+      sendJson(res, 200, response);
       return;
     }
     await handleScansApi(req, res, url, ["api", ...(resource === "monitoring" ? ["scans", ...segments.slice(3)] : segments.slice(2))]);
@@ -17758,30 +22754,124 @@ async function handlePortalApi(req, res, url, segments) {
   }
 
   if (resource === "settings") {
+    if (segments.length === 3 && method === "GET") {
+      const workspaceId = getUserWorkspaceContext(user).currentWorkspaceId;
+      const workspace = getClinicById(workspaceId);
+      if (!workspace) {
+        throw httpError(
+          404,
+          "Không tìm thấy workspace hiện tại",
+          "WORKSPACE_NOT_FOUND",
+        );
+      }
+      sendJson(res, 200, {
+        settings: publicSettings(user),
+        workspace: publicClinic(workspace),
+      });
+      return;
+    }
     if (segments[3] === "workspace" && segments.length === 4 && method === "PATCH") {
       requireAnyCapability(user, ["workspace.settings.manage"], "Không có quyền cập nhật thông tin workspace");
       const workspace = getClinicById(getUserWorkspaceContext(user).currentWorkspaceId);
       if (!workspace) {
         throw httpError(404, "Không tìm thấy workspace hiện tại");
       }
+      if (!repositories?.workspaceLifecycle) {
+        throw httpError(
+          503,
+          "Kho dữ liệu workspace chưa sẵn sàng",
+          "WORKSPACE_LIFECYCLE_REPOSITORY_UNAVAILABLE",
+        );
+      }
+      const requestPath = parseRequestPath(req).pathname;
+      const canonicalPath = "/api/v1/portal/settings/workspace";
+      const legacyPath = "/api/portal/settings/workspace";
+      const isCanonicalRequest = requestPath === canonicalPath;
+      const isLegacyCompatibilityRequest = requestPath === legacyPath;
+      const rawIdempotencyKey = req.headers["idempotency-key"];
+      if (Array.isArray(rawIdempotencyKey) || String(rawIdempotencyKey || "").trim().length > 160) {
+        throw httpError(
+          400,
+          "Idempotency-Key must be a single value no longer than 160 characters",
+          "IDEMPOTENCY_KEY_INVALID",
+        );
+      }
+      const suppliedIdempotencyKey = String(rawIdempotencyKey || "").trim();
+      if (isCanonicalRequest && !suppliedIdempotencyKey) {
+        throw httpError(
+          400,
+          "Idempotency-Key is required for workspace settings update",
+          "IDEMPOTENCY_KEY_REQUIRED",
+        );
+      }
+      if (isLegacyCompatibilityRequest) {
+        requestMetrics.legacyWorkspaceSettingsUpdate += 1;
+        res.setHeader("Deprecation", "true");
+        res.setHeader("X-Shcare-Compatibility-Alias", "workspace-settings-update");
+      }
       const payload = await readJsonBody(req);
-      for (const field of ["name", "address", "phone", "email", "website", "representative"]) {
-        if (Object.prototype.hasOwnProperty.call(payload, field)) {
-          workspace[field] = readString(payload[field], field === "address" || field === "website" ? 500 : 180);
-        }
-      }
-      workspace.updatedAt = nowIso();
-      if (repositories && typeof repositories.organizations?.upsert === "function") {
-        await repositories.organizations.upsert(workspace);
-      }
-      await appendAudit("workspace.update", req, {
-        actorUserId: user.id,
-        organizationId: workspace.id,
-        resourceType: "workspace",
-        resourceId: workspace.id,
+      const normalized = normalizeWorkspaceSettingsUpdate(payload, {
+        requireComplete: isCanonicalRequest,
+        fallbackExpectedVersion: workspace.version,
       });
-      await saveDb();
-      sendJson(res, 200, { workspace: publicClinic(workspace) });
+      const idempotencyKey = suppliedIdempotencyKey || createId("legacy_workspace_settings");
+      const operation = "workspace.settings.update";
+      const context = getRequestContext(req) || createRequestContext(req);
+      const result = await repositories.workspaceLifecycle.update({
+        workspaceId: workspace.id,
+        expectedVersion: normalized.expectedVersion,
+        payload: normalized.patch,
+        idempotency: {
+          scope: getIdempotencyScope(user, workspace.id),
+          operation,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            expectedVersion: normalized.expectedVersion,
+            payload: normalized.patch,
+          }),
+        },
+        audit: {
+          action: operation,
+          actorUserId: user.id,
+          organizationId: workspace.id,
+          resourceType: "workspace",
+          resourceId: workspace.id,
+          ip: context.ip || "",
+          userAgent: context.userAgent || "",
+          metadata: {
+            fields: Object.keys(normalized.patch).sort(),
+            expectedVersion: normalized.expectedVersion,
+          },
+        },
+      });
+      const confirmedWorkspace = result.responseBody?.workspace;
+      const operationId = readString(result.responseBody?.operationId, 160);
+      if (!confirmedWorkspace?.id || !operationId) {
+        throw httpError(
+          500,
+          "Workspace settings repository returned an incomplete receipt",
+          "WORKSPACE_SETTINGS_RECEIPT_INCOMPLETE",
+        );
+      }
+      if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+      sendJson(res, 200, {
+        ownership: {
+          userId: user.id,
+          workspaceId: confirmedWorkspace.id,
+        },
+        workspace: {
+          id: confirmedWorkspace.id,
+          name: confirmedWorkspace.name || "",
+          address: confirmedWorkspace.address || "",
+          phone: confirmedWorkspace.phone || "",
+          email: confirmedWorkspace.email || "",
+          website: confirmedWorkspace.website || "",
+          version: Number(confirmedWorkspace.version || 0),
+          updatedAt: confirmedWorkspace.updatedAt || "",
+        },
+        operationId,
+        replayed: result.replayed === true,
+      });
       return;
     }
     await handleSettingsApi(req, res, ["api", "settings", ...segments.slice(3)]);
@@ -17804,20 +22894,61 @@ async function handlePortalApi(req, res, url, segments) {
   }
 
   if (resource === "support" && segments.length === 3 && method === "POST") {
+    if (!repositories?.supportTickets) {
+      throw httpError(
+        503,
+        "Kho dữ liệu yêu cầu hỗ trợ chưa sẵn sàng",
+        "SUPPORT_TICKET_REPOSITORY_UNAVAILABLE",
+      );
+    }
     const payload = await readJsonBody(req);
-    const description = readString(payload.description || payload.desc, 3000);
-    if (!description) throw httpError(400, "Vui lòng mô tả vấn đề cần hỗ trợ");
-    const notification = await createBackendNotification({
-      type: "warning",
-      userId: user.id,
-      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || user.organizationId || "",
-      title: `Yêu cầu hỗ trợ: ${readString(payload.type, 160) || "Khác"}`,
-      message: description,
-      metadata: { actionPath: "/notifications", requesterEmail: user.email || "" },
+    const workspaceId =
+      getUserWorkspaceContext(user).currentWorkspaceId ||
+      user.organizationId ||
+      "";
+    if (!workspaceId || !hasWorkspaceMembership(user, workspaceId)) {
+      throw httpError(
+        403,
+        "Cần membership workspace đang hoạt động để gửi yêu cầu hỗ trợ",
+        "WORKSPACE_MEMBERSHIP_REQUIRED",
+      );
+    }
+    const requestPayload = normalizeSupportTicketCreate(payload, {
+      workspaceId,
+      requesterUserId: user.id,
     });
-    await appendAudit("support.request", req, { actorUserId: user.id, organizationId: notification.organizationId || "", resourceType: "notification", resourceId: notification.id });
-    await saveDb();
-    sendJson(res, 201, { ticket: { id: notification.id, status: "open", createdAt: notification.createdAt } });
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      payload,
+      "support ticket creation",
+    );
+    const requestContext =
+      getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.supportTickets.create({
+      payload: requestPayload,
+      idempotency: {
+        scope: getIdempotencyScope(user, workspaceId),
+        operation: "support.ticket.create",
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint(requestPayload),
+      },
+      audit: {
+        actorUserId: user.id,
+        organizationId: workspaceId,
+        action: "support.ticket.create",
+        ip: requestContext.ip || "",
+        userAgent:
+          requestContext.userAgent ||
+          readString(req.headers["user-agent"], 240),
+      },
+    });
+    if (result.replayed) {
+      res.setHeader("Idempotency-Replayed", "true");
+    }
+    sendJson(res, result.replayed ? 200 : 201, {
+      ticket: result.ticket,
+      replayed: result.replayed,
+    });
     return;
   }
 
@@ -17904,7 +23035,22 @@ async function handleShareTargetsApi(req, res, url, segments) {
     .filter((target) => matchesShareTargetQuery(target, query))
     .slice(0, 50);
 
-  sendJson(res, 200, { doctors, workspaces });
+  const workspaceId =
+    getUserWorkspaceContext(user).currentWorkspaceId ||
+    readString(user.organizationId, 120);
+  if (!workspaceId) {
+    throw httpError(
+      403,
+      "An operational workspace is required",
+      "WORKSPACE_MEMBERSHIP_REQUIRED",
+    );
+  }
+  sendJson(res, 200, {
+    generatedAt: nowIso(),
+    workspaceId,
+    doctors,
+    workspaces,
+  });
 }
 
 async function handleApi(req, res, url) {
@@ -17915,17 +23061,19 @@ async function handleApi(req, res, url) {
   }
 
   if (method === "GET" && segments[1] === "health") {
+    const publicHealthStatus = buildPublicHealthStatus(nowIso());
     sendJson(res, 200, {
       ok: true,
       service: "smart-health-backend",
-      status: getStatusPayload(),
-      now: nowIso(),
+      release: buildReleaseIdentity(process.env),
+      status: publicHealthStatus,
+      now: publicHealthStatus.updatedAt,
     });
     return;
   }
 
   if (method === "GET" && segments[1] === "status") {
-    sendJson(res, 200, getStatusPayload());
+    sendJson(res, 200, buildPublicHealthStatus(nowIso()));
     return;
   }
 
@@ -18031,7 +23179,7 @@ async function handleApi(req, res, url) {
   }
 
   if (segments[1] === "devices") {
-    await handleDevicesApi(req, res, segments);
+    await handleDevicesApi(req, res, url, segments);
     return;
   }
 
@@ -18078,13 +23226,139 @@ async function handleApi(req, res, url) {
   sendJson(res, 404, { error: "API route not found" });
 }
 
-function getPatientMutationAuthorization(user, patient, operation) {
+function getPatientMutationAuthorization(user, patient, operation, authority = null) {
   return {
     kind: isPlatformAdminUser(user) ? "platform" : isPatientUser(user) ? "personal" : "workspace",
     actorUserId: user.id,
     patientId: patient.id || "",
     organizationId: patient.organizationId || "",
     operation,
+    ...(authority || {}),
+  };
+}
+
+function publicPatientMutationPatient(patient) {
+  const source = Object.prototype.hasOwnProperty.call(patient || {}, "scanCount")
+    ? patient
+    : withPatientStats(patient || {});
+  const emergencyContact =
+    source.emergencyContact &&
+    typeof source.emergencyContact === "object" &&
+    !Array.isArray(source.emergencyContact)
+      ? source.emergencyContact
+      : {};
+  return {
+    id: readString(source.id, 120),
+    patientCode: readString(source.patientCode, 120),
+    name: readString(source.name, 160),
+    age:
+      source.age === null || source.age === undefined || source.age === ""
+        ? null
+        : Number(source.age),
+    dateOfBirth: readString(source.dateOfBirth || source.dob, 32),
+    bloodType: readString(source.bloodType, 20),
+    allergies: Array.isArray(source.allergies)
+      ? source.allergies.map((item) => readString(item, 160)).filter(Boolean)
+      : [],
+    emergencyContact: {
+      name: readString(emergencyContact.name, 160),
+      phone: readString(emergencyContact.phone, 40),
+      relationship: readString(emergencyContact.relationship, 80),
+    },
+    gender: readString(source.gender, 40),
+    phone: readString(source.phone, 40),
+    email: readString(source.email, 120),
+    address: readString(source.address, 240),
+    notes: readString(source.notes, 2000),
+    organizationId: readString(source.organizationId, 120),
+    ownerUserId: readString(source.ownerUserId, 120),
+    guardianUserId: readString(source.guardianUserId, 120),
+    profileType: readString(source.profileType, 60),
+    relationship: readString(source.relationship, 80),
+    familyGroupId: readString(source.familyGroupId, 120),
+    accountUserId: readString(source.accountUserId, 120),
+    primaryDoctorId: readString(source.primaryDoctorId, 120),
+    doctorName: readString(source.doctorName, 160),
+    createdAt: readString(source.createdAt, 64),
+    updatedAt: readString(source.updatedAt, 64),
+    scanCount: Math.max(0, Number(source.scanCount || 0)),
+    lastScanAt: source.lastScanAt ? readString(source.lastScanAt, 64) : null,
+    lastAiLabel: source.lastAiLabel ? readString(source.lastAiLabel, 240) : null,
+  };
+}
+
+function buildPatientMutationReceipt(user, patient, intent, replayed = false) {
+  const patientId = readString(patient?.id, 120);
+  const workspaceId = readString(patient?.organizationId, 120);
+  if (!user?.id || !patientId || !workspaceId) {
+    throw httpError(
+      503,
+      "Patient mutation receipt is missing canonical identity",
+      "PATIENT_MUTATION_RECEIPT_UNAVAILABLE",
+    );
+  }
+  const receipt = {
+    userId: user.id,
+    workspaceId,
+    patientId,
+    intent,
+  };
+  if (intent === "delete") {
+    return { ...receipt, deleted: true, replayed: Boolean(replayed) };
+  }
+  return {
+    ...receipt,
+    patient: publicPatientMutationPatient(patient),
+    replayed: Boolean(replayed),
+  };
+}
+
+function resolvePatientMutationReceipt(
+  user,
+  patient,
+  intent,
+  replayed,
+  responseResource = null,
+) {
+  const canonical = buildPatientMutationReceipt(user, patient, intent, replayed);
+  const stored =
+    responseResource &&
+    typeof responseResource === "object" &&
+    !Array.isArray(responseResource)
+      ? responseResource
+      : null;
+  const hasCanonicalStoredReceipt = Boolean(
+    stored?.userId && stored?.workspaceId && stored?.patientId && stored?.intent,
+  );
+  if (!hasCanonicalStoredReceipt) {
+    return canonical;
+  }
+  const storedPatient = stored.patient;
+  if (
+    stored.userId !== canonical.userId ||
+    stored.workspaceId !== canonical.workspaceId ||
+    stored.patientId !== canonical.patientId ||
+    stored.intent !== intent ||
+    typeof stored.replayed !== "boolean" ||
+    !storedPatient ||
+    typeof storedPatient !== "object" ||
+    Array.isArray(storedPatient) ||
+    storedPatient.id !== canonical.patientId ||
+    storedPatient.organizationId !== canonical.workspaceId
+  ) {
+    throw httpError(
+      409,
+      "Stored patient mutation receipt does not match the requested mutation",
+      "IDEMPOTENT_PATIENT_MUTATION_MISMATCH",
+    );
+  }
+  return {
+    userId: canonical.userId,
+    workspaceId: canonical.workspaceId,
+    patientId: canonical.patientId,
+    intent,
+    patient: publicPatientMutationPatient(storedPatient),
+    replayed: Boolean(replayed),
   };
 }
 
@@ -18311,15 +23585,8 @@ async function handlePatientsApi(req, res, url, segments) {
   }
   const patientId = segments[2] ? decodeURIComponent(segments[2]) : "";
   const isPatientDelete = segments.length === 3 && method === "DELETE";
-  const patientDeleteIdempotencyKey = isPatientDelete ? getIdempotencyKey(req) : "";
-  const patientDeleteIdempotency = patientDeleteIdempotencyKey
-    ? {
-        scope: getIdempotencyScope(user),
-        operation: `patient.delete:${patientId}`,
-        key: patientDeleteIdempotencyKey,
-        fingerprint: createIdempotencyFingerprint({ patientId }),
-      }
-    : null;
+  let patientDeleteIdempotency = null;
+  let patientDeleteAuthority = null;
 
   if (isPatientDelete) {
     requireAnyCapability(
@@ -18327,15 +23594,49 @@ async function handlePatientsApi(req, res, url, segments) {
       ["platform.patients.manage", "workspace.patients.manage", "personal.profiles.manage"],
       "Không có quyền xóa hồ sơ bệnh nhân này",
     );
-    const replay = patientDeleteIdempotency && repositories?.patients.findMutationReplay
-      ? await repositories.patients.findMutationReplay(patientDeleteIdempotency)
+    const patientDeleteIdempotencyKey = getRequiredHeaderIdempotencyKey(
+      req,
+      "patient deletion",
+    );
+    patientDeleteAuthority = requirePatientMutationAuthority(req, user);
+    patientDeleteIdempotency = {
+      scope: getIdempotencyScope(user),
+      operation: `patient.delete:${patientId}`,
+      key: patientDeleteIdempotencyKey,
+      fingerprint: createIdempotencyFingerprint(
+        patientDeleteAuthority
+          ? { patientId, authority: patientDeleteAuthority }
+          : { patientId },
+      ),
+    };
+    const replay = repositories?.patients.findMutationReplay
+      ? await repositories.patients.findMutationReplay(
+          patientDeleteIdempotency,
+          patientDeleteAuthority
+            ? getPatientMutationAuthorization(
+                user,
+                { id: patientId, organizationId: patientDeleteAuthority.expectedWorkspaceId },
+                "delete",
+                patientDeleteAuthority,
+              )
+            : null,
+        )
       : null;
     if (replay) {
+      const storedReceipt = replay.responseResource;
+      const activeWorkspaceId =
+        getUserWorkspaceContext(user).currentWorkspaceId ||
+        readString(user.organizationId, 120);
       if (
         replay.resourceType !== "patient_delete" ||
         replay.resourceId !== patientId ||
-        replay.responseResource?.deleted !== true ||
-        replay.responseResource?.patientId !== patientId
+        storedReceipt?.userId !== user.id ||
+        !storedReceipt?.workspaceId ||
+        storedReceipt.patientId !== patientId ||
+        storedReceipt.intent !== "delete" ||
+        storedReceipt.deleted !== true ||
+        typeof storedReceipt.replayed !== "boolean" ||
+        (!isPlatformAdminUser(user) && storedReceipt.workspaceId !== activeWorkspaceId)
       ) {
         throw httpError(
           409,
@@ -18345,8 +23646,11 @@ async function handlePatientsApi(req, res, url, segments) {
       }
       res.setHeader("Idempotency-Replayed", "true");
       sendJson(res, Number(replay.responseStatus || 200), {
+        userId: storedReceipt.userId,
+        workspaceId: storedReceipt.workspaceId,
+        patientId: storedReceipt.patientId,
+        intent: "delete",
         deleted: true,
-        patientId,
         replayed: true,
       });
       return;
@@ -18357,19 +23661,36 @@ async function handlePatientsApi(req, res, url, segments) {
     if (repositories) {
       await repositories.patients.list();
     }
-    const q = (url.searchParams.get("q") || "").trim().toLowerCase();
-    const patients = filterPatientsForUser(user, db.patients)
-      .filter((patient) => {
-        if (!q) {
-          return true;
-        }
-        return [patient.name, patient.patientCode, patient.phone]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q));
-      })
-      .map(withPatientStats);
+    const pageResult = resolveAdminListPage(
+      filterPatientsForUser(user, db.patients).map(withPatientStats),
+      url,
+      {
+        searchFields: [
+          (item) => item.id,
+          (item) => item.name,
+          (item) => item.patientCode,
+          (item) => item.phone,
+          (item) => item.email,
+          (item) => item.organizationId,
+        ],
+        sortFields: {
+          name: (item) => item.name,
+          createdAt: (item) => item.createdAt,
+          updatedAt: (item) => item.updatedAt,
+          lastScanAt: (item) => item.lastScanAt,
+          patientCode: (item) => item.patientCode,
+        },
+        defaultSort: "updatedAt:desc",
+      },
+    );
+    const patients = pageResult.items;
 
-    sendJson(res, 200, { patients });
+    const workspaceId =
+      getUserWorkspaceContext(user).currentWorkspaceId ||
+      readString(user.organizationId, 120) ||
+      readString(patients[0]?.organizationId, 120);
+    setWorkspacePaginationHeaders(res, pageResult);
+    sendJson(res, 200, { workspaceId, patients });
     return;
   }
 
@@ -18379,6 +23700,8 @@ async function handlePatientsApi(req, res, url, segments) {
       ["platform.patients.manage", "workspace.patients.manage", "personal.profiles.manage"],
       "Không có quyền tạo hồ sơ bệnh nhân trong workspace hiện tại",
     );
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "patient creation");
+    const patientMutationAuthority = requirePatientMutationAuthority(req, user);
     const payload = await readJsonBody(req);
     const workspaceContext = getUserWorkspaceContext(user);
     const isPlatformAdmin = isPlatformAdminUser(user);
@@ -18411,7 +23734,7 @@ async function handlePatientsApi(req, res, url, segments) {
       guardianUserId: isPatientUser(user) ? user.id : requestedGuardianUserId,
       profileType: isPatientUser(user) ? "dependent" : readString(payload.profileType, 60) || "patient",
     }, { addToRuntime: false });
-    const idempotencyKey = getIdempotencyKey(req, payload);
+    const responseSnapshot = buildPatientMutationReceipt(user, patient, "create", false);
     const context = getRequestContext(req) || createRequestContext(req);
     const persisted = repositories?.patients.saveWithAudit
       ? await repositories.patients.saveWithAudit(
@@ -18420,28 +23743,43 @@ async function handlePatientsApi(req, res, url, segments) {
             action: "patient.create",
             actorUserId: user.id,
             organizationId: patient.organizationId || "",
-            authorization: getPatientMutationAuthorization(user, patient, "create"),
+            authorization: getPatientMutationAuthorization(
+              user,
+              patient,
+              "create",
+              patientMutationAuthority,
+            ),
             ip: context.ip || "",
             userAgent: context.userAgent || "",
             metadata: { profileType: patient.profileType || "patient" },
           },
-          idempotencyKey
-            ? {
-                scope: getIdempotencyScope(user, patient.organizationId),
-                operation: "patient.create",
-                key: idempotencyKey,
-                fingerprint: createIdempotencyFingerprint(payload),
-              }
-            : null,
+          {
+            scope: getIdempotencyScope(user, patient.organizationId),
+            operation: "patient.create",
+            key: idempotencyKey,
+            fingerprint: createIdempotencyFingerprint(
+              patientMutationAuthority
+                ? { payload, authority: patientMutationAuthority }
+                : payload,
+            ),
+          },
           201,
+          responseSnapshot,
         )
       : null;
     if (!persisted?.patient) throw httpError(503, "Không thể lưu hồ sơ sức khỏe", "PATIENT_STORAGE_UNAVAILABLE");
     if (persisted.replayed) res.setHeader("Idempotency-Replayed", "true");
-    sendJson(res, Number(persisted.responseStatus || 201), {
-      patient: withPatientStats(persisted.patient),
-      replayed: Boolean(persisted.replayed),
-    });
+    sendJson(
+      res,
+      Number(persisted.responseStatus || 201),
+      resolvePatientMutationReceipt(
+        user,
+        persisted.patient,
+        "create",
+        Boolean(persisted.replayed),
+        persisted.responseResource,
+      ),
+    );
     return;
   }
 
@@ -18457,7 +23795,12 @@ async function handlePatientsApi(req, res, url, segments) {
       ? await repositories.patientShares.listForPatient(patient.id, { includeRevoked: true })
       : db.doctorPatientAccess.filter((grant) => grant.patientId === patient.id);
     const shares = grants.map(publicPatientShare);
-    sendJson(res, 200, { shares });
+    sendJson(res, 200, {
+      generatedAt: nowIso(),
+      workspaceId: patient.organizationId || "",
+      patientId: patient.id,
+      shares,
+    });
     return;
   }
 
@@ -18597,7 +23940,13 @@ async function handlePatientsApi(req, res, url, segments) {
       await saveDb();
     }
     if (replayed) res.setHeader("Idempotency-Replayed", "true");
-    sendJson(res, responseStatus, { share: publicPatientShare(grant), replayed });
+    sendJson(res, responseStatus, {
+      generatedAt: nowIso(),
+      workspaceId: patient.organizationId || "",
+      patientId: patient.id,
+      share: publicPatientShare(grant),
+      replayed,
+    });
     return;
   }
 
@@ -18673,6 +24022,9 @@ async function handlePatientsApi(req, res, url, segments) {
     }
     if (replayed) res.setHeader("Idempotency-Replayed", "true");
     sendJson(res, responseStatus, {
+      generatedAt: nowIso(),
+      workspaceId: patient.organizationId || "",
+      patientId: patient.id,
       revoked: true,
       share: publicPatientShare(revokedGrant),
       replayed,
@@ -18696,6 +24048,8 @@ async function handlePatientsApi(req, res, url, segments) {
       ["platform.patients.manage", "workspace.patients.manage", "personal.profiles.manage"],
       "Không có quyền cập nhật hồ sơ bệnh nhân này",
     );
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "patient update");
+    const patientMutationAuthority = requirePatientMutationAuthority(req, user);
     const payload = await readJsonBody(req);
     const nextPatient = {
       ...patient,
@@ -18714,7 +24068,6 @@ async function handlePatientsApi(req, res, url, segments) {
       nextPatient.ownerUserId = patient.ownerUserId || "";
     }
     const context = getRequestContext(req) || createRequestContext(req);
-    const idempotencyKey = getIdempotencyKey(req, payload);
     const persisted = repositories?.patients.saveWithAudit
       ? await repositories.patients.saveWithAudit(
           nextPatient,
@@ -18722,25 +24075,43 @@ async function handlePatientsApi(req, res, url, segments) {
             action: "patient.update",
             actorUserId: user.id,
             organizationId: nextPatient.organizationId || "",
-            authorization: getPatientMutationAuthorization(user, nextPatient, "update"),
+            authorization: getPatientMutationAuthorization(
+              user,
+              nextPatient,
+              "update",
+              patientMutationAuthority,
+            ),
             ip: context.ip || "",
             userAgent: context.userAgent || "",
             metadata: { fields: Object.keys(payload).filter((key) => key !== "idempotencyKey") },
           },
-          idempotencyKey
-            ? {
-                scope: getIdempotencyScope(user, nextPatient.organizationId),
-                operation: `patient.update:${nextPatient.id}`,
-                key: idempotencyKey,
-                fingerprint: createIdempotencyFingerprint(payload),
-              }
-            : null,
+          {
+            scope: getIdempotencyScope(user, nextPatient.organizationId),
+            operation: `patient.update:${nextPatient.id}`,
+            key: idempotencyKey,
+            fingerprint: createIdempotencyFingerprint(
+              patientMutationAuthority
+                ? { payload, authority: patientMutationAuthority }
+                : payload,
+            ),
+          },
           200,
+          buildPatientMutationReceipt(user, nextPatient, "update", false),
         )
       : null;
     if (!persisted?.patient) throw httpError(503, "Không thể cập nhật hồ sơ sức khỏe", "PATIENT_STORAGE_UNAVAILABLE");
     if (persisted.replayed) res.setHeader("Idempotency-Replayed", "true");
-    sendJson(res, 200, { patient: withPatientStats(persisted.patient), replayed: Boolean(persisted.replayed) });
+    sendJson(
+      res,
+      Number(persisted.responseStatus || 200),
+      resolvePatientMutationReceipt(
+        user,
+        persisted.patient,
+        "update",
+        Boolean(persisted.replayed),
+        persisted.responseResource,
+      ),
+    );
     return;
   }
 
@@ -18759,6 +24130,7 @@ async function handlePatientsApi(req, res, url, segments) {
     const activeProfileUserId = isPatientUser(user) && user.activePatientId === patient.id ? user.id : "";
     const fallbackPatientId = activeProfileUserId ? selfProfile?.id || user.patientId || "" : "";
     const context = getRequestContext(req) || createRequestContext(req);
+    const responseSnapshot = buildPatientMutationReceipt(user, patient, "delete", false);
     const deletion = repositories?.patients.deleteWithAudit
       ? await repositories.patients.deleteWithAudit(
           patient.id,
@@ -18766,19 +24138,47 @@ async function handlePatientsApi(req, res, url, segments) {
             action: "patient.delete",
             actorUserId: user.id,
             organizationId: patient.organizationId || "",
-            authorization: getPatientMutationAuthorization(user, patient, "delete"),
+            authorization: getPatientMutationAuthorization(
+              user,
+              patient,
+              "delete",
+              patientDeleteAuthority,
+            ),
             ip: context.ip || "",
             userAgent: context.userAgent || "",
             metadata: { profileType: patient.profileType || "patient" },
           },
-          { activeProfileUserId, fallbackPatientId, idempotency: patientDeleteIdempotency },
+          {
+            activeProfileUserId,
+            fallbackPatientId,
+            idempotency: patientDeleteIdempotency,
+            responseResource: responseSnapshot,
+          },
         )
       : null;
     if (!deletion?.patient) throw httpError(503, "Không thể xóa hồ sơ sức khỏe", "PATIENT_STORAGE_UNAVAILABLE");
     if (deletion.replayed) res.setHeader("Idempotency-Replayed", "true");
+    const storedDeleteReceipt = deletion.responseResource;
+    if (
+      storedDeleteReceipt?.userId !== responseSnapshot.userId ||
+      storedDeleteReceipt?.workspaceId !== responseSnapshot.workspaceId ||
+      storedDeleteReceipt?.patientId !== responseSnapshot.patientId ||
+      storedDeleteReceipt?.intent !== "delete" ||
+      storedDeleteReceipt?.deleted !== true ||
+      typeof storedDeleteReceipt?.replayed !== "boolean"
+    ) {
+      throw httpError(
+        409,
+        "Stored patient deletion receipt does not match the requested mutation",
+        "IDEMPOTENT_PATIENT_DELETE_MISMATCH",
+      );
+    }
     sendJson(res, Number(deletion.responseStatus || 200), {
+      userId: storedDeleteReceipt.userId,
+      workspaceId: storedDeleteReceipt.workspaceId,
+      patientId: storedDeleteReceipt.patientId,
+      intent: "delete",
       deleted: true,
-      patientId: patient.id,
       replayed: Boolean(deletion.replayed),
     });
     return;
@@ -18810,6 +24210,7 @@ async function notifyAppointmentMutation(appointment, event, actorUserId = "") {
     title: eventCopy[0],
     message: eventCopy[1],
     metadata: {
+      preferenceKey: "appointments",
       appointmentId: appointment.id,
       patientId: appointment.patientId,
       destination: "appointment_detail",
@@ -18889,6 +24290,17 @@ async function persistAppointmentMutation(appointment, req, detail = {}) {
 function sendAppointmentReplay(res, statusCode, appointment) {
   res.setHeader("Idempotency-Replayed", "true");
   sendJson(res, statusCode, { appointment: publicAppointment(appointment) });
+}
+
+function sendAppointmentDeleteReceipt(res, appointment, replayed = false) {
+  if (replayed) res.setHeader("Idempotency-Replayed", "true");
+  sendJson(res, 200, {
+    deleted: true,
+    appointmentId: appointment.id,
+    workspaceId: appointment.organizationId || "",
+    deletedAt: appointment.deletedAt,
+    replayed: Boolean(replayed),
+  });
 }
 
 async function handleAppointmentsApi(req, res, url, segments) {
@@ -18981,9 +24393,10 @@ async function handleAppointmentsApi(req, res, url, segments) {
     return;
   }
 
+  const isDelete = segments.length === 3 && method === "DELETE";
   const appointment = repositories && repositories.appointments
-    ? await repositories.appointments.findById(appointmentId)
-    : findAppointment(appointmentId);
+    ? await repositories.appointments.findById(appointmentId, { includeDeleted: isDelete })
+    : findAppointment(appointmentId, { includeDeleted: isDelete });
   if (!appointment) {
     throw httpError(404, "Appointment was not found", "APPOINTMENT_NOT_FOUND");
   }
@@ -18991,6 +24404,54 @@ async function handleAppointmentsApi(req, res, url, segments) {
   if (segments.length === 3 && method === "GET") {
     assertCanAccessAppointment(user, appointment);
     sendJson(res, 200, { appointment: publicAppointment(appointment) });
+    return;
+  }
+
+  if (isDelete) {
+    assertCanManageAppointment(user, appointment);
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "appointment deletion");
+    const idempotencyOperation = `appointment.delete:${appointment.id}`;
+    const idempotencyFingerprint = createIdempotencyFingerprint({
+      appointmentId: appointment.id,
+      organizationId: appointment.organizationId || "",
+    });
+    const replayedAppointment = findIdempotentResource(
+      user,
+      idempotencyKey,
+      idempotencyOperation,
+      {
+        organizationId: appointment.organizationId,
+        fingerprint: idempotencyFingerprint,
+      },
+    );
+    if (replayedAppointment) {
+      assertCanManageAppointment(user, replayedAppointment);
+      sendAppointmentDeleteReceipt(res, replayedAppointment, true);
+      return;
+    }
+    if (appointment.deletedAt) {
+      throw httpError(404, "Appointment was not found", "APPOINTMENT_NOT_FOUND");
+    }
+    const deletedAppointment = {
+      ...appointment,
+      deletedAt: nowIso(),
+      deletedByUserId: user.id,
+      updatedAt: nowIso(),
+    };
+    const persisted = await persistAppointmentMutation(deletedAppointment, req, {
+      action: "appointment.delete",
+      actorUserId: user.id,
+      metadata: { softDelete: true },
+      user,
+      idempotencyKey,
+      idempotencyOperation,
+      idempotencyFingerprint,
+      responseStatus: 200,
+    });
+    if (!persisted.appointment?.deletedAt) {
+      throw httpError(500, "Appointment deletion was not durably confirmed", "APPOINTMENT_DELETE_NOT_CONFIRMED");
+    }
+    sendAppointmentDeleteReceipt(res, persisted.appointment, persisted.replayed);
     return;
   }
 
@@ -19070,24 +24531,6 @@ async function handleAppointmentsApi(req, res, url, segments) {
     }
     await notifyAppointmentMutation(persisted.appointment, event, user.id);
     sendJson(res, 200, { appointment: publicAppointment(persisted.appointment) });
-    return;
-  }
-
-  if (segments.length === 3 && method === "DELETE") {
-    assertCanManageAppointment(user, appointment);
-    if (repositories && repositories.appointments) {
-      await repositories.appointments.delete(appointment.id);
-    } else {
-      db.appointments = db.appointments.filter((item) => item.id !== appointment.id);
-    }
-    await appendAudit("appointment.delete", req, {
-      actorUserId: user.id,
-      organizationId: appointment.organizationId || "",
-      resourceType: "appointment",
-      resourceId: appointment.id,
-    });
-    await saveDb();
-    sendJson(res, 200, { deleted: true });
     return;
   }
 
@@ -19228,13 +24671,8 @@ async function handleScansApi(req, res, url, segments) {
   if (segments.length === 3 && segments[2] === "start" && method === "POST") {
     requireAnyCapability(user, ["platform.scans.manage", "workspace.scans.manage", "personal.scans.manage"]);
     const payload = await readJsonBody(req);
-    const idempotencyKey = getIdempotencyKey(req, payload);
-    const existingScan = findIdempotentResource(user, idempotencyKey, "start_scan");
-    if (existingScan) {
-      sendJson(res, 200, { scan: existingScan, idempotent: true });
-      saveDb();
-      return;
-    }
+    const requestPayload = { ...payload };
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "scan start");
     if (isDoctorUser(user) && payload.patientId) {
       const requestedPatientId = readString(payload.patientId, 120);
       assertCanAccessPatient(user, requestedPatientId);
@@ -19244,16 +24682,22 @@ async function handleScansApi(req, res, url, segments) {
       delete payload.doctorNotes;
       delete payload.notes;
     }
-    const scan = await startRecording({ ...payload, idempotencyKey }, user);
-    rememberIdempotentResource(user, idempotencyKey, "start_scan", "scan", scan.id);
-    saveDb();
-    sendJson(res, 201, { scan });
+    const outcome = await startScanIdempotently(payload, user, idempotencyKey, requestPayload);
+    sendJson(
+      res,
+      outcome.replayed ? 200 : 201,
+      { scan: outcome.resource, ...(outcome.replayed ? { idempotent: true } : {}) },
+    );
     return;
   }
 
   if (segments.length === 4 && segments[2] === "active" && segments[3] === "stop" && method === "POST") {
-    const stopped = await stopActiveRecording(user);
-    sendJson(res, 200, { scan: stopped });
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "active scan stop");
+    const outcome = await stopActiveScanIdempotently(user, idempotencyKey);
+    sendJson(res, 200, {
+      scan: outcome.resource,
+      ...(outcome.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
@@ -19312,8 +24756,12 @@ async function handleScansApi(req, res, url, segments) {
 
   if (segments.length === 4 && segments[3] === "stop" && method === "POST") {
     assertCanManageScan(user, scan);
-    const stopped = await stopRecording(scan.id);
-    sendJson(res, 200, { scan: stopped });
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "scan stop");
+    const outcome = await stopScanIdempotently(scan, user, idempotencyKey);
+    sendJson(res, 200, {
+      scan: outcome.resource,
+      ...(outcome.replayed ? { idempotent: true } : {}),
+    });
     return;
   }
 
@@ -19416,7 +24864,11 @@ async function handleScansApi(req, res, url, segments) {
     assertCanAccessScan(user, scan);
     const audioFile = repositories ? await repositories.audioFiles.findByScanId(scan.id) : db.audioFiles.find((file) => file.scanId === scan.id);
     if (!audioFile) {
-      throw httpError(404, "Chưa có file âm thanh cho lượt đo này");
+      throw httpError(
+        404,
+        "Chưa có file âm thanh cho lượt đo này",
+        "SCAN_AUDIO_UNAVAILABLE",
+      );
     }
     const url = await storageAdapter.getSignedUrl(audioFile.objectKey, 900);
     await appendAudit("scan.audio_url", req, {
@@ -19424,7 +24876,80 @@ async function handleScansApi(req, res, url, segments) {
       resourceId: scan.id,
       organizationId: scan.organizationId || getScanOrgId(scan),
     });
-    sendJson(res, 200, { url, expiresInSeconds: 900, objectKey: audioFile.objectKey });
+    sendJson(res, 200, {
+      url,
+      expiresInSeconds: 900,
+      contentType: audioFile.contentType || "audio/wav",
+      fileName: `${scan.id}.wav`,
+      // Compatibility-only. New clients must not persist or display storage keys.
+      objectKey: audioFile.objectKey,
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[3] === "waveform" && method === "GET") {
+    assertCanAccessScan(user, scan);
+    const aiResult = repositories?.aiResults?.findByScanId
+      ? await repositories.aiResults.findByScanId(scan.id)
+      : (db.aiResults || [])
+        .filter((result) => result.scanId === scan.id)
+        .sort((left, right) => {
+          const rightTime = Date.parse(right.updatedAt || right.createdAt || "") || 0;
+          const leftTime = Date.parse(left.updatedAt || left.createdAt || "") || 0;
+          return rightTime - leftTime;
+        })[0];
+    const waveformObjectKey = readString(aiResult?.rawResult?.waveformObjectKey, 1000);
+    const expectedObjectKey = buildScanObjectKey(
+      getScanOrgId(scan),
+      scan.patientId,
+      scan.id,
+      "waveform.json",
+    );
+    if (!waveformObjectKey || waveformObjectKey !== expectedObjectKey) {
+      throw httpError(
+        404,
+        "Chưa có dữ liệu dạng sóng cho lượt đo này",
+        "SCAN_WAVEFORM_UNAVAILABLE",
+      );
+    }
+    let waveformBuffer;
+    try {
+      waveformBuffer = await storageAdapter.getBuffer(
+        waveformObjectKey,
+        MAX_SCAN_WAVEFORM_BYTES,
+      );
+    } catch (error) {
+      if (error?.code === "STORAGE_OBJECT_TOO_LARGE") {
+        throw httpError(
+          502,
+          "Dữ liệu dạng sóng vượt giới hạn cho phép",
+          "SCAN_WAVEFORM_ARTIFACT_INVALID",
+        );
+      }
+      if (error?.code === "ENOENT" || error?.name === "NoSuchKey") {
+        throw httpError(
+          404,
+          "Chưa có dữ liệu dạng sóng cho lượt đo này",
+          "SCAN_WAVEFORM_UNAVAILABLE",
+        );
+      }
+      throw httpError(
+        503,
+        "Không thể đọc dữ liệu dạng sóng",
+        "SCAN_WAVEFORM_STORAGE_UNAVAILABLE",
+      );
+    }
+    const waveform = parseScanWaveformArtifact(waveformBuffer, scan);
+    await appendAudit("scan.waveform", req, {
+      resourceType: "scan",
+      resourceId: scan.id,
+      organizationId: scan.organizationId || getScanOrgId(scan),
+      metadata: {
+        sampleRate: waveform.sampleRate,
+        pointCount: waveform.points.length,
+      },
+    });
+    sendJson(res, 200, { waveform });
     return;
   }
 
@@ -19758,6 +25283,7 @@ function startNetworkServers() {
 }
 
 async function startRuntime() {
+  assertRuntimeSecurity(process.env);
   ensureDataDirs();
   dataStore = createDataStore({
     backend: DATA_BACKEND,
@@ -19766,6 +25292,7 @@ async function startRuntime() {
     ensureDataDirs,
     createEmptyDb,
     normalizeDb,
+    env: process.env,
   });
   await dataStore.init();
   db = normalizeDb(await dataStore.load());
@@ -19777,7 +25304,14 @@ async function startRuntime() {
     createId,
     nowIso,
     getPool: () => (dataStore && dataStore.pool ? dataStore.pool : null),
+    projectRoleRequestUser: publicUser,
   });
+  const otaBackfill = await repositories.devices.backfillOtaLifecycleFromRuntime();
+  if (otaBackfill.backfilled > 0) {
+    console.log(
+      `PostgreSQL OTA lifecycle backfill: scanned=${otaBackfill.scanned}, backfilled=${otaBackfill.backfilled}, skipped=${otaBackfill.skipped}`,
+    );
+  }
   const hydratedCounts = await repositories.hydrateCoreState();
   if (hydratedCounts) {
     console.log(`PostgreSQL normalized state loaded: users=${hydratedCounts.users}, patients=${hydratedCounts.patients}, appointments=${hydratedCounts.appointments || 0}, devices=${hydratedCounts.devices}, scans=${hydratedCounts.scans}, audioFiles=${hydratedCounts.audioFiles}, aiResults=${hydratedCounts.aiResults}, organizations=${hydratedCounts.organizations}, notifications=${hydratedCounts.notifications}, auditLogs=${hydratedCounts.auditLogs}`);
@@ -19785,8 +25319,45 @@ async function startRuntime() {
   await reconcileIdentityProviderOperations();
   ensureAppDefaults();
   localizeLegacyDbText();
-  markInterruptedRecordings();
+  await markInterruptedRecordings();
   await saveDb();
+  avatarCleanupWorker = createAvatarCleanupWorker({
+    repository: repositories.avatarMutations,
+    storageAdapter,
+    workerId: `avatar-cleanup-${String(process.env.RENDER_INSTANCE_ID || process.pid).slice(0, 120)}`,
+    intervalMillis: Number(process.env.AVATAR_CLEANUP_INTERVAL_MS || 30_000),
+    leaseMillis: Number(process.env.AVATAR_CLEANUP_LEASE_MS || 60_000),
+    operationTimeoutMillis: Number(
+      process.env.AVATAR_CLEANUP_PROVIDER_TIMEOUT_MS || 30_000,
+    ),
+    batchSize: Number(process.env.AVATAR_CLEANUP_BATCH_SIZE || 20),
+    maxAttempts: Number(process.env.AVATAR_CLEANUP_MAX_ATTEMPTS || 8),
+    baseBackoffMillis: Number(
+      process.env.AVATAR_CLEANUP_BASE_BACKOFF_MS || 30_000,
+    ),
+    maxBackoffMillis: Number(
+      process.env.AVATAR_CLEANUP_MAX_BACKOFF_MS || 30 * 60_000,
+    ),
+    retentionMillis: Number(
+      process.env.AVATAR_CLEANUP_RETENTION_MS || 30 * 24 * 60 * 60_000,
+    ),
+    onError: (error) => {
+      console.error(
+        `Avatar cleanup worker failed: ${String(error?.code || "AVATAR_CLEANUP_FAILED")}`,
+      );
+    },
+  });
+  void avatarCleanupWorker.start().then((result) => {
+    if (result.claimed > 0) {
+      console.log(
+        `Avatar cleanup startup sweep: claimed=${result.claimed}, completed=${result.completed}, failed=${result.failed}, deadLettered=${result.deadLettered}`,
+      );
+    }
+  }).catch((error) => {
+    console.error(
+      `Avatar cleanup startup sweep failed: ${String(error?.code || "AVATAR_CLEANUP_FAILED")}`,
+    );
+  });
   mqttControlPlane = createMqttControlPlane({
     env: process.env,
     onTelemetry: (deviceId, payload) => {
@@ -19813,8 +25384,15 @@ server.on("error", (err) => {
   process.exit(1);
 });
 
-process.on("SIGINT", async () => {
+let shutdownStarted = false;
+
+async function shutdownRuntime(signal) {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
   try {
+    if (avatarCleanupWorker) {
+      await avatarCleanupWorker.stop();
+    }
     for (const recording of listActiveRecordings()) {
       await stopRecording(recording.scanId);
     }
@@ -19829,9 +25407,18 @@ process.on("SIGINT", async () => {
       await dataStore.close();
     }
   } catch (err) {
-    console.error(`Cannot close active recording: ${err.message}`);
+    console.error(`Cannot complete ${signal} shutdown: ${err.message}`);
   } finally {
     audioUdp.close();
-    server.close(() => process.exit(0));
+    if (server.listening) server.close(() => process.exit(0));
+    else process.exit(0);
   }
+}
+
+process.on("SIGINT", () => {
+  void shutdownRuntime("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  void shutdownRuntime("SIGTERM");
 });

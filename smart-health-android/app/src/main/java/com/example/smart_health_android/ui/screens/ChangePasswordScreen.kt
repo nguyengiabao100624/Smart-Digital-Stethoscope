@@ -1,213 +1,355 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.FirebaseAuthService
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
+import com.example.smart_health_android.security.ChangePasswordAuthoritySnapshot
+import com.example.smart_health_android.security.ChangePasswordFailure
+import com.example.smart_health_android.security.ChangePasswordFieldError
+import com.example.smart_health_android.security.ChangePasswordLoadState
+import com.example.smart_health_android.security.ChangePasswordUiAction
+import com.example.smart_health_android.security.ChangePasswordUiEffect
+import com.example.smart_health_android.security.ChangePasswordViewModel
+import com.example.smart_health_android.security.ChangePasswordViewModelFactory
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.components.ShcareSettingsHeader
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
 @Composable
-fun ChangePasswordScreen(onNavigateBack: () -> Unit) {
-    var currentPassword by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    var showCurrent by remember { mutableStateOf(false) }
-    var showNew by remember { mutableStateOf(false) }
-    var showConfirm by remember { mutableStateOf(false) }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var successMessage by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+fun ChangePasswordScreen(
+    onNavigateBack: () -> Unit,
+    onOpenPasswordRecovery: () -> Unit,
+    expectedAuthority: ChangePasswordAuthoritySnapshot?,
+    currentAuthority: () -> ChangePasswordAuthoritySnapshot?,
+    invalidateExpectedAuthority: () -> Unit,
+    closeSession: suspend () -> Boolean,
+    viewModel: ChangePasswordViewModel = viewModel(
+        key = expectedAuthority?.let {
+            "change-password-${it.userId}-${it.workspaceId}-${it.authorityEpoch}"
+        } ?: "change-password-authority-denied",
+        factory = ChangePasswordViewModelFactory(
+            expectedAuthority = expectedAuthority,
+            currentAuthority = currentAuthority,
+            invalidateExpectedAuthority = invalidateExpectedAuthority,
+            closeSession = closeSession,
+        ),
+    ),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                ChangePasswordUiEffect.NavigateBack -> onNavigateBack()
+                ChangePasswordUiEffect.OpenPasswordRecovery -> onOpenPasswordRecovery()
+            }
+        }
+    }
+
+    BackHandler(enabled = state.hasUnsavedChanges || state.isSubmitting) {
+        viewModel.onAction(ChangePasswordUiAction.BackRequested)
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF9FAFB))
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        SimpleWhiteHeader(title = "Đổi Mật Khẩu", onNavigateBack = onNavigateBack)
+        ShcareSettingsHeader(
+            title = stringResource(R.string.change_password_title),
+            onNavigateBack = { viewModel.onAction(ChangePasswordUiAction.BackRequested) },
+        )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+        if (state.loadState == ChangePasswordLoadState.PermissionDenied) {
+            ShcarePermissionState(
+                onRequestPermission = onNavigateBack,
+                modifier = Modifier.fillMaxSize(),
+                title = stringResource(R.string.change_password_permission_title),
+                message = stringResource(R.string.change_password_permission_message),
+                actionLabel = stringResource(R.string.change_password_permission_action),
+            )
+            return@Column
+        }
+
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            Row(
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFEFF6FF), RoundedCornerShape(16.dp))
-                    .border(1.dp, Color(0xFFDBEAFE), RoundedCornerShape(16.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.Top
+                    .fillMaxSize()
+                    .widthIn(max = 560.dp)
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Icon(
-                    Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = PrimaryBlue,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        "Bảo mật tài khoản y tế",
-                        color = PrimaryBlue,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Mật khẩu cần tối thiểu 8 ký tự, bao gồm chữ hoa, chữ thường và số để đảm bảo an toàn cho dữ liệu bệnh nhân.",
-                        color = TextSecondary,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                item {
+                    PasswordSecurityNotice(
+                        modifier = Modifier.padding(top = 16.dp),
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            PasswordInput(
-                label = "Mật khẩu hiện tại",
-                placeholder = "Nhập mật khẩu hiện tại",
-                value = currentPassword,
-                onValueChange = { currentPassword = it },
-                visible = showCurrent,
-                onToggleVisible = { showCurrent = !showCurrent }
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            PasswordInput(
-                label = "Mật khẩu mới",
-                placeholder = "Nhập mật khẩu mới",
-                value = newPassword,
-                onValueChange = { newPassword = it },
-                visible = showNew,
-                onToggleVisible = { showNew = !showNew }
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            PasswordInput(
-                label = "Xác nhận mật khẩu mới",
-                placeholder = "Nhập lại mật khẩu mới",
-                value = confirmPassword,
-                onValueChange = { confirmPassword = it },
-                visible = showConfirm,
-                onToggleVisible = { showConfirm = !showConfirm }
-            )
-
-            Spacer(modifier = Modifier.height(40.dp))
-
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
-            successMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = SuccessGreen,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
-
-            Button(
-                onClick = {
-                    val current = currentPassword.trim()
-                    val next = newPassword.trim()
-                    val confirm = confirmPassword.trim()
-                    errorMessage = when {
-                        current.isBlank() -> "Vui lòng nhập mật khẩu hiện tại"
-                        next.length < 8 -> "Mật khẩu mới cần tối thiểu 8 ký tự"
-                        next != confirm -> "Mật khẩu xác nhận không khớp"
-                        else -> null
+                item {
+                    PasswordInput(
+                        label = stringResource(R.string.change_password_current_label),
+                        placeholder = stringResource(R.string.change_password_current_placeholder),
+                        value = state.currentPassword,
+                        onValueChange = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.CurrentPasswordChanged(it),
+                            )
+                        },
+                        visible = state.showCurrentPassword,
+                        onToggleVisible = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.ToggleCurrentPasswordVisibility,
+                            )
+                        },
+                        error = state.fieldErrors.currentPassword.passwordErrorText(),
+                        enabled = !state.isSubmitting,
+                        imeAction = ImeAction.Next,
+                    )
+                }
+                item {
+                    PasswordInput(
+                        label = stringResource(R.string.change_password_new_label),
+                        placeholder = stringResource(R.string.change_password_new_placeholder),
+                        value = state.newPassword,
+                        onValueChange = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.NewPasswordChanged(it),
+                            )
+                        },
+                        visible = state.showNewPassword,
+                        onToggleVisible = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.ToggleNewPasswordVisibility,
+                            )
+                        },
+                        error = state.fieldErrors.newPassword.passwordErrorText(),
+                        enabled = !state.isSubmitting,
+                        imeAction = ImeAction.Next,
+                    )
+                }
+                item {
+                    PasswordInput(
+                        label = stringResource(R.string.change_password_confirm_label),
+                        placeholder = stringResource(R.string.change_password_confirm_placeholder),
+                        value = state.confirmPassword,
+                        onValueChange = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.ConfirmPasswordChanged(it),
+                            )
+                        },
+                        visible = state.showConfirmPassword,
+                        onToggleVisible = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.ToggleConfirmPasswordVisibility,
+                            )
+                        },
+                        error = state.fieldErrors.confirmPassword.passwordErrorText(),
+                        enabled = !state.isSubmitting,
+                        imeAction = ImeAction.Done,
+                        onDone = {
+                            viewModel.onAction(ChangePasswordUiAction.Submit)
+                        },
+                    )
+                }
+                if (
+                    state.failure != ChangePasswordFailure.None ||
+                    state.errorMessage.isNotBlank()
+                ) {
+                    item {
+                        ChangePasswordErrorBanner(
+                            message = when (state.failure) {
+                                ChangePasswordFailure.Unconfirmed ->
+                                    stringResource(R.string.change_password_unconfirmed)
+                                ChangePasswordFailure.Generic ->
+                                    state.errorMessage.ifBlank {
+                                        stringResource(R.string.change_password_generic_error)
+                                    }
+                                ChangePasswordFailure.None -> state.errorMessage
+                            },
+                            requestId = state.requestId,
+                            canRetry = state.canRetry,
+                            onRetry = {
+                                viewModel.onAction(ChangePasswordUiAction.Submit)
+                            },
+                        )
                     }
-                    if (errorMessage != null) return@Button
-
-                    isSubmitting = true
-                    successMessage = null
-                    coroutineScope.launch {
-                        var firebaseUpdated = false
-                        try {
-                            if (FirebaseAuthService.currentEmail().isNotBlank()) {
-                                FirebaseAuthService.changePassword(current, next)
-                                firebaseUpdated = true
-                                val refreshedToken = FirebaseAuthService.getFreshIdToken(forceRefresh = true)
-                                SmartHealthRepository.api.setAuthToken(refreshedToken)
-                                SmartHealthRepository.api.changePassword(
-                                    currentPassword = current,
-                                    newPassword = next,
-                                    firebaseClientUpdated = true
-                                )
-                            } else {
-                                SmartHealthRepository.api.changePassword(
-                                    currentPassword = current,
-                                    newPassword = next
-                                )
-                            }
-                            currentPassword = ""
-                            newPassword = ""
-                            confirmPassword = ""
-                            successMessage = "Đã cập nhật mật khẩu"
-                        } catch (error: Exception) {
-                            errorMessage = if (firebaseUpdated) {
-                                "Mật khẩu đã đổi trên Firebase nhưng backend chưa ghi nhận được: ${
-                                    error.toVietnameseMessage("Không thể ghi nhận đổi mật khẩu trên backend")
-                                }"
-                            } else {
-                                error.toVietnameseMessage("Không thể đổi mật khẩu")
-                            }
-                        } finally {
-                            isSubmitting = false
+                }
+                item {
+                    Button(
+                        onClick = {
+                            viewModel.onAction(ChangePasswordUiAction.Submit)
+                        },
+                        enabled = !state.isSubmitting && !state.completed,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        if (state.isSubmitting) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(stringResource(R.string.change_password_submitting))
+                        } else {
+                            Text(
+                                stringResource(R.string.change_password_submit),
+                                fontWeight = FontWeight.SemiBold,
+                            )
                         }
                     }
-                },
-                enabled = !isSubmitting,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-            ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                } else {
-                    Text("Cập nhật mật khẩu", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
+                item {
+                    TextButton(
+                        onClick = {
+                            viewModel.onAction(
+                                ChangePasswordUiAction.ForgotPasswordRequested,
+                            )
+                        },
+                        enabled = !state.isSubmitting,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.change_password_forgot),
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
+        }
+    }
 
-            TextButton(
-                onClick = { errorMessage = "Bạn có thể dùng màn hình Quên mật khẩu ở trang đăng nhập" },
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            ) {
-                Text("Quên mật khẩu hiện tại?", color = PrimaryBlue, fontWeight = FontWeight.Medium)
-            }
+    if (state.showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.onAction(ChangePasswordUiAction.DiscardDismissed)
+            },
+            title = { Text(stringResource(R.string.change_password_discard_title)) },
+            text = { Text(stringResource(R.string.change_password_discard_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.onAction(ChangePasswordUiAction.DiscardConfirmed)
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(stringResource(R.string.change_password_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.onAction(ChangePasswordUiAction.DiscardDismissed)
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(stringResource(R.string.change_password_discard_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PasswordSecurityNotice(modifier: Modifier = Modifier) {
+    val semanticColors = ShcareTheme.colors
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(semanticColors.infoContainer, RoundedCornerShape(16.dp))
+            .border(1.dp, semanticColors.info, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            Icons.Default.Shield,
+            contentDescription = null,
+            tint = semanticColors.onInfoContainer,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.change_password_notice_title),
+                color = semanticColors.onInfoContainer,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                text = stringResource(R.string.change_password_notice_message),
+                color = semanticColors.onInfoContainer,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.change_password_sign_in_again),
+                color = semanticColors.onInfoContainer,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
 }
@@ -219,63 +361,123 @@ private fun PasswordInput(
     value: String,
     onValueChange: (String) -> Unit,
     visible: Boolean,
-    onToggleVisible: () -> Unit
+    onToggleVisible: () -> Unit,
+    error: String?,
+    enabled: Boolean,
+    imeAction: ImeAction,
+    onDone: () -> Unit = {},
 ) {
-    Column {
-        Text(
-            label,
-            color = Color(0xFF374151),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(placeholder, color = Color(0xFF9CA3AF), fontSize = 14.sp) },
-            leadingIcon = {
-                Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF9CA3AF))
-            },
-            trailingIcon = {
-                IconButton(onClick = onToggleVisible) {
-                    Icon(
-                        if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = null,
-                        tint = Color(0xFF6B7280)
-                    )
-                }
-            },
-            visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrimaryBlue,
-                unfocusedBorderColor = Color(0xFFD1D5DB),
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary
-            )
-        )
-    }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        label = { Text(label) },
+        placeholder = { Text(placeholder) },
+        leadingIcon = {
+            Icon(Icons.Default.Lock, contentDescription = null)
+        },
+        trailingIcon = {
+            IconButton(
+                onClick = onToggleVisible,
+                enabled = enabled,
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            ) {
+                Icon(
+                    if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = stringResource(
+                        if (visible) {
+                            R.string.change_password_hide_secret
+                        } else {
+                            R.string.change_password_show_secret
+                        },
+                        label,
+                    ),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        supportingText = error?.let { message ->
+            {
+                Text(
+                    text = message,
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Assertive
+                    },
+                )
+            }
+        },
+        isError = error != null,
+        visualTransformation =
+            if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            imeAction = imeAction,
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { onDone() },
+        ),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+    )
 }
 
 @Composable
-fun SimpleWhiteHeader(title: String, onNavigateBack: () -> Unit) {
-    Row(
+private fun ChangePasswordFieldError?.passwordErrorText(): String? = when (this) {
+    ChangePasswordFieldError.Required ->
+        stringResource(R.string.change_password_error_required)
+    ChangePasswordFieldError.TooShort ->
+        stringResource(R.string.change_password_error_too_short)
+    ChangePasswordFieldError.MissingUppercase ->
+        stringResource(R.string.change_password_error_uppercase)
+    ChangePasswordFieldError.MissingLowercase ->
+        stringResource(R.string.change_password_error_lowercase)
+    ChangePasswordFieldError.MissingDigit ->
+        stringResource(R.string.change_password_error_digit)
+    ChangePasswordFieldError.MatchesCurrent ->
+        stringResource(R.string.change_password_error_matches_current)
+    ChangePasswordFieldError.ConfirmationMismatch ->
+        stringResource(R.string.change_password_error_confirmation)
+    null -> null
+}
+
+@Composable
+private fun ChangePasswordErrorBanner(
+    message: String,
+    requestId: String,
+    canRetry: Boolean,
+    onRetry: () -> Unit,
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
-            .border(1.dp, Color(0xFFE5E7EB))
-            .statusBarsPadding()
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .background(
+                MaterialTheme.colorScheme.errorContainer,
+                RoundedCornerShape(12.dp),
+            )
+            .padding(14.dp)
+            .semantics { liveRegion = LiveRegionMode.Assertive },
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onNavigateBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color(0xFF4B5563))
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (requestId.isNotBlank()) {
+            Text(
+                text = stringResource(R.string.change_password_request_id, requestId),
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
-        Text(title, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        if (canRetry) {
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text(stringResource(R.string.change_password_retry))
+            }
+        }
     }
 }

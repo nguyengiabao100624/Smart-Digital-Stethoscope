@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/portal-monitoring-response.schema.json",
+  "title": "Shcare Portal monitoring fallback response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generatedAt",
+    "workspaceId",
+    "status",
+    "devices",
+    "scans",
+    "alerts"
+  ],
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "status": {
+      "$ref": "#/$defs/liveStatus"
+    },
+    "devices": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/device"
+      }
+    },
+    "scans": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/scan"
+      }
+    },
+    "alerts": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "clinical-alert-list-response.schema.json#/$defs/clinicalAlert"
+      }
+    }
+  },
+  "$defs": {
+    "liveStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "recording",
+        "workspaceId",
+        "patientId",
+        "deviceId",
+        "scanId",
+        "sessionId",
+        "updatedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "status"
+        },
+        "recording": {
+          "type": "boolean"
+        },
+        "workspaceId": {
+          "type": ["string", "null"],
+          "maxLength": 120
+        },
+        "patientId": {
+          "type": ["string", "null"],
+          "maxLength": 120
+        },
+        "deviceId": {
+          "type": ["string", "null"],
+          "maxLength": 120
+        },
+        "scanId": {
+          "type": ["string", "null"],
+          "maxLength": 120
+        },
+        "sessionId": {
+          "type": ["string", "null"],
+          "maxLength": 160
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "recording": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "patientId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deviceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scanId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "workspaceId": {
+                "type": "null"
+              },
+              "patientId": {
+                "type": "null"
+              },
+              "deviceId": {
+                "type": "null"
+              },
+              "scanId": {
+                "type": "null"
+              },
+              "sessionId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "device": {
+      "type": "object",
+      "required": ["id", "organizationId", "online"],
+      "not": {
+        "anyOf": [
+          { "required": ["secret"] },
+          { "required": ["deviceSecret"] },
+          { "required": ["secretHash"] },
+          { "required": ["claimCode"] },
+          { "required": ["claimCodeHash"] }
+        ]
+      },
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "audioStatus": {
+          "type": "string"
+        },
+        "battery": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "ipAddress": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "required": ["id", "organizationId"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "patientId": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "deviceId": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

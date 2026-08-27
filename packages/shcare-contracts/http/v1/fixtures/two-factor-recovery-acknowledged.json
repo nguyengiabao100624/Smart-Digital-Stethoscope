@@ -1,0 +1,14 @@
+{
+  "userId": "user_two_factor_fixture",
+  "enrollmentId": "tfa_enroll_fixture_01",
+  "twoFactor": { "enabled": true, "method": "app", "enrollmentPending": false },
+  "recoveryDelivery": {
+    "id": "2fa_delivery_fixture_01",
+    "expiresAt": "2026-07-14T14:25:00.000Z",
+    "acknowledged": true,
+    "acknowledgedAt": "2026-07-14T14:18:00.000Z"
+  },
+  "twoFactorToken": "tfa_session_fixture_token_0123456789abcdef",
+  "tokenExpiresAt": "2026-07-14T14:35:00.000Z",
+  "replayed": false
+}

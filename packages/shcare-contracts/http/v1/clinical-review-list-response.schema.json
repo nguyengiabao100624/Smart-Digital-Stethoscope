@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/clinical-review-list-response.schema.json",
+  "title": "Shcare clinical review queue response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "reviews"],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "reviews": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/clinicalReview"
+      }
+    }
+  },
+  "$defs": {
+    "clinicalReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scanId",
+        "organizationId",
+        "patientId",
+        "deviceId",
+        "status",
+        "decision",
+        "note",
+        "reviewerUserId",
+        "reviewedAt",
+        "version",
+        "scanStatus",
+        "scanCreatedAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "scanId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "patientId": { "type": "string", "maxLength": 120 },
+        "deviceId": { "type": "string", "maxLength": 120 },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "reviewed"]
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["", "accepted", "repeat_measurement", "follow_up_required"]
+        },
+        "note": { "type": "string", "maxLength": 4000 },
+        "reviewerUserId": { "type": "string", "maxLength": 120 },
+        "reviewedAt": { "type": "string", "maxLength": 64 },
+        "version": { "type": "integer", "minimum": 1 },
+        "scanStatus": {
+          "type": "string",
+          "enum": ["completed", "needs_review"]
+        },
+        "scanCreatedAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      }
+    }
+  }
+}

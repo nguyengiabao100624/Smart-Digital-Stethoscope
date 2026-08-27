@@ -48,12 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,15 +67,20 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.data.LiveAudioClient
-import com.example.smart_health_android.data.LiveMetrics
 import com.example.smart_health_android.data.SmartDevice
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.scan.LiveAudioExpectation
+import com.example.smart_health_android.scan.LiveMonitoringLoadState
+import com.example.smart_health_android.scan.LiveMonitoringUiAction
+import com.example.smart_health_android.scan.LiveMonitoringUiEffect
+import com.example.smart_health_android.scan.LiveMonitoringViewModel
+import com.example.smart_health_android.scan.LiveMonitoringViewModelFactory
 import com.example.smart_health_android.ui.components.ShcareErrorState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
 import com.example.smart_health_android.ui.theme.ShcareTheme
-import kotlinx.coroutines.launch
 
 @Composable
 fun LiveMonitoringScreen(
@@ -90,89 +90,74 @@ fun LiveMonitoringScreen(
 ) {
     val context = LocalContext.current
     val spacing = ShcareTheme.spacing
-    var isRecording by remember { mutableStateOf(false) }
-    var activeScanId by remember(initialScanId) { mutableStateOf(initialScanId) }
-    var mode by remember { mutableStateOf("heart") }
-    var heartRate by remember { mutableIntStateOf(0) }
-    var sqi by remember { mutableIntStateOf(0) }
-    var devices by remember { mutableStateOf<List<SmartDevice>>(emptyList()) }
-    var selectedDeviceId by remember { mutableStateOf("") }
-    var connectionText by remember { mutableStateOf("Đang kết nối máy chủ…") }
-    var isConnected by remember { mutableStateOf(false) }
-    var liveMetrics by remember { mutableStateOf(LiveMetrics()) }
-    var hasMetrics by remember { mutableStateOf(false) }
-    var waveformSamples by remember { mutableStateOf(FloatArray(WAVEFORM_SAMPLE_COUNT)) }
-    var actionError by remember { mutableStateOf<String?>(null) }
-    var preparationError by remember { mutableStateOf<String?>(null) }
-    var interruptionMessage by remember { mutableStateOf<String?>(null) }
-    var terminalNotice by remember { mutableStateOf<String?>(null) }
-    var isBusy by remember { mutableStateOf(false) }
-    var isPreparing by remember { mutableStateOf(true) }
-    var isStopPending by remember { mutableStateOf(false) }
-    var liveExpectation by remember { mutableStateOf<LiveAudioExpectation?>(null) }
-    var droppedPackets by remember { mutableLongStateOf(0L) }
-    var navigateAfterStop by remember { mutableStateOf(false) }
-    var preparationAttempt by remember { mutableIntStateOf(0) }
-    val coroutineScope = rememberCoroutineScope()
+    val monitoringViewModel: LiveMonitoringViewModel = viewModel(
+        key = "live-monitoring:${initialScanId.orEmpty()}",
+        factory = LiveMonitoringViewModelFactory(initialScanId),
+    )
+    val state by monitoringViewModel.uiState.collectAsStateWithLifecycle()
 
-    fun resetRealtimeMeasurements() {
-        heartRate = 0
-        sqi = 0
-        liveMetrics = LiveMetrics()
-        hasMetrics = false
-        waveformSamples = FloatArray(WAVEFORM_SAMPLE_COUNT)
-        droppedPackets = 0L
+    LaunchedEffect(monitoringViewModel) {
+        monitoringViewModel.effects.collect { effect ->
+            when (effect) {
+                LiveMonitoringUiEffect.NavigateBack -> onNavigateBack()
+                LiveMonitoringUiEffect.CreateScan -> onCreateScan()
+            }
+        }
     }
 
-    val liveClient = remember(liveExpectation) {
-        liveExpectation?.let { expectation ->
+    val realtimeEpoch = state.realtimeEpoch
+    val liveClient = remember(state.expectation, realtimeEpoch) {
+        state.expectation?.let { expectation ->
             LiveAudioClient(
                 context = context,
                 expected = expectation,
                 onConnectionChanged = { connected, message ->
-                    isConnected = connected
-                    connectionText = message
+                    monitoringViewModel.onAction(
+                        LiveMonitoringUiAction.ConnectionChanged(
+                            realtimeEpoch = realtimeEpoch,
+                            scanId = expectation.scanId,
+                            connected = connected,
+                            message = message,
+                        ),
+                    )
                 },
                 onStatus = { status ->
-                    if (status.recording) {
-                        activeScanId = status.activeScanId
-                        isRecording = true
-                    } else {
-                        isRecording = false
-                    }
+                    monitoringViewModel.onAction(
+                        LiveMonitoringUiAction.StatusChanged(realtimeEpoch, status),
+                    )
                 },
                 onMetrics = { metrics ->
-                    liveMetrics = metrics
-                    hasMetrics = true
-                    if (metrics.recording) {
-                        activeScanId = metrics.activeScanId ?: activeScanId
-                    }
-                    heartRate = metrics.bpm.coerceAtLeast(0)
-                    sqi = metrics.levelPercent.coerceIn(0, 100)
+                    monitoringViewModel.onAction(
+                        LiveMonitoringUiAction.MetricsChanged(realtimeEpoch, metrics),
+                    )
                 },
-                onSamples = { samples -> waveformSamples = samples },
-                onScanLifecycle = { scanId, state ->
-                    if (
-                        scanId == activeScanId &&
-                        (state == "scan_stopped" || state == "scan_interrupted")
-                    ) {
-                        activeScanId = null
-                        isRecording = false
-                        isConnected = false
-                        isStopPending = false
-                        liveExpectation = null
-                        resetRealtimeMeasurements()
-                        if (state == "scan_interrupted") {
-                            interruptionMessage =
-                                "Luồng âm thanh đã bị gián đoạn trước khi thiết bị xác nhận hoàn tất."
-                        } else {
-                            terminalNotice =
-                                "Thiết bị đã xác nhận dừng lượt đo. Dữ liệu đã nhận có thể xem trong hồ sơ."
-                        }
-                        if (navigateAfterStop) onNavigateBack()
-                    }
+                onSamples = { samples ->
+                    monitoringViewModel.onAction(
+                        LiveMonitoringUiAction.SamplesChanged(
+                            realtimeEpoch,
+                            expectation.scanId,
+                            samples,
+                        ),
+                    )
                 },
-                onDroppedPackets = { droppedPackets = it },
+                onScanLifecycle = { scanId, lifecycleState ->
+                    monitoringViewModel.onAction(
+                        LiveMonitoringUiAction.ScanLifecycleChanged(
+                            realtimeEpoch,
+                            scanId,
+                            lifecycleState,
+                        ),
+                    )
+                },
+                onDroppedPackets = {
+                    monitoringViewModel.onAction(
+                        LiveMonitoringUiAction.DroppedPacketsChanged(
+                            realtimeEpoch,
+                            expectation.scanId,
+                            it,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -182,150 +167,45 @@ fun LiveMonitoringScreen(
         onDispose { liveClient?.close() }
     }
 
-    LaunchedEffect(initialScanId, preparationAttempt) {
-        isPreparing = true
-        preparationError = null
-        actionError = null
-        interruptionMessage = null
-        terminalNotice = null
-        isStopPending = false
-        isConnected = false
-        isRecording = false
-        connectionText = "Đang kết nối máy chủ…"
-        liveExpectation = null
-        activeScanId = initialScanId
-        resetRealtimeMeasurements()
-
-        runCatching {
-            val user = SmartHealthRepository.api.getMe()
-            val scan = initialScanId?.takeIf { it.isNotBlank() }?.let {
-                SmartHealthRepository.api.getScan(it)
-            }
-            val loadedDevices = SmartHealthRepository.api.listDevices()
-                .filter { it.type == "stethoscope" || it.type.isBlank() }
-                .sortedWith(
-                    compareByDescending<SmartDevice> { it.online || it.connected }
-                        .thenByDescending { it.lastSeenAt.orEmpty() },
-                )
-            Triple(user, scan, loadedDevices)
-        }.onSuccess { (user, scan, loaded) ->
-            devices = loaded
-            if (scan != null) {
-                selectedDeviceId = scan.deviceId
-                mode = scan.mode
-                when (scan.status) {
-                    "completed" -> {
-                        activeScanId = null
-                        terminalNotice =
-                            "Lượt đo này đã kết thúc. Mở hồ sơ để xem dữ liệu đã được lưu."
-                    }
-                    "interrupted" -> {
-                        activeScanId = null
-                        interruptionMessage =
-                            "Lượt đo này đã bị gián đoạn. Hãy kiểm tra kết nối trước khi đo lại."
-                    }
-                    else -> {
-                        val workspaceId = user.currentWorkspaceId
-                            .ifBlank { user.currentWorkspace?.id.orEmpty() }
-                            .ifBlank { user.organizationId }
-                        liveExpectation = LiveAudioExpectation(
-                            workspaceId = workspaceId,
-                            patientId = scan.patientId,
-                            deviceId = scan.deviceId,
-                            scanId = scan.id,
-                        )
-                        activeScanId = scan.id
-                    }
-                }
-            } else {
-                activeScanId = null
-                selectedDeviceId = loaded.firstOrNull()?.id.orEmpty()
-            }
-            isPreparing = false
-        }.onFailure { error ->
-            liveExpectation = null
-            activeScanId = null
-            isPreparing = false
-            preparationError = error.message ?: "Không chuẩn bị được phiên theo dõi."
-        }
-    }
-
-    fun stopRecording(navigateBackAfterStop: Boolean = false) {
-        if (isBusy) return
-        coroutineScope.launch {
-            actionError = null
-            isBusy = true
-            var shouldNavigateBack = false
-            runCatching {
-                val scanId = activeScanId ?: error("Không có lượt đo cụ thể để dừng.")
-                SmartHealthRepository.api.stopScan(scanId)
-            }.onSuccess {
-                shouldNavigateBack = navigateBackAfterStop
-                navigateAfterStop = navigateBackAfterStop
-                isStopPending = true
-                connectionText = "Máy chủ đã nhận yêu cầu; đang chờ thiết bị xác nhận dừng…"
-            }.onFailure { error ->
-                isStopPending = false
-                actionError = error.message ?: "Không gửi được yêu cầu dừng lượt đo."
-            }
-            isBusy = false
-            if (shouldNavigateBack && activeScanId == null) onNavigateBack()
-        }
-    }
-
-    val selectedDevice = devices.firstOrNull { it.id == selectedDeviceId }
+    val selectedDevice = state.selectedDevice
+    val waveformSamples = state.waveformSamples.toFloatArray()
     val hasLiveSamples = waveformSamples.any { kotlin.math.abs(it) > LIVE_SAMPLE_EPSILON }
-    val signalQualityAlert = isRecording && isConnected && hasMetrics && sqi <= LOW_SIGNAL_THRESHOLD
+    val signalQualityAlert = state.isRecording && state.isConnected && state.hasMetrics &&
+        state.signalQuality <= LOW_SIGNAL_THRESHOLD
     val primaryValue = when {
-        !hasMetrics -> "--"
-        mode == "heart" -> heartRate.toString()
-        else -> liveMetrics.rms.coerceAtLeast(0).toString()
+        !state.hasMetrics -> "--"
+        state.mode == "heart" -> state.heartRate.toString()
+        else -> state.metrics.rms.coerceAtLeast(0).toString()
     }
-    val primaryUnit = if (mode == "heart") "BPM" else "RMS"
-    val sqiValue = if (hasMetrics) sqi.toString() else "--"
-    val connectionRejected = connectionText.contains("từ chối", ignoreCase = true)
+    val primaryUnit = if (state.mode == "heart") "BPM" else "RMS"
+    val sqiValue = if (state.hasMetrics) state.signalQuality.toString() else "--"
+    val connectionRejected = state.connectionText.contains("từ chối", ignoreCase = true)
     val connectionState = when {
-        interruptionMessage != null -> MonitorVisualState.Interrupted
-        actionError != null || connectionRejected -> MonitorVisualState.Error
-        terminalNotice != null -> MonitorVisualState.Finished
-        activeScanId == null -> MonitorVisualState.Ready
-        isStopPending -> MonitorVisualState.Stopping
-        isRecording && isConnected -> MonitorVisualState.Recording
-        isConnected -> MonitorVisualState.Pending
-        connectionText.startsWith("Đang kết nối", ignoreCase = true) -> MonitorVisualState.Connecting
+        state.interruptionMessage != null -> MonitorVisualState.Interrupted
+        state.actionError != null || connectionRejected -> MonitorVisualState.Error
+        state.terminalNotice != null -> MonitorVisualState.Finished
+        state.activeScanId == null -> MonitorVisualState.Ready
+        state.isStopPending -> MonitorVisualState.Stopping
+        state.isRecording && state.isConnected -> MonitorVisualState.Recording
+        state.isConnected -> MonitorVisualState.Pending
+        state.connectionText.startsWith("Đang kết nối", ignoreCase = true) -> MonitorVisualState.Connecting
         else -> MonitorVisualState.Offline
     }
 
-    fun toggleRecording() {
-        if (activeScanId != null) {
-            stopRecording()
-        } else {
-            onCreateScan()
-        }
-    }
-
     BackHandler {
-        if (activeScanId != null) {
-            stopRecording(navigateBackAfterStop = true)
-        } else {
-            onNavigateBack()
-        }
+        monitoringViewModel.onAction(LiveMonitoringUiAction.BackRequested)
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             MonitoringHeader(onNavigateBack = {
-                if (activeScanId != null) {
-                    stopRecording(navigateBackAfterStop = true)
-                } else {
-                    onNavigateBack()
-                }
+                monitoringViewModel.onAction(LiveMonitoringUiAction.BackRequested)
             })
         },
     ) { contentPadding ->
         when {
-            isPreparing -> {
+            state.loadState == LiveMonitoringLoadState.Loading -> {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -338,7 +218,7 @@ fun LiveMonitoringScreen(
                     )
                 }
             }
-            preparationError != null -> {
+            state.loadState != LiveMonitoringLoadState.Content -> {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -346,12 +226,29 @@ fun LiveMonitoringScreen(
                         .imePadding(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    ShcareErrorState(
-                        title = "Không mở được phiên theo dõi",
-                        message = preparationError,
-                        retryLabel = "Thử tải lại",
-                        onRetry = { preparationAttempt += 1 },
-                    )
+                    val retry = {
+                        monitoringViewModel.onAction(LiveMonitoringUiAction.Retry)
+                    }
+                    when (state.loadState) {
+                        LiveMonitoringLoadState.PermissionDenied -> ShcarePermissionState(
+                            title = "Không có quyền mở phiên theo dõi",
+                            message = state.actionError,
+                            actionLabel = "Kiểm tra lại quyền",
+                            onRequestPermission = retry,
+                        )
+                        LiveMonitoringLoadState.Offline -> ShcareOfflineState(
+                            title = "Không có kết nối mạng",
+                            message = state.actionError,
+                            retryLabel = "Thử kết nối lại",
+                            onRetry = retry,
+                        )
+                        else -> ShcareErrorState(
+                            title = "Không mở được phiên theo dõi",
+                            message = state.actionError,
+                            retryLabel = "Thử tải lại",
+                            onRetry = retry,
+                        )
+                    }
                 }
             }
             else -> {
@@ -366,50 +263,58 @@ fun LiveMonitoringScreen(
                 ) {
                     DeviceContextCard(
                         device = selectedDevice,
-                        activeScanId = activeScanId,
+                        activeScanId = state.activeScanId,
                     )
                     MonitorStatusCard(
                         state = connectionState,
-                        connectionText = connectionText,
-                        actionError = actionError,
-                        interruptionMessage = interruptionMessage,
-                        terminalNotice = terminalNotice,
+                        connectionText = state.connectionText,
+                        actionError = state.actionError,
+                        interruptionMessage = state.interruptionMessage,
+                        terminalNotice = state.terminalNotice,
                         hasDevice = selectedDevice != null,
                     )
                     WaveformCard(
-                        mode = mode,
-                        isRecording = isRecording,
+                        mode = state.mode,
+                        isRecording = state.isRecording,
                         hasLiveSamples = hasLiveSamples,
                         samples = waveformSamples,
-                        heartRate = heartRate,
-                        rms = liveMetrics.rms.coerceAtLeast(0),
-                        sqi = sqi,
-                        hasMetrics = hasMetrics,
-                        droppedPackets = droppedPackets,
+                        heartRate = state.heartRate,
+                        rms = state.metrics.rms.coerceAtLeast(0),
+                        sqi = state.signalQuality,
+                        hasMetrics = state.hasMetrics,
+                        droppedPackets = state.droppedPackets,
                     )
                     AdaptiveVitalMetrics(
-                        mode = mode,
+                        mode = state.mode,
                         primaryValue = primaryValue,
                         primaryUnit = primaryUnit,
                         sqiValue = sqiValue,
-                        hasMetrics = hasMetrics,
+                        hasMetrics = state.hasMetrics,
                         signalQualityAlert = signalQualityAlert,
-                        isRecording = isRecording,
+                        isRecording = state.isRecording,
                     )
-                    if (isRecording) {
+                    if (state.isRecording) {
                         SignalGuidanceCard(
                             hasLowQuality = signalQualityAlert,
-                            hasMetrics = hasMetrics,
+                            hasMetrics = state.hasMetrics,
                         )
                     }
-                    if (droppedPackets > 0) {
-                        DroppedPacketsCard(droppedPackets = droppedPackets)
+                    if (state.droppedPackets > 0) {
+                        DroppedPacketsCard(droppedPackets = state.droppedPackets)
                     }
                     MonitoringAction(
-                        hasActiveScan = activeScanId != null,
-                        isRecording = isRecording,
-                        isBusy = isBusy,
-                        onClick = ::toggleRecording,
+                        hasActiveScan = state.activeScanId != null,
+                        isRecording = state.isRecording,
+                        isBusy = state.isBusy || state.isStopPending,
+                        onClick = {
+                            monitoringViewModel.onAction(
+                                if (state.activeScanId != null) {
+                                    LiveMonitoringUiAction.StopRequested()
+                                } else {
+                                    LiveMonitoringUiAction.CreateScanRequested
+                                },
+                            )
+                        },
                     )
                     Spacer(modifier = Modifier.height(spacing.large))
                 }

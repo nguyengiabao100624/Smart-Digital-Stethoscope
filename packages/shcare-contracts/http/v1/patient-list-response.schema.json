@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/patient-list-response.schema.json",
+  "title": "Shcare clinical patient list response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "patients"],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "patients": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "$ref": "#/$defs/patient"
+      }
+    }
+  },
+  "$defs": {
+    "emergencyContact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "relationship": { "type": "string", "maxLength": 80 }
+      }
+    },
+    "patient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "patientCode", "name", "scanCount"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "patientCode": { "type": "string", "maxLength": 120 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "age": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 130
+        },
+        "dateOfBirth": { "type": "string", "maxLength": 32 },
+        "dob": { "type": "string", "maxLength": 32 },
+        "gender": { "type": "string", "maxLength": 40 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "bloodType": { "type": "string", "maxLength": 20 },
+        "allergies": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 240 }
+        },
+        "emergencyContact": { "$ref": "#/$defs/emergencyContact" },
+        "profileType": { "type": "string", "maxLength": 40 },
+        "relationship": { "type": "string", "maxLength": 80 },
+        "ownerUserId": { "type": "string", "maxLength": 120 },
+        "scanCount": { "type": "integer", "minimum": 0 },
+        "lastScanAt": { "type": ["string", "null"], "maxLength": 64 },
+        "lastAiLabel": { "type": ["string", "null"], "maxLength": 240 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      }
+    }
+  }
+}

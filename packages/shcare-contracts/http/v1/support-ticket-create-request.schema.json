@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/support-ticket-create-request.schema.json",
+  "title": "Shcare support ticket create request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "description"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "device_connection",
+        "measurement_missing",
+        "account_access",
+        "interface_issue",
+        "other"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 3000
+    }
+  }
+}

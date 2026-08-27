@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/scan-waveform-response.schema.json",
+  "title": "Shcare scan waveform response",
+  "description": "Tenant-authorized, backend-validated waveform artifact for one canonical scan. Clients must not invent points when this artifact is unavailable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["waveform"],
+  "properties": {
+    "waveform": {
+      "$ref": "#/$defs/scanWaveform"
+    }
+  },
+  "$defs": {
+    "scanWaveform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scanId", "sampleRate", "points", "generatedAt"],
+      "properties": {
+        "scanId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sampleRate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 192000
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 512,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

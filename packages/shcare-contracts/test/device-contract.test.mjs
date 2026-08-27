@@ -27,6 +27,8 @@ describe("Shcare device protocol v1", () => {
       "auth-accepted.schema.json",
       "command.schema.json",
       "command-status.schema.json",
+      "operational-event.schema.json",
+      "event-receipt.schema.json",
     ];
 
     for (const name of schemaNames) {
@@ -72,6 +74,7 @@ describe("Shcare device protocol v1", () => {
 
   it("uses the same command envelope to start a bound audio v2 session", async () => {
     const command = await readJson("device/v1/fixtures/audio-session-start-command.json");
+    const commandSchema = await readJson("device/v1/command.schema.json");
     assert.equal(command.type, "audio.session.start");
     assert.equal(command.payload.protocolVersion, 2);
     assertRequiredStrings(command.payload, [
@@ -83,7 +86,35 @@ describe("Shcare device protocol v1", () => {
     ]);
     assert.equal(command.payload.sampleRate, 16000);
     assert.equal(command.payload.sampleCount, 128);
+    assert.equal(command.payload.frameEncoding, "shcare_audio_v2");
     assert.equal(command.payload.encoding, "pcm_s16le");
+
+    const audioStartBranch = commandSchema.allOf.find(
+      (branch) =>
+        branch.if?.properties?.type?.const === "audio.session.start",
+    );
+    assert.equal(
+      audioStartBranch.then.properties.payload.additionalProperties,
+      false,
+    );
+    for (const field of [
+      "protocolVersion",
+      "frameEncoding",
+      "workspaceId",
+      "patientId",
+      "deviceId",
+      "scanId",
+      "sessionId",
+      "sampleRate",
+      "sampleCount",
+      "encoding",
+    ]) {
+      assert.ok(audioStartBranch.then.properties.payload.required.includes(field));
+    }
+    assert.equal(
+      audioStartBranch.then.properties.payload.properties.frameEncoding.const,
+      "shcare_audio_v2",
+    );
   });
 
   it("publishes a session-bound two-phase credential rotation contract", async () => {
@@ -115,18 +146,64 @@ describe("Shcare device protocol v1", () => {
     assert.equal("nextSecretHash" in command.payload, false);
   });
 
+  it("publishes a closed OTA manifest and correlated boot-health receipt contract", async () => {
+    const commandSchema = await readJson("device/v1/command.schema.json");
+    const command = await readJson("device/v1/fixtures/ota-update-command.json");
+    const eventSchema = await readJson("device/v1/operational-event.schema.json");
+    const event = await readJson("device/v1/fixtures/ota-confirmed-event.json");
+    const receiptSchema = await readJson("device/v1/event-receipt.schema.json");
+    const receipt = await readJson("device/v1/fixtures/ota-confirmed-accepted.json");
+
+    assert.equal(command.type, "ota.update");
+    assert.equal(command.payload.hardwareTarget, "MSM261S4030H0");
+    assert.equal(command.payload.partitionTarget, "app");
+    assert.equal(command.payload.minimumProtocolVersion, 1);
+    assert.match(command.payload.url, /^https:\/\//);
+    assert.match(command.payload.downloadAuthorization, /^[A-Za-z0-9_-]{32,180}$/);
+    assert.match(command.payload.checksum, /^[a-f0-9]{64}$/);
+    const otaBranch = commandSchema.allOf.find(
+      (branch) => branch.if?.properties?.type?.const === "ota.update",
+    );
+    assert.equal(otaBranch.then.properties.payload.additionalProperties, false);
+    assert.ok(otaBranch.then.properties.payload.required.includes("signature"));
+
+    assert.equal(event.type, "ota.confirmed");
+    assert.equal(event.otaStatus, "confirmed");
+    assert.equal(event.otaBootOutcome, "confirmed");
+    assert.equal(receipt.type, "event.accepted");
+    for (const field of ["deviceId", "commandId", "correlationId", "otaId"]) {
+      assert.equal(receipt[field], event[field]);
+    }
+    assert.ok(
+      eventSchema.allOf.some(
+        (branch) =>
+          branch.if?.properties?.type?.const === "ota.confirmed" &&
+          branch.then?.properties?.otaStatus?.const === "confirmed",
+      ),
+    );
+    assert.ok(receiptSchema.properties.type.enum.includes("event.rejected"));
+  });
+
   it("keeps protocol v2 audio identity explicit", async () => {
     const schema = await readJson("device/v2/audio-frame-header.schema.json");
     const fixture = await readJson("device/v2/fixtures/audio-frame-header.json");
 
     assert.equal(schema.properties.protocolVersion.const, 2);
-    assertRequiredStrings(fixture, [
-      "workspaceId",
-      "patientId",
-      "deviceId",
-      "scanId",
-      "sessionId",
-    ]);
+    assert.equal(schema.properties.frameEncoding.const, "shcare_audio_v2");
+    assert.equal(
+      schema.properties.timestampMs.maximum,
+      Number.MAX_SAFE_INTEGER,
+    );
+    assertRequiredStrings(fixture, ["scanId", "sessionId"]);
+    assert.equal(fixture.frameEncoding, "shcare_audio_v2");
+    for (const sessionOnlyField of ["workspaceId", "patientId", "deviceId"]) {
+      assert.equal(
+        schema.required.includes(sessionOnlyField),
+        false,
+        `${sessionOnlyField} is authenticated session authority, not a wire-header field`,
+      );
+      assert.equal(sessionOnlyField in fixture, false);
+    }
     assert.equal(fixture.sampleRate, 16000);
     assert.equal(fixture.sampleCount, 128);
     assert.equal(fixture.encoding, "pcm_s16le");
@@ -135,16 +212,40 @@ describe("Shcare device protocol v1", () => {
   it("publishes a stable binary wire layout and cross-language golden frame", async () => {
     const wire = await readJson("device/v2/audio-frame-wire-format.json");
     const sessionSchema = await readJson("device/v2/audio-session.schema.json");
+    const session = await readJson("device/v2/fixtures/audio-session.json");
+    const header = await readJson("device/v2/fixtures/audio-frame-header.json");
     const encoded = Buffer.from(
       (await readText("device/v2/fixtures/audio-frame.bin.base64")).trim(),
       "base64",
     );
 
     assert.equal(wire.magicAscii, "SHC2");
+    assert.equal(wire.frameEncoding, "shcare_audio_v2");
     assert.equal(wire.byteOrder, "big-endian");
     assert.equal(wire.fixedHeaderBytes, 30);
     assert.equal(wire.maximumFrameBytes, 30 + 160 + 120 + 1024 * 2);
     assert.equal(sessionSchema.properties.type.const, "audio.session");
+    assert.equal(
+      sessionSchema.properties.frameEncoding.const,
+      "shcare_audio_v2",
+    );
+    for (const field of [
+      "workspaceId",
+      "patientId",
+      "deviceId",
+      "scanId",
+      "sessionId",
+    ]) {
+      assert.ok(sessionSchema.required.includes(field));
+      assert.equal(wire.identityBinding.sessionMetadataFields.includes(field), true);
+    }
+    assert.deepEqual(wire.identityBinding.wireFields, ["sessionId", "scanId"]);
+    assert.equal(wire.identityBinding.authenticatedSocketField, "deviceId");
+    assert.equal(wire.identityBinding.allBindingsRequired, true);
+    assert.equal(header.sessionId, session.sessionId);
+    assert.equal(header.scanId, session.scanId);
+    assert.equal(header.headerLength, 30 + 25 + 16);
+    assert.equal(header.payloadLength, header.sampleCount * 2);
 
     assert.equal(encoded.subarray(0, 4).toString("ascii"), "SHC2");
     assert.equal(encoded[4], 2);
@@ -159,5 +260,22 @@ describe("Shcare device protocol v1", () => {
     assert.equal(encoded.subarray(30, 55).toString("utf8"), "audio-session-fixture-001");
     assert.equal(encoded.subarray(55, 71).toString("utf8"), "scan-fixture-001");
     assert.equal(encoded.length, 71 + 256);
+  });
+
+  it("keeps raw PCM v1 as an explicit receiver-only migration profile", async () => {
+    const legacy = await readJson("device/v1/audio-frame-wire-format.json");
+
+    assert.equal(legacy.protocolVersion, 1);
+    assert.equal(legacy.frameEncoding, "raw_pcm_s16le");
+    assert.equal(legacy.payloadEncoding, "pcm_s16le");
+    assert.equal(legacy.headerBytes, 0);
+    assert.equal(legacy.byteOrder, "little-endian");
+    assert.equal(legacy.compatibilityOnly, true);
+    assert.equal(legacy.receiverFeatureFlagRequired, true);
+    assert.equal(legacy.newFirmwareEmissionAllowed, false);
+    assert.equal(
+      legacy.identitySource,
+      "authenticated_socket_and_server_session",
+    );
   });
 });

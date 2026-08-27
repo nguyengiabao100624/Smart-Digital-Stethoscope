@@ -61,10 +61,10 @@ export function AnimatedCard({
 }
 
 const badgeTone = {
-  online: "border-success/25 bg-success/10 text-[#12613D] dark:text-success",
-  success: "border-success/25 bg-success/10 text-[#12613D] dark:text-success",
-  warning: "border-warning/25 bg-warning/10 text-[#B45309]",
-  error: "border-destructive/20 bg-destructive/10 text-destructive",
+  online: "border-success/25 bg-success/10 text-success-foreground",
+  success: "border-success/25 bg-success/10 text-success-foreground",
+  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
+  error: "border-destructive/20 bg-destructive/10 text-danger-text",
   info: "border-primary/20 bg-primary/10 text-primary",
   muted: "border-border bg-muted text-muted-foreground",
 };
@@ -88,16 +88,8 @@ export function PulseDot({
             : "bg-muted-foreground";
 
   return (
-    <span className={cn("relative inline-flex h-2 w-2", className)}>
-      {tone !== "muted" && (
-        <span
-          className={cn(
-            "absolute inline-flex h-full w-full animate-ping rounded-full opacity-40 motion-reduce:animate-none",
-            color,
-          )}
-        />
-      )}
-      <span className={cn("relative inline-flex h-2 w-2 rounded-full", color)} />
+    <span className={cn("inline-flex h-2 w-2", className)} aria-hidden="true">
+      <span className={cn("inline-flex h-2 w-2 rounded-full", color)} />
     </span>
   );
 }
@@ -182,48 +174,6 @@ export function Timeline({
           )}
         </div>
       ))}
-    </div>
-  );
-}
-
-export function WaveformPreview({ compact = false }: { compact?: boolean }) {
-  const shouldReduceMotion = useReducedMotion();
-  const bars = [
-    34, 52, 28, 64, 44, 78, 36, 58, 82, 46, 68, 32, 74, 54, 88, 42, 60, 30, 72, 50, 84, 38, 56, 66,
-  ];
-
-  return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border border-[#334155] bg-[#0F1419] p-4",
-        compact && "p-3",
-      )}
-    >
-      <div className="mb-3 flex items-center justify-between text-xs text-[#94A3B8]">
-        <span>Waveform preview</span>
-        <span className="font-mono text-[#E2E8F0]">48 kHz / 16-bit</span>
-      </div>
-      <div className={cn("flex items-center gap-1", compact ? "h-20" : "h-32")}>
-        {bars.map((height, index) => (
-          <motion.span
-            key={index}
-            initial={shouldReduceMotion ? false : { height: 8, opacity: 0.35 }}
-            animate={{ height: `${height}%`, opacity: 1 }}
-            transition={
-              shouldReduceMotion
-                ? { duration: 0 }
-                : {
-                    duration: 0.7,
-                    repeat: Infinity,
-                    repeatType: "mirror",
-                    delay: index * 0.035,
-                    ease: "easeInOut",
-                  }
-            }
-            className="w-full rounded-full bg-gradient-to-t from-[#00A896] to-[#0EA5E9]"
-          />
-        ))}
-      </div>
     </div>
   );
 }

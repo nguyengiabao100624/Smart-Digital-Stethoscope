@@ -18,7 +18,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, type CSSProperties } from "react";
+import { memo, useEffect, useRef, type CSSProperties } from "react";
 import { usePublicMotionEnabled } from "@/app/context/PublicMotionContext";
 import { useSEO } from "@/lib/useSEO";
 import doctorVideoUrl from "../../../../MẪU UI UX/bacsi.mp4";
@@ -36,7 +36,7 @@ const workflow = [
   },
   {
     title: "Bác sĩ xác nhận",
-    description: "Hệ thống kiểm tra chất lượng tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ chốt.",
+    description: "AI chỉ hỗ trợ đọc tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ chốt.",
     icon: CheckCircle2,
   },
 ];
@@ -93,7 +93,7 @@ const proofCards = [
   },
   {
     title: "Bác sĩ là người chốt",
-    body: "Bộ quy tắc chỉ kiểm tra chất lượng tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ xác nhận.",
+    body: "AI chỉ hỗ trợ phân tích tín hiệu. Ghi chú và quyết định lâm sàng luôn do bác sĩ xác nhận.",
     icon: Monitor,
   },
 ];
@@ -109,7 +109,7 @@ function ClinicalPreview({ reducedMotion }: { reducedMotion: boolean | null }) {
   return (
     <motion.div
       className="shc-preview"
-      aria-label="Minh họa dashboard Shcare"
+      aria-label="Minh họa dashboard Smart Health"
       style={{
         backdropFilter: "blur(8px) saturate(120%)",
         WebkitBackdropFilter: "blur(8px) saturate(120%)",
@@ -186,8 +186,10 @@ function ClinicalPreview({ reducedMotion }: { reducedMotion: boolean | null }) {
   );
 }
 
-export default function HomePage() {
-  const reducedMotion = !usePublicMotionEnabled();
+function HomePage() {
+  const motionEnabled = usePublicMotionEnabled();
+  const reducedMotion = !motionEnabled;
+  const cinemaRef = useRef<HTMLDivElement | null>(null);
   const revealFrom = (direction: "left" | "right" | "up", delay = 0) => {
     if (reducedMotion) return {};
 
@@ -210,6 +212,27 @@ export default function HomePage() {
   };
 
   useEffect(() => {
+    const videos = cinemaRef.current?.querySelectorAll("video") ?? [];
+    let playTimer = 0;
+    if (motionEnabled) {
+      playTimer = window.setTimeout(() => {
+        videos.forEach((video) => {
+          void video.play().catch(() => {
+            // Muted inline playback can still be blocked by browser policy.
+          });
+        });
+      }, 4_000);
+    } else {
+      videos.forEach((video) => video.pause());
+    }
+
+    return () => {
+      window.clearTimeout(playTimer);
+      videos.forEach((video) => video.pause());
+    };
+  }, [motionEnabled]);
+
+  useEffect(() => {
     const root = document.querySelector<HTMLElement>(".shc-home");
     if (!root) return;
 
@@ -225,8 +248,10 @@ export default function HomePage() {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
           const element = entry.target as HTMLElement;
-          element.dataset.shcHomeRevealState = entry.isIntersecting ? "visible" : "pending";
+          element.dataset.shcHomeRevealState = "visible";
+          observer.unobserve(element);
         });
       },
       { rootMargin: "0px 0px -6% 0px", threshold: 0.06 },
@@ -250,21 +275,10 @@ export default function HomePage() {
   return (
     <div data-themable-page className="shc-home">
       <section className="shc-hero">
-        <div className="shc-hero-cinema" aria-hidden="true">
-          <video
-            className="shc-hero-video shc-hero-video-edge"
-            src={doctorVideoUrl}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            tabIndex={-1}
-          />
+        <div ref={cinemaRef} className="shc-hero-cinema" aria-hidden="true">
           <video
             className="shc-hero-video shc-hero-video-main"
             src={doctorVideoUrl}
-            autoPlay
             loop
             muted
             playsInline
@@ -404,7 +418,7 @@ export default function HomePage() {
 
           <motion.div
             className="shc-handoff-panel"
-            aria-label="Các tầng dữ liệu Shcare"
+            aria-label="Các tầng dữ liệu Smart Health"
             {...revealFrom("right", 0.12)}
           >
             <div className="shc-handoff-panel-head">
@@ -461,3 +475,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+export default memo(HomePage);

@@ -7,6 +7,8 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import java.util.Locale
+import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -22,8 +24,46 @@ data class PendingRegistration(
     val hospital: String = "",
     val department: String = "",
     val organizationId: String = "",
-    val reason: String = ""
+    val reason: String = "",
+    val firebaseUserId: String = "",
+    val roleRequestIdempotencyKey: String = "",
 )
+
+internal fun normalizePendingRegistrationEmail(value: String): String =
+    value.trim().lowercase(Locale.ROOT)
+
+internal fun PendingRegistration.bindToFirebaseOwner(
+    firebaseUserId: String,
+    firebaseEmail: String,
+    idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
+): PendingRegistration? {
+    val expectedFirebaseUserId = firebaseUserId.trim()
+    val expectedEmail = normalizePendingRegistrationEmail(firebaseEmail)
+    val storedFirebaseUserId = this.firebaseUserId.trim()
+    val storedEmail = normalizePendingRegistrationEmail(email)
+    if (
+        expectedFirebaseUserId.isBlank() ||
+        expectedFirebaseUserId.length > 160 ||
+        expectedEmail.isBlank() ||
+        storedEmail.isBlank() ||
+        storedEmail != expectedEmail ||
+        (storedFirebaseUserId.isNotBlank() && storedFirebaseUserId != expectedFirebaseUserId)
+    ) {
+        return null
+    }
+    val stableIdempotencyKey = roleRequestIdempotencyKey.trim()
+        .takeIf { it.length in 8..160 }
+        ?: idempotencyKeyFactory().trim().also {
+            require(it.length in 8..160) {
+                "Role request Idempotency-Key must contain between 8 and 160 characters."
+            }
+        }
+    return copy(
+        email = expectedEmail,
+        firebaseUserId = expectedFirebaseUserId,
+        roleRequestIdempotencyKey = stableIdempotencyKey,
+    )
+}
 
 @SuppressLint("ApplySharedPref", "UseKtx")
 object PendingRegistrationStore {
@@ -46,7 +86,12 @@ object PendingRegistrationStore {
 
     @Synchronized
     fun save(context: Context, registration: PendingRegistration) {
-        val encrypted = encrypt(registration.toJson().toString())
+        val normalizedRegistration = registration.copy(
+            email = normalizePendingRegistrationEmail(registration.email),
+            firebaseUserId = registration.firebaseUserId.trim(),
+            roleRequestIdempotencyKey = registration.roleRequestIdempotencyKey.trim(),
+        )
+        val encrypted = encrypt(normalizedRegistration.toJson().toString())
         // This is one small registration checkpoint. A synchronous commit lets callers fail
         // closed instead of claiming recovery data was persisted when the disk write failed.
         val saved = preferences(context)
@@ -57,7 +102,50 @@ object PendingRegistrationStore {
             .putInt(KEY_VERSION, CURRENT_VERSION)
             .commit()
         check(saved) { "Không thể lưu an toàn thông tin đăng ký tạm." }
-        current = registration
+        current = normalizedRegistration
+    }
+
+    @Synchronized
+    fun saveForFirebaseOwner(
+        context: Context,
+        registration: PendingRegistration,
+        firebaseUserId: String,
+        firebaseEmail: String,
+    ): PendingRegistration {
+        val bound = registration.bindToFirebaseOwner(
+            firebaseUserId = firebaseUserId,
+            firebaseEmail = firebaseEmail,
+        ) ?: error("Không thể gắn thông tin đăng ký với phiên Firebase hiện tại.")
+        save(context, bound)
+        return bound
+    }
+
+    @Synchronized
+    fun saveForFirebaseOwnerIfCurrentDraft(
+        context: Context,
+        registration: PendingRegistration,
+        firebaseUserId: String,
+        firebaseEmail: String,
+    ): PendingRegistration {
+        val expectedOperationId = registration.roleRequestIdempotencyKey.trim()
+        require(expectedOperationId.length in 8..160) {
+            "Registration operation ID must contain between 8 and 160 characters."
+        }
+        val currentDraft = load(context)
+            ?: error("Thông tin đăng ký tạm không còn tồn tại.")
+        if (
+            currentDraft.roleRequestIdempotencyKey.trim() != expectedOperationId ||
+            normalizePendingRegistrationEmail(currentDraft.email) !=
+            normalizePendingRegistrationEmail(registration.email)
+        ) {
+            error("Thông tin đăng ký đã được thay thế bởi một thao tác mới hơn.")
+        }
+        return saveForFirebaseOwner(
+            context = context,
+            registration = registration,
+            firebaseUserId = firebaseUserId,
+            firebaseEmail = firebaseEmail,
+        )
     }
 
     @Synchronized
@@ -99,15 +187,96 @@ object PendingRegistrationStore {
     }
 
     @Synchronized
-    fun clear(context: Context? = null) {
-        current = null
-        context?.let(::preferences)
-            ?.edit()
-            ?.remove(LEGACY_PLAINTEXT_KEY)
-            ?.remove(KEY_CIPHERTEXT)
-            ?.remove(KEY_IV)
-            ?.remove(KEY_VERSION)
-            ?.commit()
+    fun loadForFirebaseOwner(
+        context: Context,
+        firebaseUserId: String,
+        firebaseEmail: String,
+    ): PendingRegistration? {
+        val expectedFirebaseUserId = firebaseUserId.trim()
+        val expectedEmail = normalizePendingRegistrationEmail(firebaseEmail)
+        if (expectedFirebaseUserId.isBlank() || expectedEmail.isBlank()) return null
+        val registration = load(context) ?: return null
+        val bound = registration.bindToFirebaseOwner(
+            firebaseUserId = expectedFirebaseUserId,
+            firebaseEmail = expectedEmail,
+        )
+        if (bound == null) {
+            clear(context)
+            return null
+        }
+        if (bound != registration) save(context, bound)
+        return bound
+    }
+
+    @Synchronized
+    fun clearForFirebaseOwner(
+        context: Context,
+        firebaseUserId: String,
+        firebaseEmail: String,
+    ): Boolean {
+        val registration = load(context) ?: return false
+        val owned = registration.bindToFirebaseOwner(
+            firebaseUserId = firebaseUserId,
+            firebaseEmail = firebaseEmail,
+        ) ?: return false
+        if (
+            owned.firebaseUserId != firebaseUserId.trim() ||
+            owned.email != normalizePendingRegistrationEmail(firebaseEmail)
+        ) {
+            return false
+        }
+        return clear(context)
+    }
+
+    @Synchronized
+    fun clearRegistrationAttempt(
+        context: Context,
+        operationId: String,
+        firebaseUserId: String = "",
+        firebaseEmail: String = "",
+    ): Boolean {
+        val expectedOperationId = operationId.trim()
+        if (expectedOperationId.length !in 8..160) return false
+        val currentAttempt = load(context) ?: return true
+        if (
+            currentAttempt.roleRequestIdempotencyKey.trim() != expectedOperationId
+        ) {
+            return false
+        }
+
+        val expectedFirebaseUserId = firebaseUserId.trim()
+        val expectedEmail = normalizePendingRegistrationEmail(firebaseEmail)
+        val storedFirebaseUserId = currentAttempt.firebaseUserId.trim()
+        if (expectedFirebaseUserId.isBlank()) {
+            if (storedFirebaseUserId.isNotBlank()) return false
+        } else if (
+            expectedEmail.isBlank() ||
+            normalizePendingRegistrationEmail(currentAttempt.email) != expectedEmail ||
+            (
+                storedFirebaseUserId.isNotBlank() &&
+                    storedFirebaseUserId != expectedFirebaseUserId
+            )
+        ) {
+            return false
+        }
+        return clear(context)
+    }
+
+    @Synchronized
+    fun clear(context: Context? = null): Boolean {
+        if (context == null) {
+            current = null
+            return true
+        }
+        val cleared = preferences(context)
+            .edit()
+            .remove(LEGACY_PLAINTEXT_KEY)
+            .remove(KEY_CIPHERTEXT)
+            .remove(KEY_IV)
+            .remove(KEY_VERSION)
+            .commit()
+        if (cleared) current = null
+        return cleared
     }
 
     private fun encrypt(plaintext: String): EncryptedPayload {
@@ -184,6 +353,8 @@ object PendingRegistrationStore {
             department = json.optString("department"),
             organizationId = json.optString("organizationId"),
             reason = json.optString("reason"),
+            firebaseUserId = json.optString("firebaseUserId"),
+            roleRequestIdempotencyKey = json.optString("roleRequestIdempotencyKey"),
         )
     }
 
@@ -198,6 +369,8 @@ object PendingRegistrationStore {
             .put("department", department)
             .put("organizationId", organizationId)
             .put("reason", reason)
+            .put("firebaseUserId", firebaseUserId)
+            .put("roleRequestIdempotencyKey", roleRequestIdempotencyKey)
     }
 
     private data class EncryptedPayload(

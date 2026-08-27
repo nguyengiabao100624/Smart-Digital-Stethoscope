@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-operation-common.schema.json",
+  "title": "Shcare public device operation definitions",
+  "$defs": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "otaStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "delivered",
+        "downloading",
+        "verifying",
+        "rebooting",
+        "rolling_back",
+        "confirmed",
+        "rolled_back",
+        "failed",
+        "expired"
+      ]
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["websocket", "mqtt", "delivered"],
+      "properties": {
+        "websocket": { "type": "boolean" },
+        "mqtt": { "type": "boolean" },
+        "delivered": { "type": "boolean" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "id",
+        "deviceId",
+        "organizationId",
+        "type",
+        "correlationId",
+        "state",
+        "status",
+        "code",
+        "detail",
+        "requestedByUserId",
+        "issuedAt",
+        "expiresAt",
+        "acceptedAt",
+        "queuedAt",
+        "deliveredAt",
+        "acknowledgedAt",
+        "applyingAt",
+        "appliedAt",
+        "failedAt",
+        "expiredAt",
+        "delivery",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "deviceId": { "$ref": "#/$defs/deviceId" },
+        "organizationId": { "$ref": "#/$defs/workspaceId" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "restart",
+            "wifi.status",
+            "device.lock",
+            "device.revoke",
+            "device.rotate_secret",
+            "wifi.update",
+            "ota.update",
+            "audio.session.start",
+            "audio.session.stop"
+          ]
+        },
+        "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "state": {
+          "type": "string",
+          "enum": ["accepted", "queued", "delivered", "acknowledged", "applying", "applied", "failed", "expired"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["accepted", "queued", "delivered", "acknowledged", "applying", "applied", "failed", "expired"]
+        },
+        "code": { "type": "string", "maxLength": 80 },
+        "detail": { "type": "string", "maxLength": 240 },
+        "requestedByUserId": { "type": "string", "maxLength": 120 },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "executionExpiresAt": { "type": "string", "format": "date-time" },
+        "acceptedAt": { "type": "string", "maxLength": 40 },
+        "queuedAt": { "type": "string", "maxLength": 40 },
+        "deliveredAt": { "type": "string", "maxLength": 40 },
+        "acknowledgedAt": { "type": "string", "maxLength": 40 },
+        "applyingAt": { "type": "string", "maxLength": 40 },
+        "appliedAt": { "type": "string", "maxLength": 40 },
+        "failedAt": { "type": "string", "maxLength": 40 },
+        "expiredAt": { "type": "string", "maxLength": 40 },
+        "delivery": { "$ref": "#/$defs/delivery" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "genericCommand": {
+      "allOf": [
+        { "$ref": "#/$defs/command" },
+        {
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["restart", "wifi.status", "device.lock"]
+            }
+          }
+        }
+      ]
+    },
+    "credentialRotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "id",
+        "state",
+        "commandId",
+        "requestedAt",
+        "expiresAt",
+        "acknowledgedAt",
+        "confirmingAt",
+        "confirmedAt",
+        "expiredAt",
+        "rolledBackAt",
+        "failedAt",
+        "failureCode",
+        "confirmed"
+      ],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "state": {
+          "type": "string",
+          "enum": ["initiated", "pending_device_ack", "confirming", "confirmed", "expired", "rolled_back", "failed"]
+        },
+        "commandId": { "type": "string", "maxLength": 128 },
+        "requestedAt": { "type": "string", "maxLength": 40 },
+        "expiresAt": { "type": "string", "maxLength": 40 },
+        "acknowledgedAt": { "type": "string", "maxLength": 40 },
+        "confirmingAt": { "type": "string", "maxLength": 40 },
+        "confirmedAt": { "type": "string", "maxLength": 40 },
+        "expiredAt": { "type": "string", "maxLength": 40 },
+        "rolledBackAt": { "type": "string", "maxLength": 40 },
+        "failedAt": { "type": "string", "maxLength": 40 },
+        "failureCode": { "type": "string", "maxLength": 80 },
+        "confirmed": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "confirmed" } }, "required": ["state"] },
+          "then": { "properties": { "confirmed": { "const": true } } },
+          "else": { "properties": { "confirmed": { "const": false } } }
+        }
+      ]
+    },
+    "ota": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "commandId",
+        "correlationId",
+        "firmwareVersion",
+        "checksum",
+        "firmwareFileId",
+        "firmwareFileName",
+        "hardwareTarget",
+        "partitionTarget",
+        "minimumProtocolVersion",
+        "expiresAt",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "firmwareVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 80 },
+        "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "firmwareFileId": { "type": "string", "maxLength": 120 },
+        "firmwareFileName": { "type": "string", "maxLength": 240 },
+        "hardwareTarget": { "const": "MSM261S4030H0" },
+        "partitionTarget": { "const": "app" },
+        "minimumProtocolVersion": { "const": 1 },
+        "expiresAt": { "type": "string", "maxLength": 40 },
+        "status": {
+          "$ref": "#/$defs/otaStatus"
+        },
+        "requestedByUserId": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["url"] },
+          { "required": ["downloadUrl"] },
+          { "required": ["downloadAuthorization"] },
+          { "required": ["signature"] },
+          { "required": ["token"] },
+          { "required": ["tokenHash"] },
+          { "required": ["privateKey"] }
+        ]
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uptimeMs": { "type": "integer", "minimum": 0 },
+        "freeHeapBytes": { "type": "integer", "minimum": 0 },
+        "audioPacketsSent": { "type": "integer", "minimum": 0 },
+        "audioPacketsDropped": { "type": "integer", "minimum": 0 },
+        "audioSendFailures": { "type": "integer", "minimum": 0 },
+        "lastCommandUptimeMs": { "type": "integer", "minimum": 0 },
+        "audioCaptureQueueDepth": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "audioCaptureQueueHighWater": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "audioCaptureFramesEnqueued": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "audioCaptureFramesDropped": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "audioCaptureFramesStale": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot0Rms": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot0Peak": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot0WindowCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot0ActiveWindowCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot0SampleCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot0NonZeroSampleCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot1Rms": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot1Peak": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot1WindowCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot1ActiveWindowCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot1SampleCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "i2sSlot1NonZeroSampleCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "resetReason": { "type": "string", "maxLength": 160 },
+        "i2sStatus": { "type": "string", "maxLength": 160 },
+        "lastCommandId": { "type": "string", "maxLength": 160 },
+        "lastCommandState": { "type": "string", "maxLength": 160 },
+        "lastCommandCode": { "type": "string", "maxLength": 160 },
+        "otaStatus": { "$ref": "#/$defs/otaStatus" },
+        "audioStatus": { "type": "string", "maxLength": 40 },
+        "connectionMethod": { "type": "string", "maxLength": 40 }
+      }
+    },
+    "publicDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "online"],
+      "properties": {
+        "id": { "$ref": "#/$defs/deviceId" },
+        "organizationId": { "$ref": "#/$defs/workspaceId" },
+        "pairedUserId": { "type": ["string", "null"], "maxLength": 160 },
+        "ownerUserId": { "type": ["string", "null"], "maxLength": 160 },
+        "assignedPatientId": { "type": ["string", "null"], "maxLength": 160 },
+        "ownershipState": { "type": "string", "enum": ["provisioned", "claimed", "assigned", "unassigned", "revoked"] },
+        "revokedByUserId": { "type": "string", "maxLength": 120 },
+        "name": { "type": "string", "maxLength": 120 },
+        "type": { "type": "string", "enum": ["stethoscope", "respiratory", "other"] },
+        "manufacturer": { "type": "string", "maxLength": 120 },
+        "model": { "type": "string", "maxLength": 120 },
+        "serialNumber": { "type": "string", "maxLength": 120 },
+        "purchaseDate": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "maxLength": 40 },
+        "signal": { "type": ["number", "null"] },
+        "wifiRssi": { "type": ["number", "null"] },
+        "wifiSsid": { "type": "string", "maxLength": 120 },
+        "ipAddress": { "type": "string", "maxLength": 80 },
+        "battery": { "type": ["number", "null"] },
+        "connected": { "type": "boolean" },
+        "online": { "type": "boolean" },
+        "connectionMethod": { "type": "string", "maxLength": 40 },
+        "firmwareVersion": { "type": "string", "maxLength": 80 },
+        "otaStatus": { "$ref": "#/$defs/otaStatus" },
+        "audioStatus": { "type": "string", "maxLength": 80 },
+        "backendHost": { "type": "string", "maxLength": 160 },
+        "backendPort": { "type": "number" },
+        "lastSeenAt": { "type": ["string", "null"], "maxLength": 40 },
+        "revokedAt": { "type": ["string", "null"], "maxLength": 40 },
+        "secretRotatedAt": { "type": ["string", "null"], "maxLength": 40 },
+        "createdAt": { "type": "string", "maxLength": 40 },
+        "updatedAt": { "type": "string", "maxLength": 40 },
+        "credentialRotation": { "$ref": "#/$defs/credentialRotation" },
+        "telemetry": { "$ref": "#/$defs/telemetry" },
+        "ota": { "$ref": "#/$defs/ota" },
+        "lastCommand": { "$ref": "#/$defs/command" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["secret"] },
+          { "required": ["deviceSecret"] },
+          { "required": ["secretHash"] },
+          { "required": ["claimCode"] },
+          { "required": ["claimCodeHash"] },
+          { "required": ["credential"] },
+          { "required": ["factoryCredential"] },
+          { "required": ["otaSigningKey"] }
+        ]
+      }
+    }
+  }
+}

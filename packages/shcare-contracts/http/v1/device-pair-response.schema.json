@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-pair-response.schema.json",
+  "title": "Shcare device claim receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "pairing"],
+  "properties": {
+    "device": { "$ref": "#/$defs/claimedDevice" },
+    "pairing": { "$ref": "#/$defs/pairingState" },
+    "idempotent": { "type": "boolean" }
+  },
+  "$defs": {
+    "claimedDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "organizationId", "ownerUserId", "ownershipState", "status", "connected", "online", "connectionMethod"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$" },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "ownerUserId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "pairedUserId": { "type": ["string", "null"], "maxLength": 160 },
+        "name": { "type": "string", "maxLength": 120 },
+        "type": { "type": "string", "enum": ["stethoscope", "respiratory", "other"] },
+        "ownershipState": { "type": "string", "enum": ["claimed", "assigned", "unassigned"] },
+        "status": { "type": "string", "maxLength": 40 },
+        "connected": { "type": "boolean" },
+        "online": { "type": "boolean" },
+        "connectionMethod": { "type": "string", "enum": ["QR", "Manual"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["secret"] },
+          { "required": ["deviceSecret"] },
+          { "required": ["secretHash"] },
+          { "required": ["claimCode"] },
+          { "required": ["claimCodeHash"] },
+          { "required": ["proofOfPossession"] },
+          { "required": ["factoryCredential"] }
+        ]
+      }
+    },
+    "pairingState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "presence", "onlineConfirmed", "authenticatedTransport"],
+          "properties": {
+            "outcome": { "const": "accepted" },
+            "presence": { "const": "awaiting_online" },
+            "onlineConfirmed": { "const": false },
+            "authenticatedTransport": { "type": "null" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "presence", "onlineConfirmed", "authenticatedTransport"],
+          "properties": {
+            "outcome": { "const": "success" },
+            "presence": { "const": "online" },
+            "onlineConfirmed": { "const": true },
+            "authenticatedTransport": { "const": "wss" }
+          }
+        }
+      ]
+    }
+  },
+  "x-shcare-success-levels": {
+    "accepted": "backend-claim-committed-awaiting-authenticated-wss",
+    "success": "device-authenticated-online-over-wss"
+  }
+}

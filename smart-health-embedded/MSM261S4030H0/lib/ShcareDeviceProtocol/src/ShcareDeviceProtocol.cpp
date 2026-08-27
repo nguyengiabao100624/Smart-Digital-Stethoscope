@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <limits>
+#include <utility>
 
 namespace shcare {
 namespace {
@@ -15,10 +16,15 @@ constexpr std::size_t kMaxTypeBytes = 64;
 constexpr std::size_t kMaxTimestampBytes = 40;
 constexpr std::size_t kMaxPayloadBytes = 2048;
 constexpr std::size_t kMaxOtaUrlBytes = 1024;
+constexpr std::size_t kMaxOtaDownloadAuthorizationBytes = 180;
 constexpr std::size_t kMaxOtaVersionBytes = 80;
 constexpr std::size_t kMaxOtaSignatureEncodedBytes = 684;
 constexpr std::size_t kMaxCommandJournalBytes = 4096;
 constexpr std::size_t kMaxCommandResultBytes = 192;
+constexpr std::size_t kMaxPendingReconnectBytes = 768;
+constexpr std::size_t kMaxPendingOtaReceiptBytes = 768;
+constexpr std::size_t kMaxSetupWifiRequestBytes = 768;
+constexpr std::size_t kMaxWifiSsidBytes = 63;
 constexpr std::size_t kMinAuthBindingBytes = 16;
 constexpr std::size_t kMaxAuthBindingBytes = 160;
 constexpr std::size_t kMaxAuthDeviceIdBytes = 120;
@@ -134,7 +140,7 @@ bool parseIso8601UtcMillis(const std::string &value, std::int64_t &epochMs) {
 bool isSupportedCommand(const std::string &type) {
   static constexpr const char *kSupported[] = {
       "restart",      "wifi.status", "device.lock",
-      "device.revoke", "device.rotate_secret", "wifi.update", "ota.update",
+      "device.revoke", "device.rotate_secret", "wifi.setup.open", "wifi.update", "ota.update",
       "audio.session.start", "audio.session.stop",
   };
   return std::any_of(std::begin(kSupported), std::end(kSupported),
@@ -145,6 +151,103 @@ bool hasControlCharacter(const std::string &value) {
   return std::any_of(value.begin(), value.end(), [](unsigned char character) {
     return character < 0x20 || character == 0x7f;
   });
+}
+
+bool validOperationalStatus(const std::string &value) {
+  if (value.size() > 40) {
+    return false;
+  }
+  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
+    const bool alphaNumeric =
+        (character >= 'a' && character <= 'z') ||
+        (character >= 'A' && character <= 'Z') ||
+        (character >= '0' && character <= '9');
+    return alphaNumeric || character == '.' || character == '_' ||
+           character == '-';
+  });
+}
+
+bool queueableOperationalEventType(const std::string &type) {
+  return type == "ota.confirmed" || type == "ota.rollback" ||
+         type == "ota.failed" || type == "ota.downloading" ||
+         type == "ota.verifying" || type == "ota.rebooting" ||
+         type == "audio.failed" || type == "i2s.degraded" ||
+         type == "i2s.recovered" || type == "watchdog.degraded";
+}
+
+bool isOtaOperationalEventType(const std::string &type) {
+  return type.rfind("ota.", 0) == 0;
+}
+
+bool validBoundedId(const std::string &value) {
+  return !value.empty() && value.size() <= kMaxIdBytes &&
+         !hasControlCharacter(value);
+}
+
+bool validOtaDownloadAuthorization(const std::string &value) {
+  if (value.empty()) {
+    return true;
+  }
+  if (value.size() < 32 ||
+      value.size() > kMaxOtaDownloadAuthorizationBytes ||
+      hasControlCharacter(value)) {
+    return false;
+  }
+  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
+    const bool alphaNumeric =
+        (character >= 'a' && character <= 'z') ||
+        (character >= 'A' && character <= 'Z') ||
+        (character >= '0' && character <= '9');
+    return alphaNumeric || character == '-' || character == '_';
+  });
+}
+
+bool isSha256Hex(const std::string &value);
+
+bool validPendingOtaReceipt(const PendingOtaReceipt &receipt) {
+  static constexpr const char *kStatuses[] = {
+      "pending",      "delivered",  "downloading", "verifying",
+      "rebooting",    "rolling_back", "confirmed", "rolled_back",
+      "failed",       "expired",
+  };
+  const bool validStatus = std::any_of(
+      std::begin(kStatuses), std::end(kStatuses),
+      [&receipt](const char *status) { return receipt.status == status; });
+  return validBoundedId(receipt.commandId) &&
+         validBoundedId(receipt.correlationId) &&
+         validBoundedId(receipt.otaId) &&
+         receipt.otaId == receipt.commandId &&
+         !receipt.firmwareVersion.empty() &&
+         receipt.firmwareVersion.size() <= kMaxOtaVersionBytes &&
+         !hasControlCharacter(receipt.firmwareVersion) &&
+         isSha256Hex(receipt.manifestFingerprint) && validStatus;
+}
+
+void incrementSaturated(std::uint32_t &value) {
+  if (value != UINT32_MAX) {
+    ++value;
+  }
+}
+
+bool validPendingReconnectCommand(
+    const PendingReconnectCommand &command) {
+  if (command.commandId.empty() || command.commandId.size() > kMaxIdBytes ||
+      command.correlationId.empty() ||
+      command.correlationId.size() > kMaxIdBytes ||
+      hasControlCharacter(command.commandId) ||
+      hasControlCharacter(command.correlationId) ||
+      hasControlCharacter(command.expectedWifiSsid) ||
+      hasControlCharacter(command.expectedWifiConfigProof)) {
+    return false;
+  }
+  if (command.type == "restart") {
+    return command.expectedWifiSsid.empty() &&
+           command.expectedWifiConfigProof.empty();
+  }
+  return command.type == "wifi.update" &&
+         !command.expectedWifiSsid.empty() &&
+         command.expectedWifiSsid.size() <= kMaxWifiSsidBytes &&
+         isSha256Hex(command.expectedWifiConfigProof);
 }
 
 bool parseUnsignedVersionPart(const std::string &value,
@@ -385,6 +488,20 @@ void writeUint64Be(std::uint8_t *output, std::size_t offset,
   }
 }
 
+bool validAudioV2SequenceFlags(std::uint32_t sequence, std::uint8_t flags) {
+  constexpr std::uint8_t kKnownFlags =
+      kAudioV2FlagStart | kAudioV2FlagEnd | kAudioV2FlagDiscontinuity |
+      kAudioV2FlagRetransmit;
+  if ((flags & static_cast<std::uint8_t>(~kKnownFlags)) != 0) {
+    return false;
+  }
+  const bool start = (flags & kAudioV2FlagStart) != 0;
+  if ((sequence == 0) != start) {
+    return false;
+  }
+  return sequence != 0 || (flags & kAudioV2FlagDiscontinuity) == 0;
+}
+
 }  // namespace
 
 std::uint32_t reconnectBackoffDelayMs(std::uint32_t attemptCount,
@@ -455,8 +572,14 @@ bool developmentUdpAllowed(bool productionProfile,
   return !productionProfile && developmentUdpEnabled;
 }
 
-bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture) {
-  return !hasWifiConfig || physicalGesture;
+bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture,
+                        bool trustedRecovery) {
+  return !hasWifiConfig || physicalGesture || trustedRecovery;
+}
+
+bool shouldOpenSetupPortalAfterReconnectFailures(std::uint32_t failureCount,
+                                                 std::uint32_t threshold) {
+  return threshold > 0 && failureCount >= threshold;
 }
 
 bool setupPortalExpired(std::uint32_t nowMs, std::uint32_t startedAtMs,
@@ -495,6 +618,76 @@ bool validSetupPortalCsrf(const std::string &expectedToken,
   return difference == 0;
 }
 
+bool validWifiCredentials(const std::string &ssid,
+                          const std::string &password) {
+  if (ssid.empty() || ssid.size() > 32 || hasControlCharacter(ssid)) {
+    return false;
+  }
+  if (password.empty()) {
+    return true;
+  }
+  if (password.size() < 8 || password.size() > 63) {
+    return false;
+  }
+  return std::all_of(password.begin(), password.end(),
+                     [](const unsigned char character) {
+                       return character >= 0x20 && character <= 0x7e;
+                     });
+}
+
+SetupWifiProvisioningParseResult parseSetupWifiProvisioningRequest(
+    const std::string &json, const std::string &expectedDeviceId,
+    const std::string &expectedCsrfToken) {
+  SetupWifiProvisioningParseResult result;
+  if (json.empty() || json.size() > kMaxSetupWifiRequestBytes) {
+    result.code = SetupWifiProvisioningParseCode::PayloadTooLarge;
+    return result;
+  }
+
+  JsonDocument document;
+  if (deserializeJson(document, json) || !document.is<JsonObject>()) {
+    result.code = SetupWifiProvisioningParseCode::MalformedJson;
+    return result;
+  }
+
+  const JsonObject object = document.as<JsonObject>();
+  if (!object["protocolVersion"].is<int>() ||
+      object["protocolVersion"].as<int>() != 1) {
+    result.code = SetupWifiProvisioningParseCode::UnsupportedProtocol;
+    return result;
+  }
+  if (!object["deviceId"].is<const char *>() ||
+      !object["csrfToken"].is<const char *>() ||
+      !object["ssid"].is<const char *>() ||
+      !object["password"].is<const char *>()) {
+    result.code = SetupWifiProvisioningParseCode::MalformedJson;
+    return result;
+  }
+
+  const std::string deviceId = object["deviceId"].as<const char *>();
+  const std::string providedCsrf = object["csrfToken"].as<const char *>();
+  const std::string ssid = object["ssid"].as<const char *>();
+  const std::string password = object["password"].as<const char *>();
+  if (!validCanonicalDeviceId(expectedDeviceId) || deviceId != expectedDeviceId) {
+    result.code = SetupWifiProvisioningParseCode::DeviceMismatch;
+    return result;
+  }
+  if (!validSetupPortalCsrf(expectedCsrfToken, providedCsrf)) {
+    result.code = SetupWifiProvisioningParseCode::InvalidSession;
+    return result;
+  }
+  if (!validWifiCredentials(ssid, password)) {
+    result.code = SetupWifiProvisioningParseCode::InvalidCredentials;
+    return result;
+  }
+
+  result.code = SetupWifiProvisioningParseCode::Ok;
+  result.request.deviceId = deviceId;
+  result.request.ssid = ssid;
+  result.request.password = password;
+  return result;
+}
+
 bool otaBootHealthReady(const OtaBootHealthInput &input) {
   return input.pendingVerification && input.i2sReady &&
          input.stabilityWindowElapsed && input.productionProfile &&
@@ -502,6 +695,34 @@ bool otaBootHealthReady(const OtaBootHealthInput &input) {
          input.transport == CloudTransport::Wss && input.authenticated &&
          input.authenticatedHeartbeatObserved &&
          !input.recoveryPortalActive;
+}
+
+DeviceCommandAdmission evaluateDeviceCommandAdmission(
+    const std::string &commandType, bool otaInProgress,
+    bool audioSessionActive) {
+  if (otaInProgress) {
+    return DeviceCommandAdmission::OtaBusy;
+  }
+  if (commandType == "ota.update" && audioSessionActive) {
+    return DeviceCommandAdmission::RecordingActive;
+  }
+  return DeviceCommandAdmission::Allowed;
+}
+
+OtaRollbackAction evaluateOtaRollbackAction(
+    bool pendingVerification, bool timeoutElapsed, bool rollbackPossible,
+    bool terminal) {
+  if (!pendingVerification) {
+    return OtaRollbackAction::None;
+  }
+  if (terminal) {
+    return OtaRollbackAction::Terminal;
+  }
+  if (!timeoutElapsed) {
+    return OtaRollbackAction::Wait;
+  }
+  return rollbackPossible ? OtaRollbackAction::RequestRollback
+                          : OtaRollbackAction::FailUnavailable;
 }
 
 AuthAcceptedParseResult parseAuthAccepted(const std::string &json) {
@@ -590,6 +811,11 @@ AuthAcceptedParseResult parseAuthAccepted(const std::string &json) {
   return result;
 }
 
+bool parseAuthAcceptedServerTimeEpochMillis(const AuthAcceptedMessage &accepted,
+                                            std::int64_t &epochMs) {
+  return parseIso8601UtcMillis(accepted.serverTime, epochMs);
+}
+
 bool authAcceptanceMatchesCredentialAttempt(
     const AuthAcceptedMessage &accepted, bool usedPendingCredential,
     const std::string &pendingRotationId) {
@@ -644,6 +870,42 @@ void AuthHandshakeState::reset() {
   sessionId_.clear();
 }
 
+AudioSessionContractDecision evaluateAudioSessionContract(
+    int protocolVersion, const std::string &frameEncoding,
+    const std::string &payloadEncoding, int sampleRate,
+    std::size_t sampleCount) {
+  if (protocolVersion != 1 && protocolVersion != 2) {
+    return AudioSessionContractDecision(
+        AudioSessionContractCode::UnsupportedProtocol);
+  }
+  if (protocolVersion == 1) {
+    if (frameEncoding != kAudioV1RawFrameEncoding) {
+      return AudioSessionContractDecision(
+          AudioSessionContractCode::FrameEncodingMismatch);
+    }
+  } else if (frameEncoding != kAudioV2FrameEncoding) {
+    return AudioSessionContractDecision(
+        AudioSessionContractCode::FrameEncodingMismatch);
+  }
+  if (payloadEncoding != kAudioPcmEncoding) {
+    return AudioSessionContractDecision(
+        AudioSessionContractCode::PayloadEncodingMismatch);
+  }
+  if (sampleRate != kAudioSampleRate) {
+    return AudioSessionContractDecision(
+        AudioSessionContractCode::SampleRateMismatch);
+  }
+  if (sampleCount != kAudioPacketSamples) {
+    return AudioSessionContractDecision(
+        AudioSessionContractCode::SampleCountMismatch);
+  }
+  if (protocolVersion == 1) {
+    return AudioSessionContractDecision(
+        AudioSessionContractCode::LegacyReceiverOnly);
+  }
+  return AudioSessionContractDecision(AudioSessionContractCode::AcceptedV2);
+}
+
 AudioFrameBuildResult buildAudioFrameV2(
     const std::string &sessionId, const std::string &scanId,
     std::uint32_t sequence, std::uint64_t timestampMs,
@@ -658,10 +920,7 @@ AudioFrameBuildResult buildAudioFrameV2(
       sampleCount > kAudioV2MaxSamples) {
     return {AudioFrameBuildCode::InvalidSamples, 0};
   }
-  constexpr std::uint8_t kKnownFlags =
-      kAudioV2FlagStart | kAudioV2FlagEnd | kAudioV2FlagDiscontinuity |
-      kAudioV2FlagRetransmit;
-  if ((flags & static_cast<std::uint8_t>(~kKnownFlags)) != 0) {
+  if (!validAudioV2SequenceFlags(sequence, flags)) {
     return {AudioFrameBuildCode::InvalidFlags, 0};
   }
 
@@ -828,6 +1087,8 @@ OtaManifestValidation validateOtaManifest(
     int deviceProtocolVersion) {
   OtaManifest manifest;
   manifest.url = command.payloadString("url");
+  manifest.downloadAuthorization =
+      command.payloadString("downloadAuthorization");
   manifest.firmwareVersion = command.payloadString("firmwareVersion");
   manifest.checksum = command.payloadString("checksum");
   manifest.signature = command.payloadString("signature");
@@ -843,6 +1104,10 @@ OtaManifestValidation validateOtaManifest(
   if (!isHttpsUrl(manifest.url)) {
     return otaError(OtaManifestCode::HttpsRequired, "OTA_HTTPS_REQUIRED",
                     manifest);
+  }
+  if (!validOtaDownloadAuthorization(manifest.downloadAuthorization)) {
+    return otaError(OtaManifestCode::InvalidDownloadAuthorization,
+                    "OTA_DOWNLOAD_AUTHORIZATION_INVALID", manifest);
   }
   if (!isSha256Hex(manifest.checksum)) {
     return otaError(OtaManifestCode::InvalidChecksum,
@@ -892,6 +1157,203 @@ OtaManifestValidation validateOtaManifest(
   return result;
 }
 
+std::string serializePendingOtaReceipt(const PendingOtaReceipt &receipt) {
+  if (!validPendingOtaReceipt(receipt)) {
+    return {};
+  }
+  JsonDocument document;
+  document["version"] = 1;
+  document["commandId"] = receipt.commandId;
+  document["correlationId"] = receipt.correlationId;
+  document["otaId"] = receipt.otaId;
+  document["firmwareVersion"] = receipt.firmwareVersion;
+  document["manifestFingerprint"] = receipt.manifestFingerprint;
+  document["status"] = receipt.status;
+  std::string serialized;
+  serializeJson(document, serialized);
+  return serialized.size() <= kMaxPendingOtaReceiptBytes ? serialized
+                                                          : std::string{};
+}
+
+bool restorePendingOtaReceipt(const std::string &serialized,
+                              PendingOtaReceipt &receipt) {
+  receipt = PendingOtaReceipt{};
+  if (serialized.empty() || serialized.size() > kMaxPendingOtaReceiptBytes) {
+    return false;
+  }
+  JsonDocument document;
+  if (deserializeJson(document, serialized) ||
+      !document["version"].is<int>() ||
+      document["version"].as<int>() != 1) {
+    return false;
+  }
+  const JsonObjectConst root = document.as<JsonObjectConst>();
+  PendingOtaReceipt restored;
+  if (!readRequiredString(root, "commandId", kMaxIdBytes,
+                          restored.commandId) ||
+      !readRequiredString(root, "correlationId", kMaxIdBytes,
+                          restored.correlationId) ||
+      !readRequiredString(root, "otaId", kMaxIdBytes, restored.otaId) ||
+      !readRequiredString(root, "firmwareVersion", kMaxOtaVersionBytes,
+                          restored.firmwareVersion) ||
+      !readRequiredString(root, "manifestFingerprint", 64,
+                          restored.manifestFingerprint) ||
+      !readRequiredString(root, "status", kMaxTypeBytes, restored.status) ||
+      !validPendingOtaReceipt(restored)) {
+    return false;
+  }
+  receipt = restored;
+  return true;
+}
+
+PendingOtaCommandDecision evaluatePendingOtaCommand(
+    const PendingOtaReceipt &receipt, bool receiptReady,
+    const std::string &commandId, const std::string &correlationId,
+    const std::string &commandType,
+    const std::string &manifestFingerprint) {
+  if (!receiptReady) {
+    return PendingOtaCommandDecision::NoFence;
+  }
+  if (!validPendingOtaReceipt(receipt)) {
+    return PendingOtaCommandDecision::InvalidFence;
+  }
+  if (receipt.commandId == commandId) {
+    const bool exactBinding = commandType == "ota.update" &&
+                              receipt.correlationId == correlationId &&
+                              receipt.otaId == commandId &&
+                              receipt.manifestFingerprint ==
+                                  manifestFingerprint;
+    return exactBinding ? PendingOtaCommandDecision::Replay
+                        : PendingOtaCommandDecision::CommandIdConflict;
+  }
+  return commandType == "ota.update"
+             ? PendingOtaCommandDecision::OtaReceiptBusy
+             : PendingOtaCommandDecision::NoFence;
+}
+
+bool buildPendingOtaReplayOutcome(const PendingOtaReceipt &receipt,
+                                  PendingOtaReplayOutcome &outcome) {
+  outcome = PendingOtaReplayOutcome{};
+  if (!validPendingOtaReceipt(receipt)) {
+    return false;
+  }
+  if (receipt.status == "pending") {
+    outcome.commandState = "acknowledged";
+    outcome.commandCode = "OTA_PENDING";
+  } else if (receipt.status == "delivered") {
+    outcome.commandState = "acknowledged";
+    outcome.commandCode = "OTA_DELIVERED";
+  } else if (receipt.status == "downloading") {
+    outcome.commandState = "applying";
+    outcome.commandCode = "OTA_DOWNLOADING";
+    outcome.eventType = "ota.downloading";
+  } else if (receipt.status == "verifying") {
+    outcome.commandState = "applying";
+    outcome.commandCode = "OTA_VERIFYING";
+    outcome.eventType = "ota.verifying";
+  } else if (receipt.status == "rebooting") {
+    outcome.commandState = "applying";
+    outcome.commandCode = "OTA_REBOOTING";
+    outcome.eventType = "ota.rebooting";
+  } else if (receipt.status == "rolling_back") {
+    outcome.commandState = "applying";
+    outcome.commandCode = "OTA_ROLLING_BACK";
+    outcome.eventType = "ota.rollback";
+  } else if (receipt.status == "confirmed") {
+    outcome.commandState = "applied";
+    outcome.commandCode = "OTA_CONFIRMED";
+    outcome.eventType = "ota.confirmed";
+  } else if (receipt.status == "rolled_back") {
+    outcome.commandState = "failed";
+    outcome.commandCode = "OTA_ROLLED_BACK";
+    outcome.eventType = "ota.rollback";
+  } else if (receipt.status == "failed") {
+    outcome.commandState = "failed";
+    outcome.commandCode = "OTA_FAILED";
+    outcome.eventType = "ota.failed";
+  } else if (receipt.status == "expired") {
+    outcome.commandState = "expired";
+    outcome.commandCode = "OTA_EXPIRED";
+    outcome.eventType = "ota.failed";
+  }
+  return !outcome.commandState.empty() && !outcome.commandCode.empty();
+}
+
+PendingOtaRecoveryAction evaluatePendingOtaRecovery(
+    const PendingOtaReceipt &receipt, bool receiptReady,
+    bool partitionStateKnown, bool pendingImage,
+    bool targetFirmwareRunning, bool runningImageValid,
+    const std::string &bootOutcome) {
+  const bool receiptValid = receiptReady && validPendingOtaReceipt(receipt);
+  const bool terminal =
+      receiptValid && (receipt.status == "confirmed" ||
+                       receipt.status == "rolled_back" ||
+                       receipt.status == "failed" ||
+                       receipt.status == "expired");
+  if (pendingImage) {
+    return receiptValid && !terminal && targetFirmwareRunning
+               ? PendingOtaRecoveryAction::AwaitBootHealth
+               : PendingOtaRecoveryAction::RollbackRequired;
+  }
+  if (!receiptReady) {
+    return PendingOtaRecoveryAction::None;
+  }
+  if (!receiptValid) {
+    return PendingOtaRecoveryAction::Failed;
+  }
+  if (terminal) {
+    return PendingOtaRecoveryAction::Terminal;
+  }
+  if (!partitionStateKnown) {
+    return PendingOtaRecoveryAction::None;
+  }
+  if (targetFirmwareRunning &&
+      (runningImageValid || bootOutcome == "confirmed")) {
+    return PendingOtaRecoveryAction::Confirmed;
+  }
+  const bool rollbackObserved =
+      !targetFirmwareRunning &&
+      (receipt.status == "rolling_back" || receipt.status == "rebooting" ||
+       bootOutcome == "pending" || bootOutcome == "rollback_requested" ||
+       bootOutcome == "rolled_back");
+  return rollbackObserved ? PendingOtaRecoveryAction::RolledBack
+                          : PendingOtaRecoveryAction::Failed;
+}
+
+bool otaRecoveryServicesAllowed(const OtaRecoverySafeModeReason reason) {
+  return reason == OtaRecoverySafeModeReason::None;
+}
+
+const char *otaRecoverySafeModeStableCode(
+    const OtaRecoverySafeModeReason reason) {
+  switch (reason) {
+    case OtaRecoverySafeModeReason::None:
+      return "OTA_RECOVERY_NONE";
+    case OtaRecoverySafeModeReason::RollbackUnavailable:
+      return "OTA_RECOVERY_ROLLBACK_UNAVAILABLE";
+    case OtaRecoverySafeModeReason::RollbackIntentPersistenceFailed:
+      return "OTA_RECOVERY_ROLLBACK_INTENT_NOT_DURABLE";
+    case OtaRecoverySafeModeReason::RollbackApiReturned:
+      return "OTA_RECOVERY_ROLLBACK_API_RETURNED";
+  }
+  return "OTA_RECOVERY_UNKNOWN";
+}
+
+OtaConfirmationAction evaluateOtaConfirmationAction(
+    bool confirmingMarkerDurable, bool rollbackCancelled,
+    bool confirmedMarkerDurable, bool receiptConfirmedDurable) {
+  if (!confirmingMarkerDurable) {
+    return OtaConfirmationAction::PersistConfirmingMarker;
+  }
+  if (!rollbackCancelled) {
+    return OtaConfirmationAction::CancelRollback;
+  }
+  if (!confirmedMarkerDurable || !receiptConfirmedDurable) {
+    return OtaConfirmationAction::PersistConfirmedState;
+  }
+  return OtaConfirmationAction::PublishConfirmed;
+}
+
 std::string buildOtaSignatureMessage(const OtaManifest &manifest) {
   std::string checksum = manifest.checksum;
   std::transform(checksum.begin(), checksum.end(), checksum.begin(),
@@ -907,6 +1369,34 @@ std::string buildOtaSignatureMessage(const OtaManifest &manifest) {
   message += checksum;
   message += "\nfirmwareVersion=";
   message += manifest.firmwareVersion;
+  message += "\nhardwareTarget=";
+  message += manifest.hardwareTarget;
+  message += "\npartitionTarget=";
+  message += manifest.partitionTarget;
+  message += "\nminimumProtocolVersion=";
+  message += std::to_string(manifest.minimumProtocolVersion);
+  message += '\n';
+  return message;
+}
+
+std::string buildOtaEffectBindingMessage(const OtaManifest &manifest) {
+  std::string checksum = manifest.checksum;
+  std::transform(checksum.begin(), checksum.end(), checksum.begin(),
+                 [](const unsigned char character) {
+                   return character >= 'A' && character <= 'F'
+                              ? static_cast<char>(character - 'A' + 'a')
+                              : static_cast<char>(character);
+                 });
+  std::string message;
+  message.reserve(256 + manifest.url.size() + manifest.signature.size());
+  message += "SHCARE-OTA-EFFECT-V1\nurl=";
+  message += manifest.url;
+  message += "\nfirmwareVersion=";
+  message += manifest.firmwareVersion;
+  message += "\nsha256=";
+  message += checksum;
+  message += "\nsignature=";
+  message += manifest.signature;
   message += "\nhardwareTarget=";
   message += manifest.hardwareTarget;
   message += "\npartitionTarget=";
@@ -935,6 +1425,76 @@ std::string buildCommandStateJson(const std::string &commandId,
   std::string json;
   serializeJson(document, json);
   return json;
+}
+
+std::string serializePendingReconnectCommand(
+    const PendingReconnectCommand &command) {
+  if (!validPendingReconnectCommand(command)) {
+    return {};
+  }
+  JsonDocument document;
+  document["version"] = 1;
+  document["id"] = command.commandId;
+  document["correlationId"] = command.correlationId;
+  document["type"] = command.type;
+  document["expectedWifiSsid"] = command.expectedWifiSsid;
+  document["expectedWifiConfigProof"] = command.expectedWifiConfigProof;
+  std::string serialized;
+  serializeJson(document, serialized);
+  return serialized.size() <= kMaxPendingReconnectBytes ? serialized
+                                                         : std::string{};
+}
+
+bool restorePendingReconnectCommand(
+    const std::string &serialized, PendingReconnectCommand &command) {
+  command = PendingReconnectCommand{};
+  if (serialized.empty() || serialized.size() > kMaxPendingReconnectBytes) {
+    return false;
+  }
+  JsonDocument document;
+  if (deserializeJson(document, serialized) ||
+      !document["version"].is<int>() ||
+      document["version"].as<int>() != 1) {
+    return false;
+  }
+
+  PendingReconnectCommand restored;
+  const JsonObjectConst root = document.as<JsonObjectConst>();
+  if (!readRequiredString(root, "id", kMaxIdBytes, restored.commandId) ||
+      !readRequiredString(root, "correlationId", kMaxIdBytes,
+                          restored.correlationId) ||
+      !readRequiredString(root, "type", kMaxTypeBytes, restored.type) ||
+      !root["expectedWifiSsid"].is<const char *>() ||
+      !root["expectedWifiConfigProof"].is<const char *>()) {
+    return false;
+  }
+  restored.expectedWifiSsid =
+      root["expectedWifiSsid"].as<const char *>();
+  restored.expectedWifiConfigProof =
+      root["expectedWifiConfigProof"].as<const char *>();
+  if (!validPendingReconnectCommand(restored)) {
+    return false;
+  }
+  command = restored;
+  return true;
+}
+
+PendingReconnectDecision evaluatePendingReconnectCommand(
+    const PendingReconnectCommand &command, bool cloudAuthenticated,
+    bool wifiConnected, const std::string &connectedWifiSsid,
+    const std::string &currentWifiConfigProof) {
+  if (!validPendingReconnectCommand(command)) {
+    return PendingReconnectDecision::InvalidReceipt;
+  }
+  if (!cloudAuthenticated || !wifiConnected) {
+    return PendingReconnectDecision::WaitingForReconnect;
+  }
+  if (command.type == "wifi.update" &&
+      (connectedWifiSsid != command.expectedWifiSsid ||
+       currentWifiConfigProof != command.expectedWifiConfigProof)) {
+    return PendingReconnectDecision::NetworkMismatch;
+  }
+  return PendingReconnectDecision::Confirmed;
 }
 
 RecentCommandIds::RecentCommandIds(std::size_t capacity)
@@ -973,7 +1533,16 @@ CommandJournal::CommandJournal(std::size_t capacity)
     : capacity_(capacity == 0 ? 1 : std::min<std::size_t>(capacity, 16)) {}
 
 bool CommandJournal::recordTerminal(const CommandJournalEntry &entry) {
-  if (!entry.terminal() || entry.type != "wifi.status" ||
+  const bool supportedType = entry.type == "wifi.status" ||
+                             entry.type == "restart" ||
+                             entry.type == "wifi.setup.open" ||
+                             entry.type == "wifi.update" ||
+                             entry.type == "ota.update";
+  const bool validEffectFingerprint =
+      entry.type == "ota.update" ? isSha256Hex(entry.effectFingerprint)
+                                 : entry.effectFingerprint.empty();
+  if (!entry.terminal() || !supportedType ||
+      !validEffectFingerprint ||
       entry.commandId.empty() || entry.commandId.size() > kMaxIdBytes ||
       entry.correlationId.empty() ||
       entry.correlationId.size() > kMaxIdBytes || entry.code.empty() ||
@@ -1022,6 +1591,9 @@ std::string CommandJournal::serialize() const {
     item["state"] = entry.state;
     item["code"] = entry.code;
     item["result"] = entry.result;
+    if (!entry.effectFingerprint.empty()) {
+      item["effectFingerprint"] = entry.effectFingerprint;
+    }
   }
   std::string serialized;
   serializeJson(document, serialized);
@@ -1057,11 +1629,116 @@ bool CommandJournal::restore(const std::string &serialized) {
       return false;
     }
     entry.result = result.as<const char *>();
+    const JsonVariantConst effectFingerprint = item["effectFingerprint"];
+    if (!effectFingerprint.isNull()) {
+      if (!effectFingerprint.is<const char *>()) {
+        return false;
+      }
+      entry.effectFingerprint = effectFingerprint.as<const char *>();
+    }
     if (!restored.recordTerminal(entry)) {
       return false;
     }
   }
   entries_ = restored.entries_;
+  return true;
+}
+
+OfflineOperationalQueue::OfflineOperationalQueue(std::size_t capacity)
+    : capacity_(capacity == 0 ? 1 : std::min<std::size_t>(capacity, 32)) {}
+
+bool OfflineOperationalQueue::enqueueTelemetry(
+    std::uint32_t occurredAtUptimeMs) {
+  OfflineOperationalRecord record;
+  record.kind = OfflineOperationalKind::Telemetry;
+  record.type = "telemetry";
+  record.occurredAtUptimeMs = occurredAtUptimeMs;
+  return push(std::move(record));
+}
+
+bool OfflineOperationalQueue::enqueueEvent(
+    const std::string &type, const std::string &status,
+    std::uint32_t occurredAtUptimeMs, const std::string &commandId,
+    const std::string &correlationId, const std::string &otaId) {
+  if (!queueableOperationalEventType(type) ||
+      !validOperationalStatus(status) ||
+      (isOtaOperationalEventType(type) &&
+       (!validBoundedId(commandId) || !validBoundedId(correlationId) ||
+        !validBoundedId(otaId))) ||
+      (!commandId.empty() && !validBoundedId(commandId)) ||
+      (!correlationId.empty() && !validBoundedId(correlationId)) ||
+      (!otaId.empty() && !validBoundedId(otaId))) {
+    incrementSaturated(rejectedCount_);
+    return false;
+  }
+  OfflineOperationalRecord record;
+  record.kind = OfflineOperationalKind::Event;
+  record.type = type;
+  record.status = status;
+  record.commandId = commandId;
+  record.correlationId = correlationId;
+  record.otaId = otaId;
+  record.occurredAtUptimeMs = occurredAtUptimeMs;
+  return push(std::move(record));
+}
+
+bool OfflineOperationalQueue::push(OfflineOperationalRecord record) {
+  if (record.kind == OfflineOperationalKind::Telemetry) {
+    const auto existing = std::find_if(
+        entries_.begin(), entries_.end(),
+        [](const OfflineOperationalRecord &entry) {
+          return entry.kind == OfflineOperationalKind::Telemetry;
+        });
+    if (existing != entries_.end()) {
+      existing->occurredAtUptimeMs = record.occurredAtUptimeMs;
+      incrementSaturated(existing->occurrences);
+      incrementSaturated(coalescedCount_);
+      return true;
+    }
+  } else if (!entries_.empty()) {
+    OfflineOperationalRecord &last = entries_.back();
+    if (last.kind == OfflineOperationalKind::Event &&
+        last.type == record.type && last.status == record.status &&
+        last.commandId == record.commandId &&
+        last.correlationId == record.correlationId &&
+        last.otaId == record.otaId) {
+      last.occurredAtUptimeMs = record.occurredAtUptimeMs;
+      incrementSaturated(last.occurrences);
+      incrementSaturated(coalescedCount_);
+      return true;
+    }
+  }
+
+  if (entries_.size() >= capacity_) {
+    const auto telemetry = std::find_if(
+        entries_.begin(), entries_.end(),
+        [](const OfflineOperationalRecord &entry) {
+          return entry.kind == OfflineOperationalKind::Telemetry;
+        });
+    if (telemetry != entries_.end()) {
+      entries_.erase(telemetry);
+    } else {
+      entries_.pop_front();
+    }
+    incrementSaturated(droppedCount_);
+  }
+  entries_.push_back(std::move(record));
+  return true;
+}
+
+bool OfflineOperationalQueue::front(OfflineOperationalRecord &record) const {
+  if (entries_.empty()) {
+    return false;
+  }
+  record = entries_.front();
+  return true;
+}
+
+bool OfflineOperationalQueue::popFront() {
+  if (entries_.empty()) {
+    return false;
+  }
+  entries_.pop_front();
   return true;
 }
 

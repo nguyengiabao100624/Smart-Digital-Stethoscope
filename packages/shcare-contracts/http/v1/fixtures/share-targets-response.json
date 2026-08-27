@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-07-29T02:00:01.000Z",
+  "workspaceId": "workspace-a",
+  "doctors": [
+    {
+      "id": "doctor-a",
+      "name": "BS An",
+      "organizationId": "workspace-a",
+      "specialty": "Tim mạch"
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "workspace-b",
+      "name": "Phòng khám B",
+      "type": "clinic"
+    }
+  ]
+}

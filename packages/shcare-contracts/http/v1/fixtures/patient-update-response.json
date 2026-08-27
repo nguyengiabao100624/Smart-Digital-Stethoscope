@@ -1,0 +1,40 @@
+{
+  "userId": "usr_patient",
+  "workspaceId": "org_personal_patient",
+  "patientId": "pat_family_01",
+  "intent": "update",
+  "patient": {
+    "id": "pat_family_01",
+    "patientCode": "FAMILY-001",
+    "name": "Nguyễn An (đã cập nhật)",
+    "age": 10,
+    "dateOfBirth": "2016-01-02",
+    "bloodType": "O+",
+    "allergies": ["penicillin"],
+    "emergencyContact": {
+      "name": "Nguyễn Bình",
+      "phone": "0901000000",
+      "relationship": "cha"
+    },
+    "gender": "female",
+    "phone": "",
+    "email": "",
+    "address": "",
+    "notes": "Đã xác minh thông tin.",
+    "organizationId": "org_personal_patient",
+    "ownerUserId": "usr_patient",
+    "guardianUserId": "usr_patient",
+    "profileType": "dependent",
+    "relationship": "child",
+    "familyGroupId": "",
+    "accountUserId": "",
+    "primaryDoctorId": "",
+    "doctorName": "",
+    "createdAt": "2026-08-09T08:00:00.000Z",
+    "updatedAt": "2026-08-09T08:05:00.000Z",
+    "scanCount": 0,
+    "lastScanAt": null,
+    "lastAiLabel": null
+  },
+  "replayed": false
+}

@@ -11,12 +11,25 @@ function firstHeaderValue(value) {
   return typeof value === "string" ? value : "";
 }
 
-function getClientIp(req) {
+function getTrustedProxyHops(env = process.env) {
+  const configured = Number(env.TRUST_PROXY_HOPS || 0);
+  if (!Number.isFinite(configured)) return 0;
+  return Math.min(10, Math.max(0, Math.trunc(configured)));
+}
+
+function getClientIp(req, env = process.env) {
+  const socketAddress = req.socket && req.socket.remoteAddress ? req.socket.remoteAddress : "";
+  const trustedProxyHops = getTrustedProxyHops(env);
+  if (trustedProxyHops === 0) return socketAddress;
+
   const forwardedFor = firstHeaderValue(req.headers["x-forwarded-for"]);
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0].trim();
-  }
-  return req.socket && req.socket.remoteAddress ? req.socket.remoteAddress : "";
+  const forwardedChain = forwardedFor
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(-32);
+  if (forwardedChain.length < trustedProxyHops) return socketAddress;
+  return forwardedChain[forwardedChain.length - trustedProxyHops] || socketAddress;
 }
 
 function createRequestContext(req) {
@@ -59,5 +72,7 @@ function getRequestContext(req) {
 module.exports = {
   attachActor,
   createRequestContext,
+  getClientIp,
   getRequestContext,
+  getTrustedProxyHops,
 };

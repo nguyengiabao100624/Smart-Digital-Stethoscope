@@ -46,6 +46,7 @@ import { Progress } from "../../../components/ui/progress";
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -167,14 +168,28 @@ function downloadTemplate() {
 function StatusBadge({ batch }: { batch: PatientImportBatch }) {
   if (batch.status === "committed") {
     return (
-      <Badge className="border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+      <Badge
+        variant="outline"
+        style={{
+          borderColor: "var(--status-success-border)",
+          background: "var(--status-success-bg)",
+          color: "var(--status-success-fg)",
+        }}
+      >
         Đã import
       </Badge>
     );
   }
   if (batch.status === "validated") {
     return (
-      <Badge className="border-teal-600/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+      <Badge
+        variant="outline"
+        style={{
+          borderColor: "var(--status-info-border)",
+          background: "var(--status-info-bg)",
+          color: "var(--status-info-fg)",
+        }}
+      >
         Sẵn sàng
       </Badge>
     );
@@ -187,7 +202,11 @@ function StatusBadge({ batch }: { batch: PatientImportBatch }) {
 
 function RowIssues({ row }: { row: PatientImportRow }) {
   if (row.issues.length === 0) {
-    return <span className="text-sm text-emerald-700 dark:text-emerald-300">Hợp lệ</span>;
+    return (
+      <span className="text-sm text-[var(--status-success-fg)]">
+        Hợp lệ
+      </span>
+    );
   }
   return (
     <ul className="space-y-1" aria-label={`Lỗi tại dòng ${row.rowNumber}`}>
@@ -208,6 +227,8 @@ export default function PatientImportPage() {
   const validationKeyRef = useRef("");
   const commitKeyRef = useRef("");
   const inFlightRef = useRef(false);
+  const operationEpochRef = useRef(0);
+  const draftWorkspaceIdRef = useRef("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batch, setBatch] = useState<PatientImportBatch | null>(null);
   const [filter, setFilter] = useState<RowFilter>("all");
@@ -223,12 +244,21 @@ export default function PatientImportPage() {
   const [discardOpen, setDiscardOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
 
+  const workspaceId = user?.currentWorkspace.id || "";
+  const activeWorkspaceRef = useRef(workspaceId);
+  const previousWorkspaceRef = useRef(workspaceId);
+  activeWorkspaceRef.current = workspaceId;
   const canManage = Boolean(
     user?.capabilities?.some((capability) =>
       MANAGE_CAPABILITIES.includes(capability),
     ),
   );
   const unfinished = Boolean(selectedFile && batch?.status !== "committed");
+  const isBusy = isValidating || isRefreshing || isCommitting;
+  const draftWorkspaceMismatch = Boolean(
+    draftWorkspaceIdRef.current &&
+      draftWorkspaceIdRef.current !== workspaceId,
+  );
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -247,6 +277,33 @@ export default function PatientImportPage() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [unfinished]);
 
+  useEffect(() => {
+    if (previousWorkspaceRef.current === workspaceId) return;
+    const discardedDraft = Boolean(draftWorkspaceIdRef.current);
+    previousWorkspaceRef.current = workspaceId;
+    operationEpochRef.current += 1;
+    inFlightRef.current = false;
+    draftWorkspaceIdRef.current = "";
+    validationKeyRef.current = "";
+    commitKeyRef.current = "";
+    setSelectedFile(null);
+    setBatch(null);
+    setFilter("all");
+    setPage(1);
+    setIsValidating(false);
+    setIsRefreshing(false);
+    setIsCommitting(false);
+    setStaleWarning("");
+    setDiscardOpen(false);
+    setCommitOpen(false);
+    setError(
+      discardedDraft
+        ? "Workspace đã thay đổi. Hãy chọn lại file để tránh dùng dữ liệu của workspace trước."
+        : "",
+    );
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [workspaceId]);
+
   const filteredRows = useMemo(() => {
     if (!batch) return [];
     if (filter === "all") return batch.rows;
@@ -258,19 +315,27 @@ export default function PatientImportPage() {
   useEffect(() => setPage(1), [filter, batch?.id]);
 
   const resetSelection = () => {
+    operationEpochRef.current += 1;
+    inFlightRef.current = false;
+    draftWorkspaceIdRef.current = "";
     setSelectedFile(null);
     setBatch(null);
     setFilter("all");
     setPage(1);
     setError("");
     setStaleWarning("");
+    setIsValidating(false);
+    setIsRefreshing(false);
+    setIsCommitting(false);
+    setDiscardOpen(false);
+    setCommitOpen(false);
     validationKeyRef.current = "";
     commitKeyRef.current = "";
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const selectFile = (file: File | undefined) => {
-    if (!file) return;
+    if (!file || inFlightRef.current || !workspaceId) return;
     const csvName = file.name.toLocaleLowerCase().endsWith(".csv");
     if (!csvName) {
       setError("Chỉ hỗ trợ file có phần mở rộng .csv.");
@@ -284,6 +349,8 @@ export default function PatientImportPage() {
       setError("File vượt quá giới hạn 5 MB.");
       return;
     }
+    operationEpochRef.current += 1;
+    draftWorkspaceIdRef.current = workspaceId;
     setSelectedFile(file);
     setBatch(null);
     setFilter("all");
@@ -303,6 +370,8 @@ export default function PatientImportPage() {
       setError("Đang ngoại tuyến. Kết nối mạng để kiểm tra file với backend.");
       return;
     }
+    const operationEpoch = operationEpochRef.current;
+    const operationWorkspaceId = workspaceId;
     inFlightRef.current = true;
     setIsValidating(true);
     setError("");
@@ -312,11 +381,23 @@ export default function PatientImportPage() {
         "validate",
         selectedFile.name,
       );
-      const outcome = parsePatientImportValidationOutcome(
-        await smartHealthApi.validatePatientImport(
+      const response = await smartHealthApi.validatePatientImport(
           selectedFile,
           validationKeyRef.current,
-        ),
+        );
+      if (
+        operationEpochRef.current !== operationEpoch ||
+        activeWorkspaceRef.current !== operationWorkspaceId
+      ) {
+        return;
+      }
+      const outcome = parsePatientImportValidationOutcome(
+        response,
+        {
+          workspaceId: operationWorkspaceId,
+          fileName: selectedFile.name,
+          fileSizeBytes: selectedFile.size,
+        },
       );
       setBatch(outcome.batch);
       commitKeyRef.current = createPatientImportIdempotencyKey(
@@ -331,33 +412,70 @@ export default function PatientImportPage() {
         );
       }
     } catch (validationError) {
-      setError(importErrorMessage(validationError));
+      if (operationEpochRef.current === operationEpoch) {
+        setError(importErrorMessage(validationError));
+      }
     } finally {
-      inFlightRef.current = false;
-      setIsValidating(false);
+      if (operationEpochRef.current === operationEpoch) {
+        inFlightRef.current = false;
+        setIsValidating(false);
+      }
     }
   };
 
   const refreshBatch = async () => {
-    if (!batch || isRefreshing) return;
+    if (!batch || inFlightRef.current) return;
     if (!online) {
       setStaleWarning("Đang ngoại tuyến. Dữ liệu xem trước bên dưới là lần xác nhận gần nhất.");
       return;
     }
+    const operationEpoch = operationEpochRef.current;
+    const operationWorkspaceId = workspaceId;
+    const previousBatch = batch;
+    inFlightRef.current = true;
     setIsRefreshing(true);
     setStaleWarning("");
     try {
-      setBatch(
-        parsePatientImportDetail(
-          await smartHealthApi.getPatientImportBatch(batch.id),
-        ),
+      const response = await smartHealthApi.getPatientImportBatch(batch.id);
+      if (
+        operationEpochRef.current !== operationEpoch ||
+        activeWorkspaceRef.current !== operationWorkspaceId
+      ) {
+        return;
+      }
+      const refreshedBatch = parsePatientImportDetail(
+        response,
+        {
+          workspaceId: operationWorkspaceId,
+          batchId: previousBatch.id,
+          minimumVersion: previousBatch.version,
+        },
       );
+      setBatch(refreshedBatch);
+      if (
+        refreshedBatch.status === "committed" &&
+        previousBatch.status !== "committed"
+      ) {
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "portal",
+            "workspace",
+            operationWorkspaceId,
+            "patients",
+          ],
+        });
+      }
     } catch (refreshError) {
-      setStaleWarning(
-        `${importErrorMessage(refreshError)} Dữ liệu xem trước cũ vẫn được giữ lại.`,
-      );
+      if (operationEpochRef.current === operationEpoch) {
+        setStaleWarning(
+          `${importErrorMessage(refreshError)} Dữ liệu xem trước cũ vẫn được giữ lại.`,
+        );
+      }
     } finally {
-      setIsRefreshing(false);
+      if (operationEpochRef.current === operationEpoch) {
+        inFlightRef.current = false;
+        setIsRefreshing(false);
+      }
     }
   };
 
@@ -368,6 +486,9 @@ export default function PatientImportPage() {
       setCommitOpen(false);
       return;
     }
+    const operationEpoch = operationEpochRef.current;
+    const operationWorkspaceId = workspaceId;
+    const previousBatch = batch;
     inFlightRef.current = true;
     setIsCommitting(true);
     setError("");
@@ -376,35 +497,95 @@ export default function PatientImportPage() {
         "commit",
         batch.id,
       );
-      const outcome = parsePatientImportCommitOutcome(
-        await smartHealthApi.commitPatientImport(batch.id, commitKeyRef.current),
+      const response = await smartHealthApi.commitPatientImport(
         batch.id,
+        commitKeyRef.current,
+      );
+      if (
+        operationEpochRef.current !== operationEpoch ||
+        activeWorkspaceRef.current !== operationWorkspaceId
+      ) {
+        return;
+      }
+      const outcome = parsePatientImportCommitOutcome(
+        response,
+        {
+          workspaceId: operationWorkspaceId,
+          batchId: previousBatch.id,
+          minimumVersion: previousBatch.version,
+        },
       );
       setBatch(outcome.batch);
-      await queryClient.invalidateQueries({ queryKey: ["portal", "patients"] });
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "portal",
+          "workspace",
+          operationWorkspaceId,
+          "patients",
+        ],
+      });
       toast.success(`Đã import trọn vẹn ${outcome.importedCount} hồ sơ bệnh nhân.`);
       setCommitOpen(false);
     } catch (commitError) {
-      setError(importErrorMessage(commitError));
-      setCommitOpen(false);
+      if (operationEpochRef.current === operationEpoch) {
+        setError(importErrorMessage(commitError));
+        setCommitOpen(false);
+      }
     } finally {
-      inFlightRef.current = false;
-      setIsCommitting(false);
+      if (operationEpochRef.current === operationEpoch) {
+        inFlightRef.current = false;
+        setIsCommitting(false);
+      }
     }
   };
 
   const requestBack = () => {
+    if (isBusy) return;
     if (unfinished) setDiscardOpen(true);
     else navigate("/portal/patients");
   };
 
+  if (draftWorkspaceMismatch) {
+    return (
+      <div
+        className="mx-auto max-w-2xl space-y-5"
+        data-testid="patient-import-page"
+      >
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          Import bệnh nhân
+        </h1>
+        <Card role="status">
+          <CardHeader className="text-center">
+            <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <RefreshCw
+                className="motion-safe:animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            </span>
+            <CardTitle>Đang đổi workspace</CardTitle>
+            <CardDescription>
+              Shcare đang loại dữ liệu xem trước của workspace trước khi mở
+              phiên import mới.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
   if (!canManage) {
     return (
-      <div className="mx-auto max-w-2xl space-y-5">
+      <div
+        className="mx-auto max-w-2xl space-y-5"
+        data-testid="patient-import-page"
+      >
         <Button variant="ghost" className="min-h-11" onClick={() => navigate("/portal/patients")}>
           <ArrowLeft aria-hidden="true" />
           Bệnh nhân
         </Button>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          Import bệnh nhân
+        </h1>
         <Card>
           <CardHeader className="text-center">
             <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
@@ -424,7 +605,12 @@ export default function PatientImportPage() {
     <div className="mx-auto max-w-6xl space-y-6" data-testid="patient-import-page">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3">
-          <Button variant="ghost" className="min-h-11 px-0" onClick={requestBack}>
+          <Button
+            variant="ghost"
+            className="min-h-11 px-0"
+            onClick={requestBack}
+            disabled={isBusy}
+          >
             <ArrowLeft aria-hidden="true" />
             Bệnh nhân
           </Button>
@@ -466,7 +652,7 @@ export default function PatientImportPage() {
                 size="sm"
                 className="min-h-11 shrink-0"
                 onClick={validateFile}
-                disabled={isValidating || !online}
+                disabled={isBusy || !online}
               >
                 <RefreshCw aria-hidden="true" />
                 Thử lại
@@ -502,22 +688,23 @@ export default function PatientImportPage() {
             <p className="mt-3 font-medium text-foreground">Kéo file CSV vào đây</p>
             <p className="mt-1 text-sm text-muted-foreground">hoặc chọn file từ máy tính</p>
             <Label
-              htmlFor="patient-import-file"
               data-action-label
-              className="mt-4 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+              aria-disabled={isBusy}
+              className="mt-4 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-[var(--clinical-primary-strong)] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 aria-disabled:pointer-events-none aria-disabled:opacity-50"
             >
               <FileUp className="size-4" aria-hidden="true" />
               Chọn file CSV
+              <input
+                ref={fileInputRef}
+                id="patient-import-file"
+                name="patientImportFile"
+                type="file"
+                accept=".csv,text/csv"
+                className="sr-only"
+                disabled={isBusy}
+                onChange={(event) => selectFile(event.target.files?.[0])}
+              />
             </Label>
-            <input
-              ref={fileInputRef}
-              id="patient-import-file"
-              name="patientImportFile"
-              type="file"
-              accept=".csv,text/csv"
-              className="sr-only"
-              onChange={(event) => selectFile(event.target.files?.[0])}
-            />
           </div>
 
           {selectedFile && (
@@ -536,14 +723,14 @@ export default function PatientImportPage() {
                   variant="outline"
                   className="min-h-11"
                   onClick={resetSelection}
-                  disabled={isValidating || isCommitting}
+                  disabled={isBusy}
                 >
                   Chọn lại
                 </Button>
                 <Button
                   className="min-h-11"
                   onClick={validateFile}
-                  disabled={isValidating || isCommitting || !online}
+                  disabled={isBusy || !online}
                   data-testid="patient-import-validate"
                 >
                   {isValidating ? (
@@ -586,7 +773,7 @@ export default function PatientImportPage() {
               size="sm"
               className="min-h-11"
               onClick={refreshBatch}
-              disabled={isRefreshing || !online}
+              disabled={isBusy || !online}
             >
               <RefreshCw
                 className={isRefreshing ? "motion-safe:animate-spin motion-reduce:animate-none" : ""}
@@ -607,9 +794,17 @@ export default function PatientImportPage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 ["Tổng số dòng", batch.rowCount, "text-foreground"],
-                ["Hợp lệ", batch.validCount, "text-emerald-700 dark:text-emerald-300"],
+                [
+                  "Hợp lệ",
+                  batch.validCount,
+                  "text-[var(--status-success-fg)]",
+                ],
                 ["Cần sửa", batch.invalidCount, "text-destructive"],
-                ["Phát hiện trùng", batch.duplicateCount, "text-amber-700 dark:text-amber-300"],
+                [
+                  "Phát hiện trùng",
+                  batch.duplicateCount,
+                  "text-[var(--status-warning-fg)]",
+                ],
               ].map(([label, value, color]) => (
                 <div key={String(label)} className="rounded-xl border border-border bg-muted/20 p-4">
                   <p className="text-sm text-muted-foreground">{label}</p>
@@ -638,8 +833,16 @@ export default function PatientImportPage() {
               </Alert>
             )}
             {batch.status === "committed" && (
-              <Alert className="border-emerald-600/30 bg-emerald-500/5">
-                <CheckCircle2 className="text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+              <Alert
+                style={{
+                  borderColor: "var(--status-success-border)",
+                  background: "var(--status-success-bg)",
+                }}
+              >
+                <CheckCircle2
+                  className="text-[var(--status-success-fg)]"
+                  aria-hidden="true"
+                />
                 <AlertTitle>Import hoàn tất</AlertTitle>
                 <AlertDescription>
                   Backend đã xác nhận tạo trọn vẹn {batch.importedCount} hồ sơ. Không có kết quả từng
@@ -675,6 +878,9 @@ export default function PatientImportPage() {
               <>
                 <div className="hidden overflow-hidden rounded-xl border border-border md:block">
                   <Table>
+                    <TableCaption className="sr-only">
+                      Xem trước các dòng trong batch import bệnh nhân
+                    </TableCaption>
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-20">Dòng</TableHead>
@@ -706,7 +912,11 @@ export default function PatientImportPage() {
 
                 <div className="space-y-3 md:hidden">
                   {visibleRows.map((row) => (
-                    <div key={row.rowNumber} className="rounded-xl border border-border p-4">
+                    <div
+                      key={row.rowNumber}
+                      className="rounded-xl border border-border p-4"
+                      data-testid={`patient-import-row-${row.rowNumber}`}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-foreground">{row.patient.name || "Chưa có họ tên"}</p>
@@ -774,7 +984,7 @@ export default function PatientImportPage() {
                 <Button
                   className="min-h-11"
                   onClick={() => setCommitOpen(true)}
-                  disabled={batch.status !== "validated" || isCommitting || !online}
+                  disabled={batch.status !== "validated" || isBusy || !online}
                   data-testid="patient-import-commit"
                 >
                   {isCommitting ? (
@@ -802,7 +1012,10 @@ export default function PatientImportPage() {
         </Card>
       )}
 
-      <AlertDialog open={commitOpen} onOpenChange={(open) => !isCommitting && setCommitOpen(open)}>
+      <AlertDialog
+        open={commitOpen}
+        onOpenChange={(open) => !isBusy && setCommitOpen(open)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Xác nhận import {batch?.validCount || 0} hồ sơ?</AlertDialogTitle>
@@ -813,7 +1026,14 @@ export default function PatientImportPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="min-h-11" disabled={isCommitting}>Quay lại kiểm tra</AlertDialogCancel>
-            <AlertDialogAction className="min-h-11" onClick={(event) => { event.preventDefault(); void commitBatch(); }} disabled={isCommitting || !online}>
+            <AlertDialogAction
+              className="min-h-11"
+              onClick={(event) => {
+                event.preventDefault();
+                void commitBatch();
+              }}
+              disabled={isBusy || !online}
+            >
               {isCommitting && <Loader2 className="motion-safe:animate-spin motion-reduce:animate-none" aria-hidden="true" />}
               Xác nhận import
             </AlertDialogAction>

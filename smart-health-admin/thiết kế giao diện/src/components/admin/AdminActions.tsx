@@ -45,7 +45,7 @@ export function AdminActions() {
       title: "Thêm phòng khám",
       description: "Đăng ký cơ sở y tế mới",
       icon: Building2,
-      color: "bg-blue-500",
+      color: "bg-primary/10 text-primary",
       capabilities: WORKSPACE_MANAGE_CAPABILITIES,
       category: "Quản lý",
     },
@@ -54,7 +54,7 @@ export function AdminActions() {
       title: "Thêm bác sĩ",
       description: "Tạo tài khoản bác sĩ mới",
       icon: UserPlus,
-      color: "bg-green-500",
+      color: "bg-success/10 text-success",
       capabilities: STAFF_MANAGE_CAPABILITIES,
       category: "Quản lý",
     },
@@ -63,7 +63,7 @@ export function AdminActions() {
       title: "Tạo tài khoản admin",
       description: "Tạo Firebase user và cấp quyền quản trị",
       icon: ShieldCheck,
-      color: "bg-sky-600",
+      color: "bg-info/10 text-info",
       capabilities: PLATFORM_USER_MANAGE_CAPABILITIES,
       category: "Quản lý",
     },
@@ -72,7 +72,7 @@ export function AdminActions() {
       title: "Thêm hồ sơ",
       description: "Tạo hồ sơ bệnh nhân mới",
       icon: Users,
-      color: "bg-purple-500",
+      color: "bg-primary/10 text-primary",
       capabilities: PATIENT_MANAGE_CAPABILITIES,
       category: "Quản lý",
     },
@@ -81,7 +81,7 @@ export function AdminActions() {
       title: "Thêm thiết bị",
       description: "Đăng ký thiết bị y tế mới",
       icon: Stethoscope,
-      color: "bg-orange-500",
+      color: "bg-warning/10 text-warning",
       capabilities: DEVICE_MANAGE_CAPABILITIES,
       category: "Thiết bị",
     },
@@ -90,7 +90,7 @@ export function AdminActions() {
       title: "Kích hoạt thiết bị",
       description: "Kích hoạt thiết bị mới",
       icon: Wifi,
-      color: "bg-cyan-500",
+      color: "bg-success/10 text-success",
       capabilities: DEVICE_MANAGE_CAPABILITIES,
       category: "Thiết bị",
     },
@@ -99,7 +99,7 @@ export function AdminActions() {
       title: "Tạo gói mới",
       description: "Tạo gói dịch vụ mới",
       icon: Package,
-      color: "bg-pink-500",
+      color: "bg-primary/10 text-primary",
       capabilities: PACKAGE_MANAGE_CAPABILITIES,
       category: "Gói dịch vụ",
     },
@@ -108,7 +108,7 @@ export function AdminActions() {
       title: "Xuất báo cáo",
       description: "Tạo và tải xuống báo cáo",
       icon: FileText,
-      color: "bg-indigo-500",
+      color: "bg-info/10 text-info",
       capabilities: REPORT_EXPORT_CAPABILITIES,
       category: "Dữ liệu",
     },
@@ -117,7 +117,7 @@ export function AdminActions() {
       title: "Xuất dữ liệu",
       description: "Tạo artifact theo phạm vi được cấp quyền",
       icon: Database,
-      color: "bg-red-500",
+      color: "bg-info/10 text-info",
       capabilities: REPORT_EXPORT_CAPABILITIES,
       category: "Dữ liệu",
     },
@@ -126,7 +126,7 @@ export function AdminActions() {
       title: "Cài đặt thông báo",
       description: "Mở cấu hình kênh thông báo đã lưu trên hệ thống",
       icon: Bell,
-      color: "bg-yellow-500",
+      color: "bg-warning/10 text-warning",
       capabilities: NOTIFICATION_MANAGE_CAPABILITIES,
       category: "Cài đặt",
     },
@@ -178,15 +178,13 @@ export function AdminActions() {
                     <button
                       key={action.id}
                       onClick={() => handleAction(action)}
-                      className="group relative bg-card border border-border rounded-xl p-6 hover:border-primary/50 hover:shadow-lg transition-all duration-200 text-left overflow-hidden"
+                      className="group relative overflow-hidden rounded-xl border border-border bg-card p-6 text-left transition-[border-color,box-shadow] duration-200 hover:border-primary/50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
                     >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-primary/5 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
-
                       <div className="relative flex items-start gap-4">
                         <div
-                          className={`w-12 h-12 ${action.color} rounded-lg flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                          className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105 group-focus-visible:scale-105 motion-reduce:transform-none motion-reduce:transition-none ${action.color}`}
                         >
-                          <Icon className="w-6 h-6 text-white" />
+                          <Icon className="h-6 w-6" aria-hidden="true" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -196,7 +194,7 @@ export function AdminActions() {
                         </div>
                       </div>
 
-                      <div className="mt-4 flex items-center gap-2 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="mt-4 flex items-center gap-2 text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
                         <span className="font-medium">Nhấn để mở</span>
                         <svg
                           className="w-3 h-3"

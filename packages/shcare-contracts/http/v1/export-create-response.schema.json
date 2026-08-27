@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/export-create-response.schema.json",
+  "title": "Shcare export creation response",
+  "description": "Immutable backend-confirmed export metadata. A client must download and verify the artifact before reporting completion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["export", "replayed"],
+  "properties": {
+    "export": {
+      "$ref": "#/$defs/exportJob"
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "exportJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "organizationId",
+        "workspaceId",
+        "createdByUserId",
+        "format",
+        "dataset",
+        "scopeKind",
+        "filters",
+        "rendererVersion",
+        "status",
+        "includeAudio",
+        "includeReports",
+        "includeHistory",
+        "startDate",
+        "endDate",
+        "recordCount",
+        "downloadUrl",
+        "artifactByteSize",
+        "artifactSha256",
+        "createdAt",
+        "updatedAt",
+        "downloadedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "deprecated": true,
+          "description": "Compatibility alias for workspaceId in a workspace-scoped clinical export."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdByUserId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "format": {
+          "enum": ["json", "csv", "xlsx", "pdf"]
+        },
+        "dataset": {
+          "const": "clinical_bundle"
+        },
+        "scopeKind": {
+          "enum": ["workspace", "assigned_patients", "personal"]
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "rendererVersion": {
+          "const": "shcare.export-artifact.v1"
+        },
+        "status": {
+          "const": "ready"
+        },
+        "includeAudio": {
+          "type": "boolean"
+        },
+        "includeReports": {
+          "type": "boolean"
+        },
+        "includeHistory": {
+          "type": "boolean"
+        },
+        "startDate": {
+          "type": "string",
+          "pattern": "^$|^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "endDate": {
+          "type": "string",
+          "pattern": "^$|^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "downloadUrl": {
+          "type": "string",
+          "pattern": "^/api/v1/exports/download/[A-Za-z0-9._~-]+$"
+        },
+        "artifactByteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 104857600
+        },
+        "artifactSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "downloadedAt": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

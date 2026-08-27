@@ -1,0 +1,8 @@
+{
+  "firmwareFileId": "firmware_msm261s4030h0_1_0_0",
+  "hardwareTarget": "MSM261S4030H0",
+  "partitionTarget": "app",
+  "minimumProtocolVersion": 1,
+  "correlationId": "corr_ota_alpha_001",
+  "ttlMs": 300000
+}

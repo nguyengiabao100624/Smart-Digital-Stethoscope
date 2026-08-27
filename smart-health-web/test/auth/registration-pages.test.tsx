@@ -64,7 +64,9 @@ describe("registration pages", () => {
 
     expect(await screen.findByRole("alertdialog", { name: "Bạn chưa gửi hồ sơ" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Tiếp tục chỉnh sửa" }));
-    expect(screen.getByRole("heading", { name: "Đăng ký tài khoản bác sĩ" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Đăng ký Chuyên Gia Y Tế" }),
+    ).toBeVisible();
     expect(router.state.location.pathname).toBe("/");
   });
 });

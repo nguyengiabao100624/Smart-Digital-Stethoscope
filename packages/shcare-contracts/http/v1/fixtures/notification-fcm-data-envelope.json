@@ -1,0 +1,8 @@
+{
+  "notificationId": "noti_appointment_001",
+  "workspaceId": "wsp_clinic_001",
+  "organizationId": "wsp_clinic_001",
+  "userId": "usr_clinician_001",
+  "notificationProtocolVersion": "2",
+  "createdAt": "2026-07-27T01:05:00.000Z"
+}

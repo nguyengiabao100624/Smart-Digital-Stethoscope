@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, MailCheck, RotateCcw } from "lucide-react";
+import { ArrowLeft, Mail, MailCheck, RotateCcw } from "lucide-react";
 import { Link } from "react-router";
 
 import {
@@ -20,7 +20,8 @@ import { useSEO } from "@/lib/useSEO";
 export default function ForgotPasswordPage() {
   useSEO({
     title: "Khôi phục mật khẩu | Shcare",
-    description: "Nhận liên kết đặt lại mật khẩu cho tài khoản Shcare Workspace.",
+    description:
+      "Nhận liên kết đặt lại mật khẩu cho tài khoản Shcare Workspace.",
     path: "/quen-mat-khau",
   });
 
@@ -62,8 +63,8 @@ export default function ForgotPasswordPage() {
           description={`Nếu email ${email.trim()} thuộc một tài khoản Shcare, bạn sẽ nhận được liên kết đặt lại mật khẩu.`}
         />
         <AuthAlert tone="info">
-          Liên kết có thể mất vài phút để đến. Hãy kiểm tra cả thư rác và chỉ mở email có
-          nguồn gửi Shcare mà bạn tin cậy.
+          Liên kết có thể mất vài phút để đến. Hãy kiểm tra cả thư rác và chỉ mở
+          email có nguồn gửi Shcare mà bạn tin cậy.
         </AuthAlert>
         <div className="shc-auth-result-actions">
           <Link to="/login" className="shc-auth-link-button">
@@ -80,19 +81,25 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="shc-auth-page">
-      <AuthPageIntro
-        icon={MailCheck}
-        title="Khôi phục mật khẩu"
-        description="Nhập email tài khoản. Firebase sẽ gửi liên kết đặt lại mật khẩu nếu yêu cầu hợp lệ."
-      />
+    <div className="shc-auth-page shc-auth-page-forgot">
+      <header className="shc-auth-legacy-copy-intro">
+        <h1>Khôi phục mật khẩu</h1>
+        <p>
+          Hệ thống sẽ gửi liên kết đặt lại mật khẩu an toàn đến email của bạn.
+        </p>
+      </header>
 
-      <form method="post" noValidate onSubmit={submit} className="shc-auth-form">
+      <form
+        method="post"
+        noValidate
+        onSubmit={submit}
+        className="shc-auth-form"
+      >
         <AuthField
           id="reset-email"
           label="Email nhận liên kết"
           error={fieldErrors.email}
-          hint="Dùng đúng email đã đăng ký với Shcare."
+          leadingIcon={Mail}
           required
         >
           <input
@@ -105,7 +112,7 @@ export default function ForgotPasswordPage() {
               setFieldErrors({});
               setError("");
             }}
-            placeholder="bacsi@phongkham.vn"
+            placeholder="doctor@clinic.vn"
           />
         </AuthField>
 
@@ -120,7 +127,10 @@ export default function ForgotPasswordPage() {
         </AuthPrimaryButton>
       </form>
 
-      <Link to="/login" className="shc-auth-back-link">
+      <Link
+        to="/login"
+        className="shc-auth-back-link shc-auth-legacy-back-link"
+      >
         <ArrowLeft size={16} aria-hidden="true" />
         Về đăng nhập
       </Link>

@@ -1,678 +1,301 @@
-﻿package com.example.smart_health_android.ui.screens
+package com.example.smart_health_android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.EmailVerificationResendResult
-import com.example.smart_health_android.data.FirebaseAuthService
-import com.example.smart_health_android.data.PendingRegistrationStore
-import com.example.smart_health_android.data.SmartHealthPushRegistrar
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.toVietnameseMessage
-import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.BuildConfig
+import com.example.smart_health_android.R
+import com.example.smart_health_android.data.FirebaseOwnerBinding
+import com.example.smart_health_android.security.EmailVerificationUiAction
+import com.example.smart_health_android.security.EmailVerificationUiEffect
+import com.example.smart_health_android.security.EmailVerificationViewModel
+import com.example.smart_health_android.security.EmailVerificationViewModelFactory
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
-@Composable
-fun VerifyEmailScreen(
-    onNavigateBack: () -> Unit,
-    onVerified: () -> Unit,
-    email: String = "email@example.com"
-) {
-    var code by remember { mutableStateOf("") }
-    var isVerifying by remember { mutableStateOf(false) }
-    var isVerified by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-    var resendCooldown by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(resendCooldown) {
-        if (resendCooldown > 0) {
-            delay(1000)
-            resendCooldown -= 1
-        }
-    }
-
-    LaunchedEffect(code) {
-        if (code.length == 6 && !isVerifying && !isVerified) {
-            isVerifying = true
-            error = ""
-            delay(500)
-            error = "Màn nhập mã email không còn dùng mã thủ công. Vui lòng xác thực bằng liên kết Firebase trong email."
-            code = ""
-            isVerifying = false
-        }
-    }
-
-    LaunchedEffect(isVerified) {
-        if (isVerified) {
-            delay(1500)
-            onVerified()
-        }
-    }
-
-    VerificationScaffold(
-        backLabel = "Quay lại",
-        onNavigateBack = onNavigateBack,
-        footerShowsConsent = true
-    ) {
-        VerificationHeroIcon(icon = Icons.Default.Email)
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            "Xác thực Email",
-            color = PrimaryBlue,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Chúng tôi đã gửi mã xác thực 6 chữ số đến địa chỉ email",
-            color = TextSecondary,
-            fontSize = 15.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 12.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(email, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(28.dp))
-
-        if (isVerified) {
-            VerificationSuccess(
-                title = "Xác thực thành công!",
-                subtitle = "Đang chuyển đến trang chính..."
-            )
-        } else {
-            VerificationOtpInput(
-                code = code,
-                onCodeChange = { code = it },
-                enabled = !isVerifying,
-                isError = error.isNotBlank()
-            )
-            VerificationStatusMessages(
-                error = error,
-                isVerifying = isVerifying,
-                loadingText = "Đang xác thực..."
-            )
-            VerificationTip("Không dùng mã tạm. Hãy mở email Firebase để xác thực tài khoản.")
-            Spacer(modifier = Modifier.height(20.dp))
-            Text("Không nhận được mã?", color = TextSecondary, fontSize = 14.sp)
-            Spacer(modifier = Modifier.height(10.dp))
-            VerificationResendButton(
-                cooldown = resendCooldown,
-                label = "Gửi lại mã",
-                onClick = {
-                    resendCooldown = 60
-                    error = ""
-                    code = ""
-                }
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                "Thay đổi địa chỉ email",
-                color = PrimaryBlue,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable(onClick = onNavigateBack)
-            )
-        }
-    }
+private enum class VerificationNoticeKind {
+    Info,
+    Warning,
+    Success,
+    Unavailable,
 }
 
 @Composable
 fun FirebaseVerifyEmailScreen(
+    firebaseOwner: FirebaseOwnerBinding,
     onNavigateBack: () -> Unit,
-    onVerified: (accountType: String) -> Unit,
-    fallbackAccountType: String = "patient"
+    onVerified: (accountType: String, owner: FirebaseOwnerBinding) -> Unit,
+    fallbackAccountType: String = "patient",
+    verificationViewModel: EmailVerificationViewModel = viewModel(
+        factory = EmailVerificationViewModelFactory(
+            context = LocalContext.current,
+            fallbackAccountType = fallbackAccountType,
+            firebaseOwner = firebaseOwner,
+        ),
+    ),
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val pendingRegistration = remember { PendingRegistrationStore.load(context) }
-    val routeAccountType = if (fallbackAccountType == "doctor" || fallbackAccountType == "solo_doctor") {
-        fallbackAccountType
-    } else {
-        "patient"
+    val state by verificationViewModel.uiState.collectAsStateWithLifecycle()
+    val busy = state.isChecking || state.isResending
+    val initialInfo = stringResource(R.string.email_verification_initial_info)
+    val shownEmail = state.email.ifBlank {
+        stringResource(R.string.email_verification_email_unavailable)
     }
-    val email = pendingRegistration?.email ?: FirebaseAuthService.currentEmail().ifBlank { "email của bạn" }
-    var isChecking by remember { mutableStateOf(false) }
-    var isVerified by remember { mutableStateOf(false) }
-    var verifiedAccountType by remember { mutableStateOf(pendingRegistration?.accountType ?: routeAccountType) }
-    var error by remember { mutableStateOf("") }
-    var info by remember {
-        mutableStateOf("Chúng tôi đã gửi email xác thực đến địa chỉ bạn đăng ký. Vui lòng mở email và bấm vào liên kết xác thực.")
-    }
-    var resendCooldown by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(resendCooldown) {
-        if (resendCooldown > 0) {
-            delay(1000)
-            resendCooldown -= 1
+    LaunchedEffect(verificationViewModel) {
+        verificationViewModel.effects.collect { effect ->
+            when (effect) {
+                EmailVerificationUiEffect.NavigateBack -> onNavigateBack()
+                is EmailVerificationUiEffect.Verified ->
+                    onVerified(effect.accountType, effect.firebaseOwner)
+            }
         }
     }
 
+    BackHandler(enabled = !state.isVerified) {
+        verificationViewModel.onAction(EmailVerificationUiAction.BackRequested)
+    }
+
     VerificationScaffold(
-        backLabel = "Quay lại",
-        onNavigateBack = onNavigateBack,
-        footerShowsConsent = true
+        backLabel = stringResource(R.string.email_verification_back),
+        onNavigateBack = {
+            verificationViewModel.onAction(EmailVerificationUiAction.BackRequested)
+        },
+        footerShowsConsent = true,
     ) {
         VerificationHeroIcon(icon = Icons.Default.Email)
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            "Xác thực email",
-            color = PrimaryBlue,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
+            text = stringResource(R.string.email_verification_title),
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Mở hộp thư và bấm vào liên kết xác thực Firebase. Sau đó quay lại ứng dụng để tiếp tục.",
-            color = TextSecondary,
-            fontSize = 15.sp,
+            text = stringResource(R.string.email_verification_description),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.padding(horizontal = 12.dp),
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Text(email, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = shownEmail,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
         Spacer(modifier = Modifier.height(28.dp))
 
-        if (isVerified) {
+        if (state.isVerified) {
             VerificationSuccess(
-                title = "Xác thực thành công!",
-                subtitle = if (verifiedAccountType == "doctor" || verifiedAccountType == "solo_doctor") {
-                    "Đang gửi yêu cầu duyệt tài khoản bác sĩ..."
+                title = stringResource(R.string.email_verification_success_title),
+                subtitle = if (
+                    state.verifiedAccountType == "doctor" ||
+                    state.verifiedAccountType == "solo_doctor"
+                ) {
+                    stringResource(R.string.email_verification_success_doctor)
                 } else {
-                    "Đang chuyển đến hồ sơ của bạn..."
-                }
+                    stringResource(R.string.email_verification_success_patient)
+                },
             )
         } else {
             VerificationNotice(
                 icon = Icons.Default.Security,
-                title = "Xác thực bằng Firebase",
-                body = info,
-                background = Color(0xFFEFF6FF),
-                border = Color(0xFFBFDBFE),
-                tint = Color(0xFF1D4ED8)
+                title = stringResource(R.string.email_verification_secure_link_title),
+                body = state.infoMessage.ifBlank { initialInfo },
+                kind = VerificationNoticeKind.Info,
             )
             VerificationStatusMessages(
-                error = error,
-                isVerifying = isChecking,
-                loadingText = "Đang kiểm tra trạng thái email..."
+                error = state.errorMessage,
+                isVerifying = busy,
+                loadingText = if (state.isResending) {
+                    stringResource(R.string.email_verification_resending)
+                } else {
+                    stringResource(R.string.email_verification_checking)
+                },
             )
             Button(
                 onClick = {
-                    isChecking = true
-                    error = ""
-                    coroutineScope.launch {
-                        try {
-                            val verified = try {
-                                FirebaseAuthService.reloadCurrentUser()
-                            } catch (exception: Exception) {
-                                error = exception.toVietnameseMessage(
-                                    "Không thể kiểm tra trạng thái xác thực Firebase. Vui lòng kiểm tra mạng rồi thử lại."
-                                )
-                                return@launch
-                            }
-                            if (!verified) {
-                                error = "Email chưa được xác thực trên Firebase. Vui lòng mở đúng email mới nhất, bấm liên kết xác thực rồi quay lại ứng dụng."
-                                return@launch
-                            }
-
-                            val idToken = try {
-                                FirebaseAuthService.getFreshIdToken(forceRefresh = true)
-                            } catch (exception: Exception) {
-                                error = exception.toVietnameseMessage(
-                                    "Email đã xác thực nhưng ứng dụng chưa lấy được phiên đăng nhập mới. Vui lòng đăng nhập lại."
-                                )
-                                return@launch
-                            }
-
-                            val authResult = try {
-                                SmartHealthRepository.api.authenticateFirebase(idToken)
-                            } catch (exception: Exception) {
-                                error = exception.toVietnameseMessage(
-                                    "Email đã xác thực nhưng chưa kết nối được máy chủ Smart Health. Vui lòng thử lại."
-                                )
-                                return@launch
-                            }
-                            runCatching { SmartHealthPushRegistrar.registerCurrentTokenIfAuthenticated() }
-                            val registration = pendingRegistration
-                            val nextAccountType = registration?.accountType ?: routeAccountType
-                            if (nextAccountType == "doctor" || nextAccountType == "solo_doctor") {
-                                if (registration == null || registration.name.isBlank()) {
-                                    if (authResult.user.requestedRole != "doctor") {
-                                        error = "Email đã xác thực nhưng ứng dụng không còn giữ hồ sơ đăng ký bác sĩ. Vui lòng quay lại đăng ký để gửi lại hồ sơ xét duyệt."
-                                        return@launch
-                                    }
-                                } else {
-                                    try {
-                                        SmartHealthRepository.api.requestRole(
-                                            requestedRole = "doctor",
-                                            name = registration.name,
-                                            phone = registration.phone,
-                                            license = registration.license,
-                                            hospital = registration.hospital,
-                                            department = registration.department,
-                                            organizationId = registration.organizationId,
-                                            reason = registration.reason,
-                                            accountType = nextAccountType,
-                                            workspaceType = if (nextAccountType == "solo_doctor") "solo_practice" else "clinic"
-                                        )
-                                    } catch (exception: Exception) {
-                                        error = exception.toVietnameseMessage(
-                                            "Email đã xác thực nhưng chưa gửi được hồ sơ bác sĩ lên máy chủ. Vui lòng thử lại."
-                                        )
-                                        return@launch
-                                    }
-                                }
-                            } else if (nextAccountType == "personal" && registration != null) {
-                                try {
-                                    SmartHealthRepository.api.requestRole(
-                                        requestedRole = "patient",
-                                        name = registration.name,
-                                        phone = registration.phone,
-                                        accountType = nextAccountType,
-                                        workspaceType = "personal"
-                                    )
-                                } catch (exception: Exception) {
-                                    error = exception.toVietnameseMessage(
-                                        "Email đã xác thực nhưng chưa hoàn tất hồ sơ người dùng. Vui lòng thử lại."
-                                    )
-                                    return@launch
-                                }
-                            }
-                            verifiedAccountType = nextAccountType
-                            PendingRegistrationStore.clear(context)
-                            isVerified = true
-                            delay(1200)
-                            onVerified(nextAccountType)
-                        } catch (exception: Exception) {
-                            error = exception.toVietnameseMessage(
-                                "Không thể kiểm tra xác thực email. Vui lòng thử lại."
-                            )
-                        } finally {
-                            isChecking = false
-                        }
-                    }
+                    verificationViewModel.onAction(EmailVerificationUiAction.CheckStatus)
                 },
-                enabled = !isChecking,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                shape = RoundedCornerShape(12.dp)
+                enabled = !busy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 52.dp),
             ) {
-                Text("Tôi đã xác thực email", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (state.isChecking) {
+                        stringResource(R.string.email_verification_checking_short)
+                    } else {
+                        stringResource(R.string.email_verification_confirm_action)
+                    },
+                )
             }
             Spacer(modifier = Modifier.height(18.dp))
-            Text("Chưa nhận được email?", color = TextSecondary, fontSize = 14.sp)
+            Text(
+                text = stringResource(R.string.email_verification_resend_prompt),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Spacer(modifier = Modifier.height(10.dp))
             VerificationResendButton(
-                cooldown = resendCooldown,
-                label = "Gửi lại email xác thực",
+                cooldown = state.resendCooldownSeconds,
+                label = stringResource(R.string.email_verification_resend_action),
+                loadingLabel = stringResource(R.string.email_verification_resending_short),
+                enabled = !busy,
+                isLoading = state.isResending,
                 onClick = {
-                    error = ""
-                    coroutineScope.launch {
-                        try {
-                            when (FirebaseAuthService.resendEmailVerification()) {
-                                EmailVerificationResendResult.Sent -> {
-                                    resendCooldown = 60
-                                    info = "Email xác thực mới đã được gửi. Hãy kiểm tra cả hộp thư đến, spam và quảng cáo."
-                                }
-                                EmailVerificationResendResult.AlreadyVerified -> {
-                                    resendCooldown = 0
-                                    info = "Email này đã được Firebase xác thực. Bấm \"Tôi đã xác thực email\" để tiếp tục gửi hồ sơ."
-                                }
-                            }
-                        } catch (exception: Exception) {
-                            error = exception.toVietnameseMessage("Không thể gửi lại email xác thực. Vui lòng đăng nhập lại hoặc thử sau vài phút.")
-                        }
-                    }
-                }
+                    verificationViewModel.onAction(EmailVerificationUiAction.Resend)
+                },
             )
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                "Thay đổi địa chỉ email",
-                color = PrimaryBlue,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable(onClick = onNavigateBack)
-            )
+            Spacer(modifier = Modifier.height(10.dp))
+            TextButton(
+                onClick = {
+                    verificationViewModel.onAction(EmailVerificationUiAction.BackRequested)
+                },
+                enabled = !busy,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text(stringResource(R.string.email_verification_change_email))
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VerifyPhoneSettingsScreen(
     onNavigateBack: () -> Unit,
-    onVerified: () -> Unit
 ) {
-    var step by remember { mutableStateOf("input") }
-    var phoneNumber by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
-    var isVerifying by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-    var resendCooldown by remember { mutableIntStateOf(0) }
-    val phoneDigits = phoneNumber.filter { it.isDigit() }
-
-    LaunchedEffect(resendCooldown) {
-        if (resendCooldown > 0) {
-            delay(1000)
-            resendCooldown -= 1
-        }
-    }
-
-    LaunchedEffect(code, step) {
-        if (step == "verify" && code.length == 6 && !isVerifying) {
-            isVerifying = true
-            error = ""
-            delay(500)
-            error = "Xác thực SMS/OTP chưa được bật vì chưa cấu hình nhà cung cấp SMS thật."
-            code = ""
-            isVerifying = false
-        }
-    }
-
-    LaunchedEffect(step) {
-        if (step == "success") {
-            delay(2000)
-            onVerified()
-        }
-    }
-
-    VerificationScaffold(
-        backLabel = "Quay lại hồ sơ",
-        onNavigateBack = onNavigateBack
-    ) {
-        when (step) {
-            "input" -> {
-                VerificationHeroIcon(icon = Icons.Default.Phone)
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    "Thêm số điện thoại",
-                    color = PrimaryBlue,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Thêm số điện thoại để tăng cường bảo mật tài khoản",
-                    color = TextSecondary,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                VerificationNotice(
-                    icon = Icons.Default.Security,
-                    title = "Tính năng bảo mật",
-                    body = "- Xác thực 2 yếu tố (2FA)\n- Khôi phục tài khoản\n- Thông báo qua SMS",
-                    background = Color(0xFFEFF6FF),
-                    border = Color(0xFFBFDBFE),
-                    tint = Color(0xFF2563EB)
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Số điện thoại", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = phoneNumber,
-                        onValueChange = { phoneNumber = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("0912 345 678", color = TextSecondary.copy(alpha = 0.6f)) },
-                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = TextSecondary) },
-                        shape = RoundedCornerShape(12.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryBlue,
-                            unfocusedBorderColor = Border,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
-                        ),
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Nhập số điện thoại 10-11 chữ số", color = TextSecondary, fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.height(22.dp))
-                Button(
-                    onClick = {
-                        step = "verify"
-                        resendCooldown = 60
-                        code = ""
-                        error = ""
-                    },
-                    enabled = phoneDigits.length in 10..11,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimaryBlue,
-                        disabledContainerColor = Surface,
-                        disabledContentColor = TextSecondary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Gửi mã xác thực", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            "verify" -> {
-                VerificationHeroIcon(icon = Icons.Default.Phone)
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    "Xác thực số điện thoại",
-                    color = PrimaryBlue,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Chúng tôi đã gửi mã xác thực 6 chữ số đến số",
-                    color = TextSecondary,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(phoneNumber, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(28.dp))
-                VerificationOtpInput(
-                    code = code,
-                    onCodeChange = { code = it },
-                    enabled = !isVerifying,
-                    isError = error.isNotBlank()
-                )
-                VerificationStatusMessages(error = error, isVerifying = isVerifying, loadingText = "Đang xác thực...")
-                VerificationTip("Xác thực SMS/OTP cần nhà cung cấp SMS thật. Tính năng này chưa bật trong bản app hiện tại.")
-                Spacer(modifier = Modifier.height(20.dp))
-                Text("Không nhận được mã?", color = TextSecondary, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(10.dp))
-                VerificationResendButton(
-                    cooldown = resendCooldown,
-                    label = "Gửi lại mã",
-                    onClick = {
-                        resendCooldown = 60
-                        code = ""
-                        error = ""
-                    }
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    "Thay đổi số điện thoại",
-                    color = PrimaryBlue,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable {
-                        step = "input"
-                        code = ""
-                        error = ""
-                    }
-                )
-            }
-
-            else -> {
-                VerificationSuccess(
-                    title = "Thêm thành công!",
-                    subtitle = "Số điện thoại đã được thêm vào tài khoản"
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                VerificationNotice(
-                    icon = Icons.Default.CheckCircle,
-                    title = phoneNumber,
-                    body = "Đã được liên kết với tài khoản của bạn",
-                    background = Color(0xFFF0FDF4),
-                    border = Color(0xFFBBF7D0),
-                    tint = Color(0xFF16A34A)
-                )
-            }
-        }
-    }
+    VerificationUnavailableScreen(
+        icon = Icons.Default.Phone,
+        title = stringResource(R.string.phone_verification_unavailable_title),
+        message = stringResource(R.string.phone_verification_unavailable_message),
+        onNavigateBack = onNavigateBack,
+    )
 }
 
 @Composable
 fun ReVerifyContactScreen(
     verificationType: String,
-    contact: String,
     onNavigateBack: () -> Unit,
-    onVerified: () -> Unit
 ) {
-    val isEmail = verificationType == "email"
-    val icon = if (isEmail) Icons.Default.Email else Icons.Default.Phone
-    val targetName = if (isEmail) "Email" else "Số điện thoại"
-    var code by remember { mutableStateOf("") }
-    var isVerifying by remember { mutableStateOf(false) }
-    var isVerified by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-    var resendCooldown by remember { mutableIntStateOf(0) }
+    val isEmail = verificationType.equals("email", ignoreCase = true)
+    VerificationUnavailableScreen(
+        icon = if (isEmail) Icons.Default.Email else Icons.Default.Phone,
+        title = if (isEmail) {
+            "Thay đổi email chưa khả dụng"
+        } else {
+            "Thay đổi số điện thoại chưa khả dụng"
+        },
+        message = if (isEmail) {
+            "Phiên bản hiện tại chưa có quy trình đổi email được máy chủ và hệ thống xác thực " +
+                "xác nhận ở cả địa chỉ cũ lẫn mới. Dữ liệu tài khoản chưa bị thay đổi."
+        } else {
+            "Nhà cung cấp SMS chưa sẵn sàng nên Shcare không gửi mã mẫu và không cập nhật " +
+                "số điện thoại trước khi có xác nhận thật."
+        },
+        onNavigateBack = onNavigateBack,
+    )
+}
 
-    LaunchedEffect(resendCooldown) {
-        if (resendCooldown > 0) {
-            delay(1000)
-            resendCooldown -= 1
-        }
-    }
-
-    LaunchedEffect(code) {
-        if (code.length == 6 && !isVerifying && !isVerified) {
-            isVerifying = true
-            error = ""
-            delay(500)
-            error = "Xác thực SMS/OTP chưa được bật vì chưa cấu hình nhà cung cấp SMS thật."
-            code = ""
-            isVerifying = false
-        }
-    }
-
-    LaunchedEffect(isVerified) {
-        if (isVerified) {
-            delay(1500)
-            onVerified()
-        }
-    }
-
+@Composable
+private fun VerificationUnavailableScreen(
+    icon: ImageVector,
+    title: String,
+    message: String,
+    onNavigateBack: () -> Unit,
+) {
+    BackHandler(onBack = onNavigateBack)
     VerificationScaffold(
         backLabel = "Quay lại hồ sơ",
-        onNavigateBack = onNavigateBack
+        onNavigateBack = onNavigateBack,
     ) {
         VerificationHeroIcon(icon = icon)
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            "Xác thực $targetName mới",
-            color = PrimaryBlue,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            if (isEmail) {
-                "Chúng tôi đã gửi mã xác thực 6 chữ số đến địa chỉ email mới"
-            } else {
-                "Chúng tôi đã gửi mã xác thực 6 chữ số đến số điện thoại mới"
-            },
-            color = TextSecondary,
-            fontSize = 15.sp,
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.semantics { heading() },
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(contact, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(22.dp))
-        VerificationNotice(
-            icon = Icons.Default.Warning,
-            title = "Lưu ý bảo mật",
-            body = "Để bảo vệ tài khoản, vui lòng xác thực ${if (isEmail) "email" else "số điện thoại"} mới trước khi thay đổi được lưu vào hệ thống.",
-            background = Color(0xFFFFFBEB),
-            border = Color(0xFFFDE68A),
-            tint = Color(0xFFD97706)
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.contact_verification_unavailable_protection),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(24.dp))
-
-        if (isVerified) {
-            VerificationSuccess(
-                title = "Xác thực thành công!",
-                subtitle = "$targetName đã được cập nhật"
-            )
-        } else {
-            VerificationOtpInput(
-                code = code,
-                onCodeChange = { code = it },
-                enabled = !isVerifying,
-                isError = error.isNotBlank()
-            )
-            VerificationStatusMessages(error = error, isVerifying = isVerifying, loadingText = "Đang xác thực...")
-            VerificationTip("Xác thực SMS/OTP cần nhà cung cấp SMS thật. Tính năng này chưa bật trong bản app hiện tại.")
-            Spacer(modifier = Modifier.height(20.dp))
-            Text("Không nhận được mã?", color = TextSecondary, fontSize = 14.sp)
-            Spacer(modifier = Modifier.height(10.dp))
-            VerificationResendButton(
-                cooldown = resendCooldown,
-                label = "Gửi lại mã",
-                onClick = {
-                    resendCooldown = 60
-                    code = ""
-                    error = ""
-                }
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                "Hủy và quay lại",
-                color = PrimaryBlue,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable(onClick = onNavigateBack)
-            )
+        VerificationNotice(
+            icon = Icons.Default.Info,
+            title = stringResource(R.string.phone_verification_unchanged_title),
+            body = message,
+            kind = VerificationNoticeKind.Unavailable,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedButton(
+            onClick = onNavigateBack,
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 52.dp),
+        ) {
+            Text("Quay lại hồ sơ")
         }
     }
 }
@@ -682,256 +305,260 @@ internal fun VerificationScaffold(
     backLabel: String,
     onNavigateBack: () -> Unit,
     footerShowsConsent: Boolean = false,
-    content: @Composable ColumnScope.() -> Unit
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
-            .padding(horizontal = 24.dp)
+            .background(MaterialTheme.colorScheme.background)
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 24.dp),
     ) {
-        VerificationBackButton(backLabel = backLabel, onNavigateBack = onNavigateBack)
+        VerificationBackButton(
+            backLabel = backLabel,
+            onNavigateBack = onNavigateBack,
+        )
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(top = 24.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            content = content
+            verticalArrangement = Arrangement.Top,
+            content = content,
         )
         VerificationFooter(showConsent = footerShowsConsent)
     }
 }
 
 @Composable
-internal fun VerificationBackButton(backLabel: String, onNavigateBack: () -> Unit) {
-    Row(
+internal fun VerificationBackButton(
+    backLabel: String,
+    onNavigateBack: () -> Unit,
+) {
+    TextButton(
+        onClick = onNavigateBack,
         modifier = Modifier
-            .fillMaxWidth()
             .statusBarsPadding()
-            .padding(top = 16.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .defaultMinSize(minHeight = 48.dp)
+            .padding(top = 8.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onNavigateBack)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(backLabel, color = PrimaryBlue, fontWeight = FontWeight.Medium)
-        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(backLabel)
     }
 }
 
 @Composable
 internal fun VerificationHeroIcon(icon: ImageVector) {
-    Box(
-        modifier = Modifier
-            .size(80.dp)
-            .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)), CircleShape),
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier = Modifier.size(80.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(40.dp),
+            )
+        }
     }
 }
 
 @Composable
-internal fun VerificationOtpInput(
-    code: String,
-    onCodeChange: (String) -> Unit,
-    enabled: Boolean,
-    isError: Boolean
+internal fun VerificationStatusMessages(
+    error: String,
+    isVerifying: Boolean,
+    loadingText: String,
 ) {
-    BasicTextField(
-        value = code,
-        onValueChange = { raw -> onCodeChange(raw.filter { it.isDigit() }.take(6)) },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = enabled,
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-        cursorBrush = SolidColor(Color.Transparent),
-        textStyle = LocalTextStyle.current.copy(color = Color.Transparent),
-        decorationBox = { innerTextField ->
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val gap = 8.dp
-                val boxWidth = ((maxWidth - gap * 5) / 6).coerceAtMost(48.dp)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally)
-                ) {
-                    repeat(6) { index ->
-                        val digit = code.getOrNull(index)?.toString().orEmpty()
-                        val borderColor = when {
-                            isError -> ErrorRed
-                            digit.isNotEmpty() -> PrimaryBlue
-                            else -> Border
-                        }
-                        val backgroundColor = when {
-                            isError -> Color(0xFFFEF2F2)
-                            digit.isNotEmpty() -> PrimaryBlue.copy(alpha = 0.06f)
-                            else -> Color.White
-                        }
-                        Box(
-                            modifier = Modifier
-                                .width(boxWidth)
-                                .height(56.dp)
-                                .background(backgroundColor, RoundedCornerShape(12.dp))
-                                .border(
-                                    width = if (digit.isNotEmpty() || isError) 2.dp else 1.dp,
-                                    color = borderColor,
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .alpha(if (enabled) 1f else 0.5f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(digit, color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-                Box(modifier = Modifier.size(1.dp).alpha(0f)) {
-                    innerTextField()
-                }
-            }
-        }
-    )
-}
-
-@Composable
-internal fun VerificationStatusMessages(error: String, isVerifying: Boolean, loadingText: String) {
     if (error.isNotBlank()) {
         Spacer(modifier = Modifier.height(16.dp))
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFFEF2F2), RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFFFECACA), RoundedCornerShape(12.dp))
-                .padding(14.dp),
-            contentAlignment = Alignment.Center
+                .semantics { liveRegion = LiveRegionMode.Assertive },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.errorContainer,
         ) {
-            Text(error, color = Color(0xFFB91C1C), fontSize = 14.sp, textAlign = TextAlign.Center)
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(14.dp),
+            )
         }
     }
     if (isVerifying) {
         Spacer(modifier = Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
-                color = PrimaryBlue,
-                strokeWidth = 2.dp
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 2.dp,
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(loadingText, color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(
+                text = loadingText,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
     Spacer(modifier = Modifier.height(16.dp))
 }
 
 @Composable
-internal fun VerificationTip(message: String) {
-    Box(
+internal fun VerificationResendButton(
+    cooldown: Int,
+    label: String,
+    loadingLabel: String,
+    enabled: Boolean,
+    isLoading: Boolean,
+    onClick: () -> Unit,
+) {
+    val disabled = cooldown > 0 || !enabled || isLoading
+    FilledTonalButton(
+        onClick = onClick,
+        enabled = !disabled,
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFEFF6FF), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0xFFBFDBFE), RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        contentAlignment = Alignment.Center
+            .defaultMinSize(minHeight = 48.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(message, color = Color(0xFF1E40AF), fontSize = 14.sp, textAlign = TextAlign.Center)
-        }
+        Icon(
+            Icons.Default.Refresh,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            when {
+                isLoading -> loadingLabel
+                cooldown > 0 -> stringResource(
+                    R.string.email_verification_resend_after_seconds,
+                    cooldown,
+                )
+                else -> label
+            },
+        )
     }
 }
 
 @Composable
-internal fun VerificationResendButton(cooldown: Int, label: String, onClick: () -> Unit) {
-    val disabled = cooldown > 0
-    val foreground = if (disabled) TextSecondary else PrimaryBlue
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (disabled) Surface else PrimaryBlue.copy(alpha = 0.1f))
-            .clickable(enabled = !disabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Refresh, contentDescription = null, tint = foreground, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                if (disabled) "Gửi lại sau ${cooldown}s" else label,
-                color = foreground,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
-
-@Composable
-internal fun VerificationSuccess(title: String, subtitle: String) {
+internal fun VerificationSuccess(
+    title: String,
+    subtitle: String,
+) {
+    val semanticColors = ShcareTheme.colors
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 28.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .background(SuccessGreen, CircleShape),
-            contentAlignment = Alignment.Center
+        Surface(
+            modifier = Modifier.size(80.dp),
+            shape = CircleShape,
+            color = semanticColors.successContainer,
         ) {
-            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = semanticColors.onSuccessContainer,
+                    modifier = Modifier.size(48.dp),
+                )
+            }
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            title,
-            color = Color(0xFF16A34A),
-            fontSize = 24.sp,
+            text = title,
+            color = semanticColors.success,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { heading() },
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            subtitle,
-            color = TextSecondary,
-            fontSize = 15.sp,
+            text = subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
 
 @Composable
-internal fun VerificationNotice(
+private fun VerificationNotice(
     icon: ImageVector,
     title: String,
     body: String,
-    background: Color,
-    border: Color,
-    tint: Color
+    kind: VerificationNoticeKind,
 ) {
-    Row(
+    val semanticColors = ShcareTheme.colors
+    val (containerColor, contentColor) = when (kind) {
+        VerificationNoticeKind.Info ->
+            semanticColors.infoContainer to semanticColors.onInfoContainer
+
+        VerificationNoticeKind.Warning ->
+            semanticColors.warningContainer to semanticColors.onWarningContainer
+
+        VerificationNoticeKind.Success ->
+            semanticColors.successContainer to semanticColors.onSuccessContainer
+
+        VerificationNoticeKind.Unavailable ->
+            semanticColors.offlineContainer to semanticColors.onOfflineContainer
+    }
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .background(background, RoundedCornerShape(12.dp))
-            .border(1.dp, border, RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalAlignment = Alignment.Top
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        Spacer(modifier = Modifier.width(10.dp))
-        Column {
-            Text(title, color = tint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(body, color = tint, fontSize = 13.sp, lineHeight = 18.sp)
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(20.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = title,
+                    color = contentColor,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = body,
+                    color = contentColor,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
@@ -942,22 +569,34 @@ internal fun VerificationFooter(showConsent: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 16.dp, bottom = 18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        HorizontalDivider(color = Border)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(modifier = Modifier.height(14.dp))
         if (showConsent) {
             Text(
-                "Bằng việc xác thực email, bạn xác nhận đồng ý với các điều khoản bảo mật dữ liệu y tế",
-                color = TextSecondary,
-                fontSize = 12.sp,
+                text = stringResource(R.string.contact_verification_consent_notice),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
-                lineHeight = 16.sp
             )
             Spacer(modifier = Modifier.height(10.dp))
         }
-        Text("Smart Health Android", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Text(
+            text = stringResource(
+                R.string.contact_verification_app_version,
+                BuildConfig.VERSION_NAME,
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+        )
         Spacer(modifier = Modifier.height(4.dp))
-        Text("Smart Health • Xác thực và phân quyền an toàn", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Text(
+            text = stringResource(R.string.contact_verification_security_tagline),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+        )
     }
 }

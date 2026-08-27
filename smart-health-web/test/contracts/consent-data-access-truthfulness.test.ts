@@ -61,6 +61,10 @@ test("direct clinician access and administrative assignment have distinct Portal
   assert.match(source, /components\/ui\/radio-group/);
   assert.match(source, /md:hidden/);
   assert.match(source, /hidden overflow-hidden shadow-sm md:block/);
+  assert.match(source, /role="region"/);
+  assert.match(source, /aria-label="Sổ quyền truy cập dữ liệu"/);
+  assert.match(source, /tabIndex=\{0\}/);
+  assert.match(source, /overflow-x-auto focus-visible:/);
   assert.doesNotMatch(source, /glass-panel|premium-button|hero-gradient-text/);
 });
 

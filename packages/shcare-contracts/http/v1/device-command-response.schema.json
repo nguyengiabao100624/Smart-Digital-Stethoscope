@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-command-response.schema.json",
+  "title": "Shcare safe generic device command acceptance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "command", "delivery"],
+  "properties": {
+    "device": { "$ref": "device-operation-common.schema.json#/$defs/publicDevice" },
+    "command": { "$ref": "device-operation-common.schema.json#/$defs/genericCommand" },
+    "delivery": { "$ref": "device-operation-common.schema.json#/$defs/delivery" },
+    "responseStatus": { "const": 202 },
+    "idempotent": { "const": true }
+  },
+  "oneOf": [
+    { "required": ["responseStatus"], "not": { "required": ["idempotent"] } },
+    { "required": ["idempotent"], "not": { "required": ["responseStatus"] } }
+  ],
+  "x-shcare-success-level": "backend-accepted-and-transport-delivery-reported-only",
+  "x-shcare-device-applied-authority": "command.state=applied from an authenticated device status"
+}

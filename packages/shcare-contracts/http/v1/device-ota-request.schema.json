@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-ota-request.schema.json",
+  "title": "Shcare signed OTA request",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "firmwareFileId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "fileId": { "type": "string", "minLength": 1, "maxLength": 120, "deprecated": true },
+    "url": { "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 800 },
+    "downloadUrl": { "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 800, "deprecated": true },
+    "firmwareVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 80 },
+    "checksum": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+    "hardwareTarget": { "const": "MSM261S4030H0" },
+    "partitionTarget": { "const": "app" },
+    "minimumProtocolVersion": { "const": 1 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ttlMs": { "type": "integer", "minimum": 30000, "maximum": 600000 }
+  },
+  "oneOf": [
+    {
+      "required": ["firmwareFileId"],
+      "not": { "anyOf": [{ "required": ["fileId"] }, { "required": ["url"] }, { "required": ["downloadUrl"] }] }
+    },
+    {
+      "required": ["fileId"],
+      "not": { "anyOf": [{ "required": ["firmwareFileId"] }, { "required": ["url"] }, { "required": ["downloadUrl"] }] }
+    },
+    {
+      "required": ["url", "firmwareVersion", "checksum"],
+      "not": { "anyOf": [{ "required": ["firmwareFileId"] }, { "required": ["fileId"] }, { "required": ["downloadUrl"] }] }
+    },
+    {
+      "required": ["downloadUrl", "firmwareVersion", "checksum"],
+      "not": { "anyOf": [{ "required": ["firmwareFileId"] }, { "required": ["fileId"] }, { "required": ["url"] }] }
+    }
+  ],
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/devices/{deviceId}/ota",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-server-signing": {
+    "algorithm": "asymmetric-signature-over-SHCARE-OTA-MANIFEST-V1",
+    "privateKeyExposure": "forbidden",
+    "requiredManifestFields": ["checksum", "firmwareVersion", "hardwareTarget", "partitionTarget", "minimumProtocolVersion"]
+  }
+}

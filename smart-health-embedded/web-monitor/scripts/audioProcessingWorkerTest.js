@@ -82,12 +82,15 @@ function createSqlPersistenceHarness({ failAi = false } = {}) {
       statements.push(text);
       if (["BEGIN", "COMMIT", "ROLLBACK"].includes(text)) return { rows: [] };
       if (text.includes("pg_advisory_xact_lock")) return { rows: [] };
-      if (text.includes("SELECT id, organization_id, patient_id FROM scan_sessions")) {
+      if (text.includes("SELECT id, organization_id, patient_id, ai_summary, doctor_notes, phi_payload FROM scan_sessions")) {
         return {
           rows: [{
             id: "scan_sql_retry",
             organization_id: "org_sql",
             patient_id: "patient_sql",
+            ai_summary: "",
+            doctor_notes: "",
+            phi_payload: {},
           }],
         };
       }

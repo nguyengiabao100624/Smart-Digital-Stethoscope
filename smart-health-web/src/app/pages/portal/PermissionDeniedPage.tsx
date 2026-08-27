@@ -1,14 +1,13 @@
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Building2, LayoutDashboard, ShieldOff } from "lucide-react";
 
-import { Button } from "../../components/ui/button";
+import { Button } from "../../../components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
-} from "../../components/ui/card";
+} from "../../../components/ui/card";
 
 export default function PermissionDeniedPage() {
   const navigate = useNavigate();
@@ -23,7 +22,9 @@ export default function PermissionDeniedPage() {
           <span className="mb-2 grid size-14 place-items-center rounded-full bg-destructive/10 text-destructive">
             <ShieldOff aria-hidden="true" size={28} />
           </span>
-          <CardTitle>Không có quyền truy cập</CardTitle>
+          <h1 className="text-xl font-semibold leading-none tracking-tight">
+            Không có quyền truy cập
+          </h1>
           <CardDescription className="max-w-xl text-balance">
             Tài khoản hiện tại không có capability cần thiết để mở tính năng
             này trong workspace đang chọn.

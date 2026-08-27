@@ -1,4 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import {
   ArrowRight,
@@ -13,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-horizontal.svg";
 import { PublicMotionContext } from "@/app/context/PublicMotionContext";
 
 const navLinks = [
@@ -76,10 +81,12 @@ function isActive(pathname: string, href: string) {
 function resolveInitialMotionPreference() {
   if (typeof window === "undefined") return false;
 
-  const storedMotion = window.localStorage.getItem("shc-public-motion");
-  if (storedMotion) return storedMotion === "enabled";
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return false;
+  }
 
-  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const storedMotion = window.localStorage.getItem("shc-public-motion");
+  return storedMotion ? storedMotion === "enabled" : true;
 }
 
 export default function PublicLayout() {
@@ -88,12 +95,20 @@ export default function PublicLayout() {
   const [openDesktopGroup, setOpenDesktopGroup] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [homeHeroActive, setHomeHeroActive] = useState(false);
-  const [motionEnabled, setMotionEnabled] = useState(resolveInitialMotionPreference);
+  const [motionRequested, setMotionRequested] = useState(
+    resolveInitialMotionPreference,
+  );
+  const [systemReducedMotion, setSystemReducedMotion] = useState(() =>
+    typeof window === "undefined"
+      ? true
+      : window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   const closeDesktopTimer = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const publicMainRef = useRef<HTMLElement | null>(null);
   const location = useLocation();
   const isHome = location.pathname === "/";
+  const motionEnabled = motionRequested && !systemReducedMotion;
 
   const clearDesktopCloseTimer = () => {
     if (closeDesktopTimer.current !== null) {
@@ -115,11 +130,26 @@ export default function PublicLayout() {
     }, 140);
   };
 
+  const closeDesktopMenuAfterNavigation = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+  ) => {
+    clearDesktopCloseTimer();
+    setOpenDesktopGroup(null);
+    event.currentTarget.blur();
+  };
+
+  const closeMobileMenuAfterNavigation = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+  ) => {
+    setMobileOpen(false);
+    setOpenMobileGroup(null);
+    event.currentTarget.blur();
+  };
+
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (window.localStorage.getItem("shc-public-motion")) return;
-
-    const syncWithSystem = () => setMotionEnabled(!media.matches);
+    const syncWithSystem = () => setSystemReducedMotion(media.matches);
+    syncWithSystem();
     media.addEventListener("change", syncWithSystem);
     return () => media.removeEventListener("change", syncWithSystem);
   }, []);
@@ -182,22 +212,11 @@ export default function PublicLayout() {
     }
   }, [location.pathname]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const main = publicMainRef.current;
     if (!main) return;
 
-    const resetTargets = () => {
-      main
-        .querySelectorAll<HTMLElement>("[data-shc-reveal]")
-        .forEach((element) => {
-          delete element.dataset.shcReveal;
-          delete element.dataset.shcRevealState;
-          element.style.removeProperty("--shc-reveal-delay");
-        });
-    };
-
     if (!motionEnabled) {
-      resetTargets();
       return;
     }
 
@@ -217,6 +236,9 @@ export default function PublicLayout() {
       ].join(", ");
       const isHomeElement = (element: HTMLElement) =>
         Boolean(element.closest(homeSelector));
+      const authoredTargets = Array.from(
+        main.querySelectorAll<HTMLElement>("[data-shc-reveal]"),
+      );
       const containers = Array.from(
         main.querySelectorAll<HTMLElement>(
           ":scope > div > section > :not(.absolute):not([data-shc-reveal]), :scope > section > :not(.absolute):not([data-shc-reveal])",
@@ -229,29 +251,34 @@ export default function PublicLayout() {
           `:scope > div:not(.shc-home) section :is(${gridSelector}) > *, :scope > .shc-simple-page section :is(${gridSelector}) > *`,
         ),
       ).filter((element) => !element.closest("[data-shc-reveal]"));
-      const targets = [...containers, ...gridItems].filter(
+      const targets = [...authoredTargets, ...containers, ...gridItems].filter(
         (element, index, source) => source.indexOf(element) === index,
       );
       const directions = ["left", "right", "up"] as const;
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
             const element = entry.target as HTMLElement;
-            element.dataset.shcRevealState = entry.isIntersecting
-              ? "visible"
-              : "pending";
+            element.dataset.shcRevealState = "visible";
+            observer.unobserve(element);
           });
         },
         { rootMargin: "0px 0px -8% 0px", threshold: 0.08 },
       );
 
       targets.forEach((element, index) => {
-        element.dataset.shcReveal = directions[index % directions.length];
+        if (!element.dataset.shcReveal) {
+          element.dataset.shcReveal = directions[index % directions.length];
+          element.dataset.shcRevealAuto = "true";
+        }
         element.dataset.shcRevealState = "pending";
-        element.style.setProperty(
-          "--shc-reveal-delay",
-          `${Math.min((index % 5) * 70, 280)}ms`,
-        );
+        if (!element.style.getPropertyValue("--shc-reveal-delay")) {
+          element.style.setProperty(
+            "--shc-reveal-delay",
+            `${(index % 4) * 60}ms`,
+          );
+        }
         observer.observe(element);
       });
 
@@ -265,12 +292,12 @@ export default function PublicLayout() {
       window.cancelAnimationFrame(frame);
       main.dispatchEvent(new Event("shc:dispose-reveal"));
       delete main.dataset.shcRevealObserver;
-      resetTargets();
     };
   }, [location.pathname, motionEnabled]);
 
   const toggleMotion = () => {
-    setMotionEnabled((current) => {
+    if (systemReducedMotion) return;
+    setMotionRequested((current) => {
       const next = !current;
       window.localStorage.setItem(
         "shc-public-motion",
@@ -285,6 +312,7 @@ export default function PublicLayout() {
       <div
         ref={shellRef}
         className="app-shell public-shell shc-public-layout"
+        data-shcare-public-visual="legacy"
         data-shc-home-hero={homeHeroActive ? "active" : "rest"}
         data-shc-motion={motionEnabled ? "enabled" : "reduced"}
       >
@@ -309,7 +337,11 @@ export default function PublicLayout() {
           }}
         >
           <div className="shc-container shc-header-inner">
-            <Link to="/" className="shc-brand" aria-label="Shcare — Smart Health Care">
+            <Link
+              to="/"
+              className="shc-brand"
+              aria-label="Shcare — Smart Health Care"
+            >
               <span className="shc-brand-mark">
                 <img src={logoUrl} alt="" />
               </span>
@@ -347,6 +379,7 @@ export default function PublicLayout() {
                           : ""
                       }
                       aria-expanded={openDesktopGroup === item.label}
+                      onClick={closeDesktopMenuAfterNavigation}
                     >
                       {item.label}
                       <ChevronDown size={14} />
@@ -356,7 +389,7 @@ export default function PublicLayout() {
                         <Link
                           key={child.href}
                           to={child.href}
-                          onClick={() => setOpenDesktopGroup(null)}
+                          onClick={closeDesktopMenuAfterNavigation}
                         >
                           {child.label}
                         </Link>
@@ -383,12 +416,21 @@ export default function PublicLayout() {
                 className="shc-motion-toggle"
                 onClick={toggleMotion}
                 aria-pressed={motionEnabled}
+                disabled={systemReducedMotion}
                 aria-label={
-                  motionEnabled
-                    ? "Tắt hiệu ứng chuyển động"
-                    : "Bật hiệu ứng chuyển động"
+                  systemReducedMotion
+                    ? "Hệ thống đang giảm chuyển động"
+                    : motionEnabled
+                      ? "Tắt hiệu ứng chuyển động"
+                      : "Bật hiệu ứng chuyển động"
                 }
-                title={motionEnabled ? "Tắt hiệu ứng" : "Bật hiệu ứng"}
+                title={
+                  systemReducedMotion
+                    ? "Đang tuân theo cài đặt giảm chuyển động của hệ thống"
+                    : motionEnabled
+                      ? "Tắt hiệu ứng"
+                      : "Bật hiệu ứng"
+                }
               >
                 {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
                 <span>Hiệu ứng</span>
@@ -417,11 +459,13 @@ export default function PublicLayout() {
 
           <AnimatePresence>
             {mobileOpen && (
-              <motion.div
+              <motion.nav
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 className="shc-mobile-menu"
+                data-shc-menu-state="open"
+                aria-label="Điều hướng di động"
               >
                 {navLinks.map((item) =>
                   item.children ? (
@@ -448,9 +492,14 @@ export default function PublicLayout() {
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
+                            className="shc-mobile-submenu"
                           >
                             {item.children.map((child) => (
-                              <Link key={child.href} to={child.href}>
+                              <Link
+                                key={child.href}
+                                to={child.href}
+                                onClick={closeMobileMenuAfterNavigation}
+                              >
                                 {child.label}
                               </Link>
                             ))}
@@ -459,7 +508,11 @@ export default function PublicLayout() {
                       </AnimatePresence>
                     </div>
                   ) : (
-                    <Link key={item.href} to={item.href}>
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      onClick={closeMobileMenuAfterNavigation}
+                    >
                       {item.label}
                     </Link>
                   ),
@@ -470,28 +523,42 @@ export default function PublicLayout() {
                     className="shc-motion-toggle shc-mobile-motion-toggle"
                     onClick={toggleMotion}
                     aria-pressed={motionEnabled}
+                    disabled={systemReducedMotion}
                   >
                     {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
                     <span>
-                      {motionEnabled ? "Tắt hiệu ứng" : "Bật hiệu ứng"}
+                      {systemReducedMotion
+                        ? "Hệ thống đang giảm chuyển động"
+                        : motionEnabled
+                          ? "Tắt hiệu ứng"
+                          : "Bật hiệu ứng"}
                     </span>
                   </button>
-                  <Link to="/login" className="shc-button shc-button-secondary">
+                  <Link
+                    to="/login"
+                    className="shc-button shc-button-secondary"
+                    onClick={closeMobileMenuAfterNavigation}
+                  >
                     Đăng nhập
                   </Link>
                   <Link
                     to="/register"
                     className="shc-button shc-button-primary"
+                    onClick={closeMobileMenuAfterNavigation}
                   >
                     Bắt đầu
                   </Link>
                 </div>
-              </motion.div>
+              </motion.nav>
             )}
           </AnimatePresence>
         </header>
 
-        <main className="min-h-[60vh] flex-1" ref={publicMainRef}>
+        <main
+          id="shcare-public-main"
+          className="min-h-[60vh] flex-1"
+          ref={publicMainRef}
+        >
           <Outlet />
         </main>
 

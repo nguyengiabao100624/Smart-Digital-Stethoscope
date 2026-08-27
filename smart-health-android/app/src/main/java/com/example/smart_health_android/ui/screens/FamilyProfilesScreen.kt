@@ -40,6 +40,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -47,16 +48,17 @@ import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -73,12 +75,15 @@ import com.example.smart_health_android.R
 import com.example.smart_health_android.account.FamilyProfileDraft
 import com.example.smart_health_android.account.FamilyProfileField
 import com.example.smart_health_android.account.FamilyProfilesAction
+import com.example.smart_health_android.account.FamilyProfilesEffect
 import com.example.smart_health_android.account.FamilyProfilesLoadState
 import com.example.smart_health_android.account.FamilyProfilesUiState
 import com.example.smart_health_android.account.FamilyProfilesViewModel
+import com.example.smart_health_android.data.ActiveProfileResult
 import com.example.smart_health_android.data.Patient
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -92,11 +97,23 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun FamilyProfilesScreen(
     onNavigateBack: () -> Unit,
+    onActiveProfileConfirmed: (result: ActiveProfileResult, expectedPatientId: String) -> Unit,
     familyViewModel: FamilyProfilesViewModel = viewModel(),
 ) {
     val state by familyViewModel.uiState.collectAsStateWithLifecycle()
+    val currentOnActiveProfileConfirmed by rememberUpdatedState(onActiveProfileConfirmed)
     var showDiscardDialog by remember { mutableStateOf(false) }
     val hasDraft = state.editingProfileId.isNotBlank() || state.draft != FamilyProfileDraft()
+
+    LaunchedEffect(familyViewModel) {
+        familyViewModel.effects.collect { effect ->
+            when (effect) {
+                is FamilyProfilesEffect.ActiveProfileConfirmed -> {
+                    currentOnActiveProfileConfirmed(effect.result, effect.expectedPatientId)
+                }
+            }
+        }
+    }
 
     BackHandler(enabled = hasDraft && !state.isSaving) {
         showDiscardDialog = true
@@ -104,23 +121,12 @@ fun FamilyProfilesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.family_profiles_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            if (hasDraft) showDiscardDialog = true else onNavigateBack()
-                        },
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.family_profiles_back),
-                        )
-                    }
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.family_profiles_title),
+                onNavigateBack = {
+                    if (hasDraft) showDiscardDialog = true else onNavigateBack()
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+                backContentDescription = stringResource(R.string.family_profiles_back),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -406,7 +412,7 @@ private fun FamilyProfileCard(
                                 )
                             },
                             profile.resolvedAge()?.let {
-                                stringResource(R.string.family_profiles_age, it)
+                                pluralStringResource(R.plurals.family_profiles_age, it, it)
                             },
                             profile.bloodType.takeUnless { it == "unknown" || it.isBlank() },
                         ).joinToString(" • "),
@@ -531,7 +537,10 @@ private fun FamilyProfileEditor(
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bloodExpanded) },
                     isError = errors.containsKey("bloodType"),
                     modifier = Modifier
-                        .menuAnchor()
+                        .menuAnchor(
+                            MenuAnchorType.PrimaryNotEditable,
+                            enabled = !state.isSaving,
+                        )
                         .fillMaxWidth(),
                 )
                 ExposedDropdownMenu(

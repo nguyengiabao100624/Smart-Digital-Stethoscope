@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -26,7 +26,8 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import logoUrl from "../../../../packages/shcare-brand/assets/shcare-symbol.svg";
+import logoUrl from "../../../../packages/shcare-brand/assets/shcare-horizontal.svg";
+import { ThemeToggle } from "../../components/ThemeToggle";
 import { smartHealthApi } from "../../lib/smart-health-api";
 import { useAuth, type AuthUser } from "../context/AuthContext";
 import {
@@ -96,11 +97,6 @@ function portalRoleLabel(user: AuthUser | null, isClinic: boolean) {
 function canAccessPortalRoute(user: AuthUser, pathname: string) {
   return canAccessRoute(user.capabilities, pathname);
 }
-
-const popoverBackdropStyle = {
-  backdropFilter: "blur(18px) saturate(140%)",
-  WebkitBackdropFilter: "blur(18px) saturate(140%)",
-} satisfies CSSProperties;
 
 export default function PortalLayout() {
   const location = useLocation();
@@ -212,7 +208,7 @@ export default function PortalLayout() {
       ? "BE lỗi"
       : "Đang kiểm tra BE";
   const backendStatusTitle = backendStatus
-    ? `Backend ${backendStatus.service} · ${backendStatus.mode.dataBackend} · ${backendStatus.scoped.devicesOnline}/${backendStatus.scoped.devicesCount} thiết bị online`
+    ? `Backend ${backendStatus.service} · ${backendStatus.scoped.devicesOnline}/${backendStatus.scoped.devicesCount} thiết bị online`
     : "Portal đang kiểm tra kết nối backend Smart Health";
 
   const handleLogout = async () => {
@@ -221,7 +217,10 @@ export default function PortalLayout() {
   };
 
   return (
-    <div className={`clinical-portal${sidebarOpen ? " is-sidebar-open" : ""}`}>
+    <div
+      className={`clinical-portal${sidebarOpen ? " is-sidebar-open" : ""}`}
+      data-shcare-portal-visual="live-legacy"
+    >
       <div className="clinical-portal-shell">
         <AnimatePresence>
           {sidebarOpen && (
@@ -328,7 +327,7 @@ export default function PortalLayout() {
 
         <div className="clinical-main">
           <header className="clinical-topbar">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <button
                 type="button"
                 className="clinical-mobile-trigger"
@@ -338,10 +337,10 @@ export default function PortalLayout() {
                 <Menu size={20} />
               </button>
               <div className="clinical-topbar-title">
-                <p>
+                <p className="clinical-topbar-context">
                   {workspaceName} · {roleLabel}
                 </p>
-                <h1>{title}</h1>
+                <h1 className="clinical-topbar-page-title">{title}</h1>
               </div>
             </div>
 
@@ -390,7 +389,6 @@ export default function PortalLayout() {
                   {notifOpen && (
                     <motion.div
                       className="clinical-popover"
-                      style={popoverBackdropStyle}
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
@@ -462,7 +460,6 @@ export default function PortalLayout() {
                   {userMenuOpen && (
                     <motion.div
                       className="clinical-popover"
-                      style={popoverBackdropStyle}
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
@@ -493,14 +490,15 @@ export default function PortalLayout() {
                           >
                             <Shield size={16} /> Nhật ký audit
                           </Link>
-                        ) : null}
-                        <button
-                          id="portal-logout"
-                          type="button"
-                          onClick={handleLogout}
-                        >
-                          <LogOut size={16} /> Đăng xuất
-                        </button>
+                            ) : null}
+                            <ThemeToggle variant="menu" />
+                            <button
+                              id="portal-logout"
+                              type="button"
+                              onClick={handleLogout}
+                            >
+                              <LogOut size={16} /> Đăng xuất
+                            </button>
                       </div>
                     </motion.div>
                   )}

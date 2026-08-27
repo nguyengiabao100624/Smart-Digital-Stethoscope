@@ -1,0 +1,8 @@
+{
+  "release": {
+    "deviceId": "dev_patient_alpha",
+    "released": true,
+    "historyRetained": true
+  },
+  "replayed": false
+}

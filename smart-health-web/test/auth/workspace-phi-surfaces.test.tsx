@@ -18,6 +18,7 @@ import ScanDetail from "../../src/app/pages/portal/ScanDetail";
 const api = vi.hoisted(() => ({
   hasToken: vi.fn(),
   me: vi.fn(),
+  switchWorkspace: vi.fn(),
   updateMe: vi.fn(),
   clearToken: vi.fn(),
   authenticateFirebase: vi.fn(),
@@ -84,6 +85,65 @@ function deferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function canonicalReview(
+  workspaceId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: `review-${workspaceId}`,
+    scanId: `scan-${workspaceId}`,
+    organizationId: workspaceId,
+    patientId: `patient-${workspaceId}`,
+    deviceId: `device-${workspaceId}`,
+    status: "pending" as const,
+    decision: "",
+    note: "",
+    reviewerUserId: "",
+    reviewedAt: "",
+    version: 1,
+    scanStatus: "needs_review",
+    scanCreatedAt: "2026-07-29T08:00:00.000Z",
+    createdAt: "",
+    updatedAt: "2026-07-29T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function canonicalAlert(
+  workspaceId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const sourceId = `scan-${workspaceId}`;
+  return {
+    id: `alert-${workspaceId}`,
+    organizationId: workspaceId,
+    sourceType: "scan",
+    sourceId,
+    dedupeKey: `scan:${sourceId}`,
+    occurrenceNumber: 1,
+    previousAlertId: "",
+    occurredAt: "2026-07-29T08:00:00.000Z",
+    status: "open" as const,
+    severity: "warning",
+    title: `Alert ${workspaceId}`,
+    message: "Tín hiệu cần được kiểm tra.",
+    patientId: `patient-${workspaceId}`,
+    deviceId: `device-${workspaceId}`,
+    scanId: sourceId,
+    acknowledgedByUserId: "",
+    acknowledgedAt: "",
+    acknowledgementNote: "",
+    resolvedByUserId: "",
+    resolvedAt: "",
+    resolutionNote: "",
+    version: 1,
+    metadata: {},
+    createdAt: "2026-07-29T08:00:00.000Z",
+    updatedAt: "2026-07-29T08:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function WorkspaceSwitchProbe() {
@@ -155,22 +215,24 @@ describe("workspace PHI surfaces", () => {
     Object.values(api).forEach((mock) => mock.mockReset());
     api.hasToken.mockReturnValue(true);
     api.me.mockResolvedValue({ user: rawUser("workspace-a") });
-    api.updateMe.mockResolvedValue({ user: rawUser("workspace-b") });
+    api.switchWorkspace.mockResolvedValue({ user: rawUser("workspace-b") });
   });
 
   it("never flashes workspace A review data while workspace B refetch is slow", async () => {
     const workspaceB = deferred<{
-      reviews: Array<{
-        id: string;
-        scanId: string;
-        patientId: string;
-        status: "pending";
-        version: number;
-      }>;
+      workspaceId: string;
+      reviews: Array<ReturnType<typeof canonicalReview>>;
     }>();
     api.listReviewQueue
       .mockResolvedValueOnce({
-        reviews: [{ id: "review-a", scanId: "scan-a", patientId: "Patient A", status: "pending", version: 1 }],
+        workspaceId: "workspace-a",
+        reviews: [
+          canonicalReview("workspace-a", {
+            id: "review-a",
+            scanId: "scan-a",
+            patientId: "Patient A",
+          }),
+        ],
       })
       .mockReturnValueOnce(workspaceB.promise);
     const client = new QueryClient({
@@ -192,7 +254,14 @@ describe("workspace PHI surfaces", () => {
 
     await act(async () => {
       workspaceB.resolve({
-        reviews: [{ id: "review-b", scanId: "scan-b", patientId: "Patient B", status: "pending", version: 1 }],
+        workspaceId: "workspace-b",
+        reviews: [
+          canonicalReview("workspace-b", {
+            id: "review-b",
+            scanId: "scan-b",
+            patientId: "Patient B",
+          }),
+        ],
       });
     });
     expect(await screen.findByText("Patient B")).toBeVisible();
@@ -205,17 +274,39 @@ describe("workspace PHI surfaces", () => {
         "clinical-review-queue",
         "pending",
       ]),
-    ).toEqual({ reviews: [{ id: "review-b", scanId: "scan-b", patientId: "Patient B", status: "pending", version: 1 }] });
+    ).toMatchObject({
+      workspaceId: "workspace-b",
+      reviews: [
+        {
+          id: "review-b",
+          scanId: "scan-b",
+          patientId: "Patient B",
+          organizationId: "workspace-b",
+        },
+      ],
+    });
   });
 
   it("keeps workspace A alerts hidden when workspace B is offline and retries only workspace B", async () => {
     api.listClinicalAlerts
       .mockResolvedValueOnce({
-        alerts: [{ id: "alert-a", title: "Alert A", status: "open", version: 1 }],
+        workspaceId: "workspace-a",
+        alerts: [
+          canonicalAlert("workspace-a", {
+            id: "alert-a",
+            title: "Alert A",
+          }),
+        ],
       })
       .mockRejectedValueOnce(new Error("Network offline"))
       .mockResolvedValueOnce({
-        alerts: [{ id: "alert-b", title: "Alert B", status: "open", version: 1 }],
+        workspaceId: "workspace-b",
+        alerts: [
+          canonicalAlert("workspace-b", {
+            id: "alert-b",
+            title: "Alert B",
+          }),
+        ],
       });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

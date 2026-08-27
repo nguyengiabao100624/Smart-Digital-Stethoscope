@@ -726,7 +726,7 @@ export function Clinics() {
                 </div>
               ) : null}
               <table className="w-full min-w-[980px] text-left text-sm" aria-busy={isRefreshing}>
-                <thead className="sticky top-0 z-[1] bg-muted/95 text-muted-foreground backdrop-blur-sm">
+                <thead className="sticky top-0 z-[1] bg-muted text-muted-foreground">
                   <tr>
                     <th className="px-5 py-3 font-medium">Workspace</th>
                     <th className="px-5 py-3 font-medium">Liên hệ</th>

@@ -1,463 +1,635 @@
 package com.example.smart_health_android.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SsidChart
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.R
-import com.example.smart_health_android.appointments.AppointmentRoute
-import com.example.smart_health_android.data.Scan
-import com.example.smart_health_android.data.SmartDevice
-import com.example.smart_health_android.data.SmartHealthRepository
-import com.example.smart_health_android.data.scanIsNormal
-import com.example.smart_health_android.data.scanSummary
-import com.example.smart_health_android.ui.theme.Background
-import com.example.smart_health_android.ui.theme.Border
-import com.example.smart_health_android.ui.theme.ErrorRed
-import com.example.smart_health_android.ui.theme.PrimaryBlue
-import com.example.smart_health_android.ui.theme.PrimaryTeal
-import com.example.smart_health_android.ui.theme.SuccessGreen
-import com.example.smart_health_android.ui.theme.Surface
-import com.example.smart_health_android.ui.theme.TextPrimary
-import com.example.smart_health_android.ui.theme.TextSecondary
-import com.example.smart_health_android.ui.theme.WarningYellow
-import kotlinx.coroutines.delay
+import com.example.smart_health_android.patientdashboard.PatientDashboardAnalysisState
+import com.example.smart_health_android.patientdashboard.PatientDashboardAuthoritySnapshot
+import com.example.smart_health_android.patientdashboard.PatientDashboardDevice
+import com.example.smart_health_android.patientdashboard.PatientDashboardDevicePresence
+import com.example.smart_health_android.patientdashboard.PatientDashboardFeatureAccess
+import com.example.smart_health_android.patientdashboard.PatientDashboardLoadState
+import com.example.smart_health_android.patientdashboard.PatientDashboardProfile
+import com.example.smart_health_android.patientdashboard.PatientDashboardRecentScan
+import com.example.smart_health_android.patientdashboard.PatientDashboardSectionState
+import com.example.smart_health_android.patientdashboard.PatientDashboardUiAction
+import com.example.smart_health_android.patientdashboard.PatientDashboardUiEffect
+import com.example.smart_health_android.patientdashboard.PatientDashboardUiState
+import com.example.smart_health_android.patientdashboard.PatientDashboardViewModel
+import com.example.smart_health_android.patientdashboard.PatientDashboardViewModelFactory
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
-private data class PatientRecentScan(
-    val id: String,
-    val date: String,
-    val time: String,
-    val type: String,
-    val diagnosis: String,
-    val isNormal: Boolean
-)
+@Composable
+fun PatientDashboardScreen(
+    expectedAuthority: PatientDashboardAuthoritySnapshot?,
+    currentAuthority: () -> PatientDashboardAuthoritySnapshot?,
+    invalidateExpectedAuthority: () -> Unit,
+    canStartScan: Boolean,
+    canViewRecords: Boolean,
+    canManageDevice: Boolean,
+    canViewAppointments: Boolean,
+    canUseAssistant: Boolean,
+    onNavigateToNotifications: () -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
+    onNavigateToDevicePairing: () -> Unit,
+    onNavigateToNewScan: () -> Unit,
+    onNavigateToRecords: () -> Unit,
+    onNavigateToAppointments: () -> Unit,
+    onNavigateToRecordDetail: (String) -> Unit,
+    onOpenWorkspaceSwitcher: () -> Unit,
+    viewModel: PatientDashboardViewModel = viewModel(
+        key = expectedAuthority?.let { authority ->
+            "patient-dashboard-${authority.userId}-${authority.workspaceId}-${authority.authorityEpoch}"
+        } ?: "patient-dashboard-authority-denied",
+        factory = PatientDashboardViewModelFactory(
+            expectedAuthority = expectedAuthority,
+            currentAuthority = currentAuthority,
+            features = PatientDashboardFeatureAccess(
+                canStartScan = canStartScan,
+                canViewRecords = canViewRecords,
+                canManageDevice = canManageDevice,
+                canViewAppointments = canViewAppointments,
+                canUseAssistant = canUseAssistant,
+            ),
+            invalidateExpectedAuthority = invalidateExpectedAuthority,
+        ),
+    ),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val refreshConfirmed = stringResource(R.string.patient_dashboard_refresh_confirmed)
 
-private fun Scan.toPatientRecentScan(): PatientRecentScan {
-    return PatientRecentScan(
-        id = id,
-        date = formattedDate(),
-        time = formattedTime(),
-        type = if (isHeart) "Tim" else "Phổi",
-        diagnosis = if (isRecording) "Đang ghi âm từ thiết bị." else scanSummary(this),
-        isNormal = scanIsNormal(this)
+    LaunchedEffect(viewModel, refreshConfirmed) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                PatientDashboardUiEffect.RefreshConfirmed ->
+                    snackbarHostState.showSnackbar(refreshConfirmed)
+            }
+        }
+    }
+
+    PatientDashboardContent(
+        state = state,
+        snackbarHostState = snackbarHostState,
+        onAction = viewModel::onAction,
+        onNavigateToNotifications = onNavigateToNotifications,
+        onNavigateToDeviceManagement = onNavigateToDeviceManagement,
+        onNavigateToDevicePairing = onNavigateToDevicePairing,
+        onNavigateToNewScan = onNavigateToNewScan,
+        onNavigateToRecords = onNavigateToRecords,
+        onNavigateToAppointments = onNavigateToAppointments,
+        onNavigateToRecordDetail = onNavigateToRecordDetail,
+        onOpenWorkspaceSwitcher = onOpenWorkspaceSwitcher,
     )
 }
 
 @Composable
-fun PatientDashboardScreen(
-    onNavigateToSettings: () -> Unit,
+internal fun PatientDashboardContent(
+    state: PatientDashboardUiState,
+    snackbarHostState: SnackbarHostState,
+    onAction: (PatientDashboardUiAction) -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToBluetooth: () -> Unit,
-    onNavigateToMonitoring: () -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
+    onNavigateToDevicePairing: () -> Unit,
+    onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
-    onNavigateToAssistant: () -> Unit,
     onNavigateToAppointments: () -> Unit,
-    onNavigateToRecordDetail: (String) -> Unit
+    onNavigateToRecordDetail: (String) -> Unit,
+    onOpenWorkspaceSwitcher: () -> Unit,
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var patientName by remember { mutableStateOf("Bệnh nhân") }
-    var workspaceName by remember { mutableStateOf("") }
-    var recentScans by remember { mutableStateOf<List<PatientRecentScan>>(emptyList()) }
-    var currentDevice by remember { mutableStateOf<SmartDevice?>(null) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    var canViewAppointments by remember { mutableStateOf(false) }
-    suspend fun refreshPatientDashboard() {
-        runCatching {
-            val user = SmartHealthRepository.api.getMe()
-            patientName = user.name.ifBlank { patientName }
-            workspaceName = user.currentWorkspace?.name
-                .orEmpty()
-                .ifBlank { user.clinicName }
-                .ifBlank { user.organizationId }
-            canViewAppointments = AppointmentRoute.List.canOpen(user.capabilities.toSet())
-            recentScans = SmartHealthRepository.api.listPatientScans(limit = 5).map { it.toPatientRecentScan() }
-            val devices = SmartHealthRepository.api.listDevices()
-            currentDevice = devices.firstOrNull { it.online || it.connected } ?: devices.firstOrNull()
-            loadError = null
-        }.onFailure {
-            loadError = it.message ?: "Không kết nối được máy chủ"
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            refreshPatientDashboard()
-            delay(5000)
-        }
-    }
-
-    val visibleScans = remember(recentScans, searchQuery) {
-        val query = searchQuery.trim().lowercase()
-        if (query.isBlank()) {
-            recentScans
-        } else {
-            recentScans.filter { scan ->
-                listOf(scan.id, scan.type, scan.diagnosis).any { it.lowercase().contains(query) }
-            }
-        }
-    }
-
-    Column(
+    Scaffold(
+        topBar = {
+            PatientDashboardTopBar(
+                profile = state.profile,
+                query = state.query,
+                searchEnabled = state.scansState != PatientDashboardSectionState.Unavailable,
+                isRefreshing = state.isRefreshing,
+                onRefresh = { onAction(PatientDashboardUiAction.Refresh) },
+                onNavigateToNotifications = onNavigateToNotifications,
+                onQueryChange = {
+                    onAction(PatientDashboardUiAction.SearchChanged(it))
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
-            .verticalScroll(rememberScrollState())
-    ) {
-        PatientHomeHeader(
-            patientName = patientName,
-            workspaceName = workspaceName,
-            searchQuery = searchQuery,
-            onSearchQueryChange = { searchQuery = it },
-            onNavigateToSettings = onNavigateToSettings,
-            onNavigateToNotifications = onNavigateToNotifications
-        )
-
-        Column(
-            modifier = Modifier
-                .offset(y = (-64).dp)
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 8.dp)
-        ) {
-            PatientDeviceStatusCard(device = currentDevice, onClick = onNavigateToBluetooth)
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                "Tác Vụ Nhanh",
-                color = TextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold
+            .navigationBarsPadding(),
+    ) { innerPadding ->
+        when (state.loadState) {
+            PatientDashboardLoadState.Loading -> ShcareLoadingState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .testTag("patient-dashboard.state.loading"),
+                message = stringResource(R.string.patient_dashboard_loading),
             )
-            Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                PatientQuickActionTile(
-                    icon = Icons.Default.SsidChart,
-                    label = "Đo Ngay",
-                    background = Brush.linearGradient(listOf(PrimaryBlue, Color(0xFF0E7AB8))),
-                    contentColor = Color.White,
-                    onClick = onNavigateToMonitoring,
-                    modifier = Modifier.weight(1f)
-                )
-                PatientQuickActionTile(
-                    icon = Icons.Default.Description,
-                    label = "Hồ Sơ Của Tôi",
-                    background = Brush.linearGradient(listOf(Color.White, Color.White)),
-                    contentColor = PrimaryBlue,
-                    borderColor = PrimaryBlue,
-                    onClick = onNavigateToRecords,
-                    modifier = Modifier.weight(1f)
-                )
-                PatientQuickActionTile(
-                    icon = Icons.Default.ChatBubbleOutline,
-                    label = stringResource(R.string.ai_assistant_short_label),
-                    background = Brush.linearGradient(listOf(PrimaryTeal, Color(0xFF00C9B7))),
-                    contentColor = Color.White,
-                    onClick = onNavigateToAssistant,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            PatientDashboardLoadState.PermissionDenied -> ShcarePermissionState(
+                onRequestPermission = onOpenWorkspaceSwitcher,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .testTag("patient-dashboard.state.permission"),
+                title = stringResource(R.string.patient_dashboard_permission_title),
+                message = patientDashboardMessageWithRequestId(
+                    message = stringResource(R.string.patient_dashboard_permission_message),
+                    requestId = state.requestId,
+                ),
+                actionLabel = stringResource(R.string.patient_dashboard_open_workspace),
+            )
 
-            if (canViewAppointments) {
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onNavigateToAppointments,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 52.dp),
-                ) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.appointment_title_patient))
-                }
-            }
+            PatientDashboardLoadState.Offline -> ShcareOfflineState(
+                onRetry = { onAction(PatientDashboardUiAction.Retry) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .testTag("patient-dashboard.state.offline"),
+                title = stringResource(R.string.patient_dashboard_offline_title),
+                message = stringResource(R.string.patient_dashboard_offline_message),
+                retryLabel = stringResource(R.string.patient_dashboard_retry),
+            )
 
-            Spacer(modifier = Modifier.height(26.dp))
+            PatientDashboardLoadState.Error -> ShcareErrorState(
+                onRetry = { onAction(PatientDashboardUiAction.Retry) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .testTag("patient-dashboard.state.error"),
+                title = stringResource(R.string.patient_dashboard_error_title),
+                message = patientDashboardMessageWithRequestId(
+                    message = stringResource(R.string.patient_dashboard_error_message),
+                    requestId = state.requestId,
+                ),
+                retryLabel = stringResource(R.string.patient_dashboard_retry),
+            )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Lịch Sử Đo Gần Đây",
-                    color = TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    "Xem Tất Cả",
-                    color = PrimaryBlue,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable(onClick = onNavigateToRecords)
-                )
-            }
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (loadError != null) {
-                    PatientNoticeCard(text = loadError ?: "")
-                } else if (visibleScans.isEmpty()) {
-                    PatientNoticeCard(text = "Chưa có hồ sơ đo từ máy chủ.")
-                } else {
-                    visibleScans.forEach { scan ->
-                        PatientHistoryCard(
-                            date = scan.date,
-                            time = scan.time,
-                            type = scan.type,
-                            diagnosis = scan.diagnosis,
-                            isNormal = scan.isNormal,
-                            onClick = { onNavigateToRecordDetail(scan.id) }
-                        )
-                    }
-                }
-            }
+            PatientDashboardLoadState.Content -> PatientDashboardReadyContent(
+                state = state,
+                innerPadding = innerPadding,
+                onAction = onAction,
+                onNavigateToDeviceManagement = onNavigateToDeviceManagement,
+                onNavigateToDevicePairing = onNavigateToDevicePairing,
+                onNavigateToNewScan = onNavigateToNewScan,
+                onNavigateToRecords = onNavigateToRecords,
+                onNavigateToAppointments = onNavigateToAppointments,
+                onNavigateToRecordDetail = onNavigateToRecordDetail,
+            )
         }
     }
 }
 
 @Composable
-private fun PatientHomeHeader(
-    patientName: String,
-    workspaceName: String,
-    searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToNotifications: () -> Unit
+private fun PatientDashboardTopBar(
+    profile: PatientDashboardProfile?,
+    query: String,
+    searchEnabled: Boolean,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    onNavigateToNotifications: () -> Unit,
+    onQueryChange: (String) -> Unit,
 ) {
+    val semanticColors = ShcareTheme.colors
+    val displayName = profile?.displayName.orEmpty().ifBlank {
+        stringResource(R.string.patient_dashboard_profile_fallback)
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-            .background(Brush.linearGradient(listOf(PrimaryBlue, PrimaryTeal)))
-            .padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 96.dp)
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        semanticColors.brandHeaderStart,
+                        semanticColors.brandHeaderEnd,
+                    ),
+                ),
+            ),
     ) {
-        Column {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(
+                    start = ShcareTheme.spacing.large,
+                    end = ShcareTheme.spacing.large,
+                    top = ShcareTheme.spacing.medium,
+                    bottom = ShcareTheme.spacing.extraLarge,
+                ),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.large),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Chào buổi sáng,", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        patientName,
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = stringResource(R.string.patient_dashboard_welcome),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = semanticColors.onBrandHeader.copy(alpha = 0.8f),
                     )
-                    if (workspaceName.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = workspaceName,
-                            color = Color.White.copy(alpha = 0.76f),
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = semanticColors.onBrandHeader,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { heading() },
+                    )
                 }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PatientHeaderIconButton(icon = Icons.Default.Settings, onClick = onNavigateToSettings)
-                    Box(contentAlignment = Alignment.TopEnd) {
-                        PatientHeaderIconButton(icon = Icons.Default.Notifications, onClick = onNavigateToNotifications)
-                        Box(
-                            modifier = Modifier
-                                .offset(x = (-4).dp, y = 4.dp)
-                                .size(12.dp)
-                                .background(ErrorRed, CircleShape)
-                                .border(2.dp, PrimaryBlue, CircleShape)
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = !isRefreshing,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            semanticColors.onBrandHeader.copy(alpha = 0.16f),
+                            CircleShape,
                         )
-                    }
+                        .border(
+                            1.dp,
+                            semanticColors.onBrandHeader.copy(alpha = 0.28f),
+                            CircleShape,
+                        )
+                        .testTag("patient-dashboard.action.refresh"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.patient_dashboard_refresh),
+                        tint = semanticColors.onBrandHeader,
+                    )
+                }
+                IconButton(
+                    onClick = onNavigateToNotifications,
+                    modifier = Modifier
+                        .padding(start = ShcareTheme.spacing.small)
+                        .size(48.dp)
+                        .background(
+                            semanticColors.onBrandHeader.copy(alpha = 0.16f),
+                            CircleShape,
+                        )
+                        .border(
+                            1.dp,
+                            semanticColors.onBrandHeader.copy(alpha = 0.28f),
+                            CircleShape,
+                        )
+                        .testTag("patient-dashboard.action.notifications"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = stringResource(
+                            R.string.patient_dashboard_notifications,
+                        ),
+                        tint = semanticColors.onBrandHeader,
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        "Tìm kiếm hồ sơ, thông tin...",
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.6f)
-                    )
-                },
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                enabled = searchEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
-                shape = RoundedCornerShape(16.dp),
-                textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 15.sp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = Color.White.copy(alpha = 0.2f),
-                    focusedContainerColor = Color.White.copy(alpha = 0.2f),
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                    focusedBorderColor = Color.White.copy(alpha = 0.5f),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color.White
+                    .heightIn(min = 52.dp)
+                    .border(
+                        1.dp,
+                        semanticColors.onBrandHeader.copy(alpha = 0.30f),
+                        MaterialTheme.shapes.medium,
+                    )
+                    .testTag("patient-dashboard.search"),
+                placeholder = {
+                    Text(stringResource(R.string.patient_dashboard_search_hint))
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.18f),
+                    unfocusedContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.14f),
+                    disabledContainerColor = semanticColors.onBrandHeader.copy(alpha = 0.10f),
+                    focusedTextColor = semanticColors.onBrandHeader,
+                    unfocusedTextColor = semanticColors.onBrandHeader,
+                    focusedPlaceholderColor = semanticColors.onBrandHeader.copy(alpha = 0.72f),
+                    unfocusedPlaceholderColor = semanticColors.onBrandHeader.copy(alpha = 0.72f),
+                    focusedLeadingIconColor = semanticColors.onBrandHeader.copy(alpha = 0.82f),
+                    unfocusedLeadingIconColor = semanticColors.onBrandHeader.copy(alpha = 0.82f),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    cursorColor = semanticColors.onBrandHeader,
                 ),
-                singleLine = true
             )
         }
     }
 }
 
 @Composable
-private fun PatientHeaderIconButton(icon: ImageVector, onClick: () -> Unit) {
-    IconButton(
-        onClick = onClick,
+private fun PatientDashboardReadyContent(
+    state: PatientDashboardUiState,
+    innerPadding: PaddingValues,
+    onAction: (PatientDashboardUiAction) -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
+    onNavigateToDevicePairing: () -> Unit,
+    onNavigateToNewScan: () -> Unit,
+    onNavigateToRecords: () -> Unit,
+    onNavigateToAppointments: () -> Unit,
+    onNavigateToRecordDetail: (String) -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    BoxWithConstraints(
         modifier = Modifier
-            .size(48.dp)
-            .background(Color.White.copy(alpha = 0.2f), CircleShape)
-            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+            .fillMaxSize()
+            .padding(innerPadding),
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-    }
-}
+        val fontScale = LocalDensity.current.fontScale
+        val useTwoColumns = maxWidth >= 840.dp && fontScale < 1.5f
+        val stackQuickActions = maxWidth < 320.dp || fontScale >= 1.5f
+        val contentWidth = when {
+            maxWidth >= 840.dp -> 840.dp
+            maxWidth >= 600.dp -> 600.dp
+            else -> maxWidth
+        }
 
-@Composable
-private fun PatientDeviceStatusCard(device: SmartDevice?, onClick: () -> Unit) {
-    val isOnline = device?.online == true || device?.connected == true
-    val statusColor = if (isOnline) SuccessGreen else WarningYellow
-    val statusText = when {
-        device == null -> "Chưa ghép thiết bị"
-        isOnline -> "Online qua cloud"
-        else -> "Chưa online"
-    }
-    val batteryText = device?.battery?.takeIf { it > 0 }?.coerceIn(0, 100)?.let { "$it%" } ?: "--"
-    val signalText = device?.wifiRssi?.let { "WiFi $it dBm" }
-        ?: device?.signal?.let { "RSSI $it dBm" }
-        ?: "Chưa có RSSI"
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Border)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+        LazyColumn(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = contentWidth)
+                .fillMaxSize()
+                .testTag("patient-dashboard.content"),
+            contentPadding = PaddingValues(
+                start = spacing.large,
+                top = spacing.large,
+                end = spacing.large,
+                bottom = spacing.tripleExtraLarge,
+            ),
+            verticalArrangement = Arrangement.spacedBy(spacing.extraLarge),
+        ) {
+            if (state.isRefreshing) {
+                item {
+                    val refreshing = stringResource(R.string.patient_dashboard_refreshing)
+                    LinearProgressIndicator(
                         modifier = Modifier
-                            .size(42.dp)
-                            .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .semantics {
+                                stateDescription = refreshing
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                    )
+                }
+            }
+
+            if (state.isStale) {
+                item {
+                    PatientDashboardStateBanner(
+                        message = stringResource(R.string.patient_dashboard_stale),
+                        onRetry = { onAction(PatientDashboardUiAction.Refresh) },
+                    )
+                }
+            }
+
+            if (state.isPartial) {
+                item {
+                    PatientDashboardStateBanner(
+                        message = stringResource(R.string.patient_dashboard_partial),
+                    )
+                }
+            }
+
+            item {
+                PatientProfileCard(profile = state.profile)
+            }
+
+            item {
+                if (useTwoColumns && state.features.hasAnyQuickAction) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.large),
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        Icon(Icons.Default.MonitorHeart, contentDescription = null, tint = statusColor, modifier = Modifier.size(24.dp))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                        ) {
+                            PatientSectionHeading(
+                                stringResource(R.string.patient_dashboard_device_title),
+                            )
+                            PatientDashboardDeviceSection(
+                                state = state,
+                                onNavigateToDeviceManagement = onNavigateToDeviceManagement,
+                                onNavigateToDevicePairing = onNavigateToDevicePairing,
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                        ) {
+                            PatientSectionHeading(
+                                stringResource(R.string.patient_dashboard_quick_actions),
+                            )
+                            PatientDashboardQuickActions(
+                                features = state.features,
+                                stackActions = false,
+                                onNavigateToNewScan = onNavigateToNewScan,
+                                onNavigateToRecords = onNavigateToRecords,
+                                onNavigateToAppointments = onNavigateToAppointments,
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Trạng thái thiết bị", color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(statusText, color = statusColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.extraLarge),
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                        ) {
+                            PatientSectionHeading(
+                                stringResource(R.string.patient_dashboard_device_title),
+                            )
+                            PatientDashboardDeviceSection(
+                                state = state,
+                                onNavigateToDeviceManagement = onNavigateToDeviceManagement,
+                                onNavigateToDevicePairing = onNavigateToDevicePairing,
+                            )
+                        }
+                        if (state.features.hasAnyQuickAction) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                            ) {
+                                PatientSectionHeading(
+                                    stringResource(R.string.patient_dashboard_quick_actions),
+                                )
+                                PatientDashboardQuickActions(
+                                    features = state.features,
+                                    stackActions = stackQuickActions,
+                                    onNavigateToNewScan = onNavigateToNewScan,
+                                    onNavigateToRecords = onNavigateToRecords,
+                                    onNavigateToAppointments = onNavigateToAppointments,
+                                )
+                            }
+                        }
                     }
                 }
+            }
 
+            item {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.BatteryFull, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(batteryText, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    PatientSectionHeading(
+                        stringResource(R.string.patient_dashboard_recent_scans),
+                    )
+                    if (state.features.canViewRecords) {
+                        TextButton(
+                            onClick = onNavigateToRecords,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(R.string.patient_dashboard_view_all))
+                        }
                     }
-                    Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                "${device?.name?.ifBlank { "Smart Health Stethoscope" } ?: "Chưa có thiết bị"} • $signalText",
-                color = TextSecondary,
-                fontSize = 12.sp,
-                maxLines = 1
-            )
-            if (!device?.firmwareVersion.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Firmware ${device?.firmwareVersion}", color = TextSecondary, fontSize = 12.sp)
+            when {
+                state.scansState == PatientDashboardSectionState.Unavailable -> item {
+                    PatientDashboardNoticeCard(
+                        message = stringResource(
+                            R.string.patient_dashboard_scans_unavailable,
+                        ),
+                    )
+                }
+
+                state.recentScans.isEmpty() -> item {
+                    val hasQuery = state.query.isNotBlank()
+                    ShcareEmptyState(
+                        title = stringResource(
+                            if (hasQuery) {
+                                R.string.patient_dashboard_search_empty_title
+                            } else {
+                                R.string.patient_dashboard_empty_title
+                            },
+                        ),
+                        message = stringResource(
+                            if (hasQuery) {
+                                R.string.patient_dashboard_search_empty_message
+                            } else {
+                                R.string.patient_dashboard_empty_message
+                            },
+                        ),
+                        actionLabel = if (
+                            !hasQuery && state.features.canStartScan
+                        ) {
+                            stringResource(R.string.patient_dashboard_start_scan)
+                        } else {
+                            null
+                        },
+                        onAction = if (
+                            !hasQuery && state.features.canStartScan
+                        ) {
+                            onNavigateToNewScan
+                        } else {
+                            null
+                        },
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .background(Surface, CircleShape)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .height(6.dp)
-                        .background(Brush.horizontalGradient(listOf(SuccessGreen, PrimaryTeal)), CircleShape)
+            items(
+                items = state.recentScans,
+                key = PatientDashboardRecentScan::id,
+            ) { scan ->
+                PatientDashboardScanCard(
+                    scan = scan,
+                    enabled = state.features.canViewRecords,
+                    onClick = { onNavigateToRecordDetail(scan.id) },
                 )
             }
         }
@@ -465,129 +637,794 @@ private fun PatientDeviceStatusCard(device: SmartDevice?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PatientQuickActionTile(
-    icon: ImageVector,
-    label: String,
-    background: Brush,
-    contentColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    borderColor: Color? = null
-) {
+private fun PatientProfileCard(profile: PatientDashboardProfile?) {
+    val displayName = profile?.displayName.orEmpty().ifBlank {
+        stringResource(R.string.patient_dashboard_profile_fallback)
+    }
+    val patientCode = profile?.patientCode.orEmpty().ifBlank {
+        stringResource(R.string.patient_dashboard_patient_code_unavailable)
+    }
+    val relationship = when (profile?.relationship?.trim()?.lowercase()) {
+        "self" -> stringResource(R.string.patient_dashboard_relationship_self)
+        "child" -> stringResource(R.string.patient_dashboard_relationship_child)
+        "parent" -> stringResource(R.string.patient_dashboard_relationship_parent)
+        "spouse" -> stringResource(R.string.patient_dashboard_relationship_spouse)
+        else -> stringResource(R.string.patient_dashboard_relationship_other)
+    }
+    val spokenSummary = stringResource(
+        R.string.patient_dashboard_profile_state,
+        displayName,
+        patientCode,
+        relationship,
+    )
+
     Card(
-        modifier = modifier
-            .height(112.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (borderColor == null) 7.dp else 2.dp),
-        shape = RoundedCornerShape(18.dp),
-        border = borderColor?.let { androidx.compose.foundation.BorderStroke(2.dp, it) }
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = spokenSummary
+            }
+            .testTag("patient-dashboard.profile"),
+    ) {
+        Row(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MonitorHeart,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(modifier = Modifier.width(ShcareTheme.spacing.large))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+            ) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = stringResource(
+                        R.string.patient_dashboard_patient_code_value,
+                        patientCode,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = relationship,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientDashboardDeviceSection(
+    state: PatientDashboardUiState,
+    onNavigateToDeviceManagement: (String) -> Unit,
+    onNavigateToDevicePairing: () -> Unit,
+) {
+    when (state.deviceState) {
+        PatientDashboardSectionState.Unavailable -> PatientDashboardNoticeCard(
+            message = stringResource(R.string.patient_dashboard_device_unavailable),
+        )
+
+        PatientDashboardSectionState.Empty -> PatientDashboardUnpairedDeviceCard(
+            canManageDevice = state.features.canManageDevice,
+            onNavigateToDevicePairing = onNavigateToDevicePairing,
+        )
+
+        PatientDashboardSectionState.Ready -> {
+            val device = state.device
+            if (device == null) {
+                PatientDashboardUnpairedDeviceCard(
+                    canManageDevice = state.features.canManageDevice,
+                    onNavigateToDevicePairing = onNavigateToDevicePairing,
+                )
+            } else {
+                PatientDashboardDeviceCard(
+                    device = device,
+                    canManageDevice = state.features.canManageDevice,
+                    onNavigateToDeviceManagement = onNavigateToDeviceManagement,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientDashboardDeviceCard(
+    device: PatientDashboardDevice,
+    canManageDevice: Boolean,
+    onNavigateToDeviceManagement: (String) -> Unit,
+) {
+    val isOnline = device.presence == PatientDashboardDevicePresence.Online
+    val status = stringResource(
+        if (isOnline) {
+            R.string.patient_dashboard_device_online
+        } else {
+            R.string.patient_dashboard_device_offline
+        },
+    )
+    val deviceName = device.name.ifBlank {
+        stringResource(R.string.patient_dashboard_device_name_fallback)
+    }
+    val basicSpokenState = stringResource(
+        R.string.patient_dashboard_device_state,
+        deviceName,
+        status,
+    )
+    val spokenState = buildList {
+        add(basicSpokenState)
+        device.batteryPercent?.let { battery ->
+            add(stringResource(R.string.patient_dashboard_battery_value, battery))
+        }
+        device.signalDbm?.let { signal ->
+            add(stringResource(R.string.patient_dashboard_signal_value, signal))
+        }
+        if (device.firmwareVersion.isNotBlank()) {
+            add(
+                stringResource(
+                    R.string.patient_dashboard_firmware_value,
+                    device.firmwareVersion,
+                ),
+            )
+        }
+    }.joinToString(separator = ". ")
+    val manageDescription = stringResource(R.string.patient_dashboard_manage_device)
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                enabled = canManageDevice,
+                role = Role.Button,
+                onClick = { onNavigateToDeviceManagement(device.id) },
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (canManageDevice) {
+                    "$spokenState. $manageDescription"
+                } else {
+                    spokenState
+                }
+            }
+            .testTag("patient-dashboard.device"),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(background)
-                .padding(horizontal = 8.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
         ) {
-            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(32.dp))
-            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = if (isOnline) {
+                                ShcareTheme.colors.successContainer
+                            } else {
+                                ShcareTheme.colors.offlineContainer
+                            },
+                            shape = MaterialTheme.shapes.medium,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sensors,
+                        contentDescription = null,
+                        tint = if (isOnline) {
+                            ShcareTheme.colors.onSuccessContainer
+                        } else {
+                            ShcareTheme.colors.onOfflineContainer
+                        },
+                    )
+                }
+                Spacer(modifier = Modifier.width(ShcareTheme.spacing.medium))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = deviceName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isOnline) {
+                            ShcareTheme.colors.success
+                        } else {
+                            ShcareTheme.colors.offline
+                        },
+                    )
+                }
+                if (canManageDevice) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                    )
+                }
+            }
+
+            device.batteryPercent?.let { batteryPercent ->
+                val batteryColor = when {
+                    batteryPercent <= 15 -> MaterialTheme.colorScheme.error
+                    batteryPercent <= 30 -> ShcareTheme.colors.warning
+                    else -> ShcareTheme.colors.success
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(
+                        ShcareTheme.spacing.small,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BatteryFull,
+                        contentDescription = null,
+                        tint = batteryColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.patient_dashboard_battery_value,
+                            batteryPercent,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { batteryPercent.coerceIn(0, 100) / 100f },
+                    color = batteryColor,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            device.signalDbm?.let { signal ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(
+                        ShcareTheme.spacing.small,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wifi,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.patient_dashboard_signal_value,
+                            signal,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            if (device.firmwareVersion.isNotBlank()) {
+                Text(
+                    text = stringResource(
+                        R.string.patient_dashboard_firmware_value,
+                        device.firmwareVersion,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientDashboardUnpairedDeviceCard(
+    canManageDevice: Boolean,
+    onNavigateToDevicePairing: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        ) {
             Text(
-                label,
-                color = contentColor,
-                fontSize = 12.sp,
-                lineHeight = 15.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                text = stringResource(R.string.patient_dashboard_device_unpaired),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.patient_dashboard_device_unpaired_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (canManageDevice) {
+                FilledTonalButton(
+                    onClick = onNavigateToDevicePairing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("patient-dashboard.device.pair"),
+                ) {
+                    Text(stringResource(R.string.patient_dashboard_pair_device))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientDashboardQuickActions(
+    features: PatientDashboardFeatureAccess,
+    stackActions: Boolean,
+    onNavigateToNewScan: () -> Unit,
+    onNavigateToRecords: () -> Unit,
+    onNavigateToAppointments: () -> Unit,
+) {
+    val actions = buildList {
+        if (features.canStartScan) {
+            add(
+                PatientDashboardQuickAction(
+                    icon = Icons.Default.MonitorHeart,
+                    labelRes = R.string.patient_dashboard_start_scan,
+                    testTag = "patient-dashboard.action.scan",
+                    tone = PatientDashboardQuickActionTone.Primary,
+                    action = onNavigateToNewScan,
+                ),
+            )
+        }
+        if (features.canViewRecords) {
+            add(
+                PatientDashboardQuickAction(
+                    icon = Icons.Default.Description,
+                    labelRes = R.string.patient_dashboard_records,
+                    testTag = "patient-dashboard.action.records",
+                    tone = PatientDashboardQuickActionTone.Outline,
+                    action = onNavigateToRecords,
+                ),
+            )
+        }
+        if (features.canViewAppointments) {
+            add(
+                PatientDashboardQuickAction(
+                    icon = Icons.Default.CalendarMonth,
+                    labelRes = R.string.patient_dashboard_appointments,
+                    testTag = "patient-dashboard.action.appointments",
+                    tone = PatientDashboardQuickActionTone.Secondary,
+                    action = onNavigateToAppointments,
+                ),
+            )
+        }
+    }
+
+    if (stackActions || actions.size == 1) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        ) {
+            actions.forEach { action ->
+                PatientDashboardQuickActionButton(
+                    action = action,
+                    modifier = Modifier.fillMaxWidth(),
+                    compact = false,
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        ) {
+            actions.chunked(3).forEach { rowActions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        ShcareTheme.spacing.small,
+                    ),
+                ) {
+                    rowActions.forEach { action ->
+                        PatientDashboardQuickActionButton(
+                            action = action,
+                            modifier = Modifier.weight(1f),
+                            compact = true,
+                        )
+                    }
+                    repeat(3 - rowActions.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class PatientDashboardQuickAction(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val labelRes: Int,
+    val testTag: String,
+    val tone: PatientDashboardQuickActionTone,
+    val action: () -> Unit,
+)
+
+private enum class PatientDashboardQuickActionTone {
+    Primary,
+    Outline,
+    Secondary,
+}
+
+@Composable
+private fun PatientDashboardQuickActionButton(
+    action: PatientDashboardQuickAction,
+    modifier: Modifier = Modifier,
+    compact: Boolean,
+) {
+    val containerColor = when (action.tone) {
+        PatientDashboardQuickActionTone.Primary -> MaterialTheme.colorScheme.primary
+        PatientDashboardQuickActionTone.Outline -> MaterialTheme.colorScheme.surface
+        PatientDashboardQuickActionTone.Secondary -> MaterialTheme.colorScheme.secondary
+    }
+    val contentColor = when (action.tone) {
+        PatientDashboardQuickActionTone.Primary -> MaterialTheme.colorScheme.onPrimary
+        PatientDashboardQuickActionTone.Outline -> MaterialTheme.colorScheme.primary
+        PatientDashboardQuickActionTone.Secondary -> MaterialTheme.colorScheme.onSecondary
+    }
+    Card(
+        onClick = action.action,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (action.tone == PatientDashboardQuickActionTone.Outline) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                containerColor
+            },
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = MaterialTheme.shapes.large,
+        modifier = modifier
+            .heightIn(min = if (compact) 104.dp else 60.dp)
+            .semantics { role = Role.Button }
+            .testTag(action.testTag),
+    ) {
+        if (compact) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(ShcareTheme.spacing.medium),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = action.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(modifier = Modifier.height(ShcareTheme.spacing.small))
+                Text(
+                    text = stringResource(action.labelRes),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = ShcareTheme.spacing.large,
+                        vertical = ShcareTheme.spacing.medium,
+                    ),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = action.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                Text(
+                    text = stringResource(action.labelRes),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientDashboardScanCard(
+    scan: PatientDashboardRecentScan,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val analysisLabel = patientDashboardAnalysisLabel(scan.analysisState)
+    val (containerColor, contentColor) = patientDashboardAnalysisColors(scan.analysisState)
+    val type = patientDashboardScanTypeLabel(scan.type)
+    val summary = scan.summary.ifBlank {
+        patientDashboardAnalysisDescription(scan.analysisState)
+    }
+    val spokenSummary = stringResource(
+        R.string.patient_dashboard_scan_state,
+        type,
+        scan.date,
+        scan.time,
+        analysisLabel,
+    ) + " " + summary
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = spokenSummary
+            }
+            .testTag("patient-dashboard.scan.${scan.id}"),
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(
+                        ShcareTheme.spacing.extraSmall,
+                    ),
+                ) {
+                    Text(
+                        text = type,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.patient_dashboard_scan_time,
+                            scan.date,
+                            scan.time,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(modifier = Modifier.width(ShcareTheme.spacing.small))
+                Box(
+                    modifier = Modifier.background(
+                        color = containerColor,
+                        shape = CircleShape,
+                    ),
+                ) {
+                    Text(
+                        text = analysisLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor,
+                        modifier = Modifier.padding(
+                            horizontal = ShcareTheme.spacing.medium,
+                            vertical = ShcareTheme.spacing.small,
+                        ),
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
 
 @Composable
-private fun PatientNoticeCard(text: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Border)
-    ) {
-        Text(
-            text,
-            color = TextSecondary,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            modifier = Modifier.padding(16.dp)
-        )
-    }
-}
-
-@Composable
-fun PatientHistoryCard(
-    date: String,
-    time: String,
-    type: String,
-    diagnosis: String,
-    isNormal: Boolean,
-    onClick: () -> Unit
+private fun PatientDashboardStateBanner(
+    message: String,
+    onRetry: (() -> Unit)? = null,
 ) {
     Card(
+        colors = CardDefaults.cardColors(
+            containerColor = ShcareTheme.colors.warningContainer,
+            contentColor = ShcareTheme.colors.onWarningContainer,
+        ),
+        shape = MaterialTheme.shapes.medium,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = message
+            },
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("$date • $time", color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Đo $type", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (onRetry != null) {
+                FilledTonalButton(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.patient_dashboard_retry))
                 }
-                Spacer(modifier = Modifier.width(10.dp))
-                PatientStatusBadge(isNormal = isNormal)
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF8FAFC), RoundedCornerShape(12.dp))
-                    .border(1.dp, Color(0xFFEFF3F8), RoundedCornerShape(12.dp))
-                    .padding(12.dp)
-            ) {
-                Text(stringResource(R.string.ai_assistant_result_label), color = TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(diagnosis, color = TextPrimary, fontSize = 14.sp, lineHeight = 19.sp)
             }
         }
     }
 }
 
 @Composable
-private fun PatientStatusBadge(isNormal: Boolean) {
-    val color = if (isNormal) SuccessGreen else WarningYellow
-    val icon = if (isNormal) Icons.Default.CheckCircle else Icons.Default.Warning
-    val label = if (isNormal) "Bình thường" else "Bất thường"
-
-    Row(
+private fun PatientDashboardNoticeCard(message: String) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+        shape = MaterialTheme.shapes.medium,
         modifier = Modifier
-            .background(color.copy(alpha = 0.1f), CircleShape)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+            },
     ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+        )
     }
 }
+
+@Composable
+private fun PatientSectionHeading(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.semantics { heading() },
+    )
+}
+
+@Composable
+private fun patientDashboardAnalysisLabel(
+    state: PatientDashboardAnalysisState,
+): String = when (state) {
+    PatientDashboardAnalysisState.Unavailable ->
+        stringResource(R.string.patient_dashboard_analysis_unavailable)
+    PatientDashboardAnalysisState.Captured ->
+        stringResource(R.string.patient_dashboard_analysis_available)
+    PatientDashboardAnalysisState.Processing ->
+        stringResource(R.string.patient_dashboard_analysis_processing)
+    PatientDashboardAnalysisState.NeedsAttention ->
+        stringResource(R.string.patient_dashboard_analysis_attention)
+    PatientDashboardAnalysisState.Recording ->
+        stringResource(R.string.patient_dashboard_analysis_recording)
+    PatientDashboardAnalysisState.TechnicalFailure ->
+        stringResource(R.string.patient_dashboard_analysis_technical_failure)
+}
+
+@Composable
+private fun patientDashboardAnalysisColors(
+    state: PatientDashboardAnalysisState,
+) = when (state) {
+    PatientDashboardAnalysisState.NeedsAttention ->
+        ShcareTheme.colors.warningContainer to ShcareTheme.colors.onWarningContainer
+    PatientDashboardAnalysisState.Processing,
+    PatientDashboardAnalysisState.Recording,
+    PatientDashboardAnalysisState.Captured,
+    -> ShcareTheme.colors.infoContainer to ShcareTheme.colors.onInfoContainer
+    PatientDashboardAnalysisState.Unavailable ->
+        ShcareTheme.colors.offlineContainer to ShcareTheme.colors.onOfflineContainer
+    PatientDashboardAnalysisState.TechnicalFailure ->
+        MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+}
+
+@Composable
+private fun patientDashboardAnalysisDescription(
+    state: PatientDashboardAnalysisState,
+): String = when (state) {
+    PatientDashboardAnalysisState.Unavailable ->
+        stringResource(R.string.patient_dashboard_analysis_unavailable_description)
+    PatientDashboardAnalysisState.Captured ->
+        stringResource(R.string.patient_dashboard_analysis_available_description)
+    PatientDashboardAnalysisState.Processing ->
+        stringResource(R.string.patient_dashboard_analysis_processing_description)
+    PatientDashboardAnalysisState.NeedsAttention ->
+        stringResource(R.string.patient_dashboard_analysis_attention_description)
+    PatientDashboardAnalysisState.Recording ->
+        stringResource(R.string.patient_dashboard_analysis_recording_description)
+    PatientDashboardAnalysisState.TechnicalFailure ->
+        stringResource(R.string.patient_dashboard_analysis_technical_failure_description)
+}
+
+@Composable
+private fun patientDashboardScanTypeLabel(type: String): String = when (type) {
+    "heart" -> stringResource(R.string.patient_dashboard_scan_type_heart)
+    "lung" -> stringResource(R.string.patient_dashboard_scan_type_lung)
+    else -> stringResource(R.string.patient_dashboard_scan_type_unknown)
+}
+
+@Composable
+private fun patientDashboardMessageWithRequestId(
+    message: String,
+    requestId: String,
+): String = if (requestId.isBlank()) {
+    message
+} else {
+    stringResource(R.string.patient_dashboard_request_id_message, message, requestId)
+}
+
+private val PatientDashboardFeatureAccess.hasAnyQuickAction: Boolean
+    get() = canStartScan || canViewRecords || canViewAppointments

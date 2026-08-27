@@ -43,14 +43,28 @@ function renderClaimPage() {
     },
   });
   const invalidateQueries = vi.spyOn(client, "invalidateQueries");
-  const view = render(
+  const ui = () => (
     <MemoryRouter initialEntries={["/portal/devices/claim"]}>
       <QueryClientProvider client={client}>
         <ClaimDevicePage />
       </QueryClientProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
-  return { ...view, client, invalidateQueries };
+  const view = render(ui());
+  return {
+    ...view,
+    client,
+    invalidateQueries,
+    rerenderClaimPage: () => view.rerender(ui()),
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 function fillExactClaim(
@@ -67,7 +81,13 @@ function fillExactClaim(
 
 function awaitingResponse() {
   return {
-    device: { id: "Device_Aa-01", name: "Shcare A1", online: false },
+    device: {
+      id: "Device_Aa-01",
+      name: "Shcare A1",
+      organizationId: "workspace-1",
+      connected: false,
+      online: false,
+    },
     pairing: {
       outcome: "accepted" as const,
       presence: "awaiting_online" as const,
@@ -79,9 +99,42 @@ function awaitingResponse() {
 
 describe("ClaimDevicePage", () => {
   beforeEach(() => {
+    authUser.currentWorkspace.id = "workspace-1";
+    authUser.capabilities = ["workspace.devices.view", "workspace.devices.manage"];
     Object.values(api).forEach((mock) => mock.mockReset());
     api.listDevices.mockResolvedValue({ devices: [] });
     vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+  });
+
+  it("drops a late claim result after the active workspace changes", async () => {
+    const pending = deferred<ReturnType<typeof awaitingResponse>>();
+    api.activateDeviceByClaim.mockReturnValueOnce(pending.promise);
+    const view = renderClaimPage();
+    fillExactClaim();
+    fireEvent.click(screen.getByRole("button", { name: /xác nhận ghép thiết bị/i }));
+    await waitFor(() => expect(api.activateDeviceByClaim).toHaveBeenCalledTimes(1));
+
+    authUser.currentWorkspace.id = "workspace-2";
+    view.rerenderClaimPage();
+    await act(async () => {
+      pending.resolve(awaitingResponse());
+    });
+
+    expect(screen.queryByText("Backend đã chấp nhận")).not.toBeInTheDocument();
+    expect(view.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("does not treat workspace view access as permission to claim a device", async () => {
+    authUser.capabilities = ["workspace.devices.view"];
+    renderClaimPage();
+
+    expect(
+      await screen.findByText(/không có quyền ghép thiết bị/i),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /xác nhận ghép thiết bị/i }),
+    ).not.toBeInTheDocument();
+    expect(api.activateDeviceByClaim).not.toHaveBeenCalled();
   });
 
   it("requires exact canonical device and claim identifiers without mutating case", async () => {
@@ -101,7 +154,8 @@ describe("ClaimDevicePage", () => {
     expect(api.activateDeviceByClaim.mock.calls[0][0]).toEqual({
       deviceId: "Device_Aa-01",
       claimCode: "Claim_aB-123",
-      connectionMethod: "QR",
+      connectionMethod: "Manual",
+      organizationId: "workspace-1",
     });
   });
 
@@ -144,10 +198,24 @@ describe("ClaimDevicePage", () => {
     api.activateDeviceByClaim.mockResolvedValue(awaitingResponse());
     api.listDevices
       .mockResolvedValueOnce({
-        devices: [{ id: "Device_Aa-01", name: "Shcare A1", online: false }],
+        devices: [
+          {
+            id: "Device_Aa-01",
+            name: "Shcare A1",
+            organizationId: "workspace-1",
+            online: false,
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        devices: [{ id: "Device_Aa-01", name: "Shcare A1", online: true }],
+        devices: [
+          {
+            id: "Device_Aa-01",
+            name: "Shcare A1",
+            organizationId: "workspace-1",
+            online: true,
+          },
+        ],
       });
     const { invalidateQueries } = renderClaimPage();
     fillExactClaim();
@@ -157,7 +225,7 @@ describe("ClaimDevicePage", () => {
     expect(screen.getByText(/đang chờ thiết bị xác thực trực tuyến/i)).toBeVisible();
     expect(screen.queryByText(/thiết bị đã sẵn sàng/i)).not.toBeInTheDocument();
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["portal", "devices", "workspace-1"],
+      queryKey: ["portal", "workspace", "workspace-1", "devices"],
     });
 
     fireEvent.click(screen.getByRole("button", { name: /kiểm tra trạng thái/i }));

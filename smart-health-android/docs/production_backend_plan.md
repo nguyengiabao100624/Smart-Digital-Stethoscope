@@ -7,7 +7,10 @@ Mục tiêu của bản production là tách rõ app bác sĩ, app bệnh nhân,
 - Backend demo có route tách vai trò `/api/doctor/*` và `/api/patient/*`, đồng thời hỗ trợ alias `/api/v1/*`.
 - Patient API chỉ trả dữ liệu theo session hiện tại; app không quyết định `patientId`.
 - Start scan hỗ trợ `Idempotency-Key`.
-- Device API demo có QR claim payload `deviceId + claimCode`, pair, unpair, revoke và rotate secret; API không trả `deviceSecret`.
+- Device API v1 chỉ provision một định danh đã factory-enroll, trả one-time claim
+  cùng setup AP WPA2/PoP, rồi pair theo receipt; revoke/rotate/command/OTA là
+  Platform Admin-only. API không trả `deviceSecret`, hash hay factory credential
+  và không hỗ trợ unpair phá lịch sử.
 - Có scaffold vận hành trong `smart-health-embedded/web-monitor`: `.env.example`, `Dockerfile`, `public/openapi.yaml`, `db/schema.sql`.
 
 ## 1. Phân Tách Plane
@@ -63,9 +66,15 @@ Quyền truy cập lấy từ quan hệ DB:
 ## 4. Provisioning Thiết Bị
 
 - Không hardcode SSID/password/IP trong firmware.
-- Provision bằng BLE hoặc captive portal.
-- QR chỉ chứa `deviceId + claimCode`, không chứa `deviceSecret`.
-- Backend hỗ trợ claim, rotate secret, revoke, unpair, transfer owner.
+- Release canonical dùng QR hoặc nhập mã thủ công, sau đó captive portal của
+  setup AP bảo mật; BLE chỉ được mở lại khi App + firmware có GATT/security/HIL
+  cùng đợt.
+- QR v1 chứa `deviceId + claimCode + expiry + setup AP SSID + WPA2 PoP`, không
+  chứa `deviceSecret`. Các trường định danh, claim và expiry phải khớp chính xác.
+- Backend hỗ trợ claim, rotate credential, revoke và audited owner transfer;
+  không hard-delete/unpair để giả lập trạng thái.
+- Claim `accepted` chưa phải kết nối thành công. App chỉ báo hoàn tất sau khi
+  backend xác nhận thiết bị online trên WSS đã xác thực.
 - Secret lưu trong secure storage/NVS encrypted trên ESP32.
 
 ## 5. Audio Và AI Pipeline

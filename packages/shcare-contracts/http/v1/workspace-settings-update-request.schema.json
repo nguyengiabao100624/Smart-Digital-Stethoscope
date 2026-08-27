@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/workspace-settings-update-request.schema.json",
+  "title": "Workspace settings update request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "address", "phone", "email", "website", "expectedVersion"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "address": { "type": "string", "maxLength": 240 },
+    "phone": { "type": "string", "maxLength": 40 },
+    "email": {
+      "type": "string",
+      "maxLength": 160,
+      "anyOf": [{ "const": "" }, { "format": "email" }]
+    },
+    "website": {
+      "type": "string",
+      "maxLength": 240,
+      "anyOf": [{ "const": "" }, { "format": "uri", "pattern": "^https?://" }]
+    },
+    "expectedVersion": { "type": "integer", "minimum": 1 }
+  },
+  "x-shcare-http": {
+    "method": "PATCH",
+    "path": "/v1/portal/settings/workspace",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-authority": {
+    "actor": "authenticated-backend-user",
+    "workspace": "active-backend-membership",
+    "requiredCapability": "workspace.settings.manage",
+    "idempotencyScope": "userId:workspaceId"
+  }
+}

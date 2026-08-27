@@ -21,7 +21,8 @@ type Feedback = {
 export default function EmailVerificationPage() {
   useSEO({
     title: "Xác minh email | Shcare",
-    description: "Kiểm tra trạng thái xác minh email cho tài khoản Shcare Workspace.",
+    description:
+      "Kiểm tra trạng thái xác minh email cho tài khoản Shcare Workspace.",
     path: "/xac-nhan-email",
   });
 
@@ -46,7 +47,8 @@ export default function EmailVerificationPage() {
       if (!result.verified) {
         setFeedback({
           tone: "warning",
-          message: "Email chưa được xác minh. Mở liên kết trong hộp thư rồi kiểm tra lại.",
+          message:
+            "Email chưa được xác minh. Mở liên kết trong hộp thư rồi kiểm tra lại.",
         });
         return;
       }
@@ -54,7 +56,10 @@ export default function EmailVerificationPage() {
     } catch (cause) {
       setFeedback({
         tone: "error",
-        message: getSafeAuthErrorMessage(cause, "Không thể kiểm tra trạng thái. Vui lòng thử lại."),
+        message: getSafeAuthErrorMessage(
+          cause,
+          "Không thể kiểm tra trạng thái. Vui lòng thử lại.",
+        ),
       });
     } finally {
       setBusyAction(null);
@@ -87,12 +92,15 @@ export default function EmailVerificationPage() {
       }
       setFeedback({
         tone: "info",
-        message: `Backend đã gửi email xác minh đến ${delivery.email}${delivery.provider ? ` qua ${delivery.provider}` : ""}.`,
+        message: `Email xác minh đã được gửi đến ${delivery.email}.`,
       });
     } catch (cause) {
       setFeedback({
         tone: "error",
-        message: getSafeAuthErrorMessage(cause, "Không thể gửi lại email. Vui lòng thử lại."),
+        message: getSafeAuthErrorMessage(
+          cause,
+          "Không thể gửi lại email. Vui lòng thử lại.",
+        ),
       });
     } finally {
       setBusyAction(null);
@@ -116,19 +124,25 @@ export default function EmailVerificationPage() {
           <span>1</span>
           <p>
             <strong>Mở email xác minh</strong>
-            <small>Chỉ dùng liên kết Firebase được gửi cho tài khoản của bạn.</small>
+            <small>
+              Chỉ dùng liên kết Firebase được gửi cho tài khoản của bạn.
+            </small>
           </p>
         </div>
         <div data-complete={verified ? "true" : undefined}>
           <span>2</span>
           <p>
             <strong>Đồng bộ với Shcare</strong>
-            <small>Quyền workspace chỉ được cập nhật sau khi backend xác nhận.</small>
+            <small>
+              Quyền workspace chỉ được cập nhật sau khi backend xác nhận.
+            </small>
           </p>
         </div>
       </div>
 
-      {feedback ? <AuthAlert tone={feedback.tone}>{feedback.message}</AuthAlert> : null}
+      {feedback ? (
+        <AuthAlert tone={feedback.tone}>{feedback.message}</AuthAlert>
+      ) : null}
 
       {verified ? (
         <div className="shc-auth-result-actions">

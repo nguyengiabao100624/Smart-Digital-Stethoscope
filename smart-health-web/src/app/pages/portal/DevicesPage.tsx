@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BatteryWarning,
@@ -7,7 +7,6 @@ import {
   Cpu,
   Clock3,
   Info,
-  Loader2,
   MemoryStick,
   Plus,
   Radio,
@@ -16,16 +15,14 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useCallback, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link } from "react-router";
-import { toast } from "sonner";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
 } from "../../../components/ui/card";
 import { Skeleton } from "../../../components/ui/skeleton";
@@ -39,23 +36,7 @@ import {
 } from "../../../lib/smart-health-api";
 import { useAuth } from "../../context/AuthContext";
 
-const COMMAND_POLL_INTERVAL_MS = 2_000;
-const COMMAND_POLL_MAX_DURATION_MS = 45_000;
-const TERMINAL_COMMAND_STATES = new Set<DeviceCommandState>([
-  "applied",
-  "failed",
-  "expired",
-]);
-
 type StatusTone = "info" | "success" | "warning" | "danger" | "neutral";
-
-interface CommandOperation {
-  type: DeviceCommandType;
-  idempotencyKey: string;
-  sending: boolean;
-  command?: DeviceCommand;
-  error?: string;
-}
 
 const COMMAND_COPY: Record<
   DeviceCommandState,
@@ -145,145 +126,59 @@ const STATUS_TOKENS: Record<
   },
 };
 
-function isTerminalCommand(command?: DeviceCommand | null) {
-  return Boolean(command && TERMINAL_COMMAND_STATES.has(command.state));
+function isPermissionError(error: unknown) {
+  return (error as ApiError | undefined)?.status === 403;
 }
 
-export function deviceCommandPollInterval(
-  command: DeviceCommand,
-  pollingStartedAt: number,
-  now = Date.now(),
-) {
-  if (isTerminalCommand(command)) return false;
-  const parsedExpiry = Date.parse(command.expiresAt);
-  const boundedDeadline = pollingStartedAt + COMMAND_POLL_MAX_DURATION_MS;
-  const deadline = Number.isFinite(parsedExpiry)
-    ? Math.min(parsedExpiry, boundedDeadline)
-    : boundedDeadline;
-  return now >= deadline ? false : COMMAND_POLL_INTERVAL_MS;
-}
-
-function createCommandIdempotencyKey(
-  deviceId: string,
-  type: DeviceCommandType,
-) {
-  const randomPart =
-    globalThis.crypto?.randomUUID?.() ||
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `web:${deviceId}:${type}:${randomPart}`.slice(0, 160);
-}
-
-function submissionErrorMessage(error: unknown) {
-  if (
-    (error as ApiError | undefined)?.code === "DEVICE_COMMAND_DEVICE_OFFLINE"
-  ) {
-    return "Backend xác nhận thiết bị đang Offline. Hãy chờ thiết bị kết nối lại rồi thử gửi lại.";
-  }
-  return "Chưa xác định backend đã nhận lệnh hay chưa. Thử gửi lại sẽ dùng cùng mã chống trùng.";
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
 }
 
 export default function DevicesPage() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [operations, setOperations] = useState<
-    Record<string, CommandOperation>
-  >({});
-  const inFlightDevices = useRef(new Set<string>());
+  const workspaceId = user?.currentWorkspace.id || "";
+  const [online, setOnline] = useState(() => !isOffline());
   const canManage = Boolean(
     user?.capabilities.includes("workspace.devices.manage") ||
     user?.capabilities.includes("platform.devices.manage"),
   );
   const canClaim = Boolean(
-    user?.capabilities.includes("workspace.devices.view") ||
     user?.capabilities.includes("workspace.devices.manage") ||
     user?.capabilities.includes("platform.devices.manage") ||
     user?.capabilities.includes("personal.devices.manage"),
   );
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
+
   const devices = useQuery({
-    queryKey: ["portal", "devices", user?.currentWorkspace.id],
-    queryFn: smartHealthApi.listDevices,
+    queryKey: ["portal", "workspace", workspaceId, "devices"],
+    queryFn: () => smartHealthApi.listDevices(workspaceId),
+    enabled: Boolean(workspaceId),
+    retry: false,
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 
-  const submitCommand = useCallback(
-    async (
-      deviceId: string,
-      type: DeviceCommandType,
-      existingIdempotencyKey?: string,
-    ) => {
-      if (inFlightDevices.current.has(deviceId)) return;
-      const idempotencyKey =
-        existingIdempotencyKey || createCommandIdempotencyKey(deviceId, type);
-      inFlightDevices.current.add(deviceId);
-      setOperations((current) => ({
-        ...current,
-        [deviceId]: {
-          type,
-          idempotencyKey,
-          sending: true,
-          ...(existingIdempotencyKey && current[deviceId]?.command
-            ? { command: current[deviceId].command }
-            : {}),
-        },
-      }));
-
-      try {
-        const result = await smartHealthApi.sendDeviceCommand(deviceId, {
-          type,
-          payload: {},
-          idempotencyKey,
-        });
-        setOperations((current) => ({
-          ...current,
-          [deviceId]: {
-            type,
-            idempotencyKey,
-            sending: false,
-            command: result.command,
-          },
-        }));
-        queryClient.setQueryData(
-          ["portal", "device-command", deviceId, result.command.id],
-          { command: result.command },
-        );
-        void queryClient.invalidateQueries({ queryKey: ["portal", "devices"] });
-
-        if (result.command.state === "applied") {
-          toast.success("Thiết bị đã xác nhận áp dụng lệnh.");
-        } else if (
-          result.command.state === "failed" ||
-          result.command.state === "expired"
-        ) {
-          toast.error(COMMAND_COPY[result.command.state].message);
-        } else {
-          toast.info("Backend đã chấp nhận lệnh; đang chờ thiết bị xác nhận.");
-        }
-      } catch (error) {
-        const message = submissionErrorMessage(error);
-        setOperations((current) => ({
-          ...current,
-          [deviceId]: {
-            type,
-            idempotencyKey,
-            sending: false,
-            error: message,
-          },
-        }));
-        toast.error(message);
-      } finally {
-        inFlightDevices.current.delete(deviceId);
-      }
-    },
-    [queryClient],
-  );
-
   const list = devices.data?.devices || [];
+  const hasSnapshot = Boolean(devices.data);
+  const refreshError = hasSnapshot ? devices.error : null;
 
   return (
-    <div className="space-y-5">
-      <header className="clinical-page-header flex flex-wrap items-start justify-between gap-4">
+    <div
+      className="space-y-5"
+      data-testid="portal-devices"
+      data-workspace-id={workspaceId}
+    >
+      <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="min-w-0">
-          <h1 className="clinical-page-title flex items-center gap-2 text-foreground">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
             <Stethoscope aria-hidden="true" size={22} />
             Quản lý thiết bị
           </h1>
@@ -292,6 +187,23 @@ export default function DevicesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={!online || devices.isFetching}
+            onClick={() => void devices.refetch()}
+          >
+            <RotateCw
+              aria-hidden="true"
+              className={
+                devices.isFetching
+                  ? "animate-spin motion-reduce:animate-none"
+                  : undefined
+              }
+            />
+            Làm mới
+          </Button>
           {canClaim && (
             <Button asChild className="min-h-11">
               <Link to="/portal/devices/claim">
@@ -308,6 +220,15 @@ export default function DevicesPage() {
         </div>
       </header>
 
+      {!online ? <DeviceOfflineState hasSnapshot={hasSnapshot} /> : null}
+
+      {refreshError ? (
+        <DeviceRefreshWarning
+          generatedAt={devices.data?.generatedAt}
+          retry={() => void devices.refetch()}
+        />
+      ) : null}
+
       {!canManage && (
         <div
           className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground"
@@ -317,15 +238,22 @@ export default function DevicesPage() {
             aria-hidden="true"
             className="mr-2 inline size-4 text-primary"
           />
-          Tài khoản hiện tại có quyền xem nhưng không có quyền gửi lệnh hoặc gán
+          Tài khoản hiện tại có quyền xem trạng thái nhưng không có quyền gán
           thiết bị.
         </div>
       )}
 
       {devices.isLoading ? (
         <DeviceListLoading />
-      ) : devices.error ? (
-        <DeviceListError retry={() => void devices.refetch()} />
+      ) : devices.error && !hasSnapshot ? (
+        isPermissionError(devices.error) ? (
+          <DevicePermissionState requestId={(devices.error as ApiError).requestId} />
+        ) : (
+          <DeviceListError
+            error={devices.error}
+            retry={() => void devices.refetch()}
+          />
+        )
       ) : !list.length ? (
         <Card className="shadow-sm" role="status">
           <CardContent className="p-10 text-center text-sm text-muted-foreground">
@@ -334,25 +262,9 @@ export default function DevicesPage() {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {list.map((device) => {
-            const operation = operations[device.id];
-            return (
-              <DeviceCard
-                key={device.id}
-                device={device}
-                canManage={canManage}
-                operation={operation}
-                send={() => void submitCommand(device.id, "restart")}
-                retry={() =>
-                  void submitCommand(
-                    device.id,
-                    operation?.type || "restart",
-                    operation?.idempotencyKey,
-                  )
-                }
-              />
-            );
-          })}
+          {list.map((device) => (
+            <DeviceCard key={device.id} device={device} />
+          ))}
         </div>
       )}
     </div>
@@ -383,7 +295,14 @@ function DeviceListLoading() {
   );
 }
 
-function DeviceListError({ retry }: { retry: () => void }) {
+function DeviceListError({
+  error,
+  retry,
+}: {
+  error: unknown;
+  retry: () => void;
+}) {
+  const requestId = (error as ApiError | undefined)?.requestId;
   return (
     <Card className="border-destructive/40 shadow-sm" role="alert">
       <CardContent className="flex flex-wrap items-center gap-3 p-5">
@@ -396,6 +315,11 @@ function DeviceListError({ retry }: { retry: () => void }) {
             Kiểm tra kết nối rồi thử lại. Dữ liệu cũ không được dùng thay cho
             trạng thái hiện tại.
           </p>
+          {requestId ? (
+            <p className="mt-2 font-mono text-xs text-muted-foreground">
+              Mã yêu cầu: {requestId}
+            </p>
+          ) : null}
         </div>
         <Button variant="outline" className="min-h-11" onClick={retry}>
           Thử lại
@@ -405,35 +329,96 @@ function DeviceListError({ retry }: { retry: () => void }) {
   );
 }
 
-function DeviceCard({
-  device,
-  operation,
-  send,
+function DevicePermissionState({ requestId }: { requestId?: string }) {
+  return (
+    <Card
+      className="border-[var(--clinical-warning)]/40 shadow-sm"
+      role="alert"
+    >
+      <CardContent className="p-6">
+        <p className="font-semibold text-foreground">
+          Không có quyền xem thiết bị của workspace này
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Backend đã từ chối truy cập. Hãy kiểm tra workspace đang chọn và
+          quyền được cấp cho tài khoản.
+        </p>
+        {requestId ? (
+          <p className="mt-2 font-mono text-xs text-muted-foreground">
+            Mã yêu cầu: {requestId}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeviceOfflineState({ hasSnapshot }: { hasSnapshot: boolean }) {
+  return (
+    <Card
+      className="border-[var(--clinical-warning)]/40 shadow-sm"
+      role="status"
+    >
+      <CardContent className="flex items-start gap-3 p-4">
+        <WifiOff
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 text-[var(--clinical-warning)]"
+        />
+        <div>
+          <p className="font-semibold text-foreground">Trình duyệt đang ngoại tuyến</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {hasSnapshot
+              ? "Danh sách đang hiển thị là snapshot đã tải và có thể đã cũ. Kết nối lại để làm mới trạng thái."
+              : "Chưa có snapshot thiết bị. Hãy kết nối mạng để tải dữ liệu từ backend."}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeviceRefreshWarning({
+  generatedAt,
   retry,
-  canManage,
 }: {
-  device: Device;
-  operation?: CommandOperation;
-  send: () => void;
+  generatedAt?: string;
   retry: () => void;
-  canManage: boolean;
 }) {
+  const timestamp =
+    generatedAt && Number.isFinite(Date.parse(generatedAt))
+      ? new Date(generatedAt).toLocaleString("vi-VN")
+      : "không xác định";
+  return (
+    <Card
+      className="border-[var(--clinical-warning)]/40 shadow-sm"
+      role="status"
+    >
+      <CardContent className="flex flex-wrap items-center gap-3 p-4">
+        <CircleAlert
+          aria-hidden="true"
+          className="size-5 text-[var(--clinical-warning)]"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">
+            Không thể làm mới trạng thái thiết bị
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Đang giữ snapshot tạo lúc {timestamp}; trạng thái Online và
+            telemetry có thể đã cũ.
+          </p>
+        </div>
+        <Button type="button" variant="outline" className="min-h-11" onClick={retry}>
+          Thử lại
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeviceCard({ device }: { device: Device }) {
   const online = device.online === true;
   const batteryAvailable = Number.isFinite(device.battery);
   const battery = batteryAvailable ? Number(device.battery) : null;
-  const currentCommand =
-    operation?.command ||
-    (!operation?.sending && !operation?.error
-      ? device.lastCommand || undefined
-      : undefined);
-  const commandInProgress = Boolean(
-    currentCommand && !isTerminalCommand(currentCommand),
-  );
-  const actionDisabled =
-    !online ||
-    Boolean(operation?.sending) ||
-    Boolean(operation?.error) ||
-    commandInProgress;
   const presenceTokens = STATUS_TOKENS[online ? "success" : "neutral"];
 
   return (
@@ -498,75 +483,10 @@ function DeviceCard({
           lastSeenAt={device.lastSeenAt}
         />
 
-        {currentCommand && (
-          <DeviceCommandStatus deviceId={device.id} command={currentCommand} />
-        )}
-
-        {operation?.error && (
-          <div
-            className="rounded-lg border p-3 text-sm"
-            style={{
-              background: STATUS_TOKENS.danger.background,
-              borderColor: STATUS_TOKENS.danger.border,
-              color: STATUS_TOKENS.danger.foreground,
-            }}
-            role="alert"
-          >
-            <p className="font-medium">{operation.error}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 min-h-11 bg-background"
-              onClick={retry}
-              disabled={operation.sending}
-            >
-              {operation.sending && (
-                <Loader2
-                  aria-hidden="true"
-                  className="animate-spin motion-reduce:animate-none"
-                />
-              )}
-              Thử gửi lại
-            </Button>
-          </div>
-        )}
-
-        {!online && canManage && (
-          <p className="text-xs text-muted-foreground">
-            Thiết bị phải Online trước khi nhận lệnh. Portal không xếp hàng lệnh
-            cho thiết bị Offline.
-          </p>
-        )}
+        {device.lastCommand ? (
+          <DeviceCommandStatus command={device.lastCommand} />
+        ) : null}
       </CardContent>
-
-      {canManage && (
-        <CardFooter>
-          <Button
-            variant="outline"
-            className="min-h-11 w-full"
-            disabled={actionDisabled}
-            onClick={send}
-            aria-busy={operation?.sending || undefined}
-            title={
-              !online
-                ? "Thiết bị phải Online trước khi nhận lệnh"
-                : commandInProgress
-                  ? "Đang chờ kết quả lệnh hiện tại"
-                  : undefined
-            }
-          >
-            {operation?.sending ? (
-              <Loader2
-                aria-hidden="true"
-                className="animate-spin motion-reduce:animate-none"
-              />
-            ) : (
-              <RotateCw aria-hidden="true" />
-            )}
-            {operation?.sending ? "Đang gửi lệnh..." : "Khởi động lại"}
-          </Button>
-        </CardFooter>
-      )}
     </Card>
   );
 }
@@ -741,46 +661,15 @@ function DeviceMetric({
   );
 }
 
-function DeviceCommandStatus({
-  deviceId,
-  command,
-}: {
-  deviceId: string;
-  command: DeviceCommand;
-}) {
-  const [pollingStartedAt, setPollingStartedAt] = useState(() => Date.now());
-  const commandQuery = useQuery({
-    queryKey: ["portal", "device-command", deviceId, command.id],
-    queryFn: ({ signal }) =>
-      smartHealthApi.getDeviceCommand(deviceId, command.id, signal),
-    initialData: { command },
-    initialDataUpdatedAt: 0,
-    enabled: !isTerminalCommand(command),
-    retry: false,
-    refetchInterval: (query) => {
-      if (query.state.error) return false;
-      const latest = query.state.data?.command || command;
-      return deviceCommandPollInterval(latest, pollingStartedAt);
-    },
-    refetchIntervalInBackground: false,
-  });
-  const latest = commandQuery.data?.command || command;
-  const copy = COMMAND_COPY[latest.state];
+function DeviceCommandStatus({ command }: { command: DeviceCommand }) {
+  const copy = COMMAND_COPY[command.state];
   const tokens = STATUS_TOKENS[copy.tone];
-  const pollingStopped =
-    !isTerminalCommand(latest) &&
-    deviceCommandPollInterval(latest, pollingStartedAt) === false;
   const StateIcon =
-    latest.state === "applied"
+    command.state === "applied"
       ? CircleCheck
-      : latest.state === "failed"
+      : command.state === "failed"
         ? CircleAlert
         : Clock3;
-
-  const retryPolling = () => {
-    setPollingStartedAt(Date.now());
-    void commandQuery.refetch();
-  };
 
   return (
     <div
@@ -790,7 +679,7 @@ function DeviceCommandStatus({
         borderColor: tokens.border,
         color: tokens.foreground,
       }}
-      role={latest.state === "failed" ? "alert" : "status"}
+      role={command.state === "failed" ? "alert" : "status"}
       aria-live="polite"
     >
       <div className="flex items-start gap-2">
@@ -798,7 +687,7 @@ function DeviceCommandStatus({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide">
-              {COMMAND_TYPE_LABELS[latest.type]}
+              {COMMAND_TYPE_LABELS[command.type]}
             </span>
             <Badge
               variant="outline"
@@ -808,46 +697,10 @@ function DeviceCommandStatus({
             </Badge>
           </div>
           <p className="mt-2 text-sm font-medium">{copy.message}</p>
-          {commandQuery.isFetching && !isTerminalCommand(latest) && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs">
-              <Loader2
-                aria-hidden="true"
-                className="size-3.5 animate-spin motion-reduce:animate-none"
-              />
-              Đang cập nhật trạng thái thiết bị...
-            </p>
-          )}
-          {commandQuery.isError && (
-            <div className="mt-3" role="alert">
-              <p className="text-xs">
-                Không thể cập nhật trạng thái lệnh. Chưa có xác nhận mới từ
-                thiết bị.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 min-h-11 bg-background"
-                onClick={retryPolling}
-              >
-                Thử cập nhật lại
-              </Button>
-            </div>
-          )}
-          {pollingStopped && !commandQuery.isError && (
-            <div className="mt-3">
-              <p className="text-xs">
-                Đã dừng cập nhật tự động sau thời gian chờ an toàn.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 min-h-11 bg-background"
-                onClick={retryPolling}
-              >
-                Cập nhật trạng thái
-              </Button>
-            </div>
-          )}
+          <p className="mt-2 text-xs opacity-80">
+            Trạng thái chỉ đọc từ snapshot backend. Lệnh thiết bị và OTA được
+            quản trị trong Platform Admin.
+          </p>
         </div>
       </div>
     </div>

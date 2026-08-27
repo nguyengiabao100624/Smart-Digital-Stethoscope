@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/device-assignment-request.schema.json",
+  "title": "Shcare device assignment request",
+  "description": "Assigns one already-claimed device to one patient. Actor, workspace and idempotency authority are derived from authentication and headers, never from this body.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "assignedPatientId"
+  ],
+  "properties": {
+    "assignedPatientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+    }
+  }
+}

@@ -11,6 +11,7 @@ import {
   Shield,
   UploadCloud,
 } from "lucide-react";
+import { useId } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
 import {
@@ -176,7 +177,7 @@ type SettingsScope = {
 
 const defaults: SettingsState = {
   system: {
-    name: "Smart Health B2B Platform",
+    name: "Shcare — Smart Health Care",
     supportEmail: "support@smarthealth.vn",
     supportHotline: "1900 8888",
     timezone: "Asia/Ho_Chi_Minh",
@@ -823,9 +824,9 @@ export function Settings() {
     try {
       await smartHealthApi.testEmail({
         to: settings.outbound.email.testRecipient,
-        subject: "Smart Health test email",
+        subject: "Shcare test email",
         message:
-          "Email kiểm tra từ Web Admin Smart Health. Email outbound đang hoạt động nếu bạn nhận được email này.",
+          "Email kiểm tra từ Shcare Platform Admin. Email outbound đang hoạt động nếu bạn nhận được email này.",
       });
       toast.success("Đã gửi email kiểm tra.");
     } catch (error) {
@@ -861,7 +862,7 @@ export function Settings() {
       await smartHealthApi.testOutbound({
         channel,
         to: recipient,
-        message: `Smart Health test ${channel.toUpperCase()} qua webhook cấu hình miễn phí.`,
+        message: `Shcare test ${channel.toUpperCase()} qua webhook cấu hình miễn phí.`,
       });
       toast.success(`Đã gửi test ${channel.toUpperCase()} qua webhook.`);
     } catch (error) {
@@ -1610,10 +1611,15 @@ function TextField({
   type?: string;
   mono?: boolean;
 }) {
+  const inputId = useId();
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
+      <label htmlFor={inputId} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
       <input
+        id={inputId}
+        name={inputId}
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -1636,10 +1642,15 @@ function SelectField({
   onChange: (value: string) => void;
   options: string[];
 }) {
+  const selectId = useId();
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
+      <label htmlFor={selectId} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
       <select
+        id={selectId}
+        name={selectId}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
@@ -1668,7 +1679,7 @@ function RuntimeNotice({
       className={`rounded-lg border px-3 py-2 text-sm ${
         ok
           ? "border-success/20 bg-success/10 text-success"
-          : "border-warning/30 bg-warning/10 text-[#B45309]"
+          : "border-warning/30 bg-warning/10 text-warning-foreground"
       }`}
     >
       {ok ? okText : failText}

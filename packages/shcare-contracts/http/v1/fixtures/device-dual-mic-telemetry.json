@@ -1,0 +1,22 @@
+{
+  "uptimeMs": 12345,
+  "i2sStatus": "ready",
+  "audioStatus": "ready",
+  "audioCaptureQueueDepth": 3,
+  "audioCaptureQueueHighWater": 8,
+  "audioCaptureFramesEnqueued": 1250,
+  "audioCaptureFramesDropped": 17,
+  "audioCaptureFramesStale": 2,
+  "i2sSlot0Rms": 1280,
+  "i2sSlot0Peak": 4096,
+  "i2sSlot0WindowCount": 40,
+  "i2sSlot0ActiveWindowCount": 39,
+  "i2sSlot0SampleCount": 10240,
+  "i2sSlot0NonZeroSampleCount": 9800,
+  "i2sSlot1Rms": 1144,
+  "i2sSlot1Peak": 3840,
+  "i2sSlot1WindowCount": 40,
+  "i2sSlot1ActiveWindowCount": 38,
+  "i2sSlot1SampleCount": 10240,
+  "i2sSlot1NonZeroSampleCount": 9620
+}

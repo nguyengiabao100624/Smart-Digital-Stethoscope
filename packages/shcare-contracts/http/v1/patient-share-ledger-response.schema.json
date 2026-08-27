@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/patient-share-ledger-response.schema.json",
+  "title": "Shcare patient data-access ledger response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generatedAt", "workspaceId", "patientId", "shares"],
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "patientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "shares": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/patientShare"
+      }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": ["object", "null"],
+      "required": ["id", "name", "role"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "recipient": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "name", "workspaceId"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "type": {
+          "enum": ["doctor", "workspace"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "grantedByUserId",
+        "grantedAt",
+        "revokedByUserId",
+        "revokedAt"
+      ],
+      "properties": {
+        "grantedByUserId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedByUserId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "revokedAt": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "patientShare": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "patientId",
+        "scope",
+        "scanIds",
+        "accessLevel",
+        "purpose",
+        "consentedAt",
+        "active",
+        "authorityType",
+        "status",
+        "recipient",
+        "audit",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "patientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "scope": {
+          "enum": ["patient_profile", "selected_scans"]
+        },
+        "scanIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 500,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "accessLevel": {
+          "const": "read"
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "consentedAt": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "authorityType": {
+          "enum": [
+            "patient_consent",
+            "clinician_access_grant",
+            "administrative_assignment"
+          ]
+        },
+        "status": {
+          "enum": ["active", "revoked", "expired"]
+        },
+        "recipient": {
+          "$ref": "#/$defs/recipient"
+        },
+        "grantedByActor": {
+          "$ref": "#/$defs/actor"
+        },
+        "revokedByActor": {
+          "$ref": "#/$defs/actor"
+        },
+        "audit": {
+          "$ref": "#/$defs/audit"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedAt": {
+          "type": ["string", "null"],
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

@@ -27,8 +27,9 @@ test("package mutations carry Idempotency-Key and validate canonical outcomes", 
 test("package UI uses truthful partial, empty, retry, archive and status states", async () => {
   const source = await readFile(packagesPath, "utf8");
 
-  assert.match(source, /Promise\.allSettled/);
-  assert.match(source, /Không thể tải số workspace đang sử dụng gói/);
+  assert.match(source, /result\.summary\?\.assignedWorkspaceCount/);
+  assert.match(source, /result\.summary\?\.assignedByPackage/);
+  assert.doesNotMatch(source, /smartHealthApi\.listClinics\(\)/);
   assert.match(source, /Chưa có gói dịch vụ/);
   assert.match(source, /Thử lại/);
   assert.match(source, /Lưu trữ gói/);

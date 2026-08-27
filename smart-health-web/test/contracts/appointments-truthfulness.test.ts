@@ -18,10 +18,12 @@ test("appointment mutations use dedicated backend contracts and idempotency keys
   assert.match(api, /cancelAppointment/);
   assert.match(api, /Idempotency-Key/);
   assert.match(page, /cancellationReason/);
-  assert.match(page, /createAppointmentIntentKey/);
+  assert.match(page, /resolveAppointmentOperationAttempt/);
+  assert.match(page, /parseAppointmentMutationOutcome/);
+  assert.match(page, /AppointmentOperationSupersededError/);
 });
 
-test("appointment actions are capability gated and respect terminal states", async () => {
+test("appointment actions are capability gated, respect terminal states and soft-delete truthfully", async () => {
   const source = await readFile(pagePath, "utf8");
 
   assert.match(source, /workspace\.appointments\.manage/);
@@ -30,10 +32,11 @@ test("appointment actions are capability gated and respect terminal states", asy
   assert.match(source, /TERMINAL_STATUSES/);
   assert.match(source, /completed/);
   assert.match(source, /no_show/);
-  assert.doesNotMatch(
-    source,
-    /deleteAppointment|data-appointment-delete|Trash2/,
-  );
+  assert.match(source, /deleteAppointment/);
+  assert.match(source, /parseAppointmentDeletionReceipt/);
+  assert.match(source, /resolveAppointmentOperationAttempt/);
+  assert.match(source, /data-appointment-delete/);
+  assert.match(source, /Backend đã xác nhận xóa mềm lịch hẹn/);
 });
 
 test("appointment forms do not fetch the staff-management ledger without permission", async () => {
@@ -45,7 +48,7 @@ test("appointment forms do not fetch the staff-management ledger without permiss
   );
   assert.match(
     source,
-    /enabled: Boolean\(workspaceId && canManageStaff\)/,
+    /enabled: Boolean\(workspaceId && canManageStaff && !workspaceChanging\)/,
   );
   assert.match(
     source,
@@ -58,7 +61,11 @@ test("appointment page uses canonical responsive primitives instead of legacy vi
 
   assert.match(source, /components\/ui\/button/);
   assert.match(source, /components\/ui\/dialog/);
+  assert.match(source, /components\/ui\/table/);
+  assert.match(source, /TableCaption/);
   assert.match(source, /md:hidden/);
-  assert.match(source, /hidden md:block/);
+  assert.match(source, /md:block/);
+  assert.match(source, /data-testid="portal-appointments-page"/);
+  assert.match(source, /beforeunload/);
   assert.doesNotMatch(source, /glass-panel|premium-button|hero-gradient-text/);
 });

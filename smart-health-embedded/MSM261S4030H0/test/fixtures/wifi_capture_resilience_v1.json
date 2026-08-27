@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "reconnect": {
+    "baseDelayMs": 1000,
+    "maxDelayMs": 30000,
+    "attempts": [
+      { "count": 1, "expectedDelayMs": 1000 },
+      { "count": 2, "expectedDelayMs": 2000 },
+      { "count": 3, "expectedDelayMs": 4000 },
+      { "count": 5, "expectedDelayMs": 16000 },
+      { "count": 6, "expectedDelayMs": 30000 },
+      { "count": 31, "expectedDelayMs": 30000 }
+    ]
+  },
+  "setupPortal": {
+    "directCaptureCalls": 0,
+    "captureMustContinue": true
+  }
+}

@@ -149,6 +149,42 @@ function applyDeviceOwnershipTransition(device, nextState, options = {}) {
   return next;
 }
 
+function applyDeviceOwnershipRelease(device, options = {}) {
+  if (!device || typeof device !== "object" || !cleanId(device.id)) {
+    throw new DeviceOwnershipError(
+      "DEVICE_OWNERSHIP_DEVICE_REQUIRED",
+      "A persisted device is required for an ownership release",
+      400,
+    );
+  }
+  const currentState = inferDeviceOwnershipState(device);
+  if (currentState === "provisioned") {
+    throw new DeviceOwnershipError(
+      "DEVICE_ALREADY_RELEASED",
+      "The device is already released from its previous account",
+      409,
+    );
+  }
+  if (currentState === "revoked") {
+    throw new DeviceOwnershipError(
+      "DEVICE_REVOKED_RELEASE_FORBIDDEN",
+      "A revoked device cannot be released back into provisioning",
+      409,
+    );
+  }
+  const at = cleanId(options.at, 40) || new Date().toISOString();
+  return {
+    ...device,
+    ownershipState: "provisioned",
+    ownerUserId: null,
+    pairedUserId: null,
+    assignedPatientId: null,
+    connected: false,
+    status: "available",
+    updatedAt: at,
+  };
+}
+
 function applyDeviceOwnershipTransfer(device, options = {}) {
   if (!device || typeof device !== "object" || !cleanId(device.id)) {
     throw new DeviceOwnershipError(
@@ -295,6 +331,7 @@ function validateActiveDeviceClaim(claim, expected = {}) {
 module.exports = {
   DEVICE_OWNERSHIP_STATES,
   DeviceOwnershipError,
+  applyDeviceOwnershipRelease,
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,
   classifyDeviceClaim,

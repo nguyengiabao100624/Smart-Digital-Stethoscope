@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-provision-request.schema.json",
+  "title": "Shcare factory-enrolled device provision request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId"],
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+    },
+    "organizationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "type": { "type": "string", "enum": ["stethoscope", "respiratory", "other"] },
+    "manufacturer": { "type": "string", "maxLength": 120 },
+    "model": { "type": "string", "maxLength": 120 },
+    "serialNumber": { "type": "string", "maxLength": 120 },
+    "purchaseDate": { "type": "string", "format": "date" }
+  },
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/devices/provision-qr",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-device-authority": {
+    "actor": "platform_admin",
+    "identitySource": "factory-enrollment",
+    "workspaceSource": "factory-record",
+    "crossWorkspaceOutcome": 403,
+    "idempotencyScope": "userId+workspaceId"
+  }
+}

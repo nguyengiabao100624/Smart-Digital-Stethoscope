@@ -1,7 +1,6 @@
 package com.example.smart_health_android.devices
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +24,7 @@ class DeviceClaimPayloadTest {
         assertEquals("dev_Alpha-01", payload.deviceId)
         assertEquals("Claim_aB12", payload.claimCode)
         assertEquals(Instant.parse("2026-07-18T00:10:00Z"), payload.claimExpiresAt)
+        assertEquals(Instant.parse("2026-07-18T00:10:00Z"), payload.setupExpiresAt)
         assertEquals(DeviceClaimSource.SecureSetupQr, payload.source)
         assertTrue(payload.supportsSecureSetup)
         assertEquals("Shcare-9487FC14F3E6", payload.setupAp?.ssid)
@@ -84,27 +84,47 @@ class DeviceClaimPayloadTest {
     }
 
     @Test
-    fun manualEntryIsExplicitClaimOnlyAndNeverInventsSetupCapability() {
-        val payload = DeviceClaimPayloadParser.fromManualEntry(
-            deviceId = "  DEV_001  ",
+    fun manualSetupFieldsPreserveSecureApCapabilityWithoutRequiringJson() {
+        val payload = DeviceClaimPayloadParser.fromManualSetupFields(
+            deviceId = " DEV_001 ",
             claimCode = " Claim_aB12 ",
+            setupSsid = " Shcare-9487FC14F3E6 ",
+            proofOfPossession = " 4hxulJ_mCLIz2XhP-KXh ",
+            now = now,
         )
 
         requireNotNull(payload)
         assertEquals("DEV_001", payload.deviceId)
         assertEquals("Claim_aB12", payload.claimCode)
-        assertEquals(DeviceClaimSource.ManualClaimOnly, payload.source)
-        assertFalse(payload.supportsSecureSetup)
+        assertEquals(DeviceClaimSource.SecureSetupManual, payload.source)
+        assertTrue(payload.supportsSecureSetup)
         assertNull(payload.claimExpiresAt)
-        assertNull(payload.setupAp)
+        assertEquals(now.plusSeconds(15L * 60L), payload.setupExpiresAt)
+        assertEquals("Shcare-9487FC14F3E6", payload.setupAp?.ssid)
+        assertEquals("4hxulJ_mCLIz2XhP-KXh", payload.setupAp?.proofOfPossession)
     }
 
     @Test
-    fun manualEntryUsesTheSameCanonicalDeviceIdBoundary() {
-        assertNull(DeviceClaimPayloadParser.fromManualEntry("dev.001", "Claim123"))
-        assertNull(DeviceClaimPayloadParser.fromManualEntry("ab", "Claim123"))
-        assertNull(DeviceClaimPayloadParser.fromManualEntry("a".repeat(64), "Claim123"))
-        assertNull(DeviceClaimPayloadParser.fromManualEntry("dev_001", "short"))
+    fun manualFallbackRejectsAnyMissingOrNonCanonicalSetupMaterial() {
+        fun parse(
+            deviceId: String = "DEV_001",
+            claimCode: String = "Claim_aB12",
+            setupSsid: String = "Shcare-9487FC14F3E6",
+            proof: String = "4hxulJ_mCLIz2XhP-KXh",
+        ) = DeviceClaimPayloadParser.fromManualSetupFields(
+            deviceId = deviceId,
+            claimCode = claimCode,
+            setupSsid = setupSsid,
+            proofOfPossession = proof,
+            now = now,
+        )
+
+        assertNull(parse(setupSsid = ""))
+        assertNull(parse(proof = ""))
+        assertNull(parse(deviceId = "dev.001"))
+        assertNull(parse(claimCode = "short"))
+        assertNull(parse(setupSsid = "shcare-9487FC14F3E6"))
+        assertNull(parse(proof = "4hxulJ+mCLIz2XhP-KXh"))
     }
 
     private fun secureQr(

@@ -1,0 +1,49 @@
+{
+  "device": {
+    "id": "dev_factory_alpha",
+    "organizationId": "org_alpha",
+    "ownershipState": "claimed",
+    "name": "Shcare Clinic Unit 01",
+    "type": "stethoscope",
+    "status": "connected",
+    "connected": true,
+    "online": true,
+    "updatedAt": "2026-08-15T04:00:01.000Z"
+  },
+  "command": {
+    "protocolVersion": 1,
+    "id": "cmd_device_status_001",
+    "deviceId": "dev_factory_alpha",
+    "organizationId": "org_alpha",
+    "type": "wifi.status",
+    "correlationId": "corr_device_status_001",
+    "state": "delivered",
+    "status": "delivered",
+    "code": "TRANSPORT_DELIVERED",
+    "detail": "Command delivered to an authenticated transport",
+    "requestedByUserId": "usr_platform_admin",
+    "issuedAt": "2026-08-15T04:00:00.000Z",
+    "expiresAt": "2026-08-15T04:00:30.000Z",
+    "acceptedAt": "2026-08-15T04:00:00.000Z",
+    "queuedAt": "",
+    "deliveredAt": "2026-08-15T04:00:01.000Z",
+    "acknowledgedAt": "",
+    "applyingAt": "",
+    "appliedAt": "",
+    "failedAt": "",
+    "expiredAt": "",
+    "delivery": {
+      "websocket": true,
+      "mqtt": false,
+      "delivered": true
+    },
+    "createdAt": "2026-08-15T04:00:00.000Z",
+    "updatedAt": "2026-08-15T04:00:01.000Z"
+  },
+  "delivery": {
+    "websocket": true,
+    "mqtt": false,
+    "delivered": true
+  },
+  "responseStatus": 202
+}

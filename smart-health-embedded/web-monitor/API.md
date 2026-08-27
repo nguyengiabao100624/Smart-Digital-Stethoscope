@@ -354,23 +354,36 @@ Quy tắc tạm thời của demo:
 - `POST .../scans/start` hỗ trợ header `Idempotency-Key` để tránh bấm start trùng.
 - Đây chưa phải kiến trúc production; bản production cần `/api/v1`, PostgreSQL, organization/membership, doctor-patient access, signed URL, queue AI và audit log bất biến như file `smart-health-android/docs/production_backend_plan.md`.
 
-### Provisioning Thiết Bị Demo
+### Provisioning thiết bị Shcare v1
 
 ```http
 POST /api/v1/devices/provision-qr
 POST /api/v1/devices/pair
-POST /api/v1/devices/:id/unpair
+POST /api/v1/devices/:id/setup-session
+POST /api/v1/devices/:id/release
 POST /api/v1/devices/:id/revoke
 POST /api/v1/devices/:id/rotate-secret
 ```
 
-`provision-qr` trả về QR payload chỉ gồm `deviceId + claimCode`, không trả `deviceSecret`.
+`provision-qr` chỉ dành cho Platform Admin và chỉ tạo claim/setup material cho
+một `deviceId` đã được factory-enroll. Browser không được tạo định danh hoặc gửi
+`deviceSecret`, hash hay factory credential. Phản hồi một lần chứa cùng
+`deviceId + claimCode + expiry` ở receipt và QR, cùng setup AP
+`SSID + WPA2_PSK proof-of-possession`; replay ledger không lưu các giá trị
+plaintext này.
+
+`pair` yêu cầu `Idempotency-Key`, claim code một lần và `connectionMethod` là
+`QR` hoặc `Manual`. `accepted/awaiting_online` chỉ xác nhận backend đã commit
+claim. Chỉ `success/online` với `authenticatedTransport=wss` mới có nghĩa thiết
+bị đã đăng nhập trực tuyến. `unpair` không được hỗ trợ trong release canonical;
+revoke, rotate credential, command và OTA là thao tác Platform Admin có audit.
 
 Ví dụ pair thiết bị bằng claim code:
 
 ```json
 {
   "deviceId": "stetho-001",
-  "claimCode": "A1B2C3D4E5F6"
+  "claimCode": "A1B2C3D4E5F6",
+  "connectionMethod": "Manual"
 }
 ```

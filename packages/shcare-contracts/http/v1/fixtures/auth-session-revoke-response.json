@@ -1,0 +1,15 @@
+{
+  "session": {
+    "id": "session_fixture_revoked_001",
+    "provider": "firebase",
+    "device": "Shcare Android",
+    "userAgent": "ShcareAndroid/1.0",
+    "ip": "203.0.113.10",
+    "createdAt": "2026-08-06T01:00:00.000Z",
+    "lastSeenAt": "2026-08-06T02:00:00.000Z",
+    "revokedAt": "2026-08-06T03:00:00.000Z",
+    "current": false
+  },
+  "revoked": true,
+  "replayed": false
+}

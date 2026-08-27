@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/device/v1/operational-event.schema.json",
+  "title": "Shcare correlated device operational event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "deviceId",
+    "commandId",
+    "correlationId",
+    "otaId",
+    "otaStatus"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "type": {
+      "enum": [
+        "ota.downloading",
+        "ota.verifying",
+        "ota.rebooting",
+        "ota.rollback",
+        "ota.confirmed",
+        "ota.failed"
+      ]
+    },
+    "deviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$" },
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "otaId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "otaStatus": {
+      "enum": [
+        "downloading",
+        "verifying",
+        "rebooting",
+        "rolling_back",
+        "confirmed",
+        "rolled_back",
+        "failed",
+        "expired"
+      ]
+    },
+    "firmwareVersion": { "type": "string", "maxLength": 80 },
+    "otaBootOutcome": {
+      "enum": ["pending", "confirmed", "rollback_requested", "rolled_back", "rollback_unavailable", "rollback_failed"]
+    },
+    "detail": { "type": "string", "maxLength": 500 },
+    "code": { "type": "string", "maxLength": 80 },
+    "queuedOffline": { "type": "boolean" },
+    "occurredAtUptimeMs": { "type": "integer", "minimum": 0 },
+    "occurrences": { "type": "integer", "minimum": 1 },
+    "offlineQueueDropped": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "ota.downloading" } }, "required": ["type"] },
+      "then": { "properties": { "otaStatus": { "const": "downloading" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ota.verifying" } }, "required": ["type"] },
+      "then": { "properties": { "otaStatus": { "const": "verifying" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ota.rebooting" } }, "required": ["type"] },
+      "then": { "properties": { "otaStatus": { "const": "rebooting" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ota.rollback" } }, "required": ["type"] },
+      "then": { "properties": { "otaStatus": { "enum": ["rolling_back", "rolled_back"] } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ota.confirmed" } }, "required": ["type"] },
+      "then": { "properties": { "otaStatus": { "const": "confirmed" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ota.failed" } }, "required": ["type"] },
+      "then": { "properties": { "otaStatus": { "const": "failed" } } }
+    },
+    {
+      "if": {
+        "properties": { "otaStatus": { "const": "confirmed" } },
+        "required": ["otaStatus"]
+      },
+      "then": {
+        "required": ["firmwareVersion", "otaBootOutcome"],
+        "properties": { "otaBootOutcome": { "const": "confirmed" } }
+      }
+    }
+  ]
+}

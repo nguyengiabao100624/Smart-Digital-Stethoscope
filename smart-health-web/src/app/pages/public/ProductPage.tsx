@@ -86,8 +86,9 @@ export default function ProductPage() {
           <p>Sản phẩm</p>
           <h1>Hệ sinh thái theo dõi từ xa, thiết kế quanh lượt đo thật.</h1>
           <span>
-            Từ thiết bị đến ứng dụng và workspace bác sĩ, mỗi phần đều có một nhiệm vụ rõ: thu dữ
-            liệu, giữ quyền truy cập đúng, sắp hàng hồ sơ và giúp bác sĩ xem lại nhanh hơn.
+            Từ thiết bị đến ứng dụng và workspace bác sĩ, mỗi phần đều có một
+            nhiệm vụ rõ: thu dữ liệu, giữ quyền truy cập đúng, sắp hàng hồ sơ và
+            giúp bác sĩ xem lại nhanh hơn.
           </span>
         </div>
       </section>
@@ -129,10 +130,16 @@ export default function ProductPage() {
             <h2>Bắt đầu bằng bác sĩ cá nhân hoặc workspace cơ sở.</h2>
           </div>
           <div className="shc-cta-actions">
-            <Link to="/giai-phap/bac-si-ca-nhan" className="shc-button shc-button-secondary">
+            <Link
+              to="/giai-phap/bac-si-ca-nhan"
+              className="shc-button shc-button-secondary"
+            >
               Giải pháp bác sĩ
             </Link>
-            <Link to="/giai-phap/phong-kham" className="shc-button shc-button-primary">
+            <Link
+              to="/giai-phap/phong-kham"
+              className="shc-button shc-button-primary"
+            >
               Giải pháp cơ sở <ArrowRight size={18} />
             </Link>
           </div>

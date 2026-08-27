@@ -16,7 +16,7 @@ Tất cả màn hình sản phẩm trong Figma đều có màn hình Compose tư
 | `/login` | `login` | Khớp |
 | `/forgot-password` | `forgot-password` | Khớp |
 | `/signup` | `sign-up` | Khác tên route, khớp màn hình |
-| `/phone-login` | `phone-login` | Khớp |
+| `/phone-login` | `N/A` | Loại khỏi canonical app cho đến khi Firebase Phone Auth và SMS provider có runtime thật; prototype không được dùng làm production route. |
 | `/verify-email` | `verify-email` | Khớp |
 | `/re-verify` | `re-verify/{type}/{contact}` | Android có tham số động |
 | `/verify-phone-settings` | `verify-phone-settings` | Khớp |
@@ -45,9 +45,9 @@ Tất cả màn hình sản phẩm trong Figma đều có màn hình Compose tư
 
 ## Các điểm parity đã sửa
 
-- `BluetoothPairingScreen`: màn chọn kết nối chỉ còn QR và Bluetooth như Figma; nhập tay nằm trong QR scanner.
-- `BluetoothPairingScreen`: thêm callout xanh cuối màn chọn kết nối về bật nguồn và đèn xanh dương nhấp nháy.
-- `BluetoothPairingScreen`: giữ `Quét lại` ở Bluetooth radar, reset danh sách và chạy lại radar.
+- `BluetoothPairingScreen` là demo lịch sử đã được đưa ra khỏi source set sản xuất. Các ghi chú QR/Bluetooth radar cũ không còn là tiêu chí nghiệm thu.
+- Luồng canonical là `DevicePairingScreen`: QR thật hoặc mã thủ công, backend claim, secure setup AP và chỉ hoàn tất sau khi backend xác nhận thiết bị online qua WSS.
+- BLE không được hiển thị như chức năng sản phẩm cho đến khi Android và firmware cùng có GATT bảo mật và bằng chứng phần cứng.
 - `StethoscopeSettingsScreen`: section `QUẢN LÝ KẾT NỐI` có đủ `Tự động kết nối`, `Ghép nối thiết bị mới`, `Quản lý thiết bị đã lưu`.
 - `BluetoothSettingsScreen`: giữ header trắng, connected-device card, pulsing dot, pin, phương thức kết nối, lịch sử ghép nối và ghi chú cuối màn.
 - `AppNavGraph`: bỏ route phụ `device-management`; chỉ giữ đường `bluetooth-settings` tương ứng Figma.

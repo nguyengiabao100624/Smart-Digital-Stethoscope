@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
@@ -37,6 +36,7 @@ import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,7 +51,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,6 +85,7 @@ import com.example.smart_health_android.devices.DeviceManagementViewModel
 import com.example.smart_health_android.devices.DevicePresenceStatus
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -97,11 +97,15 @@ import java.time.Instant
 fun BluetoothSettingsScreen(
     onNavigateBack: () -> Unit,
     onAddDevice: () -> Unit,
+    onConfigureWifi: (String) -> Unit = {},
+    initialDeviceId: String = "",
     viewModel: DeviceManagementViewModel = viewModel(),
 ) {
     DeviceManagementScreen(
         onNavigateBack = onNavigateBack,
         onAddDevice = onAddDevice,
+        onConfigureWifi = onConfigureWifi,
+        initialDeviceId = initialDeviceId,
         viewModel = viewModel,
     )
 }
@@ -111,70 +115,44 @@ fun BluetoothSettingsScreen(
 fun DeviceManagementScreen(
     onNavigateBack: () -> Unit,
     onAddDevice: () -> Unit,
+    onConfigureWifi: (String) -> Unit = {},
+    initialDeviceId: String = "",
     viewModel: DeviceManagementViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var pendingDisconnectId by rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    var pendingDeleteId by rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var pendingReleaseId by rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
 
-    LaunchedEffect(viewModel) {
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
-    }
-
-    val pendingDisconnect = state.devices.firstOrNull { it.id == pendingDisconnectId }
-    val pendingDelete = state.devices.firstOrNull { it.id == pendingDeleteId }
-
-    pendingDisconnect?.let { device ->
-        val name = DeviceHealthSnapshot.from(device).displayName()
-        AlertDialog(
-            onDismissRequest = { pendingDisconnectId = null },
-            title = { Text(stringResource(R.string.device_management_disconnect_title)) },
-            text = { Text(stringResource(R.string.device_management_disconnect_message, name)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDisconnectId = null
-                        viewModel.onAction(DeviceManagementUiAction.Disconnect(device.id))
-                    },
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text(stringResource(R.string.device_management_disconnect))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { pendingDisconnectId = null },
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text(stringResource(R.string.device_management_cancel))
-                }
-            },
+    LaunchedEffect(viewModel, initialDeviceId) {
+        viewModel.onAction(
+            DeviceManagementUiAction.ScreenOpened(preferredDeviceId = initialDeviceId),
         )
     }
 
-    pendingDelete?.let { device ->
+    val pendingRelease = state.devices.firstOrNull { it.id == pendingReleaseId }
+
+    pendingRelease?.let { device ->
         val name = DeviceHealthSnapshot.from(device).displayName()
         AlertDialog(
-            onDismissRequest = { pendingDeleteId = null },
-            title = { Text(stringResource(R.string.device_management_delete_title)) },
-            text = { Text(stringResource(R.string.device_management_delete_message, name)) },
+            onDismissRequest = { pendingReleaseId = null },
+            title = { Text(stringResource(R.string.device_management_release_title)) },
+            text = { Text(stringResource(R.string.device_management_release_message, name)) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        pendingDeleteId = null
-                        viewModel.onAction(DeviceManagementUiAction.Delete(device.id))
+                        pendingReleaseId = null
+                        viewModel.onAction(DeviceManagementUiAction.Release(device.id))
                     },
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.device_management_delete),
+                        text = stringResource(R.string.device_management_release),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
                 TextButton(
-                    onClick = { pendingDeleteId = null },
+                    onClick = { pendingReleaseId = null },
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                 ) {
                     Text(stringResource(R.string.device_management_cancel))
@@ -185,19 +163,10 @@ fun DeviceManagementScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.device_management_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.device_management_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.device_management_title),
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.device_management_back),
                 actions = {
                     IconButton(
                         onClick = { viewModel.onAction(DeviceManagementUiAction.Refresh) },
@@ -208,6 +177,7 @@ fun DeviceManagementScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
+                                color = ShcareTheme.colors.onBrandHeader,
                             )
                         } else {
                             Icon(
@@ -240,10 +210,10 @@ fun DeviceManagementScreen(
                 state = state,
                 onNavigateBack = onNavigateBack,
                 onAddDevice = onAddDevice,
+                onConfigureWifi = onConfigureWifi,
                 onRefresh = { viewModel.onAction(DeviceManagementUiAction.Refresh) },
                 onSelectDevice = { viewModel.onAction(DeviceManagementUiAction.SelectDevice(it)) },
-                onDisconnect = { pendingDisconnectId = it },
-                onDelete = { pendingDeleteId = it },
+                onRelease = { pendingReleaseId = it },
             )
         }
     }
@@ -254,10 +224,10 @@ private fun DeviceManagementBody(
     state: DeviceManagementUiState,
     onNavigateBack: () -> Unit,
     onAddDevice: () -> Unit,
+    onConfigureWifi: (String) -> Unit,
     onRefresh: () -> Unit,
     onSelectDevice: (String) -> Unit,
-    onDisconnect: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onRelease: (String) -> Unit,
 ) {
     when {
         state.isLoading && state.devices.isEmpty() -> ShcareLoadingState(
@@ -286,16 +256,16 @@ private fun DeviceManagementBody(
                     state = state,
                     onRefresh = onRefresh,
                     onSelectDevice = onSelectDevice,
-                    onDisconnect = onDisconnect,
-                    onDelete = onDelete,
+                    onRelease = onRelease,
+                    onConfigureWifi = onConfigureWifi,
                 )
             } else {
                 CompactDeviceManagementContent(
                     state = state,
                     onRefresh = onRefresh,
                     onSelectDevice = onSelectDevice,
-                    onDisconnect = onDisconnect,
-                    onDelete = onDelete,
+                    onRelease = onRelease,
+                    onConfigureWifi = onConfigureWifi,
                 )
             }
         }
@@ -345,8 +315,8 @@ private fun CompactDeviceManagementContent(
     state: DeviceManagementUiState,
     onRefresh: () -> Unit,
     onSelectDevice: (String) -> Unit,
-    onDisconnect: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onRelease: (String) -> Unit,
+    onConfigureWifi: (String) -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
     val selectedDevice = state.selectedDevice ?: return
@@ -387,11 +357,10 @@ private fun CompactDeviceManagementContent(
         item {
             DeviceHealthPanel(
                 snapshot = DeviceHealthSnapshot.from(selectedDevice, now),
-                isDisconnecting = state.disconnectingDeviceId == selectedDevice.id,
-                isDeleting = state.deletingDeviceId == selectedDevice.id,
+                isReleasing = state.releasingDeviceId == selectedDevice.id,
                 mutationEnabled = !state.isMutating,
-                onDisconnect = { onDisconnect(selectedDevice.id) },
-                onDelete = { onDelete(selectedDevice.id) },
+                onRelease = { onRelease(selectedDevice.id) },
+                onConfigureWifi = { onConfigureWifi(selectedDevice.id) },
             )
         }
         item { DeviceManagementInfo() }
@@ -403,8 +372,8 @@ private fun ExpandedDeviceManagementContent(
     state: DeviceManagementUiState,
     onRefresh: () -> Unit,
     onSelectDevice: (String) -> Unit,
-    onDisconnect: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onRelease: (String) -> Unit,
+    onConfigureWifi: (String) -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
     val selectedDevice = state.selectedDevice ?: return
@@ -450,11 +419,10 @@ private fun ExpandedDeviceManagementContent(
                 item {
                     DeviceHealthPanel(
                         snapshot = DeviceHealthSnapshot.from(selectedDevice, now),
-                        isDisconnecting = state.disconnectingDeviceId == selectedDevice.id,
-                        isDeleting = state.deletingDeviceId == selectedDevice.id,
+                        isReleasing = state.releasingDeviceId == selectedDevice.id,
                         mutationEnabled = !state.isMutating,
-                        onDisconnect = { onDisconnect(selectedDevice.id) },
-                        onDelete = { onDelete(selectedDevice.id) },
+                        onRelease = { onRelease(selectedDevice.id) },
+                        onConfigureWifi = { onConfigureWifi(selectedDevice.id) },
                     )
                 }
             }
@@ -535,12 +503,11 @@ private fun DeviceSelectorCard(
 @Composable
 internal fun DeviceHealthPanel(
     snapshot: DeviceHealthSnapshot,
-    isDisconnecting: Boolean,
-    isDeleting: Boolean,
+    isReleasing: Boolean,
     mutationEnabled: Boolean,
-    onDisconnect: () -> Unit,
-    onDelete: () -> Unit,
+    onRelease: () -> Unit,
     modifier: Modifier = Modifier,
+    onConfigureWifi: () -> Unit = {},
 ) {
     val spacing = ShcareTheme.spacing
     val presenceLabel = snapshot.presence.label()
@@ -619,54 +586,45 @@ internal fun DeviceHealthPanel(
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            Button(
+                onClick = onConfigureWifi,
+                enabled = mutationEnabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("device_management.configure_wifi"),
             ) {
-                OutlinedButton(
-                    onClick = onDisconnect,
-                    enabled = mutationEnabled,
-                    modifier = Modifier
-                        .weight(1f)
-                        .defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LinkOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(spacing.small))
-                    Text(
-                        if (isDisconnecting) {
-                            stringResource(R.string.device_management_disconnecting)
-                        } else {
-                            stringResource(R.string.device_management_disconnect)
-                        },
-                    )
-                }
-                TextButton(
-                    onClick = onDelete,
-                    enabled = mutationEnabled,
-                    modifier = Modifier
-                        .weight(1f)
-                        .defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(spacing.small))
-                    Text(
-                        text = if (isDeleting) {
-                            stringResource(R.string.device_management_deleting)
-                        } else {
-                            stringResource(R.string.device_management_delete)
-                        },
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Wifi,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(spacing.small))
+                Text(stringResource(R.string.device_management_configure_wifi))
+            }
+            OutlinedButton(
+                onClick = onRelease,
+                enabled = mutationEnabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("device_management.release"),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LinkOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(spacing.small))
+                Text(
+                    text = if (isReleasing) {
+                        stringResource(R.string.device_management_releasing)
+                    } else {
+                        stringResource(R.string.device_management_release)
+                    },
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
@@ -929,8 +887,7 @@ private fun DeviceManagementInlineFailure(
     failure: DeviceManagementFailure,
     onRefresh: () -> Unit,
 ) {
-    val isMutationFailure = failure.operation == DeviceManagementOperation.Disconnect ||
-        failure.operation == DeviceManagementOperation.Delete
+    val isMutationFailure = failure.operation == DeviceManagementOperation.Release
     val title = stringResource(
         if (isMutationFailure) {
             R.string.device_management_mutation_unconfirmed_title
@@ -1090,8 +1047,18 @@ private fun formatUptime(value: Long?): String {
     val hours = (totalMinutes % (24L * 60L)) / 60L
     val minutes = totalMinutes % 60L
     return when {
-        days > 0L -> stringResource(R.string.device_health_duration_days, days, hours)
-        hours > 0L -> stringResource(R.string.device_health_duration_hours, hours, minutes)
+        days > 0L -> pluralStringResource(
+            R.plurals.device_health_duration_days,
+            days.toInt(),
+            days,
+            hours,
+        )
+        hours > 0L -> pluralStringResource(
+            R.plurals.device_health_duration_hours,
+            hours.toInt(),
+            hours,
+            minutes,
+        )
         else -> stringResource(R.string.device_health_duration_minutes, minutes)
     }
 }

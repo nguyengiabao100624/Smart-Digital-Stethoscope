@@ -2,7 +2,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { getAdminSmokeContracts } from "../src/contracts/admin-route-contract.ts";
@@ -30,6 +29,7 @@ const credentialsPath =
     "production-role-smoke-credentials.json",
   );
 const accountKey = process.env.SMOKE_ACCOUNT_KEY || "platform";
+const factoryDeviceId = (process.env.SMOKE_FACTORY_DEVICE_ID || "").trim();
 const runId = `admin-mutation-${Date.now().toString(36)}`;
 const runKey = runId.replace(/[^a-z0-9]/gi, "_");
 
@@ -584,17 +584,30 @@ async function exerciseAdminMutations(page, state) {
     body: { notes: `Updated by ${runId}` },
   });
 
-  const deviceId = `dev_${runKey}`;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$/.test(factoryDeviceId)) {
+    throw new Error(
+      "Device provisioning smoke requires SMOKE_FACTORY_DEVICE_ID for a dedicated factory-enrolled inventory record. The browser must never mint a device id or submit a raw credential.",
+    );
+  }
+  const deviceId = factoryDeviceId;
   const deviceResult = await apiFetch(page, "/devices/provision-qr", {
     method: "POST",
     body: {
       deviceId,
       name: `Admin smoke device ${runId}`,
       organizationId: state.clinicId,
-      deviceSecret: randomBytes(48).toString("base64url"),
+      type: "stethoscope",
+      manufacturer: "Shcare test fixture",
+      model: "MSM261S4030H0",
+      serialNumber: `SMOKE-${runKey.slice(-24)}`,
     },
   });
-  state.deviceId = deviceResult.payload?.device?.id || deviceId;
+  state.deviceId = deviceResult.payload?.device?.id || "";
+  if (state.deviceId !== deviceId) {
+    throw new Error(
+      `device provision response did not confirm the exact factory device id ${deviceId}`,
+    );
+  }
   if (!deviceResult.payload?.claim?.claimCode) {
     throw new Error("device provision response did not include claim.claimCode");
   }

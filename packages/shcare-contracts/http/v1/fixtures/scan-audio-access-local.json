@@ -1,0 +1,6 @@
+{
+  "url": "/api/v1/objects/local?key=authorized-object-reference",
+  "expiresInSeconds": 900,
+  "contentType": "audio/wav",
+  "fileName": "scan_contract_001.wav"
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-preferences-patch-request.schema.json",
+  "title": "Shcare notification preference update request",
+  "description": "PATCH /api/v1/me/notification-preferences body. It changes exactly one account-wide preference owned by the authenticated user.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "enabled"],
+  "properties": {
+    "key": {
+      "enum": [
+        "enabled",
+        "doctorRequests",
+        "abnormalResults",
+        "deviceOffline",
+        "appointments",
+        "messages",
+        "aiUpdates",
+        "newLogin"
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  }
+}

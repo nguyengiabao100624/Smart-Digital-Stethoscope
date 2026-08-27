@@ -169,14 +169,14 @@ const BUCKET_TYPES = [
 ];
 
 const COLOR_OPTIONS = [
-  { key: "blue", label: "Xanh y tế", className: "from-[#0B5C9A] to-[#0EA5E9]" },
-  { key: "emerald", label: "Xanh ngọc", className: "from-[#00A896] to-[#10B981]" },
-  { key: "amber", label: "Hổ phách", className: "from-[#F59E0B] to-[#F97316]" },
-  { key: "rose", label: "Đỏ nhạt", className: "from-[#EF4444] to-[#F97316]" },
-  { key: "violet", label: "Tím kỹ thuật", className: "from-[#7C3AED] to-[#0B5C9A]" },
-  { key: "slate", label: "Xám thiết bị", className: "from-[#334155] to-[#0B5C9A]" },
-  { key: "teal", label: "Teal", className: "from-[#0F766E] to-[#00A896]" },
-  { key: "cyan", label: "Cyan", className: "from-[#0EA5E9] to-[#00A896]" },
+  { key: "blue", label: "Xanh y tế", className: "bg-[#2457D6]" },
+  { key: "emerald", label: "Xanh ngọc", className: "bg-[#087F75]" },
+  { key: "amber", label: "Hổ phách", className: "bg-[#A15C00]" },
+  { key: "rose", label: "Đỏ nhạt", className: "bg-[#B4233A]" },
+  { key: "violet", label: "Tím kỹ thuật", className: "bg-[#6D4AFF]" },
+  { key: "slate", label: "Xám thiết bị", className: "bg-[#334155]" },
+  { key: "teal", label: "Teal", className: "bg-[#087F75]" },
+  { key: "cyan", label: "Cyan", className: "bg-[#2563A6]" },
 ];
 
 function splitList(value: string) {
@@ -265,8 +265,8 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in motion-reduce:animate-none" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card shadow-xl animate-in fade-in zoom-in-95 motion-reduce:animate-none">
           <div className="flex items-center justify-between border-b border-border p-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -359,7 +359,7 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                       type="button"
                       key={item.key}
                       onClick={() => applyType(item.key)}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors motion-reduce:transition-none ${
                         active
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border hover:bg-muted"
@@ -387,7 +387,7 @@ export function CreateBucketDialog({ open, onOpenChange, onCreate }: CreateBucke
                         : "border-border hover:bg-muted"
                     }`}
                   >
-                    <span className={`h-5 w-5 rounded-md bg-gradient-to-br ${color.className}`} />
+                    <span className={`h-5 w-5 rounded-md ${color.className}`} />
                     {color.label}
                   </button>
                 ))}

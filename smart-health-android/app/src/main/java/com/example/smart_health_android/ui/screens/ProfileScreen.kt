@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,14 +42,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,16 +74,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.smart_health_android.BuildConfig
 import com.example.smart_health_android.R
 import com.example.smart_health_android.account.AccountProfileAction
+import com.example.smart_health_android.account.AccountProfileAvatarCleanup
 import com.example.smart_health_android.account.AccountProfileConfirmation
-import com.example.smart_health_android.account.AccountProfileEffect
 import com.example.smart_health_android.account.AccountProfileErrorKind
 import com.example.smart_health_android.account.AccountProfileLoadState
 import com.example.smart_health_android.account.AccountProfileUiState
 import com.example.smart_health_android.account.AccountProfileViewModel
+import com.example.smart_health_android.data.AvatarCleanupStatus
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
@@ -99,25 +100,12 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ProfileScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToVerifyPhoneSettings: () -> Unit,
-    onNavigateToReVerifyContact: (String, String) -> Unit,
     profileViewModel: AccountProfileViewModel = viewModel(),
 ) {
     val state by profileViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var leaveAfterDiscard by remember { mutableStateOf(false) }
-
-    LaunchedEffect(profileViewModel) {
-        profileViewModel.effects.collect { effect ->
-            when (effect) {
-                AccountProfileEffect.StartPhoneEnrollment -> onNavigateToVerifyPhoneSettings()
-                is AccountProfileEffect.ReverifyPhone -> {
-                    onNavigateToReVerifyContact("phone", effect.phone)
-                }
-            }
-        }
-    }
 
     val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -161,16 +149,10 @@ fun ProfileScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.profile_title)) },
-                navigationIcon = {
-                    IconButton(onClick = ::leaveProfile) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.profile_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.profile_title),
+                onNavigateBack = ::leaveProfile,
+                backContentDescription = stringResource(R.string.profile_back),
                 actions = {
                     if (state.loadState == AccountProfileLoadState.Ready) {
                         TextButton(
@@ -182,11 +164,16 @@ fun ProfileScreen(
                             },
                             enabled = !state.isSaving && !state.isAvatarBusy,
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = ShcareTheme.colors.onBrandHeader,
+                                disabledContentColor = ShcareTheme.colors.onBrandHeader.copy(alpha = 0.55f),
+                            ),
                         ) {
                             if (state.isSaving) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
+                                    color = ShcareTheme.colors.onBrandHeader,
                                 )
                                 Spacer(Modifier.size(8.dp))
                             } else {
@@ -209,9 +196,6 @@ fun ProfileScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -351,7 +335,36 @@ private fun ProfileContent(
                             append(stringResource(R.string.profile_request_id, state.requestId))
                         }
                     },
-                    error = true,
+                    tone = ProfileStatusTone.Error,
+                )
+            }
+        }
+
+        state.avatarCleanupNotice?.let { cleanup ->
+            item {
+                ProfileStatusMessage(
+                    title = stringResource(
+                        if (cleanup.status == AvatarCleanupStatus.DeadLetter) {
+                            R.string.profile_avatar_cleanup_support_title
+                        } else {
+                            R.string.profile_avatar_cleanup_pending_title
+                        },
+                    ),
+                    message = stringResource(
+                        when {
+                            cleanup.status == AvatarCleanupStatus.DeadLetter -> {
+                                R.string.profile_avatar_cleanup_support_message
+                            }
+                            cleanup.action == AccountProfileAvatarCleanup.Upload -> {
+                                R.string.profile_avatar_upload_cleanup_pending
+                            }
+                            cleanup.action == AccountProfileAvatarCleanup.Delete -> {
+                                R.string.profile_avatar_delete_cleanup_pending
+                            }
+                            else -> R.string.profile_avatar_orphan_cleanup_pending
+                        },
+                    ),
+                    tone = ProfileStatusTone.Warning,
                 )
             }
         }
@@ -366,7 +379,7 @@ private fun ProfileContent(
                             AccountProfileConfirmation.AvatarDeleted -> R.string.profile_avatar_deleted
                         }
                     ),
-                    error = false,
+                    tone = ProfileStatusTone.Success,
                 )
             }
         }
@@ -393,16 +406,9 @@ private fun ProfileContent(
                 ProfileField(
                     label = stringResource(R.string.profile_phone),
                     value = state.draft.phone,
-                    editing = state.isEditing && BuildConfig.SMART_HEALTH_PHONE_AUTH_ENABLED,
-                    onValueChange = { onAction(AccountProfileAction.ChangePhone(it)) },
-                    isError = state.phoneInvalid,
-                    supportingText = if (state.phoneInvalid) {
-                        stringResource(R.string.profile_phone_invalid)
-                    } else if (!BuildConfig.SMART_HEALTH_PHONE_AUTH_ENABLED) {
-                        stringResource(R.string.profile_phone_unavailable)
-                    } else {
-                        stringResource(R.string.profile_phone_verification_note)
-                    },
+                    editing = false,
+                    onValueChange = {},
+                    supportingText = stringResource(R.string.profile_phone_unavailable),
                     keyboardType = KeyboardType.Phone,
                 )
                 ProfileField(
@@ -617,23 +623,56 @@ private fun ProfileHero(
 }
 
 @Composable
-private fun ProfileStatusMessage(message: String, error: Boolean) {
+private fun ProfileStatusMessage(
+    message: String,
+    tone: ProfileStatusTone,
+    title: String? = null,
+) {
     Surface(
-        color = if (error) MaterialTheme.colorScheme.errorContainer else ShcareTheme.colors.successContainer,
-        contentColor = if (error) MaterialTheme.colorScheme.onErrorContainer else ShcareTheme.colors.onSuccessContainer,
+        color = when (tone) {
+            ProfileStatusTone.Error -> MaterialTheme.colorScheme.errorContainer
+            ProfileStatusTone.Success -> ShcareTheme.colors.successContainer
+            ProfileStatusTone.Warning -> ShcareTheme.colors.warningContainer
+        },
+        contentColor = when (tone) {
+            ProfileStatusTone.Error -> MaterialTheme.colorScheme.onErrorContainer
+            ProfileStatusTone.Success -> ShcareTheme.colors.onSuccessContainer
+            ProfileStatusTone.Warning -> ShcareTheme.colors.onWarningContainer
+        },
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                liveRegion = if (error) LiveRegionMode.Assertive else LiveRegionMode.Polite
+                liveRegion = if (tone == ProfileStatusTone.Error) {
+                    LiveRegionMode.Assertive
+                } else {
+                    LiveRegionMode.Polite
+                }
             },
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
+        Column(
             modifier = Modifier.padding(ShcareTheme.spacing.large),
-        )
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+        ) {
+            title?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
+}
+
+private enum class ProfileStatusTone {
+    Error,
+    Success,
+    Warning,
 }
 
 @Composable
@@ -727,7 +766,7 @@ private fun ProfileCatalogField(
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
-                .menuAnchor()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 56.dp),
         )

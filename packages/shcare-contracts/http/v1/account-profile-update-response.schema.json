@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shcare.vn/contracts/http/v1/account-profile-update-response.schema.json",
+  "title": "Shcare account profile update receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "intent", "changedFields", "user", "replayed"],
+  "properties": {
+    "userId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "intent": { "type": "string", "const": "profile_update" },
+    "changedFields": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "enum": [
+          "name",
+          "title",
+          "phone",
+          "license",
+          "hospital",
+          "department",
+          "specialty",
+          "address"
+        ]
+      }
+    },
+    "user": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "title",
+        "phone",
+        "license",
+        "hospital",
+        "department",
+        "specialty",
+        "address",
+        "organizationId",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "name": { "type": "string", "maxLength": 160 },
+        "title": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 160 },
+        "license": { "type": "string", "maxLength": 160 },
+        "hospital": { "type": "string", "maxLength": 160 },
+        "department": { "type": "string", "maxLength": 160 },
+        "specialty": { "type": "string", "maxLength": 160 },
+        "address": { "type": "string", "maxLength": 1000 },
+        "organizationId": { "type": "string", "maxLength": 120 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "replayed": { "type": "boolean" }
+  },
+  "x-shcare-http": {
+    "method": "PATCH",
+    "path": "/v1/me",
+    "status": 200
+  },
+  "x-shcare-owner-binding": {
+    "userId": "authenticated-backend-user",
+    "crossAccountOutcome": 409,
+    "idempotencyScope": "userId"
+  }
+}

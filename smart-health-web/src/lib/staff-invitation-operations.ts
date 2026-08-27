@@ -14,6 +14,7 @@ type StaffOperation =
   | "member-suspend"
   | "member-reactivate"
   | "member-revoke"
+  | "member-role"
   | "invite-accept";
 
 type ExpectedInvitation = {
@@ -296,21 +297,46 @@ export function parsePortalStaffInvitationOutcome(
   };
 }
 
-export function parsePortalStaffInvitationList(response: unknown) {
+export function parsePortalStaffInvitationList(
+  response: unknown,
+  expectedWorkspaceId: string,
+) {
   const invitations = recordOf(response).invitations;
   if (!Array.isArray(invitations)) {
     throw new Error("Phản hồi nhân sự thiếu danh sách lời mời canonical.");
   }
-  return invitations.map(parseInvitation);
+  const workspaceId = requiredString(
+    expectedWorkspaceId,
+    "workspace kỳ vọng của lời mời",
+  );
+  const ids = new Set<string>();
+  return invitations.map((value) => {
+    const invitation = parseInvitation(value);
+    if (invitation.organizationId !== workspaceId) {
+      throw new Error(
+        "Danh sách lời mời chứa dữ liệu ngoài workspace hiện tại.",
+      );
+    }
+    if (ids.has(invitation.id)) {
+      throw new Error(`Danh sách lời mời bị trùng ID ${invitation.id}.`);
+    }
+    ids.add(invitation.id);
+    return invitation;
+  });
 }
 
 export function assertPortalStaffInvitationStatus(
   response: unknown,
   expectedId: string,
   expectedStatus: StaffInvitation["status"],
+  expectedWorkspaceId: string,
 ) {
   const invitation = parseInvitation(recordOf(response).invitation);
-  if (invitation.id !== expectedId || invitation.status !== expectedStatus) {
+  if (
+    invitation.id !== expectedId ||
+    invitation.status !== expectedStatus ||
+    invitation.organizationId !== expectedWorkspaceId
+  ) {
     throw new Error(
       "Backend chưa xác nhận đúng lời mời và trạng thái vừa thao tác.",
     );
@@ -322,6 +348,7 @@ export function assertMembershipLifecycleOutcome(
   response: unknown,
   expectedUserId: string,
   expectedAction: WorkspaceMembershipAction,
+  expectedWorkspaceId: string,
 ) {
   const responseRecord = recordOf(response);
   const membership = recordOf(responseRecord.membership);
@@ -337,6 +364,15 @@ export function assertMembershipLifecycleOutcome(
   }
   if (membership.userId !== expectedUserId || user.id !== expectedUserId) {
     throw new Error("ID nhân sự trong phản hồi không khớp thao tác vừa gửi.");
+  }
+  const membershipWorkspaceId = requiredString(
+    membership.workspaceId || membership.organizationId,
+    "workspace membership canonical",
+  );
+  if (membershipWorkspaceId !== expectedWorkspaceId) {
+    throw new Error(
+      "Workspace membership trong phản hồi không khớp workspace đang thao tác.",
+    );
   }
   if (membership.status !== expectedStatus) {
     throw new Error("Backend chưa xác nhận đúng trạng thái membership.");

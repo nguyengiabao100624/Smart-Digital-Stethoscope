@@ -17,17 +17,43 @@ import {
   User,
   Lock,
 } from "lucide-react";
+import { useId } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import {
+  clearSmartHealthStoredTokenIfMatches,
+  getSmartHealthStoredTokenSnapshot,
   smartHealthApi,
   type SmartHealthAuthSession,
   type SmartHealthAuthUser,
+  type SmartHealthNotificationPreferencesResponse,
+  type SmartHealthTwoFactorStatus,
 } from "@/lib/smart-health-api";
-import { changeFirebasePassword, hasFirebaseWebConfig } from "@/lib/firebase-client";
+import {
+  getCurrentFirebaseUid,
+  hasFirebaseWebConfig,
+  reauthenticateFirebasePassword,
+  signOutFirebaseIfUidMatches,
+} from "@/lib/firebase-client";
+import {
+  createPasswordChangeIntent,
+  executePasswordChange,
+  isAmbiguousPasswordMutationError,
+  isPasswordChangeAuthorityError,
+  PasswordChangeAuthorityError,
+  passwordIntentMatches,
+  type PasswordChangeAuthority,
+  type PasswordChangeIntent,
+} from "@/lib/password-change";
+import {
+  AuthSessionRevokeIntentRegistry,
+  executeAuthSessionRevoke,
+  isAuthSessionIdempotencyCollision,
+} from "@/lib/auth-session-revoke";
 import { toVietnameseErrorMessage } from "@/lib/error-messages";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
+import { useNavigate } from "./router-shim";
 
 type ProfileState = {
   name: string;
@@ -41,8 +67,6 @@ type ProfileState = {
   address: string;
   avatarFileId: string;
   avatarUrl: string;
-  twoFactorEnabled: boolean;
-  twoFactorMethod: string;
   notificationPreferences: {
     doctorRequests: boolean;
     abnormalResults: boolean;
@@ -70,8 +94,6 @@ const emptyProfile: ProfileState = {
   address: "",
   avatarFileId: "",
   avatarUrl: "",
-  twoFactorEnabled: false,
-  twoFactorMethod: "",
   notificationPreferences: {
     doctorRequests: true,
     abnormalResults: true,
@@ -94,8 +116,6 @@ function profileFromUser(user: SmartHealthAuthUser): ProfileState {
     address: user.address || "",
     avatarFileId: user.avatarFileId || "",
     avatarUrl: user.avatarUrl || "",
-    twoFactorEnabled: Boolean(user.twoFactorEnabled),
-    twoFactorMethod: user.twoFactorMethod || "",
     notificationPreferences: {
       doctorRequests: preferences.doctorRequests !== false,
       abnormalResults: preferences.abnormalResults !== false,
@@ -103,6 +123,67 @@ function profileFromUser(user: SmartHealthAuthUser): ProfileState {
       newLogin: preferences.newLogin !== false,
     },
   };
+}
+
+type AccountNotificationPreferenceKey = keyof ProfileState["notificationPreferences"];
+
+const notificationPreferenceRows: ReadonlyArray<{
+  key: AccountNotificationPreferenceKey;
+  title: string;
+  description: string;
+}> = [
+  {
+    key: "doctorRequests",
+    title: "Bác sĩ mới đăng ký",
+    description: "Thông báo khi có bác sĩ cần duyệt",
+  },
+  {
+    key: "abnormalResults",
+    title: "Cảnh báo kết quả cần xem xét",
+    description: "Thông báo khi backend ghi nhận cảnh báo cần người có chuyên môn xem xét",
+  },
+  {
+    key: "deviceOffline",
+    title: "Thiết bị offline",
+    description: "Thông báo khi thiết bị mất kết nối quá 30 phút",
+  },
+  {
+    key: "newLogin",
+    title: "Đăng nhập từ thiết bị lạ",
+    description: "Thông báo khi tài khoản có phiên đăng nhập mới",
+  },
+];
+
+function accountPreferencesFromResponse(
+  response: SmartHealthNotificationPreferencesResponse,
+): ProfileState["notificationPreferences"] {
+  return {
+    doctorRequests: response.preferences.doctorRequests,
+    abnormalResults: response.preferences.abnormalResults,
+    deviceOffline: response.preferences.deviceOffline,
+    newLogin: response.preferences.newLogin,
+  };
+}
+
+function assertOwnedNotificationPreferences(
+  response: SmartHealthNotificationPreferencesResponse,
+  expectedUserId: string,
+) {
+  if (
+    !expectedUserId ||
+    response.userId !== expectedUserId ||
+    response.ownership.kind !== "self" ||
+    response.ownership.userId !== expectedUserId
+  ) {
+    throw new Error("Notification preference receipt does not belong to the signed-in account");
+  }
+}
+
+function createIdempotencyKey(scope: string) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${scope}:${crypto.randomUUID()}`;
+  }
+  return `${scope}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }
 
 function formatSessionTime(value?: string) {
@@ -136,8 +217,19 @@ function sessionIcon(session: SmartHealthAuthSession) {
 }
 
 export function AccountSettings() {
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const avatarObjectUrlRef = useRef("");
+  const passwordChangeIntentRef = useRef<PasswordChangeIntent | null>(null);
+  const sessionRevokeIntentsRef = useRef<AuthSessionRevokeIntentRegistry | null>(null);
+  const sessionAuthorityUserIdRef = useRef("");
+  if (!sessionRevokeIntentsRef.current) {
+    sessionRevokeIntentsRef.current = new AuthSessionRevokeIntentRegistry();
+  }
+  const passwordAuthorityRef = useRef<{
+    userId: string;
+    firebaseUid: string | null;
+  }>({ userId: "", firebaseUid: null });
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success">("idle");
   const [isLoading, setIsLoading] = useState(true);
   const [avatarPreview, setAvatarPreview] = useState("");
@@ -155,7 +247,19 @@ export function AccountSettings() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
   const [profile, setProfile] = useState<ProfileState>(emptyProfile);
+  const [accountUserId, setAccountUserId] = useState("");
+  const [accountFirebaseUid, setAccountFirebaseUid] = useState<string | null>(null);
+  const [twoFactorStatus, setTwoFactorStatus] = useState<SmartHealthTwoFactorStatus | null>(null);
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false);
+  const [twoFactorError, setTwoFactorError] = useState("");
+  const [notificationPreferencesReady, setNotificationPreferencesReady] = useState(false);
+  const [notificationPreferencesError, setNotificationPreferencesError] = useState("");
+  const [preferencePendingKeys, setPreferencePendingKeys] = useState<
+    Set<AccountNotificationPreferenceKey>
+  >(() => new Set());
 
   const setObjectAvatarPreview = useCallback((blob: Blob) => {
     if (avatarObjectUrlRef.current) {
@@ -178,13 +282,99 @@ export function AccountSettings() {
     }
   }, []);
 
+  const refreshTwoFactorStatus = useCallback(async () => {
+    setTwoFactorLoading(true);
+    setTwoFactorError("");
+    try {
+      const status = await smartHealthApi.getTwoFactorStatus();
+      setTwoFactorStatus(status);
+    } catch (error) {
+      setTwoFactorError(
+        toVietnameseErrorMessage(error, "Không thể tải trạng thái xác thực hai yếu tố."),
+      );
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setIsLoading(true);
       try {
-        const [{ user }] = await Promise.all([smartHealthApi.me(), loadSessions()]);
-        if (!cancelled) setProfile(profileFromUser(user));
+        const [{ user }, twoFactorResult, preferencesResult] = await Promise.all([
+          smartHealthApi.me(),
+          smartHealthApi.getTwoFactorStatus().then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error }),
+          ),
+          smartHealthApi.getNotificationPreferences().then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error }),
+          ),
+          loadSessions(),
+        ]);
+        if (cancelled) return;
+
+        const nextProfile = profileFromUser(user);
+        const nextFirebaseUid = user.firebaseUid || null;
+        const previousAuthority = passwordAuthorityRef.current;
+        if (
+          previousAuthority.userId &&
+          (previousAuthority.userId !== user.id ||
+            previousAuthority.firebaseUid !== nextFirebaseUid)
+        ) {
+          passwordChangeIntentRef.current = null;
+          setPasswordForm({
+            currentPassword: "",
+            newPassword: "",
+            confirmPassword: "",
+          });
+          setPasswordError("Tài khoản hiện tại đã thay đổi. Thao tác đổi mật khẩu cũ đã bị hủy.");
+        }
+        passwordAuthorityRef.current = {
+          userId: user.id,
+          firebaseUid: nextFirebaseUid,
+        };
+        sessionAuthorityUserIdRef.current = user.id;
+        setAccountUserId(user.id);
+        setAccountFirebaseUid(nextFirebaseUid);
+
+        if (twoFactorResult.ok) {
+          setTwoFactorStatus(twoFactorResult.value);
+          setTwoFactorError("");
+        } else {
+          setTwoFactorStatus(null);
+          setTwoFactorError(
+            toVietnameseErrorMessage(
+              twoFactorResult.error,
+              "Không thể tải trạng thái xác thực hai yếu tố.",
+            ),
+          );
+        }
+
+        if (preferencesResult.ok) {
+          try {
+            assertOwnedNotificationPreferences(preferencesResult.value, user.id);
+            nextProfile.notificationPreferences = accountPreferencesFromResponse(
+              preferencesResult.value,
+            );
+            setNotificationPreferencesReady(true);
+            setNotificationPreferencesError("");
+          } catch (error) {
+            setNotificationPreferencesReady(false);
+            setNotificationPreferencesError(
+              toVietnameseErrorMessage(error, "Phản hồi tùy chọn thông báo không hợp lệ."),
+            );
+          }
+        } else {
+          setNotificationPreferencesReady(false);
+          setNotificationPreferencesError(
+            toVietnameseErrorMessage(preferencesResult.error, "Không thể tải tùy chọn thông báo."),
+          );
+        }
+
+        setProfile(nextProfile);
       } catch (error) {
         if (!cancelled) {
           toast.error(toVietnameseErrorMessage(error, "Không thể tải thông tin tài khoản."));
@@ -225,6 +415,7 @@ export function AccountSettings() {
 
   useEffect(() => {
     return () => {
+      sessionAuthorityUserIdRef.current = "";
       if (avatarObjectUrlRef.current) {
         URL.revokeObjectURL(avatarObjectUrlRef.current);
       }
@@ -244,6 +435,13 @@ export function AccountSettings() {
     setProfile((current) => ({ ...current, ...patch }));
   };
 
+  const applyUserProfile = (user: SmartHealthAuthUser) => {
+    setProfile((current) => ({
+      ...profileFromUser(user),
+      notificationPreferences: current.notificationPreferences,
+    }));
+  };
+
   const handleSave = async () => {
     setSaveStatus("saving");
     try {
@@ -258,9 +456,8 @@ export function AccountSettings() {
         address: profile.address,
         avatarFileId: profile.avatarFileId,
         avatarUrl: profile.avatarUrl,
-        notificationPreferences: profile.notificationPreferences,
       });
-      setProfile(profileFromUser(user));
+      applyUserProfile(user);
       setSaveStatus("success");
       toast.success("Đã lưu cài đặt tài khoản");
       window.setTimeout(() => setSaveStatus("idle"), 2000);
@@ -270,44 +467,62 @@ export function AccountSettings() {
     }
   };
 
-  const updateTwoFactor = async (method: "app" | "sms" | "disable") => {
+  const refreshNotificationPreferences = async () => {
+    if (!accountUserId) return;
+    setNotificationPreferencesError("");
     try {
-      const { user, twoFactor } = await smartHealthApi.updateTwoFactor(
-        method === "disable" ? { action: "disable" } : { action: "enable", method },
-      );
-      setProfile(profileFromUser(user));
-      if (twoFactor.recoveryCodes?.length) {
-        toast.success(`Đã bật 2FA ${method.toUpperCase()}. Recovery codes đã được backend tạo.`);
-      } else {
-        toast.success(method === "disable" ? "Đã tắt 2FA." : "Đã cập nhật 2FA.");
-      }
+      const response = await smartHealthApi.getNotificationPreferences();
+      assertOwnedNotificationPreferences(response, accountUserId);
+      setProfile((current) => ({
+        ...current,
+        notificationPreferences: accountPreferencesFromResponse(response),
+      }));
+      setNotificationPreferencesReady(true);
     } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể cập nhật 2FA."));
+      setNotificationPreferencesReady(false);
+      setNotificationPreferencesError(
+        toVietnameseErrorMessage(error, "Không thể tải tùy chọn thông báo."),
+      );
     }
   };
 
   const updateNotificationPreference = async (
-    key: keyof ProfileState["notificationPreferences"],
+    key: AccountNotificationPreferenceKey,
     value: boolean,
   ) => {
-    const nextPreferences = {
-      ...profile.notificationPreferences,
-      [key]: value,
-    };
-    setProfile((current) => ({ ...current, notificationPreferences: nextPreferences }));
+    if (!accountUserId || !notificationPreferencesReady || preferencePendingKeys.has(key)) {
+      return;
+    }
+
+    setPreferencePendingKeys((current) => new Set(current).add(key));
     try {
-      const { user } = await smartHealthApi.updateMe({ notificationPreferences: nextPreferences });
-      setProfile(profileFromUser(user));
-      toast.success("Đã lưu tùy chọn thông báo.");
-    } catch (error) {
+      const response = await smartHealthApi.patchNotificationPreference(
+        { key, enabled: value },
+        createIdempotencyKey(`notification-preference:${key}`),
+      );
+      assertOwnedNotificationPreferences(response, accountUserId);
+      if (response.preferences[key] !== value) {
+        throw new Error("Backend did not confirm the requested notification preference");
+      }
       setProfile((current) => ({
         ...current,
         notificationPreferences: {
           ...current.notificationPreferences,
-          [key]: !value,
+          [key]: response.preferences[key],
         },
       }));
-      toast.error(toVietnameseErrorMessage(error, "Không thể lưu tùy chọn thông báo."));
+      setNotificationPreferencesError("");
+      toast.success("Đã lưu tùy chọn thông báo.");
+    } catch (error) {
+      const message = toVietnameseErrorMessage(error, "Không thể lưu tùy chọn thông báo.");
+      setNotificationPreferencesError(message);
+      toast.error(message);
+    } finally {
+      setPreferencePendingKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -327,7 +542,7 @@ export function AccountSettings() {
     setObjectAvatarPreview(file);
     try {
       const { user } = await smartHealthApi.uploadMyAvatar(file);
-      setProfile(profileFromUser(user));
+      applyUserProfile(user);
       toast.success("Đã cập nhật ảnh đại diện.");
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể tải ảnh đại diện."));
@@ -351,43 +566,166 @@ export function AccountSettings() {
           avatarObjectUrlRef.current = "";
         }
         setAvatarPreview("");
-        setProfile(profileFromUser(user));
+        applyUserProfile(user);
         toast.success("Đã gỡ ảnh đại diện.");
       },
     });
   };
 
+  const abandonPasswordIntent = (message?: string) => {
+    passwordChangeIntentRef.current = null;
+    setPasswordForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+    if (message) setPasswordError(message);
+  };
+
+  const updatePasswordField = (key: keyof typeof passwordForm, value: string) => {
+    passwordChangeIntentRef.current = null;
+    setPasswordError("");
+    setPasswordForm((current) => ({ ...current, [key]: value }));
+  };
+
   const handlePasswordChange = async () => {
-    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
-      toast.error("Vui lòng nhập mật khẩu hiện tại và mật khẩu mới.");
+    if (passwordSubmitting) return;
+
+    const { currentPassword, newPassword, confirmPassword } = passwordForm;
+    const failValidation = (message: string) => {
+      setPasswordError(message);
+      toast.error(message);
+    };
+
+    if (currentPassword.length === 0 || newPassword.length === 0) {
+      failValidation("Vui lòng nhập mật khẩu hiện tại và mật khẩu mới.");
       return;
     }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error("Mật khẩu xác nhận không khớp.");
+    if (newPassword !== confirmPassword) {
+      failValidation("Mật khẩu xác nhận không khớp.");
       return;
     }
-    if (passwordForm.newPassword.length < 8) {
-      toast.error("Mật khẩu mới cần tối thiểu 8 ký tự.");
+    if (newPassword.length < 8) {
+      failValidation("Mật khẩu mới cần tối thiểu 8 ký tự.");
       return;
     }
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      failValidation("Mật khẩu mới phải có chữ hoa, chữ thường và chữ số.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      failValidation("Mật khẩu mới phải khác mật khẩu hiện tại.");
+      return;
+    }
+
+    const firebaseConfigured = hasFirebaseWebConfig();
+    const authority: PasswordChangeAuthority = {
+      userId: accountUserId,
+      firebaseConfigured,
+      firebaseUid: firebaseConfigured ? accountFirebaseUid : null,
+      authToken: getSmartHealthStoredTokenSnapshot(),
+    };
+    const input = { currentPassword, newPassword };
+    let intent = passwordChangeIntentRef.current;
+
     try {
-      if (hasFirebaseWebConfig()) {
-        const idToken = await changeFirebasePassword(
-          passwordForm.currentPassword,
-          passwordForm.newPassword,
+      if (!intent || !passwordIntentMatches(intent, input, authority)) {
+        intent = createPasswordChangeIntent(
+          input,
+          authority,
+          createIdempotencyKey("password-change"),
         );
-        await smartHealthApi.authenticateFirebase(idToken);
-        await smartHealthApi.changePassword({ firebaseClientUpdated: true });
-      } else {
-        await smartHealthApi.changePassword({
-          currentPassword: passwordForm.currentPassword,
-          newPassword: passwordForm.newPassword,
-        });
+        passwordChangeIntentRef.current = intent;
       }
-      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      toast.success("Đã cập nhật mật khẩu thành công.");
+
+      setPasswordSubmitting(true);
+      setPasswordError("");
+      const result = await executePasswordChange(intent, authority, {
+        currentAuthToken: getSmartHealthStoredTokenSnapshot,
+        currentFirebaseUid: () => (firebaseConfigured ? getCurrentFirebaseUid() : null),
+        reauthenticateFirebase: reauthenticateFirebasePassword,
+        authenticateFirebase: smartHealthApi.authenticateFirebase.bind(smartHealthApi),
+        changePassword: smartHealthApi.changePassword.bind(smartHealthApi),
+      });
+
+      const completedIntent = intent;
+      passwordChangeIntentRef.current = null;
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+
+      const currentAuthority = passwordAuthorityRef.current;
+      if (
+        currentAuthority.userId !== completedIntent.userId ||
+        currentAuthority.firebaseUid !== completedIntent.firebaseUid ||
+        getSmartHealthStoredTokenSnapshot() !== completedIntent.authToken ||
+        (result.provider === "firebase" &&
+          (!firebaseConfigured ||
+            !completedIntent.firebaseUid ||
+            getCurrentFirebaseUid() !== completedIntent.firebaseUid))
+      ) {
+        throw new PasswordChangeAuthorityError(
+          "Mật khẩu của tài khoản ban đầu có thể đã thay đổi, nhưng danh tính hiện tại đã chuyển. Phiên mới không bị đăng xuất.",
+        );
+      }
+
+      let backendSessionClosed = false;
+      try {
+        backendSessionClosed = await smartHealthApi.logoutIfTokenMatches(completedIntent.authToken);
+      } catch {
+        backendSessionClosed = getSmartHealthStoredTokenSnapshot() === "";
+      }
+      if (!backendSessionClosed) {
+        throw new PasswordChangeAuthorityError(
+          "Mật khẩu đã đổi nhưng phiên backend hiện tại không còn thuộc tài khoản ban đầu; phiên mới không bị xóa.",
+        );
+      }
+
+      if (result.provider === "firebase") {
+        const firebaseSessionClosed = await signOutFirebaseIfUidMatches(
+          completedIntent.firebaseUid || "",
+        ).catch(() => false);
+        if (!firebaseSessionClosed) {
+          throw new PasswordChangeAuthorityError(
+            "Mật khẩu đã đổi nhưng không thể kết thúc đúng phiên Firebase ban đầu. Tài khoản Firebase thay thế không bị đăng xuất.",
+          );
+        }
+      }
+
+      toast.success("Đã đổi mật khẩu. Vui lòng đăng nhập lại.");
+      navigate("/login");
     } catch (error) {
-      toast.error(toVietnameseErrorMessage(error, "Không thể cập nhật mật khẩu."));
+      const message = toVietnameseErrorMessage(error, "Không thể cập nhật mật khẩu.");
+      if (isPasswordChangeAuthorityError(error)) {
+        const oldTokenCleared = intent
+          ? clearSmartHealthStoredTokenIfMatches(intent.authToken)
+          : false;
+        const originalSessionIsAbsent =
+          Boolean(intent) &&
+          getSmartHealthStoredTokenSnapshot() === "" &&
+          passwordAuthorityRef.current.userId === intent?.userId;
+        if (oldTokenCleared || originalSessionIsAbsent) {
+          passwordAuthorityRef.current = { userId: "", firebaseUid: null };
+          setAccountUserId("");
+          setAccountFirebaseUid(null);
+          setProfile(emptyProfile);
+          setAvatarPreview("");
+          setSessions([]);
+          setTwoFactorStatus(null);
+          setNotificationPreferencesReady(false);
+        }
+        abandonPasswordIntent(message);
+      } else {
+        if (!isAmbiguousPasswordMutationError(error)) {
+          passwordChangeIntentRef.current = null;
+        }
+        setPasswordError(message);
+      }
+      toast.error(message);
+    } finally {
+      setPasswordSubmitting(false);
     }
   };
 
@@ -403,7 +741,20 @@ export function AccountSettings() {
       ),
       confirmLabel: "Đăng xuất phiên",
       run: async () => {
-        await smartHealthApi.revokeSession(session.id);
+        const ownerUserId = sessionAuthorityUserIdRef.current.trim();
+        const registry = sessionRevokeIntentsRef.current!;
+        const intent = registry.getOrCreate(ownerUserId, session.id);
+        try {
+          await executeAuthSessionRevoke(
+            intent,
+            () => sessionAuthorityUserIdRef.current,
+            (pendingIntent) => smartHealthApi.revokeSession(pendingIntent),
+          );
+          registry.confirm(intent);
+        } catch (error) {
+          registry.fail(intent, error);
+          throw error;
+        }
         await loadSessions();
         toast.success("Đã đăng xuất phiên đăng nhập.");
       },
@@ -418,8 +769,42 @@ export function AccountSettings() {
       description: `Hệ thống sẽ thu hồi ${otherSessions.length} phiên đăng nhập khác, trừ phiên hiện tại của bạn.`,
       confirmLabel: "Đăng xuất thiết bị khác",
       run: async () => {
-        await Promise.all(otherSessions.map((session) => smartHealthApi.revokeSession(session.id)));
+        const ownerUserId = sessionAuthorityUserIdRef.current.trim();
+        const registry = sessionRevokeIntentsRef.current!;
+        const targets = [...otherSessions];
+        const results = await Promise.allSettled(
+          targets.map(async (session) => {
+            const intent = registry.getOrCreate(ownerUserId, session.id);
+            try {
+              const receipt = await executeAuthSessionRevoke(
+                intent,
+                () => sessionAuthorityUserIdRef.current,
+                (pendingIntent) => smartHealthApi.revokeSession(pendingIntent),
+              );
+              registry.confirm(intent);
+              return receipt;
+            } catch (error) {
+              registry.fail(intent, error);
+              throw error;
+            }
+          }),
+        );
         await loadSessions();
+        const confirmed = results.filter((result) => result.status === "fulfilled").length;
+        if (confirmed !== targets.length) {
+          const collision = results.some(
+            (result) =>
+              result.status === "rejected" && isAuthSessionIdempotencyCollision(result.reason),
+          );
+          const error = new Error(
+            `Backend chỉ xác nhận thu hồi ${confirmed}/${targets.length} phiên. Danh sách đã được tải lại; vui lòng kiểm tra rồi thử lại.`,
+          ) as Error & { code?: string; status?: number };
+          if (collision) {
+            error.code = "IDEMPOTENCY_KEY_REUSED";
+            error.status = 409;
+          }
+          throw error;
+        }
         toast.success("Đã đăng xuất tất cả thiết bị khác.");
       },
     });
@@ -531,6 +916,7 @@ export function AccountSettings() {
                     disabled={avatarUploading}
                     className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                     title="Tải ảnh đại diện"
+                    aria-label="Tải ảnh đại diện"
                   >
                     <Camera className="w-4 h-4" />
                   </button>
@@ -618,8 +1004,12 @@ export function AccountSettings() {
                   onChange={(value) => updateProfile({ specialty: value })}
                 />
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-medium text-foreground">Địa chỉ</label>
+                  <label htmlFor="account-address" className="text-sm font-medium text-foreground">
+                    Địa chỉ
+                  </label>
                   <textarea
+                    id="account-address"
+                    name="address"
                     value={profile.address}
                     onChange={(event) => updateProfile({ address: event.target.value })}
                     rows={3}
@@ -640,41 +1030,72 @@ export function AccountSettings() {
           <div className="bg-card border border-border rounded-xl shadow-sm p-6 space-y-6">
             <div>
               <h3 className="text-base font-semibold mb-4">Đổi mật khẩu</h3>
-              <div className="space-y-4 max-w-md">
+              <form
+                className="max-w-md space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handlePasswordChange();
+                }}
+              >
                 <PasswordField
+                  id="admin-current-password"
                   label="Mật khẩu hiện tại"
                   value={passwordForm.currentPassword}
                   show={showCurrentPw}
+                  autoComplete="current-password"
+                  disabled={passwordSubmitting}
                   onToggle={() => setShowCurrentPw((value) => !value)}
-                  onChange={(value) =>
-                    setPasswordForm((current) => ({ ...current, currentPassword: value }))
-                  }
+                  onChange={(value) => updatePasswordField("currentPassword", value)}
                 />
                 <PasswordField
+                  id="admin-new-password"
                   label="Mật khẩu mới"
                   value={passwordForm.newPassword}
                   show={showNewPw}
+                  autoComplete="new-password"
+                  disabled={passwordSubmitting}
                   onToggle={() => setShowNewPw((value) => !value)}
-                  onChange={(value) =>
-                    setPasswordForm((current) => ({ ...current, newPassword: value }))
-                  }
+                  onChange={(value) => updatePasswordField("newPassword", value)}
                 />
                 <PasswordField
+                  id="admin-confirm-password"
                   label="Xác nhận mật khẩu mới"
                   value={passwordForm.confirmPassword}
                   show={showConfirmPw}
+                  autoComplete="new-password"
+                  disabled={passwordSubmitting}
                   onToggle={() => setShowConfirmPw((value) => !value)}
-                  onChange={(value) =>
-                    setPasswordForm((current) => ({ ...current, confirmPassword: value }))
-                  }
+                  onChange={(value) => updatePasswordField("confirmPassword", value)}
                 />
                 <button
-                  onClick={handlePasswordChange}
-                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  type="submit"
+                  disabled={passwordSubmitting}
+                  aria-busy={passwordSubmitting}
+                  className="min-h-11 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Cập nhật mật khẩu
+                  {passwordSubmitting ? "Đang cập nhật..." : "Cập nhật mật khẩu"}
                 </button>
-              </div>
+                {passwordError && (
+                  <div
+                    role="alert"
+                    className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+                  >
+                    <p>{passwordError}</p>
+                    {passwordForm.currentPassword &&
+                      passwordForm.newPassword &&
+                      passwordForm.confirmPassword && (
+                        <button
+                          type="button"
+                          disabled={passwordSubmitting}
+                          onClick={() => void handlePasswordChange()}
+                          className="min-h-11 rounded-md border border-destructive/30 px-3 py-2 font-medium hover:bg-destructive/10 disabled:opacity-60"
+                        >
+                          Thử lại cùng thao tác
+                        </button>
+                      )}
+                  </div>
+                )}
+              </form>
             </div>
 
             <div className="h-px w-full bg-border" />
@@ -682,43 +1103,55 @@ export function AccountSettings() {
             <div>
               <h3 className="text-base font-semibold mb-4">Xác thực hai yếu tố (2FA)</h3>
               <div className="space-y-3">
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
-                  Trạng thái:{" "}
-                  {profile.twoFactorEnabled
-                    ? `Đã bật (${profile.twoFactorMethod || "app"})`
-                    : "Chưa bật"}
-                  . Trạng thái 2FA và recovery code được backend ghi nhận; OTP provider có thể nối
-                  thêm theo môi trường triển khai.
-                </div>
-                <ActionRow
-                  title="Xác thực qua ứng dụng"
-                  description="Bật 2FA bằng ứng dụng và tạo recovery codes trên backend"
-                  button={
-                    profile.twoFactorEnabled && profile.twoFactorMethod === "app"
-                      ? "Đang bật"
-                      : "Bật app 2FA"
-                  }
-                  disabled={profile.twoFactorEnabled && profile.twoFactorMethod === "app"}
-                  onClick={() => void updateTwoFactor("app")}
-                />
-                <ActionRow
-                  title="Xác thực qua SMS"
-                  description="Bật 2FA qua SMS; yêu cầu tài khoản có số điện thoại"
-                  button={
-                    profile.twoFactorEnabled && profile.twoFactorMethod === "sms"
-                      ? "Đang bật"
-                      : "Bật SMS 2FA"
-                  }
-                  disabled={profile.twoFactorEnabled && profile.twoFactorMethod === "sms"}
-                  onClick={() => void updateTwoFactor("sms")}
-                />
-                <button
-                  onClick={() => void updateTwoFactor("disable")}
-                  disabled={!profile.twoFactorEnabled}
-                  className="rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                >
-                  Tắt 2FA
-                </button>
+                {twoFactorLoading ? (
+                  <div
+                    role="status"
+                    className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground"
+                  >
+                    Đang tải trạng thái xác thực hai yếu tố...
+                  </div>
+                ) : twoFactorError ? (
+                  <div
+                    role="alert"
+                    className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span>{twoFactorError}</span>
+                    <button
+                      type="button"
+                      onClick={() => void refreshTwoFactorStatus()}
+                      className="shrink-0 rounded-md border border-destructive/30 px-3 py-2 font-medium hover:bg-destructive/10"
+                    >
+                      Tải lại trạng thái
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-primary"
+                    aria-live="polite"
+                  >
+                    <p className="font-semibold">
+                      Trạng thái:{" "}
+                      {twoFactorStatus?.twoFactor.enabled
+                        ? `Đã bật (${twoFactorStatus.twoFactor.method || "app"})`
+                        : twoFactorStatus?.twoFactor.enrollmentPending
+                          ? "Đang chờ xác minh"
+                          : "Chưa bật"}
+                    </p>
+                    <p className="mt-2 text-foreground">
+                      Backend chỉ đánh dấu 2FA là đã bật sau khi quy trình đăng ký hoàn tất xác minh
+                      mã OTP. Platform Admin hiện chỉ đọc trạng thái để không tạo kết quả thành công
+                      giả hoặc làm khóa tài khoản bằng một quy trình chưa đầy đủ.
+                    </p>
+                    <p className="mt-2 text-muted-foreground">
+                      Phương thức khả dụng:{" "}
+                      {twoFactorStatus?.availability.available &&
+                      twoFactorStatus.availability.methods.length > 0
+                        ? twoFactorStatus.availability.methods.join(", ")
+                        : "chưa có"}
+                      . SMS chỉ xuất hiện khi provider thật được cấu hình.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -795,27 +1228,26 @@ export function AccountSettings() {
 
         <Tabs.Content value="notifications" className="space-y-6">
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
-            Tùy chọn thông báo cá nhân được lưu trực tiếp vào hồ sơ tài khoản backend.
+            Mỗi tùy chọn được lưu độc lập và chỉ đổi trạng thái sau khi backend xác nhận đúng tài
+            khoản đang đăng nhập.
           </div>
+          {notificationPreferencesError && (
+            <div
+              role="alert"
+              className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+            >
+              <span>{notificationPreferencesError}</span>
+              <button
+                type="button"
+                onClick={() => void refreshNotificationPreferences()}
+                className="shrink-0 rounded-md border border-destructive/30 px-3 py-2 font-medium hover:bg-destructive/10"
+              >
+                Tải lại tùy chọn
+              </button>
+            </div>
+          )}
           <div className="bg-card border border-border rounded-xl shadow-sm p-6 space-y-4">
-            {[
-              ["doctorRequests", "Bác sĩ mới đăng ký", "Thông báo khi có bác sĩ cần duyệt"],
-              [
-                "abnormalResults",
-                "Cảnh báo kết quả cần xem xét",
-                "Thông báo khi backend ghi nhận cảnh báo cần người có chuyên môn xem xét",
-              ],
-              [
-                "deviceOffline",
-                "Thiết bị offline",
-                "Thông báo khi thiết bị mất kết nối quá 30 phút",
-              ],
-              [
-                "newLogin",
-                "Đăng nhập từ thiết bị lạ",
-                "Thông báo khi tài khoản có phiên đăng nhập mới",
-              ],
-            ].map(([key, title, description]) => (
+            {notificationPreferenceRows.map(({ key, title, description }) => (
               <div
                 key={title}
                 className="flex items-center justify-between gap-4 rounded-lg border border-border p-3"
@@ -825,17 +1257,10 @@ export function AccountSettings() {
                   <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
                 </div>
                 <Switch
-                  checked={
-                    profile.notificationPreferences[
-                      key as keyof ProfileState["notificationPreferences"]
-                    ]
-                  }
-                  onCheckedChange={(checked) =>
-                    void updateNotificationPreference(
-                      key as keyof ProfileState["notificationPreferences"],
-                      checked,
-                    )
-                  }
+                  checked={profile.notificationPreferences[key]}
+                  onCheckedChange={(checked) => void updateNotificationPreference(key, checked)}
+                  disabled={preferencePendingKeys.has(key) || !notificationPreferencesReady}
+                  aria-busy={preferencePendingKeys.has(key)}
                   aria-label={title}
                 />
               </div>
@@ -856,10 +1281,15 @@ function Field({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const inputId = useId();
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
+      <label htmlFor={inputId} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
       <input
+        id={inputId}
+        name={inputId}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
@@ -883,12 +1313,17 @@ function IconField({
   readOnly?: boolean;
   note?: string;
 }) {
+  const inputId = useId();
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
+      <label htmlFor={inputId} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
       <div className="relative">
         <Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
+          id={inputId}
+          name={inputId}
           value={value}
           readOnly={readOnly}
           onChange={(event) => onChange?.(event.target.value)}
@@ -901,67 +1336,51 @@ function IconField({
 }
 
 function PasswordField({
+  id,
   label,
   value,
   show,
+  autoComplete,
+  disabled,
   onToggle,
   onChange,
 }: {
+  id: string;
   label: string;
   value: string;
   show: boolean;
+  autoComplete: "current-password" | "new-password";
+  disabled?: boolean;
   onToggle: () => void;
   onChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
+      <label htmlFor={id} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
       <div className="relative">
         <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
+          id={id}
+          name={id}
           type={show ? "text" : "password"}
+          autoComplete={autoComplete}
           value={value}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full rounded-md border border-border bg-background py-2 pl-10 pr-10 text-sm outline-none focus:border-ring"
+          className="min-h-11 w-full rounded-md border border-border bg-background py-2 pl-10 pr-12 text-sm outline-none focus:border-ring disabled:cursor-not-allowed disabled:opacity-60"
         />
         <button
           type="button"
           onClick={onToggle}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          disabled={disabled}
+          aria-label={`${show ? "Ẩn" : "Hiện"} ${label.toLocaleLowerCase("vi-VN")}`}
+          className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-60"
         >
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </div>
-    </div>
-  );
-}
-
-function ActionRow({
-  title,
-  description,
-  button,
-  disabled = false,
-  onClick,
-}: {
-  title: string;
-  description: string;
-  button: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/20 p-4">
-      <div>
-        <div className="font-medium text-foreground">{title}</div>
-        <div className="mt-1 text-sm text-muted-foreground">{description}</div>
-      </div>
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className="rounded border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-      >
-        {button}
-      </button>
     </div>
   );
 }

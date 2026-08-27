@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/patient-dashboard-snapshot.schema.json",
+  "title": "Shcare patient dashboard snapshot",
+  "description": "The atomic, backend-authoritative patient dashboard payload nested at response.dashboard. It binds one active patient profile, at most five recent scans and at most one device to the authenticated account and current workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "generatedAt",
+    "userId",
+    "workspaceId",
+    "activePatientId",
+    "patient",
+    "sections",
+    "recentScans",
+    "device"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "userId": {
+      "$ref": "#/$defs/canonicalId"
+    },
+    "workspaceId": {
+      "$ref": "#/$defs/canonicalId"
+    },
+    "activePatientId": {
+      "$ref": "#/$defs/canonicalId"
+    },
+    "patient": {
+      "$ref": "#/$defs/patient"
+    },
+    "sections": {
+      "$ref": "#/$defs/sections"
+    },
+    "recentScans": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/scan"
+      }
+    },
+    "device": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/device"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "canonicalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$"
+    },
+    "patient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "organizationId"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "ownerUserId"
+          ]
+        },
+        {
+          "required": [
+            "accountUserId"
+          ]
+        },
+        {
+          "required": [
+            "guardianUserId"
+          ]
+        }
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "patientCode": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "ownerUserId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "accountUserId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "guardianUserId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "profileType": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "relationship": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scans",
+        "device"
+      ],
+      "properties": {
+        "scans": {
+          "enum": [
+            "ready",
+            "empty",
+            "unavailable"
+          ]
+        },
+        "device": {
+          "enum": [
+            "ready",
+            "empty",
+            "unavailable"
+          ]
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "patientId",
+        "organizationId"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "patientId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "mode": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "startedAt": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "organizationId",
+        "ownerUserId",
+        "assignedPatientId",
+        "online"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "organizationId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "ownerUserId": {
+          "$ref": "#/$defs/canonicalId"
+        },
+        "assignedPatientId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "battery": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "signal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": -127,
+          "maximum": 0
+        },
+        "firmwareVersion": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    }
+  }
+}

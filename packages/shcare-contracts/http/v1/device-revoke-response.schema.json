@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-revoke-response.schema.json",
+  "title": "Shcare device revocation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "replayed"],
+  "properties": {
+    "device": {
+      "allOf": [
+        { "$ref": "device-operation-common.schema.json#/$defs/publicDevice" },
+        {
+          "required": ["ownershipState", "revokedAt"],
+          "properties": {
+            "ownershipState": { "const": "revoked" },
+            "status": { "const": "revoked" },
+            "online": { "const": false }
+          }
+        }
+      ]
+    },
+    "replayed": { "type": "boolean" }
+  },
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/devices/{deviceId}/revoke",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-success-level": "ownership-revoked-audit-committed-and-active-socket-closed"
+}

@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-07-29T11:00:00.000Z",
+  "workspaceId": "workspace-a",
+  "status": {
+    "type": "status",
+    "recording": false,
+    "workspaceId": null,
+    "patientId": null,
+    "deviceId": null,
+    "scanId": null,
+    "sessionId": null,
+    "updatedAt": "2026-07-29T11:00:00.000Z"
+  },
+  "devices": [
+    {
+      "id": "device-a",
+      "name": "Shcare A",
+      "organizationId": "workspace-a",
+      "status": "available",
+      "connected": true,
+      "online": false,
+      "audioStatus": "idle",
+      "battery": 84,
+      "ipAddress": "192.0.2.10",
+      "updatedAt": "2026-07-29T10:59:00.000Z"
+    }
+  ],
+  "scans": [
+    {
+      "id": "scan-a",
+      "organizationId": "workspace-a",
+      "patientId": "patient-a",
+      "deviceId": "device-a",
+      "status": "completed",
+      "createdAt": "2026-07-29T10:30:00.000Z",
+      "updatedAt": "2026-07-29T10:35:00.000Z"
+    }
+  ],
+  "alerts": [
+    {
+      "id": "alert-live-1",
+      "organizationId": "workspace-a",
+      "sourceType": "device",
+      "sourceId": "device-a",
+      "dedupeKey": "device:device-a",
+      "occurrenceNumber": 1,
+      "previousAlertId": "",
+      "occurredAt": "2026-07-29T10:55:00.000Z",
+      "status": "open",
+      "severity": "warning",
+      "title": "Thiết bị cần kiểm tra",
+      "message": "Thiết bị chưa gửi heartbeat mới.",
+      "patientId": "patient-a",
+      "deviceId": "device-a",
+      "scanId": "",
+      "acknowledgedByUserId": "",
+      "acknowledgedAt": "",
+      "acknowledgementNote": "",
+      "resolvedByUserId": "",
+      "resolvedAt": "",
+      "resolutionNote": "",
+      "version": 1,
+      "metadata": {},
+      "createdAt": "2026-07-29T10:55:00.000Z",
+      "updatedAt": "2026-07-29T10:55:00.000Z"
+    }
+  ]
+}

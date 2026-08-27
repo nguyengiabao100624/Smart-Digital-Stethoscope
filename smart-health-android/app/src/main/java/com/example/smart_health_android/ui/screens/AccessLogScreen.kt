@@ -1,177 +1,443 @@
 package com.example.smart_health_android.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.smart_health_android.data.AccessLog
-import com.example.smart_health_android.data.SmartHealthRepository
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smart_health_android.R
 import com.example.smart_health_android.data.formatIso
-import com.example.smart_health_android.ui.theme.*
-
-private data class AccessLogEntry(
-    val action: String,
-    val device: String,
-    val location: String,
-    val time: String,
-    val icon: ImageVector,
-    val color: Color
-)
-
-private fun AccessLog.toAccessLogEntry(): AccessLogEntry {
-    val isWarning = severity == "warning" || severity == "error"
-    return AccessLogEntry(
-        action = action,
-        device = device.ifBlank { "Ứng dụng Smart Health" },
-        location = if (ip.isNotBlank()) "${location.ifBlank { "Không rõ vị trí" }} (IP: $ip)" else location.ifBlank { "Không rõ vị trí" },
-        time = formatIso(createdAt, "HH:mm - dd/MM/yyyy"),
-        icon = if (isWarning) Icons.Default.Security else Icons.Default.Smartphone,
-        color = if (isWarning) ErrorRed else PrimaryBlue
-    )
-}
+import com.example.smart_health_android.security.AccessLogLoadState
+import com.example.smart_health_android.security.AccessLogRecord
+import com.example.smart_health_android.security.AccessLogSeverity
+import com.example.smart_health_android.security.AccessLogUiAction
+import com.example.smart_health_android.security.AccessLogUiEffect
+import com.example.smart_health_android.security.AccessLogUiState
+import com.example.smart_health_android.security.AccessLogViewModel
+import com.example.smart_health_android.security.AccessLogViewModelFactory
+import com.example.smart_health_android.ui.components.ShcareEmptyState
+import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareLoadingState
+import com.example.smart_health_android.ui.components.ShcareOfflineState
+import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.components.ShcareSettingsHeader
+import com.example.smart_health_android.ui.theme.ShcareTheme
 
 @Composable
-fun AccessLogScreen(onNavigateBack: () -> Unit) {
-    var logs by remember { mutableStateOf<List<AccessLogEntry>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var loadError by remember { mutableStateOf<String?>(null) }
+fun AccessLogScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: AccessLogViewModel = viewModel(factory = AccessLogViewModelFactory()),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val refreshConfirmedMessage = stringResource(R.string.access_log_refresh_confirmed)
 
-    LaunchedEffect(Unit) {
-        try {
-            logs = SmartHealthRepository.api.listAccessLogs().map { it.toAccessLogEntry() }
-            loadError = null
-        } catch (error: Exception) {
-            loadError = error.message ?: "Không thể tải nhật ký truy cập"
-        } finally {
-            isLoading = false
+    LaunchedEffect(viewModel, refreshConfirmedMessage) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                AccessLogUiEffect.RefreshConfirmed ->
+                    snackbarHostState.showSnackbar(refreshConfirmedMessage)
+            }
         }
     }
 
-    Column(
+    Scaffold(
+        topBar = {
+            ShcareSettingsHeader(
+                title = stringResource(R.string.access_log_title),
+                onNavigateBack = onNavigateBack,
+                actions = {
+                    val refreshEnabled =
+                        !state.isRefreshing &&
+                            state.loadState != AccessLogLoadState.Loading &&
+                            state.loadState != AccessLogLoadState.PermissionDenied
+                    val refreshState = when {
+                        state.loadState == AccessLogLoadState.Loading ->
+                            stringResource(R.string.access_log_loading)
+                        state.isRefreshing ->
+                            stringResource(R.string.access_log_refreshing)
+                        else -> stringResource(R.string.access_log_refresh)
+                    }
+                    IconButton(
+                        onClick = {
+                            viewModel.onAction(
+                                if (state.hasLoaded) {
+                                    AccessLogUiAction.Refresh
+                                } else {
+                                    AccessLogUiAction.Retry
+                                },
+                            )
+                        },
+                        enabled = refreshEnabled,
+                        modifier = Modifier.semantics {
+                            stateDescription = refreshState
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.access_log_refresh),
+                        )
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF9FAFB))
-    ) {
-        SimpleWhiteHeader(title = "Nhật Ký Truy Cập", onNavigateBack = onNavigateBack)
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            Text(
-                "Theo dõi các hoạt động đăng nhập và lịch sử truy cập dữ liệu y tế của bạn.",
-                color = TextSecondary,
-                fontSize = 14.sp,
-                lineHeight = 20.sp
+            .navigationBarsPadding(),
+    ) { innerPadding ->
+        when (state.loadState) {
+            AccessLogLoadState.Loading -> ShcareLoadingState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                message = stringResource(R.string.access_log_loading),
             )
-            Spacer(modifier = Modifier.height(24.dp))
 
-            if (isLoading) {
-                CircularProgressIndicator(color = PrimaryBlue, modifier = Modifier.align(Alignment.CenterHorizontally))
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            loadError?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+            AccessLogLoadState.Empty -> ShcareEmptyState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.access_log_empty_title),
+                message = stringResource(R.string.access_log_empty_message),
+                actionLabel = stringResource(R.string.access_log_refresh),
+                onAction = { viewModel.onAction(AccessLogUiAction.Refresh) },
+            )
 
-            Column(modifier = Modifier.padding(start = 4.dp)) {
-                logs.forEachIndexed { index, log ->
-                    AccessLogTimelineItem(log = log, isLast = index == logs.lastIndex)
+            AccessLogLoadState.PermissionDenied -> ShcarePermissionState(
+                onRequestPermission = onNavigateBack,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.access_log_permission_title),
+                message = accessLogMessageWithRequestId(
+                    message = stringResource(R.string.access_log_permission_message),
+                    requestId = state.requestId,
+                ),
+                actionLabel = stringResource(R.string.shcare_action_back),
+            )
+
+            AccessLogLoadState.Offline -> ShcareOfflineState(
+                onRetry = { viewModel.onAction(AccessLogUiAction.Retry) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.access_log_offline_title),
+                message = stringResource(R.string.access_log_offline_message),
+            )
+
+            AccessLogLoadState.Error -> ShcareErrorState(
+                onRetry = { viewModel.onAction(AccessLogUiAction.Retry) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                title = stringResource(R.string.access_log_error_title),
+                message = accessLogMessageWithRequestId(
+                    message = stringResource(R.string.access_log_error_message),
+                    requestId = state.requestId,
+                ),
+            )
+
+            AccessLogLoadState.Content -> AccessLogContent(
+                state = state,
+                innerPadding = innerPadding,
+                onRefresh = { viewModel.onAction(AccessLogUiAction.Refresh) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccessLogContent(
+    state: AccessLogUiState,
+    innerPadding: PaddingValues,
+    onRefresh: () -> Unit,
+) {
+    val spacing = ShcareTheme.spacing
+    val refreshingDescription = stringResource(R.string.access_log_refreshing)
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(
+            start = spacing.large,
+            top = spacing.large,
+            end = spacing.large,
+            bottom = spacing.tripleExtraLarge,
+        ),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
+                Text(
+                    text = stringResource(R.string.access_log_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.isRefreshing) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics {
+                                stateDescription = refreshingDescription
+                            },
+                    )
+                }
+                if (state.isStale) {
+                    AccessLogStaleBanner(onRefresh = onRefresh)
                 }
             }
         }
+
+        itemsIndexed(
+            items = state.records,
+            key = { index, record ->
+                record.id.ifBlank { "access-log-$index-${record.createdAt.orEmpty()}" }
+            },
+        ) { index, record ->
+            AccessLogTimelineItem(
+                record = record,
+                isLast = index == state.records.lastIndex,
+            )
+        }
     }
 }
 
 @Composable
-private fun AccessLogTimelineItem(log: AccessLogEntry, isLast: Boolean) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+private fun AccessLogStaleBanner(onRefresh: () -> Unit) {
+    val message = stringResource(R.string.access_log_stale_message)
+    Surface(
+        color = ShcareTheme.colors.warningContainer,
+        contentColor = ShcareTheme.colors.onWarningContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = message
+            },
+    ) {
+        Column(
+            modifier = Modifier.padding(ShcareTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        ) {
+            Text(text = message, style = MaterialTheme.typography.bodyMedium)
+            FilledTonalButton(
+                onClick = onRefresh,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.access_log_retry_refresh))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccessLogTimelineItem(
+    record: AccessLogRecord,
+    isLast: Boolean,
+) {
+    val spacing = ShcareTheme.spacing
+    val isWarning = record.severity == AccessLogSeverity.Warning
+    val accentColor = if (isWarning) {
+        MaterialTheme.colorScheme.error
+    } else {
+        ShcareTheme.colors.info
+    }
+    val device = record.device.ifBlank {
+        stringResource(R.string.access_log_default_device)
+    }
+    val location = record.location.ifBlank {
+        stringResource(R.string.access_log_unknown_location)
+    }
+    val locationWithIp = if (record.ip.isBlank()) {
+        location
+    } else {
+        stringResource(R.string.access_log_location_with_ip, location, record.ip)
+    }
+    val timestamp = formatIso(record.createdAt, "HH:mm - dd/MM/yyyy")
+    val severityDescription = if (isWarning) {
+        stringResource(R.string.access_log_severity_warning)
+    } else {
+        stringResource(R.string.access_log_severity_info)
+    }
+    val itemDescription = stringResource(
+        R.string.access_log_item_description,
+        record.action,
+        device,
+        locationWithIp,
+        timestamp,
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = itemDescription
+                stateDescription = severityDescription
+            },
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
                     .size(24.dp)
-                    .background(Color.White, CircleShape)
-                    .border(2.dp, Color(0xFFE5E7EB), CircleShape),
-                contentAlignment = Alignment.Center
+                    .background(MaterialTheme.colorScheme.surface, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(modifier = Modifier.size(10.dp).background(log.color, CircleShape))
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(accentColor, CircleShape),
+                )
             }
             if (!isLast) {
                 Box(
                     modifier = Modifier
                         .width(2.dp)
                         .height(64.dp)
-                        .background(Color(0xFFE5E7EB))
+                        .background(MaterialTheme.colorScheme.outlineVariant),
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(spacing.medium))
 
-        Column(
+        Card(
             modifier = Modifier
                 .weight(1f)
-                .padding(bottom = if (isLast) 0.dp else 16.dp)
-                .background(Color.White, RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
-                .padding(16.dp)
+                .padding(bottom = if (isLast) 0.dp else spacing.small),
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+            Column(
+                modifier = Modifier.padding(spacing.large),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
-                Text(
-                    log.action,
-                    color = if (log.color == ErrorRed) ErrorRed else TextPrimary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    log.time,
-                    color = Color(0xFF9CA3AF),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .background(Color(0xFFF3F4F6), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Icon(
+                        imageVector = if (isWarning) {
+                            Icons.Default.Security
+                        } else {
+                            Icons.Default.Smartphone
+                        },
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = record.action,
+                        color = if (isWarning) accentColor else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { heading() },
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            text = timestamp,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(
+                                horizontal = spacing.small,
+                                vertical = spacing.extraSmall,
+                            ),
+                        )
+                    }
+                }
+                AccessLogMeta(text = device)
+                AccessLogMeta(text = locationWithIp)
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            AccessLogMeta(text = log.device)
-            Spacer(modifier = Modifier.height(4.dp))
-            AccessLogMeta(text = log.location)
         }
     }
 }
 
 @Composable
 private fun AccessLogMeta(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(6.dp).background(Color(0xFFD1D5DB), CircleShape))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text, color = TextSecondary, fontSize = 12.sp, lineHeight = 16.sp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(MaterialTheme.colorScheme.outline, CircleShape),
+        )
+        Text(
+            text = text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
+}
+
+@Composable
+private fun accessLogMessageWithRequestId(
+    message: String,
+    requestId: String,
+): String = if (requestId.isBlank()) {
+    message
+} else {
+    "$message\n${stringResource(R.string.access_log_request_id, requestId)}"
 }

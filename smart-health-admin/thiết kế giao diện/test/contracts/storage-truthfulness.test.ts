@@ -48,7 +48,10 @@ test("storage read models fail closed and partial failures stay independently re
   assert.match(operations, /export function parseStorageFilesResponse/);
   assert.match(operations, /STORAGE_CHART_COLORS/);
   assert.match(api, /async getStorageStats\(\)[\s\S]{0,180}requestJson<unknown>/);
-  assert.match(api, /async listStorageFiles\(\)[\s\S]{0,160}requestJson<unknown>/);
+  assert.match(api, /async listStorageFiles\([\s\S]{0,420}SmartHealthListPagination/);
+  assert.match(source, /filesResult\.value\.pagination/);
+  assert.match(source, /pageSize=\{pagination\.limit\}/);
+  assert.match(source, /totalItems=\{pagination\.totalCount\}/);
 });
 
 test("bucket lifecycle is visibly restricted to Platform Admin", async () => {

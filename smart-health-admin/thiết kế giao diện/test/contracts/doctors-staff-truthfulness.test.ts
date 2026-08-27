@@ -9,13 +9,17 @@ const inviteDialogPath = new URL(
 );
 const apiPath = new URL("../../src/lib/smart-health-api.ts", import.meta.url);
 
-test("doctor list filters only by real values and never fabricates activity counts", async () => {
+test("doctor list delegates filters and pagination to the real API without fabricating activity", async () => {
   const source = await readFile(doctorsPath, "utf8");
+  const api = await readFile(apiPath, "utf8");
 
-  assert.match(source, /const specialtyOptions = useMemo/);
-  assert.match(source, /const clinicOptions = useMemo/);
-  assert.match(source, /doc\.specialty === filterSpecialty/);
-  assert.match(source, /doc\.clinic === filterClinic/);
+  assert.match(source, /smartHealthApi\.listApprovedDoctors\(\{/);
+  assert.match(source, /status: filterStatus === "all" \? undefined : filterStatus/);
+  assert.match(source, /specialty: filterSpecialty === "all" \? undefined : filterSpecialty/);
+  assert.match(source, /clinic: filterClinic === "all" \? undefined : filterClinic/);
+  assert.match(source, /response\.facets\?\.specialties/);
+  assert.match(source, /response\.pagination/);
+  assert.match(api, /X-Total-Count/);
   assert.match(source, /patientsCount: user\.patientsCount \?\? null/);
   assert.match(source, /formatOptionalMetric/);
   assert.doesNotMatch(source, /patientsCount: 0|measurementsCount: 0/);
@@ -31,6 +35,13 @@ test("doctor detail removes synthetic audit, assignment and dead edit controls",
   assert.doesNotMatch(source, />\s*Gán bệnh nhân\s*</);
   assert.doesNotMatch(source, />\s*Chỉnh sửa\s*</);
   assert.doesNotMatch(source, /Timeline/);
+});
+
+test("doctor active states use the accessible success text token", async () => {
+  const source = await readFile(doctorsPath, "utf8");
+
+  assert.match(source, /bg-success\/10 text-success-foreground/);
+  assert.doesNotMatch(source, /text-success(?:\s|")/);
 });
 
 test("Firebase action is a report-only reconciliation with canonical parsing", async () => {

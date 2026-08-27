@@ -8,8 +8,19 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { AlertCircle, CheckCircle2, Info, Loader2, TriangleAlert, type LucideIcon } from "lucide-react";
-import { useBeforeUnload, useBlocker, type BlockerFunction } from "react-router";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Info,
+  Loader2,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  useBeforeUnload,
+  useBlocker,
+  type BlockerFunction,
+} from "react-router";
 
 type ControlProps = {
   id?: string;
@@ -49,6 +60,8 @@ export function AuthField({
   error,
   required,
   action,
+  leadingIcon: LeadingIcon,
+  controlAction,
   children,
 }: {
   id: string;
@@ -57,11 +70,21 @@ export function AuthField({
   error?: string;
   required?: boolean;
   action?: ReactNode;
+  leadingIcon?: LucideIcon;
+  controlAction?: ReactNode;
   children: ReactElement<ControlProps>;
 }) {
   const descriptionIds = [hint ? `${id}-hint` : "", error ? `${id}-error` : ""]
     .filter(Boolean)
     .join(" ");
+  const control = cloneElement(children, {
+    id,
+    name: children.props.name || id,
+    className: `shc-auth-control ${children.props.className || ""}`.trim(),
+    "aria-invalid": Boolean(error),
+    "aria-describedby": descriptionIds || undefined,
+    "aria-required": required || undefined,
+  });
 
   return (
     <div className="shc-auth-field" data-invalid={error ? "true" : undefined}>
@@ -72,14 +95,27 @@ export function AuthField({
         </div>
         {action}
       </div>
-      {cloneElement(children, {
-        id,
-        name: children.props.name || id,
-        className: `shc-auth-control ${children.props.className || ""}`.trim(),
-        "aria-invalid": Boolean(error),
-        "aria-describedby": descriptionIds || undefined,
-        "aria-required": required || undefined,
-      })}
+      {LeadingIcon || controlAction ? (
+        <div
+          className="shc-auth-control-wrap"
+          data-leading-icon={LeadingIcon ? "true" : undefined}
+          data-control-action={controlAction ? "true" : undefined}
+        >
+          {LeadingIcon ? (
+            <LeadingIcon
+              className="shc-auth-input-icon"
+              size={18}
+              aria-hidden="true"
+            />
+          ) : null}
+          {control}
+          {controlAction ? (
+            <span className="shc-auth-control-action">{controlAction}</span>
+          ) : null}
+        </div>
+      ) : (
+        control
+      )}
       {hint ? (
         <p id={`${id}-hint`} className="shc-auth-field-hint">
           {hint}
@@ -148,7 +184,9 @@ export function AuthPrimaryButton({
       aria-busy={loading || undefined}
       className={`shc-auth-primary-button ${className}`.trim()}
     >
-      {loading ? <Loader2 size={18} className="shc-auth-spinner" aria-hidden="true" /> : null}
+      {loading ? (
+        <Loader2 size={18} className="shc-auth-spinner" aria-hidden="true" />
+      ) : null}
       {loading ? <span>{loadingLabel}</span> : children}
     </button>
   );
@@ -158,14 +196,24 @@ export const AuthSecondaryButton = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement>
 >(({ children, className = "", ...props }, ref) => (
-  <button ref={ref} {...props} className={`shc-auth-secondary-button ${className}`.trim()}>
+  <button
+    ref={ref}
+    {...props}
+    className={`shc-auth-secondary-button ${className}`.trim()}
+  >
     {children}
   </button>
 ));
 
 AuthSecondaryButton.displayName = "AuthSecondaryButton";
 
-export function AuthStepper({ steps, current }: { steps: string[]; current: number }) {
+export function AuthStepper({
+  steps,
+  current,
+}: {
+  steps: string[];
+  current: number;
+}) {
   return (
     <nav className="shc-auth-progress" aria-label="Tiến trình đăng ký">
       <p>
@@ -175,7 +223,13 @@ export function AuthStepper({ steps, current }: { steps: string[]; current: numb
         {steps.map((label, index) => (
           <li
             key={label}
-            data-state={index < current ? "complete" : index === current ? "current" : "upcoming"}
+            data-state={
+              index < current
+                ? "complete"
+                : index === current
+                  ? "current"
+                  : "upcoming"
+            }
             aria-current={index === current ? "step" : undefined}
           >
             <span aria-hidden="true">{index < current ? "✓" : index + 1}</span>
@@ -189,7 +243,11 @@ export function AuthStepper({ steps, current }: { steps: string[]; current: numb
 
 export function AuthSubmissionStatus({ label }: { label: string }) {
   return (
-    <div className="shc-auth-submission-status" role="status" aria-live="polite">
+    <div
+      className="shc-auth-submission-status"
+      role="status"
+      aria-live="polite"
+    >
       <Loader2 size={17} className="shc-auth-spinner" aria-hidden="true" />
       <span>{label}</span>
     </div>
@@ -246,10 +304,18 @@ export function AuthUnsavedChangesGuard({ when }: { when: boolean }) {
           Thông tin đang nhập sẽ mất nếu bạn rời trang này.
         </p>
         <div className="shc-auth-guard-actions">
-          <AuthSecondaryButton ref={cancelRef} type="button" onClick={() => blocker.reset()}>
+          <AuthSecondaryButton
+            ref={cancelRef}
+            type="button"
+            onClick={() => blocker.reset()}
+          >
             Tiếp tục chỉnh sửa
           </AuthSecondaryButton>
-          <button type="button" className="shc-auth-danger-button" onClick={() => blocker.proceed()}>
+          <button
+            type="button"
+            className="shc-auth-danger-button"
+            onClick={() => blocker.proceed()}
+          >
             Rời trang
           </button>
         </div>

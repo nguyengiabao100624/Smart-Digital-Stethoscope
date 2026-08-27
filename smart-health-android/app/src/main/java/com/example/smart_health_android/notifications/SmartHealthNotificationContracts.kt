@@ -1,5 +1,9 @@
 package com.example.smart_health_android.notifications
 
+import com.example.smart_health_android.navigation.MobileRouteAccessContext
+import com.example.smart_health_android.navigation.MobileRouteAccessDecision
+import com.example.smart_health_android.navigation.MobileRouteSessionRequirement
+import com.example.smart_health_android.navigation.ShcareMobileRouteContract
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -49,7 +53,7 @@ sealed interface SmartHealthNotificationDestination {
     }
 
     data object DeviceManagement : SmartHealthNotificationDestination {
-        override val route = "bluetooth-settings"
+        override val route = "device-management"
         override val wireName = "device_management"
     }
 
@@ -84,7 +88,8 @@ sealed interface SmartHealthNotificationDestination {
                         return identifier?.let(::RecordDetail) ?: Inbox
                     }
                     "monitoring", "live_monitoring", "active_scan" -> return Monitoring(scanId)
-                    "device_management", "devices", "bluetooth_settings" -> return DeviceManagement
+                    "device_management", "device_detail", "device_pairing", "devices",
+                    "bluetooth_settings" -> return DeviceManagement
                     "doctor_approval", "doctor_approval_pending", "role_request" -> return DoctorApproval
                     "ai_assistant", "assistant" -> return AiAssistant
                 }
@@ -119,7 +124,7 @@ sealed interface SmartHealthNotificationDestination {
                     ?: Appointments
                 "record_detail" -> identifier?.takeIf(String::isNotBlank)?.let(::RecordDetail) ?: Inbox
                 "monitoring" -> Monitoring(identifier?.takeIf(String::isNotBlank))
-                "device_management" -> DeviceManagement
+                "device_management", "device_detail", "device_pairing" -> DeviceManagement
                 "doctor_approval" -> DoctorApproval
                 "ai_assistant" -> AiAssistant
                 else -> Inbox
@@ -151,75 +156,59 @@ enum class SmartHealthNotificationChannel(val channelId: String) {
 
 enum class NotificationPreferenceField(val backendKey: String) {
     Enabled("enabled"),
-    Sound("sound"),
-    Vibration("vibration"),
+    DoctorRequests("doctorRequests"),
     AbnormalResults("abnormalResults"),
     DeviceOffline("deviceOffline"),
     Appointments("appointments"),
-    AiUpdates("aiUpdates"),
     Messages("messages"),
+    AiUpdates("aiUpdates"),
+    NewLogin("newLogin"),
 }
 
 data class NotificationPreferenceMutation(
     val field: NotificationPreferenceField,
     val value: Boolean,
 ) {
-    fun requestFields(
-        currentPreferences: Map<String, Boolean>,
-    ): Map<String, Map<String, Boolean>> {
-        val mergedPreferences = LinkedHashMap(currentPreferences)
-        mergedPreferences[field.backendKey] = value
-        return mapOf("notificationPreferences" to mergedPreferences)
-    }
-}
-
-sealed interface NotificationPermissionDecision {
-    data object RequestSystemPermission : NotificationPermissionDecision
-
-    data class Persist(
-        val mutation: NotificationPreferenceMutation,
-    ) : NotificationPermissionDecision
-}
-
-object NotificationPermissionPolicy {
-    fun onToggle(
-        requestedEnabled: Boolean,
-        hasSystemPermission: Boolean,
-    ): NotificationPermissionDecision {
-        return if (requestedEnabled && !hasSystemPermission) {
-            NotificationPermissionDecision.RequestSystemPermission
-        } else {
-            NotificationPermissionDecision.Persist(
-                NotificationPreferenceMutation(NotificationPreferenceField.Enabled, requestedEnabled)
-            )
-        }
-    }
-
-    fun onPermissionResult(granted: Boolean): NotificationPermissionDecision.Persist {
-        return NotificationPermissionDecision.Persist(
-            NotificationPreferenceMutation(NotificationPreferenceField.Enabled, granted)
+    fun requestFields(): Map<String, Any> {
+        return linkedMapOf(
+            "key" to field.backendKey,
+            "enabled" to value,
         )
     }
 }
 
 object NotificationNavigationPolicy {
-    private val unauthenticatedRoutes = setOf(
-        "splash",
-        "login",
-        "sign-up",
-        "forgot-password",
-        "phone-login",
-        "verify-email",
-        "doctor-approval-pending",
-    )
-
     fun canNavigate(
         currentRoute: String?,
+        destinationRoute: String,
         hasAuthenticatedSession: Boolean,
+        hasMatchingNotificationOwner: Boolean,
+        authority: MobileRouteAccessContext?,
+        expectedAuthorityEpoch: Long = authority?.authorityEpoch ?: -1L,
     ): Boolean {
-        if (!hasAuthenticatedSession || currentRoute.isNullOrBlank()) return false
-        val routeRoot = currentRoute.substringBefore('?').substringBefore('/')
-        return routeRoot !in unauthenticatedRoutes
+        if (
+            !hasAuthenticatedSession ||
+            !hasMatchingNotificationOwner ||
+            authority == null ||
+            currentRoute.isNullOrBlank()
+        ) {
+            return false
+        }
+        val currentContract = ShcareMobileRouteContract.resolve(currentRoute) ?: return false
+        val destinationContract =
+            ShcareMobileRouteContract.resolve(destinationRoute) ?: return false
+        if (
+            currentContract.sessionRequirement != MobileRouteSessionRequirement.Authenticated ||
+            destinationContract.sessionRequirement != MobileRouteSessionRequirement.Authenticated
+        ) {
+            return false
+        }
+
+        return ShcareMobileRouteContract.evaluate(
+            contract = destinationContract,
+            context = authority,
+            expectedAuthorityEpoch = expectedAuthorityEpoch,
+        ) is MobileRouteAccessDecision.Allowed
     }
 }
 

@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-07-29T03:00:00.000Z",
+  "workspaceId": "workspace-clinic-1",
+  "range": {
+    "key": "today",
+    "label": "Hôm nay",
+    "startAt": "2026-07-28T17:00:00.000Z",
+    "endAt": "2026-07-29T03:00:00.000Z",
+    "timezoneOffsetMinutes": 420,
+    "bucket": "4h"
+  },
+  "stats": {
+    "clinics": 1,
+    "workspaces": 1,
+    "patientsCount": 3,
+    "pendingDoctors": 0,
+    "devicesCount": 2,
+    "devicesOnline": 1,
+    "scansCount": 4,
+    "aiJobsFailed": 1,
+    "storageBytes": 2048,
+    "storageUsed": "0 MB"
+  },
+  "measureData": [
+    {
+      "time": "00:00",
+      "count": 1
+    },
+    {
+      "time": "04:00",
+      "count": 1
+    },
+    {
+      "time": "08:00",
+      "count": 2
+    }
+  ],
+  "deviceData": [
+    {
+      "key": "online",
+      "name": "Đang hoạt động",
+      "value": 1,
+      "color": "#18794E"
+    },
+    {
+      "key": "offline",
+      "name": "Mất kết nối",
+      "value": 1,
+      "color": "#D8E3EA"
+    }
+  ],
+  "aiJobData": [
+    {
+      "key": "processing",
+      "name": "Đang xử lý",
+      "value": 1,
+      "color": "#2563A6"
+    },
+    {
+      "key": "completed",
+      "name": "Hoàn tất",
+      "value": 2,
+      "color": "#18794E"
+    },
+    {
+      "key": "failed",
+      "name": "Thất bại",
+      "value": 1,
+      "color": "#B4233A"
+    },
+    {
+      "key": "pending",
+      "name": "Chờ xử lý",
+      "value": 0,
+      "color": "#A15C00"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-wifi-setup-request.schema.json",
+  "title": "Shcare ESPTouch V2 setup-session request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["supportedTransports"],
+  "properties": {
+    "supportedTransports": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": { "const": "esptouch_v2" }
+    }
+  }
+}

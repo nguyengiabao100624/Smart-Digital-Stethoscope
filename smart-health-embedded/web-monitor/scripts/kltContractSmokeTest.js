@@ -117,10 +117,10 @@ function run() {
   assertIncludes(firmware, "#define I2S_WS 12", "firmware keeps MSM261 WS pin");
   assertIncludes(firmware, "#define I2S_SCK 11", "firmware keeps MSM261 SCK pin");
   assertIncludes(firmware, "#define I2S_SD 10", "firmware keeps MSM261 SD pin");
-  assertIncludes(firmware, "int16_t pcmBuffer[BUFFER_LEN]", "firmware outputs PCM16 buffer");
-  assertIncludes(firmware, "void sendAudioCloud(const int samplesRead)", "firmware has cloud audio sender");
+  assertIncludes(firmware, "int16_t pcm[BUFFER_LEN] = {}", "firmware queues bounded PCM16 capture frames");
+  assertIncludes(firmware, "void drainAudioCaptureQueue(std::size_t maxPackets)", "firmware drains capture frames on the network loop");
   assertIncludes(firmware, "shcare::buildAudioFrameV2(", "firmware sends source-bound SHC2 frames");
-  assertIncludes(firmware, "sendAudioUdp(samplesRead)", "firmware falls back to UDP audio");
+  assertIncludes(firmware, "sendAudioUdp(item.pcm, item.sampleCount)", "firmware falls back to UDP audio");
 
   assertIncludes(androidLiveAudio, "class LiveAudioClient", "Android has live audio client");
   assertIncludes(androidLiveAudio, "override fun onMessage(webSocket: WebSocket, bytes: ByteString)", "Android handles binary SHC2 frames");

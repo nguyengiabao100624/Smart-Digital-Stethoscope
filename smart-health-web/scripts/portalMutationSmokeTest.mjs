@@ -2,7 +2,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
@@ -29,6 +28,8 @@ const credentialsPath =
 const accountKey = process.env.SMOKE_ACCOUNT_KEY || "workspace";
 const runId = `portal-mutation-${Date.now().toString(36)}`;
 const disableWebSecurity = process.env.SMOKE_DISABLE_WEB_SECURITY === "1";
+const allowDurableSupportTicket =
+  process.env.SMOKE_ALLOW_DURABLE_SUPPORT_TICKET === "1";
 
 const sensitiveHeaderNames = new Set(["authorization", "cookie", "set-cookie"]);
 const watchPatterns = [
@@ -42,7 +43,7 @@ const watchPatterns = [
   "/api/portal/settings",
   "/api/portal/reports",
   "/api/v1/exports",
-  "/api/portal/support",
+  "/api/v1/portal/support",
   "/api/share-targets",
 ];
 
@@ -635,50 +636,12 @@ async function exerciseDeviceAssignment(page, patientId, state) {
   };
 }
 
-async function exerciseDeviceClaim(page, state) {
-  const deviceId = `claim_${runId.replace(/[^a-z0-9]/gi, "_")}`;
-  const provision = await apiFetch(page, "/portal/devices/provision-qr", {
-    method: "POST",
-    body: {
-      deviceId,
-      name: `Claim smoke ${runId}`,
-      deviceSecret: randomBytes(48).toString("base64url"),
-    },
-  });
-  const claimCode = provision.payload?.claim?.claimCode;
-  if (!claimCode) {
-    throw new Error("claim device: backend did not return a claim code");
-  }
-  state.claimedDevice = { deviceId, deleted: false };
-
-  await page.goto(`${siteUrl}/portal/devices/claim?smoke=${runId}`, {
-    waitUntil: "domcontentloaded",
-  });
-  await waitSettled(page);
-  await page.waitForSelector("#claim-device-id", { timeout: 20_000 });
-  await page.locator("#claim-device-id").fill(deviceId);
-  await page.locator("#claim-device-code").fill(claimCode);
-  await page.locator("#claim-device-name").fill(`Claim smoke ${runId}`);
-
-  const claimResponse = waitForApiResponse(
-    page,
-    "/api/portal/devices/pair",
-    "POST",
-  );
-  await page.locator("#claim-device-submit").click();
-  const payload = await readResponsePayload(
-    await claimResponse,
-    "claim device",
-  );
-  if (payload?.device?.id !== deviceId) {
-    throw new Error(
-      `claim device: expected ${deviceId}, received ${payload?.device?.id || "empty"}`,
-    );
-  }
+function exerciseDeviceClaim() {
   return {
-    deviceId,
-    pairedUserId: payload.device.pairedUserId || "",
-    status: payload.device.status || "",
+    skipped: true,
+    state: "BLOCKED",
+    reason:
+      "Device claim browser proof requires a dedicated factory-enrolled, pre-provisioned one-time artifact and Platform Admin cleanup. The generic Portal smoke must not mint credentials, provision inventory, or hard-delete ownership.",
   };
 }
 
@@ -1056,7 +1019,7 @@ async function exerciseReportExport(page) {
   };
 }
 
-async function exerciseSupportTicket(page, state) {
+async function exerciseSupportTicket(page) {
   await page.goto(`${siteUrl}/portal/help?smoke=${runId}`, {
     waitUntil: "domcontentloaded",
   });
@@ -1067,25 +1030,60 @@ async function exerciseSupportTicket(page, state) {
     .locator("#support-ticket-description")
     .fill(`Controlled support ticket smoke ${runId}`);
 
-  const supportResponse = waitForApiResponse(
+  const supportResponsePromise = waitForApiResponse(
     page,
-    "/api/portal/support",
+    "/api/v1/portal/support",
     "POST",
   );
   await page.locator("#support-ticket-submit").click();
-  const payload = await readResponsePayload(
-    await supportResponse,
-    "create support ticket",
-  );
-  const ticketId = payload?.ticket?.id;
-  if (!ticketId) {
+  const supportResponse = await supportResponsePromise;
+  if (supportResponse.status() !== 201) {
     throw new Error(
-      "create support ticket: response did not include ticket.id",
+      `create support ticket: expected HTTP 201, got ${supportResponse.status()}`,
     );
   }
-  state.supportNotificationId = ticketId;
+  const idempotencyKey = mutationIdempotencyKey(
+    supportResponse,
+    "create support ticket",
+  );
+  const requestBody = supportResponse.request().postDataJSON();
+  if (
+    Object.hasOwn(requestBody || {}, "workspaceId") ||
+    Object.hasOwn(requestBody || {}, "requesterUserId")
+  ) {
+    throw new Error(
+      "create support ticket: client leaked workspace or requester authority",
+    );
+  }
+  const payload = await readResponsePayload(
+    supportResponse,
+    "create support ticket",
+  );
+  const ticket = payload?.ticket;
+  if (
+    !ticket?.id ||
+    !ticket.workspaceId ||
+    !ticket.requesterUserId ||
+    ticket.status !== "open" ||
+    payload.replayed !== false
+  ) {
+    throw new Error(
+      `create support ticket: invalid canonical receipt ${JSON.stringify(payload)}`,
+    );
+  }
   await page.waitForSelector("#support-ticket-success", { timeout: 20_000 });
-  return { ticketId, status: payload.ticket.status || "open" };
+  return {
+    ticketId: ticket.id,
+    workspaceId: ticket.workspaceId,
+    requesterUserId: ticket.requesterUserId,
+    status: ticket.status,
+    idempotencyKeyPresent: Boolean(idempotencyKey),
+    cleanup: {
+      state: "blocked",
+      reason:
+        "Support tickets are a durable ledger and no requester withdrawal contract exists yet.",
+    },
+  };
 }
 
 async function deletePatientViaUi(page, patientId, state) {
@@ -1343,58 +1341,6 @@ async function restoreIfNeeded(page, state, cleanupResults) {
     state.appointmentId = "";
   }
 
-  if (state.supportNotificationId) {
-    await apiFetch(
-      page,
-      `/portal/notifications/${encodeURIComponent(state.supportNotificationId)}`,
-      {
-        method: "DELETE",
-        allowFailure: true,
-      },
-    )
-      .then((result) =>
-        cleanupResults.push({
-          target: "support notification",
-          ok: result.ok || result.status === 404,
-          status: result.status,
-        }),
-      )
-      .catch((error) =>
-        cleanupResults.push({
-          target: "support notification",
-          ok: false,
-          error: error.message,
-        }),
-      );
-    state.supportNotificationId = "";
-  }
-
-  if (state.claimedDevice?.deviceId && state.claimedDevice.deleted !== true) {
-    await apiFetch(
-      page,
-      `/portal/devices/${encodeURIComponent(state.claimedDevice.deviceId)}`,
-      {
-        method: "DELETE",
-        allowFailure: true,
-      },
-    )
-      .then((result) =>
-        cleanupResults.push({
-          target: "claimed device",
-          ok: result.ok || result.status === 404,
-          status: result.status,
-        }),
-      )
-      .catch((error) =>
-        cleanupResults.push({
-          target: "claimed device",
-          ok: false,
-          error: error.message,
-        }),
-      );
-    state.claimedDevice.deleted = true;
-  }
-
   if (state.patientShare?.shareId && state.patientShare.revoked !== true) {
     await apiFetch(
       page,
@@ -1516,7 +1462,7 @@ async function main() {
       state,
     );
 
-    const deviceClaim = await exerciseDeviceClaim(page, state);
+    const deviceClaim = exerciseDeviceClaim();
 
     const deviceAssignment = await exerciseDeviceAssignment(
       page,
@@ -1554,24 +1500,6 @@ async function main() {
       });
     }
 
-    if (state.claimedDevice?.deviceId && state.claimedDevice.deleted !== true) {
-      const claimedCleanup = await apiFetch(
-        page,
-        `/portal/devices/${encodeURIComponent(state.claimedDevice.deviceId)}`,
-        {
-          method: "DELETE",
-          allowFailure: true,
-        },
-      );
-      cleanupResults.push({
-        target: "claimed device",
-        ok: claimedCleanup.ok || claimedCleanup.status === 404,
-        status: claimedCleanup.status,
-        phase: "main",
-      });
-      state.claimedDevice.deleted = true;
-    }
-
     if (state.settings?.workspaceSaved) {
       await apiFetch(page, "/portal/settings/workspace", {
         method: "PATCH",
@@ -1598,24 +1526,13 @@ async function main() {
     }
 
     const reportExport = await exerciseReportExport(page);
-    const supportTicket = await exerciseSupportTicket(page, state);
-    if (state.supportNotificationId) {
-      const supportCleanupResult = await apiFetch(
-        page,
-        `/portal/notifications/${encodeURIComponent(state.supportNotificationId)}`,
-        {
-          method: "DELETE",
-          allowFailure: true,
-        },
-      );
-      cleanupResults.push({
-        target: "support notification",
-        ok: supportCleanupResult.ok || supportCleanupResult.status === 404,
-        status: supportCleanupResult.status,
-        phase: "main",
-      });
-      state.supportNotificationId = "";
-    }
+    const supportTicket = allowDurableSupportTicket
+      ? await exerciseSupportTicket(page)
+      : {
+          status: "BLOCKED",
+          reason:
+            "Set SMOKE_ALLOW_DURABLE_SUPPORT_TICKET=1 only when retaining a provider support ticket is explicitly acceptable; no cleanup contract exists yet.",
+        };
     const deletedPatientId = state.patientId;
     const patientDelete = await deletePatientViaUi(
       page,

@@ -4,6 +4,18 @@ import type {
   PatientImportRow,
 } from "./smart-health-api";
 
+export type PatientImportValidationExpectation = {
+  workspaceId: string;
+  fileName: string;
+  fileSizeBytes: number;
+};
+
+export type PatientImportBatchExpectation = {
+  workspaceId: string;
+  batchId: string;
+  minimumVersion: number;
+};
+
 function recordOf(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -189,33 +201,83 @@ export function parsePatientImportBatch(value: unknown): PatientImportBatch {
   };
 }
 
-export function parsePatientImportValidationOutcome(response: unknown) {
+function requireBatchWorkspace(
+  batch: PatientImportBatch,
+  expectedWorkspaceId: string,
+) {
+  if (!expectedWorkspaceId || batch.organizationId !== expectedWorkspaceId) {
+    throw new Error("Batch import không thuộc workspace hiện tại.");
+  }
+  return batch;
+}
+
+function requireBatchIdentity(
+  batch: PatientImportBatch,
+  expectation: PatientImportBatchExpectation,
+) {
+  requireBatchWorkspace(batch, expectation.workspaceId);
+  if (batch.id !== expectation.batchId) {
+    throw new Error("Backend chưa xác nhận đúng batch import hiện tại.");
+  }
+  if (batch.version < expectation.minimumVersion) {
+    throw new Error("Backend trả về version cũ hơn batch import đang hiển thị.");
+  }
+  return batch;
+}
+
+export function parsePatientImportValidationOutcome(
+  response: unknown,
+  expectation: PatientImportValidationExpectation,
+) {
   const record = recordOf(response);
   if (typeof record.replayed !== "boolean") {
     throw new Error("Phản hồi validate import thiếu trạng thái replayed.");
   }
-  const batch = parsePatientImportBatch(record.batch);
+  const batch = requireBatchWorkspace(
+    parsePatientImportBatch(record.batch),
+    expectation.workspaceId,
+  );
+  if (
+    batch.fileName !== expectation.fileName ||
+    batch.fileSizeBytes !== expectation.fileSizeBytes
+  ) {
+    throw new Error("Backend chưa xác nhận đúng file đã chọn để import.");
+  }
   if (batch.status === "committed") {
     throw new Error("Validate import không được trả về batch đã commit.");
   }
   return { batch, replayed: record.replayed };
 }
 
-export function parsePatientImportDetail(response: unknown) {
-  return parsePatientImportBatch(recordOf(response).batch);
+export function parsePatientImportDetail(
+  response: unknown,
+  expectation: PatientImportBatchExpectation,
+) {
+  return requireBatchIdentity(
+    parsePatientImportBatch(recordOf(response).batch),
+    expectation,
+  );
 }
 
 export function parsePatientImportCommitOutcome(
   response: unknown,
-  expectedBatchId: string,
+  expectation: PatientImportBatchExpectation,
 ) {
   const record = recordOf(response);
   if (typeof record.replayed !== "boolean") {
     throw new Error("Phản hồi commit import thiếu trạng thái replayed.");
   }
-  const batch = parsePatientImportBatch(record.batch);
-  if (batch.id !== expectedBatchId || batch.status !== "committed") {
+  const batch = requireBatchIdentity(
+    parsePatientImportBatch(record.batch),
+    expectation,
+  );
+  if (batch.status !== "committed") {
     throw new Error("Backend chưa xác nhận đúng batch import đã commit.");
+  }
+  if (batch.version <= expectation.minimumVersion) {
+    throw new Error(
+      "Backend chưa xác nhận version mới hơn sau khi commit batch import.",
+    );
   }
   const importedCount = nonNegativeInteger(
     record.importedCount,

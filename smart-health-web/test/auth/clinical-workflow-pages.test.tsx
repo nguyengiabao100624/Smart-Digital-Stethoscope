@@ -14,39 +14,85 @@ const api = vi.hoisted(() => ({
   resolveClinicalAlert: vi.fn(),
 }));
 
+const auth = vi.hoisted(() => ({
+  user: {
+    currentWorkspace: { id: "workspace-a" },
+    capabilities: ["workspace.review.manage", "workspace.alerts.manage"],
+  },
+}));
+
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+
 vi.mock("../../src/lib/smart-health-api", () => ({ smartHealthApi: api }));
 vi.mock("../../src/app/context/AuthContext", () => ({
-  useAuth: () => ({
-    user: {
-      currentWorkspace: { id: "workspace-a" },
-      capabilities: ["workspace.review.manage", "workspace.alerts.manage"],
-    },
-  }),
+  useAuth: () => ({ user: auth.user }),
 }));
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
-}));
+vi.mock("sonner", () => ({ toast }));
 
-const pendingReview = {
-  id: "review-1",
-  scanId: "scan-1",
-  patientId: "patient-1",
-  deviceId: "device-1",
-  status: "pending" as const,
-  version: 1,
-};
+function review(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "review-1",
+    scanId: "scan-1",
+    organizationId: "workspace-a",
+    patientId: "patient-1",
+    deviceId: "device-1",
+    status: "pending" as const,
+    decision: "",
+    note: "",
+    reviewerUserId: "",
+    reviewedAt: "",
+    version: 1,
+    scanStatus: "needs_review",
+    scanCreatedAt: "2026-07-29T08:00:00.000Z",
+    createdAt: "",
+    updatedAt: "2026-07-29T08:00:00.000Z",
+    ...overrides,
+  };
+}
 
-const openAlert = {
-  id: "alert-1",
-  title: "Tín hiệu cần chú ý",
-  message: "Chất lượng tín hiệu thấp",
-  sourceType: "scan",
-  sourceId: "scan-1",
-  scanId: "scan-1",
-  status: "open" as const,
-  severity: "warning",
-  version: 1,
-};
+function alert(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "alert-1",
+    organizationId: "workspace-a",
+    title: "Tín hiệu cần chú ý",
+    message: "Chất lượng tín hiệu thấp",
+    sourceType: "scan",
+    sourceId: "scan-1",
+    dedupeKey: "scan:scan-1",
+    occurrenceNumber: 1,
+    previousAlertId: "",
+    occurredAt: "2026-07-29T08:00:00.000Z",
+    patientId: "patient-1",
+    deviceId: "device-1",
+    scanId: "scan-1",
+    status: "open" as const,
+    severity: "warning",
+    acknowledgedByUserId: "",
+    acknowledgedAt: "",
+    acknowledgementNote: "",
+    resolvedByUserId: "",
+    resolvedAt: "",
+    resolutionNote: "",
+    version: 1,
+    metadata: {},
+    createdAt: "2026-07-29T08:00:00.000Z",
+    updatedAt: "2026-07-29T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function pageTree(page: "review" | "alert", client: QueryClient) {
+  return (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        {page === "review" ? <ReviewQueuePage /> : <AlertCenterPage />}
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
 
 function renderPage(page: "review" | "alert") {
   const client = new QueryClient({
@@ -55,27 +101,41 @@ function renderPage(page: "review" | "alert") {
       mutations: { retry: false },
     },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter>
-        {page === "review" ? <ReviewQueuePage /> : <AlertCenterPage />}
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+  return { ...render(pageTree(page, client)), client };
 }
 
 describe("clinical workflow pages", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
-    api.listReviewQueue.mockResolvedValue({ reviews: [pendingReview] });
-    api.listClinicalAlerts.mockResolvedValue({ alerts: [openAlert] });
+    toast.success.mockReset();
+    toast.error.mockReset();
+    auth.user.currentWorkspace = { id: "workspace-a" };
+    auth.user.capabilities = [
+      "workspace.review.manage",
+      "workspace.alerts.manage",
+    ];
+    api.listReviewQueue.mockResolvedValue({
+      workspaceId: "workspace-a",
+      reviews: [review()],
+    });
+    api.listClinicalAlerts.mockResolvedValue({
+      workspaceId: "workspace-a",
+      alerts: [alert()],
+    });
   });
 
   it("retries one review submission with the same idempotency key", async () => {
     api.decideReview
       .mockRejectedValueOnce(new Error("Network offline"))
       .mockResolvedValueOnce({
-        review: { ...pendingReview, status: "reviewed", decision: "accepted", version: 2 },
+        workspaceId: "workspace-a",
+        review: review({
+          status: "reviewed",
+          decision: "accepted",
+          reviewerUserId: "doctor-1",
+          reviewedAt: "2026-07-29T08:10:00.000Z",
+          version: 2,
+        }),
       });
     renderPage("review");
 
@@ -121,8 +181,14 @@ describe("clinical workflow pages", () => {
       code: "REVIEW_VERSION_CONFLICT",
     });
     api.listReviewQueue
-      .mockResolvedValueOnce({ reviews: [pendingReview] })
-      .mockResolvedValue({ reviews: [{ ...pendingReview, version: 2 }] });
+      .mockResolvedValueOnce({
+        workspaceId: "workspace-a",
+        reviews: [review()],
+      })
+      .mockResolvedValue({
+        workspaceId: "workspace-a",
+        reviews: [review({ version: 2 })],
+      });
     api.decideReview.mockRejectedValueOnce(conflict);
     renderPage("review");
 
@@ -154,7 +220,13 @@ describe("clinical workflow pages", () => {
     api.acknowledgeClinicalAlert
       .mockRejectedValueOnce(new Error("Connection lost"))
       .mockResolvedValueOnce({
-        alert: { ...openAlert, status: "acknowledged", version: 2 },
+        workspaceId: "workspace-a",
+        alert: alert({
+          status: "acknowledged",
+          acknowledgedByUserId: "doctor-1",
+          acknowledgedAt: "2026-07-29T08:10:00.000Z",
+          version: 2,
+        }),
       });
     renderPage("alert");
 
@@ -168,5 +240,119 @@ describe("clinical workflow pages", () => {
     expect(api.acknowledgeClinicalAlert.mock.calls[1][1].idempotencyKey).toBe(
       api.acknowledgeClinicalAlert.mock.calls[0][1].idempotencyKey,
     );
+  });
+
+  it("fails closed instead of rendering a foreign-workspace review row", async () => {
+    api.listReviewQueue.mockResolvedValue({
+      workspaceId: "workspace-a",
+      reviews: [
+        review({
+          organizationId: "workspace-b",
+          patientId: "PHI workspace B",
+        }),
+      ],
+    });
+
+    renderPage("review");
+
+    expect(
+      await screen.findByText(/không thuộc workspace hiện tại/i),
+    ).toBeVisible();
+    expect(screen.queryByText("PHI workspace B")).not.toBeInTheDocument();
+  });
+
+  it("does not publish review success for a foreign mutation receipt", async () => {
+    api.decideReview.mockResolvedValue({
+      workspaceId: "workspace-b",
+      review: review({
+        organizationId: "workspace-b",
+        status: "reviewed",
+        decision: "accepted",
+        reviewerUserId: "doctor-b",
+        reviewedAt: "2026-07-29T08:10:00.000Z",
+        version: 2,
+      }),
+    });
+
+    renderPage("review");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ghi nhận quyết định" }),
+    );
+
+    expect(
+      await screen.findByText(/không thuộc workspace hiện tại/i),
+    ).toBeVisible();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("suppresses a late review outcome after the workspace changes", async () => {
+    let resolveDecision:
+      | ((value: {
+          workspaceId: string;
+          review: ReturnType<typeof review>;
+        }) => void)
+      | undefined;
+    api.decideReview.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDecision = resolve;
+        }),
+    );
+
+    const { rerender, client } = renderPage("review");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ghi nhận quyết định" }),
+    );
+    await waitFor(() => expect(api.decideReview).toHaveBeenCalledTimes(1));
+
+    auth.user.currentWorkspace = { id: "workspace-b" };
+    api.listReviewQueue.mockResolvedValue({
+      workspaceId: "workspace-b",
+      reviews: [
+        review({
+          id: "review-b",
+          scanId: "scan-b",
+          organizationId: "workspace-b",
+          patientId: "Bệnh nhân B",
+          deviceId: "device-b",
+        }),
+      ],
+    });
+    rerender(pageTree("review", client));
+
+    resolveDecision?.({
+      workspaceId: "workspace-a",
+      review: review({
+        status: "reviewed",
+        decision: "accepted",
+        reviewerUserId: "doctor-a",
+        reviewedAt: "2026-07-29T08:10:00.000Z",
+        version: 2,
+      }),
+    });
+
+    expect(await screen.findByText("Bệnh nhân B")).toBeVisible();
+    await waitFor(() => expect(toast.success).not.toHaveBeenCalled());
+  });
+
+  it("does not publish alert success for a mismatched receipt", async () => {
+    api.acknowledgeClinicalAlert.mockResolvedValue({
+      workspaceId: "workspace-a",
+      alert: alert({
+        id: "alert-other",
+        status: "acknowledged",
+        acknowledgedByUserId: "doctor-1",
+        acknowledgedAt: "2026-07-29T08:10:00.000Z",
+        version: 2,
+      }),
+    });
+
+    renderPage("alert");
+    fireEvent.click(await screen.findByRole("button", { name: "Tiếp nhận" }));
+
+    expect(
+      await screen.findByText(/không trả về đúng cảnh báo/i),
+    ).toBeVisible();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

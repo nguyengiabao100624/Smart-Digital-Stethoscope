@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.shcare.vn/http/v1/notification-device-registration-ack.schema.json",
+  "title": "Shcare notification device registration acknowledgement",
+  "description": "Backend-confirmed owner binding for an FCM token. A client may activate delivery only after every echoed owner and client-version field matches its current authenticated context and submitted request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device"],
+  "properties": {
+    "device": {
+      "$ref": "#/$defs/deviceAcknowledgement"
+    }
+  },
+  "$defs": {
+    "deviceAcknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "userId",
+        "workspaceId",
+        "fcmToken",
+        "authSessionId",
+        "platform",
+        "enabled",
+        "notificationProtocolVersion",
+        "appVersion",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "deprecated": true,
+          "description": "Compatibility alias only. When emitted, it must equal workspaceId."
+        },
+        "fcmToken": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 4096
+        },
+        "authSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "platform": {
+          "const": "android"
+        },
+        "enabled": {
+          "const": true
+        },
+        "notificationProtocolVersion": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "appVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

@@ -54,7 +54,7 @@ function formatNotificationTime(value?: string | null) {
 function mapBackendNotification(notification: SmartHealthNotification): NotificationItem {
   return {
     id: notification.id,
-    title: notification.title || "Thông báo Smart Health",
+    title: notification.title || "Thông báo Shcare",
     message: notification.message || "Backend chưa có nội dung chi tiết.",
     time: formatNotificationTime(notification.createdAt || notification.updatedAt),
     type: notification.type || "info",
@@ -168,9 +168,9 @@ export function Notifications() {
   const getTypeBadgeClass = (type: string) => {
     switch (getNotificationTone(type)) {
       case "warning":
-        return "border-warning/30 bg-warning/10 text-[#B45309]";
+        return "border-warning/30 bg-warning/10 text-warning-foreground";
       case "success":
-        return "border-success/30 bg-success/10 text-[#12613D] dark:text-success";
+        return "border-success/30 bg-success/10 text-success-foreground";
       case "error":
         return "border-destructive/30 bg-destructive/10 text-destructive";
       case "info":
@@ -454,7 +454,7 @@ export function Notifications() {
       />
 
       {backendError && (
-        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-[#B45309]">
+        <div className="rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
           Chưa tải được thông báo từ backend. Trang sẽ không dùng dữ liệu mẫu để tránh hiển thị sai:{" "}
           {backendError}
         </div>

@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const http = require("node:http");
 const { spawn } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
@@ -90,6 +92,58 @@ async function postJson(url, body, headers = {}) {
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+}
+
+async function postBuffer(url, body, headers = {}) {
+  return fetch(url, {
+    method: "POST",
+    headers,
+    body,
+  });
+}
+
+async function postChunkedBuffers(url, chunks, headers = {}) {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method: "POST",
+        headers,
+      },
+      (response) => {
+        const responseChunks = [];
+        response.on("data", (chunk) => responseChunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(responseChunks).toString("utf8");
+          resolve({
+            status: response.statusCode,
+            headers: response.headers,
+            data: text ? JSON.parse(text) : {},
+          });
+        });
+      },
+    );
+    request.on("error", reject);
+    for (const chunk of chunks) request.write(chunk);
+    request.end();
+  });
+}
+
+function listFilesRecursively(rootPath) {
+  if (!fs.existsSync(rootPath)) return [];
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolutePath);
+      else if (entry.isFile()) files.push(absolutePath);
+    }
+  };
+  visit(rootPath);
+  return files.sort();
 }
 
 async function patchJson(url, headers = {}) {
@@ -753,7 +807,10 @@ async function testWorkspaceTombstoneSurvivesRestart() {
             workspaceType: "clinic",
             organizationId: workspaceId,
           },
-          { Authorization: `Bearer ${doctor.token}` },
+          {
+            Authorization: `Bearer ${doctor.token}`,
+            "Idempotency-Key": `tombstone-role-request-${suffix}`,
+          },
         );
         assert.equal(roleRequest.status, 400);
         assert.equal((await roleRequest.json()).message, "Clinic is not available");
@@ -767,12 +824,17 @@ async function testWorkspaceTombstoneSurvivesRestart() {
 async function testDoctorRequestNeedsInfoResubmit() {
   const port = "3414";
   const suffix = Date.now();
+  const doctorRequestDataDir = path.join(
+    rootDir,
+    ".test-data",
+    `smoke-doctor-request-${suffix}`,
+  );
   await withServer(
     {
       PORT: port,
       AUDIO_UDP_PORT: "3415",
       DATA_BACKEND: "json",
-      DATA_DIR: `.test-data/smoke-doctor-request-${suffix}`,
+      DATA_DIR: doctorRequestDataDir,
       AUTH_MODE: "demo",
       FIREBASE_AUTH_ENABLED: "false",
     },
@@ -797,6 +859,337 @@ async function testDoctorRequestNeedsInfoResubmit() {
       const doctor = await doctorResponse.json();
       const doctorHeaders = { Authorization: `Bearer ${doctor.token}` };
 
+      const roleDocumentBytes = Buffer.from(
+        "%PDF-1.7\nShcare role verification fixture\n%%EOF",
+        "utf8",
+      );
+      const roleDocumentHeaders = {
+        ...doctorHeaders,
+        "Content-Type": "application/pdf",
+        "X-File-Name": "medical-license.pdf",
+        "Idempotency-Key": `doctor-role-document-${suffix}`,
+      };
+      const roleDocumentWithoutKey = await postBuffer(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+        roleDocumentBytes,
+        {
+          ...doctorHeaders,
+          "Content-Type": "application/pdf",
+          "X-File-Name": "medical-license.pdf",
+        },
+      );
+      assert.equal(roleDocumentWithoutKey.status, 400);
+      assert.equal(
+        (await roleDocumentWithoutKey.json()).error.code,
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+      const objectsBeforeOversizedDocument = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      const oversizedRoleDocument = await postChunkedBuffers(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+        [
+          ...Array.from({ length: 10 }, () => Buffer.alloc(1024 * 1024)),
+          Buffer.from([0]),
+        ],
+        {
+          ...doctorHeaders,
+          "Content-Type": "application/pdf",
+          "X-File-Name": "oversized-license.pdf",
+          "Idempotency-Key": `doctor-role-document-oversized-${suffix}`,
+        },
+      );
+      assert.equal(oversizedRoleDocument.status, 413);
+      assert.equal(
+        oversizedRoleDocument.data.error.code,
+        "REQUEST_BODY_TOO_LARGE",
+      );
+      assert.equal(
+        oversizedRoleDocument.data.error.details.maxBytes,
+        10 * 1024 * 1024,
+      );
+      assert.deepEqual(
+        listFilesRecursively(path.join(doctorRequestDataDir, "objects")),
+        objectsBeforeOversizedDocument,
+      );
+      const firstRoleDocumentResponse = await postBuffer(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+        roleDocumentBytes,
+        roleDocumentHeaders,
+      );
+      assert.equal(
+        firstRoleDocumentResponse.status,
+        201,
+        await firstRoleDocumentResponse.clone().text(),
+      );
+      const firstRoleDocument = await firstRoleDocumentResponse.json();
+      assert.deepEqual(Object.keys(firstRoleDocument), [
+        "document",
+        "operationId",
+        "replayed",
+      ]);
+      assert.deepEqual(Object.keys(firstRoleDocument.document), [
+        "id",
+        "userId",
+        "organizationId",
+        "name",
+        "contentType",
+        "byteSize",
+        "sha256",
+        "uploadedAt",
+      ]);
+      assert.equal(firstRoleDocument.document.userId, doctor.user.id);
+      assert.ok(firstRoleDocument.document.organizationId);
+      assert.equal(firstRoleDocument.document.name, "medical-license.pdf");
+      assert.equal(firstRoleDocument.document.contentType, "application/pdf");
+      assert.equal(firstRoleDocument.document.byteSize, roleDocumentBytes.length);
+      assert.equal(
+        firstRoleDocument.document.sha256,
+        crypto.createHash("sha256").update(roleDocumentBytes).digest("hex"),
+      );
+      assert.ok(firstRoleDocument.operationId);
+      assert.equal(firstRoleDocument.replayed, false);
+      const roleDocumentOwnerState = await getJson(
+        `http://127.0.0.1:${port}/api/v1/auth/firebase`,
+        doctorHeaders,
+      );
+      assert.equal(roleDocumentOwnerState.response.status, 200);
+      const publicRoleDocument = roleDocumentOwnerState.data.user.roleRequestDocuments.find(
+        (entry) => entry.id === firstRoleDocument.document.id,
+      );
+      assert.ok(publicRoleDocument);
+      assert.deepEqual(publicRoleDocument, firstRoleDocument.document);
+      assert.equal(Object.hasOwn(publicRoleDocument, "objectKey"), false);
+      assert.equal(Object.hasOwn(publicRoleDocument, "storageProvider"), false);
+      const roleDocumentDbBeforeReplay = JSON.parse(
+        fs.readFileSync(path.join(doctorRequestDataDir, "db.json"), "utf8"),
+      );
+      const roleDocumentRecordsBeforeReplay = roleDocumentDbBeforeReplay.roleRequestDocuments.filter(
+        (entry) => entry.id === firstRoleDocument.document.id,
+      );
+      const roleDocumentAuditsBeforeReplay = roleDocumentDbBeforeReplay.auditLogs.filter(
+        (entry) =>
+          entry.action === "doctor.role_request.document.upload" &&
+          entry.resourceId === firstRoleDocument.document.id,
+      );
+      const roleDocumentObjectsBeforeReplay = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      assert.equal(roleDocumentRecordsBeforeReplay.length, 1);
+      assert.equal(roleDocumentAuditsBeforeReplay.length, 1);
+      assert.equal(roleDocumentObjectsBeforeReplay.length, 1);
+      assert.match(
+        path.basename(roleDocumentRecordsBeforeReplay[0].objectKey),
+        /^doctor_doc_[a-f0-9]{24}-[a-f0-9]{64}-[a-f0-9]{64}-[a-f0-9]{24}-medical-license\.pdf$/,
+        "each uploaded candidate must carry a unique attempt identity",
+      );
+
+      const replayedRoleDocumentResponse = await postBuffer(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+        roleDocumentBytes,
+        roleDocumentHeaders,
+      );
+      assert.equal(replayedRoleDocumentResponse.status, 201);
+      assert.equal(
+        replayedRoleDocumentResponse.headers.get("idempotency-replayed"),
+        "true",
+      );
+      const replayedRoleDocument = await replayedRoleDocumentResponse.json();
+      assert.deepEqual(replayedRoleDocument.document, firstRoleDocument.document);
+      assert.equal(replayedRoleDocument.operationId, firstRoleDocument.operationId);
+      assert.equal(replayedRoleDocument.replayed, true);
+      const roleDocumentDbAfterReplay = JSON.parse(
+        fs.readFileSync(path.join(doctorRequestDataDir, "db.json"), "utf8"),
+      );
+      assert.deepEqual(
+        roleDocumentDbAfterReplay.roleRequestDocuments.filter(
+          (entry) => entry.id === firstRoleDocument.document.id,
+        ),
+        roleDocumentRecordsBeforeReplay,
+      );
+      assert.deepEqual(
+        roleDocumentDbAfterReplay.auditLogs.filter(
+          (entry) =>
+            entry.action === "doctor.role_request.document.upload" &&
+            entry.resourceId === firstRoleDocument.document.id,
+        ),
+        roleDocumentAuditsBeforeReplay,
+      );
+      assert.deepEqual(
+        listFilesRecursively(path.join(doctorRequestDataDir, "objects")),
+        roleDocumentObjectsBeforeReplay,
+      );
+
+      const exactConcurrentObjectsBefore = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      const exactConcurrentHeaders = {
+        ...doctorHeaders,
+        "Content-Type": "application/pdf",
+        "X-File-Name": "exact-concurrent-license.pdf",
+        "Idempotency-Key": `doctor-role-document-exact-concurrent-${suffix}`,
+      };
+      const exactConcurrentResponses = await Promise.all([
+        postBuffer(
+          `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+          roleDocumentBytes,
+          exactConcurrentHeaders,
+        ),
+        postBuffer(
+          `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+          roleDocumentBytes,
+          exactConcurrentHeaders,
+        ),
+      ]);
+      assert.deepEqual(
+        exactConcurrentResponses.map((response) => response.status),
+        [201, 201],
+      );
+      const exactConcurrentReceipts = await Promise.all(
+        exactConcurrentResponses.map((response) => response.json()),
+      );
+      assert.deepEqual(
+        exactConcurrentReceipts.map((receipt) => receipt.replayed).sort(),
+        [false, true],
+      );
+      assert.deepEqual(
+        exactConcurrentReceipts[0].document,
+        exactConcurrentReceipts[1].document,
+      );
+      assert.equal(
+        exactConcurrentReceipts[0].operationId,
+        exactConcurrentReceipts[1].operationId,
+      );
+      const exactConcurrentObjectsAfter = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      assert.equal(
+        exactConcurrentObjectsAfter.filter(
+          (file) => !exactConcurrentObjectsBefore.includes(file),
+        ).length,
+        1,
+        "the replaying exact attempt must clean only its unique candidate object",
+      );
+
+      const conflictingRoleDocumentResponse = await postBuffer(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+        Buffer.from(`${roleDocumentBytes.toString("utf8")} changed`, "utf8"),
+        roleDocumentHeaders,
+      );
+      assert.equal(conflictingRoleDocumentResponse.status, 409);
+      assert.equal(
+        (await conflictingRoleDocumentResponse.json()).error.code,
+        "IDEMPOTENCY_KEY_REUSED",
+      );
+      assert.deepEqual(
+        listFilesRecursively(path.join(doctorRequestDataDir, "objects")),
+        exactConcurrentObjectsAfter,
+      );
+
+      const concurrentObjectsBefore = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      const concurrentKey = `doctor-role-document-concurrent-${suffix}`;
+      const concurrentBytes = [
+        Buffer.from("%PDF-1.7\nConcurrent document A\n%%EOF", "utf8"),
+        Buffer.from("%PDF-1.7\nConcurrent document B\n%%EOF", "utf8"),
+      ];
+      const concurrentResponses = await Promise.all(
+        concurrentBytes.map((body) =>
+          postBuffer(
+            `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+            body,
+            {
+              ...doctorHeaders,
+              "Content-Type": "application/pdf",
+              "X-File-Name": "concurrent-license.pdf",
+              "Idempotency-Key": concurrentKey,
+            },
+          ),
+        ),
+      );
+      assert.deepEqual(
+        concurrentResponses.map((response) => response.status).sort(),
+        [201, 409],
+      );
+      const concurrentWinner = await concurrentResponses
+        .find((response) => response.status === 201)
+        .json();
+      const concurrentLoser = await concurrentResponses
+        .find((response) => response.status === 409)
+        .json();
+      assert.equal(concurrentLoser.error.code, "IDEMPOTENCY_KEY_REUSED");
+      const concurrentObjectsAfter = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      const newConcurrentObjects = concurrentObjectsAfter.filter(
+        (file) => !concurrentObjectsBefore.includes(file),
+      );
+      assert.equal(
+        newConcurrentObjects.length,
+        1,
+        "a conflicting concurrent retry must clean up its uncommitted object",
+      );
+      assert.match(
+        path.basename(newConcurrentObjects[0]),
+        new RegExp(concurrentWinner.document.sha256),
+        "the immutable object identity must include the committed content digest",
+      );
+      assert.equal(
+        crypto
+          .createHash("sha256")
+          .update(fs.readFileSync(newConcurrentObjects[0]))
+          .digest("hex"),
+        concurrentWinner.document.sha256,
+      );
+
+      const contentTypeRaceObjectsBefore = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      const contentTypeRaceBytes = Buffer.from(
+        "same bytes with conflicting declared content type",
+        "utf8",
+      );
+      const contentTypeRaceResponses = await Promise.all(
+        ["application/pdf", "image/png"].map((declaredContentType) =>
+          postBuffer(
+            `http://127.0.0.1:${port}/api/v1/auth/role-request-document`,
+            contentTypeRaceBytes,
+            {
+              ...doctorHeaders,
+              "Content-Type": declaredContentType,
+              "X-File-Name": "content-type-race.bin",
+              "Idempotency-Key": `doctor-role-document-content-type-race-${suffix}`,
+            },
+          ),
+        ),
+      );
+      assert.deepEqual(
+        contentTypeRaceResponses.map((response) => response.status).sort(),
+        [201, 409],
+      );
+      const contentTypeRaceWinner = await contentTypeRaceResponses
+        .find((response) => response.status === 201)
+        .json();
+      const contentTypeRaceObjectsAfter = listFilesRecursively(
+        path.join(doctorRequestDataDir, "objects"),
+      );
+      const newContentTypeRaceObjects = contentTypeRaceObjectsAfter.filter(
+        (file) => !contentTypeRaceObjectsBefore.includes(file),
+      );
+      assert.equal(
+        newContentTypeRaceObjects.length,
+        1,
+        "cleanup for a content-type conflict must not delete the committed object",
+      );
+      assert.equal(
+        crypto
+          .createHash("sha256")
+          .update(fs.readFileSync(newContentTypeRaceObjects[0]))
+          .digest("hex"),
+        contentTypeRaceWinner.document.sha256,
+      );
+
       const firstSubmitResponse = await postJson(
         `http://127.0.0.1:${port}/api/v1/auth/role-request`,
         {
@@ -809,7 +1202,10 @@ async function testDoctorRequestNeedsInfoResubmit() {
           department: "Tim mach",
           reason: "Initial smoke request",
         },
-        doctorHeaders,
+        {
+          ...doctorHeaders,
+          "Idempotency-Key": `doctor-role-request-first-${suffix}`,
+        },
       );
       assert.equal(firstSubmitResponse.status, 200);
       const firstSubmit = await firstSubmitResponse.json();
@@ -841,19 +1237,23 @@ async function testDoctorRequestNeedsInfoResubmit() {
       assert.equal(needsInfoBefore.response.status, 200);
       assert.ok(needsInfoBefore.data.requests.some((request) => request.id === doctor.user.id));
 
+      const resubmitPayload = {
+        requestedRole: "doctor",
+        name: "Lifecycle Doctor Updated",
+        phone: "0911111111",
+        license: "CCHN-LIFE-UPDATED",
+        organizationId: "org_default_clinic",
+        hospital: "Smart Health Clinic",
+        department: "Tim mach",
+        reason: "Updated smoke request",
+      };
       const resubmitResponse = await postJson(
         `http://127.0.0.1:${port}/api/v1/auth/role-request`,
+        resubmitPayload,
         {
-          requestedRole: "doctor",
-          name: "Lifecycle Doctor Updated",
-          phone: "0911111111",
-          license: "CCHN-LIFE-UPDATED",
-          organizationId: "org_default_clinic",
-          hospital: "Smart Health Clinic",
-          department: "Tim mach",
-          reason: "Updated smoke request",
+          ...doctorHeaders,
+          "Idempotency-Key": `doctor-role-request-resubmit-${suffix}`,
         },
-        doctorHeaders,
       );
       assert.equal(resubmitResponse.status, 200);
       const resubmit = await resubmitResponse.json();
@@ -915,7 +1315,86 @@ async function testDoctorRequestNeedsInfoResubmit() {
       });
       assert.equal(approvedDoctorLoginResponse.status, 200);
       const approvedDoctorLogin = await approvedDoctorLoginResponse.json();
+      assert.equal(
+        approvedDoctorLogin.user.memberships.some(
+          (membership) =>
+            membership.organizationId === "org_default_clinic" &&
+            membership.role === "doctor" &&
+            membership.operational === true,
+        ),
+        true,
+      );
+      assert.equal(
+        approvedDoctorLogin.user.capabilities.includes("workspace.review.manage"),
+        true,
+      );
       const approvedDoctorHeaders = { Authorization: `Bearer ${approvedDoctorLogin.token}` };
+      const persistedBeforeDelayedReplay = JSON.parse(
+        fs.readFileSync(path.join(doctorRequestDataDir, "db.json"), "utf8"),
+      );
+      const delayedReplayNotificationId = `noti_${resubmit.operationId}`;
+      const delayedReplayNotificationsBefore = persistedBeforeDelayedReplay.notifications.filter(
+        (entry) => entry.id === delayedReplayNotificationId,
+      );
+      const delayedReplayAuditsBefore = persistedBeforeDelayedReplay.auditLogs.filter(
+        (entry) =>
+          entry.action === "auth.role.request" &&
+          entry.resourceId === doctor.user.id &&
+          entry.metadata?.operationId === resubmit.operationId,
+      );
+      assert.equal(delayedReplayNotificationsBefore.length, 1);
+      assert.equal(delayedReplayAuditsBefore.length, 1);
+      const approvedRoleRequestReplay = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/role-request`,
+        resubmitPayload,
+        {
+          ...approvedDoctorHeaders,
+          "Idempotency-Key": `doctor-role-request-resubmit-${suffix}`,
+        },
+      );
+      assert.equal(approvedRoleRequestReplay.status, 200);
+      const approvedReplayReceipt = await approvedRoleRequestReplay.json();
+      assert.equal(approvedReplayReceipt.replayed, true);
+      assert.equal(approvedReplayReceipt.operationId, resubmit.operationId);
+      assert.deepEqual(
+        approvedReplayReceipt.user,
+        resubmit.user,
+        "a delayed replay must return the exact original public user projection",
+      );
+      assert.equal(approvedReplayReceipt.user.role, "patient");
+      assert.equal(approvedReplayReceipt.roleRequest.status, "pending");
+      const persistedAfterDelayedReplay = JSON.parse(
+        fs.readFileSync(path.join(doctorRequestDataDir, "db.json"), "utf8"),
+      );
+      const delayedReplayNotificationsAfter = persistedAfterDelayedReplay.notifications.filter(
+        (entry) => entry.id === delayedReplayNotificationId,
+      );
+      const delayedReplayAuditsAfter = persistedAfterDelayedReplay.auditLogs.filter(
+        (entry) =>
+          entry.action === "auth.role.request" &&
+          entry.resourceId === doctor.user.id &&
+          entry.metadata?.operationId === resubmit.operationId,
+      );
+      assert.deepEqual(
+        delayedReplayNotificationsAfter,
+        delayedReplayNotificationsBefore,
+        "a delayed replay must not append or mutate the original notification",
+      );
+      assert.deepEqual(
+        delayedReplayAuditsAfter,
+        delayedReplayAuditsBefore,
+        "a delayed replay must not append or mutate the original audit event",
+      );
+      const approvedStateAfterReplay = await getJson(
+        `http://127.0.0.1:${port}/api/v1/auth/firebase`,
+        approvedDoctorHeaders,
+      );
+      assert.equal(approvedStateAfterReplay.response.status, 200);
+      assert.equal(approvedStateAfterReplay.data.user.role, "doctor");
+      assert.equal(
+        approvedStateAfterReplay.data.user.roleRequestStatus,
+        "approved",
+      );
 
       const lockDoctorResponse = await patchJson(
         `http://127.0.0.1:${port}/api/v1/admin/doctors/${encodeURIComponent(doctor.user.id)}/lock`,
@@ -989,7 +1468,10 @@ async function testDoctorRequestNeedsInfoResubmit() {
           accountType: "solo_doctor",
           workspaceType: "solo_practice",
         },
-        soloHeaders,
+        {
+          ...soloHeaders,
+          "Idempotency-Key": `solo-role-request-first-${suffix}`,
+        },
       );
       assert.equal(soloFirstResponse.status, 200);
       const soloFirst = await soloFirstResponse.json();
@@ -1017,7 +1499,10 @@ async function testDoctorRequestNeedsInfoResubmit() {
           accountType: "solo_doctor",
           workspaceType: "solo_practice",
         },
-        soloHeaders,
+        {
+          ...soloHeaders,
+          "Idempotency-Key": `solo-role-request-resubmit-${suffix}`,
+        },
       );
       assert.equal(soloResubmitResponse.status, 200);
       const soloResubmit = await soloResubmitResponse.json();

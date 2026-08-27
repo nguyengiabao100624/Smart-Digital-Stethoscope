@@ -12515,6 +12515,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
         emailVerified: true,
         disabled: true,
       });
+      firebaseUser = await firebaseAdminApp.auth().getUser(firebaseUser.uid);
       candidateUser.firebaseUid = firebaseUser.uid;
       // The durable provider ownership marker stays provider-side. Backend and
       // API models retain only the authorization claims clients need.

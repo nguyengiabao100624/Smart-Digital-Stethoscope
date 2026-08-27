@@ -2269,7 +2269,7 @@ async function main() {
     /CREATE\s+CONSTRAINT\s+TRIGGER\s+users_validate_patient_identity_transition[\s\S]*?AFTER\s+INSERT\s+OR\s+UPDATE\s+ON\s+users[\s\S]*?DEFERRABLE\s+INITIALLY\s+DEFERRED/i,
   );
   assert.match(reconciliationMigration, /current_patient\s+patients%ROWTYPE/i);
-  assert.match(reconciliationMigration, /current_user\s+users%ROWTYPE/i);
+  assert.match(reconciliationMigration, /(?:current_user|target_user)\s+users%ROWTYPE/i);
   assert.match(
     reconciliationMigration,
     /UPDATE\s+users\s+account\s+SET\s+patient_id\s*=\s*patient\.id[\s\S]*?patient\.account_user_id\s*=\s*account\.id[\s\S]*?account\.patient_id\s+IS\s+NULL/i,

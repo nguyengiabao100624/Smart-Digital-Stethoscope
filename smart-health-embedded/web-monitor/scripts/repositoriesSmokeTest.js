@@ -266,7 +266,9 @@ const pool = {
       return { rows: [target] };
     }
     if (text.includes("INSERT INTO users")) {
-      guardChecks.userPatientFk = text.includes("EXISTS (SELECT 1 FROM patients WHERE id = $13)");
+      guardChecks.userPatientFk =
+        text.includes("EXISTS (SELECT 1 FROM patients WHERE id = $13)") ||
+        text.includes("EXISTS (SELECT 1 FROM patients WHERE id = $13::text)");
     }
     if (text.includes("INSERT INTO organizations")) {
       guardChecks.organizationBillingFields =
@@ -275,10 +277,14 @@ const pool = {
         text.includes("subscription_status") &&
         text.includes("billing_cycle") &&
         text.includes("request_metadata");
-      guardChecks.organizationOwnerFk = text.includes("EXISTS (SELECT 1 FROM users WHERE id = $12)");
+      guardChecks.organizationOwnerFk =
+        text.includes("EXISTS (SELECT 1 FROM users WHERE id = $12)") ||
+        text.includes("EXISTS (SELECT 1 FROM users WHERE id = $12::text)");
     }
     if (text.includes("INSERT INTO patients")) {
-      guardChecks.patientOwnerFk = text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3)");
+      guardChecks.patientOwnerFk =
+        text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3)") ||
+        text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3::text)");
     }
     if (text.includes("INSERT INTO devices")) {
       guardChecks.deviceOwnershipColumns =

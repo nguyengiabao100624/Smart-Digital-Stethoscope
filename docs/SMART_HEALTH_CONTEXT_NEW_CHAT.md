@@ -1,6 +1,15 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
+
+## 2026-08-28 live synchronization checkpoint
+
+- Current source is `main` at commit `1c80697eac2b` and Render health plus `/api/v1/health/data-summary` are healthy. Production reports `dataBackend=postgres`, `authMode=production`, and currently `devices=0`; this is the authoritative live data and must not be replaced with demo rows.
+- Firebase Hosting was rebuilt from the current source and released: Portal `shcare` version `688821e5060a0204` (release `1787869121611000`), Admin version `f11f18346406ba05` (release `1787867401307000`). Both public URLs return HTTP 200 with `Cache-Control: no-cache, no-store, must-revalidate`.
+- Local verification: backend check/smoke/device-security `84/84`, API production smoke PASS, Web auth `390/390`, Web contracts `139/139`, Portal browser foundation `478` checks, Admin contracts `192`, Admin lint and filtered device-route browser smoke PASS, Android unit/lint/local-demo assemble PASS, firmware production and OTA builds PASS.
+- Fixed two release-test drifts: API production smoke now resolves a tenant-visible device instead of the retired `esp32-stethoscope` fixture; Admin ESLint ignores generated `dist-firebase-portal` output so CI does not scan generated bundles.
+- Three full browser sweeps timed out in the host when run without filters; filtered production/route checks pass. This is an environment/runtime limitation, not a product PASS claim for every browser matrix case.
+- G4 is still not closed: live Postgres currently has no devices, and Render production secret/provider/migration evidence plus authenticated production mutation/HIL evidence are still required. The old LiteSteth-A92 screenshot is stale and is not evidence of current production data.
 
 ## 2026-08-27 Gate G3 Physical Hardware HIL Pass Checkpoint
 

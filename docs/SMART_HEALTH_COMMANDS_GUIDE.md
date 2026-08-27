@@ -1,6 +1,13 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
+
+## Current live verification (2026-08-28)
+
+- Portal production release: Firebase Hosting site `shcare`, version `688821e5060a0204`, release `1787869121611000`.
+- Platform Admin production release: Firebase Hosting site `shcare-admin`, version `f11f18346406ba05`, release `1787867401307000`.
+- Backend release marker: Render commit `1c80697eac2b`; data summary is Postgres/production and currently contains zero devices. Treat this endpoint as the source of truth when diagnosing stale demo rows.
+- Verified commands: `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:api-production`, Web/Admin contract and lint gates, Android Gradle test/lint/assemble, and PlatformIO production/OTA builds.
 
 ## 2026-08-27 G3 hardware re-probe commands
 

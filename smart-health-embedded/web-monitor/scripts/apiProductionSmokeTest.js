@@ -59,13 +59,23 @@ async function main() {
     const login = await loginResponse.json();
     const auth = { Authorization: `Bearer ${login.token}` };
 
+    // Resolve a device from the authenticated tenant instead of relying on a
+    // retired fixture id.  The seed set intentionally evolves (for example
+    // `shcare-g3-hil` replaced `esp32-stethoscope`), while the scan contract
+    // must exercise the same authorization path as production clients.
+    const devicesResponse = await fetch(`http://127.0.0.1:${port}/api/v1/devices`, { headers: auth });
+    assert.equal(devicesResponse.status, 200);
+    const devicesPayload = await devicesResponse.json();
+    const smokeDevice = (devicesPayload.devices || []).find((item) => item?.id);
+    assert.ok(smokeDevice?.id, "the authenticated seed must expose a usable device");
+
     const createResponse = await fetch(`http://127.0.0.1:${port}/api/v1/scans`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
       body: JSON.stringify({
         patientName: "Smoke Patient",
         mode: "heart",
-        deviceId: "esp32-stethoscope",
+        deviceId: smokeDevice.id,
       }),
     });
     assert.equal(createResponse.status, 201);

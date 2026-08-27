@@ -10,6 +10,7 @@ export default tseslint.config(
     ignores: [
       "dist/**",
       "dist-firebase/**",
+      "dist-firebase-portal/**",
       "node_modules/**",
       ".firebase/**",
       ".lovable/**",

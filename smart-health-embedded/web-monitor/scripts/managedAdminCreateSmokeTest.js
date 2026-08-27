@@ -628,6 +628,11 @@ function testServerProviderSafetyContract() {
     /providerCreatedByCurrentAttempt[\s\S]*updateUser\(firebaseUser\.uid, \{ disabled: true \}\)[\s\S]*deleteUser\(firebaseUser\.uid\)/,
   );
   assert.match(functionSource, /assertPendingManagedAdminProvider/);
+  assert.doesNotMatch(functionSource, /getRequestIp\(req\)/);
+  assert.match(
+    functionSource,
+    /\(getRequestContext\(req\) \|\| createRequestContext\(req\)\)\.ip/,
+  );
   assert.doesNotMatch(functionSource, /createIdempotencyFingerprint\(payload\)/);
   const providerProfileStart = functionSource.indexOf("setCustomUserClaims(firebaseUser.uid, provisioningClaims)");
   const backendCommitStart = functionSource.indexOf("createManagedAdminWithAudit", providerProfileStart);

@@ -97,11 +97,11 @@ DECLARE
   constraint_name text;
 BEGIN
   FOR constraint_name IN
-    SELECT constraint.conname
-    FROM pg_constraint constraint
-    WHERE constraint.conrelid = 'public.clinical_alerts'::regclass
-      AND constraint.contype = 'u'
-      AND pg_get_constraintdef(constraint.oid) = 'UNIQUE (organization_id, dedupe_key)'
+    SELECT c.conname
+    FROM pg_constraint c
+    WHERE c.conrelid = 'public.clinical_alerts'::regclass
+      AND c.contype = 'u'
+      AND pg_get_constraintdef(c.oid) = 'UNIQUE (organization_id, dedupe_key)'
   LOOP
     EXECUTE format('ALTER TABLE public.clinical_alerts DROP CONSTRAINT %I', constraint_name);
   END LOOP;

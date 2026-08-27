@@ -2217,7 +2217,7 @@ function createRepositories(options) {
           VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12,
-            CASE WHEN $13 IS NOT NULL AND EXISTS (SELECT 1 FROM patients WHERE id = $13) THEN $13 ELSE NULL END,
+            CASE WHEN $13::text IS NOT NULL AND EXISTS (SELECT 1 FROM patients WHERE id = $13::text) THEN $13::text ELSE NULL END,
             $14, $15, $16,
             $17, $18, $19, $20, $21,
             $22, $23, $24, $25::jsonb, now()
@@ -2293,7 +2293,7 @@ function createRepositories(options) {
           VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9,
             $10, $11,
-            CASE WHEN $12 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12) THEN $12 ELSE NULL END,
+            CASE WHEN $12::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12::text) THEN $12::text ELSE NULL END,
             $13, $14, $15, $16::jsonb, now()
           )
           ON CONFLICT (id)
@@ -2502,12 +2502,12 @@ function createRepositories(options) {
           )
           VALUES (
             $1, $2,
-            CASE WHEN $3 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $3) THEN $3 ELSE NULL END,
+            CASE WHEN $3::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $3::text) THEN $3::text ELSE NULL END,
             $4, $5, $6, $7::date, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15,
-            CASE WHEN $16 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $16) THEN $16 ELSE NULL END,
+            CASE WHEN $16::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $16::text) THEN $16::text ELSE NULL END,
             $17, $18, $19,
-            CASE WHEN $20 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $20) THEN $20 ELSE NULL END,
-            CASE WHEN $21 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $21) THEN $21 ELSE NULL END,
+            CASE WHEN $20::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $20::text) THEN $20::text ELSE NULL END,
+            CASE WHEN $21::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $21::text) THEN $21::text ELSE NULL END,
             $22, COALESCE($23::timestamptz, now()), COALESCE($24::timestamptz, now()), $25::jsonb
           )
           ON CONFLICT (id)
@@ -2582,14 +2582,14 @@ function createRepositories(options) {
         )
         VALUES (
           $1, $2,
-          CASE WHEN $3 IS NOT NULL AND EXISTS (SELECT 1 FROM patients WHERE id = $3) THEN $3 ELSE NULL END,
-          CASE WHEN $4 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $4) THEN $4 ELSE NULL END,
-          CASE WHEN $5 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $5) THEN $5 ELSE NULL END,
+          CASE WHEN $3::text IS NOT NULL AND EXISTS (SELECT 1 FROM patients WHERE id = $3::text) THEN $3::text ELSE NULL END,
+          CASE WHEN $4::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $4::text) THEN $4::text ELSE NULL END,
+          CASE WHEN $5::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $5::text) THEN $5::text ELSE NULL END,
           $6, $7, $8::timestamptz, $9::timestamptz, $10, $11, $12, $13,
           $14, $15::timestamptz, $16::timestamptz, $17, $18::timestamptz,
-          CASE WHEN $19 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $19) THEN $19 ELSE NULL END,
+          CASE WHEN $19::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $19::text) THEN $19::text ELSE NULL END,
           $20::timestamptz,
-          CASE WHEN $21 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $21) THEN $21 ELSE NULL END,
+          CASE WHEN $21::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $21::text) THEN $21::text ELSE NULL END,
           COALESCE($22::timestamptz, now()), COALESCE($23::timestamptz, now())
         )
         ON CONFLICT (id)
@@ -2660,10 +2660,10 @@ function createRepositories(options) {
             $1, $2, $2, $3,
             $4,
             $5, $6, $7::jsonb,
-            CASE WHEN $8 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $8) THEN $8 ELSE NULL END,
+            CASE WHEN $8::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $8::text) THEN $8::text ELSE NULL END,
             $9, $10, $11::timestamptz,
             $12::timestamptz, $13::timestamptz,
-            CASE WHEN $14 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $14) THEN $14 ELSE NULL END,
+            CASE WHEN $14::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $14::text) THEN $14::text ELSE NULL END,
             COALESCE($15::timestamptz, now()), COALESCE($16::timestamptz, now())
           )
           ON CONFLICT (id)
@@ -3621,7 +3621,7 @@ function createRepositories(options) {
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9,
           $10, $11,
-          CASE WHEN $12 IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12) THEN $12 ELSE NULL END,
+          CASE WHEN $12::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12::text) THEN $12::text ELSE NULL END,
           $13, $14, $15, $16::jsonb, now(), now()
         )
         ON CONFLICT (id) DO NOTHING

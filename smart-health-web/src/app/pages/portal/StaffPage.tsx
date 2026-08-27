@@ -104,6 +104,15 @@ type Confirmation = {
   run: () => Promise<void>;
 };
 
+const MANAGEABLE_ROLES: StaffInvitationRole[] = [
+  "workspace_admin",
+  "doctor",
+  "nurse",
+  "technician",
+  "billing",
+  "viewer",
+];
+
 const EMPTY_FORM: InvitationForm = {
   name: "",
   email: "",
@@ -125,6 +134,11 @@ const ROLE_LABELS: Record<StaffInvitationRole, string> = {
 function errorMessage(error: unknown, fallback: string) {
   const code = (error as ApiError | undefined)?.code || "";
   const messages: Record<string, string> = {
+    MEMBERSHIP_ROLE_INVALID: "Vai trò workspace không hợp lệ.",
+    MEMBERSHIP_ROLE_SELF_CHANGE_DENIED:
+      "Không thể tự thay đổi vai trò của chính tài khoản đang đăng nhập.",
+    WORKSPACE_OWNER_TRANSFER_REQUIRED:
+      "Không thể đổi vai trò chủ sở hữu. Hãy chuyển quyền sở hữu trước.",
     STAFF_INVITATION_PENDING:
       "Email này đã có một lời mời đang chờ trong workspace.",
     STAFF_INVITATION_NOT_FOUND:
@@ -169,6 +183,12 @@ function deliveryLabel(delivery?: StaffInvitationDelivery) {
 function roleLabel(value?: string) {
   if (value === "workspace_owner") return "Chủ sở hữu workspace";
   return ROLE_LABELS[value as StaffInvitationRole] || value || "Chưa xác định";
+}
+
+function roleCanManageDevices(value?: string) {
+  return ["workspace_owner", "workspace_admin", "nurse", "technician"].includes(
+    value || "",
+  );
 }
 
 function invitationStatus(invitation: StaffInvitation) {
@@ -257,6 +277,12 @@ export default function StaffPage() {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmationError, setConfirmationError] = useState("");
+  const [roleEditor, setRoleEditor] = useState<{
+    member: ApiUser;
+    role: StaffInvitationRole;
+  } | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState("");
   const attemptRef = useRef<{
     fingerprint: string;
     idempotencyKey: string;
@@ -297,6 +323,9 @@ export default function StaffPage() {
     setConfirmation(null);
     setIsConfirming(false);
     setConfirmationError("");
+    setRoleEditor(null);
+    setRoleSaving(false);
+    setRoleError("");
     setSettledWorkspaceId(workspaceId);
   }, [settledWorkspaceId, workspaceId]);
 
@@ -637,6 +666,61 @@ export default function StaffPage() {
     });
   };
 
+  const openRoleEditor = (member: ApiUser) => {
+    const currentRole = member.workspaceMembership?.role as StaffInvitationRole;
+    if (!MANAGEABLE_ROLES.includes(currentRole)) return;
+    setRoleError("");
+    setRoleEditor({ member, role: currentRole });
+  };
+
+  const saveRoleChange = async () => {
+    if (!roleEditor || roleSaving || !canMutate) return;
+    const operationWorkspaceId = workspaceId;
+    const operationEpoch = operationEpochRef.current;
+    const { member, role } = roleEditor;
+    if (member.id === user?.id) {
+      setRoleError("Không thể tự thay đổi vai trò của chính tài khoản đang đăng nhập.");
+      return;
+    }
+    const operationId = `role-member:${member.id}`;
+    const idempotencyKey =
+      actionAttemptsRef.current.get(operationId) ||
+      createPortalStaffIdempotencyKey("member-role", member.id);
+    actionAttemptsRef.current.set(operationId, idempotencyKey);
+    setRoleSaving(true);
+    setRoleError("");
+    try {
+      const response = await smartHealthApi.changeStaffMemberRole(
+        member.id,
+        role,
+        idempotencyKey,
+      );
+      assertCurrentOperation(operationWorkspaceId, operationEpoch);
+      if (
+        response.action !== "change_role" ||
+        response.membership?.organizationId !== operationWorkspaceId ||
+        response.membership?.userId !== member.id ||
+        response.membership?.role !== role
+      ) {
+        throw new Error("Backend trả về quyền không khớp workspace hoặc tài khoản đã chọn.");
+      }
+      actionAttemptsRef.current.delete(operationId);
+      setRoleEditor(null);
+      void refreshStaff(operationWorkspaceId);
+      toast.success("Backend đã xác nhận thay đổi quyền thành viên.");
+    } catch (error) {
+      if (error instanceof StaffOperationSupersededError) return;
+      setRoleError(errorMessage(error, "Không thể thay đổi quyền thành viên."));
+    } finally {
+      if (
+        activeWorkspaceRef.current === operationWorkspaceId &&
+        operationEpochRef.current === operationEpoch
+      ) {
+        setRoleSaving(false);
+      }
+    }
+  };
+
   const runConfirmation = async () => {
     if (!confirmation || isConfirming) return;
     const operationWorkspaceId = workspaceId;
@@ -939,6 +1023,14 @@ export default function StaffPage() {
                           </dd>
                         </div>
                       </dl>
+                      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                        <span>
+                          {roleCanManageDevices(member.workspaceMembership?.role)
+                            ? "Có quyền quản lý/ghép thiết bị"
+                            : "Chỉ xem; chưa có quyền ghép thiết bị"}
+                        </span>
+                      </div>
                       {isCurrentUser ? (
                         <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
                           Đây là membership đang dùng. Hãy nhờ quản trị viên
@@ -946,6 +1038,18 @@ export default function StaffPage() {
                         </p>
                       ) : (
                         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-11"
+                            disabled={
+                              !canMutate ||
+                              member.workspaceMembership?.role === "workspace_owner"
+                            }
+                            onClick={() => openRoleEditor(member)}
+                          >
+                            Điều chỉnh quyền
+                          </Button>
                           {status === "suspended" ? (
                             <Button
                               size="sm"
@@ -1274,6 +1378,88 @@ export default function StaffPage() {
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(roleEditor)}
+        onOpenChange={(open) => {
+          if (!open && !roleSaving) {
+            setRoleEditor(null);
+            setRoleError("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Điều chỉnh quyền workspace</DialogTitle>
+            <DialogDescription>
+              Vai trò membership quyết định capability của tài khoản trong workspace hiện tại.
+              Muốn ghép/cấu hình thiết bị, chọn Quản trị workspace, Điều dưỡng hoặc Kỹ thuật viên.
+            </DialogDescription>
+          </DialogHeader>
+          {roleEditor ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                <div className="font-medium text-foreground">
+                  {roleEditor.member.name || roleEditor.member.email || roleEditor.member.id}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {roleEditor.member.email || "Không có email"}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="staff-membership-role">Vai trò trong workspace</Label>
+                <select
+                  id="staff-membership-role"
+                  value={roleEditor.role}
+                  disabled={roleSaving}
+                  onChange={(event) =>
+                    setRoleEditor({
+                      ...roleEditor,
+                      role: event.target.value as StaffInvitationRole,
+                    })
+                  }
+                  className="flex min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {MANAGEABLE_ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {ROLE_LABELS[role]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+                Thay đổi chỉ áp dụng cho membership của workspace này, không đổi vai trò Admin toàn hệ thống.
+                Người được đổi quyền cần đăng nhập lại hoặc tải lại phiên để app nhận capability mới.
+              </div>
+              {roleError ? (
+                <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive">
+                  {roleError}
+                </div>
+              ) : null}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={roleSaving}
+                  onClick={() => setRoleEditor(null)}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="button"
+                  className="min-h-11 gap-2"
+                  disabled={roleSaving || !canMutate}
+                  onClick={() => void saveRoleChange()}
+                >
+                  {roleSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                  {roleSaving ? "Đang lưu..." : "Lưu quyền"}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 

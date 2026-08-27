@@ -111,6 +111,7 @@ fun PatientDashboardScreen(
     canViewAppointments: Boolean,
     canUseAssistant: Boolean,
     onNavigateToNotifications: () -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
     onNavigateToDevicePairing: () -> Unit,
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
@@ -153,6 +154,7 @@ fun PatientDashboardScreen(
         snackbarHostState = snackbarHostState,
         onAction = viewModel::onAction,
         onNavigateToNotifications = onNavigateToNotifications,
+        onNavigateToDeviceManagement = onNavigateToDeviceManagement,
         onNavigateToDevicePairing = onNavigateToDevicePairing,
         onNavigateToNewScan = onNavigateToNewScan,
         onNavigateToRecords = onNavigateToRecords,
@@ -168,6 +170,7 @@ internal fun PatientDashboardContent(
     snackbarHostState: SnackbarHostState,
     onAction: (PatientDashboardUiAction) -> Unit,
     onNavigateToNotifications: () -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
     onNavigateToDevicePairing: () -> Unit,
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
@@ -247,6 +250,7 @@ internal fun PatientDashboardContent(
                 state = state,
                 innerPadding = innerPadding,
                 onAction = onAction,
+                onNavigateToDeviceManagement = onNavigateToDeviceManagement,
                 onNavigateToDevicePairing = onNavigateToDevicePairing,
                 onNavigateToNewScan = onNavigateToNewScan,
                 onNavigateToRecords = onNavigateToRecords,
@@ -410,6 +414,7 @@ private fun PatientDashboardReadyContent(
     state: PatientDashboardUiState,
     innerPadding: PaddingValues,
     onAction: (PatientDashboardUiAction) -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
     onNavigateToDevicePairing: () -> Unit,
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
@@ -496,6 +501,7 @@ private fun PatientDashboardReadyContent(
                             )
                             PatientDashboardDeviceSection(
                                 state = state,
+                                onNavigateToDeviceManagement = onNavigateToDeviceManagement,
                                 onNavigateToDevicePairing = onNavigateToDevicePairing,
                             )
                         }
@@ -528,6 +534,7 @@ private fun PatientDashboardReadyContent(
                             )
                             PatientDashboardDeviceSection(
                                 state = state,
+                                onNavigateToDeviceManagement = onNavigateToDeviceManagement,
                                 onNavigateToDevicePairing = onNavigateToDevicePairing,
                             )
                         }
@@ -722,6 +729,7 @@ private fun PatientProfileCard(profile: PatientDashboardProfile?) {
 @Composable
 private fun PatientDashboardDeviceSection(
     state: PatientDashboardUiState,
+    onNavigateToDeviceManagement: (String) -> Unit,
     onNavigateToDevicePairing: () -> Unit,
 ) {
     when (state.deviceState) {
@@ -745,7 +753,7 @@ private fun PatientDashboardDeviceSection(
                 PatientDashboardDeviceCard(
                     device = device,
                     canManageDevice = state.features.canManageDevice,
-                    onNavigateToDevicePairing = onNavigateToDevicePairing,
+                    onNavigateToDeviceManagement = onNavigateToDeviceManagement,
                 )
             }
         }
@@ -756,7 +764,7 @@ private fun PatientDashboardDeviceSection(
 private fun PatientDashboardDeviceCard(
     device: PatientDashboardDevice,
     canManageDevice: Boolean,
-    onNavigateToDevicePairing: () -> Unit,
+    onNavigateToDeviceManagement: (String) -> Unit,
 ) {
     val isOnline = device.presence == PatientDashboardDevicePresence.Online
     val status = stringResource(
@@ -791,6 +799,7 @@ private fun PatientDashboardDeviceCard(
             )
         }
     }.joinToString(separator = ". ")
+    val manageDescription = stringResource(R.string.patient_dashboard_manage_device)
 
     Card(
         colors = CardDefaults.cardColors(
@@ -803,8 +812,17 @@ private fun PatientDashboardDeviceCard(
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(
+                enabled = canManageDevice,
+                role = Role.Button,
+                onClick = { onNavigateToDeviceManagement(device.id) },
+            )
             .semantics(mergeDescendants = true) {
-                contentDescription = spokenState
+                contentDescription = if (canManageDevice) {
+                    "$spokenState. $manageDescription"
+                } else {
+                    spokenState
+                }
             }
             .testTag("patient-dashboard.device"),
     ) {
@@ -859,17 +877,10 @@ private fun PatientDashboardDeviceCard(
                     )
                 }
                 if (canManageDevice) {
-                    IconButton(
-                        onClick = onNavigateToDevicePairing,
-                        modifier = Modifier.testTag("patient-dashboard.device.manage"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = stringResource(
-                                R.string.patient_dashboard_manage_device,
-                            ),
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                    )
                 }
             }
 
@@ -978,7 +989,8 @@ private fun PatientDashboardUnpairedDeviceCard(
                     onClick = onNavigateToDevicePairing,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp),
+                        .heightIn(min = 48.dp)
+                        .testTag("patient-dashboard.device.pair"),
                 ) {
                     Text(stringResource(R.string.patient_dashboard_pair_device))
                 }

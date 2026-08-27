@@ -54,8 +54,8 @@ fun ShcareSettingsHeader(
 fun ShcareGradientTopAppBar(
     title: String,
     onNavigateBack: (() -> Unit)?,
-    subtitle: String? = null,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     backContentDescription: String = stringResource(R.string.shcare_action_back),
     backModifier: Modifier = Modifier,
     backEnabled: Boolean = true,

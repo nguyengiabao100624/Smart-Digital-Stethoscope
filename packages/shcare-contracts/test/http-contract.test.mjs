@@ -1920,13 +1920,16 @@ describe("Shcare HTTP v1 contracts", () => {
     );
   });
 
-  it("publishes closed generic-command, revocation and two-phase rotation contracts", async () => {
+  it("publishes closed Wi-Fi setup, generic-command, release, revocation and rotation contracts", async () => {
     const schemaNames = [
       "device-operation-common.schema.json",
       "device-command-request.schema.json",
       "device-command-response.schema.json",
       "device-command-status-response.schema.json",
       "device-revoke-response.schema.json",
+      "device-release-response.schema.json",
+      "device-wifi-setup-request.schema.json",
+      "device-wifi-setup-response.schema.json",
       "device-credential-rotation-request.schema.json",
       "device-credential-rotation-response.schema.json",
     ];
@@ -1939,6 +1942,9 @@ describe("Shcare HTTP v1 contracts", () => {
       "device-command-response.schema.json": await readJson("http/v1/fixtures/device-command-response.json"),
       "device-command-status-response.schema.json": await readJson("http/v1/fixtures/device-command-status-response.json"),
       "device-revoke-response.schema.json": await readJson("http/v1/fixtures/device-revoke-response.json"),
+      "device-release-response.schema.json": await readJson("http/v1/fixtures/device-release-response.json"),
+      "device-wifi-setup-request.schema.json": await readJson("http/v1/fixtures/device-wifi-setup-request.json"),
+      "device-wifi-setup-response.schema.json": await readJson("http/v1/fixtures/device-wifi-setup-response.json"),
       "device-credential-rotation-request.schema.json": await readJson("http/v1/fixtures/device-credential-rotation-request.json"),
       "device-credential-rotation-response.schema.json": await readJson("http/v1/fixtures/device-credential-rotation-response.json"),
     };
@@ -1956,6 +1962,9 @@ describe("Shcare HTTP v1 contracts", () => {
     const commandReceipt = fixtures["device-command-response.schema.json"];
     const commandStatus = fixtures["device-command-status-response.schema.json"];
     const revokeReceipt = fixtures["device-revoke-response.schema.json"];
+    const releaseReceipt = fixtures["device-release-response.schema.json"];
+    const wifiSetupRequest = fixtures["device-wifi-setup-request.schema.json"];
+    const wifiSetupResponse = fixtures["device-wifi-setup-response.schema.json"];
     const rotationReceipt = fixtures["device-credential-rotation-response.schema.json"];
     const commandRequestSchema = documents.get("device-command-request.schema.json");
     assert.deepEqual(commandRequestSchema["x-shcare-http"], {
@@ -1970,7 +1979,7 @@ describe("Shcare HTTP v1 contracts", () => {
     ]);
     assert.equal(JSON.stringify(commandRequestSchema).includes("password"), false);
     assert.equal(JSON.stringify(commandRequestSchema).includes('"pass"'), false);
-    assert.equal(commandRequestSchema["x-shcare-wifi-provisioning-policy"].flow, "secure_setup_ap");
+    assert.equal(commandRequestSchema["x-shcare-wifi-provisioning-policy"].flow, "esptouch_v2_broadcast");
     assert.equal(
       commandRequestSchema["x-shcare-wifi-provisioning-policy"].failureCode,
       "DEVICE_WIFI_UPDATE_LOCAL_SETUP_REQUIRED",
@@ -1986,6 +1995,14 @@ describe("Shcare HTTP v1 contracts", () => {
     assert.equal(revokeReceipt.device.ownershipState, "revoked");
     assert.equal(revokeReceipt.device.status, "revoked");
     assert.equal(revokeReceipt.device.online, false);
+    assert.equal(releaseReceipt.release.released, true);
+    assert.equal(releaseReceipt.release.historyRetained, true);
+    assert.equal(releaseReceipt.release.deviceId, "dev_patient_alpha");
+    assert.deepEqual(wifiSetupRequest.supportedTransports, ["esptouch_v2"]);
+    assert.equal(wifiSetupResponse.setup.protocolVersion, 2);
+    assert.equal(wifiSetupResponse.setup.transport, "esptouch_v2");
+    assert.equal(wifiSetupResponse.setup.smartConfig.security, "aes128");
+    assert.doesNotMatch(JSON.stringify(wifiSetupResponse), /(?:password|targetSsid|deviceSecret|secretHash)/i);
     assert.deepEqual(rotationReceipt.device.credentialRotation, rotationReceipt.rotation);
     assert.equal(rotationReceipt.rotation.confirmed, false);
     assert.equal(rotationReceipt.confirmed, false);
@@ -1999,6 +2016,15 @@ describe("Shcare HTTP v1 contracts", () => {
       await readText("../../smart-health-embedded/web-monitor/public/openapi.yaml"),
     );
     const commandOperation = openApi.paths["/devices/{deviceId}/commands"].post;
+    const wifiSetupOperation = openApi.paths["/devices/{deviceId}/setup-session"].post;
+    assert.equal(
+      wifiSetupOperation.requestBody.content["application/json"].schema.$ref,
+      "#/components/schemas/DeviceWifiSetupRequest",
+    );
+    assert.equal(
+      wifiSetupOperation.responses["200"].content["application/json"].schema.$ref,
+      "#/components/schemas/DeviceWifiSetupResponse",
+    );
     assert.equal(
       commandOperation.requestBody.content["application/json"].schema.$ref,
       "#/components/schemas/GenericSafeDeviceCommandRequest",
@@ -2014,6 +2040,7 @@ describe("Shcare HTTP v1 contracts", () => {
       "#/components/schemas/DeviceCommandStatusResponse",
     );
     const revokeOperation = openApi.paths["/devices/{deviceId}/revoke"].post;
+    const releaseOperation = openApi.paths["/devices/{deviceId}/release"].post;
     const rotationOperation = openApi.paths["/devices/{deviceId}/rotate-secret"].post;
     assert.deepEqual(revokeOperation.parameters.at(-1), {
       $ref: "#/components/parameters/IdempotencyKey",
@@ -2021,6 +2048,13 @@ describe("Shcare HTTP v1 contracts", () => {
     assert.equal(
       revokeOperation.responses["200"].content["application/json"].schema.$ref,
       "#/components/schemas/DeviceRevokeReceipt",
+    );
+    assert.deepEqual(releaseOperation.parameters.at(-1), {
+      $ref: "#/components/parameters/IdempotencyKey",
+    });
+    assert.equal(
+      releaseOperation.responses["200"].content["application/json"].schema.$ref,
+      "#/components/schemas/DeviceReleaseReceipt",
     );
     assert.equal(
       rotationOperation.requestBody.content["application/json"].schema.$ref,
@@ -2030,7 +2064,7 @@ describe("Shcare HTTP v1 contracts", () => {
       rotationOperation.responses["202"].content["application/json"].schema.$ref,
       "#/components/schemas/DeviceCredentialRotationReceipt",
     );
-    for (const operation of [commandOperation, revokeOperation, rotationOperation]) {
+    for (const operation of [commandOperation, revokeOperation, releaseOperation, rotationOperation]) {
       for (const status of ["400", "403", "404", "409", "503"]) {
         assert.equal(operation.responses[status].$ref, "#/components/responses/ErrorResponse");
       }

@@ -14,6 +14,7 @@ type StaffOperation =
   | "member-suspend"
   | "member-reactivate"
   | "member-revoke"
+  | "member-role"
   | "invite-accept";
 
 type ExpectedInvitation = {

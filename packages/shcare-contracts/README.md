@@ -50,9 +50,14 @@ Platform device operations use closed HTTP v1 contracts in addition to the
 wire envelope: `device-command-*` restricts the generic endpoint to the three
 non-credential command types and separates backend acceptance from device
 `applied`; remote `wifi.update` is forbidden because Wi-Fi credentials are
-provisioned only through the device-local secure setup AP and must never enter
+provisioned only through the foreground ESPTouch V2 broadcast flow and must never enter
 the backend command, audit or idempotency ledger;
 `device-revoke-response` records the committed, audited revocation;
+`device-release-response` records a tenant-scoped patient release while retaining
+clinical and audit history;
+`device-wifi-setup-*` publishes only a short-lived, no-store ESPTouch V2
+AES-128 setup session for one already-owned device; Wi-Fi credentials remain
+foreground-only in Android and never enter this HTTP contract;
 `device-credential-rotation-*` exposes only the public two-phase state; and
 `device-ota-*` covers the server-signed request, bounded acceptance receipt and
 reconciled status. Public receipts never expose Wi-Fi material, candidate

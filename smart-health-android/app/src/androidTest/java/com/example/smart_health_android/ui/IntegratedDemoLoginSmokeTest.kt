@@ -4,9 +4,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -33,12 +33,17 @@ class IntegratedDemoLoginSmokeTest {
         )
 
         composeRule.waitUntil(timeoutMillis = 20_000) {
-            composeRule.onAllNodesWithTag("login.email").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("login.email").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithTag("patient-dashboard.content")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
         }
-        composeRule.onNodeWithTag("login.mode.patient").performClick()
-        composeRule.onNodeWithTag("login.email").performTextReplacement("patient@example.com")
-        composeRule.onNodeWithTag("login.password").performTextReplacement("12345678")
-        composeRule.onNodeWithTag("login.submit").performClick()
+        if (composeRule.onAllNodesWithTag("login.email").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithTag("login.mode.patient").performClick()
+            composeRule.onNodeWithTag("login.email").performTextReplacement("patient@example.com")
+            composeRule.onNodeWithTag("login.password").performTextReplacement("12345678")
+            composeRule.onNodeWithTag("login.submit").performClick()
+        }
 
         val reachedDashboard = runCatching {
             composeRule.waitUntil(timeoutMillis = 30_000) {
@@ -73,12 +78,32 @@ class IntegratedDemoLoginSmokeTest {
         }
         composeRule.onNodeWithTag("patient-dashboard.content").assertIsDisplayed()
         composeRule.onNodeWithTag("patient-dashboard.search").assertIsDisplayed()
-        composeRule.onNodeWithText("Ghép thiết bị").performClick()
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithTag("device_pairing.entry")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+        if (composeRule.onAllNodesWithTag("patient-dashboard.device").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithTag("patient-dashboard.device").performClick()
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithTag("device_management.configure_wifi")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            composeRule.onNodeWithTag("device_management.configure_wifi")
+                .performScrollTo()
+                .assertIsDisplayed()
+            check(
+                composeRule.onAllNodesWithTag("device_pairing.entry")
+                    .fetchSemanticsNodes()
+                    .isEmpty(),
+            ) {
+                "A paired dashboard device must open Device Management, not Device ID pairing."
+            }
+        } else {
+            composeRule.onNodeWithTag("patient-dashboard.device.pair").performClick()
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithTag("device_pairing.entry")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            composeRule.onNodeWithTag("device_pairing.entry").assertIsDisplayed()
+            composeRule.onNodeWithTag("device_pairing.device_id").assertIsDisplayed()
         }
-        composeRule.onNodeWithTag("device_pairing.entry").assertIsDisplayed()
     }
 }

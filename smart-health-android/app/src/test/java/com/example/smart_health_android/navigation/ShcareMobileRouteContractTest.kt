@@ -47,6 +47,8 @@ class ShcareMobileRouteContractTest {
             "new-scan" to ShcareMobileRoute.NewScan,
             "monitoring?scanId=scan-42" to ShcareMobileRoute.Monitoring,
             "device-pairing?returnRoute=dashboard" to ShcareMobileRoute.DevicePairing,
+            "device-wifi/device-42" to ShcareMobileRoute.DeviceWifiSetup,
+            "device-management?deviceId=device-42" to ShcareMobileRoute.DeviceManagement,
             "bluetooth?returnRoute=dashboard" to ShcareMobileRoute.LegacyBluetoothPairing,
             "connection-success/Shcare%20One?returnRoute=dashboard" to ShcareMobileRoute.ConnectionSuccess,
             "records" to ShcareMobileRoute.Records,
@@ -66,7 +68,7 @@ class ShcareMobileRouteContractTest {
             "change-password" to ShcareMobileRoute.ChangePassword,
             "data-access" to ShcareMobileRoute.DataAccess,
             "access-log" to ShcareMobileRoute.AccessLog,
-            "bluetooth-settings" to ShcareMobileRoute.BluetoothSettings,
+            "bluetooth-settings" to ShcareMobileRoute.LegacyBluetoothSettings,
             "export-data" to ShcareMobileRoute.ExportData,
         )
 
@@ -84,6 +86,42 @@ class ShcareMobileRouteContractTest {
         assertEquals(
             ShcareMobileRoute.RecordDetail,
             ShcareMobileRouteContract.resolve("  /record-detail/record-42/  "),
+        )
+    }
+
+    @Test
+    fun deviceWifiSetupRouteIsTypedAndRequiresDeviceManagementCapability() {
+        assertEquals(
+            "route.device-wifi",
+            ShcareMobileRouteContract.rootTestTagFor("device-wifi/device-42"),
+        )
+        assertTrue(
+            ShcareMobileRouteContract.evaluate(
+                "device-wifi/device-42",
+                patientAuthority(capabilities = setOf("personal.devices.manage")),
+            ) is MobileRouteAccessDecision.Allowed,
+        )
+    }
+
+    @Test
+    fun deviceManagementRouteSelectsAnOptionalDeviceAndKeepsTheBluetoothRouteAsAnAlias() {
+        val authority = patientAuthority(capabilities = setOf("personal.devices.manage"))
+
+        assertEquals(
+            "route.device-management",
+            ShcareMobileRouteContract.rootTestTagFor("device-management?deviceId=device-42"),
+        )
+        assertTrue(
+            ShcareMobileRouteContract.evaluate(
+                "device-management?deviceId=device-42",
+                authority,
+            ) is MobileRouteAccessDecision.Allowed,
+        )
+        assertTrue(
+            ShcareMobileRouteContract.evaluate(
+                "bluetooth-settings",
+                authority,
+            ) is MobileRouteAccessDecision.Allowed,
         )
     }
 
@@ -143,7 +181,7 @@ class ShcareMobileRouteContractTest {
         )
         assertTrue(
             ShcareMobileRouteContract.evaluate(
-                "bluetooth-settings",
+                "device-management?deviceId=device-42",
                 clinicalAuthority(capabilities = setOf("platform.devices.manage")),
             ) is MobileRouteAccessDecision.Allowed,
         )

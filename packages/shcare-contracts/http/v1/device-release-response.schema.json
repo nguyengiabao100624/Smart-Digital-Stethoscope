@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-release-response.schema.json",
+  "title": "Shcare patient device release receipt",
+  "description": "Backend-confirmed receipt for releasing one owned device while retaining its clinical and audit history.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["release", "replayed"],
+  "properties": {
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "released", "historyRetained"],
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+        },
+        "released": { "const": true },
+        "historyRetained": { "const": true }
+      }
+    },
+    "replayed": { "type": "boolean" }
+  },
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/devices/{deviceId}/release",
+    "requiredHeaders": ["Idempotency-Key"]
+  },
+  "x-shcare-success-level": "ownership-released-audit-committed-history-retained-and-active-socket-closed"
+}

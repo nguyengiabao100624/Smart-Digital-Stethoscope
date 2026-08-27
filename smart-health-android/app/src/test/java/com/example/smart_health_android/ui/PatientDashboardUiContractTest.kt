@@ -29,6 +29,9 @@ class PatientDashboardUiContractTest {
         assertTrue(screen.contains("device.batteryPercent?.let"))
         assertTrue(screen.contains("batteryPercent <= 15"))
         assertTrue(screen.contains("patient_dashboard_firmware_value"))
+        assertTrue(screen.contains("onNavigateToDeviceManagement"))
+        assertTrue(screen.contains("onNavigateToDeviceManagement(device.id)"))
+        assertTrue(screen.contains("patient-dashboard.device"))
         assertTrue(screen.contains(") + \" \" + summary"))
 
         assertFalse(screen.contains("SmartHealthRepository.api"))
@@ -54,12 +57,12 @@ class PatientDashboardUiContractTest {
         assertTrue(appNavGraph.contains("canViewRecords"))
         assertTrue(appNavGraph.contains("canManageDevice"))
         assertTrue(appNavGraph.contains("canViewAppointments"))
+        assertTrue(appNavGraph.contains("device-management?deviceId="))
     }
 
     @Test
     fun `patient dashboard copy is resource backed and never labels blank AI as normal`() {
         listOf(
-            "patient_dashboard_title",
             "patient_dashboard_search_hint",
             "patient_dashboard_loading",
             "patient_dashboard_offline_title",

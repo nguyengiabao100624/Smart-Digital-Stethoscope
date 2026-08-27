@@ -940,7 +940,7 @@ fun AppNavGraph(
                 onNavigateToAssistant = { navController.navigate("ai-assistant") },
                 onNavigateToNewScan = { navController.navigate("new-scan") },
                 onNavigateToNotifications = { navController.navigate("notifications") },
-                onNavigateToBluetooth = { navController.navigate("device-pairing?returnRoute=dashboard") },
+                onNavigateToBluetooth = { navController.navigate("device-management") },
                 onNavigateToAppointments = { navController.navigate(AppointmentRoute.List.route) },
                 onNavigateToRecordDetail = { recordId ->
                     navController.navigate("record-detail/${Uri.encode(recordId)}")
@@ -969,6 +969,9 @@ fun AppNavGraph(
                     patientDashboardRouteBinding.features.canUseAssistant,
                 onNavigateToNotifications = {
                     navController.navigate(ShcareMobileRoute.Notifications.routePattern)
+                },
+                onNavigateToDeviceManagement = { deviceId ->
+                    navController.navigate("device-management?deviceId=${Uri.encode(deviceId)}")
                 },
                 onNavigateToDevicePairing = {
                     navController.navigate(
@@ -1114,6 +1117,11 @@ fun AppNavGraph(
                 expectedAuthority = devicePairingAuthority,
                 currentAuthority = currentDevicePairingAuthority,
                 onNavigateBack = { navController.popBackStack() },
+                onDeviceRegistered = { deviceId ->
+                    navController.navigate("device-management?deviceId=${Uri.encode(deviceId)}") {
+                        popUpTo("device-pairing?returnRoute={returnRoute}") { inclusive = true }
+                    }
+                },
                 onConnectionSuccess = { deviceName ->
                     navController.navigate(
                         "connection-success/${Uri.encode(deviceName)}?returnRoute=${Uri.encode(returnRoute)}"
@@ -1121,6 +1129,31 @@ fun AppNavGraph(
                         popUpTo("device-pairing?returnRoute={returnRoute}") { inclusive = true }
                     }
                 }
+            )
+        }
+
+        authorizedMobileComposable(
+            navController = navController,
+            route = "device-wifi/{deviceId}",
+            arguments = listOf(
+                navArgument("deviceId") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val deviceId = Uri.decode(backStackEntry.arguments?.getString("deviceId").orEmpty())
+            DeviceWifiSetupScreen(
+                deviceId = deviceId,
+                expectedAuthority = devicePairingAuthority,
+                currentAuthority = currentDevicePairingAuthority,
+                onNavigateBack = { navController.popBackStack() },
+                onWifiConfigured = { deviceName ->
+                    val returnRoute = "device-management?deviceId=${Uri.encode(deviceId)}"
+                    navController.navigate(
+                        "connection-success/${Uri.encode(deviceName)}" +
+                            "?returnRoute=${Uri.encode(returnRoute)}",
+                    ) {
+                        popUpTo("device-wifi/{deviceId}") { inclusive = true }
+                    }
+                },
             )
         }
 
@@ -1142,6 +1175,11 @@ fun AppNavGraph(
                 expectedAuthority = devicePairingAuthority,
                 currentAuthority = currentDevicePairingAuthority,
                 onNavigateBack = { navController.popBackStack() },
+                onDeviceRegistered = { deviceId ->
+                    navController.navigate("device-management?deviceId=${Uri.encode(deviceId)}") {
+                        popUpTo("bluetooth?returnRoute={returnRoute}") { inclusive = true }
+                    }
+                },
                 onConnectionSuccess = { deviceName ->
                     navController.navigate(
                         "connection-success/${Uri.encode(deviceName)}?returnRoute=${Uri.encode(returnRoute)}"
@@ -1411,7 +1449,7 @@ fun AppNavGraph(
                 onNavigateToDevicePairing = {
                     navController.navigate("device-pairing?returnRoute=settings")
                 },
-                onNavigateToDeviceManagement = { navController.navigate("bluetooth-settings") }
+                onNavigateToDeviceManagement = { navController.navigate("device-management") }
             )
         }
 
@@ -1472,10 +1510,45 @@ fun AppNavGraph(
             )
         }
 
-        authorizedMobileComposable(navController, "bluetooth-settings") {
+        authorizedMobileComposable(
+            navController = navController,
+            route = ShcareMobileRoute.DeviceManagement.routePattern,
+            arguments = listOf(
+                navArgument("deviceId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val deviceId = Uri.decode(backStackEntry.arguments?.getString("deviceId").orEmpty())
             DeviceManagementScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onAddDevice = { navController.navigate("device-pairing?returnRoute=settings") }
+                onAddDevice = { navController.navigate("device-pairing?returnRoute=settings") },
+                onConfigureWifi = { deviceId ->
+                    navController.navigate("device-wifi/${Uri.encode(deviceId)}")
+                },
+                initialDeviceId = deviceId,
+            )
+        }
+
+        authorizedMobileComposable(
+            navController = navController,
+            route = ShcareMobileRoute.LegacyBluetoothSettings.routePattern,
+            arguments = listOf(
+                navArgument("deviceId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val deviceId = Uri.decode(backStackEntry.arguments?.getString("deviceId").orEmpty())
+            DeviceManagementScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onAddDevice = { navController.navigate("device-pairing?returnRoute=settings") },
+                onConfigureWifi = { resolvedDeviceId ->
+                    navController.navigate("device-wifi/${Uri.encode(resolvedDeviceId)}")
+                },
+                initialDeviceId = deviceId,
             )
         }
 

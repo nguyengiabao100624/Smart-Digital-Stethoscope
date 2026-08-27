@@ -53,7 +53,7 @@ sealed interface SmartHealthNotificationDestination {
     }
 
     data object DeviceManagement : SmartHealthNotificationDestination {
-        override val route = "bluetooth-settings"
+        override val route = "device-management"
         override val wireName = "device_management"
     }
 

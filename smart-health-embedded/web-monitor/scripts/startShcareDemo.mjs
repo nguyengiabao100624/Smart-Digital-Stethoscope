@@ -29,6 +29,7 @@ const hilRuntimeDir = path.resolve(
   process.env.SHCARE_HIL_RUNTIME_DIR || path.join(os.tmpdir(), "shcare-g3-hil-runtime"),
 );
 const deviceMaterialPath = path.join(hilRuntimeDir, "device.material");
+const hilOtaPrivateKeyPath = path.join(hilRuntimeDir, "ota-signing-private.pem");
 
 const ports = {
   backend: Number(process.env.SHCARE_DEMO_BACKEND_PORT || 3765),
@@ -55,6 +56,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shcare-interactive-demo-"
 const children = new Map();
 let stopping = false;
 let deviceMaterial = "";
+let hilOtaPrivateKey = "";
 
 function requireFile(filePath, label) {
   if (!fs.existsSync(filePath)) {
@@ -109,19 +111,36 @@ function prepareIntegratedDeviceFixture() {
   if (deviceMaterial.length < 16 || deviceMaterial.length > 95) {
     throw new Error("Physical demo device material is outside firmware bounds.");
   }
+  if (fs.existsSync(hilOtaPrivateKeyPath)) {
+    const parsedKey = crypto.createPrivateKey(fs.readFileSync(hilOtaPrivateKeyPath));
+    if (parsedKey.asymmetricKeyType !== "rsa") {
+      throw new Error("Physical demo HIL OTA key must be an RSA private key.");
+    }
+    hilOtaPrivateKey = fs.readFileSync(hilOtaPrivateKeyPath, "utf8").trim();
+  }
   const now = new Date().toISOString();
   const database = {
     version: 1,
     createdAt: now,
     updatedAt: now,
     devices: [
-      createFactoryEnrolledDeviceFixture({
+      {
+        // The local, Firebase-backed Android demo starts after the company has
+        // already assigned this fixture to the demo account.  This exercises
+        // the same ID-only boundary as production: entering an ID opens setup
+        // only for a device the current user is already authorized to manage.
+        ...createFactoryEnrolledDeviceFixture({
         deviceId,
         organizationId: "org_default_clinic",
         factoryCredential: deviceMaterial,
         name: "Shcare ESP32-S3 hai mic",
         createdAt: now,
-      }),
+        }),
+        status: "claimed",
+        ownershipState: "claimed",
+        ownerUserId: "usr_patient_default",
+        pairedUserId: "usr_patient_default",
+      },
     ],
   };
   fs.writeFileSync(path.join(dataDir, "db.json"), JSON.stringify(database, null, 2));
@@ -455,6 +474,11 @@ async function main() {
     LOCAL_OBJECT_STORAGE_DIR: path.join(dataDir, "objects"),
     NOTIFICATION_EMAIL_ENABLED: "false",
     PUSH_NOTIFICATIONS_ENABLED: "false",
+    // This HIL-only private key is stored only in the OS temporary runtime
+    // directory and is paired with the public key compiled into the fixture.
+    // Production receives its signing key exclusively from its secret manager.
+    OTA_SIGNING_PRIVATE_KEY_PEM: integratedDemo ? hilOtaPrivateKey : "",
+    PUBLIC_BACKEND_URL: integratedDemo ? `https://${lanIp}:${ports.tls}` : "",
     CORS_ORIGIN: `${origins.web},${origins.admin}`,
   });
   await waitForUrl(`${origins.backend}/api/v1/health`, "Backend", backend);

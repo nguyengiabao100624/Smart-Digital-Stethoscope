@@ -254,11 +254,15 @@ void test_cloud_reconnect_backoff_is_exponential_and_bounded() {
       1000, shcare::reconnectBackoffDelayMs(0, 1000, 30000));
 }
 
-void test_setup_portal_requires_factory_state_or_physical_gesture() {
-  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(false, false));
-  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(false, true));
-  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(true, true));
-  TEST_ASSERT_FALSE(shcare::setupPortalAllowed(true, false));
+void test_setup_portal_requires_factory_state_or_trusted_recovery() {
+  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(false, false, false));
+  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(false, true, false));
+  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(true, true, false));
+  TEST_ASSERT_TRUE(shcare::setupPortalAllowed(true, false, true));
+  TEST_ASSERT_FALSE(shcare::setupPortalAllowed(true, false, false));
+  TEST_ASSERT_FALSE(shcare::shouldOpenSetupPortalAfterReconnectFailures(2, 3));
+  TEST_ASSERT_TRUE(shcare::shouldOpenSetupPortalAfterReconnectFailures(3, 3));
+  TEST_ASSERT_FALSE(shcare::shouldOpenSetupPortalAfterReconnectFailures(3, 0));
 }
 
 void test_setup_portal_expiry_is_bounded_and_wrap_safe() {
@@ -1463,6 +1467,11 @@ void test_shared_auth_accepted_fixture_binds_exact_handshake_identity() {
                            accepted.message.rotationId.c_str());
   TEST_ASSERT_EQUAL_STRING("confirmed",
                            accepted.message.rotationState.c_str());
+  std::int64_t serverEpochMs = 0;
+  TEST_ASSERT_TRUE(
+      shcare::parseAuthAcceptedServerTimeEpochMillis(accepted.message,
+                                                      serverEpochMs));
+  TEST_ASSERT_EQUAL_INT64(1784246401000LL, serverEpochMs);
 
   shcare::AuthHandshakeState handshake;
   TEST_ASSERT_TRUE(handshake.beginChallenge(accepted.message.challengeId));
@@ -1487,7 +1496,7 @@ void runTests() {
   RUN_TEST(test_production_security_profile_requires_wss_ca_and_device_credential);
   RUN_TEST(test_plain_ws_and_udp_require_explicit_development_profile);
   RUN_TEST(test_cloud_reconnect_backoff_is_exponential_and_bounded);
-  RUN_TEST(test_setup_portal_requires_factory_state_or_physical_gesture);
+  RUN_TEST(test_setup_portal_requires_factory_state_or_trusted_recovery);
   RUN_TEST(test_setup_portal_expiry_is_bounded_and_wrap_safe);
   RUN_TEST(test_setup_portal_csrf_requires_exact_non_empty_token);
   RUN_TEST(test_setup_wifi_json_request_is_bound_to_device_session_and_protocol);

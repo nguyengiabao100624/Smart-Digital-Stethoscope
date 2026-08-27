@@ -1,10 +1,7 @@
 package com.example.smart_health_android.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.os.PersistableBundle
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,12 +27,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Router
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wifi
@@ -48,6 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -61,12 +59,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -85,7 +81,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.core.net.toUri
 import com.example.smart_health_android.R
 import com.example.smart_health_android.devices.DeviceManualSetupField
 import com.example.smart_health_android.devices.DeviceCurrentWifiSsidState
@@ -96,6 +91,7 @@ import com.example.smart_health_android.devices.DevicePairingUiEffect
 import com.example.smart_health_android.devices.DevicePairingUiState
 import com.example.smart_health_android.devices.DevicePairingAuthoritySnapshot
 import com.example.smart_health_android.devices.DevicePairingViewModel
+import com.example.smart_health_android.devices.DeviceProvisioningProgress
 import com.example.smart_health_android.devices.DevicePairingViewModelFactory
 import com.example.smart_health_android.devices.DeviceTargetWifiField
 import com.example.smart_health_android.ui.components.ShcareErrorState
@@ -104,18 +100,15 @@ import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
 import com.example.smart_health_android.ui.theme.ShcareTheme
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanner
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DevicePairingScreen(
     onNavigateBack: () -> Unit,
     onConnectionSuccess: (deviceName: String) -> Unit,
+    onDeviceRegistered: (deviceId: String) -> Unit = {},
+    initialWifiSetupDeviceId: String? = null,
     expectedAuthority: DevicePairingAuthoritySnapshot? = null,
     currentAuthority: () -> DevicePairingAuthoritySnapshot? = { expectedAuthority },
     viewModel: DevicePairingViewModel = viewModel(
@@ -129,21 +122,19 @@ fun DevicePairingScreen(
     ),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isWifiSetupSurface = initialWifiSetupDeviceId
+        ?.trim()
+        ?.isNotEmpty()
+        ?: false
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
-    val scannerError = stringResource(R.string.device_pairing_scanner_error)
-    val wifiSettingsError = stringResource(R.string.device_pairing_wifi_settings_error)
     val locationSettingsError = stringResource(R.string.device_pairing_location_settings_error)
-    val setupPortalError = stringResource(R.string.device_pairing_portal_open_error)
-    val copiedMessage = stringResource(R.string.device_pairing_copied)
-    val scanner = rememberDeviceScanner()
-    val nearbyWifiPermissionLauncher = rememberLauncherForActivityResult(
+    val wifiAccessPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
         viewModel.onAction(
-            DevicePairingUiAction.NearbyWifiPermissionResult(
+            DevicePairingUiAction.WifiAccessPermissionResult(
                 granted = grants.isNotEmpty() && grants.values.all { it },
             ),
         )
@@ -161,6 +152,15 @@ fun DevicePairingScreen(
     BackHandler {
         viewModel.onAction(DevicePairingUiAction.Cancel)
         onNavigateBack()
+    }
+
+    LaunchedEffect(initialWifiSetupDeviceId, viewModel) {
+        initialWifiSetupDeviceId
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.let { deviceId ->
+                viewModel.onAction(DevicePairingUiAction.OpenWifiSetup(deviceId))
+            }
     }
 
     DisposableEffect(viewModel, lifecycleOwner) {
@@ -189,8 +189,8 @@ fun DevicePairingScreen(
                         currentWifiSsidPermissionLauncher.launch(effect.permissions.toTypedArray())
                     }
 
-                    is DevicePairingUiEffect.RequestNearbyWifiPermissions -> {
-                        nearbyWifiPermissionLauncher.launch(effect.permissions.toTypedArray())
+                    is DevicePairingUiEffect.RequestWifiAccessPermissions -> {
+                        wifiAccessPermissionLauncher.launch(effect.permissions.toTypedArray())
                     }
 
                     DevicePairingUiEffect.OpenSystemLocationSettings -> {
@@ -201,27 +201,12 @@ fun DevicePairingScreen(
                         }
                     }
 
-                    DevicePairingUiEffect.OpenSystemWifiSettings -> {
-                        runCatching {
-                            context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-                        }.onFailure {
-                            viewModel.onAction(DevicePairingUiAction.WifiSettingsLaunchFailed)
-                            snackbarHostState.showSnackbar(wifiSettingsError)
-                        }
-                    }
-
-                    is DevicePairingUiEffect.OpenExternalSetupPortal -> {
-                        runCatching {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, effect.url.toUri()),
-                            )
-                        }.onFailure {
-                            snackbarHostState.showSnackbar(setupPortalError)
-                        }
-                    }
-
                     is DevicePairingUiEffect.DeviceOnlineConfirmed -> {
                         onConnectionSuccess(effect.deviceName)
+                    }
+
+                    is DevicePairingUiEffect.DeviceRegistered -> {
+                        onDeviceRegistered(effect.deviceId)
                     }
                 }
             }
@@ -231,13 +216,27 @@ fun DevicePairingScreen(
     Scaffold(
         topBar = {
             ShcareGradientTopAppBar(
-                title = stringResource(R.string.device_pairing_title),
+                title = stringResource(
+                    if (isWifiSetupSurface) {
+                        R.string.device_wifi_setup_title
+                    } else {
+                        R.string.device_pairing_title
+                    },
+                ),
                 onNavigateBack = {
                     viewModel.onAction(DevicePairingUiAction.Cancel)
                     onNavigateBack()
                 },
-                backContentDescription = stringResource(R.string.device_pairing_back),
-                backModifier = Modifier.testTag("device_pairing.back"),
+                backContentDescription = stringResource(
+                    if (isWifiSetupSurface) {
+                        R.string.device_wifi_setup_back
+                    } else {
+                        R.string.device_pairing_back
+                    },
+                ),
+                backModifier = Modifier.testTag(
+                    if (isWifiSetupSurface) "device_wifi.back" else "device_pairing.back",
+                ),
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -252,33 +251,56 @@ fun DevicePairingScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .widthIn(max = 720.dp)
+                    .testTag(
+                        if (isWifiSetupSurface) {
+                            "device_wifi.surface"
+                        } else {
+                            "device_pairing.surface"
+                        },
+                    )
                     .align(Alignment.TopCenter),
             ) {
                 when (state.stage) {
-                DevicePairingStage.Entry -> DevicePairingEntryContent(
-                    state = state,
-                    onAction = viewModel::onAction,
-                    onScanQr = {
-                        scanner.startScan()
-                            .addOnSuccessListener { barcode ->
-                                val rawValue = barcode.rawValue
-                                if (!rawValue.isNullOrBlank()) {
-                                    viewModel.onAction(DevicePairingUiAction.QrScanned(rawValue))
-                                }
-                            }
-                            .addOnFailureListener {
-                                coroutineScope.launch { snackbarHostState.showSnackbar(scannerError) }
-                            }
-                    },
-                )
+                DevicePairingStage.Entry -> {
+                    if (isWifiSetupSurface) {
+                        ShcareLoadingState(
+                            message = stringResource(R.string.device_wifi_setup_preparing),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("device_wifi.preparing"),
+                        )
+                    } else {
+                        DevicePairingEntryContent(
+                            state = state,
+                            onAction = viewModel::onAction,
+                        )
+                    }
+                }
 
                 DevicePairingStage.Claiming -> ShcareLoadingState(
                     message = stringResource(R.string.device_pairing_claiming),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("device_pairing.claiming"),
+                )
+
+                DevicePairingStage.PreparingWifi -> ShcareLoadingState(
+                    message = stringResource(R.string.device_pairing_preparing_wifi),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("device_pairing.preparing_wifi"),
                 )
 
                 DevicePairingStage.ClaimFailed -> {
-                    if (
+                    if (isWifiSetupSurface) {
+                        DeviceWifiSetupFailure(
+                            state = state,
+                            onNavigateBack = onNavigateBack,
+                            onRetry = {
+                                viewModel.onAction(DevicePairingUiAction.RetryWifiSetup)
+                            },
+                        )
+                    } else if (
                         state.failureKind in setOf(
                             DevicePairingFailureKind.Permission,
                             DevicePairingFailureKind.Session,
@@ -292,9 +314,17 @@ fun DevicePairingScreen(
                                     R.string.device_pairing_permission_title
                                 },
                             ),
-                            message = state.resolveErrorMessageWithRequestId(
-                                fallback = stringResource(R.string.device_pairing_claim_failed_message),
-                            ),
+                            message = buildString {
+                                append(
+                                    state.resolveErrorMessageWithRequestId(
+                                        fallback = stringResource(R.string.device_pairing_claim_failed_message),
+                                    ),
+                                )
+                                if (state.failureKind == DevicePairingFailureKind.Permission) {
+                                    append("\n\n")
+                                    append(stringResource(R.string.device_pairing_permission_guidance))
+                                }
+                            },
                             actionLabel = stringResource(R.string.device_pairing_back),
                             onRequestPermission = {
                                 viewModel.onAction(DevicePairingUiAction.Cancel)
@@ -335,7 +365,6 @@ fun DevicePairingScreen(
 
                 DevicePairingStage.SetupReady -> DevicePairingSetupContent(
                     state = state,
-                    isPortalStep = false,
                     onTargetSsidChanged = {
                         viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged(it))
                     },
@@ -348,55 +377,12 @@ fun DevicePairingScreen(
                     onUseCurrentWifiSsid = {
                         viewModel.onAction(DevicePairingUiAction.UseCurrentWifiSsid)
                     },
-                    onOpenWifiSettings = {
-                        viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
-                    },
-                    onOpenPortal = {},
-                    onConfirmPortal = {},
-                    onCopy = { label, value ->
-                        copySensitiveText(context, label, value)
-                        coroutineScope.launch { snackbarHostState.showSnackbar(copiedMessage) }
-                    },
                 )
 
-                DevicePairingStage.OpeningWifi -> ShcareLoadingState(
-                    message = stringResource(R.string.device_pairing_opening_wifi),
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                DevicePairingStage.Provisioning -> ShcareLoadingState(
-                    message = stringResource(R.string.device_pairing_provisioning_in_app),
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                DevicePairingStage.PortalGuidance -> DevicePairingSetupContent(
+                DevicePairingStage.Provisioning -> DevicePairingProvisioningContent(
                     state = state,
-                    isPortalStep = true,
-                    onTargetSsidChanged = {
-                        viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged(it))
-                    },
-                    onTargetPasswordChanged = {
-                        viewModel.onAction(DevicePairingUiAction.TargetWifiPasswordChanged(it))
-                    },
-                    onStartLocalProvisioning = {
-                        viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
-                    },
-                    onUseCurrentWifiSsid = {
-                        viewModel.onAction(DevicePairingUiAction.UseCurrentWifiSsid)
-                    },
-                    onOpenWifiSettings = {
-                        viewModel.onAction(DevicePairingUiAction.OpenWifiSettings)
-                    },
-                    onOpenPortal = {
-                        viewModel.onAction(DevicePairingUiAction.OpenSetupPortal)
-                    },
-                    onConfirmPortal = {
-                        viewModel.onAction(DevicePairingUiAction.PortalSetupConfirmed)
-                    },
-                    onCopy = { label, value ->
-                        copySensitiveText(context, label, value)
-                        coroutineScope.launch { snackbarHostState.showSnackbar(copiedMessage) }
-                    },
+                    modifier = Modifier.fillMaxSize(),
+                    testTag = "device_pairing.provisioning",
                 )
 
                 DevicePairingStage.AwaitingOnline -> DevicePairingAwaitingOnlineContent(
@@ -418,7 +404,9 @@ fun DevicePairingScreen(
 
                 DevicePairingStage.Online -> ShcareLoadingState(
                     message = stringResource(R.string.device_pairing_online_confirmed),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("device_pairing.online"),
                 )
                 }
             }
@@ -427,27 +415,73 @@ fun DevicePairingScreen(
 }
 
 @Composable
-private fun rememberDeviceScanner(): GmsBarcodeScanner {
-    val context = LocalContext.current
-    val options = remember {
-        GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .enableAutoZoom()
-            .build()
+fun DeviceWifiSetupScreen(
+    deviceId: String,
+    onNavigateBack: () -> Unit,
+    onWifiConfigured: (deviceName: String) -> Unit,
+    expectedAuthority: DevicePairingAuthoritySnapshot? = null,
+    currentAuthority: () -> DevicePairingAuthoritySnapshot? = { expectedAuthority },
+    viewModel: DevicePairingViewModel = viewModel(
+        key = expectedAuthority?.let { authority ->
+            "device-wifi-${deviceId.trim()}-${authority.userId}-${authority.workspaceId}-${authority.authorityEpoch}"
+        } ?: "device-wifi-authority-denied",
+        factory = DevicePairingViewModelFactory(
+            expectedAuthority = expectedAuthority,
+            currentAuthority = currentAuthority,
+        ),
+    ),
+) {
+    DevicePairingScreen(
+        onNavigateBack = onNavigateBack,
+        onConnectionSuccess = onWifiConfigured,
+        initialWifiSetupDeviceId = deviceId,
+        expectedAuthority = expectedAuthority,
+        currentAuthority = currentAuthority,
+        viewModel = viewModel,
+    )
+}
+
+@Composable
+private fun DeviceWifiSetupFailure(
+    state: DevicePairingUiState,
+    onNavigateBack: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val isPermissionFailure = state.failureKind in setOf(
+        DevicePairingFailureKind.Permission,
+        DevicePairingFailureKind.Session,
+    )
+    val fallback = stringResource(R.string.device_wifi_setup_failed_message)
+    if (isPermissionFailure) {
+        ShcarePermissionState(
+            title = stringResource(R.string.device_wifi_setup_unavailable_title),
+            message = state.resolveErrorMessageWithRequestId(fallback = fallback),
+            actionLabel = stringResource(R.string.device_wifi_setup_back),
+            onRequestPermission = onNavigateBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("device_wifi.permission_denied"),
+        )
+    } else {
+        ShcareErrorState(
+            title = stringResource(R.string.device_wifi_setup_failed_title),
+            message = state.resolveErrorMessageWithRequestId(fallback = fallback),
+            retryLabel = stringResource(R.string.device_wifi_setup_retry),
+            onRetry = onRetry,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("device_wifi.error"),
+        )
     }
-    return remember(context, options) { GmsBarcodeScanning.getClient(context, options) }
 }
 
 @Composable
 private fun DevicePairingEntryContent(
     state: DevicePairingUiState,
     onAction: (DevicePairingUiAction) -> Unit,
-    onScanQr: () -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
     val resolvedErrorMessage = state.resolveErrorMessage()
-    var showClaimCode by rememberSaveable { mutableStateOf(false) }
-    var showSetupProof by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -478,69 +512,6 @@ private fun DevicePairingEntryContent(
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
-                PairingStepCard(
-                    number = 1,
-                    icon = Icons.Default.VerifiedUser,
-                    title = stringResource(R.string.device_pairing_step_claim_title),
-                    description = stringResource(R.string.device_pairing_step_claim_description),
-                )
-                PairingStepCard(
-                    number = 2,
-                    icon = Icons.Default.Router,
-                    title = stringResource(R.string.device_pairing_step_wifi_title),
-                    description = stringResource(R.string.device_pairing_step_wifi_description),
-                )
-                PairingStepCard(
-                    number = 3,
-                    icon = Icons.Default.CloudDone,
-                    title = stringResource(R.string.device_pairing_step_online_title),
-                    description = stringResource(R.string.device_pairing_step_online_description),
-                )
-            }
-        }
-
-        item {
-            Button(
-                onClick = onScanQr,
-                enabled = !state.isBusy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .testTag("device_pairing.scan_qr"),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.QrCodeScanner,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.size(spacing.small))
-                Column {
-                    Text(stringResource(R.string.device_pairing_scan_qr))
-                    Text(
-                        text = stringResource(R.string.device_pairing_scan_qr_description),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        }
-
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.medium),
-            ) {
-                HorizontalDivider(Modifier.weight(1f))
-                Text(
-                    text = stringResource(R.string.device_pairing_or_manual),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                HorizontalDivider(Modifier.weight(1f))
-            }
-        }
-
-        item {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
                 OutlinedTextField(
                     value = state.manualDeviceId,
@@ -550,124 +521,18 @@ private fun DevicePairingEntryContent(
                     enabled = !state.isBusy,
                     isError = DeviceManualSetupField.DeviceId in state.manualFieldErrors,
                     supportingText = if (DeviceManualSetupField.DeviceId in state.manualFieldErrors) {
-                        { Text(stringResource(R.string.device_pairing_invalid_device_id)) }
+                        {
+                            Text(
+                                stringResource(R.string.device_pairing_invalid_device_id),
+                                modifier = Modifier.testTag("device_pairing.device_id.error"),
+                            )
+                        }
                     } else {
                         null
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Ascii,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("device_pairing.device_id"),
-                )
-                OutlinedTextField(
-                    value = state.manualClaimCode,
-                    onValueChange = { onAction(DevicePairingUiAction.ManualClaimCodeChanged(it)) },
-                    label = { Text(stringResource(R.string.device_pairing_claim_code)) },
-                    placeholder = { Text(stringResource(R.string.device_pairing_claim_code_hint)) },
-                    enabled = !state.isBusy,
-                    isError = DeviceManualSetupField.ClaimCode in state.manualFieldErrors,
-                    supportingText = if (DeviceManualSetupField.ClaimCode in state.manualFieldErrors) {
-                        { Text(stringResource(R.string.device_pairing_invalid_claim_code)) }
-                    } else {
-                        null
-                    },
-                    singleLine = true,
-                    visualTransformation = if (showClaimCode) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { showClaimCode = !showClaimCode }) {
-                            Icon(
-                                imageVector = if (showClaimCode) {
-                                    Icons.Default.VisibilityOff
-                                } else {
-                                    Icons.Default.Visibility
-                                },
-                                contentDescription = stringResource(
-                                    if (showClaimCode) {
-                                        R.string.device_pairing_hide_claim_code
-                                    } else {
-                                        R.string.device_pairing_show_claim_code
-                                    },
-                                ),
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("device_pairing.claim_code"),
-                )
-                OutlinedTextField(
-                    value = state.manualSetupSsid,
-                    onValueChange = { onAction(DevicePairingUiAction.ManualSetupSsidChanged(it)) },
-                    label = { Text(stringResource(R.string.device_pairing_manual_setup_ssid)) },
-                    placeholder = { Text(stringResource(R.string.device_pairing_manual_setup_ssid_hint)) },
-                    enabled = !state.isBusy,
-                    isError = DeviceManualSetupField.SetupSsid in state.manualFieldErrors,
-                    supportingText = if (DeviceManualSetupField.SetupSsid in state.manualFieldErrors) {
-                        { Text(stringResource(R.string.device_pairing_invalid_setup_ssid)) }
-                    } else {
-                        null
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Ascii,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("device_pairing.setup_ssid"),
-                )
-                OutlinedTextField(
-                    value = state.manualProofOfPossession,
-                    onValueChange = { onAction(DevicePairingUiAction.ManualProofChanged(it)) },
-                    label = { Text(stringResource(R.string.device_pairing_manual_setup_proof)) },
-                    placeholder = { Text(stringResource(R.string.device_pairing_manual_setup_proof_hint)) },
-                    enabled = !state.isBusy,
-                    isError = DeviceManualSetupField.ProofOfPossession in state.manualFieldErrors,
-                    supportingText = if (
-                        DeviceManualSetupField.ProofOfPossession in state.manualFieldErrors
-                    ) {
-                        { Text(stringResource(R.string.device_pairing_invalid_setup_proof)) }
-                    } else {
-                        { Text(stringResource(R.string.device_pairing_manual_setup_help)) }
-                    },
-                    singleLine = true,
-                    visualTransformation = if (showSetupProof) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { showSetupProof = !showSetupProof }) {
-                            Icon(
-                                imageVector = if (showSetupProof) {
-                                    Icons.Default.VisibilityOff
-                                } else {
-                                    Icons.Default.Visibility
-                                },
-                                contentDescription = stringResource(
-                                    if (showSetupProof) {
-                                        R.string.device_pairing_hide_setup_proof
-                                    } else {
-                                        R.string.device_pairing_show_setup_proof
-                                    },
-                                ),
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                     ),
                     keyboardActions = KeyboardActions(
@@ -675,7 +540,7 @@ private fun DevicePairingEntryContent(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("device_pairing.setup_proof"),
+                        .testTag("device_pairing.device_id"),
                 )
                 Button(
                     onClick = { onAction(DevicePairingUiAction.SubmitManual) },
@@ -699,33 +564,17 @@ private fun DevicePairingEntryContent(
 @Composable
 private fun DevicePairingSetupContent(
     state: DevicePairingUiState,
-    isPortalStep: Boolean,
     onTargetSsidChanged: (String) -> Unit,
     onTargetPasswordChanged: (String) -> Unit,
     onStartLocalProvisioning: () -> Unit,
     onUseCurrentWifiSsid: () -> Unit,
-    onOpenWifiSettings: () -> Unit,
-    onOpenPortal: () -> Unit,
-    onConfirmPortal: () -> Unit,
-    onCopy: (label: String, value: String) -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
     var showTargetPassword by rememberSaveable(state.claimedDeviceId) { mutableStateOf(false) }
-    var showManualFallback by rememberSaveable(state.claimedDeviceId, isPortalStep) {
-        mutableStateOf(isPortalStep)
-    }
-    val ssidLabel = stringResource(R.string.device_pairing_setup_ssid)
-    val passwordLabel = stringResource(R.string.device_pairing_setup_password)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .testTag(
-                if (isPortalStep) {
-                    "device_pairing.portal_guidance"
-                } else {
-                    "device_pairing.setup_ready"
-                },
-            ),
+            .testTag("device_pairing.setup_ready"),
         contentPadding = PaddingValues(
             start = spacing.large,
             top = spacing.large,
@@ -737,24 +586,12 @@ private fun DevicePairingSetupContent(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
                 Text(
-                    text = stringResource(
-                        if (isPortalStep) {
-                            R.string.device_pairing_portal_heading
-                        } else {
-                            R.string.device_pairing_setup_heading
-                        },
-                    ),
+                    text = stringResource(R.string.device_pairing_setup_heading),
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.semantics { heading() },
                 )
                 Text(
-                    text = stringResource(
-                        if (isPortalStep) {
-                            R.string.device_pairing_portal_description
-                        } else {
-                            R.string.device_pairing_setup_description
-                        },
-                    ),
+                    text = stringResource(R.string.device_pairing_setup_description),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -821,6 +658,7 @@ private fun DevicePairingSetupContent(
                 }
                 if (
                     state.currentWifiSsidState in setOf(
+                        DeviceCurrentWifiSsidState.Idle,
                         DeviceCurrentWifiSsidState.PermissionRequired,
                         DeviceCurrentWifiSsidState.LocationDisabled,
                         DeviceCurrentWifiSsidState.Unavailable,
@@ -870,9 +708,9 @@ private fun DevicePairingSetupContent(
                                 },
                                 contentDescription = stringResource(
                                     if (showTargetPassword) {
-                                        R.string.device_pairing_hide_setup_proof
+                                        R.string.device_pairing_hide_target_wifi_password
                                     } else {
-                                        R.string.device_pairing_show_setup_proof
+                                        R.string.device_pairing_show_target_wifi_password
                                     },
                                 ),
                             )
@@ -900,7 +738,7 @@ private fun DevicePairingSetupContent(
                         .defaultMinSize(minHeight = 48.dp)
                         .testTag("device_pairing.provision_in_app"),
                 ) {
-                    Icon(Icons.Default.Router, contentDescription = null)
+                    Icon(Icons.Default.Wifi, contentDescription = null)
                     Spacer(Modifier.size(spacing.small))
                     Text(stringResource(R.string.device_pairing_connect_in_app))
                 }
@@ -908,167 +746,12 @@ private fun DevicePairingSetupContent(
                 if (errorMessage.isNotBlank()) {
                     DevicePairingInlineError(state, errorMessage)
                 }
-            }
-        }
-
-        if (!isPortalStep) {
-            item {
-                OutlinedButton(
-                    onClick = { showManualFallback = !showManualFallback },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = 48.dp)
-                        .testTag("device_pairing.toggle_manual_fallback"),
-                ) {
-                    Icon(
-                        imageVector = if (showManualFallback) {
-                            Icons.Default.ExpandLess
-                        } else {
-                            Icons.Default.ExpandMore
-                        },
-                        contentDescription = null,
-                    )
-                    Spacer(Modifier.size(spacing.small))
-                    Text(
-                        stringResource(
-                            if (showManualFallback) {
-                                R.string.device_pairing_hide_browser_fallback
-                            } else {
-                                R.string.device_pairing_show_browser_fallback
-                            },
-                        ),
-                    )
+                if (state.provisioningProgress.isFailure()) {
+                    DevicePairingConnectionTrace(state.provisioningProgress)
                 }
             }
         }
 
-        if (showManualFallback || isPortalStep) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(spacing.large),
-                        verticalArrangement = Arrangement.spacedBy(spacing.large),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.device_pairing_setup_network_heading),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        SetupCredentialRow(
-                            label = ssidLabel,
-                            value = state.setupSsid,
-                            copyDescription = stringResource(R.string.device_pairing_copy_ssid),
-                            onCopy = { onCopy(ssidLabel, state.setupSsid) },
-                        )
-                        HorizontalDivider()
-                        SetupCredentialRow(
-                            label = passwordLabel,
-                            value = state.setupProofOfPossession,
-                            copyDescription = stringResource(R.string.device_pairing_copy_password),
-                            onCopy = { onCopy(passwordLabel, state.setupProofOfPossession) },
-                        )
-                        Text(
-                            text = stringResource(R.string.device_pairing_setup_sensitive_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-
-            if (!isPortalStep) {
-                item {
-                    OutlinedButton(
-                        onClick = onOpenWifiSettings,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                            .testTag("device_pairing.open_wifi_settings"),
-                    ) {
-                        Icon(Icons.Default.Router, contentDescription = null)
-                        Spacer(Modifier.size(spacing.small))
-                        Text(stringResource(R.string.device_pairing_browser_fallback))
-                    }
-                }
-            } else {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
-                        Text(
-                            text = stringResource(R.string.device_pairing_portal_instruction),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        OutlinedButton(
-                            onClick = onOpenWifiSettings,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 48.dp)
-                                .testTag("device_pairing.reopen_wifi_settings"),
-                        ) {
-                            Text(stringResource(R.string.device_pairing_reopen_wifi_settings))
-                        }
-                        Button(
-                            onClick = onOpenPortal,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 48.dp)
-                                .testTag("device_pairing.open_portal"),
-                        ) {
-                            Text(stringResource(R.string.device_pairing_open_portal))
-                        }
-                        OutlinedButton(
-                            onClick = onConfirmPortal,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 48.dp)
-                                .testTag("device_pairing.confirm_portal"),
-                        ) {
-                            Text(stringResource(R.string.device_pairing_confirm_portal))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SetupCredentialRow(
-    label: String,
-    value: String,
-    copyDescription: String,
-    onCopy: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.small),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        OutlinedButton(
-            onClick = onCopy,
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp),
-        ) {
-            Text(copyDescription)
-        }
     }
 }
 
@@ -1079,26 +762,11 @@ private fun DevicePairingAwaitingOnlineContent(
 ) {
     val resolvedErrorMessage = state.resolveErrorMessage()
     if (state.isBusy) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(ShcareTheme.spacing.extraLarge),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            CircularProgressIndicator(modifier = Modifier.size(40.dp))
-            Spacer(Modifier.height(ShcareTheme.spacing.large))
-            Text(
-                text = stringResource(R.string.device_pairing_waiting_online_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Spacer(Modifier.height(ShcareTheme.spacing.small))
-            Text(
-                text = stringResource(R.string.device_pairing_waiting_online),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        DevicePairingProvisioningContent(
+            state = state,
+            modifier = Modifier.fillMaxSize(),
+            testTag = "device_pairing.awaiting_online",
+        )
         return
     }
 
@@ -1114,52 +782,267 @@ private fun DevicePairingAwaitingOnlineContent(
 }
 
 @Composable
-private fun PairingStepCard(
-    number: Int,
-    icon: ImageVector,
-    title: String,
-    description: String,
+private fun DevicePairingProvisioningContent(
+    state: DevicePairingUiState,
+    modifier: Modifier = Modifier,
+    testTag: String,
 ) {
+    val spacing = ShcareTheme.spacing
+    val progress = state.provisioningProgress
+    LazyColumn(
+        modifier = modifier.testTag(testTag),
+        contentPadding = PaddingValues(
+            start = spacing.large,
+            top = spacing.extraLarge,
+            end = spacing.large,
+            bottom = spacing.doubleExtraLarge,
+        ),
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+                Text(
+                    text = stringResource(R.string.device_pairing_progress_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = stringResource(progress.messageRes()),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
+        item {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            DevicePairingConnectionTrace(progress)
+        }
+    }
+}
+
+private enum class DeviceProvisioningTraceStatus {
+    Pending,
+    Active,
+    Complete,
+    NoDirectResponse,
+    Failed,
+}
+
+private data class DeviceProvisioningTraceStep(
+    val titleRes: Int,
+)
+
+private val DeviceProvisioningTraceSteps = listOf(
+    DeviceProvisioningTraceStep(R.string.device_pairing_trace_network),
+    DeviceProvisioningTraceStep(R.string.device_pairing_trace_prepare),
+    DeviceProvisioningTraceStep(R.string.device_pairing_trace_broadcast),
+    DeviceProvisioningTraceStep(R.string.device_pairing_trace_received),
+    DeviceProvisioningTraceStep(R.string.device_pairing_trace_wait),
+    DeviceProvisioningTraceStep(R.string.device_pairing_trace_online),
+)
+
+@Composable
+private fun DevicePairingConnectionTrace(progress: DeviceProvisioningProgress) {
+    val spacing = ShcareTheme.spacing
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .testTag("device_pairing.connection_trace"),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(ShcareTheme.spacing.large),
-            horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
-            verticalAlignment = Alignment.Top,
+        Column(
+            modifier = Modifier.padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.extraSmall)) {
                 Text(
-                    text = number.toString(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = stringResource(R.string.device_pairing_trace_title),
+                    style = MaterialTheme.typography.titleMedium,
                 )
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
-            ) {
-                Text(text = title, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = stringResource(R.string.device_pairing_trace_privacy),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            DeviceProvisioningTraceSteps.forEachIndexed { index, step ->
+                DevicePairingTraceRow(
+                    title = stringResource(step.titleRes),
+                    status = progress.traceStatus(index),
+                )
+                if (index < DeviceProvisioningTraceSteps.lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun DevicePairingTraceRow(
+    title: String,
+    status: DeviceProvisioningTraceStatus,
+) {
+    val semanticColors = ShcareTheme.colors
+    val tint = when (status) {
+        DeviceProvisioningTraceStatus.Complete -> semanticColors.success
+        DeviceProvisioningTraceStatus.Active -> semanticColors.info
+        DeviceProvisioningTraceStatus.NoDirectResponse -> semanticColors.warning
+        DeviceProvisioningTraceStatus.Failed -> MaterialTheme.colorScheme.error
+        DeviceProvisioningTraceStatus.Pending -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val statusRes = when (status) {
+        DeviceProvisioningTraceStatus.Complete -> R.string.device_pairing_trace_complete
+        DeviceProvisioningTraceStatus.Active -> R.string.device_pairing_trace_active
+        DeviceProvisioningTraceStatus.NoDirectResponse ->
+            R.string.device_pairing_trace_no_direct_response
+        DeviceProvisioningTraceStatus.Failed -> R.string.device_pairing_trace_failed
+        DeviceProvisioningTraceStatus.Pending -> R.string.device_pairing_trace_pending
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when (status) {
+            DeviceProvisioningTraceStatus.Active -> CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                color = tint,
+                strokeWidth = 2.dp,
+            )
+
+            DeviceProvisioningTraceStatus.Complete -> Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp),
+            )
+
+            DeviceProvisioningTraceStatus.NoDirectResponse -> Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp),
+            )
+
+            DeviceProvisioningTraceStatus.Failed -> Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp),
+            )
+
+            DeviceProvisioningTraceStatus.Pending -> Icon(
+                imageVector = Icons.Default.Router,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ShcareTheme.spacing.extraSmall),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = stringResource(statusRes),
+                style = MaterialTheme.typography.labelMedium,
+                color = tint,
+            )
+        }
+    }
+}
+
+private fun DeviceProvisioningProgress.messageRes(): Int = when (this) {
+    DeviceProvisioningProgress.Idle -> R.string.device_pairing_progress_idle
+    DeviceProvisioningProgress.CheckingTargetNetwork ->
+        R.string.device_pairing_progress_connecting_setup
+    DeviceProvisioningProgress.PreparingSecureSession ->
+        R.string.device_pairing_progress_validating_device
+    DeviceProvisioningProgress.BroadcastingCredentials ->
+        R.string.device_pairing_progress_sending_wifi
+    DeviceProvisioningProgress.BroadcastCompletedWithoutDirectResponse ->
+        R.string.device_pairing_progress_waiting_online
+    DeviceProvisioningProgress.DeviceAcknowledged ->
+        R.string.device_pairing_progress_restarting_device
+    DeviceProvisioningProgress.WaitingForDeviceOnline ->
+        R.string.device_pairing_progress_waiting_online
+    DeviceProvisioningProgress.WaitingForDeviceOnlineWithoutDirectResponse ->
+        R.string.device_pairing_progress_waiting_online
+    DeviceProvisioningProgress.CheckingDeviceOnline ->
+        R.string.device_pairing_progress_checking_online
+    DeviceProvisioningProgress.CheckingDeviceOnlineWithoutDirectResponse ->
+        R.string.device_pairing_progress_checking_online
+    DeviceProvisioningProgress.TargetNetworkUnavailable ->
+        R.string.device_pairing_progress_setup_network_unavailable
+    DeviceProvisioningProgress.SmartConfigFailed ->
+        R.string.device_pairing_progress_local_api_failed
+    DeviceProvisioningProgress.DeviceNotOnline ->
+        R.string.device_pairing_progress_device_not_online
+    DeviceProvisioningProgress.DeviceNotOnlineWithoutDirectResponse ->
+        R.string.device_pairing_progress_device_not_online_no_direct_response
+    DeviceProvisioningProgress.DeviceOnline ->
+        R.string.device_pairing_online_confirmed
+}
+
+private fun DeviceProvisioningProgress.isFailure(): Boolean = this in setOf(
+    DeviceProvisioningProgress.TargetNetworkUnavailable,
+    DeviceProvisioningProgress.SmartConfigFailed,
+    DeviceProvisioningProgress.DeviceNotOnline,
+    DeviceProvisioningProgress.DeviceNotOnlineWithoutDirectResponse,
+)
+
+private fun DeviceProvisioningProgress.traceStatus(index: Int): DeviceProvisioningTraceStatus {
+    if (this in setOf(
+            DeviceProvisioningProgress.BroadcastCompletedWithoutDirectResponse,
+            DeviceProvisioningProgress.WaitingForDeviceOnlineWithoutDirectResponse,
+            DeviceProvisioningProgress.CheckingDeviceOnlineWithoutDirectResponse,
+            DeviceProvisioningProgress.DeviceNotOnlineWithoutDirectResponse,
+        )
+    ) {
+        return when (index) {
+            in 0..2 -> DeviceProvisioningTraceStatus.Complete
+            3 -> DeviceProvisioningTraceStatus.NoDirectResponse
+            4 -> if (this == DeviceProvisioningProgress.DeviceNotOnlineWithoutDirectResponse) {
+                DeviceProvisioningTraceStatus.Failed
+            } else {
+                DeviceProvisioningTraceStatus.Active
+            }
+
+            else -> DeviceProvisioningTraceStatus.Pending
+        }
+    }
+    val (completedThrough, activeIndex, failedIndex) = when (this) {
+        DeviceProvisioningProgress.Idle -> Triple(-1, null, null)
+        DeviceProvisioningProgress.CheckingTargetNetwork -> Triple(-1, 0, null)
+        DeviceProvisioningProgress.PreparingSecureSession -> Triple(0, 1, null)
+        DeviceProvisioningProgress.BroadcastingCredentials -> Triple(1, 2, null)
+        DeviceProvisioningProgress.BroadcastCompletedWithoutDirectResponse,
+        DeviceProvisioningProgress.WaitingForDeviceOnlineWithoutDirectResponse,
+        DeviceProvisioningProgress.CheckingDeviceOnlineWithoutDirectResponse,
+        DeviceProvisioningProgress.DeviceNotOnlineWithoutDirectResponse ->
+            error("Handled above")
+        DeviceProvisioningProgress.DeviceAcknowledged -> Triple(2, 3, null)
+        DeviceProvisioningProgress.WaitingForDeviceOnline,
+        DeviceProvisioningProgress.CheckingDeviceOnline -> Triple(3, 4, null)
+        DeviceProvisioningProgress.TargetNetworkUnavailable -> Triple(-1, null, 0)
+        DeviceProvisioningProgress.SmartConfigFailed -> Triple(1, null, 2)
+        DeviceProvisioningProgress.DeviceNotOnline -> Triple(4, null, 4)
+        DeviceProvisioningProgress.DeviceOnline -> Triple(5, null, null)
+    }
+    return when {
+        index == failedIndex -> DeviceProvisioningTraceStatus.Failed
+        index == activeIndex -> DeviceProvisioningTraceStatus.Active
+        index <= completedThrough -> DeviceProvisioningTraceStatus.Complete
+        else -> DeviceProvisioningTraceStatus.Pending
     }
 }
 
@@ -1202,14 +1085,4 @@ private fun DevicePairingUiState.resolveErrorMessageWithRequestId(fallback: Stri
     val message = resolveErrorMessage().ifBlank { fallback }
     if (requestId.isBlank()) return message
     return "$message\n${stringResource(R.string.device_pairing_request_id, requestId)}"
-}
-
-private fun copySensitiveText(context: Context, label: String, value: String) {
-    if (value.isBlank()) return
-    val clip = ClipData.newPlainText(label, value)
-    clip.description.extras = PersistableBundle().apply {
-        putBoolean("android.content.extra.IS_SENSITIVE", true)
-    }
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(clip)
 }

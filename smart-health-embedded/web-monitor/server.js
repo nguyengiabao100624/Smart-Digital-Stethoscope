@@ -182,6 +182,10 @@ const {
   buildSecureSetupQrPayload,
 } = require("./src/deviceSetupSecurity");
 const {
+  SMART_CONFIG_TRANSPORT,
+  buildSmartConfigV2Material,
+} = require("./src/deviceSmartConfigSecurity");
+const {
   STAFF_INVITATION_STATUSES,
   assertStaffInvitationToken,
   generateStaffInvitationToken,
@@ -3806,6 +3810,22 @@ async function syncDeviceLastCommand(command) {
 async function refreshDeviceCommandExpiry(command) {
   if (!command) return null;
   const result = expireDeviceCommandIfOverdue(command);
+  // OTA delivery may already be acknowledged/applying when the device becomes
+  // unreachable. Unlike a generic command, its signed download authority has
+  // a hard deadline and must not permanently block later safe updates.
+  if (
+    !result.changed &&
+    command.type === "ota.update" &&
+    !["applied", "failed", "expired"].includes(command.state) &&
+    Number.isFinite(Date.parse(command.expiresAt || "")) &&
+    Date.parse(command.expiresAt) <= Date.now()
+  ) {
+    result.changed = transitionDeviceCommand(command, "expired", {
+      at: nowIso(),
+      code: "OTA_EXECUTION_EXPIRED",
+      detail: "OTA did not reach authenticated boot-health confirmation before expiry",
+    }).changed;
+  }
   if (result.changed) {
     let commandPersistedWithOta = false;
     if (command.type === "ota.update" && command.state === "expired") {
@@ -8699,6 +8719,7 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
       sessionId: recording.sessionId,
       sampleRate: SAMPLE_RATE,
       sampleCount: 128,
+      frameEncoding: "shcare_audio_v2",
       encoding: "pcm_s16le",
     },
     scan.id,
@@ -9258,6 +9279,30 @@ function assertRateLimit(req) {
   }
   if (count > limit) {
     throw httpError(429, "Quá nhiều yêu cầu. Vui lòng thử lại sau.", "RATE_LIMITED");
+  }
+}
+
+function assertDeviceSetupRateLimit(req, userId, deviceId) {
+  const limit = Number(process.env.DEVICE_SETUP_RATE_LIMIT_PER_MINUTE || 10);
+  if (!limit || limit <= 0) return;
+  const context = getRequestContext(req) || createRequestContext(req);
+  const minute = Math.floor(Date.now() / 60000);
+  const scopes = [
+    `device-setup:ip:${context.ip || "unknown"}:${minute}`,
+    `device-setup:user:${userId || "unknown"}:${minute}`,
+    `device-setup:device:${deviceId || "unknown"}:${minute}`,
+  ];
+  const counts = scopes.map((key) => (rateLimitBuckets.get(key) || 0) + 1);
+  scopes.forEach((key, index) => rateLimitBuckets.set(key, counts[index]));
+  if (rateLimitBuckets.size > 2000) {
+    for (const itemKey of rateLimitBuckets.keys()) {
+      if (itemKey.startsWith("device-setup:") && !itemKey.endsWith(`:${minute}`)) {
+        rateLimitBuckets.delete(itemKey);
+      }
+    }
+  }
+  if (counts.some((count) => count > limit)) {
+    throw httpError(429, "Too many Wi-Fi setup requests. Please try again shortly.", "DEVICE_WIFI_SETUP_RATE_LIMITED");
   }
 }
 
@@ -19855,6 +19900,149 @@ async function handleDevicesApi(req, res, url, segments) {
     throw httpError(404, "Không tìm thấy thiết bị");
   }
 
+  if (segments.length === 4 && segments[3] === "setup-session" && method === "POST") {
+    // Device assignment and DeviceManage remain the boundary before an app may
+    // open an encrypted SmartConfig session for this tenant-scoped device.
+    assertCanManageDevice(user, device);
+    const payload = await readJsonBody(req);
+    const requestedTransports = Array.isArray(payload.supportedTransports)
+      ? payload.supportedTransports.map((item) => readString(item, 80))
+      : [];
+    if (!requestedTransports.includes(SMART_CONFIG_TRANSPORT)) {
+      throw httpError(
+        426,
+        "This app version does not support encrypted ESPTouch V2. Update the app and try again.",
+        "DEVICE_WIFI_SETUP_TRANSPORT_UPGRADE_REQUIRED",
+      );
+    }
+    assertDeviceSetupRateLimit(req, user.id, device.id);
+    if (inferDeviceOwnershipState(device) !== "claimed") {
+      throw httpError(
+        409,
+        "The device must be assigned before Wi-Fi setup can be opened",
+        "DEVICE_WIFI_SETUP_NOT_ASSIGNED",
+      );
+    }
+    if (!device.secretHash && device.secret) {
+      device.secretHash = canonicalDeviceSecretHash(device.secret);
+      delete device.secret;
+    }
+    if (!device.secretHash) {
+      throw httpError(
+        503,
+        "The device has no SmartConfig verification material",
+        "DEVICE_WIFI_SETUP_MATERIAL_UNAVAILABLE",
+      );
+    }
+    const setupMaterial = buildSmartConfigV2Material({
+      deviceId: device.id,
+      secretHash: device.secretHash,
+    });
+    const context = getRequestContext(req) || createRequestContext(req);
+    let activation = {
+      requested: false,
+      state: "device_offline",
+    };
+    const authenticatedDeviceSocket = getAuthenticatedDeviceSocket(device);
+    if (authenticatedDeviceSocket) {
+      if (!repositories?.deviceCommands?.reserve) {
+        throw httpError(
+          503,
+          "Durable device command reservation is unavailable",
+          "DEVICE_COMMAND_RESERVATION_UNAVAILABLE",
+        );
+      }
+      const activationRequest = {
+        type: "wifi.setup.open",
+        deviceId: device.id,
+      };
+      const activationIdempotency = {
+        scope: getIdempotencyScope(user, device.organizationId),
+        operation: `device.wifi_setup.open:${device.id}`,
+        key: createId("wifi_setup_open"),
+        fingerprint: createIdempotencyFingerprint(activationRequest),
+      };
+      const envelope = buildDeviceCommand(
+        "wifi.setup.open",
+        {},
+        `wifi-setup-${createId("activation")}`,
+        60_000,
+      );
+      let command = createDeviceCommandRecord({
+        envelope,
+        deviceId: device.id,
+        organizationId: device.organizationId || "",
+        requestedByUserId: user.id,
+        idempotencyKey: activationIdempotency.key,
+        requestFingerprint: activationIdempotency.fingerprint,
+      });
+      const reservation = await repositories.deviceCommands.reserve(
+        command,
+        activationIdempotency,
+        {
+          action: "device.wifi_setup.open",
+          actorUserId: user.id,
+          organizationId: device.organizationId || "",
+          ip: context.ip || "",
+          userAgent: context.userAgent || "",
+          metadata: {
+            protocolVersion: command.protocolVersion,
+            commandId: command.id,
+            correlationId: command.correlationId,
+            type: command.type,
+            state: command.state,
+          },
+        },
+      );
+      command = reservation.command;
+      if (!reservation.replayed) {
+        await appendDeviceEvent(device.id, "command.accepted", {
+          protocolVersion: command.protocolVersion,
+          commandId: command.id,
+          correlationId: command.correlationId,
+          type: command.type,
+          state: command.state,
+          expiresAt: command.expiresAt,
+        });
+        const delivery = publishDeviceCommand(device.id, envelope);
+        applyDeviceCommandDelivery(command, delivery);
+        await saveDeviceCommandRecord(command);
+        await syncDeviceLastCommand(command);
+        await appendDeviceEvent(device.id, `command.${command.state}`, {
+          protocolVersion: command.protocolVersion,
+          commandId: command.id,
+          correlationId: command.correlationId,
+          type: command.type,
+          state: command.state,
+          delivery: command.delivery,
+        });
+      }
+      activation = {
+        requested: true,
+        commandId: command.id,
+        state: command.state,
+        delivery: command.delivery || {},
+      };
+    }
+    addAccessLog(`Opened Wi-Fi setup session for device ${device.name}`, {
+      userId: user.id,
+      organizationId: device.organizationId,
+      ip: context.ip || "",
+      severity: "info",
+    });
+    await saveDb();
+    res.setHeader("Cache-Control", "no-store");
+    sendJson(res, 200, {
+      device: publicPairedDeviceReceipt(device),
+      setup: {
+        ...setupMaterial,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        activation,
+      },
+    });
+    return;
+  }
+
   if (segments.length === 4 && segments[3] === "events" && method === "GET") {
     assertCanAccessDevice(user, device);
     const events = db.deviceEvents
@@ -19896,6 +20084,93 @@ async function handleDevicesApi(req, res, url, segments) {
     assertCanAccessDevice(user, device);
     await expireDeviceCredentialRotation(device);
     sendJson(res, 200, { device: publicDevice(device) });
+    return;
+  }
+
+  if (segments.length === 4 && segments[3] === "release" && method === "POST") {
+    const ownershipState = inferDeviceOwnershipState(device);
+    const ownerUserId = readString(device.ownerUserId || device.pairedUserId, 120);
+    const workspaceId = getDeviceWorkspaceId(device);
+    const workspaceContext = getUserWorkspaceContext(user);
+    const mayReplayReleasedReceipt = Boolean(
+      ownershipState === "provisioned" &&
+      !ownerUserId &&
+      workspaceContext.currentWorkspaceId === workspaceId &&
+      hasWorkspaceDeviceCapability(user, workspaceId, [
+        "personal.devices.manage",
+        "workspace.devices.manage",
+      ]),
+    );
+    if (!canManageDevice(user, device) && !mayReplayReleasedReceipt) {
+      throw httpError(403, "Device is outside current user management scope");
+    }
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device account release",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    if (!repositories?.devices?.saveOwnershipMutationWithAudit) {
+      throw httpError(
+        503,
+        "Audited device ownership storage is unavailable",
+        "DEVICE_OWNERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const at = nowIso();
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = await repositories.devices.saveOwnershipMutationWithAudit(
+      {
+        deviceId: device.id,
+        operation: "release",
+        expected: deviceOwnershipExpectation(device),
+        actorUserId: user.id,
+        at,
+        revokeOpenClaims: true,
+        claimOrganizationId: device.organizationId || "",
+        idempotency: {
+          scope: getIdempotencyScope(user, device.organizationId),
+          operation: `device.release:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            deviceId: device.id,
+            operation: "release",
+          }),
+        },
+      },
+      [{
+        action: "device.release",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        resourceType: "device",
+        resourceId: device.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: {
+          previousOwnershipState: ownershipState,
+          historyRetained: true,
+        },
+      }],
+    );
+    if (!persisted.replayed) {
+      const activeDeviceSocket = deviceSockets.get(device.id);
+      if (activeDeviceSocket) closeSocket(activeDeviceSocket, 1008, "OWNERSHIP_RELEASED");
+      await appendDeviceEvent(device.id, "ownership.release", { actorUserId: user.id });
+      await interruptRecordingForDevice(
+        device.id,
+        "Lượt ghi bị ngắt vì thiết bị đã được gỡ khỏi tài khoản.",
+      );
+    }
+    sendJson(res, 200, {
+      release: {
+        deviceId: persisted.device.id,
+        released: inferDeviceOwnershipState(persisted.device) === "provisioned",
+        historyRetained: true,
+      },
+      replayed: Boolean(persisted.replayed),
+    });
     return;
   }
 
@@ -22089,6 +22364,7 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
   if (method === "DELETE" && segments.length === 4) action = "revoke";
   if (method === "PATCH" && ["lock", "suspend"].includes(rawAction)) action = "suspend";
   if (method === "PATCH" && ["unlock", "reactivate"].includes(rawAction)) action = "reactivate";
+  if (method === "PATCH" && rawAction === "role") action = "change_role";
   if (!action || !targetUserId) {
     throw httpError(404, "Workspace staff route not found", "WORKSPACE_STAFF_ROUTE_NOT_FOUND");
   }
@@ -22103,6 +22379,89 @@ async function handlePortalStaffApi(req, res, url, segments, user) {
     : db.users.find((item) => item.id === targetUserId || item.firebaseUid === targetUserId);
   if (!targetUser) {
     throw httpError(404, "Workspace staff account was not found", "WORKSPACE_STAFF_NOT_FOUND");
+  }
+
+  if (action === "change_role") {
+    if (targetUser.id === user.id) {
+      throw httpError(
+        409,
+        "The current actor cannot change their own workspace role",
+        "MEMBERSHIP_ROLE_SELF_CHANGE_DENIED",
+      );
+    }
+    const payload = await readJsonBody(req);
+    const role = readString(payload.role, 40).toLowerCase();
+    const allowedRoles = new Set([
+      "workspace_admin",
+      "doctor",
+      "nurse",
+      "technician",
+      "billing",
+      "viewer",
+    ]);
+    if (!allowedRoles.has(role)) {
+      throw httpError(
+        400,
+        "A valid workspace staff role is required",
+        "MEMBERSHIP_ROLE_INVALID",
+      );
+    }
+    const idempotencyKey = getIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for workspace membership mutations",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+    if (!repositories?.memberships?.changeRole) {
+      throw httpError(
+        503,
+        "Workspace membership storage is unavailable",
+        "MEMBERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const operation = `workspace.membership.${action}`;
+    const fingerprint = createIdempotencyFingerprint({
+      action,
+      organizationId: workspaceId,
+      targetUserId: targetUser.id,
+      role,
+    });
+    const result = await repositories.memberships.changeRole({
+      organizationId: workspaceId,
+      targetUserId: targetUser.id,
+      role,
+      actorUserId: user.id,
+      idempotency: {
+        scope: getIdempotencyScope(user, workspaceId),
+        operation: `${operation}:${targetUser.id}`,
+        key: idempotencyKey,
+        fingerprint,
+      },
+      audit: {
+        actorUserId: user.id,
+        organizationId: workspaceId,
+        action: operation,
+        resourceType: "membership",
+        ip: req.socket.remoteAddress || "",
+        userAgent: readString(req.headers["user-agent"], 240),
+        metadata: {
+          action,
+          targetUserId: targetUser.id,
+          role,
+          globalIdentityChanged: false,
+        },
+      },
+    });
+    if (result.replayed) res.setHeader("Idempotency-Replayed", "true");
+    sendJson(res, 200, {
+      action,
+      membership: result.membership,
+      replayed: result.replayed,
+      user: publicUser(targetUser),
+    });
+    return;
   }
 
   const idempotencyKey = getIdempotencyKey(req);

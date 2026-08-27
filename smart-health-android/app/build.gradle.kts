@@ -5,6 +5,7 @@ plugins {
 
 val requestedTasks = gradle.startParameter.taskNames.joinToString(" ").lowercase()
 val releaseBuildRequested = requestedTasks.contains("release")
+val localDemoDebugRequested = requestedTasks.contains("assemblelocaldemodebug")
 val googleServicesConfigured =
     file("google-services.json").isFile ||
         fileTree("src") {
@@ -16,17 +17,25 @@ val releaseGoogleServicesConfigured =
 val configuredSmartHealthBaseUrl = providers
     .gradleProperty("SMART_HEALTH_BASE_URL")
     .map { it.trim().trimEnd('/') }
-val firebaseAuthEmulatorHost = providers
+val configuredFirebaseAuthEmulatorHost = providers
     .gradleProperty("SHCARE_FIREBASE_AUTH_EMULATOR_HOST")
     .orNull
     ?.trim()
     .orEmpty()
+val firebaseAuthEmulatorHost = configuredFirebaseAuthEmulatorHost.ifEmpty {
+    if (localDemoDebugRequested) "127.0.0.1" else ""
+}
 val firebaseAuthEmulatorPort = providers
     .gradleProperty("SHCARE_FIREBASE_AUTH_EMULATOR_PORT")
     .orNull
     ?.trim()
     ?.toIntOrNull()
     ?: 9099
+val hilPairingAssetDirectory = providers
+    .environmentVariable("SHCARE_HIL_PAIRING_ASSET_DIR")
+    .orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
 
 require(
     firebaseAuthEmulatorHost.isEmpty() ||
@@ -48,7 +57,13 @@ if (googleServicesConfigured) {
 }
 
 val smartHealthBaseUrl = configuredSmartHealthBaseUrl
-    .orElse(if (releaseBuildRequested) "" else "https://smart-health-api-r5is.onrender.com")
+    .orElse(
+        when {
+            localDemoDebugRequested -> "http://127.0.0.1:3765"
+            releaseBuildRequested -> ""
+            else -> "https://smart-health-api-r5is.onrender.com"
+        },
+    )
     .get()
     .trimEnd('/')
 fun validateReleaseConfiguration() {
@@ -105,6 +120,12 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
+    sourceSets {
+        if (hilPairingAssetDirectory != null) {
+            getByName("androidTest").assets.directories.add(hilPairingAssetDirectory)
+        }
+    }
+
     buildTypes {
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -143,6 +164,12 @@ android {
     }
 }
 
+tasks.register("assembleLocalDemoDebug") {
+    group = "build"
+    description = "Builds the LAN/Firebase-emulator debug APK used by the local Xiaomi demo."
+    dependsOn("assembleDebug")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -164,6 +191,8 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.messaging)
     implementation(libs.google.play.services.code.scanner)
+    implementation(libs.google.mlkit.barcode.scanning)
+    implementation(libs.espressif.esptouch.v2)
     testImplementation(libs.junit)
     testImplementation(libs.squareup.mockwebserver)
     testImplementation(libs.json)

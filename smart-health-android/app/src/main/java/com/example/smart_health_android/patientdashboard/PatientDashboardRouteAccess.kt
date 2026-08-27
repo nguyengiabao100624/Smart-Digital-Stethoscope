@@ -116,7 +116,7 @@ fun bindPatientDashboardRouteAccess(
         features = PatientDashboardFeatureAccess(
             canStartScan = canOpen(ShcareMobileRoute.NewScan),
             canViewRecords = canOpen(ShcareMobileRoute.Records),
-            canManageDevice = canOpen(ShcareMobileRoute.DevicePairing),
+            canManageDevice = canOpen(ShcareMobileRoute.DeviceManagement),
             canViewAppointments = canOpen(ShcareMobileRoute.Appointments),
             canUseAssistant = false,
         ),

@@ -27,7 +27,7 @@ object SmartHealthMotion {
             "notifications", "monitoring", "ai-assistant", "bluetooth",
             "connection-success" -> 3
             "record-detail", "profile", "privacy", "stethoscope-settings", "ai-calibration",
-            "data-storage", "notification-settings", "bluetooth-settings" -> 4
+            "data-storage", "notification-settings", "device-management", "bluetooth-settings" -> 4
             "verify-phone-settings", "re-verify/{type}", "change-password",
             "data-access", "access-log", "export-data" -> 5
             else -> 3

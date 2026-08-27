@@ -891,6 +891,13 @@ data class SmartDevice(
     val updatedAt: String? = null
 )
 
+data class DeviceReleaseReceipt(
+    val deviceId: String,
+    val released: Boolean,
+    val historyRetained: Boolean,
+    val replayed: Boolean,
+)
+
 enum class PatientDashboardSectionAvailability(
     val wireValue: String,
 ) {

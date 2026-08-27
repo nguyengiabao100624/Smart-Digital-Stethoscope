@@ -19,6 +19,15 @@ class FirebaseAuthEmulatorSourceContractTest {
     }
 
     @Test
+    fun `local demo task fixes LAN and Firebase emulator routing without shell properties`() {
+        val build = projectDirectory().resolve("build.gradle.kts").readText()
+
+        assertTrue(build.contains("assembleLocalDemoDebug"))
+        assertTrue(build.contains("localDemoDebugRequested -> \"http://127.0.0.1:3765\""))
+        assertTrue(build.contains("if (localDemoDebugRequested) \"127.0.0.1\" else \"\""))
+    }
+
+    @Test
     fun `release builds cannot inherit local Firebase Auth emulator routing`() {
         val build = projectDirectory().resolve("build.gradle.kts").readText()
 

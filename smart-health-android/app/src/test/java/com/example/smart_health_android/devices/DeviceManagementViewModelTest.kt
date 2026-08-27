@@ -1,6 +1,7 @@
 package com.example.smart_health_android.devices
 
 import com.example.smart_health_android.data.SmartDevice
+import com.example.smart_health_android.data.DeviceReleaseReceipt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -38,7 +39,7 @@ class DeviceManagementViewModelTest {
         val repository = FakeDeviceManagementRepository(devices = mutableListOf(connectedOnly, online))
         val viewModel = DeviceManagementViewModel(repository)
 
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened())
         advanceUntilIdle()
 
         assertEquals(listOf(connectedOnly, online), viewModel.uiState.value.devices)
@@ -53,7 +54,7 @@ class DeviceManagementViewModelTest {
         val repository = FakeDeviceManagementRepository(listFailure = IOException("network unavailable"))
         val viewModel = DeviceManagementViewModel(repository)
 
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened())
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.devices.isEmpty())
@@ -67,7 +68,7 @@ class DeviceManagementViewModelTest {
         val repository = FakeDeviceManagementRepository(devices = mutableListOf(online))
         val viewModel = DeviceManagementViewModel(repository)
 
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened())
         advanceUntilIdle()
         repository.listFailure = IOException("offline")
         viewModel.onAction(DeviceManagementUiAction.Refresh)
@@ -80,46 +81,55 @@ class DeviceManagementViewModelTest {
     }
 
     @Test
-    fun disconnectOnlyAppliesTheDeviceReturnedByBackend() = runTest(dispatcher) {
+    fun confirmedReleaseRemovesOnlyTheCanonicalDevice() = runTest(dispatcher) {
         val online = SmartDevice(id = "dev-online", online = true)
-        val confirmed = online.copy(online = false, status = "disconnected")
         val repository = FakeDeviceManagementRepository(
             devices = mutableListOf(online),
-            disconnectResult = confirmed,
+            releaseResult = DeviceReleaseReceipt(
+                deviceId = "dev-online",
+                released = true,
+                historyRetained = true,
+                replayed = false,
+            ),
         )
-        val viewModel = DeviceManagementViewModel(repository)
+        val viewModel = DeviceManagementViewModel(repository) { "release-key-1" }
 
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened())
         advanceUntilIdle()
-        viewModel.onAction(DeviceManagementUiAction.Disconnect("dev-online"))
+        viewModel.onAction(DeviceManagementUiAction.Release("dev-online"))
 
-        assertEquals("dev-online", viewModel.uiState.value.disconnectingDeviceId)
+        assertEquals("dev-online", viewModel.uiState.value.releasingDeviceId)
         assertTrue(viewModel.uiState.value.devices.single().online)
         advanceUntilIdle()
 
-        assertEquals(confirmed, viewModel.uiState.value.devices.single())
-        assertEquals("", viewModel.uiState.value.disconnectingDeviceId)
-        assertEquals(listOf("dev-online"), repository.disconnectCalls)
+        assertTrue(viewModel.uiState.value.devices.isEmpty())
+        assertEquals("", viewModel.uiState.value.releasingDeviceId)
+        assertEquals(listOf("dev-online" to "release-key-1"), repository.releaseCalls)
     }
 
     @Test
-    fun unconfirmedDeleteDoesNotRemoveTheDeviceLocally() = runTest(dispatcher) {
+    fun unconfirmedReleaseDoesNotRemoveTheDeviceLocally() = runTest(dispatcher) {
         val device = SmartDevice(id = "dev-001")
         val repository = FakeDeviceManagementRepository(
             devices = mutableListOf(device),
-            deleteResult = false,
+            releaseResult = DeviceReleaseReceipt(
+                deviceId = "dev-001",
+                released = false,
+                historyRetained = true,
+                replayed = false,
+            ),
         )
-        val viewModel = DeviceManagementViewModel(repository)
+        val viewModel = DeviceManagementViewModel(repository) { "release-key-2" }
 
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened())
         advanceUntilIdle()
-        viewModel.onAction(DeviceManagementUiAction.Delete("dev-001"))
+        viewModel.onAction(DeviceManagementUiAction.Release("dev-001"))
         advanceUntilIdle()
 
         assertEquals(listOf(device), viewModel.uiState.value.devices)
         assertEquals(DeviceManagementFailureKind.Error, viewModel.uiState.value.failure?.kind)
-        assertEquals(DeviceManagementOperation.Delete, viewModel.uiState.value.failure?.operation)
-        assertEquals(listOf("dev-001"), repository.deleteCalls)
+        assertEquals(DeviceManagementOperation.Release, viewModel.uiState.value.failure?.operation)
+        assertEquals(listOf("dev-001" to "release-key-2"), repository.releaseCalls)
     }
 
     @Test
@@ -130,7 +140,7 @@ class DeviceManagementViewModelTest {
             FakeDeviceManagementRepository(devices = mutableListOf(first, second)),
         )
 
-        viewModel.onAction(DeviceManagementUiAction.ScreenOpened)
+        viewModel.onAction(DeviceManagementUiAction.ScreenOpened())
         advanceUntilIdle()
         viewModel.onAction(DeviceManagementUiAction.SelectDevice("dev-002"))
         assertEquals("dev-002", viewModel.uiState.value.selectedDeviceId)
@@ -138,29 +148,52 @@ class DeviceManagementViewModelTest {
         viewModel.onAction(DeviceManagementUiAction.SelectDevice("missing"))
         assertEquals("dev-002", viewModel.uiState.value.selectedDeviceId)
     }
+
+    @Test
+    fun openingFromAnAssignedDeviceSelectsThatDeviceOnlyAfterItIsReturnedByBackend() =
+        runTest(dispatcher) {
+            val online = SmartDevice(id = "dev-online", online = true)
+            val assigned = SmartDevice(id = "dev-assigned", online = false)
+            val viewModel = DeviceManagementViewModel(
+                FakeDeviceManagementRepository(devices = mutableListOf(online, assigned)),
+            )
+
+            viewModel.onAction(
+                DeviceManagementUiAction.ScreenOpened(preferredDeviceId = "dev-assigned"),
+            )
+            advanceUntilIdle()
+
+            assertEquals("dev-assigned", viewModel.uiState.value.selectedDeviceId)
+
+            val missing = DeviceManagementViewModel(
+                FakeDeviceManagementRepository(devices = mutableListOf(online)),
+            )
+            missing.onAction(
+                DeviceManagementUiAction.ScreenOpened(preferredDeviceId = "dev-assigned"),
+            )
+            advanceUntilIdle()
+
+            assertEquals("dev-online", missing.uiState.value.selectedDeviceId)
+        }
 }
 
 private class FakeDeviceManagementRepository(
     val devices: MutableList<SmartDevice> = mutableListOf(),
     var listFailure: Throwable? = null,
-    var disconnectResult: SmartDevice? = null,
-    var deleteResult: Boolean = true,
+    var releaseResult: DeviceReleaseReceipt? = null,
 ) : DeviceManagementRepository {
-    val disconnectCalls = mutableListOf<String>()
-    val deleteCalls = mutableListOf<String>()
+    val releaseCalls = mutableListOf<Pair<String, String>>()
 
     override suspend fun listDevices(): List<SmartDevice> {
         listFailure?.let { throw it }
         return devices.toList()
     }
 
-    override suspend fun disconnectDevice(deviceId: String): SmartDevice {
-        disconnectCalls += deviceId
-        return disconnectResult ?: error("Missing disconnect result")
-    }
-
-    override suspend fun deleteDevice(deviceId: String): Boolean {
-        deleteCalls += deviceId
-        return deleteResult
+    override suspend fun releaseDevice(
+        deviceId: String,
+        idempotencyKey: String,
+    ): DeviceReleaseReceipt {
+        releaseCalls += deviceId to idempotencyKey
+        return releaseResult ?: error("Missing release result")
     }
 }

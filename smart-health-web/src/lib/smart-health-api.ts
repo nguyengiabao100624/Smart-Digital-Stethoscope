@@ -246,6 +246,13 @@ export type StaffInvitationMutationResponse = {
 
 export type WorkspaceMembershipAction = "suspend" | "reactivate" | "revoke";
 
+export type WorkspaceMembershipRoleChangeResponse = {
+  action: "change_role";
+  membership: WorkspaceMembership;
+  user: ApiUser;
+  replayed?: boolean;
+};
+
 export interface WorkspaceSummary {
   id: string;
   name?: string;
@@ -3264,6 +3271,19 @@ export const smartHealthApi = {
       method: "DELETE",
       headers: { "Idempotency-Key": idempotencyKey },
     }),
+  changeStaffMemberRole: (
+    userId: string,
+    role: StaffInvitationRole,
+    idempotencyKey: string,
+  ) =>
+    request<WorkspaceMembershipRoleChangeResponse>(
+      `/portal/staff/${encodeURIComponent(userId)}/role`,
+      {
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ role }),
+      },
+    ),
   reports: () =>
     request<{ summary: Record<string, number>; latestScans: Scan[] }>(
       "/portal/reports",

@@ -15,8 +15,10 @@ firebaseBom = "34.7.0"
 navigationCompose = "2.7.7"
 okhttp = "4.12.0"
 playServicesCodeScanner = "16.1.0"
+mlKitBarcodeScanning = "17.3.0"
 json = "20240303"
 coroutines = "1.10.2"
+espTouchV2 = "2.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -46,8 +48,10 @@ firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging
 squareup-okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 squareup-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 google-play-services-code-scanner = { group = "com.google.android.gms", name = "play-services-code-scanner", version.ref = "playServicesCodeScanner" }
+google-mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlKitBarcodeScanning" }
 json = { group = "org.json", name = "json", version.ref = "json" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+espressif-esptouch-v2 = { group = "com.github.EspressifApp", name = "lib-esptouch-v2-android", version.ref = "espTouchV2" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

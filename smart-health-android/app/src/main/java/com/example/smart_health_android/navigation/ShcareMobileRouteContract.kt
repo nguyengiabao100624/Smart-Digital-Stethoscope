@@ -161,6 +161,12 @@ enum class ShcareMobileRoute(
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
         anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
     ),
+    DeviceWifiSetup(
+        routePattern = "device-wifi/{deviceId}",
+        testTag = "route.device-wifi",
+        sessionRequirement = MobileRouteSessionRequirement.Authenticated,
+        anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
+    ),
     LegacyBluetoothPairing(
         routePattern = "bluetooth?returnRoute={returnRoute}",
         testTag = "route.legacy-bluetooth-pairing",
@@ -266,9 +272,19 @@ enum class ShcareMobileRoute(
         testTag = "route.access-log",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
     ),
-    BluetoothSettings(
-        routePattern = "bluetooth-settings",
-        testTag = "route.bluetooth-settings",
+    DeviceManagement(
+        routePattern = "device-management?deviceId={deviceId}",
+        testTag = "route.device-management",
+        sessionRequirement = MobileRouteSessionRequirement.Authenticated,
+        anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
+    ),
+    /**
+     * Compatibility route for old notifications and deep links. New navigation must use
+     * [DeviceManagement], because the product no longer uses Bluetooth provisioning.
+     */
+    LegacyBluetoothSettings(
+        routePattern = "bluetooth-settings?deviceId={deviceId}",
+        testTag = "route.legacy-bluetooth-settings",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
         anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
     ),

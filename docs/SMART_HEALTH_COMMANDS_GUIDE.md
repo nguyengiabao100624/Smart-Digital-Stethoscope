@@ -1,6 +1,192 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-25
+## Workspace role and device permission check (2026-08-27)
+
+Public access (current live shells): Web Portal `https://shcare.web.app`; Platform Admin `https://shcare-admin.web.app`. These sites are reachable, but the current RC2 permission-role changes are not live until the G3/G4 promotion gate is approved.
+
+Current local RC2 servers: Portal `http://127.0.0.1:8765/`, Admin `http://127.0.0.1:8766/`, backend `http://127.0.0.1:3765/`.
+
+Run from `smart-health-embedded/web-monitor`:
+
+```powershell
+npm.cmd run smoke:workspace-membership-role
+```
+
+In the workspace Portal, open **Bác sĩ và nhân sự**, choose a member, select **Điều chỉnh quyền**, then choose **Kỹ thuật viên** or **Điều dưỡng** (or **Quản trị workspace**) to grant device pairing/management capability in that workspace. The affected account must sign in again or refresh its session before Android reflects the new capability. Use `/admin/admin-accounts` only for Platform Admin account and platform-wide role management.
+
+> 2026-08-27 current device-flow evidence: APK SHA-256 `4787916AA8F6DA533CAB8AFCF6F7220EBB79DB8FC209D417CAC23E193B8BA5F7`; COM9 HIL firmware image SHA-256 `7756A0EE72062EB74EE1A3A745903A6C2AE0CB95DA672F5F46E2779591B13879`. Physical HIL passed authenticated WSS, `wifi.status` ACK, audio-v2 and durable scan. Never pass a real Wi-Fi password via ADB, shell, environment, source, test arguments or logs; it belongs only in the foreground secure Android field.
+
+## 2026-08-27 cross-surface local release gate
+
+- Portal and Platform Admin: run `npm run lint`, `npm run test:contracts`, then `npm run build` from each respective source root. These commands prove local source/package integrity only; they neither deploy nor validate Firebase Hosting.
+- Backend local release contracts: run `npm run precheck`, `npm run smoke:cors-policy`, then `node --test scripts/releaseIdentityTest.js scripts/releaseRuntimeContractTest.js scripts/releaseSecurityGateTest.js scripts/identityMigrationSmokeTest.js` from `smart-health-embedded/web-monitor`.
+- Do not run production migrations, Firebase Hosting deploy, Render deploy, backup or provider-mutating commands until the physical G3 gates and pre-deploy backup/restore plan have passed.
+
+## 2026-08-27 Android local-demo build
+
+> 2026-08-27 full gate: backend/Web/Admin/Android checks passed; firmware production command is `platformio run -e esp32-s3-devkitm-1`, OTA command is `platformio run -e esp32-s3-ota`. The explicit upload target is `COM9`; no OTA upload was attempted because the OTA environment requires a device hostname/IP and must remain a separate controlled lane.
+
+> 2026-08-27 permission-guidance refresh: APK SHA-256 `B6FA41D8EA2FCEAAF4B02C114FEEB9D832E0F4F2F7EF1CF8AFA2D0C23C8B0616` installed successfully on the attached Xiaomi. The package is `com.example.smart_health_android`, version `1.0.0-rc.2`.
+
+- In a fresh worktree, set `ANDROID_HOME` and `ANDROID_SDK_ROOT` to the installed SDK for the current shell, then run `gradlew.bat testDebugUnitTest lintDebug assembleLocalDemoDebug`. Build AndroidTest together with `assembleLocalDemoDebug` in the same Gradle invocation; otherwise the test artifact sees default-debug backend values and correctly skips local Firebase smoke.
+- Install only the resulting `app/build/outputs/apk/debug/app-debug.apk` with ADB. Do not use ADB/instrumentation arguments for a customer Wi-Fi password or to bypass keyguard.
+
+## 2026-08-27 HIL OTA rollback proof
+
+- Build and upload a known-good HIL bootstrap with `SHCARE_HIL_UPLOAD=true`, `SHCARE_HIL_ERASE=false`, a stable firmware version, and no forced-failure/reset fixture flag. This preserves Wi-Fi NVS; PlatformIO updates app0 plus normal boot metadata.
+- Build the negative artifact only with `SHCARE_HIL_UPLOAD=false`, `SHCARE_HIL_OTA_FORCED_AUTH_FAILURE=true`, then run `scripts/runDeviceHilOtaSmoke.mjs` with `SHCARE_HIL_OTA_EXPECT_ROLLBACK=true` and the stable version. The expected pass is backend OTA `rolled_back` plus command code `OTA_ROLLED_BACK`.
+- Never use full-chip erase or place a customer Wi-Fi password in environment variables, shell history, source, test parameters or logs. A COM9 `flash_id` probe confirms 16 MB on this physical device; do not treat PlatformIO's generic `8MB` banner as a partition decision.
+
+## 2026-08-27 HIL OTA safety notes
+
+- `scripts/buildDeviceHilFirmware.mjs` accepts `SHCARE_HIL_RESET_OTA_STATE=true` only with a wired upload. It clears only stale `pendingOta`/`otaBoot` HIL test state, never Wi-Fi/device identity. Do not set it on an OTA target.
+- When recovering an invalid test slot, only `esptool.py erase_region 0xE000 0x2000` may clear OTA selection metadata after confirming COM9; it must never be replaced with NVS/full-flash erase. Physical rollback evidence remains BLOCKED until otadata shows `PENDING_VERIFY` on the target image.
+
+> 2026-08-26 verified transport diagnostic: run only `EspTouchV2HardwareNegativeCredentialHilTest` when Xiaomi and COM9 are attached. It requests a real authenticated setup session but emits a fixed invalid diagnostic password, so it can prove RF/AES/Device-ID binding without changing the customer router. The 60-second targeted run passed `OK (1)` and COM9 reported successful decrypt/binding acceptance. Production Android now passes the BSSID of the AP currently used by the phone; do not substitute a scanned 2.4 GHz BSSID. Real end-to-end provisioning still begins only after foreground runtime consent and password entry in the secure app field; no command may carry that password.
+
+> 2026-08-26 physical HIL checkpoints: `EspTouchV2BroadcastStartHilTest` runs with an invalid test key/password and proves only that Xiaomi starts the broadcaster. `PhysicalDeviceProvisioningHilTest` with `shcareProvisioningStopAtPassword=true` proves the Device Management → secure input boundary. Never pass a real Wi-Fi password in ADB/instrumentation arguments; after manual secure-field entry, let the latter HIL continue automatically to its terminal device state.
+
+> 2026-08-26 superseding dual-band note: do **not** use an Android `WifiNetworkSpecifier` or insist that the phone switch to a temporary 2.4 GHz network. The active build broadcasts ESPTouch V2 on the existing router connection and selects the visible 2.4 GHz BSSID as target metadata. Use the standard local-demo build below; real Wi-Fi passwords remain phone-UI-only.
+
+> 2026-08-26 local-demo APK recovery: use `assembleLocalDemoDebug`; it fixes the LAN API/Firebase-emulator routing in Gradle, so a default Render debug APK is never accidentally used with the persisted Firebase/local-demo session. The exact LAN APK validated on Xiaomi is `59EE3111045AFBA2AE3EA64EE28FB70C0D67F55583CD4EDA1F6A1C83AA480E4B`.
+
+```powershell
+cd smart-health-android
+$env:ANDROID_HOME = 'C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+& .\gradlew.bat ':app:assembleLocalDemoDebug' '--no-daemon' '--console=plain'
+```
+
+> 2026-08-26 2.4 GHz guard: the attached Xiaomi is currently on 5 GHz, which is an intentional physical blocker for ESP32-S3 ESPTouch. APK `3D32084C2B3BEA6F9D6A58CF470CFD4F27B3320E50A4B8A64AC459A9AC7898F9` reports it truthfully. Do not pass target Wi-Fi credentials to any command. Run the foreground broadcaster HIL only after the phone is on the router's 2.4 GHz band.
+
+## ESPTouch 2.4 GHz regression and physical broadcaster check
+
+```powershell
+cd smart-health-android
+$env:ANDROID_HOME = 'C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --no-daemon --console=plain `
+  --tests=com.example.smart_health_android.devices.DevicePairingViewModelTest.fiveGhzWifiStopsBeforeBroadcastAndExplainsTheActualRequirement
+
+# The test uses an invalid test key/password; it cannot provision an ESP.
+$adb = 'C:\Users\baobe\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+& $adb -s '<attached-xiaomi-serial>' shell am instrument -w -r `
+  -e shcareSmartConfigStartHil true `
+  -e class com.example.smart_health_android.devices.EspTouchV2BroadcastStartHilTest `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+> 2026-08-26 ESPTouch V2 response-lifecycle verification: APK `7FAD70770FFAC046EA8AAEC1F99B2EE6AFF67E3D28D1D6A99D2D40FD212CAC9C` is installed on Xiaomi. The no-direct-response path is a completed broadcast followed by presence polling; it is not a direct ESP acknowledgement and does not close G3. Never provide a target-network password through the commands below.
+
+## ESPTouch V2 response-lifecycle regression
+
+```powershell
+cd smart-health-android
+$env:ANDROID_HOME = 'C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest --no-daemon --console=plain `
+  --tests=com.example.smart_health_android.devices.DevicePairingViewModelTest.completedBroadcastWithoutDirectAckStillChecksAuthenticatedDevicePresence `
+  --tests=com.example.smart_health_android.devices.DevicePairingViewModelTest.retryingWifiSetupClearsAStaleBroadcastFailureAndThePreviousPassword `
+  --tests=com.example.smart_health_android.devices.DevicePairingCanonicalSourceTest
+.\gradlew.bat :app:lintDebug :app:compileDebugAndroidTestKotlin --no-daemon --console=plain
+```
+
+> Latest ESPTouch V2 execution record (2026-08-26): normal firmware hash `623072C1A59C05312F318712A99E0570806DBCE1814A7E637236C0C89516B647` was uploaded to COM9 with verified writes; OTA image is `AFAA53C90A3B5F0C13AA8470500AE91FA6AC7ECCF042EF6ACD3EE763F3CFE806`; APK hash `CB018EE8815FD0222D8B261B9A34820AE878083298ED01FC471A27C981A4F62C` is installed on Xiaomi. Serial confirms KDF self-test and listener startup. Do not use any command below to supply a real Wi-Fi password; end-to-end HIL remains blocked at the locked on-device secure UI.
+
+## 2026-08-26 ESPTouch V2 focused gates
+
+Use the active RC2 worktree. These commands contain no target-network credential.
+
+```powershell
+cd smart-health-embedded\web-monitor
+node --test scripts/deviceSmartConfigSecurityTest.js scripts/deviceSetupSecurityTest.js
+npm.cmd run smoke:device-security
+
+cd ..\MSM261S4030H0
+node test\firmware_runtime_source_contract_test.js
+node test\wifi_capture_resilience_source_contract_test.js
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-ota
+
+cd ..\..\smart-health-android
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:compileDebugKotlin :app:compileDebugUnitTestKotlin
+.\gradlew.bat :app:testDebugUnitTest --tests 'com.example.smart_health_android.devices.DeviceSmartConfigV2ContractTest'
+```
+
+Only after normal and OTA builds plus Android assembly pass may COM9 be flashed. Enter the real Wi-Fi password only into the protected Xiaomi field; never put it in a shell, ADB command, environment variable, source, test parameter or log.
+
+Current evidence: use Gradle `-P` properties (not similarly named process environment variables) for the LAN Firebase-emulator APK. The current Android gate is `856/856` unit tests, lint `0` errors / `3` warnings, and `PhysicalDeviceProvisioningHilTest` `OK (1 test)` on Xiaomi. It passes to the secure Wi-Fi form without a runtime-dialog overlay because current-SSID permission is requested only after the optional helper is tapped. COM9 is a verified ESP32-S3 rev 0.2 with 16 MB flash and 8 MB PSRAM; the normal image (`1,141,872` bytes, SHA-256 `1671FDE1C44155BA6514549B33F0CB0042918E6894C5B13EA3A06646E3B7D29B`) was uploaded with write-hash verification. The target password remains phone-field-only.
+
+## 2026-08-26 Device Management to SoftAP regression gate
+
+Use the local LAN build properties below. They identify only demo services; never add a target Wi-Fi password to a command.
+
+```powershell
+cd smart-health-android
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug -PSMART_HEALTH_BASE_URL=http://192.168.1.13:3765 -PSHCARE_FIREBASE_AUTH_EMULATOR_HOST=192.168.1.13 -PSHCARE_FIREBASE_AUTH_EMULATOR_PORT=9099
+.\gradlew.bat :app:connectedDebugAndroidTest -PSMART_HEALTH_BASE_URL=http://192.168.1.13:3765 -PSHCARE_FIREBASE_AUTH_EMULATOR_HOST=192.168.1.13 -PSHCARE_FIREBASE_AUTH_EMULATOR_PORT=9099 -Pandroid.testInstrumentationRunnerArguments.class=com.example.smart_health_android.ui.IntegratedDemoLoginSmokeTest
+```
+
+The second command verifies paired Dashboard card -> Device Management, not Device ID pairing. The physical provisioning HIL may stop only at the secure target-password field; target credentials belong in that phone field, never Gradle, ADB, shell, source, environment variables, logs, or docs. A keyguard, system overlay, absent COM port, or password-boundary stop is not WSS/ESP completion.
+
+> 2026-08-26 Android demo build rule: supply `SMART_HEALTH_BASE_URL` as the HTTP host only; `BackendConfig` owns the `/api/v1` suffix. For local demo APKs, pair that host with the local Firebase Auth emulator host/port properties. Do not pass user or target-Wi-Fi credentials to Gradle, ADB, source, or logs.
+
+> 2026-08-26 current hardware state: the repaired image has been uploaded to the verified COM9 ESP32-S3 target. Filtered serial confirmation shows the protected SoftAP setup portal and local port-80 server started. Do not rerun provisioning by shell with target credentials; use the App's secure input when continuing the real network test.
+
+## 2026-08-26 SoftAP auto-start repair
+
+The latest firmware build starts the protected ESP SoftAP automatically when no Wi-Fi has been saved. Check that the board appears before upload; do not put target Wi-Fi credentials in any command:
+
+```powershell
+Get-CimInstance Win32_SerialPort | Select-Object DeviceID,Name,Status
+```
+
+Once the board is visible as the verified ESP port, upload with the existing `platformio.exe run -e esp32-s3-devkitm-1 --target upload --upload-port COM9` command below. The 2026-08-26 repair has passed firmware source-contract/compile checks but was not uploaded in this session because no serial ESP port was available.
+
+Android shows a five-step, privacy-safe trace while the native Android Wi-Fi picker locates the ESP SoftAP. That picker is system UI, not BLE. Xiaomi Compose verification is `OK (1 test)` in `1.839s`; it uses a fake local provisioner and does not prove real ESP association/WSS.
+
+The deployed SoftAP-only Android/ESP pairing checkpoint passed on Xiaomi as `PhysicalDeviceProvisioningHilTest` `OK (1 test)` in `25.791s`, ending at the secure target-Wi-Fi input. This is not association/WSS proof and does not authorize putting a target password in a command.
+
+The attached ESP32-S3 uses COM9 for the current physical board. The 2026-08-26 upload of the SoftAP-only build completed with write-hash verification and hardware reset; it did not demonstrate target-network association or WSS. Do not include target Wi-Fi credentials in this command:
+
+```powershell
+cd smart-health-embedded\MSM261S4030H0
+C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run -e esp32-s3-devkitm-1 --target upload --upload-port COM9
+```
+
+## 2026-08-26 SoftAP-only provisioning checkpoint
+
+Provisioning is now App → ESP Wi-Fi SoftAP → ESP local HTTP API only. The App obtains the authorized per-device SoftAP material in memory, uses `WifiNetworkSpecifier`, requests the ESP setup session and posts the target Wi-Fi through `/api/v1/setup/wifi`; it never opens a browser, requests Bluetooth, or asks for an IP address. Build proof: Android full JVM plus `:app:assembleDebug :app:assembleDebugAndroidTest` and firmware `platformio.exe run -e esp32-s3-devkitm-1` pass. The latest Xiaomi rerun stopped before the app hierarchy because the phone keyguard was locked; it is not a provisioning failure.
+
+## 2026-08-26 Device-ID Wi-Fi HIL checkpoint
+
+`PhysicalDeviceProvisioningHilTest` is the current device-side checkpoint: it signs in to the LAN Firebase demo, enters the assigned Device ID, opens Device Settings, selects Wi-Fi setup and verifies the target-network input boundary. The test must never receive target Wi-Fi credentials through ADB arguments, shell, environment variables, source or logs. `shcareProvisioningStopAtPassword=true` is the safe checkpoint mode; omit it only when target Wi-Fi is entered directly in the foreground App.
+
+Last updated: 2026-08-26
+
+## Historical G3 Xiaomi BLE notes — superseded by SoftAP-only provisioning
+
+The two completed physical checks are `PhysicalDeviceBleClaimHilTest` and `CurrentWifiSsidHilTest`, each `1/1` on Xiaomi. The test asset directory is local/untracked and must never be copied into source control, command output or documentation. Rebuild the debug/test APKs with the existing LAN properties, install both, then run only these explicit HIL classes through `AndroidJUnitRunner`; do not use a Wi-Fi password as a shell argument or environment variable.
+
+Before the BLE provisioning HIL, grant **Nearby devices** to Shcare through Android's normal permission UI. The next test must enter the target password only in the App and require the chain BLE encrypted write → ESP Wi-Fi association → authenticated WSS presence → ACK/audio-v2/durable scan. A claim or SSID HIL pass alone is not online/device-control proof.
+
+For a non-mutating hardware identity check before flashing, use the PlatformIO-bundled `esptool.py flash_id` against the discovered COM port. The current proof is ESP32-S3 revision v0.2 with `16 MB` physical flash; do not use the generic PlatformIO board banner as the flash-size authority and do not alter the verified 16-MB OTA partition table without a new hardware check.
+
+## G3 Android QR image-selection gate
+
+Build and source-check from `smart-health-android`:
+
+```powershell
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleDebug --no-daemon --console=plain
+```
+
+For LAN/demo builds, add the already documented `SMART_HEALTH_BASE_URL` and Firebase emulator properties; never add a Wi-Fi password to a command or environment variable. On-device proof requires the phone to be unlocked and awake. Use the **Chọn ảnh QR từ thư viện** control on Device Pairing; Android's system picker needs no broad storage permission. The selected image is processed locally and is not a reason to bypass QR claim validation.
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
@@ -4338,3 +4524,74 @@ $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 ```
 
 Expected current checkpoint: `118` suites / `850/850`; AndroidTest compile, lint and assemble PASS. Run `CurrentWifiSsidHilTest` only after the phone is unlocked, Location services is ON and the App owns Fine Location. MIUI on this Xiaomi denies shell/UiAutomation permission and Location mutation; do not retry with weaker device security and do not count an assumption skip as PASS. Never put the target Wi-Fi password in a command, environment variable, source, report or log.
+
+## 2026-08-25 G3 BLE-first provisioning commands
+
+```powershell
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+Set-Location smart-health-android
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --console=plain
+
+Set-Location ..\smart-health-embedded\MSM261S4030H0
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e esp32-s3-development
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e esp32-s3-devkitm-1
+```
+
+Development-only flash for the attached HIL board:
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e esp32-s3-development -t upload --upload-port COM9
+```
+
+Expected serial: `BLE WiFi provisioning ready`, then offline/no-WSS until a target Wi-Fi submission. In App claim by QR/manual code, then use the separate Bluetooth Wi-Fi action. Do not place target Wi-Fi credentials in shell commands, logs or documents.
+
+## 2026-08-26 Xiaomi claim and BLE discovery HIL
+
+Re-detect the attached Xiaomi for every run; never hardcode its serial. Install both APKs built from the same LAN configuration and the same local/untracked pairing artifact, then run only the explicit physical classes:
+
+```powershell
+$adb = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+$serial = ((& $adb devices | Where-Object { $_ -match "`tdevice$" } | Select-Object -First 1) -split "`t")[0]
+
+& $adb -s $serial shell am instrument -w -r `
+  -e class com.example.smart_health_android.devices.PhysicalDeviceBleClaimHilTest `
+  -e shcareBleClaimHil true `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+
+& $adb -s $serial shell am instrument -w -r `
+  -e class com.example.smart_health_android.devices.PhysicalDeviceBleDiscoveryHilTest `
+  -e shcareBleDiscoveryHil true `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Count a run as physical PASS only when it prints `OK (1 test)` and contains no JUnit assumption status `-4`. The discovery gate name is exactly `shcareBleDiscoveryHil`; using a different flag intentionally skips the test. `INSTRUMENTATION_CODE: -1` is the Android runner's normal completed result and is not itself a failure.
+
+Current physical evidence is claim/recovery `1/1` in `6.674s` and BLE discovery/GATT contract `1/1` in `1.086s`. Android permissions are granted. On a clean install, let the App invoke the normal OS permission dialog at the point of use; MIUI does not allow ADB or UiAutomation to approve security consent. The target Wi-Fi password must still be typed only into Shcare App and must never appear in commands, environment variables, logs, screenshots or committed artifacts.
+
+## 2026-08-26 Device-ID + SoftAP verification
+
+### Current integrated demo runtime
+
+Run `node scripts/startShcareIntegratedDemo.mjs` from `smart-health-embedded\\web-monitor` and keep that terminal open. It serves backend `3765`, WSS HIL `3767`, Firebase Auth `9099`, Portal `8765`, and Admin `8766` with isolated data. The fixture `shcare-g3-hil` is pre-assigned to the Firebase demo patient so the ID-only flow can be shown without QR or claim code; production assignment remains an admin/company operation.
+
+The target Wi-Fi password is entered only in the foreground Shcare App. Never add it to commands, source, logs, or documentation.
+
+Build/install the current local-demo APK without writing a machine-local `local.properties` file:
+
+```powershell
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+Set-Location smart-health-android
+.\gradlew.bat :app:testDebugUnitTest --tests com.example.smart_health_android.devices.DevicePairingViewModelTest
+.\gradlew.bat :app:compileDebugAndroidTestKotlin :app:assembleDebug
+```
+
+Backend security contract gate from `smart-health-embedded\web-monitor`:
+
+```powershell
+npm.cmd run check
+node --test scripts/deviceSetupSecurityTest.js scripts/deviceSecuritySmokeTest.js
+```
+
+Demo path: Add Device → enter only the company-assigned Device ID → open **Kết nối Wi-Fi** from Device Settings → enter target SSID/password → let Android show the normal required system permission/temporary network dialog. The App obtains the ESP SoftAP material only from the authenticated setup-session API; never enter, print, copy, or put the setup SSID/proof in a user command or test artifact. MIUI may block ADB shell input injection; that is an OS policy limitation, not a permission to bypass the normal Android prompt.

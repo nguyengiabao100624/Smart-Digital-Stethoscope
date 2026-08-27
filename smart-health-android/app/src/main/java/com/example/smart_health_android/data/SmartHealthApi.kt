@@ -1,5 +1,6 @@
 package com.example.smart_health_android.data
 
+import android.util.Base64
 import com.example.smart_health_android.appointments.Appointment
 import com.example.smart_health_android.appointments.AppointmentMutation
 import com.example.smart_health_android.appointments.AppointmentPatch
@@ -80,10 +81,51 @@ data class PasswordChangeReceipt(
     val replayed: Boolean,
 )
 
+/** Encrypted ESPTouch V2 material, retained only for the foreground setup session. */
+data class DeviceWifiSetupSession(
+    val device: SmartDevice,
+    val transport: String,
+    val security: String,
+    val provisioningKey: ByteArray,
+    val reservedData: ByteArray,
+    val expiresAt: Instant,
+) {
+    fun clearSensitiveMaterial() {
+        provisioningKey.fill(0)
+        reservedData.fill(0)
+    }
+}
+
+private const val ESPTouchV2ProtocolVersion = 2
+private const val ESPTouchV2Transport = "esptouch_v2"
+private const val ESPTouchV2Security = "aes128"
+private const val ESPTouchV2KeyBytes = 16
+private const val ESPTouchV2ReservedDataBytes = 35
+
 class SmartHealthApi(
     private val baseUrl: String = BackendConfig.API_BASE_URL,
     private val client: OkHttpClient = sharedClient
 ) {
+    private fun decodeSetupMaterial(value: String, expectedLength: Int): ByteArray {
+        val decoded = runCatching {
+            Base64.decode(
+                value,
+                Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP,
+            )
+        }.getOrElse { invalidDeviceWifiSetupContract() }
+        if (decoded.size != expectedLength) {
+            decoded.fill(0)
+            invalidDeviceWifiSetupContract()
+        }
+        return decoded
+    }
+
+    private fun invalidDeviceWifiSetupContract(): Nothing = throw SmartHealthApiException(
+        statusCode = 502,
+        code = "DEVICE_WIFI_SETUP_CONTRACT_INVALID",
+        message = "Backend returned an invalid encrypted Wi-Fi setup session",
+    )
+
     @Volatile
     private var authSessionSnapshot = AuthSessionSnapshot()
 
@@ -1086,6 +1128,52 @@ class SmartHealthApi(
             .map(::parseSmartDevice)
     }
 
+    suspend fun getDevice(id: String): SmartDevice = withContext(Dispatchers.IO) {
+        parseSmartDevice(getJson("$baseUrl/devices/${id.urlEncode()}").getJSONObject("device"))
+    }
+
+    suspend fun openDeviceWifiSetup(id: String): DeviceWifiSetupSession = withContext(Dispatchers.IO) {
+        val json = postJson(
+            "$baseUrl/devices/${id.urlEncode()}/setup-session",
+            JSONObject().put("supportedTransports", JSONArray().put(ESPTouchV2Transport)),
+        )
+        val setup = json.getJSONObject("setup")
+        val smartConfig = setup.optJSONObject("smartConfig")
+            ?: invalidDeviceWifiSetupContract()
+        val protocolVersion = setup.optInt("protocolVersion", -1)
+        val transport = setup.optString("transport").trim()
+        val security = smartConfig.optString("security").trim()
+        if (
+            protocolVersion != ESPTouchV2ProtocolVersion ||
+            transport != ESPTouchV2Transport ||
+            security != ESPTouchV2Security
+        ) {
+            invalidDeviceWifiSetupContract()
+        }
+        val provisioningKey = decodeSetupMaterial(
+            smartConfig.optString("provisioningKey"),
+            ESPTouchV2KeyBytes,
+        )
+        val reservedData = decodeSetupMaterial(
+            smartConfig.optString("reservedData"),
+            ESPTouchV2ReservedDataBytes,
+        )
+        try {
+            DeviceWifiSetupSession(
+                device = parseSmartDevice(json.getJSONObject("device")),
+                transport = transport,
+                security = security,
+                provisioningKey = provisioningKey,
+                reservedData = reservedData,
+                expiresAt = Instant.parse(setup.getString("expiresAt")),
+            )
+        } catch (error: Throwable) {
+            provisioningKey.fill(0)
+            reservedData.fill(0)
+            throw error
+        }
+    }
+
     suspend fun scanDevices(): List<SmartDevice> = withContext(Dispatchers.IO) {
         getJson("$baseUrl/devices/scan")
             .optJSONArray("devices")
@@ -1116,13 +1204,37 @@ class SmartHealthApi(
         parseSmartDevice(postJson("$baseUrl/devices/${id.urlEncode()}/connect", JSONObject()).getJSONObject("device"))
     }
 
-    suspend fun disconnectDevice(id: String): SmartDevice = withContext(Dispatchers.IO) {
-        parseSmartDevice(postJson("$baseUrl/devices/${id.urlEncode()}/disconnect", JSONObject()).getJSONObject("device"))
-    }
-
-    suspend fun deleteDevice(id: String): Boolean = withContext(Dispatchers.IO) {
-        deleteJson("$baseUrl/devices/${id.urlEncode()}")
-        true
+    suspend fun releaseDevice(
+        id: String,
+        idempotencyKey: String,
+    ): DeviceReleaseReceipt = withContext(Dispatchers.IO) {
+        require(id.isNotBlank()) { "Device id is required" }
+        require(idempotencyKey.isNotBlank()) { "Idempotency-Key is required" }
+        val json = postJson(
+            "$baseUrl/devices/${id.urlEncode()}/release",
+            JSONObject(),
+            idempotencyKey,
+        )
+        val release = json.optJSONObject("release")
+            ?: throw SmartHealthApiException(
+                statusCode = 502,
+                code = "DEVICE_RELEASE_CONTRACT_INVALID",
+                message = "Backend returned an invalid device release receipt",
+            )
+        val receipt = DeviceReleaseReceipt(
+            deviceId = release.optString("deviceId").trim(),
+            released = release.optBoolean("released", false),
+            historyRetained = release.optBoolean("historyRetained", false),
+            replayed = json.optBoolean("replayed", false),
+        )
+        if (receipt.deviceId != id || !receipt.released || !receipt.historyRetained) {
+            throw SmartHealthApiException(
+                statusCode = 502,
+                code = "DEVICE_RELEASE_CONTRACT_INVALID",
+                message = "Backend did not confirm the canonical device release",
+            )
+        }
+        receipt
     }
 
     suspend fun updateDevice(id: String, patch: JSONObject): SmartDevice = withContext(Dispatchers.IO) {

@@ -4,7 +4,7 @@ import com.example.smart_health_android.BuildConfig
 
 object BackendConfig {
     val HTTP_BASE_URL = BuildConfig.SMART_HEALTH_BASE_URL.trimEnd('/')
-    val API_BASE_URL = "$HTTP_BASE_URL/api"
+    val API_BASE_URL = "$HTTP_BASE_URL/api/v1"
     val APP_WS_URL = HTTP_BASE_URL
         .replace("http://", "ws://")
         .replace("https://", "wss://") + "/app"

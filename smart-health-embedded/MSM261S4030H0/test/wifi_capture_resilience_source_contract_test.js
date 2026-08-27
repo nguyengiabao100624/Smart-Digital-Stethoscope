@@ -72,7 +72,10 @@ assert.doesNotMatch(reconnect, /delay\s*\(/);
 assert.doesNotMatch(reconnect, /runSetupPortal\s*\(/);
 assert.doesNotMatch(reconnect, /wifiPass[^;\n]*Serial|Serial[^;\n]*wifiPass/);
 
-assert.match(setupWifi, /runSetupPortal\("WiFi SSID is missing\."\)/);
+assert.match(
+  setupWifi,
+  /startSmartConfigProvisioning\("WiFi setup is required before cloud connection"\)/,
+);
 assert.match(
   setupWifi,
   /runSetupPortal\("Physical setup gesture requested WiFi recovery\."\)/,
@@ -83,6 +86,7 @@ assert.doesNotMatch(
   setupWifi,
   /runSetupPortal\("Cannot connect to the configured WiFi network\."\)/,
 );
+assert.doesNotMatch(setupPortal, /while\s*\(/);
 
 const portalCaptureCalls = setupPortal.match(/captureI2sFrame\(\);/g) || [];
 assert.equal(
@@ -93,7 +97,7 @@ assert.equal(
 assert.ok(
   runtimeSetup.indexOf("startAudioCaptureTask()") <
     runtimeSetup.indexOf("setupWiFi()"),
-  "capture task must start before setup WiFi may block in the recovery portal",
+  "capture task must start before WiFi provisioning begins",
 );
 
 assert.match(capture, /i2s_read\(/);

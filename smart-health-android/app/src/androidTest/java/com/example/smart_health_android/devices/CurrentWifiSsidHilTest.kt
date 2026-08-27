@@ -3,8 +3,11 @@ package com.example.smart_health_android.devices
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.smart_health_android.MainActivity
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -22,15 +25,23 @@ class CurrentWifiSsidHilTest {
         )
         val context = instrumentation.targetContext
         val permission = Manifest.permission.ACCESS_FINE_LOCATION
-        assumeTrue(
+        assertTrue(
             "Grant location from the App's pairing screen before running this HIL check.",
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED,
         )
 
-        val currentWifi = AndroidDeviceWifiProvisioner(context).currentWifiSsid()
-        assertTrue(
-            "The attached phone must expose a non-redacted connected Wi-Fi SSID.",
-            currentWifi is DeviceCurrentWifiSsid.Available && currentWifi.value.isNotBlank(),
-        )
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var currentWifi: DeviceCurrentWifiSsid? = null
+            scenario.onActivity { activity ->
+                currentWifi = runBlocking {
+                    AndroidDeviceWifiProvisioner(activity).currentWifiSsid()
+                }
+            }
+            assertTrue(
+                "The attached phone must expose a non-redacted connected Wi-Fi SSID while Shcare is foreground.",
+                currentWifi is DeviceCurrentWifiSsid.Available &&
+                    (currentWifi as DeviceCurrentWifiSsid.Available).value.isNotBlank(),
+            )
+        }
     }
 }

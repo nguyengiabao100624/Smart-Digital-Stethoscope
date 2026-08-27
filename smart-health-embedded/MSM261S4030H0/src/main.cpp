@@ -9,6 +9,7 @@
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <NimBLEDevice.h>
 #include <Preferences.h>
 #include <Update.h>
 #include <WebServer.h>
@@ -18,6 +19,7 @@
 #include <esp_app_format.h>
 #include <esp_flash_encrypt.h>
 #include <esp_ota_ops.h>
+#include <esp_smartconfig.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
@@ -34,6 +36,7 @@
 #include <algorithm>
 #include <memory>
 #include <string.h>
+#include <sys/time.h>
 #include <time.h>
 
 using namespace websockets;
@@ -101,6 +104,10 @@ using namespace websockets;
 #define SMART_HEALTH_SETUP_PORTAL_TTL_MS 600000
 #endif
 
+#ifndef SMART_HEALTH_SETUP_PORTAL_AUTO_RECOVERY_FAILURES
+#define SMART_HEALTH_SETUP_PORTAL_AUTO_RECOVERY_FAILURES 3
+#endif
+
 #ifndef SMART_HEALTH_ENABLE_LAN_OTA
 #define SMART_HEALTH_ENABLE_LAN_OTA 0
 #endif
@@ -116,6 +123,52 @@ using namespace websockets;
 #ifndef SMART_HEALTH_ENABLE_DEVELOPMENT_UDP
 #define SMART_HEALTH_ENABLE_DEVELOPMENT_UDP 0
 #endif
+
+// Set only by the ignored, generated local HIL header. It makes the factory
+// fixture's cloud identity authoritative while still reading a user-provided
+// Wi-Fi credential from NVS. Normal development and production builds keep
+// persisted cloud configuration behavior unchanged.
+#ifndef SMART_HEALTH_HIL_RUNTIME_CONFIG
+#define SMART_HEALTH_HIL_RUNTIME_CONFIG 0
+#endif
+
+// Defined only by the ignored local HIL header.  A local fixture may set a
+// fresh build timestamp before it makes its first mutually-authenticated WSS
+// connection, because NTP is not always reachable from an isolated LAN.  It
+// is intentionally unavailable to production images and never bypasses CA or
+// certificate-chain verification.
+#ifndef SMART_HEALTH_HIL_CLOCK_EPOCH
+#define SMART_HEALTH_HIL_CLOCK_EPOCH 0
+#endif
+static_assert(!(SMART_HEALTH_HIL_RUNTIME_CONFIG && SMART_HEALTH_PRODUCTION_PROFILE),
+              "HIL runtime configuration must never be compiled into a production image.");
+
+// Arduino-ESP32 supplies a weak verifyOta() implementation that accepts a
+// PENDING_VERIFY image during framework startup.  That runs before setup(),
+// so relying solely on the application-level boot-health state machine below
+// would silently cancel ESP-IDF A/B rollback before it has authenticated with
+// Shcare.  Defer that framework decision and let
+// confirmPendingFirmwareIfHealthy() be the single, durable confirmation path.
+// This symbol intentionally has C linkage because the Arduino core is C.
+#if CONFIG_APP_ROLLBACK_ENABLE
+extern "C" bool verifyRollbackLater() { return true; }
+#endif
+
+// Physical HIL may opt in to compare the persisted device identity with the
+// factory material compiled into an ignored local header.  The check reports
+// only a boolean and is not compiled into normal production images.
+#ifndef SMART_HEALTH_HIL_EXPECTED_IDENTITY_CHECK
+#define SMART_HEALTH_HIL_EXPECTED_IDENTITY_CHECK 0
+#endif
+
+// ESPTouch V2 encrypted broadcast is the supported customer provisioning
+// transport. BLE is deliberately disabled; the SoftAP portal is physical
+// recovery only and is never opened by the Android customer flow.
+#ifndef SMART_HEALTH_ENABLE_BLE_PROVISIONING
+#define SMART_HEALTH_ENABLE_BLE_PROVISIONING 0
+#endif
+static_assert(SMART_HEALTH_ENABLE_BLE_PROVISIONING == 0,
+              "BLE provisioning is retired; use ESPTouch V2 SmartConfig.");
 
 #ifndef SMART_HEALTH_BACKEND_CA_CERT
 #define SMART_HEALTH_BACKEND_CA_CERT ""
@@ -230,26 +283,82 @@ private:
   size_t observedWriteExpectedBytes = 0;
   size_t observedWriteActualBytes = 0;
 };
+#elif SMART_HEALTH_HIL_RUNTIME_CONFIG
+#ifndef SMART_HEALTH_HIL_BACKEND_CONNECT_IP
+#define SMART_HEALTH_HIL_BACKEND_CONNECT_IP ""
+#endif
+#ifndef SMART_HEALTH_HIL_RESET_OTA_STATE
+#define SMART_HEALTH_HIL_RESET_OTA_STATE 0
+#endif
+
+// Local HIL has no authoritative LAN DNS. Preserve the production-like
+// hostname-verifying TLS flow while routing the fixture hostname to its
+// explicit LAN IP. CA validation remains mandatory.
+class HilSecureCloudTcpClient final
+    : public websockets::network::SecuredEsp32TcpClient {
+public:
+  bool connect(const WSString &host, const int port) override {
+    IPAddress target;
+    if (!target.fromString(SMART_HEALTH_HIL_BACKEND_CONNECT_IP)) {
+      Serial.println("Local HIL TLS route is invalid.");
+      return false;
+    }
+    const bool connected = client.connect(
+        target, port, host.c_str(), BACKEND_CA_CERT, nullptr, nullptr);
+    client.setNoDelay(true);
+    return connected;
+  }
+};
 #endif
 
 Preferences devicePrefs;
 WebServer setupServer(80);
 DNSServer setupDns;
+NimBLEServer *bleProvisioningServer = nullptr;
+NimBLECharacteristic *bleProvisioningIdentityCharacteristic = nullptr;
+NimBLECharacteristic *bleProvisioningChallengeCharacteristic = nullptr;
+NimBLECharacteristic *bleProvisioningWifiCharacteristic = nullptr;
+NimBLECharacteristic *bleProvisioningStatusCharacteristic = nullptr;
+String bleProvisioningNonce = "";
+unsigned long bleProvisioningNonceIssuedAtMs = 0;
+unsigned long bleProvisioningRestartAtMs = 0;
+bool bleProvisioningStarted = false;
 #if SMART_HEALTH_PRODUCTION_PROFILE
 std::shared_ptr<BoundedSecureCloudTcpClient> boundedCloudTcpClient =
     std::make_shared<BoundedSecureCloudTcpClient>();
 WebsocketsClient cloudSocket(boundedCloudTcpClient);
+#elif SMART_HEALTH_HIL_RUNTIME_CONFIG
+std::shared_ptr<HilSecureCloudTcpClient> hilSecureCloudTcpClient =
+    std::make_shared<HilSecureCloudTcpClient>();
+WebsocketsClient cloudSocket(hilSecureCloudTcpClient);
 #else
 WebsocketsClient cloudSocket;
 #endif
 const byte SETUP_DNS_PORT = 53;
 const unsigned long WIFI_RECONNECT_BASE_MS = 1000;
 const unsigned long WIFI_RECONNECT_MAX_MS = 30000;
+// WPA association and DHCP need materially longer than the exponential retry
+// base. Calling WiFi.begin again earlier tears down the in-flight station
+// attempt (reported by ESP-IDF as ASSOC_LEAVE/reason 8).
+const unsigned long WIFI_ASSOCIATION_TIMEOUT_MS = 15000;
 const unsigned long CLOUD_RECONNECT_BASE_MS = 1000;
 const unsigned long CLOUD_RECONNECT_MAX_MS = 30000;
+constexpr time_t TLS_CERT_TIME_FLOOR = 1700000000;
 const unsigned long CLOUD_TELEMETRY_INTERVAL_MS = 10000;
 const unsigned long I2S_RETRY_BASE_MS = 1000;
 const unsigned long I2S_RETRY_MAX_MS = 60000;
+const unsigned long BLE_PROVISIONING_NONCE_TTL_MS = 90000;
+const unsigned long BLE_PROVISIONING_RESTART_DELAY_MS = 3500;
+const char *BLE_PROVISIONING_SERVICE_UUID =
+    "a4d35bd2-6641-4e2d-b61f-6db74a3b8a10";
+const char *BLE_PROVISIONING_IDENTITY_UUID =
+    "a4d35bd3-6641-4e2d-b61f-6db74a3b8a10";
+const char *BLE_PROVISIONING_CHALLENGE_UUID =
+    "a4d35bd4-6641-4e2d-b61f-6db74a3b8a10";
+const char *BLE_PROVISIONING_WIFI_UUID =
+    "a4d35bd5-6641-4e2d-b61f-6db74a3b8a10";
+const char *BLE_PROVISIONING_STATUS_UUID =
+    "a4d35bd6-6641-4e2d-b61f-6db74a3b8a10";
 const std::uint32_t I2S_READ_FAILURE_THRESHOLD = 3;
 const std::uint32_t TASK_WATCHDOG_TIMEOUT_SECONDS = 30;
 const std::uint32_t BUILT_TASK_WATCHDOG_TIMEOUT_SECONDS =
@@ -270,6 +379,8 @@ const unsigned long OTA_RECOVERY_SAFE_MODE_STATUS_MS = 15000;
 const int FACTORY_RESET_PIN = SMART_HEALTH_FACTORY_RESET_PIN;
 const unsigned long FACTORY_RESET_HOLD_MS = SMART_HEALTH_FACTORY_RESET_HOLD_MS;
 const unsigned long SETUP_PORTAL_TTL_MS = SMART_HEALTH_SETUP_PORTAL_TTL_MS;
+const std::uint32_t SETUP_PORTAL_AUTO_RECOVERY_FAILURES =
+    SMART_HEALTH_SETUP_PORTAL_AUTO_RECOVERY_FAILURES;
 IPAddress setupPortalIp(192, 168, 4, 1);
 IPAddress setupPortalGateway(192, 168, 4, 1);
 IPAddress setupPortalSubnet(255, 255, 255, 0);
@@ -278,6 +389,19 @@ String setupPortalCsrfToken = "";
 bool setupPortalActive = false;
 bool setupPortalPhysicalGesture = false;
 bool configServerStarted = false;
+bool smartConfigActive = false;
+bool smartConfigCandidateReady = false;
+bool smartConfigCandidateBindingValid = false;
+bool smartConfigCandidateValidationReported = false;
+bool smartConfigEventRegistered = false;
+bool wifiDiagnosticEventRegistered = false;
+bool smartConfigKdfVerified = false;
+unsigned long smartConfigStartedAtMs = 0;
+unsigned long smartConfigNextAttemptAtMs = 0;
+char smartConfigProvisioningKey[17] = {0};
+char smartConfigExpectedBinding[36] = {0};
+char smartConfigCandidateSsid[33] = {0};
+char smartConfigCandidatePassword[65] = {0};
 bool otaReady = false;
 bool mdnsReady = false;
 bool i2sReady = false;
@@ -286,7 +410,10 @@ bool i2sMaintenancePaused = false;
 bool taskWatchdogReady = false;
 bool cloudTransportConnected = false;
 bool cloudConnected = false;
+int64_t authenticatedServerEpochBaseMs = 0;
+uint32_t authenticatedServerEpochAtUptimeMs = 0;
 bool cloudConfigured = false;
+bool cloudClockWaitReported = false;
 bool udpAudioReady = false;
 bool deviceLocked = false;
 bool authenticatedProductionHeartbeatObserved = false;
@@ -939,6 +1066,50 @@ bool hasWiFiConfig() { return strlen(wifiSsid) > 0; }
 
 bool hasBackendConfig() { return strlen(backendHost) > 0 && backendPort > 0 && backendPort <= 65535; }
 
+bool hasTrustedClock() { return time(nullptr) >= TLS_CERT_TIME_FLOOR; }
+
+void bootstrapHilTrustedClock() {
+#if SMART_HEALTH_HIL_RUNTIME_CONFIG
+  if (!hasTrustedClock() && SMART_HEALTH_HIL_CLOCK_EPOCH >= TLS_CERT_TIME_FLOOR) {
+    timeval bootstrapTime = {
+        .tv_sec = static_cast<time_t>(SMART_HEALTH_HIL_CLOCK_EPOCH),
+        .tv_usec = 0,
+    };
+    settimeofday(&bootstrapTime, nullptr);
+    if (hasTrustedClock()) {
+      Serial.println("Local HIL clock bootstrap accepted; TLS validation remains enabled.");
+    }
+  }
+#endif
+}
+
+bool synchronizeClockFromAuthenticatedServer(
+    const shcare::AuthAcceptedMessage &accepted) {
+  std::int64_t serverEpochMs = 0;
+  if (!shcare::parseAuthAcceptedServerTimeEpochMillis(accepted,
+                                                       serverEpochMs)) {
+    return false;
+  }
+  const time_t serverEpoch = static_cast<time_t>(serverEpochMs / 1000);
+  if (serverEpoch < TLS_CERT_TIME_FLOOR) {
+    return false;
+  }
+  const timeval authenticatedTime = {
+      .tv_sec = serverEpoch,
+      .tv_usec = static_cast<suseconds_t>((serverEpochMs % 1000) * 1000),
+  };
+  settimeofday(&authenticatedTime, nullptr);
+  if (!hasTrustedClock()) {
+    return false;
+  }
+  // Commands are accepted only on an authenticated WSS session.  Anchor their
+  // expiry checks to the TLS-authenticated server time and monotonic uptime so
+  // a late SNTP correction cannot turn a fresh command into an expired one.
+  authenticatedServerEpochBaseMs = serverEpochMs;
+  authenticatedServerEpochAtUptimeMs = static_cast<uint32_t>(millis());
+  return true;
+}
+
 bool isProductionProfile() { return SMART_HEALTH_PRODUCTION_PROFILE != 0; }
 
 bool isCredentialStorageEncrypted() {
@@ -1417,12 +1588,12 @@ void loadRuntimeConfig() {
                     devicePrefs.getString("wifiPass", ""), false);
   }
 
-  if (devicePrefs.isKey("audioHost")) {
+  if (!SMART_HEALTH_HIL_RUNTIME_CONFIG && devicePrefs.isKey("audioHost")) {
     copyConfigValue(audioHost, sizeof(audioHost),
                     devicePrefs.getString("audioHost", ""));
   }
 
-  if (devicePrefs.isKey("backendHost")) {
+  if (!SMART_HEALTH_HIL_RUNTIME_CONFIG && devicePrefs.isKey("backendHost")) {
     copyConfigValue(backendHost, sizeof(backendHost),
                     devicePrefs.getString("backendHost", ""));
   } else if (strlen(backendHost) == 0 && strlen(audioHost) > 0) {
@@ -1434,7 +1605,7 @@ void loadRuntimeConfig() {
                     devicePrefs.getString("deviceName", ""));
   }
 
-  if (devicePrefs.isKey("deviceId")) {
+  if (!SMART_HEALTH_HIL_RUNTIME_CONFIG && devicePrefs.isKey("deviceId")) {
     const String storedDeviceId = devicePrefs.getString("deviceId", "");
     const std::string canonicalStoredDeviceId(storedDeviceId.c_str());
     memset(deviceId, 0, sizeof(deviceId));
@@ -1448,7 +1619,7 @@ void loadRuntimeConfig() {
     }
   }
 
-  if (devicePrefs.isKey("deviceSecret")) {
+  if (!SMART_HEALTH_HIL_RUNTIME_CONFIG && devicePrefs.isKey("deviceSecret")) {
     const String storedDeviceSecret =
         devicePrefs.getString("deviceSecret", "");
     memset(deviceSecret, 0, sizeof(deviceSecret));
@@ -1482,18 +1653,24 @@ void loadRuntimeConfig() {
                     devicePrefs.getString("otaPass", ""), false);
   }
 
-  const int storedUdpPort =
-      devicePrefs.getInt("udpPort", SMART_HEALTH_AUDIO_UDP_PORT);
+  const int storedUdpPort = SMART_HEALTH_HIL_RUNTIME_CONFIG
+                                ? SMART_HEALTH_AUDIO_UDP_PORT
+                                : devicePrefs.getInt(
+                                      "udpPort", SMART_HEALTH_AUDIO_UDP_PORT);
   if (storedUdpPort > 0 && storedUdpPort <= 65535) {
     audioUdpPort = storedUdpPort;
   }
 
-  const int storedBackendPort =
-      devicePrefs.getInt("backendPort", SMART_HEALTH_BACKEND_PORT);
+  const int storedBackendPort = SMART_HEALTH_HIL_RUNTIME_CONFIG
+                                    ? SMART_HEALTH_BACKEND_PORT
+                                    : devicePrefs.getInt(
+                                          "backendPort", SMART_HEALTH_BACKEND_PORT);
   if (storedBackendPort > 0 && storedBackendPort <= 65535) {
     backendPort = storedBackendPort;
   }
-  backendUseTls = devicePrefs.getBool("backendTls", backendUseTls);
+  if (!SMART_HEALTH_HIL_RUNTIME_CONFIG) {
+    backendUseTls = devicePrefs.getBool("backendTls", backendUseTls);
+  }
   deviceLocked = devicePrefs.getBool("deviceLocked", false);
   const String persistedCommandJournal =
       devicePrefs.getString("cmdJournal", "");
@@ -1936,156 +2113,364 @@ void startConfigWebServer(const bool portalMode, const char *reason) {
   Serial.println("Smart Health WiFi recovery server ready on port 80.");
 }
 
+void stopSetupPortal() {
+  if (configServerStarted) setupServer.stop();
+  setupDns.stop();
+  WiFi.softAPdisconnect(true);
+  setupPortalActive = false;
+  configServerStarted = false;
+  setupPortalCsrfToken = "";
+}
+
 void runSetupPortal(const char *reason) {
-  if (!shcare::setupPortalAllowed(hasWiFiConfig(),
-                                  setupPortalPhysicalGesture)) {
-    Serial.println();
-    Serial.println(
-        "WiFi recovery AP remains closed: configured devices require the "
-        "physical setup gesture at boot.");
-    if (FACTORY_RESET_PIN < 0) {
-      Serial.println(
-          "No setup/reset GPIO is configured; use a wired recovery flash.");
-    }
-    while (WiFi.status() != WL_CONNECTED) {
-      maintainTaskWatchdog();
-      handleI2SRecovery();
-      handleFactoryResetButton();
-      handlePendingFirmwareHealth();
-      if (!otaRecoveryRuntimeServicesAllowed()) {
-        handleOtaRecoverySafeMode();
-        return;
-      }
-      delay(100);
-    }
+  if (setupPortalActive) return;
+  if (!shcare::setupPortalAllowed(hasWiFiConfig(), setupPortalPhysicalGesture,
+                                  false)) {
+    Serial.println("WiFi recovery AP remains closed without a physical setup gesture.");
+    return;
+  }
+  if (!shcare::validCanonicalDeviceId(std::string(deviceId)) ||
+      strlen(deviceSecret) < 16) {
+    Serial.println("WiFi recovery AP remains closed: device identity is unavailable.");
     return;
   }
 
   WiFi.disconnect(false);
-  delay(250);
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(setupPortalIp, setupPortalGateway, setupPortalSubnet);
-
-  if (!shcare::validCanonicalDeviceId(std::string(deviceId)) ||
-      strlen(deviceSecret) < 16) {
-    Serial.println(
-        "WiFi recovery AP remains closed: canonical device identity and "
-        "device credential are required.");
-    while (true) {
-      maintainTaskWatchdog();
-      handleI2SRecovery();
-      handleFactoryResetButton();
-      handlePendingFirmwareHealth();
-      if (!otaRecoveryRuntimeServicesAllowed()) {
-        handleOtaRecoverySafeMode();
-        return;
-      }
-      delay(100);
-    }
-  }
-
   shcare::SetupAccessPointCredentials apCredentials =
       shcare::deriveSetupAccessPointFromSecret(std::string(deviceId),
                                                 std::string(deviceSecret));
   if (!apCredentials.ok()) {
-    Serial.println(
-        "WiFi recovery AP remains closed: per-device WPA2 derivation failed.");
-    while (true) {
-      maintainTaskWatchdog();
-      handleI2SRecovery();
-      handleFactoryResetButton();
-      handlePendingFirmwareHealth();
-      if (!otaRecoveryRuntimeServicesAllowed()) {
-        handleOtaRecoverySafeMode();
-        return;
-      }
-      delay(100);
-    }
+    Serial.println("WiFi recovery AP remains closed: credential derivation failed.");
+    return;
   }
-
   String apName(apCredentials.ssid.c_str());
   String apPassword(apCredentials.password.c_str());
-  std::fill(apCredentials.password.begin(), apCredentials.password.end(),
-            '\0');
+  std::fill(apCredentials.password.begin(), apCredentials.password.end(), '\0');
   apCredentials.password.clear();
+  const bool accessPointStarted = WiFi.softAP(apName.c_str(), apPassword.c_str());
+  for (size_t index = 0; index < apPassword.length(); ++index) apPassword.setCharAt(index, '\0');
+  apPassword = "";
+  if (!accessPointStarted) {
+    Serial.println("Cannot start physical WiFi recovery access point.");
+    return;
+  }
   setupPortalCsrfToken = generateSetupPortalCsrfToken();
   setupPortalStartedAtMs = millis();
-
-  const bool accessPointStarted =
-      WiFi.softAP(apName.c_str(), apPassword.c_str());
-  for (size_t index = 0; index < apPassword.length(); ++index) {
-    apPassword.setCharAt(index, '\0');
-  }
-  apPassword = "";
-
-  if (!accessPointStarted) {
-    Serial.println("Cannot start Smart Health setup access point.");
-    while (true) {
-      maintainTaskWatchdog();
-      handleI2SRecovery();
-      handleFactoryResetButton();
-      handlePendingFirmwareHealth();
-      if (!otaRecoveryRuntimeServicesAllowed()) {
-        handleOtaRecoverySafeMode();
-        return;
-      }
-      delay(1000);
-    }
-  }
-
   setupDns.start(SETUP_DNS_PORT, "*", setupPortalIp);
   startConfigWebServer(true, reason);
+  Serial.println("Physical WiFi recovery portal started; it expires automatically.");
+}
 
-  Serial.println();
-  Serial.println("Smart Health setup portal started.");
-  if (reason != NULL && strlen(reason) > 0) {
-    Serial.print("Reason: ");
-    Serial.println(reason);
+void handleSetupPortal() {
+  if (!setupPortalActive) return;
+  if (shcare::setupPortalExpired(static_cast<std::uint32_t>(millis()),
+                                 static_cast<std::uint32_t>(setupPortalStartedAtMs),
+                                 static_cast<std::uint32_t>(SETUP_PORTAL_TTL_MS))) {
+    Serial.println("Physical WiFi recovery session expired; access point is shutting down.");
+    stopSetupPortal();
+    return;
   }
-  Serial.print("AP SSID: ");
-  Serial.println(apName);
-  Serial.println(
-      "AP access: factory/physical-gated, time-bounded and protected by "
-      "per-device WPA2 proof of possession.");
-  Serial.print("Open: http://");
-  Serial.println(setupPortalIp);
+  setupDns.processNextRequest();
+  setupServer.handleClient();
+}
 
-  while (true) {
-    maintainTaskWatchdog();
-    handleI2SRecovery();
-    if (shcare::setupPortalExpired(
-            static_cast<std::uint32_t>(millis()),
-            static_cast<std::uint32_t>(setupPortalStartedAtMs),
-            static_cast<std::uint32_t>(SETUP_PORTAL_TTL_MS))) {
-      Serial.println(
-          "WiFi recovery session expired; access point is shutting down.");
-      setupServer.stop();
-      setupDns.stop();
-      WiFi.softAPdisconnect(true);
-      setupPortalActive = false;
-      configServerStarted = false;
-      setupPortalCsrfToken = "";
-      while (true) {
-        maintainTaskWatchdog();
-        handleI2SRecovery();
-        handleFactoryResetButton();
-        handlePendingFirmwareHealth();
-        if (!otaRecoveryRuntimeServicesAllowed()) {
-          handleOtaRecoverySafeMode();
-          return;
-        }
-        delay(100);
-      }
+bool deriveSmartConfigV2MaterialForIdentity(const char *canonicalDeviceId,
+                                            const char *rawDeviceSecret,
+                                            uint8_t provisioningKey[16],
+                                            char expectedBinding[36]) {
+  if (canonicalDeviceId == nullptr || rawDeviceSecret == nullptr ||
+      provisioningKey == nullptr || expectedBinding == nullptr ||
+      !shcare::validCanonicalDeviceId(std::string(canonicalDeviceId)) ||
+      strlen(rawDeviceSecret) < 16) {
+    return false;
+  }
+  uint8_t verificationKey[32] = {0};
+  uint8_t derivedKey[32] = {0};
+  uint8_t bindingDigest[32] = {0};
+  const String keyDomain = String("shcare/esptouch-v2/aes128\n") + canonicalDeviceId;
+  const String bindingDomain = String("shcare/esptouch-v2/device\n") + canonicalDeviceId;
+  const mbedtls_md_info_t *sha256 =
+      mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  const bool verified = mbedtls_sha256_ret(
+                            reinterpret_cast<const unsigned char *>(rawDeviceSecret),
+                            strlen(rawDeviceSecret), verificationKey, 0) == 0 &&
+                        sha256 != nullptr &&
+                        mbedtls_md_hmac(
+                            sha256, verificationKey, sizeof(verificationKey),
+                            reinterpret_cast<const unsigned char *>(keyDomain.c_str()),
+                            keyDomain.length(), derivedKey) == 0 &&
+                        mbedtls_sha256_ret(
+                            reinterpret_cast<const unsigned char *>(bindingDomain.c_str()),
+                            bindingDomain.length(), bindingDigest, 0) == 0;
+  if (verified) {
+    memcpy(provisioningKey, derivedKey, 16);
+    constexpr char kHex[] = "0123456789abcdef";
+    expectedBinding[0] = 'v';
+    expectedBinding[1] = '2';
+    expectedBinding[2] = ':';
+    for (size_t index = 0; index < 16; ++index) {
+      expectedBinding[3 + (index * 2)] = kHex[(bindingDigest[index] >> 4) & 0x0f];
+      expectedBinding[4 + (index * 2)] = kHex[bindingDigest[index] & 0x0f];
     }
-    setupDns.processNextRequest();
-    setupServer.handleClient();
-    handleFactoryResetButton();
-    handlePendingFirmwareHealth();
-    if (!otaRecoveryRuntimeServicesAllowed()) {
-      handleOtaRecoverySafeMode();
+    expectedBinding[35] = '\0';
+  }
+  memset(verificationKey, 0, sizeof(verificationKey));
+  memset(derivedKey, 0, sizeof(derivedKey));
+  memset(bindingDigest, 0, sizeof(bindingDigest));
+  return verified;
+}
+
+bool deriveSmartConfigV2Material(uint8_t provisioningKey[16],
+                                 char expectedBinding[36]) {
+  return deriveSmartConfigV2MaterialForIdentity(
+      deviceId, deviceSecret, provisioningKey, expectedBinding);
+}
+
+#if SMART_HEALTH_HIL_EXPECTED_IDENTITY_CHECK
+bool hilExpectedIdentityMatchesPersisted() {
+  if (!shcare::validCanonicalDeviceId(std::string(DEFAULT_DEVICE_ID)) ||
+      !shcare::validCanonicalDeviceId(std::string(deviceId)) ||
+      strlen(DEFAULT_DEVICE_SECRET) < 16 || strlen(deviceSecret) < 16) {
+    return false;
+  }
+  uint8_t expectedDigest[32] = {0};
+  uint8_t persistedDigest[32] = {0};
+  const bool hashed =
+      mbedtls_sha256_ret(
+          reinterpret_cast<const unsigned char *>(DEFAULT_DEVICE_SECRET),
+          strlen(DEFAULT_DEVICE_SECRET), expectedDigest, 0) == 0 &&
+      mbedtls_sha256_ret(
+          reinterpret_cast<const unsigned char *>(deviceSecret),
+          strlen(deviceSecret), persistedDigest, 0) == 0;
+  uint8_t difference = 0;
+  for (size_t index = 0; index < sizeof(expectedDigest); ++index) {
+    difference |= expectedDigest[index] ^ persistedDigest[index];
+  }
+  memset(expectedDigest, 0, sizeof(expectedDigest));
+  memset(persistedDigest, 0, sizeof(persistedDigest));
+  return hashed && difference == 0 && String(DEFAULT_DEVICE_ID) == String(deviceId);
+}
+#endif
+
+bool smartConfigV2GoldenVectorMatches() {
+  // This non-secret fixture is shared with the JavaScript/Kotlin contract.
+  constexpr char kFixtureDeviceId[] = "dev_alpha";
+  constexpr char kFixtureRawSecret[] = "0123456789abcdef0123456789abcdef";
+  constexpr uint8_t kExpectedKey[16] = {
+      0x0b, 0x0b, 0xeb, 0x38, 0x35, 0xec, 0x3e, 0x93,
+      0xfd, 0x94, 0x5c, 0xf6, 0x12, 0x16, 0x84, 0x29,
+  };
+  constexpr char kExpectedBinding[] = "v2:ec1ed31a41a7430defd880bc96532810";
+  uint8_t derivedKey[16] = {0};
+  char derivedBinding[36] = {0};
+  const bool derived = deriveSmartConfigV2MaterialForIdentity(
+      kFixtureDeviceId, kFixtureRawSecret, derivedKey, derivedBinding);
+  uint8_t difference = 0;
+  for (size_t index = 0; index < sizeof(derivedKey); ++index) {
+    difference |= derivedKey[index] ^ kExpectedKey[index];
+  }
+  for (size_t index = 0; index < sizeof(derivedBinding); ++index) {
+    difference |= derivedBinding[index] ^ kExpectedBinding[index];
+  }
+  memset(derivedKey, 0, sizeof(derivedKey));
+  memset(derivedBinding, 0, sizeof(derivedBinding));
+  return derived && difference == 0;
+}
+
+enum class SmartConfigBindingLayout : uint8_t {
+  Exact,
+  LeadingProtocolByteStripped,
+  LeadingPaddingByteAdded,
+  Different,
+};
+
+SmartConfigBindingLayout inspectSmartConfigBinding(const uint8_t received[65]) {
+  if (received == nullptr) return SmartConfigBindingLayout::Different;
+  uint8_t difference = 0;
+  for (size_t index = 0; index < sizeof(smartConfigExpectedBinding) - 1; ++index) {
+    difference |= received[index] ^ static_cast<uint8_t>(smartConfigExpectedBinding[index]);
+  }
+  if (difference == 0) return SmartConfigBindingLayout::Exact;
+
+  // The diagnostic only reports a layout class, never reserved-data bytes.
+  // It distinguishes an IDF/client framing change from a wrong-device attack.
+  uint8_t strippedDifference = 0;
+  uint8_t paddedDifference = 0;
+  for (size_t index = 0; index < sizeof(smartConfigExpectedBinding) - 2; ++index) {
+    strippedDifference |= received[index] ^ static_cast<uint8_t>(smartConfigExpectedBinding[index + 1]);
+    paddedDifference |= received[index + 1] ^ static_cast<uint8_t>(smartConfigExpectedBinding[index]);
+  }
+  if (strippedDifference == 0) {
+    return SmartConfigBindingLayout::LeadingProtocolByteStripped;
+  }
+  if (paddedDifference == 0) {
+    return SmartConfigBindingLayout::LeadingPaddingByteAdded;
+  }
+  return SmartConfigBindingLayout::Different;
+}
+
+void clearSmartConfigSensitiveMaterial() {
+  memset(smartConfigProvisioningKey, 0, sizeof(smartConfigProvisioningKey));
+  memset(smartConfigExpectedBinding, 0, sizeof(smartConfigExpectedBinding));
+  memset(smartConfigCandidateSsid, 0, sizeof(smartConfigCandidateSsid));
+  memset(smartConfigCandidatePassword, 0, sizeof(smartConfigCandidatePassword));
+  smartConfigCandidateReady = false;
+  smartConfigCandidateBindingValid = false;
+  smartConfigCandidateValidationReported = false;
+}
+
+void handleSmartConfigEvent(arduino_event_t *event) {
+  if (event == nullptr || !smartConfigActive) {
+    return;
+  }
+  if (event->event_id == ARDUINO_EVENT_SC_FOUND_CHANNEL) {
+    // This proves that the ESP radio can hear the ESPTouch broadcast, without
+    // revealing the target SSID, password, provisioning key or binding.
+    // It lets field HIL distinguish RF/router multicast isolation from a
+    // cryptographic binding rejection before a customer is asked to retry.
+    Serial.println("ESPTouch V2 signal detected on a target WiFi channel.");
+    return;
+  }
+  if (event->event_id != ARDUINO_EVENT_SC_GOT_SSID_PSWD) {
+    return;
+  }
+  const auto &credential = event->event_info.sc_got_ssid_pswd;
+  memcpy(smartConfigCandidateSsid, credential.ssid,
+         std::min(sizeof(smartConfigCandidateSsid) - 1, sizeof(credential.ssid)));
+  memcpy(smartConfigCandidatePassword, credential.password,
+         std::min(sizeof(smartConfigCandidatePassword) - 1, sizeof(credential.password)));
+  uint8_t receivedBinding[65] = {0};
+  const esp_err_t reservedResult =
+      esp_smartconfig_get_rvd_data(receivedBinding, sizeof(receivedBinding));
+  const SmartConfigBindingLayout bindingLayout =
+      reservedResult == ESP_OK ? inspectSmartConfigBinding(receivedBinding)
+                               : SmartConfigBindingLayout::Different;
+  smartConfigCandidateBindingValid = bindingLayout == SmartConfigBindingLayout::Exact;
+  if (!smartConfigCandidateBindingValid) {
+    switch (bindingLayout) {
+      case SmartConfigBindingLayout::LeadingProtocolByteStripped:
+        Serial.println("ESPTouch V2 reserved-data layout: leading protocol byte was stripped.");
+        break;
+      case SmartConfigBindingLayout::LeadingPaddingByteAdded:
+        Serial.println("ESPTouch V2 reserved-data layout: leading padding byte was added.");
+        break;
+      case SmartConfigBindingLayout::Different:
+        Serial.println("ESPTouch V2 reserved-data layout: binding differs from this device.");
+        break;
+      case SmartConfigBindingLayout::Exact:
+        break;
+    }
+  }
+  memset(receivedBinding, 0, sizeof(receivedBinding));
+  smartConfigCandidateReady = true;
+}
+
+void handleWifiDiagnosticEvent(arduino_event_t *event) {
+  if (event == nullptr ||
+      event->event_id != ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    return;
+  }
+  // The numeric reason is enough to distinguish router rejection, an absent
+  // AP and radio/authentication failures. Never log SSID or password values.
+  Serial.print("WiFi station connection failed; reason=");
+  Serial.println(event->event_info.wifi_sta_disconnected.reason);
+}
+
+void registerWifiDiagnosticEvent() {
+  if (wifiDiagnosticEventRegistered) return;
+  WiFi.onEvent(handleWifiDiagnosticEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  wifiDiagnosticEventRegistered = true;
+}
+
+bool startSmartConfigProvisioning(const char *reason) {
+  if (smartConfigActive) return true;
+  if (!smartConfigKdfVerified) {
+    Serial.println("ESPTouch V2 listener remains closed: KDF self-test failed.");
+    return false;
+  }
+  if (setupPortalActive) stopSetupPortal();
+  clearSmartConfigSensitiveMaterial();
+  if (!deriveSmartConfigV2Material(
+          reinterpret_cast<uint8_t *>(smartConfigProvisioningKey),
+          smartConfigExpectedBinding)) {
+    Serial.println("ESPTouch V2 listener was not opened: device identity is unavailable.");
+    clearSmartConfigSensitiveMaterial();
+    return false;
+  }
+  if (!smartConfigEventRegistered) {
+    WiFi.onEvent(handleSmartConfigEvent, ARDUINO_EVENT_SC_FOUND_CHANNEL);
+    WiFi.onEvent(handleSmartConfigEvent, ARDUINO_EVENT_SC_GOT_SSID_PSWD);
+    smartConfigEventRegistered = true;
+  }
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  if (!WiFi.beginSmartConfig(SC_TYPE_ESPTOUCH_V2, smartConfigProvisioningKey)) {
+    clearSmartConfigSensitiveMaterial();
+    Serial.println("ESPTouch V2 listener failed to start.");
+    return false;
+  }
+  smartConfigActive = true;
+  smartConfigStartedAtMs = millis();
+  Serial.print("ESPTouch V2 listener opened");
+  if (reason != nullptr && strlen(reason) > 0) {
+    Serial.print(": ");
+    Serial.print(reason);
+  }
+  Serial.println();
+  return true;
+}
+
+void stopSmartConfigProvisioning(const bool retry) {
+  if (smartConfigActive) WiFi.stopSmartConfig();
+  smartConfigActive = false;
+  clearSmartConfigSensitiveMaterial();
+  smartConfigNextAttemptAtMs = retry ? millis() + 3000UL : 0;
+}
+
+void handleSmartConfigProvisioning() {
+  if (!smartConfigActive) {
+    if (!hasWiFiConfig() && smartConfigNextAttemptAtMs > 0 &&
+        static_cast<long>(millis() - smartConfigNextAttemptAtMs) >= 0) {
+      startSmartConfigProvisioning("retrying encrypted WiFi configuration");
+    }
+    return;
+  }
+  if (smartConfigCandidateReady) {
+    if (!smartConfigCandidateBindingValid) {
+      Serial.println("ESPTouch V2 credential rejected: device binding mismatch.");
+      WiFi.disconnect(false);
+      stopSmartConfigProvisioning(!hasWiFiConfig());
       return;
     }
-    delay(2);
+    if (!smartConfigCandidateValidationReported) {
+      // Safe HIL milestone: the encrypted packet was decrypted and bound to
+      // this device.  Never include SSID, password, key or binding bytes.
+      Serial.println("ESPTouch V2 credentials decrypted and device binding accepted; awaiting WiFi association.");
+      smartConfigCandidateValidationReported = true;
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      const bool persisted = persistSetupWifi(
+          String(smartConfigCandidateSsid), String(smartConfigCandidatePassword));
+      if (persisted) {
+        Serial.println("ESPTouch V2 WiFi association and DHCP succeeded; configuration saved.");
+        smartConfigActive = false;
+        clearSmartConfigSensitiveMaterial();
+        smartConfigNextAttemptAtMs = 0;
+      } else {
+        Serial.println("ESPTouch V2 WiFi configuration was not saved; previous network is retained.");
+        WiFi.disconnect(false);
+        stopSmartConfigProvisioning(!hasWiFiConfig());
+      }
+      return;
+    }
+  }
+  if (millis() - smartConfigStartedAtMs >= 120000UL) {
+    Serial.println("ESPTouch V2 listener timed out without a valid WiFi association.");
+    WiFi.disconnect(false);
+    stopSmartConfigProvisioning(!hasWiFiConfig());
   }
 }
 
@@ -2108,6 +2493,13 @@ String jsonEscape(String value) {
 }
 
 int64_t currentEpochMillis() {
+  if (cloudConnected &&
+      authenticatedServerEpochBaseMs >=
+          static_cast<int64_t>(TLS_CERT_TIME_FLOOR) * 1000) {
+    const uint32_t elapsedMs = static_cast<uint32_t>(
+        static_cast<uint32_t>(millis()) - authenticatedServerEpochAtUptimeMs);
+    return authenticatedServerEpochBaseMs + static_cast<int64_t>(elapsedMs);
+  }
   const time_t now = time(nullptr);
   if (now < 1700000000) {
     return 0;
@@ -2421,6 +2813,369 @@ String buildWifiConfigProof(const String &ssid, const String &password) {
   }
   memset(proof, 0, sizeof(proof));
   return encoded;
+}
+
+bool constantTimeEquals(const String &left, const String &right) {
+  if (left.length() != right.length()) {
+    return false;
+  }
+  uint8_t difference = 0;
+  for (size_t index = 0; index < left.length(); ++index) {
+    difference |= static_cast<uint8_t>(left[index] ^ right[index]);
+  }
+  return difference == 0;
+}
+
+void setBleProvisioningStatus(const char *state, const char *code) {
+  JsonDocument status;
+  status["protocolVersion"] = 1;
+  status["state"] = state == nullptr ? "rejected" : state;
+  status["deviceId"] = deviceId;
+  status["code"] = code == nullptr ? "BLE_PROVISIONING_FAILED" : code;
+  String serialized;
+  serializeJson(status, serialized);
+  if (bleProvisioningStatusCharacteristic != nullptr) {
+    bleProvisioningStatusCharacteristic->setValue(serialized.c_str());
+    bleProvisioningStatusCharacteristic->notify();
+  }
+}
+
+void clearBleProvisioningNonce() {
+  for (size_t index = 0; index < bleProvisioningNonce.length(); ++index) {
+    bleProvisioningNonce.setCharAt(index, '\0');
+  }
+  bleProvisioningNonce = "";
+  bleProvisioningNonceIssuedAtMs = 0;
+}
+
+bool bleProvisioningNonceIsFresh() {
+  return bleProvisioningNonce.length() > 0 &&
+         static_cast<unsigned long>(millis() - bleProvisioningNonceIssuedAtMs) <
+             BLE_PROVISIONING_NONCE_TTL_MS;
+}
+
+String createBleProvisioningChallenge() {
+  uint8_t nonceBytes[16];
+  for (size_t index = 0; index < sizeof(nonceBytes); index += sizeof(uint32_t)) {
+    const uint32_t randomValue = esp_random();
+    memcpy(nonceBytes + index, &randomValue,
+           std::min(sizeof(randomValue), sizeof(nonceBytes) - index));
+  }
+  clearBleProvisioningNonce();
+  bleProvisioningNonce = base64UrlEncode(nonceBytes, sizeof(nonceBytes));
+  memset(nonceBytes, 0, sizeof(nonceBytes));
+  bleProvisioningNonceIssuedAtMs = millis();
+
+  JsonDocument challenge;
+  challenge["protocolVersion"] = 1;
+  challenge["deviceId"] = deviceId;
+  challenge["nonce"] = bleProvisioningNonce;
+  challenge["expiresInSeconds"] =
+      static_cast<unsigned long>(BLE_PROVISIONING_NONCE_TTL_MS / 1000UL);
+  String serialized;
+  serializeJson(challenge, serialized);
+  return serialized;
+}
+
+bool deriveBleProvisioningKey(const String &nonce, uint8_t key[32]) {
+  if (key == nullptr || !shcare::validCanonicalDeviceId(std::string(deviceId)) ||
+      strlen(deviceSecret) < 16 || nonce.length() == 0) {
+    return false;
+  }
+  shcare::SetupAccessPointCredentials access =
+      shcare::deriveSetupAccessPointFromSecret(std::string(deviceId),
+                                                std::string(deviceSecret));
+  if (!access.ok() || access.password.length() != 20) {
+    return false;
+  }
+  String input = "shcare-ble-wifi-v1\n";
+  input += access.password.c_str();
+  input += "\n";
+  input += deviceId;
+  input += "\n";
+  input += nonce;
+  const int result = mbedtls_sha256_ret(
+      reinterpret_cast<const unsigned char *>(input.c_str()), input.length(),
+      key, 0);
+  std::fill(access.password.begin(), access.password.end(), '\0');
+  access.password.clear();
+  for (size_t index = 0; index < input.length(); ++index) {
+    input.setCharAt(index, '\0');
+  }
+  return result == 0;
+}
+
+std::string buildBleAdvertisementToken() {
+  if (!shcare::validCanonicalDeviceId(std::string(deviceId))) {
+    return "";
+  }
+  const String material = String("shcare-ble-advertisement-v1\n") + deviceId;
+  uint8_t digest[32] = {0};
+  const int result = mbedtls_sha256_ret(
+      reinterpret_cast<const unsigned char *>(material.c_str()), material.length(),
+      digest, 0);
+  if (result != 0) {
+    memset(digest, 0, sizeof(digest));
+    return "";
+  }
+  const std::string token(reinterpret_cast<const char *>(digest), 8);
+  memset(digest, 0, sizeof(digest));
+  return token;
+}
+
+void rejectBleProvisioning(const char *code) {
+  clearBleProvisioningNonce();
+  setBleProvisioningStatus("rejected", code);
+}
+
+void handleBleWifiProvisioning(const std::string &rawValue) {
+  constexpr size_t kMaxBleProvisioningBytes = 480;
+  if (rawValue.empty() || rawValue.size() > kMaxBleProvisioningBytes ||
+      bleProvisioningRestartAtMs != 0) {
+    rejectBleProvisioning("BLE_PAYLOAD_INVALID");
+    return;
+  }
+  if (isProductionProfile() && !isCredentialStorageEncrypted()) {
+    rejectBleProvisioning("BLE_CREDENTIAL_STORAGE_ENCRYPTION_REQUIRED");
+    return;
+  }
+  if (!bleProvisioningNonceIsFresh()) {
+    rejectBleProvisioning("BLE_CHALLENGE_EXPIRED");
+    return;
+  }
+
+  JsonDocument envelope;
+  if (deserializeJson(envelope, rawValue) ||
+      !envelope.is<JsonObjectConst>()) {
+    rejectBleProvisioning("BLE_PAYLOAD_INVALID");
+    return;
+  }
+  const int protocolVersion = envelope["protocolVersion"] | 0;
+  const String requestedDeviceId = envelope["deviceId"] | "";
+  const String requestedNonce = envelope["nonce"] | "";
+  const String ivValue = envelope["iv"] | "";
+  const String ciphertextValue = envelope["ciphertext"] | "";
+  const String tagValue = envelope["tag"] | "";
+  if (protocolVersion != 1 || requestedDeviceId != String(deviceId) ||
+      !constantTimeEquals(requestedNonce, bleProvisioningNonce) ||
+      ivValue.length() > 32 || ciphertextValue.length() > 360 ||
+      tagValue.length() > 32) {
+    rejectBleProvisioning("BLE_PAYLOAD_INVALID");
+    return;
+  }
+
+  uint8_t iv[12];
+  uint8_t tag[16];
+  uint8_t ciphertext[256];
+  uint8_t plaintext[257];
+  uint8_t key[32];
+  size_t ivLength = 0;
+  size_t tagLength = 0;
+  size_t ciphertextLength = 0;
+  const bool encodedValuesValid =
+      base64UrlDecode(ivValue, iv, sizeof(iv), ivLength) &&
+      base64UrlDecode(tagValue, tag, sizeof(tag), tagLength) &&
+      base64UrlDecode(ciphertextValue, ciphertext, sizeof(ciphertext),
+                      ciphertextLength) &&
+      ivLength == sizeof(iv) && tagLength == sizeof(tag) &&
+      ciphertextLength > 0 && ciphertextLength < sizeof(plaintext) &&
+      deriveBleProvisioningKey(bleProvisioningNonce, key);
+  if (!encodedValuesValid) {
+    memset(iv, 0, sizeof(iv));
+    memset(tag, 0, sizeof(tag));
+    memset(ciphertext, 0, sizeof(ciphertext));
+    memset(key, 0, sizeof(key));
+    rejectBleProvisioning("BLE_PAYLOAD_INVALID");
+    return;
+  }
+
+  String aad = "shcare-ble-wifi-aad-v1\n";
+  aad += deviceId;
+  aad += "\n";
+  aad += bleProvisioningNonce;
+  mbedtls_gcm_context gcm;
+  mbedtls_gcm_init(&gcm);
+  int cryptoResult = mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, 256);
+  if (cryptoResult == 0) {
+    cryptoResult = mbedtls_gcm_auth_decrypt(
+        &gcm, ciphertextLength, iv, sizeof(iv),
+        reinterpret_cast<const unsigned char *>(aad.c_str()), aad.length(),
+        tag, sizeof(tag), ciphertext, plaintext);
+  }
+  mbedtls_gcm_free(&gcm);
+  memset(iv, 0, sizeof(iv));
+  memset(tag, 0, sizeof(tag));
+  memset(ciphertext, 0, sizeof(ciphertext));
+  memset(key, 0, sizeof(key));
+  for (size_t index = 0; index < aad.length(); ++index) {
+    aad.setCharAt(index, '\0');
+  }
+  if (cryptoResult != 0) {
+    memset(plaintext, 0, sizeof(plaintext));
+    rejectBleProvisioning("BLE_AUTHENTICATION_FAILED");
+    return;
+  }
+  plaintext[ciphertextLength] = '\0';
+
+  JsonDocument provisioning;
+  const bool payloadValid =
+      !deserializeJson(provisioning, plaintext, ciphertextLength) &&
+      provisioning.is<JsonObjectConst>() &&
+      (provisioning["protocolVersion"] | 0) == 1 &&
+      String(provisioning["deviceId"] | "") == String(deviceId) &&
+      constantTimeEquals(String(provisioning["nonce"] | ""),
+                         bleProvisioningNonce);
+  if (!payloadValid) {
+    memset(plaintext, 0, sizeof(plaintext));
+    rejectBleProvisioning("BLE_PAYLOAD_INVALID");
+    return;
+  }
+  String ssid = provisioning["ssid"] | "";
+  String password = provisioning["password"] | "";
+  memset(plaintext, 0, sizeof(plaintext));
+  clearBleProvisioningNonce();
+  if (!shcare::validWifiCredentials(std::string(ssid.c_str()),
+                                    std::string(password.c_str()))) {
+    for (size_t index = 0; index < password.length(); ++index) {
+      password.setCharAt(index, '\0');
+    }
+    rejectBleProvisioning("BLE_WIFI_INVALID");
+    return;
+  }
+  const bool persisted = persistSetupWifi(ssid, password);
+  for (size_t index = 0; index < password.length(); ++index) {
+    password.setCharAt(index, '\0');
+  }
+  password = "";
+  if (!persisted) {
+    rejectBleProvisioning("BLE_WIFI_STORAGE_FAILED");
+    return;
+  }
+  setBleProvisioningStatus("accepted", "BLE_WIFI_ACCEPTED");
+  bleProvisioningRestartAtMs = millis() + BLE_PROVISIONING_RESTART_DELAY_MS;
+}
+
+class ShcareBleProvisioningServerCallbacks final : public NimBLEServerCallbacks {
+ public:
+  void onDisconnect(NimBLEServer *server, NimBLEConnInfo &, int) override {
+    clearBleProvisioningNonce();
+    if (server != nullptr && bleProvisioningRestartAtMs == 0) {
+      server->startAdvertising();
+    }
+  }
+};
+
+class ShcareBleProvisioningCharacteristicCallbacks final
+    : public NimBLECharacteristicCallbacks {
+ public:
+  void onRead(NimBLECharacteristic *characteristic, NimBLEConnInfo &) override {
+    if (characteristic != bleProvisioningChallengeCharacteristic) {
+      return;
+    }
+    const String challenge = createBleProvisioningChallenge();
+    characteristic->setValue(challenge.c_str());
+    setBleProvisioningStatus("ready", "BLE_CHALLENGE_READY");
+  }
+
+  void onWrite(NimBLECharacteristic *characteristic, NimBLEConnInfo &) override {
+    if (characteristic != bleProvisioningWifiCharacteristic) {
+      return;
+    }
+    const NimBLEAttValue value = characteristic->getValue();
+    handleBleWifiProvisioning(
+        std::string(reinterpret_cast<const char *>(value.data()), value.size()));
+  }
+};
+
+ShcareBleProvisioningServerCallbacks bleProvisioningServerCallbacks;
+ShcareBleProvisioningCharacteristicCallbacks bleProvisioningCharacteristicCallbacks;
+
+void setupBleProvisioning() {
+  if (bleProvisioningStarted ||
+      !shcare::validCanonicalDeviceId(std::string(deviceId)) ||
+      strlen(deviceSecret) < 16) {
+    return;
+  }
+  if (!NimBLEDevice::init("Shcare")) {
+    Serial.println("BLE provisioning unavailable.");
+    return;
+  }
+  NimBLEDevice::setMTU(247);
+  bleProvisioningServer = NimBLEDevice::createServer();
+  if (bleProvisioningServer == nullptr) {
+    Serial.println("BLE provisioning server unavailable.");
+    return;
+  }
+  bleProvisioningServer->setCallbacks(&bleProvisioningServerCallbacks, false);
+  bleProvisioningServer->advertiseOnDisconnect(true);
+  NimBLEService *service =
+      bleProvisioningServer->createService(BLE_PROVISIONING_SERVICE_UUID);
+  if (service == nullptr) {
+    Serial.println("BLE provisioning service unavailable.");
+    return;
+  }
+  bleProvisioningIdentityCharacteristic = service->createCharacteristic(
+      BLE_PROVISIONING_IDENTITY_UUID, NIMBLE_PROPERTY::READ, 96);
+  bleProvisioningChallengeCharacteristic = service->createCharacteristic(
+      BLE_PROVISIONING_CHALLENGE_UUID, NIMBLE_PROPERTY::READ, 256);
+  bleProvisioningWifiCharacteristic = service->createCharacteristic(
+      BLE_PROVISIONING_WIFI_UUID, NIMBLE_PROPERTY::WRITE, 512);
+  bleProvisioningStatusCharacteristic = service->createCharacteristic(
+      BLE_PROVISIONING_STATUS_UUID,
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 192);
+  if (bleProvisioningIdentityCharacteristic == nullptr ||
+      bleProvisioningChallengeCharacteristic == nullptr ||
+      bleProvisioningWifiCharacteristic == nullptr ||
+      bleProvisioningStatusCharacteristic == nullptr) {
+    Serial.println("BLE provisioning characteristic unavailable.");
+    return;
+  }
+  bleProvisioningIdentityCharacteristic->setValue(deviceId);
+  bleProvisioningChallengeCharacteristic->setCallbacks(
+      &bleProvisioningCharacteristicCallbacks);
+  bleProvisioningWifiCharacteristic->setCallbacks(
+      &bleProvisioningCharacteristicCallbacks);
+  setBleProvisioningStatus("ready", "BLE_READY");
+  if (!bleProvisioningServer->start()) {
+    Serial.println("BLE provisioning start failed.");
+    return;
+  }
+  NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
+  if (advertising == nullptr) {
+    Serial.println("BLE provisioning advertising unavailable.");
+    return;
+  }
+  const std::string advertisementToken = buildBleAdvertisementToken();
+  NimBLEAdvertisementData advertisementData;
+  // NimBLEAdvertising::setServiceData() may transparently move a field to
+  // scan response data when the current payload is full. Xiaomi/Android HIL
+  // must see the discriminator in the primary packet, so construct the
+  // canonical payload directly and install it without the fallback path.
+  if (advertisementToken.length() != 8 ||
+      !advertisementData.setFlags(BLE_HS_ADV_F_DISC_GEN) ||
+      !advertisementData.setServiceData(
+          NimBLEUUID(BLE_PROVISIONING_SERVICE_UUID), advertisementToken) ||
+      !advertising->setAdvertisementData(advertisementData)) {
+    Serial.println("BLE provisioning advertisement token unavailable.");
+    return;
+  }
+  if (!NimBLEDevice::startAdvertising()) {
+    Serial.println("BLE provisioning advertising failed.");
+    return;
+  }
+  bleProvisioningStarted = true;
+  Serial.println("BLE WiFi provisioning ready.");
+}
+
+void handleBleProvisioningRestart() {
+  if (bleProvisioningRestartAtMs == 0 ||
+      static_cast<long>(millis() - bleProvisioningRestartAtMs) < 0) {
+    return;
+  }
+  bleProvisioningRestartAtMs = 0;
+  Serial.println("BLE WiFi provisioning persisted; restarting.");
+  delay(50);
+  ESP.restart();
 }
 
 String cloudWsUrl() {
@@ -2745,6 +3500,21 @@ void handleOtaRecoverySafeMode() {
 
 void beginPendingFirmwareHealthCheck() {
   loadPendingOtaReceipt();
+#if SMART_HEALTH_HIL_RESET_OTA_STATE
+  // A wired HIL bootstrap may clean up a stranded test receipt without
+  // touching Wi-Fi, identity, or any other device configuration. OTA targets
+  // never include this one-shot fixture flag.
+  const bool receiptCleared = erasePendingOtaReceipt();
+  bool markerCleared = false;
+  if (devicePrefs.begin("smart-health", false)) {
+    markerCleared = !devicePrefs.isKey("otaBoot") ||
+                    devicePrefs.remove("otaBoot") > 0;
+    devicePrefs.end();
+  }
+  if (receiptCleared && markerCleared) {
+    Serial.println("HIL bootstrap cleared only stale OTA recovery state.");
+  }
+#endif
   otaBootOutcome = loadOtaBootOutcome();
   const esp_partition_t *runningPartition = esp_ota_get_running_partition();
   esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
@@ -2879,7 +3649,13 @@ bool pendingFirmwareHealthReady() {
   health.i2sReady = i2sReady;
   health.stabilityWindowElapsed =
       millis() - pendingFirmwareBootStartedMs >= OTA_BOOT_STABILITY_MS;
-  health.productionProfile = isProductionProfile();
+  // HIL uses the production WSS trust/authentication path with short-lived
+  // local credentials even though its profile permits development audio
+  // diagnostics. An OTA image in HIL must therefore meet the same
+  // authenticated WSS boot-health bar; otherwise a bad credential could be
+  // marked valid without proving it can rejoin the control plane.
+  health.productionProfile = isProductionProfile() ||
+                             SMART_HEALTH_HIL_RUNTIME_CONFIG;
   health.runtimeSecurityReady = cloudSecurityDecision.ready();
   health.transport = cloudSecurityDecision.transport;
   health.authenticated = cloudConnected;
@@ -3125,6 +3901,13 @@ void handleCloudAuthMessage(const String &type, const String &message) {
       rejectCloudTransport("CREDENTIAL_SLOT_BINDING_INVALID");
       return;
     }
+    // The accepted message arrives only after the TLS server certificate,
+    // challenge, device identity, session and credential slot are all bound.
+    // It corrects a stale RTC without weakening command expiry validation.
+    if (!synchronizeClockFromAuthenticatedServer(accepted.message)) {
+      rejectCloudTransport("AUTH_SERVER_TIME_INVALID");
+      return;
+    }
     if (authUsingPendingCredential) {
       if (!commitPendingCredentialRotation()) {
         // The candidate remains in the commit-marked NVS slot and will still
@@ -3162,6 +3945,16 @@ void handleCloudAuthMessage(const String &type, const String &message) {
     }
     cloudConnected = false;
     cloudSessionId = "";
+    // A newly installed OTA image has not earned validity yet. An authenticated
+    // WSS rejection proves it cannot rejoin the control plane with its device
+    // identity. Leave the actual rollback to the single guarded loop path,
+    // which persists intent and checks A/B feasibility before rebooting.
+    if (pendingFirmwareVerification) {
+      pendingFirmwareBootStartedMs = millis() - OTA_BOOT_HEALTH_TIMEOUT_MS;
+      pendingFirmwareLastStatusMs = 0;
+      Serial.println(
+          "OTA boot health rejected by WSS authentication; rollback is scheduled.");
+    }
     cloudAuthHandshake.reset();
     authenticatedProductionHeartbeatObserved = false;
     resetAudioSession();
@@ -3647,7 +4440,37 @@ bool performCloudOta(const shcare::CommandEnvelope &command,
   http.setRedirectLimit(3);
   http.setConnectTimeout(10000);
   http.setTimeout(15000);
+#if SMART_HEALTH_HIL_RUNTIME_CONFIG
+  // The local HIL TLS proxy is reached at an explicit LAN IP, while its
+  // certificate is issued to shcare-hil.local. Reuse the same hostname-
+  // verified connection model as the WSS transport; never relax certificate
+  // verification merely to make the OTA fixture reachable.
+  const String scheme("https://");
+  const int pathOffset = url.indexOf('/', scheme.length());
+  const String authority = pathOffset >= 0
+                               ? url.substring(scheme.length(), pathOffset)
+                               : url.substring(scheme.length());
+  const String requestUri =
+      pathOffset >= 0 ? url.substring(pathOffset) : String("/");
+  const String expectedAuthority =
+      String(SMART_HEALTH_HIL_BACKEND_CONNECT_IP) + ":" + String(backendPort);
+  IPAddress target;
+  if (authority != expectedAuthority ||
+      !target.fromString(SMART_HEALTH_HIL_BACKEND_CONNECT_IP)) {
+    return failOta("OTA_HIL_URL_MISMATCH", "local ota route is invalid", false);
+  }
+  if (!secureClient.connect(target, static_cast<uint16_t>(backendPort),
+                            "shcare-hil.local", OTA_CA_CERT, nullptr,
+                            nullptr)) {
+    return failOta("OTA_DOWNLOAD_CONNECT_FAILED",
+                   "firmware tls connection failed", false);
+  }
+  const bool began = http.begin(secureClient, String("shcare-hil.local"),
+                                static_cast<uint16_t>(backendPort), requestUri,
+                                true);
+#else
   const bool began = http.begin(secureClient, url);
+#endif
 
   if (!began) {
     return failOta("OTA_DOWNLOAD_OPEN_FAILED", "cannot open firmware url",
@@ -3662,8 +4485,10 @@ bool performCloudOta(const shcare::CommandEnvelope &command,
 
   const int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
+    const String httpDetail =
+        String("firmware download http error (") + String(httpCode) + ")";
     return failOta("OTA_DOWNLOAD_HTTP_FAILED",
-                   "firmware download http error", false);
+                   httpDetail.c_str(), false);
   }
 
   const int totalSize = http.getSize();
@@ -3989,6 +4814,25 @@ void handleCloudCommand(const String &message) {
   Serial.print(command.type.c_str());
   Serial.print(" id=");
   Serial.println(command.id.c_str());
+
+  if (command.type == "wifi.setup.open") {
+    beginValidatedCommand(command);
+    if (!startSmartConfigProvisioning("authorized Shcare app requested WiFi setup")) {
+      sendCommandState(command, "failed", "SMARTCONFIG_LISTENER_START_FAILED",
+                       "encrypted WiFi listener could not be opened");
+      return;
+    }
+    if (!persistTerminalCommand(
+            command, "applied", "SMARTCONFIG_LISTENING",
+            "authorized app opened the encrypted ESPTouch V2 listener")) {
+      sendCommandState(command, "failed", "COMMAND_JOURNAL_WRITE_FAILED",
+                       "terminal result was not durably stored");
+      return;
+    }
+    sendCommandState(command, "applied", "SMARTCONFIG_LISTENING",
+                     "encrypted ESPTouch V2 listener is ready");
+    return;
+  }
 
   if (command.type == "restart") {
     beginValidatedCommand(command, false);
@@ -4335,6 +5179,8 @@ void setupCloudSocket() {
   if (cloudSecurityDecision.transport == shcare::CloudTransport::Wss) {
 #if SMART_HEALTH_PRODUCTION_PROFILE
     boundedCloudTcpClient->setCACert(BACKEND_CA_CERT);
+#elif SMART_HEALTH_HIL_RUNTIME_CONFIG
+    hilSecureCloudTcpClient->setCACert(BACKEND_CA_CERT);
 #else
     cloudSocket.setCACert(BACKEND_CA_CERT);
 #endif
@@ -4377,6 +5223,16 @@ void connectCloudSocketIfNeeded() {
   if (!cloudConfigured || WiFi.status() != WL_CONNECTED || deviceLocked) {
     return;
   }
+  if (cloudSecurityDecision.transport == shcare::CloudTransport::Wss &&
+      !hasTrustedClock()) {
+    if (!cloudClockWaitReported) {
+      Serial.println(
+          "WSS waits for trusted network time before certificate validation.");
+      cloudClockWaitReported = true;
+    }
+    return;
+  }
+  cloudClockWaitReported = false;
   if (cloudTransportConnected) {
     return;
   }
@@ -4394,7 +5250,14 @@ void connectCloudSocketIfNeeded() {
   const String url = cloudWsUrl();
   Serial.print("Connecting cloud control transport: ");
   Serial.println(url);
-#if SMART_HEALTH_PRODUCTION_PROFILE
+#if SMART_HEALTH_HIL_RUNTIME_CONFIG
+  // Deliberately expose only the non-secret prerequisites for a local TLS
+  // diagnosis. The production image never contains this HIL-only message.
+  Serial.printf("Local HIL TLS preflight: epoch=%lld, caTrust=%s.\n",
+                static_cast<long long>(time(nullptr)),
+                strlen(BACKEND_CA_CERT) > 0 ? "configured" : "missing");
+#endif
+#if SMART_HEALTH_PRODUCTION_PROFILE || SMART_HEALTH_HIL_RUNTIME_CONFIG
   // Production security already requires WSS. Calling the host/port/path
   // overload retains the bounded, CA-configured transport instead of letting
   // ArduinoWebsockets replace it with its default 30-120 second TLS client.
@@ -4828,7 +5691,7 @@ void handleWiFiReconnect() {
   if (!otaRecoveryRuntimeServicesAllowed()) {
     return;
   }
-  if (setupPortalActive || !hasWiFiConfig()) {
+  if (setupPortalActive || smartConfigActive || !hasWiFiConfig()) {
     return;
   }
 
@@ -4846,6 +5709,7 @@ void handleWiFiReconnect() {
       Serial.println("WiFi connected");
       Serial.print("ESP32 IP: ");
       Serial.println(WiFi.localIP());
+      bootstrapHilTrustedClock();
       configTime(0, 0, "pool.ntp.org", "time.google.com");
       setupAudioUdp();
       startStationServices();
@@ -4860,8 +5724,10 @@ void handleWiFiReconnect() {
   }
 
   const unsigned long nowMs = millis();
+  const unsigned long minimumWaitMs =
+      std::max(wifiReconnectDelayMs, WIFI_ASSOCIATION_TIMEOUT_MS);
   if (wifiReconnectAttempted &&
-      nowMs - lastWifiConnectAttemptMs < wifiReconnectDelayMs) {
+      nowMs - lastWifiConnectAttemptMs < minimumWaitMs) {
     return;
   }
 
@@ -4869,6 +5735,11 @@ void handleWiFiReconnect() {
   wifiReconnectAttempted = true;
   if (wifiReconnectFailureCount < 31U) {
     ++wifiReconnectFailureCount;
+  }
+  if (shcare::shouldOpenSetupPortalAfterReconnectFailures(
+          wifiReconnectFailureCount, SETUP_PORTAL_AUTO_RECOVERY_FAILURES)) {
+    startSmartConfigProvisioning("saved WiFi could not reconnect");
+    return;
   }
   wifiReconnectDelayMs = shcare::reconnectBackoffDelayMs(
       wifiReconnectFailureCount, WIFI_RECONNECT_BASE_MS,
@@ -4886,10 +5757,8 @@ void setupWiFi() {
     return;
   }
   if (!hasWiFiConfig()) {
-    runSetupPortal("WiFi SSID is missing.");
-    if (!otaRecoveryRuntimeServicesAllowed()) {
-      return;
-    }
+    startSmartConfigProvisioning("WiFi setup is required before cloud connection");
+    return;
   }
   if (setupPortalPhysicalGesture) {
     runSetupPortal("Physical setup gesture requested WiFi recovery.");
@@ -5589,6 +6458,22 @@ void setup() {
     return;
   }
   loadRuntimeConfig();
+  Serial.println(hasWiFiConfig() && strlen(wifiPass) > 0
+                     ? "WiFi configuration is present; attempting saved network."
+                     : "WiFi configuration is absent or incomplete.");
+  registerWifiDiagnosticEvent();
+#if SMART_HEALTH_HIL_EXPECTED_IDENTITY_CHECK
+  Serial.println(hilExpectedIdentityMatchesPersisted()
+                     ? "HIL identity material matches the backend fixture."
+                     : "HIL identity material does not match the backend fixture.");
+#endif
+  smartConfigKdfVerified = smartConfigV2GoldenVectorMatches();
+  if (!smartConfigKdfVerified) {
+    Serial.println("ESPTouch V2 KDF golden-vector self-test failed; provisioning is fail-closed.");
+  } else {
+    Serial.println("ESPTouch V2 KDF golden-vector self-test passed.");
+  }
+  Serial.println("ESPTouch V2 provisioning enabled; BLE provisioning disabled.");
   setupI2S(false);
   setupHeartbeatFilters();
   if (!startAudioCaptureTask()) {
@@ -5615,6 +6500,8 @@ void loop() {
   handleDeviceServices();
   handlePendingFirmwareHealth();
   drainAudioCaptureQueue(2);
+  handleSetupPortal();
+  handleSmartConfigProvisioning();
   handleWiFiReconnect();
   if (!i2sReady || i2sMaintenancePaused) {
     delay(25);

@@ -15,10 +15,19 @@ const uploadPort = String(process.env.SHCARE_HIL_UPLOAD_PORT || "COM9").trim();
 const tlsPort = Number(process.env.SHCARE_HIL_TLS_PORT || 3767);
 const shouldUpload = String(process.env.SHCARE_HIL_UPLOAD || "true").toLowerCase() !== "false";
 const shouldErase = String(process.env.SHCARE_HIL_ERASE || "false").toLowerCase() === "true";
+const firmwareVersion = String(process.env.SHCARE_HIL_FIRMWARE_VERSION || "1.0.1-hil").trim();
+const forcedOtaAuthFailure =
+  String(process.env.SHCARE_HIL_OTA_FORCED_AUTH_FAILURE || "").toLowerCase() === "true";
+const resetOtaState =
+  String(process.env.SHCARE_HIL_RESET_OTA_STATE || "").toLowerCase() === "true";
 const materialPath = path.join(runtimeDir, "device.material");
-const certificatePath = path.join(runtimeDir, "server.crt");
+const certificatePath = path.resolve(
+  process.env.SHCARE_HIL_TLS_CA || path.join(runtimeDir, "server-ca.crt"),
+);
 const generatedHeaderPath = path.join(runtimeDir, "hil-config.h");
 const setupAccessPath = path.join(runtimeDir, "setup-access.json");
+const otaPrivateKeyPath = path.join(runtimeDir, "ota-signing-private.pem");
+const otaPublicKeyPath = path.join(runtimeDir, "ota-signing-public.pem");
 const platformioPath = path.resolve(
   process.env.SHCARE_PLATFORMIO ||
     path.join(os.homedir(), ".platformio", "penv", "Scripts", "platformio.exe"),
@@ -37,6 +46,17 @@ function validate() {
   if (shouldErase && !shouldUpload) {
     throw new Error("SHCARE_HIL_ERASE requires SHCARE_HIL_UPLOAD=true");
   }
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(firmwareVersion)) {
+    throw new Error("SHCARE_HIL_FIRMWARE_VERSION must be a strict HIL semver");
+  }
+  if (forcedOtaAuthFailure && shouldUpload) {
+    throw new Error(
+      "SHCARE_HIL_OTA_FORCED_AUTH_FAILURE may build an OTA artifact only; set SHCARE_HIL_UPLOAD=false",
+    );
+  }
+  if (resetOtaState && !shouldUpload) {
+    throw new Error("SHCARE_HIL_RESET_OTA_STATE is only allowed for a wired HIL bootstrap upload");
+  }
   for (const [filePath, label] of [
     [materialPath, "HIL device material"],
     [certificatePath, "HIL CA certificate"],
@@ -52,18 +72,48 @@ function cppString(value) {
   return JSON.stringify(String(value));
 }
 
-function writeGeneratedConfig(deviceMaterial, certificate) {
+function getOrCreateHilOtaSigningKeyPair() {
+  try {
+    const privateKey = crypto.createPrivateKey(fs.readFileSync(otaPrivateKeyPath));
+    const expectedPublic = crypto.createPublicKey(privateKey).export({ type: "spki", format: "pem" });
+    const storedPublic = crypto.createPublicKey(fs.readFileSync(otaPublicKeyPath)).export({ type: "spki", format: "pem" });
+    if (Buffer.compare(Buffer.from(expectedPublic), Buffer.from(storedPublic)) === 0) {
+      return { publicKeyPem: String(storedPublic) };
+    }
+  } catch {
+    // The pair is regenerated below inside the already private temporary HIL
+    // directory. No key material is emitted to stdout or source control.
+  }
+  const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" });
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" });
+  fs.writeFileSync(otaPrivateKeyPath, privateKeyPem, { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(otaPublicKeyPath, publicKeyPem, { encoding: "utf8", mode: 0o600 });
+  return { publicKeyPem };
+}
+
+function writeGeneratedConfig(deviceMaterial, certificate, otaPublicKeyPem) {
+  // This short-lived timestamp is only emitted into the ignored, local HIL
+  // header.  It lets an isolated fixture validate the local TLS certificate
+  // before outbound NTP has responded; it never disables CA verification and
+  // cannot be included by a production PlatformIO environment.
+  const hilClockEpoch = Math.floor(Date.now() / 1000);
   const header = [
     "#pragma once",
-    `#define SMART_HEALTH_BACKEND_HOST ${cppString(lanIp)}`,
+    "#define SMART_HEALTH_HIL_RUNTIME_CONFIG 1",
+    `#define SMART_HEALTH_HIL_CLOCK_EPOCH ${hilClockEpoch}`,
+    `#define SMART_HEALTH_HIL_RESET_OTA_STATE ${resetOtaState ? 1 : 0}`,
+    `#define SMART_HEALTH_BACKEND_HOST ${cppString("shcare-hil.local")}`,
+    `#define SMART_HEALTH_HIL_BACKEND_CONNECT_IP ${cppString(lanIp)}`,
     `#define SMART_HEALTH_BACKEND_PORT ${tlsPort}`,
     "#define SMART_HEALTH_BACKEND_TLS 1",
     `#define SMART_HEALTH_DEVICE_ID ${cppString(deviceId)}`,
     `#define SMART_HEALTH_DEVICE_SECRET ${cppString(deviceMaterial)}`,
-    `#define SMART_HEALTH_FIRMWARE_VERSION ${cppString("1.0.1-hil")}`,
+    `#define SMART_HEALTH_FIRMWARE_VERSION ${cppString(firmwareVersion)}`,
     `#define SMART_HEALTH_AUDIO_HOST ${cppString(lanIp)}`,
     "#define SMART_HEALTH_AUDIO_UDP_PORT 3766",
     `#define SMART_HEALTH_BACKEND_CA_CERT ${cppString(`${certificate.trim()}\n`)}`,
+    `#define SMART_HEALTH_OTA_PUBLIC_KEY_PEM ${cppString(`${otaPublicKeyPem.trim()}\n`)}`,
     "",
   ].join("\n");
   fs.writeFileSync(generatedHeaderPath, header, { encoding: "utf8", mode: 0o600 });
@@ -98,12 +148,11 @@ async function runPlatformio(args, deviceMaterial) {
       windowsHide: true,
       env: {
         ...process.env,
-        PLATFORMIO_BUILD_FLAGS: [
-          "-DSMART_HEALTH_PRODUCTION_PROFILE=0",
-          "-DSMART_HEALTH_ENABLE_DEVELOPMENT_WS=1",
-          "-DSMART_HEALTH_ENABLE_DEVELOPMENT_UDP=1",
-          `-include ${generatedHeaderPath.replaceAll("\\", "/")}`,
-        ].join(" "),
+        // PlatformIO applies this value through the development-only
+        // extra_script. PLATFORMIO_BUILD_FLAGS does not reliably augment a
+        // project environment on all PlatformIO Core paths, so do not use it
+        // for a security-sensitive HIL configuration.
+        SHCARE_HIL_CONFIG_HEADER: generatedHeaderPath,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -126,7 +175,11 @@ if (deviceMaterial.length < 16 || deviceMaterial.length > 95) {
   throw new Error("HIL device material is outside the firmware bounds");
 }
 const certificate = fs.readFileSync(certificatePath, "utf8");
-writeGeneratedConfig(deviceMaterial, certificate);
+const otaSigningKeys = getOrCreateHilOtaSigningKeyPair();
+const configuredDeviceMaterial = forcedOtaAuthFailure
+  ? crypto.createHash("sha256").update(`shcare-hil-forced-ota-auth-failure\n${deviceMaterial}`, "utf8").digest("base64url")
+  : deviceMaterial;
+writeGeneratedConfig(configuredDeviceMaterial, certificate, otaSigningKeys.publicKeyPem);
 writeSetupAccess(deviceMaterial);
 if (shouldErase) {
   await runPlatformio(
@@ -144,5 +197,8 @@ process.stdout.write(`${JSON.stringify({
   uploaded: shouldUpload,
   erased: shouldErase,
   uploadPort: shouldUpload ? uploadPort : null,
+  firmwareVersion,
+  forcedOtaAuthFailure,
+  resetOtaState,
   setupAccessPath,
 })}\n`);

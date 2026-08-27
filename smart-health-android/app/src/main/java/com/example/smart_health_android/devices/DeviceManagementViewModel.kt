@@ -3,6 +3,7 @@ package com.example.smart_health_android.devices
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smart_health_android.data.SmartDevice
+import com.example.smart_health_android.data.DeviceReleaseReceipt
 import com.example.smart_health_android.data.SmartHealthApiException
 import com.example.smart_health_android.data.SmartHealthRepository
 import kotlinx.coroutines.CancellationException
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.Instant
+import java.util.UUID
 
 enum class DeviceManagementFailureKind {
     Offline,
@@ -22,8 +24,7 @@ enum class DeviceManagementFailureKind {
 enum class DeviceManagementOperation {
     Load,
     Refresh,
-    Disconnect,
-    Delete,
+    Release,
 }
 
 data class DeviceManagementFailure(
@@ -38,8 +39,7 @@ data class DeviceManagementUiState(
     val selectedDeviceId: String = "",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
-    val disconnectingDeviceId: String = "",
-    val deletingDeviceId: String = "",
+    val releasingDeviceId: String = "",
     val failure: DeviceManagementFailure? = null,
     val hasLoaded: Boolean = false,
 ) {
@@ -51,48 +51,57 @@ data class DeviceManagementUiState(
         get() = devices.isNotEmpty() && failure != null
 
     val isMutating: Boolean
-        get() = disconnectingDeviceId.isNotBlank() || deletingDeviceId.isNotBlank()
+        get() = releasingDeviceId.isNotBlank()
 }
 
 sealed interface DeviceManagementUiAction {
-    data object ScreenOpened : DeviceManagementUiAction
+    data class ScreenOpened(
+        val preferredDeviceId: String = "",
+    ) : DeviceManagementUiAction
     data object Refresh : DeviceManagementUiAction
     data class SelectDevice(val deviceId: String) : DeviceManagementUiAction
-    data class Disconnect(val deviceId: String) : DeviceManagementUiAction
-    data class Delete(val deviceId: String) : DeviceManagementUiAction
+    data class Release(val deviceId: String) : DeviceManagementUiAction
 }
 
 interface DeviceManagementRepository {
     suspend fun listDevices(): List<SmartDevice>
-    suspend fun disconnectDevice(deviceId: String): SmartDevice
-    suspend fun deleteDevice(deviceId: String): Boolean
+    suspend fun releaseDevice(deviceId: String, idempotencyKey: String): DeviceReleaseReceipt
 }
 
 class ApiDeviceManagementRepository : DeviceManagementRepository {
     override suspend fun listDevices(): List<SmartDevice> = SmartHealthRepository.api.listDevices()
 
-    override suspend fun disconnectDevice(deviceId: String): SmartDevice =
-        SmartHealthRepository.api.disconnectDevice(deviceId)
-
-    override suspend fun deleteDevice(deviceId: String): Boolean =
-        SmartHealthRepository.api.deleteDevice(deviceId)
+    override suspend fun releaseDevice(
+        deviceId: String,
+        idempotencyKey: String,
+    ): DeviceReleaseReceipt = SmartHealthRepository.api.releaseDevice(deviceId, idempotencyKey)
 }
 
 class DeviceManagementViewModel(
     private val repository: DeviceManagementRepository = ApiDeviceManagementRepository(),
+    private val idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DeviceManagementUiState())
     val uiState = _uiState.asStateFlow()
 
     fun onAction(action: DeviceManagementUiAction) {
         when (action) {
-            DeviceManagementUiAction.ScreenOpened -> {
+            is DeviceManagementUiAction.ScreenOpened -> {
+                val preferredDeviceId = action.preferredDeviceId.trim()
+                if (
+                    preferredDeviceId.isNotBlank() &&
+                    (
+                        !_uiState.value.hasLoaded ||
+                            _uiState.value.devices.any { it.id == preferredDeviceId }
+                        )
+                ) {
+                    _uiState.update { it.copy(selectedDeviceId = preferredDeviceId) }
+                }
                 if (!_uiState.value.hasLoaded) loadDevices(isRefresh = false)
             }
             DeviceManagementUiAction.Refresh -> loadDevices(isRefresh = _uiState.value.hasLoaded)
             is DeviceManagementUiAction.SelectDevice -> selectDevice(action.deviceId)
-            is DeviceManagementUiAction.Disconnect -> disconnectDevice(action.deviceId)
-            is DeviceManagementUiAction.Delete -> deleteDevice(action.deviceId)
+            is DeviceManagementUiAction.Release -> releaseDevice(action.deviceId)
         }
     }
 
@@ -145,56 +154,28 @@ class DeviceManagementViewModel(
         _uiState.update { it.copy(selectedDeviceId = deviceId) }
     }
 
-    private fun disconnectDevice(deviceId: String) {
+    private fun releaseDevice(deviceId: String) {
         val current = _uiState.value
         if (current.isLoading || current.isRefreshing || current.isMutating) return
         if (current.devices.none { it.id == deviceId }) return
-        _uiState.update { it.copy(disconnectingDeviceId = deviceId, failure = null) }
+        val idempotencyKey = idempotencyKeyFactory()
+        _uiState.update { it.copy(releasingDeviceId = deviceId, failure = null) }
         viewModelScope.launch {
             try {
-                val confirmed = repository.disconnectDevice(deviceId)
-                check(confirmed.id == deviceId) {
-                    "Backend returned a different device for disconnect"
-                }
-                _uiState.update { state ->
-                    state.copy(
-                        devices = state.devices.map { device ->
-                            if (device.id == deviceId) confirmed else device
-                        },
-                        selectedDeviceId = deviceId,
-                        disconnectingDeviceId = "",
-                        failure = null,
-                    )
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                _uiState.update {
-                    it.copy(
-                        disconnectingDeviceId = "",
-                        failure = error.toDeviceManagementFailure(DeviceManagementOperation.Disconnect),
-                    )
-                }
-            }
-        }
-    }
-
-    private fun deleteDevice(deviceId: String) {
-        val current = _uiState.value
-        if (current.isLoading || current.isRefreshing || current.isMutating) return
-        if (current.devices.none { it.id == deviceId }) return
-        _uiState.update { it.copy(deletingDeviceId = deviceId, failure = null) }
-        viewModelScope.launch {
-            try {
-                check(repository.deleteDevice(deviceId)) {
-                    "Backend did not confirm device deletion"
+                val receipt = repository.releaseDevice(deviceId, idempotencyKey)
+                check(
+                    receipt.deviceId == deviceId &&
+                        receipt.released &&
+                        receipt.historyRetained
+                ) {
+                    "Backend did not confirm the canonical device release"
                 }
                 _uiState.update { state ->
                     val remaining = state.devices.filterNot { it.id == deviceId }
                     state.copy(
                         devices = remaining,
                         selectedDeviceId = preferredDeviceId(remaining, state.selectedDeviceId),
-                        deletingDeviceId = "",
+                        releasingDeviceId = "",
                         failure = null,
                     )
                 }
@@ -203,8 +184,8 @@ class DeviceManagementViewModel(
             } catch (error: Throwable) {
                 _uiState.update {
                     it.copy(
-                        deletingDeviceId = "",
-                        failure = error.toDeviceManagementFailure(DeviceManagementOperation.Delete),
+                        releasingDeviceId = "",
+                        failure = error.toDeviceManagementFailure(DeviceManagementOperation.Release),
                     )
                 }
             }

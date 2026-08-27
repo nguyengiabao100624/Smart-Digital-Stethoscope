@@ -1,6 +1,93 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-08-25
+## 2026-08-27 full verification checkpoint
+
+- [x] Run candidate automated gates across backend, Web Portal, Web Admin, Android and ESP32 production/OTA builds.
+- [x] Upload and hash-verify the current production firmware on COM9.
+- [x] Deploy RC2 Portal/Admin bundles to reversible Firebase Hosting preview channels and verify both public URLs return HTTP 200.
+- [ ] Bind production PostgreSQL, S3/object storage, PHI/HMAC/2FA and OTA-signing secrets through the approved secret manager.
+- [ ] Deploy the RC2 backend and both Firebase Hosting lanes only after G3 physical/provider gates pass; current live backend remains the older revision.
+- [ ] Freeze a clean candidate commit/manifest (current RC2 worktree still contains 95 tracked/untracked entries).
+- [x] Run live public and authenticated read-only deployment smoke; old live backend remains healthy but is not the RC2 candidate.
+- [x] Verify Firebase CLI can see the production project.
+- [ ] Obtain/bind approved Supabase and Render deployment sessions through the secret manager; never place tokens in repo or shell history.
+
+## Authorization follow-up — 2026-08-27
+
+- [x] Add workspace Portal role adjustment with tenant binding, idempotency and audit.
+- [x] Keep Platform Admin account/role management on the separate `/admin` surface.
+- [ ] Run authenticated browser smoke against the deployed Portal role dialog and verify a fresh Android session receives the updated `workspace.devices.manage` capability.
+- [ ] Repeat the same contract on Postgres candidate and capture production-provider evidence before G3 closure; G4 remains blocked until all G3 gates pass.
+
+> 2026-08-27 device-flow update: fixed the slow ESPTouch step with concurrent presence polling, added canonical online-success navigation, and replaced failing disconnect/delete actions with tenant-scoped idempotent `POST /api/v1/devices/{id}/release` (history retained). OpenAPI/shared fixtures cover ESPTouch V2 setup-session and release. Local/HIL evidence is in the active checkpoint; provider, migration, accessibility and final-candidate G3 gates still block G4.
+
+## 2026-08-27 cross-surface local release gate
+
+- Portal and Platform Admin lint, contract tests and production builds pass. Backend source precheck, exact-origin CORS contract (`4/4`), release/runtime/security and identity migration contracts (`11/11`) pass.
+- This is pre-release source evidence only. It does not authorize a production deploy, because real ESPTouch association/DHCP, release Android foreground/accessibility proof and provider/live migration, Firebase and Portal WSS evidence are still open.
+- The official diff-security helper cannot start on this host until its Python dependency `tomli` is available; it is recorded as an evidence gap, not a clean security result.
+
+## 2026-08-27 Android gate update
+
+- Local-demo debug artifact is rebuilt, lint-clean and installed on Xiaomi. The remaining Android physical gate is not a source/build defect: MIUI keyguard prevents foreground accessibility/UI HIL. Resume only after normal unlock, keeping the real Wi-Fi password in the secure app field and out of tools.
+
+## 2026-08-27 G3 physical OTA rollback: closed
+
+- COM9 read-only probe confirms 16 MB flash; the PlatformIO board banner is not authoritative hardware evidence. Firmware now overrides Arduino's eager `verifyOta()` path with `verifyRollbackLater()` so Shcare's WSS/durable boot-health state machine owns confirmation.
+- Forced invalid-credential OTA `1.0.3` physically returned to stable `1.0.2`; backend recorded `rolled_back` and command `OTA_ROLLED_BACK`. Keep this evidence with the candidate artifact hash `168A598A8EA502B004A28DABF598CDF64259A0C3A04011410B203BD6C18ABBBB`.
+- G4 remains blocked by the other G3 gates: real secure-field ESPTouch association/DHCP, release Android accessibility/lifecycle proof, provider/migration/CORS/Firebase/Portal WSS gates and final candidate evidence bundle.
+
+> 2026-08-26 G3 transport evidence update: Xiaomi -> ESPTouch V2 RF/AES/exact-device binding is physically PASS on COM9. Targeted no-secret HIL passed `OK (1)` in `64.657 s`; serial confirmed both signal detection and successful decrypt/binding acceptance. This uses current-active-AP BSSID metadata and the AES-protected ASCII-safe `v2:` binding form. It is intentionally not association/WSS proof. Continue only from the foreground app after normal precise-Location consent and real secure-field password entry, then require association/DHCP, authenticated WSS/Online, command ACK, two-mic audio-v2, durable scan, signed OTA and forced rollback. Do not begin G4.
+
+> 2026-08-26 G3 physical state update: physical Xiaomi now passes guarded direct ESPTouch start and Device Management → secure Wi-Fi form gates; COM9 serial confirms the listener is alive. Continue the real HIL only from the secure password field. A fake-credential broadcast is evidence that Android starts the transport, not evidence of ESP provisioning. Preserve the no-secret tooling boundary and do not begin G4.
+
+> 2026-08-26 current G3 dual-band gate: the MIUI-rejected `WifiNetworkSpecifier` handover has been eliminated from the production Android path. The installed Xiaomi APK `7A1C18FBFC77846CBFA2FE4B612D5F6A988ADB0826B43B4C020CD40A1E9A38C0` uses direct ESPTouch V2 Broadcast on the current router connection and encodes a same-SSID 2.4 GHz BSSID when scan data is available. This is not a temporary ESP connection and must not create a system network chooser. Source/build/lint gates pass; the remaining physical evidence is secure-field Broadcast, ESP listener/association/DHCP, authenticated WSS, command ACK, two-mic audio-v2, durable scan, signed OTA and forced rollback. COM9 is currently absent and the no-secret broadcaster HIL was backgrounded by MIUI before SSID access, so no physical completion is claimed. Do not begin G4.
+
+> 2026-08-26 closed local-startup repair: rebuild and install the Android demo APK only with `assembleLocalDemoDebug`; its fixed LAN API/Firebase-emulator settings prevent accidental use of the default Render debug artifact with the local demo session. APK `59EE3111045AFBA2AE3EA64EE28FB70C0D67F55583CD4EDA1F6A1C83AA480E4B` starts successfully on Xiaomi after ADB reverse restoration and reaches Dashboard. This eliminates the current generic connection-screen regression; it does not authorize deployment or close any G3 radio/WSS/HIL gate.
+
+> 2026-08-26 active G3 radio gate: Xiaomi foreground HIL proves the current phone connection is 5 GHz, so ESPTouch has correctly not sent any credentials to ESP32-S3. The shipped APK now explains this exact condition and no longer marks a 2.4 GHz check complete prematurely. The next physical prerequisite is a 2.4 GHz connection for the same target router; only then run the safe broadcaster HIL and the real secure-field flow. ESP association/DHCP, WSS/auth, ACK, audio-v2, scan, OTA and rollback remain open. Do not begin G4.
+
+> 2026-08-26 active G3 provisioning gate: Android now handles ESPTouch V2's no-direct-UDP-response completion correctly by continuing to authenticated presence polling, not showing a false broadcast error. The new Xiaomi APK is `7FAD70770FFAC046EA8AAEC1F99B2EE6AFF67E3D28D1D6A99D2D40FD212CAC9C`; source regression, AndroidTest Kotlin compilation and lint are green. The remaining evidence is still physical: listener receives/binds the broadcast, ESP associates and gets DHCP, then authenticates WSS with the intended Device ID. Preserve the secure password boundary and do not begin G4.
+
+> 2026-08-26 latest G3 hardware state: ESPTouch V2 firmware is flashed to COM9 and the current APK is installed on Xiaomi. Boot serial proves listener startup only. The remaining gate is an on-device secure-field Broadcast followed by association/DHCP, authenticated WSS, ACK, two-mic audio-v2, durable scan, signed OTA and forced rollback. MIUI keyguard blocks the foreground step; no deployment or G4 work is authorized.
+
+> 2026-08-26 G3 transport cutover gate: finish and verify the ESPTouch V2 migration before any deployment. Required next evidence is OTA-profile firmware build, Android lint/assembly/instrumented route test, exact APK/firmware hashes, then COM9 flash and Xiaomi secure-field ESPTouch Broadcast → association/DHCP → authenticated WSS. Do not reuse old SoftAP HIL evidence, deploy, or begin G4; no real Wi-Fi credential may enter tooling or logs.
+
+> 2026-08-26 active G3 next gate: source/build/security and the Xiaomi secure-input HIL are green. The app now opens SSID/password without a system permission overlay; its optional current-SSID action is the only place that requests the related runtime permission. COM9 firmware is freshly uploaded and hash-verified. Continue only with target Wi-Fi entry in the foreground secure field, then automatically collect ESP association, authenticated WSS, command ACK, two-mic audio-v2, durable scan, signed OTA and forced-failure rollback. Do not treat the password boundary as PASS, deploy, or G4 authorization.
+
+> 2026-08-26 current G3 state: source/build/device-navigation gates are green, but physical completion is not. The LAN APK `D1C0A52C895C1C3F9793C371DC1EB4CB1985109A623273EF0C1DBBF6A18484FE` is installed on Xiaomi. Resume only at Device Management -> **Kết nối Wi-Fi** -> secure on-device target Wi-Fi input, then collect ESP association, authenticated WSS, command ACK, two-mic audio-v2, durable scan, signed OTA and forced-failure rollback. The latest guarded HIL stopped at Android system UI before the password boundary and no ESP serial port is present; it is BLOCKED, not PASS. Do not deploy or start G4.
+
+> 2026-08-26 completed startup gate: the current demo APK no longer stops at the generic connection-error screen. Versioned API routing and rejected-session recovery are covered by regression tests and the installed Xiaomi app reaches the device flow. Resume G3 physical provisioning at the App-only Wi-Fi setup sequence; target-network association and authenticated WSS remain open.
+
+> 2026-08-26 latest G3 hardware update: COM9 is attached and the SoftAP auto-start firmware is deployed. ESP boot diagnostics confirm its protected setup portal and local server are active. The next open proof is the normal App-only target-password submission, then ESP association and authenticated WSS; do not use a browser/IP workflow or put credentials into tooling.
+
+> 2026-08-26 immediate G3 gate: attach the ESP32-S3 so its serial port becomes visible, then upload the build that auto-starts the protected SoftAP for an unconfigured device. The App APK with the privacy-safe five-step trace is installed and its physical Compose test passes. After upload, prove the real sequence SoftAP discovery → local API POST → ESP target-network association → authenticated WSS. Until then, the firmware repair is not hardware-deployed.
+
+> 2026-08-26 final SoftAP checkpoint: Xiaomi now reaches the native target-Wi-Fi input using the deployed SoftAP-only App/firmware (`OK (1 test)`, `25.791s`). The sole next transport step is secure on-device target-password entry followed by ESP association and authenticated WSS; no BLE work remains.
+
+> 2026-08-26 hardware update: the SoftAP-only firmware has been uploaded and hash-verified on COM9. The remaining physical gate begins after the Xiaomi keyguard is cleared: native target-Wi-Fi entry, ESP association and authenticated WSS.
+
+> 2026-08-26 superseding transport decision: G3 provisioning is SoftAP-only, not BLE. Keep only the App → ESP SoftAP → local HTTP API → ESP target-network association → authenticated WSS chain. The next Xiaomi HIL is blocked by the current keyguard, not a SoftAP failure.
+
+> 2026-08-26 update: fixed and physically verified the guarded Device Settings → Wi-Fi setup route through the on-device input boundary. Keep target-network association, authenticated WSS presence, command ACK, audio-v2/durable scan and signed OTA/rollback open; none may be marked complete before physical evidence exists.
+
+Last updated: 2026-08-26
+
+## Historical G3 runtime record — BLE superseded by SoftAP-only provisioning
+
+- [x] Xiaomi canonical QR/manual claim HIL `1/1` and current-Wi-Fi SSID HIL `1/1`; focused pairing/BLE-contract JVM `38/38`, current LAN debug/test APKs assembled and installed.
+- [x] Reconfirm firmware target before another flash: production build passes and COM9 physical read-only probe reports ESP32-S3 rev v0.2 with 16 MB flash. Keep the custom 16-MB dual-OTA partition table; do not infer hardware size from the generic PlatformIO banner.
+- [x] Fine Location, Nearby Wi-Fi and Nearby Bluetooth are granted through Android's normal consent UI. Future requests remain App-triggered; do not bypass MIUI policy with shell or UiAutomation.
+- [x] Corrected primary-packet advertisement is physically detected on Xiaomi. The opaque discriminator diagnostic matches, and the full BLE service/characteristic discovery HIL passes a real, non-skipped `1/1`.
+- [x] Authenticated claim/recovery passes `1/1`; backend state is claimed/offline and the App reaches `SetupReady` even after the one-time claim code is consumed.
+- [ ] From the App only, perform encrypted BLE Wi-Fi transfer with the target password entered in the UI; then prove ESP association, authenticated WSS presence, command ACK, audio-v2/durable scan and OTA recovery. G3/G4 state does not change until those gates have real evidence.
+
+## Immediate G3 runtime backlog — QR image pairing
+
+- [x] Add Android system photo-picker QR input that remains local, QR-only and bounded; preserve the camera/manual flows and backend claim contract.
+- [x] Source gates: fresh pairing JVM `33/33`, AndroidTest compile/assemble, lint and debug assemble; retained aggregate JVM gate `852/852`. The current LAN debug artifact is installed on Xiaomi.
+- [ ] User resolves the system Google-account confirmation that appeared after the `1/1` integrated-login smoke; never automate this account decision. Then keep Xiaomi awake and verify photo picker opening, successful QR image selection and no-QR error on the physical display. MIUI blocks ADB input injection, so this remains an explicit device interaction gate.
+- [ ] Continue only after that with target Wi-Fi entry, authenticated WSS, ACK, audio-v2, durable scan and OTA rollback. G3/G4 state does not change.
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
 
@@ -2452,3 +2539,22 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Android JVM `850/850`, AndroidTest compile, lint, assemble và cài APK LAN-integrated lên Xiaomi.
 - [ ] Mở khóa Xiaomi, bật Location/chấp thuận quyền trong App rồi chạy lại Compose route test và `CurrentWifiSsidHilTest` không skip.
 - [ ] Hoàn tất QR → local secure provisioning → authenticated WSS → ACK → audio-v2 → durable scan → OTA rollback trước khi đóng G3.
+
+## 2026-08-25 G3 BLE-first runtime backlog
+
+- [x] Separate QR/manual claim from Wi-Fi provisioning; the claimed device has a truthful offline state.
+- [x] Android/ESP BLE is nonce-bound AES-GCM with opaque exact-device scan filtering, firmware acknowledgement and backend-only online state.
+- [x] Android unit/lint/assemble and firmware builds pass; development firmware is flashed and serial confirms BLE and two-microphone runtime.
+- [x] Restore authenticated backend reachability on Xiaomi and complete physical claim/recovery plus primary-packet BLE/GATT discovery.
+- [ ] Complete encrypted BLE Wi-Fi submission with the target password entered only in the App.
+- [ ] Require backend WSS presence, command ACK, audio-v2 binding, durable scan and OTA success/forced rollback. Current App-server and Windows-Bluetooth limitations are blockers, not completion.
+- [x] 2026-08-26: corrected BLE advertisement image is physically discovered on Xiaomi and the canonical GATT contract passes. Continue with BLE Wi-Fi, WSS ACK/audio-v2, durable scan and OTA rollback evidence.
+
+## 2026-08-26 — SoftAP local-demo backlog
+
+- [x] Replace the public QR/manual setup surface with Device-ID-only registration for devices already assigned by the company/account.
+- [x] Add audited, manager-scoped SoftAP setup session; reject unassigned devices and avoid returning secret/hash material.
+- [x] Add **Kết nối Wi-Fi** in Device Settings and route it through Android native `WifiNetworkSpecifier` SoftAP provisioning.
+- [x] Backend device security suite `62/62`, Android focused ViewModel test, Kotlin/test compilation, debug APK assembly and installation.
+- [ ] Run the physical SoftAP target-Wi-Fi submission when the Xiaomi foreground surface is available. Do not record the target password in code, logs, environment variables or documentation.
+- [ ] Complete authenticated WSS presence, command ACK, audio-v2, durable scan and signed OTA success/forced rollback. These gates remain prerequisites for G3 closure and before any G4 promotion.

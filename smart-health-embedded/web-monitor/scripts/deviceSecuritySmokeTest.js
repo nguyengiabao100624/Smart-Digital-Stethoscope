@@ -293,11 +293,29 @@ function writeSeedDb() {
             updatedAt: createdAt,
           },
           {
+            id: "dev_release",
+            name: "Release Contract Device",
+            type: "stethoscope",
+            status: "available",
+            organizationId: "org_beta",
+            ownershipState: "claimed",
+            ownerUserId: "usr_admin_beta",
+            pairedUserId: "usr_admin_beta",
+            connected: false,
+            secret: "release-contract-device-secret",
+            historyMarker: "retained",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
             id: "dev_alpha_peer",
             name: "Alpha Peer Device",
             type: "stethoscope",
             status: "available",
             organizationId: "org_alpha",
+            ownershipState: "claimed",
+            ownerUserId: "usr_platform",
+            pairedUserId: "usr_platform",
             connected: false,
             secret: secrets.peer,
             firmwareVersion: "1.0.0",
@@ -1067,6 +1085,45 @@ test("public device projections use an allowlist and strip nested command or OTA
     JSON.stringify(device),
     /must-not-be-public|signed-download\.invalid/,
   );
+});
+
+test("Wi-Fi setup sessions require an assigned manageable device and never disclose its verifier", async () => {
+  const token = await loginPlatformAdmin();
+  const unassigned = await requestJson("/api/v1/devices/dev_alpha/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(unassigned.response.status, 409, JSON.stringify(unassigned.body));
+  assert.equal(unassigned.body.code, "device_wifi_setup_not_assigned");
+
+  const opened = await requestJson("/api/v1/devices/dev_auth_fence/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(opened.response.status, 200, JSON.stringify(opened.body));
+  assert.equal(opened.response.headers.get("cache-control"), "no-store");
+  assert.equal(opened.body.setup?.protocolVersion, 2);
+  assert.equal(opened.body.setup?.transport, "esptouch_v2");
+  assert.equal(opened.body.setup?.smartConfig?.security, "aes128");
+  assert.match(opened.body.setup?.smartConfig?.provisioningKey || "", /^[A-Za-z0-9_-]{22}$/);
+  const reservedData = Buffer.from(
+    opened.body.setup?.smartConfig?.reservedData || "",
+    "base64url",
+  ).toString("ascii");
+  assert.match(reservedData, /^v2:[a-f0-9]{32}$/);
+  assert.equal(opened.body.setup?.setupAp, undefined);
+  assert.ok(Number.isFinite(Date.parse(opened.body.setup?.expiresAt)));
+  assert.doesNotMatch(JSON.stringify(opened.body), /auth-fence-device-secret|secretHash|"secret"/);
+
+  const legacy = await requestJson("/api/v1/devices/dev_auth_fence/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["softap_v1"] }),
+  });
+  assert.equal(legacy.response.status, 426, JSON.stringify(legacy.body));
+  assert.equal(legacy.body.code, "device_wifi_setup_transport_upgrade_required");
 });
 
 test("provisioning authorizes an existing device before any workspace mutation", async () => {
@@ -2115,6 +2172,51 @@ test("unpair is rejected without erasing ownership or fabricating an offline dev
   assert.equal(retained.body.device.online, true);
   esp.socket.close();
   await esp.closed();
+});
+
+test("account release is tenant-scoped, idempotent, audited, and retains the device row", async () => {
+  const betaToken = await login("admin@beta.test");
+  const alphaToken = await login("doctor@alpha.test");
+  const idempotencyKey = "device-release-contract";
+  const denied = await requestJson("/api/v1/devices/dev_release/release", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${alphaToken}`, "Idempotency-Key": idempotencyKey },
+  });
+  assert.equal(denied.response.status, 403, JSON.stringify(denied.body));
+
+  const released = await requestJson("/api/v1/devices/dev_release/release", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${betaToken}`, "Idempotency-Key": idempotencyKey },
+  });
+  assert.equal(released.response.status, 200, JSON.stringify(released.body));
+  assert.deepEqual(released.body.release, {
+    deviceId: "dev_release",
+    released: true,
+    historyRetained: true,
+  });
+  assert.equal(released.body.replayed, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(released.body, "device"), false);
+
+  const replay = await requestJson("/api/v1/devices/dev_release/release", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${betaToken}`, "Idempotency-Key": idempotencyKey },
+  });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.replayed, true);
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const device = persisted.devices.find((candidate) => candidate.id === "dev_release");
+  assert.ok(device, "release must retain the canonical device row");
+  assert.equal(device.ownershipState, "provisioned");
+  assert.equal(device.ownerUserId, null);
+  assert.equal(device.pairedUserId, null);
+  assert.equal(device.historyMarker, "retained");
+  assert.equal(
+    persisted.auditLogs.filter(
+      (entry) => entry.action === "device.release" && entry.resourceId === "dev_release",
+    ).length,
+    1,
+  );
 });
 
 test("OTA is platform-only, signed, canonical, and confirmed only after authenticated reconnect telemetry", async () => {
@@ -3419,6 +3521,25 @@ test("device command lifecycle requires canonical delivery and correlated device
     "Content-Type": "application/json",
     "Idempotency-Key": "device-command-wifi-status-001",
   };
+  const openedSetup = await requestJson(
+    "/api/v1/devices/dev_alpha_peer/setup-session",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+    },
+  );
+  assert.equal(openedSetup.response.status, 200, JSON.stringify(openedSetup.body));
+  assert.equal(openedSetup.body.setup?.protocolVersion, 2);
+  const openSetupCommand = await esp.nextJson();
+  assert.equal(openSetupCommand.type, "wifi.setup.open");
+  assert.deepEqual(openSetupCommand.payload, {});
+  assert.equal(openSetupCommand.deviceId, undefined);
+  assert.doesNotMatch(
+    JSON.stringify(openSetupCommand),
+    /password|secret|proofOfPossession|ssid/i,
+    "the remote setup-open command must never carry Wi-Fi or device credentials",
+  );
   const wifiCredential = "clinic-low-entropy-password";
   const beforeRemoteWifiUpdate = JSON.parse(
     fs.readFileSync(path.join(dataDir, "db.json"), "utf8"),
@@ -4272,6 +4393,7 @@ test("recording binds protocol v2 identity, rejects replay, and ignores unbound 
   const sessionCommand = await beta.nextJson();
   assert.equal(sessionCommand.type, "audio.session.start");
   assert.equal(sessionCommand.payload.protocolVersion, 2);
+  assert.equal(sessionCommand.payload.frameEncoding, "shcare_audio_v2");
   assert.equal(sessionCommand.payload.scanId, started.body.scan.id);
   assert.equal(sessionCommand.payload.workspaceId, "org_beta");
   assert.equal(sessionCommand.payload.patientId, "pat_beta");

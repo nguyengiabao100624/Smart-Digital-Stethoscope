@@ -46,11 +46,9 @@ class DeviceHealthPanelTest {
                 ShcareMobileTheme(mode = ShcareThemeMode.Dark) {
                     DeviceHealthPanel(
                         snapshot = snapshot,
-                        isDisconnecting = false,
-                        isDeleting = false,
+                        isReleasing = false,
                         mutationEnabled = true,
-                        onDisconnect = {},
-                        onDelete = {},
+                        onRelease = {},
                     )
                 }
             }
@@ -84,11 +82,9 @@ class DeviceHealthPanelTest {
             ShcareMobileTheme {
                 DeviceHealthPanel(
                     snapshot = snapshot,
-                    isDisconnecting = false,
-                    isDeleting = false,
+                    isReleasing = false,
                     mutationEnabled = true,
-                    onDisconnect = {},
-                    onDelete = {},
+                    onRelease = {},
                 )
             }
         }

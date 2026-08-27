@@ -23,6 +23,19 @@ const tlsKeyPath = path.resolve(
 const tlsCertificatePath = path.resolve(
   process.env.SHCARE_HIL_TLS_CERT || path.join(runtimeDir, "server.crt"),
 );
+const tlsCaPath = path.resolve(
+  process.env.SHCARE_HIL_TLS_CA || path.join(runtimeDir, "server-ca.crt"),
+);
+const tlsCaKeyPath = path.join(runtimeDir, "server-ca.key");
+const tlsCsrPath = path.join(runtimeDir, "server.csr");
+const tlsExtensionsPath = path.join(runtimeDir, "server-ext.cnf");
+const tlsSerialPath = path.join(runtimeDir, "server-ca.srl");
+const tlsServerHostname = "shcare-hil.local";
+const usesDefaultTlsPaths = !process.env.SHCARE_HIL_TLS_KEY &&
+  !process.env.SHCARE_HIL_TLS_CERT && !process.env.SHCARE_HIL_TLS_CA;
+const tlsTrustCertificatePath = process.env.SHCARE_HIL_TLS_CA
+  ? tlsCaPath
+  : usesDefaultTlsPaths ? tlsCaPath : tlsCertificatePath;
 let deviceSecret = "";
 const backendPort = Number(process.env.SHCARE_HIL_BACKEND_PORT || 3765);
 const audioPort = Number(process.env.SHCARE_HIL_AUDIO_PORT || 3766);
@@ -51,7 +64,31 @@ function prepareRuntimeMaterial() {
     deviceSecret = crypto.randomBytes(32).toString("base64url");
     fs.writeFileSync(materialPath, deviceSecret, { encoding: "utf8", flag: "wx", mode: 0o600 });
   }
-  if (fs.existsSync(tlsKeyPath) && fs.existsSync(tlsCertificatePath)) return;
+  const tlsRequiredPaths = [tlsKeyPath, tlsCertificatePath, tlsTrustCertificatePath];
+  const tlsMaterialExists = tlsRequiredPaths.some((filePath) => fs.existsSync(filePath));
+  const hasTlsMaterial = tlsRequiredPaths.every((filePath) => fs.existsSync(filePath));
+  if (hasTlsMaterial && certificateMatchesCurrentHilLan()) return;
+  if (tlsMaterialExists && !usesDefaultTlsPaths) {
+    throw new Error(
+      "configured HIL TLS certificate is expired or does not cover SHCARE_HIL_LAN_IP; rotate it explicitly",
+    );
+  }
+  if (tlsMaterialExists) {
+    // The default files are generated only inside the temporary HIL runtime
+    // directory.  Rotate them atomically when a DHCP address changed or the
+    // short-lived development certificate is close to expiry.
+    for (const filePath of [
+      tlsKeyPath,
+      tlsCertificatePath,
+      tlsCaPath,
+      tlsCaKeyPath,
+      tlsCsrPath,
+      tlsExtensionsPath,
+      tlsSerialPath,
+    ]) {
+      fs.rmSync(filePath, { force: true });
+    }
+  }
   const opensslCandidates = [
     process.env.SHCARE_HIL_OPENSSL,
     "C:\\Program Files\\Git\\usr\\bin\\openssl.exe",
@@ -59,18 +96,73 @@ function prepareRuntimeMaterial() {
   ].filter(Boolean);
   const openssl = opensslCandidates.find((candidate) => fs.existsSync(candidate));
   if (!openssl) throw new Error("OpenSSL is required to generate the local HIL certificate");
-  const generated = spawnSync(openssl, [
+  const rootGenerated = spawnSync(openssl, [
     "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-nodes",
-    "-keyout", tlsKeyPath,
-    "-out", tlsCertificatePath,
-    "-days", "2",
-    "-subj", "/CN=Shcare G3 Local HIL",
-    "-addext", `subjectAltName=IP:${lanIp},DNS:localhost`,
-    "-addext", "keyUsage=digitalSignature,keyEncipherment",
-    "-addext", "extendedKeyUsage=serverAuth",
+    "-keyout", tlsCaKeyPath,
+    "-out", tlsCaPath,
+    "-days", "14",
+    "-subj", "/CN=ShcareHIL Root CA/OU=ShcareHILv3",
+    "-addext", "basicConstraints=critical,CA:TRUE,pathlen:0",
+    "-addext", "keyUsage=critical,keyCertSign,cRLSign",
   ], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-  if (generated.status !== 0) {
-    throw new Error("OpenSSL could not generate the local HIL certificate");
+  if (rootGenerated.status !== 0) {
+    throw new Error("OpenSSL could not generate the local HIL trust anchor");
+  }
+  const requestGenerated = spawnSync(openssl, [
+    "req", "-newkey", "rsa:2048", "-sha256", "-nodes",
+    "-keyout", tlsKeyPath,
+    "-out", tlsCsrPath,
+    "-subj", `/CN=${tlsServerHostname}/OU=ShcareHILv3`,
+  ], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  if (requestGenerated.status !== 0) {
+    throw new Error("OpenSSL could not generate the local HIL server key");
+  }
+  fs.writeFileSync(tlsExtensionsPath, [
+    "basicConstraints=critical,CA:FALSE",
+    `subjectAltName=DNS:${tlsServerHostname},IP:${lanIp},DNS:localhost`,
+    "keyUsage=critical,digitalSignature,keyEncipherment",
+    "extendedKeyUsage=serverAuth",
+    "subjectKeyIdentifier=hash",
+    "authorityKeyIdentifier=keyid,issuer",
+    "",
+  ].join("\n"), { encoding: "utf8", mode: 0o600 });
+  const leafGenerated = spawnSync(openssl, [
+    "x509", "-req", "-in", tlsCsrPath,
+    "-CA", tlsCaPath,
+    "-CAkey", tlsCaKeyPath,
+    "-CAcreateserial",
+    "-out", tlsCertificatePath,
+    "-days", "14",
+    "-sha256",
+    "-extfile", tlsExtensionsPath,
+  ], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  for (const filePath of [tlsCsrPath, tlsExtensionsPath, tlsSerialPath]) {
+    fs.rmSync(filePath, { force: true });
+  }
+  if (leafGenerated.status !== 0) {
+    throw new Error("OpenSSL could not sign the local HIL server certificate");
+  }
+}
+
+function certificateMatchesCurrentHilLan() {
+  try {
+    const certificate = new crypto.X509Certificate(fs.readFileSync(tlsCertificatePath));
+    const trustAnchor = new crypto.X509Certificate(
+      fs.readFileSync(tlsTrustCertificatePath),
+    );
+    const validUntil = Date.parse(certificate.validTo);
+    const trustValidUntil = Date.parse(trustAnchor.validTo);
+    return Number.isFinite(validUntil) &&
+      Number.isFinite(trustValidUntil) &&
+      validUntil > Date.now() + 5 * 60 * 1000 &&
+      trustValidUntil > Date.now() + 5 * 60 * 1000 &&
+      certificate.subject.includes(`CN=${tlsServerHostname}`) &&
+      certificate.subject.includes("OU=ShcareHILv3") &&
+      certificate.subjectAltName.includes(`IP Address:${lanIp}`) &&
+      trustAnchor.subject.includes("CN=ShcareHIL Root CA") &&
+      trustAnchor.subject.includes("OU=ShcareHILv3");
+  } catch {
+    return false;
   }
 }
 
@@ -84,6 +176,7 @@ function validateInputs() {
   for (const [filePath, label] of [
     [tlsKeyPath, "HIL TLS private key"],
     [tlsCertificatePath, "HIL TLS certificate"],
+    [tlsTrustCertificatePath, "HIL TLS trust anchor"],
   ]) {
     if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       throw new Error(`${label} is missing`);
@@ -232,6 +325,11 @@ function proxyHttpRequest(req, res) {
     path: req.url,
     headers: { ...req.headers, host: `127.0.0.1:${backendPort}` },
   }, (upstream) => {
+    if (String(req.url || "").includes("/ota/") && String(req.url || "").endsWith("/firmware")) {
+      // HIL-only diagnostic: expose the status code and route shape, never
+      // headers (which may contain the one-time OTA bearer).
+      process.stdout.write(`[device-hil] OTA firmware proxy ${req.method} ${new URL(req.url, "https://shcare-hil.local").pathname} -> HTTP ${upstream.statusCode || 502}\n`);
+    }
     res.writeHead(upstream.statusCode || 502, upstream.headers);
     upstream.pipe(res);
   });
@@ -267,9 +365,17 @@ function proxyUpgrade(req, clientSocket, head) {
 }
 
 async function listenTlsProxy() {
+  const leafCertificate = fs.readFileSync(tlsCertificatePath);
+  // The ESP32 fixture pins the local root.  Supplying the complete local
+  // chain makes the HIL proxy interoperable with mbedTLS builds that require
+  // every issuer to be present in the peer chain.  Custom certificates retain
+  // their owner-provided chain verbatim.
+  const certificateChain = usesDefaultTlsPaths
+    ? Buffer.concat([leafCertificate, Buffer.from("\n"), fs.readFileSync(tlsCaPath)])
+    : leafCertificate;
   tlsServer = https.createServer({
     key: fs.readFileSync(tlsKeyPath),
-    cert: fs.readFileSync(tlsCertificatePath),
+    cert: certificateChain,
     minVersion: "TLSv1.2",
   }, proxyHttpRequest);
   tlsServer.on("upgrade", proxyUpgrade);

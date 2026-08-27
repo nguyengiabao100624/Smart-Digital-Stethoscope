@@ -359,6 +359,8 @@ Quy tắc tạm thời của demo:
 ```http
 POST /api/v1/devices/provision-qr
 POST /api/v1/devices/pair
+POST /api/v1/devices/:id/setup-session
+POST /api/v1/devices/:id/release
 POST /api/v1/devices/:id/revoke
 POST /api/v1/devices/:id/rotate-secret
 ```

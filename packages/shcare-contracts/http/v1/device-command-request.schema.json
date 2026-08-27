@@ -24,7 +24,7 @@
     "failureCode": "DEVICE_COMMAND_SPECIALIZED_ROUTE_REQUIRED"
   },
   "x-shcare-wifi-provisioning-policy": {
-    "flow": "secure_setup_ap",
+    "flow": "esptouch_v2_broadcast",
     "remoteCredentialCommand": "forbidden",
     "failureCode": "DEVICE_WIFI_UPDATE_LOCAL_SETUP_REQUIRED"
   }

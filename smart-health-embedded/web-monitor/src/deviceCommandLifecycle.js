@@ -6,6 +6,7 @@ const DEVICE_COMMAND_TYPES = new Set([
   "device.lock",
   "device.revoke",
   "device.rotate_secret",
+  "wifi.setup.open",
   "wifi.update",
   "ota.update",
   "audio.session.start",
@@ -24,6 +25,7 @@ const GENERIC_SAFE_DEVICE_COMMAND_TYPES = new Set([
 const SPECIALIZED_DEVICE_COMMAND_ROUTES = new Map([
   ["device.revoke", "/v1/devices/{deviceId}/revoke"],
   ["device.rotate_secret", "/v1/devices/{deviceId}/rotate-secret"],
+  ["wifi.setup.open", "/v1/devices/{deviceId}/setup-session"],
   ["ota.update", "/v1/devices/{deviceId}/ota"],
   ["audio.session.start", "/v1/scans/start"],
   ["audio.session.stop", "/v1/scans/{scanId}/stop"],

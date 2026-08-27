@@ -95,6 +95,10 @@ const setupPortal = section(
   "String jsonEscape(",
 );
 const setupWifi = section("void setupWiFi()", "void setupAudioUdp()");
+const wifiDiagnostics = section(
+  "void handleWifiDiagnosticEvent(arduino_event_t *event)",
+  "bool startSmartConfigProvisioning(",
+);
 const runtimeSetup = section("void setup() {", "void loop() {");
 const runtimeLoop = source.slice(source.indexOf("void loop() {"));
 const cloudEvent = section(
@@ -108,6 +112,10 @@ const audioStart = section(
 const audioSend = section(
   "void drainAudioCaptureQueue(std::size_t maxPackets) {",
   "void startMdns()",
+);
+const cloudConnect = section(
+  "void connectCloudSocketIfNeeded()",
+  "void handleCloudSocket()",
 );
 
 assert.match(audioStart, /payloadString\("frameEncoding"\)/);
@@ -123,9 +131,100 @@ assert.match(protocolSource, /LegacyReceiverOnly/);
 assert.match(protocolSource, /validAudioV2SequenceFlags\(sequence, flags\)/);
 
 assert.match(source, /bool otaInProgress = false;/);
+assert.match(
+  source,
+  /#if CONFIG_APP_ROLLBACK_ENABLE\s+extern "C" bool verifyRollbackLater\(\) \{ return true; \}\s+#endif/,
+  "Arduino's eager rollback verifier must be deferred until Shcare boot health is durable",
+);
 assert.match(command, /evaluateDeviceCommandAdmission\(/);
 assert.match(command, /DEVICE_BUSY_OTA/);
 assert.match(command, /OTA_RECORDING_ACTIVE/);
+assert.match(source, /SC_TYPE_ESPTOUCH_V2/);
+assert.match(source, /"shcare\/esptouch-v2\/aes128\\n"/);
+assert.match(source, /"shcare\/esptouch-v2\/device\\n"/);
+assert.match(source, /bool smartConfigV2GoldenVectorMatches\(\)/);
+assert.match(runtimeSetup, /smartConfigKdfVerified = smartConfigV2GoldenVectorMatches\(\);/);
+assert.match(source, /0x0b, 0x0b, 0xeb, 0x38/);
+assert.match(source, /esp_smartconfig_get_rvd_data/);
+assert.match(source, /WiFi\.persistent\(false\)/);
+assert.match(source, /constexpr time_t TLS_CERT_TIME_FLOOR = 1700000000;/);
+assert.match(source, /bool hasTrustedClock\(\) \{ return time\(nullptr\) >= TLS_CERT_TIME_FLOOR; \}/);
+assert.match(source, /#define SMART_HEALTH_HIL_CLOCK_EPOCH 0/);
+assert.match(source, /static_assert\(!\(SMART_HEALTH_HIL_RUNTIME_CONFIG && SMART_HEALTH_PRODUCTION_PROFILE\)/);
+const hilClockBootstrap = section("void bootstrapHilTrustedClock()", "bool isProductionProfile()");
+assert.match(hilClockBootstrap, /#if SMART_HEALTH_HIL_RUNTIME_CONFIG/);
+assert.match(hilClockBootstrap, /SMART_HEALTH_HIL_CLOCK_EPOCH >= TLS_CERT_TIME_FLOOR/);
+assert.match(hilClockBootstrap, /settimeofday\(&bootstrapTime, nullptr\)/);
+assert.match(hilClockBootstrap, /TLS validation remains enabled\./);
+assert.doesNotMatch(hilClockBootstrap, /setInsecure\(/);
+const authenticatedClockSync = section("bool synchronizeClockFromAuthenticatedServer(", "bool isProductionProfile()");
+assert.match(authenticatedClockSync, /parseAuthAcceptedServerTimeEpochMillis/);
+assert.match(authenticatedClockSync, /TLS_CERT_TIME_FLOOR/);
+assert.match(authenticatedClockSync, /settimeofday\(&authenticatedTime, nullptr\)/);
+assert.match(authenticatedClockSync, /authenticatedServerEpochBaseMs = serverEpochMs/);
+assert.match(authenticatedClockSync, /authenticatedServerEpochAtUptimeMs = static_cast<uint32_t>\(millis\(\)\)/);
+assert.doesNotMatch(authenticatedClockSync, /setInsecure\(/);
+const cloudAuth = section("void handleCloudAuthMessage(", "void sendCommandState(");
+assert.match(cloudAuth, /authAcceptanceMatchesCredentialAttempt/);
+assert.match(cloudAuth, /synchronizeClockFromAuthenticatedServer\(accepted\.message\)/);
+assert.match(cloudAuth, /AUTH_SERVER_TIME_INVALID/);
+assert.match(
+  cloudAuth,
+  /if \(pendingFirmwareVerification\) \{\s*pendingFirmwareBootStartedMs = millis\(\) - OTA_BOOT_HEALTH_TIMEOUT_MS;/,
+  "an OTA image rejected by authenticated WSS must enter the guarded rollback path without waiting out the full window",
+);
+assert.match(cloudAuth, /rollback is scheduled/);
+const currentClock = section("int64_t currentEpochMillis()", "std::uint32_t nextAudioSessionGeneration");
+assert.match(currentClock, /cloudConnected/);
+assert.match(currentClock, /authenticatedServerEpochBaseMs/);
+assert.match(currentClock, /authenticatedServerEpochAtUptimeMs/);
+assert.match(cloudConnect, /cloudSecurityDecision\.transport == shcare::CloudTransport::Wss/);
+assert.match(cloudConnect, /!hasTrustedClock\(\)/);
+assert.match(cloudConnect, /WSS waits for trusted network time before certificate validation\./);
+assert.doesNotMatch(
+  cloudConnect,
+  /setInsecure\(/,
+  "WSS must wait for a trusted clock rather than disabling certificate validation",
+);
+assert.match(source, /const unsigned long WIFI_ASSOCIATION_TIMEOUT_MS = 15000;/);
+const wifiReconnect = section("void handleWiFiReconnect()", "void setupWiFi()");
+assert.match(wifiReconnect, /bootstrapHilTrustedClock\(\);/);
+assert.match(
+  wifiReconnect,
+  /std::max\(wifiReconnectDelayMs, WIFI_ASSOCIATION_TIMEOUT_MS\)/,
+  "a WPA association must complete before reconnect retry can replace it",
+);
+assert.match(source, /#define SMART_HEALTH_HIL_RUNTIME_CONFIG 0/);
+const hilTlsPreflight = section("void connectCloudSocketIfNeeded()", "void handleCloudSocket()");
+assert.match(hilTlsPreflight, /#if SMART_HEALTH_HIL_RUNTIME_CONFIG/);
+assert.match(hilTlsPreflight, /Local HIL TLS preflight: epoch=%lld, caTrust=%s/);
+assert.doesNotMatch(hilTlsPreflight, /setInsecure\(/);
+assert.match(source, /class HilSecureCloudTcpClient final/);
+assert.match(source, /client\.connect\(\s*target, port, host\.c_str\(\), BACKEND_CA_CERT, nullptr, nullptr\)/);
+assert.match(source, /#if SMART_HEALTH_PRODUCTION_PROFILE \|\| SMART_HEALTH_HIL_RUNTIME_CONFIG/);
+const runtimeConfig = section("void loadRuntimeConfig()", "bool saveRuntimeConfig()");
+assert.match(
+  runtimeConfig,
+  /!SMART_HEALTH_HIL_RUNTIME_CONFIG && devicePrefs\.isKey\("backendHost"\)/,
+  "a HIL fixture must not inherit an unrelated persisted backend host",
+);
+assert.match(
+  runtimeConfig,
+  /!SMART_HEALTH_HIL_RUNTIME_CONFIG && devicePrefs\.isKey\("deviceSecret"\)/,
+  "a HIL fixture must not inherit an unrelated persisted device credential",
+);
+assert.match(runtimeConfig, /if \(!SMART_HEALTH_HIL_RUNTIME_CONFIG\) \{\s*backendUseTls =/);
+assert.match(runtimeSetup, /registerWifiDiagnosticEvent\(\);/);
+assert.match(wifiDiagnostics, /ARDUINO_EVENT_WIFI_STA_DISCONNECTED/);
+assert.match(wifiDiagnostics, /WiFi station connection failed; reason=/);
+assert.doesNotMatch(
+  wifiDiagnostics,
+  /wifiSsid|wifiPass|smartConfigCandidatePassword/,
+  "WiFi diagnostics must not disclose the SSID or password",
+);
+assert.match(command, /startSmartConfigProvisioning\(/);
+assert.match(command, /SMARTCONFIG_LISTENING/);
+assert.doesNotMatch(command, /runSetupPortal\(/);
 
 assert.match(ota, /beginBlockingOtaRuntime\(/);
 assert.match(ota, /endBlockingOtaRuntime\(/);
@@ -174,6 +273,25 @@ assert.ok(
 );
 assert.match(ota, /evaluatePendingOtaCommand\(/);
 assert.match(ota, /otaBootOutcome != "prepared"/);
+assert.match(ota, /firmware download http error \("\) \+ String\(httpCode\)/);
+assert.match(ota, /OTA_HIL_URL_MISMATCH/);
+assert.match(
+  ota,
+  /secureClient\.connect\(target,[\s\S]*?"shcare-hil\.local", OTA_CA_CERT/,
+  "the HIL OTA client must connect to the fixture IP while retaining hostname and CA validation",
+);
+assert.match(
+  ota,
+  /http\.begin\(secureClient, String\("shcare-hil\.local"\),/,
+  "the HIL OTA request must reuse the verified fixture-host connection",
+);
+assert.match(
+  source,
+  /health\.productionProfile = isProductionProfile\(\) \|\|\s*SMART_HEALTH_HIL_RUNTIME_CONFIG/,
+  "HIL OTA boot health must require the authenticated WSS control plane",
+);
+assert.match(source, /HIL bootstrap cleared only stale OTA recovery state/);
+assert.match(source, /SMART_HEALTH_HIL_RESET_OTA_STATE/);
 assert.match(
   otaReceipt,
   /if \(pendingOtaReceiptReady\) \{[\s\S]*return false;\s*\}/,
@@ -369,39 +487,28 @@ assert.match(runtimeLoop, /handleOtaRecoverySafeMode\(\);\s*return;/);
 assert.match(protocolSource, /OtaRecoverySafeModeReason::None/);
 assert.match(protocolSource, /return reason == OtaRecoverySafeModeReason::None/);
 
-const pendingHealthCall = "handlePendingFirmwareHealth();";
-const portalHealthCalls = [
-  ...setupPortal.matchAll(/handlePendingFirmwareHealth\(\);/g),
-];
-assert.equal(
-  portalHealthCalls.length,
-  6,
-  "every blocking setup-portal health call must remain explicitly audited",
-);
-for (const call of portalHealthCalls) {
-  const afterCall = setupPortal.slice(call.index + pendingHealthCall.length);
-  assert.match(
-    afterCall,
-    /^\s*if \(!otaRecoveryRuntimeServicesAllowed\(\)\) \{\s*handleOtaRecoverySafeMode\(\);\s*return;\s*\}/,
-    "setup-portal work must return immediately after OTA safe-mode activation",
-  );
-}
-assert.equal(
-  (setupPortal.match(/handleFactoryResetButton\(\);/g) || []).length,
-  portalHealthCalls.length,
-  "every blocking setup-portal loop must retain physical factory recovery",
-);
-
 const portalCallSites = [...setupWifi.matchAll(/runSetupPortal\([^;]+\);/g)];
-assert.equal(portalCallSites.length, 2, "all setup-portal callers must be gated");
-for (const call of portalCallSites) {
-  const afterCall = setupWifi.slice(call.index + call[0].length);
-  assert.match(
-    afterCall,
-    /^\s*if \(!otaRecoveryRuntimeServicesAllowed\(\)\) \{\s*return;\s*\}/,
-    "safe-mode return from the portal must not resume WiFi startup",
-  );
-}
+assert.equal(portalCallSites.length, 1, "only a physical gesture may open the recovery portal");
+const unconfiguredWifiStart = setupWifi.indexOf("if (!hasWiFiConfig())");
+const physicalGestureStart = setupWifi.indexOf("if (setupPortalPhysicalGesture)");
+assert.notEqual(unconfiguredWifiStart, -1, "missing unconfigured WiFi boot branch");
+assert.notEqual(physicalGestureStart, -1, "missing physical recovery branch");
+const unconfiguredWifi = setupWifi.slice(unconfiguredWifiStart, physicalGestureStart);
+assert.match(
+  unconfiguredWifi,
+  /startSmartConfigProvisioning\("WiFi setup is required before cloud connection"\);/,
+  "an unconfigured device must start its encrypted ESPTouch V2 listener",
+);
+assert.doesNotMatch(
+  unconfiguredWifi,
+  /WiFi\.mode\(WIFI_OFF\)/,
+  "an unconfigured device must not disable the WiFi radio before app setup",
+);
+assert.doesNotMatch(unconfiguredWifi, /runSetupPortal\(/);
+assert.match(setupWifi, /runSetupPortal\("Physical setup gesture requested WiFi recovery\."\);/);
+assert.doesNotMatch(setupPortal, /while\s*\(/, "recovery portal must not block audio, OTA or reset handling");
+assert.match(runtimeLoop, /handleSetupPortal\(\)/);
+assert.match(runtimeLoop, /handleSmartConfigProvisioning\(\)/);
 
 assert.doesNotMatch(lanOta, /resetAudioSession\(\)/);
 assert.match(services, /otaReady && !audioSessionActive && !otaInProgress/);

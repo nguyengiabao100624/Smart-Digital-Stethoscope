@@ -19,6 +19,7 @@ const {
   transitionDeviceCommand,
 } = require("./deviceCommandLifecycle");
 const {
+  applyDeviceOwnershipRelease,
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,
   inferDeviceOwnershipState,
@@ -8000,6 +8001,138 @@ function createRepositories(options) {
       }
       return result;
     },
+
+    async changeRole(input = {}) {
+      const organizationId = String(input.organizationId || "");
+      const targetUserId = String(input.targetUserId || "");
+      const role = String(input.role || "").toLowerCase();
+      const allowedRoles = new Set(["workspace_admin", "doctor", "nurse", "technician", "billing", "viewer"]);
+      if (!organizationId || !targetUserId || !allowedRoles.has(role)) {
+        throw repositoryError(
+          400,
+          "MEMBERSHIP_ROLE_INVALID",
+          "A valid workspace, staff member, and operational role are required",
+        );
+      }
+      const idempotency = normalizeMutationIdempotency(input.idempotency);
+      const responseStatus = 200;
+
+      if (!getPool()) {
+        const runtimeDb = getDb();
+        const replay = idempotency ? findRuntimeIdempotency(idempotency) : null;
+        if (replay) {
+          assertIdempotencyFingerprint(replay, idempotency);
+          replay.lastSeenAt = nowIso();
+          return {
+            membership: cloneRuntimeValue(replay.responseResource?.membership),
+            replayed: true,
+            responseStatus: Number(replay.responseStatus || responseStatus),
+          };
+        }
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          const membership = runtimeDb.memberships.find(
+            (item) => item.organizationId === organizationId && item.userId === targetUserId,
+          );
+          if (!membership) {
+            throw repositoryError(404, "WORKSPACE_MEMBERSHIP_NOT_FOUND", "The staff member does not belong to the selected workspace");
+          }
+          const organization = (runtimeDb.organizations || []).find(
+            (item) => String(item.id || "") === organizationId,
+          );
+          if (
+            ["owner", "workspace_owner"].includes(String(membership.role || "")) ||
+            String(organization?.ownerUserId || organization?.owner_user_id || "") === targetUserId
+          ) {
+            throw repositoryError(409, "WORKSPACE_OWNER_TRANSFER_REQUIRED", "Transfer workspace ownership before changing the owner role");
+          }
+          const changedAt = nowIso();
+          const previousRole = membership.role || "viewer";
+          membership.role = role;
+          membership.updatedAt = changedAt;
+          const auditLog = createAuditLog({
+            ...(input.audit || {}),
+            organizationId,
+            action: input.audit?.action || "workspace.membership.role_change",
+            resourceType: "membership",
+            resourceId: membership.id,
+            metadata: {
+              ...(input.audit?.metadata || {}),
+              action: "change_role",
+              targetUserId,
+              previousRole,
+              role,
+            },
+          });
+          const responseResource = { action: "change_role", membership: { ...membership } };
+          syncRuntimeAuditLog(auditLog);
+          syncRuntimeMutationIdempotency(idempotency, "membership", membership.id, responseStatus, responseResource);
+          await saveDb();
+          return { membership: { ...membership }, auditLog, replayed: false, responseStatus };
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      }
+
+      const result = await withSqlTransaction(async (client) => {
+        const replay = await findSqlMutationReplay(client, idempotency);
+        if (replay) {
+          const response = objectOf(replay.response_json);
+          return { membership: response.membership || null, auditLog: null, replayed: true, responseStatus: Number(replay.response_status || responseStatus) };
+        }
+        const selected = await client.query(
+          `
+            SELECT membership.*, organization.owner_user_id
+            FROM memberships membership
+            JOIN organizations organization ON organization.id = membership.organization_id
+            WHERE membership.organization_id = $1 AND membership.user_id = $2
+            LIMIT 1
+            FOR UPDATE OF membership, organization
+          `,
+          [organizationId, targetUserId],
+        );
+        const row = selected.rows[0] || null;
+        if (!row) throw repositoryError(404, "WORKSPACE_MEMBERSHIP_NOT_FOUND", "The staff member does not belong to the selected workspace");
+        if (["owner", "workspace_owner"].includes(String(row.role || "")) || String(row.owner_user_id || "") === targetUserId) {
+          throw repositoryError(409, "WORKSPACE_OWNER_TRANSFER_REQUIRED", "Transfer workspace ownership before changing the owner role");
+        }
+        const changedAt = nowIso();
+        const updated = await client.query(
+          `UPDATE memberships SET role = $3, updated_at = $4 WHERE organization_id = $1 AND user_id = $2 RETURNING *`,
+          [organizationId, targetUserId, role, changedAt],
+        );
+        const membership = rowToMembership(updated.rows[0]);
+        const auditLog = createAuditLog({
+          ...(input.audit || {}),
+          organizationId,
+          action: input.audit?.action || "workspace.membership.role_change",
+          resourceType: "membership",
+          resourceId: membership.id,
+          metadata: {
+            ...(input.audit?.metadata || {}),
+            action: "change_role",
+            targetUserId,
+            previousRole: row.role || "viewer",
+            role,
+          },
+        });
+        const responseResource = { action: "change_role", membership };
+        await queryInsertAuditLog(client, auditLog);
+        await insertSqlMutationIdempotency(client, idempotency, "membership", membership.id, responseStatus, responseResource);
+        return { membership, auditLog, replayed: false, responseStatus };
+      });
+      if (!result.replayed) {
+        syncArrayItem(getDb().memberships, result.membership);
+        if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+        syncRuntimeMutationIdempotency(idempotency, "membership", result.membership?.id || "", result.responseStatus, {
+          action: "change_role",
+          membership: result.membership,
+        });
+        await saveDb();
+      }
+      return result;
+    },
   };
 
   function exportRecordTimestamp(record, fallbackField = "") {
@@ -13690,6 +13823,9 @@ function createRepositories(options) {
     if (["workspace_owner", "workspace_admin", "nurse", "technician"].includes(role)) {
       return true;
     }
+    if (role === "patient" && String(operation || "").toLowerCase() === "release") {
+      return true;
+    }
     if (role === "patient") {
       return Boolean(
         String(user.role || "").toLowerCase() === "patient" &&
@@ -13713,6 +13849,7 @@ function createRepositories(options) {
     if (["update", "assign", "unassign"].includes(normalized)) {
       return `device.ownership.update:${deviceId}`;
     }
+    if (normalized === "release") return `device.release:${deviceId}`;
     if (normalized === "transfer") return `device.transfer:${deviceId}`;
     if (normalized === "revoke") return `device.revoke:${deviceId}`;
     return "";
@@ -14361,7 +14498,14 @@ function createRepositories(options) {
 
   function applyDeviceOwnershipIntent(currentDevice, input = {}) {
     const operation = String(input.operation || "").trim().toLowerCase();
-    const allowedOperations = new Set(["update", "assign", "unassign", "revoke", "transfer"]);
+    const allowedOperations = new Set([
+      "update",
+      "assign",
+      "unassign",
+      "release",
+      "revoke",
+      "transfer",
+    ]);
     if (!allowedOperations.has(operation)) {
       throw repositoryError(
         400,
@@ -14393,6 +14537,8 @@ function createRepositories(options) {
       });
     } else if (operation === "unassign") {
       nextDevice = applyDeviceOwnershipTransition(nextDevice, "unassigned", { at });
+    } else if (operation === "release") {
+      nextDevice = applyDeviceOwnershipRelease(nextDevice, { at });
     } else if (operation === "revoke") {
       nextDevice = applyDeviceOwnershipTransition(nextDevice, "revoked", {
         actorUserId: String(input.actorUserId || ""),

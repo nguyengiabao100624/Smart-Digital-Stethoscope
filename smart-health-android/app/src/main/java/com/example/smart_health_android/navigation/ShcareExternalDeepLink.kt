@@ -242,8 +242,8 @@ object ShcareExternalDeepLinkContract {
                 )
             }
             segments == listOf("devices") -> accepted(
-                ShcareMobileRoute.BluetoothSettings,
-                ShcareMobileRoute.BluetoothSettings.routePattern,
+                ShcareMobileRoute.DeviceManagement,
+                "device-management",
             )
             segments == listOf("settings") -> accepted(
                 ShcareMobileRoute.Settings,

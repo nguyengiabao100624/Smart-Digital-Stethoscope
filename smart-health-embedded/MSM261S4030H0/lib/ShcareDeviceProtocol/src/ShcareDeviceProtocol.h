@@ -75,7 +75,10 @@ bool developmentUdpAllowed(bool productionProfile,
 std::uint32_t reconnectBackoffDelayMs(std::uint32_t attemptCount,
                                       std::uint32_t baseDelayMs,
                                       std::uint32_t maxDelayMs);
-bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture);
+bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture,
+                        bool trustedRecovery = false);
+bool shouldOpenSetupPortalAfterReconnectFailures(std::uint32_t failureCount,
+                                                 std::uint32_t threshold);
 bool setupPortalExpired(std::uint32_t nowMs, std::uint32_t startedAtMs,
                         std::uint32_t ttlMs);
 bool validSetupPortalCsrf(const std::string &expectedToken,
@@ -207,6 +210,11 @@ struct AuthAcceptedParseResult {
 };
 
 AuthAcceptedParseResult parseAuthAccepted(const std::string &json);
+// The value is only suitable for setting the local clock after the caller has
+// authenticated the enclosing WSS session and bound this acceptance to its
+// outstanding device challenge.
+bool parseAuthAcceptedServerTimeEpochMillis(const AuthAcceptedMessage &accepted,
+                                            std::int64_t &epochMs);
 bool authAcceptanceMatchesCredentialAttempt(
     const AuthAcceptedMessage &accepted, bool usedPendingCredential,
     const std::string &pendingRotationId);

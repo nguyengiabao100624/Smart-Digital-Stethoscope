@@ -1606,6 +1606,52 @@ paths:
           $ref: "#/components/responses/ErrorResponse"
         "503":
           $ref: "#/components/responses/ErrorResponse"
+  /devices/{deviceId}/setup-session:
+    post:
+      summary: Open one short-lived encrypted ESPTouch V2 setup session
+      description: >
+        Requires DeviceManage authority for the already-owned device. The
+        response is no-store and contains only derived, short-lived ESPTouch V2
+        AES-128 material; it never contains the device secret or target Wi-Fi
+        credentials. An offline device is valid because it listens for
+        SmartConfig after boot. Unsupported clients receive HTTP 426.
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceWifiSetupRequest"
+      responses:
+        "200":
+          description: Short-lived ESPTouch V2 setup material with Cache-Control no-store
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceWifiSetupResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "426":
+          $ref: "#/components/responses/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
   /devices/{deviceId}/commands:
     get:
       summary: List the bounded command lifecycle for one authorized device
@@ -1631,7 +1677,7 @@ paths:
       summary: Accept one safe generic Platform Admin device command
       description: >
         This endpoint accepts only `restart`, `wifi.status` and `device.lock`.
-        Wi-Fi credentials must use the device-local secure setup AP and a remote
+        Wi-Fi credentials must use the foreground ESPTouch V2 broadcast flow and a remote
         `wifi.update` returns `DEVICE_WIFI_UPDATE_LOCAL_SETUP_REQUIRED` before
         reservation or delivery. Revocation, credential rotation, OTA and clinical audio
         commands return `DEVICE_COMMAND_SPECIALIZED_ROUTE_REQUIRED` and must use
@@ -1719,6 +1765,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceRevokeReceipt"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /devices/{deviceId}/release:
+    post:
+      summary: Release one owned device from the current account
+      description: >
+        This tenant-scoped, idempotent workflow removes the current owner and
+        patient assignment, returns the device to the provisioned state, closes
+        its active socket and retains clinical and audit history. It is distinct
+        from Platform Admin revocation and never hard-deletes the device record.
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Committed release receipt or exact idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceReleaseReceipt"
         "400":
           $ref: "#/components/responses/ErrorResponse"
         "403":
@@ -2405,6 +2484,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalStaffResponse"
         "403":
+          $ref: "#/components/responses/ErrorResponse"
+  /portal/staff/{userId}/role:
+    patch:
+      summary: Change one staff member's role in the active workspace
+      description: >
+        Requires `workspace.staff.manage`. The membership role is scoped to the
+        authenticated workspace and is persisted with an audit event and an
+        idempotent receipt. Platform-admin roles and workspace ownership cannot
+        be changed through this endpoint.
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceMembershipRoleChangeRequest"
+      responses:
+        "200":
+          description: Exact backend-confirmed role change or idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceMembershipRoleChangeResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
           $ref: "#/components/responses/ErrorResponse"
   /portal/devices/{deviceId}:
     patch:
@@ -5783,6 +5902,35 @@ components:
           maxItems: 500
           items:
             $ref: "#/components/schemas/PortalStaffMember"
+    WorkspaceMembershipRoleChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [workspace_admin, doctor, nurse, technician, billing, viewer]
+    WorkspaceMembershipRoleChangeResponse:
+      type: object
+      additionalProperties: false
+      required: [action, membership, user, replayed]
+      properties:
+        action:
+          type: string
+          enum: [change_role]
+        membership:
+          $ref: "#/components/schemas/PortalStaffMembership"
+        user:
+          type: object
+          description: Sanitized account snapshot; credentials and session material are excluded.
+          required: [id]
+          properties:
+            id:
+              type: string
+              minLength: 1
+              maxLength: 120
+        replayed:
+          type: boolean
     ClinicalReview:
       type: object
       additionalProperties: false
@@ -6932,6 +7080,48 @@ components:
           maxItems: 100
           items:
             $ref: "#/components/schemas/DeviceCommand"
+    DeviceWifiSetupRequest:
+      type: object
+      additionalProperties: false
+      required: [supportedTransports]
+      properties:
+        supportedTransports:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [esptouch_v2] }
+    DeviceWifiSetupResponse:
+      type: object
+      additionalProperties: false
+      required: [device, setup]
+      properties:
+        device:
+          $ref: "#/components/schemas/DeviceOperationPublicDevice"
+        setup:
+          type: object
+          additionalProperties: false
+          required: [protocolVersion, transport, smartConfig, expiresAt, activation]
+          properties:
+            protocolVersion: { type: integer, enum: [2] }
+            transport: { type: string, enum: [esptouch_v2] }
+            smartConfig:
+              type: object
+              additionalProperties: false
+              required: [security, provisioningKey, reservedData]
+              properties:
+                security: { type: string, enum: [aes128] }
+                provisioningKey: { type: string, pattern: "^[A-Za-z0-9_-]{22}$" }
+                reservedData: { type: string, pattern: "^[A-Za-z0-9_-]{47}$" }
+            expiresAt: { type: string, format: date-time }
+            activation:
+              type: object
+              additionalProperties: true
+              required: [requested, state]
+              properties:
+                requested: { type: boolean }
+                state: { type: string, minLength: 1, maxLength: 40 }
+                commandId: { type: string, minLength: 1, maxLength: 128 }
     DeviceRevokeReceipt:
       type: object
       additionalProperties: false
@@ -6946,6 +7136,23 @@ components:
                 ownershipState: { type: string, enum: [revoked] }
                 status: { type: string, enum: [revoked] }
                 online: { type: boolean, enum: [false] }
+        replayed:
+          type: boolean
+    DeviceReleaseReceipt:
+      type: object
+      additionalProperties: false
+      required: [release, replayed]
+      properties:
+        release:
+          type: object
+          additionalProperties: false
+          required: [deviceId, released, historyRetained]
+          properties:
+            deviceId:
+              type: string
+              pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
+            released: { type: boolean, enum: [true] }
+            historyRetained: { type: boolean, enum: [true] }
         replayed:
           type: boolean
     DeviceCredentialRotationRequest:

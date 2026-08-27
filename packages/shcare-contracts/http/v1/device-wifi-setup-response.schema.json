@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.shcare.vn/http/v1/device-wifi-setup-response.schema.json",
+  "title": "Shcare ESPTouch V2 setup-session response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "setup"],
+  "properties": {
+    "device": { "$ref": "device-operation-common.schema.json#/$defs/publicDevice" },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "transport", "smartConfig", "expiresAt", "activation"],
+      "properties": {
+        "protocolVersion": { "const": 2 },
+        "transport": { "const": "esptouch_v2" },
+        "smartConfig": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["security", "provisioningKey", "reservedData"],
+          "properties": {
+            "security": { "const": "aes128" },
+            "provisioningKey": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{22}$"
+            },
+            "reservedData": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{47}$"
+            }
+          }
+        },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "activation": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["requested", "state"],
+          "properties": {
+            "requested": { "type": "boolean" },
+            "state": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "commandId": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        }
+      }
+    }
+  },
+  "x-shcare-http": {
+    "method": "POST",
+    "path": "/v1/devices/{deviceId}/setup-session"
+  },
+  "x-shcare-cache-control": "no-store"
+}

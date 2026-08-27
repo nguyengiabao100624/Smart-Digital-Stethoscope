@@ -1,6 +1,58 @@
 # Shcare rebuild execution ledger
 
-Updated: 2026-08-25
+## 2026-08-26 - G3 direct dual-band ESPTouch correction
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| Android transport | Source + focused test + lint PASS | Removed the MIUI-rejected `WifiNetworkSpecifier`/network-binding handover. ESPTouch V2 remains on the existing router connection, selects a visible same-SSID 2.4 GHz BSSID for the ESP target, and has no chooser, BLE, SoftAP, browser, or IP path. |
+| Android package | Xiaomi install PASS | Full `:app:testDebugUnitTest` is `857/857`; `:app:lintDebug`, `:app:assembleLocalDemoDebug`, and `:app:assembleDebugAndroidTest` pass. APK SHA-256 `7A1C18FBFC77846CBFA2FE4B612D5F6A988ADB0826B43B4C020CD40A1E9A38C0` installed successfully with local API/Auth reverse mappings. |
+| Physical Broadcast and downstream | OPEN, not passed | A guarded fake-credential broadcaster HIL could not read the current SSID while MIUI kept the instrumentation surface backgrounded; it sent no real credential. COM9 is absent. Resume only with secure on-device input plus serial listener → DHCP → WSS/ACK/audio/scan/OTA rollback evidence. |
+
+## 2026-08-26 - G3 ESPTouch V2 dual-band router correction
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| Android router selection | Source, test and lint PASS | Xiaomi scan confirmed a common SSID with 5 GHz and a separate 2.4 GHz BSSID. Android now requests the exact 2.4 GHz BSSID through `WifiNetworkSpecifier`, binds only the ESPTouch broadcast window, and releases it after broadcast. There is no BLE, ESP SoftAP, browser/IP or Settings path. |
+| Android package | Xiaomi install PASS | `:app:testDebugUnitTest` focused tests (37), `:app:lintDebug` and `:app:assembleLocalDemoDebug` passed. The merged manifest has no Bluetooth/nearby-device permission. APK `30002978605139CA73B8618479DE72CBF2DFBC32E8DF7A9228A83A8EB3696C5D` installed successfully. |
+| End-to-end provisioning | OPEN, not passed | Phone lock prevented a final visual cold-start check and was not bypassed. Resume only through the secure password field and any normal Android confirmation; then collect ESPTouch listener, DHCP, WSS, ACK, audio-v2, durable scan, signed OTA and rollback proof. |
+
+## 2026-08-26 - G3 ESPTouch V2 hardware deployment
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| COM9 firmware | Physical deployment PASS | Normal ESP32-S3 image `623072C1A59C05312F318712A99E0570806DBCE1814A7E637236C0C89516B647` uploaded to ESP32-S3 rev 0.2; OTA counterpart is `AFAA53C90A3B5F0C13AA8470500AE91FA6AC7ECCF042EF6ACD3EE763F3CFE806`. Every uploader write reported verified. Post-reset serial confirms the KDF golden-vector self-test, `ESPTouch V2 listener opened`, and active audio capture. |
+| Xiaomi APK | Physical deployment PASS | LAN debug APK `CB018EE8815FD0222D8B261B9A34820AE878083298ED01FC471A27C981A4F62C` installed successfully. |
+| End-to-end provisioning | BLOCKED, not failed | The secure UI cannot be reached while MIUI keyguard is locked. Do not inject the real Wi-Fi password via tooling. Resume only after unlock, then gather Broadcast, DHCP, WSS, ACK, audio-v2, durable scan and OTA rollback evidence. |
+
+## 2026-08-26 - G3 ESPTouch V2 AES-128 transport cutover
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| Backend setup-session | Source + focused security PASS | Returns protocol 2 / `esptouch_v2` with derived AES-128 key and 17-byte Device-ID binding; tenant DeviceManage, `no-store`, upgrade rejection and throttle are tested in device security `83/83`. |
+| Android broadcaster | Source + focused unit PASS | Official ESPTouch V2 builder receives API-provided key/binding and the six-step UI trace removes temporary ESP Wi-Fi/local API wording. Main/test Kotlin compilation and `DeviceSmartConfigV2ContractTest` pass. |
+| Firmware listener | Source + normal build PASS | ESP32-S3 normal build passes with non-blocking V2 listener, binding rejection and deferred credential persistence. OTA build, COM9 flash/hash and real association/WSS remain pending. |
+
+## 2026-08-26 - G3 Wi-Fi permission-overlay repair and hardware alignment
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| G3 Device Management -> Wi-Fi | Physical password-boundary PASS | Wi-Fi now opens direct SSID/password input; current-SSID permission is deferred to the explicit helper. Android full unit `856/856`, lint `0` errors / `3` warnings, Xiaomi `PhysicalDeviceProvisioningHilTest` `OK (1 test)`, backend check, device security `83/83`, and setup security `3/3` pass. LAN APK `00BC681014D3A0CBB73DC6575B1621B9A64A75491359480447A5AF32231EFA3F` is installed. |
+| G3 ESP image | Physical flash PASS | COM9 read-only identity confirms ESP32-S3 rev 0.2 with 16 MB flash and 8 MB PSRAM. The current normal image (`1,141,872` bytes; SHA-256 `1671FDE1C44155BA6514549B33F0CB0042918E6894C5B13EA3A06646E3B7D29B`) was uploaded with verified writes and reset. Target Wi-Fi association, WSS/auth, ACK, audio-v2, durable scan, signed OTA and rollback remain unproven. |
+
+Updated: 2026-08-26
+
+## 2026-08-25 — G3 Xiaomi QR/manual claim and SSID HIL
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| G3 Android claim and Wi-Fi prefill | Physical partial proof | `PhysicalDeviceBleClaimHilTest` passed `1/1`; `CurrentWifiSsidHilTest` passed `1/1`. Focused `DevicePairingViewModelTest` + `DeviceBleProvisioningContractTest` are `38/38`; LAN debug and AndroidTest APKs rebuild/install. The HIL test now recognizes the existing safe permission/session state instead of falsely waiting out. Nearby Bluetooth is still denied, so obtain ordinary user permission and then prove BLE encrypted write → ESP Wi-Fi association → authenticated WSS/ACK/audio-v2/durable scan/OTA. |
+| G3 firmware identity drift | Source/build + physical read-only proof | Production ESP32-S3 build passes at `1,311,397 / 6,291,456` application-slot bytes. COM9 read-only `flash_id` confirms ESP32-S3 rev v0.2, BLE and `16 MB` hardware flash; the checked 16-MB dual-OTA partition table remains valid. No firmware write occurred. |
+
+## 2026-08-25 — G3 Android QR gallery slice
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| G3 Android pairing input | Source/build complete; physical UI proof blocked | Added system photo picker plus local QR-only decoder, 10 MB limit and no-backend-on-decode-error behavior. Fresh pairing JVM `33/33`, AndroidTest compile/assemble, lint and debug assemble pass; aggregate JVM `852/852` is retained. LAN artifact `897775F474DB1EC306DED901B9985FC6234860851279322C73944898A558D34F` is installed on Xiaomi; unlock/keep awake to run visual picker proof, then continue target Wi-Fi → WSS/ACK/audio-v2/durable scan. |
 
 This ledger turns the accepted Shcare Web, Portal, Platform Admin, Android, backend and MSM261S4030H0 firmware plan into verifiable slices. It is an execution record, not a completion claim.
 
@@ -958,3 +1010,10 @@ Any unavailable emulator, board, credential or provider is recorded as `BLOCKED`
 - Implemented: `LocationDisabled` + native Location settings recovery + refresh-on-return; bỏ timer giữa cùng route, giữ các gate fail-closed ở foreground/route/session/workspace/backend.
 - Gate: JVM `118` suites / `850/850`, AndroidTest compile, lint, assemble PASS; APK `26,961,117` bytes, SHA-256 `E4A1ECDACF98ED6DB32B4B248D7152EC38B7C47383E54DF524A5171840159D0B`, installed Xiaomi.
 - Open: secure-unlock Xiaomi → approve Location in App → runtime Compose/SSID HIL → QR provisioning → WSS/ACK/audio-v2/durable scan/OTA rollback. No secret persisted or logged.
+
+## 2026-08-25 — G3 BLE-first pairing correction
+
+- Replaced the accidental primary setup-AP journey with `QR/manual claim -> paired/offline -> separate BLE Wi-Fi action`. AP is an explicit physical recovery route only.
+- Added opaque scan filtering, identity verification, nonce-bound AES-GCM payload, bounded parser, acknowledgement gate and reboot. Android waits for backend presence before online.
+- PASS: Android JVM `119/857`, lint/assemble, and firmware development/production builds. Development firmware flashed on COM9 reports BLE ready, offline/no-WSS and two active microphones.
+- BLOCKED: App server connection and unavailable Windows Bluetooth (`0x800710DF`) prevent a full authenticated BLE HIL. G3 remains open; G4 pending.

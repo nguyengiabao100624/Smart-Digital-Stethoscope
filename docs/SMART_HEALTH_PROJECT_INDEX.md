@@ -1,6 +1,44 @@
 # Smart Health - Project Index
 
-Last updated: 2026-08-15
+## Current G3 provisioning pointer — ESPTouch V2 dual-band router flow
+
+- Android source of truth: `smart-health-android/app/src/main/java/com/example/smart_health_android/devices/DeviceWifiProvisioner.kt`; it selects the exact 2.4 GHz BSSID for the current combined-router SSID with Android `WifiNetworkSpecifier` and broadcasts ESPTouch V2 AES-128. It has no BLE, ESP SoftAP, local HTTP `192.168.4.1`, browser or Settings workflow.
+- Current proof: focused 37 Android tests, `:app:lintDebug`, `:app:assembleLocalDemoDebug`, merged-manifest inspection (no Bluetooth/nearby-device permission) and Xiaomi install passed. Installed APK SHA-256: `30002978605139CA73B8618479DE72CBF2DFBC32E8DF7A9228A83A8EB3696C5D`.
+- Open evidence only: secure on-device password entry/system confirmation, ESPTouch listener, association/DHCP, authenticated WSS, command ACK, audio-v2, durable scan, signed OTA and rollback. Do not close G3 or begin G4.
+
+## Latest ESPTouch V2 hardware checkpoint
+
+- COM9 normal firmware SHA-256 `623072C1A59C05312F318712A99E0570806DBCE1814A7E637236C0C89516B647` is flashed with esptool write verification; its OTA counterpart is `AFAA53C90A3B5F0C13AA8470500AE91FA6AC7ECCF042EF6ACD3EE763F3CFE806`. Boot serial confirms the KDF golden-vector self-test and ESPTouch V2 listener.
+- Xiaomi has LAN APK SHA-256 `CB018EE8815FD0222D8B261B9A34820AE878083298ED01FC471A27C981A4F62C` installed.
+- This is not end-to-end provisioning proof: keyguard blocks the protected Wi-Fi field, therefore Broadcast, association/DHCP and WSS remain open.
+
+## Current integration pointer - G3 ESPTouch V2 Broadcast
+
+- Customer provisioning source: backend `web-monitor/src/deviceSmartConfigSecurity.js`, Android `devices/DeviceWifiProvisioner.kt`, and firmware `MSM261S4030H0/src/main.cpp`.
+- Contract: DeviceManage setup-session emits V2 AES-128 key + reserved Device-ID binding; Android broadcasts it on the current 2.4 GHz Wi-Fi; firmware checks binding, association/DHCP, then WSS presence is final confirmation.
+- Current evidence is source/build only: backend device security `83/83`, Android main/test compile plus focused V2 unit test, and ESP32-S3 normal build. COM9 flash, Xiaomi APK and end-to-end HIL are still open; G3 is active and G4 is pending.
+
+## Current integration pointer - G3 SoftAP physical chain
+
+- Plan: [SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G0-G2 complete, G3 active, G4 pending.
+- Android source: `smart-health-android/app/src/main/java/com/example/smart_health_android/devices/DevicePairingViewModel.kt` and `ui/screens/DevicePairingScreen.kt`. The Wi-Fi form opens SSID/password directly; reading the current SSID is an explicit helper action so no system permission dialog overlays initial entry.
+- Fresh proof: Android unit `856/856`, lint `0` errors / `3` warnings, Xiaomi `PhysicalDeviceProvisioningHilTest` `OK (1 test)`, backend device-security `83/83`, setup security `3/3`, firmware source/normal/OTA builds. LAN APK `00BC681014D3A0CBB73DC6575B1621B9A64A75491359480447A5AF32231EFA3F` is installed.
+- Hardware: COM9 is ESP32-S3 rev 0.2 with 16 MB flash and 8 MB PSRAM. Current SoftAP firmware is flashed with verified writes. Next boundary is target password entered only in the on-device field, followed by physical association/WSS/ACK/audio-v2/durable-scan/OTA rollback evidence.
+
+Last updated: 2026-08-26
+
+## Current integration pointer — G3 physical claim proof
+
+- Plan: [SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G0–G2 complete, G3 active, G4 pending.
+- Latest physical gates: `smart-health-android/.../devices/PhysicalDeviceBleClaimHilTest.kt` (`1/1` canonical claim) and `CurrentWifiSsidHilTest.kt` (`1/1` current SSID); focused JVM pairing/BLE contract proof `38/38`.
+- Firmware identity: `smart-health-embedded/MSM261S4030H0/platformio.ini` uses the checked 16-MB OTA table; a COM9 read-only probe confirms the attached ESP32-S3 rev v0.2 has 16 MB flash. No upload was performed in the verification.
+- Next boundary: normal Android Nearby Bluetooth permission, then encrypted BLE provisioning and server/device evidence. Never place pairing artifact values or a Wi-Fi password in source, commands or handoff notes.
+
+## Current integration pointer — G3 QR gallery input
+
+- Plan: [SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md); G0–G2 complete, G3 active, G4 pending.
+- Android source: `smart-health-android/app/src/main/java/com/example/smart_health_android/devices/DeviceQrImageDecoder.kt`, `DevicePairingViewModel.kt`, and `ui/screens/DevicePairingScreen.kt`.
+- Resume proof and limits: `SMART_HEALTH_ACTIVE_CHECKPOINT.md`; fresh pairing JVM `33/33`, the current LAN APK hash is `897775F474DB1EC306DED901B9985FC6234860851279322C73944898A558D34F`, and the Xiaomi must be unlocked for physical picker verification. Do not use `setup-access.json` or any Wi-Fi password as a user workflow.
 
 This is the fastest navigation file for `D:\Study\KLTN`. Read it before opening broad folders or scanning the whole workspace.
 
@@ -487,3 +525,10 @@ C:\Users\baobe\.platformio\penv\Scripts\platformio.exe run
 - RC2 versions, hashes, gate verdicts and rollback: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md).
 - Demo operator checklist: [khoaluan/03-demo-and-evidence-checklist.md](khoaluan/03-demo-and-evidence-checklist.md).
 - Phase 0–7 are closed at source/build/local scope; Phase 8 is active. Local demo is ready, while live/provider/Android-runtime gates remain blocked and hardware HIL remains deferred.
+
+## 2026-08-25 latest restart index — G3 BLE-first pairing active
+
+- Governing plan: [Kế hoạch tích hợp Phase 0–7, bổ sung UI còn thiếu và phát hành Shcare](SHCARE_LEGACY_UI_FULL_FUNCTION_RELEASE_PLAN.md). Restart pointer: [SMART_HEALTH_ACTIVE_CHECKPOINT.md](SMART_HEALTH_ACTIVE_CHECKPOINT.md).
+- Phase map: G0–G2 complete; **G3 active**; G4 pending. This correction does not reopen completed work.
+- Source: Android `devices/DeviceBleProvisioningContract.kt`, `devices/DeviceBleProvisioner.kt`, `devices/DevicePairingViewModel.kt`, `ui/screens/DevicePairingScreen.kt`; firmware `MSM261S4030H0/src/main.cpp`.
+- Latest evidence: Android `119/857`, lint/assemble; firmware development/production build. COM9 reports BLE ready/offline and both microphones; App authenticated HIL and host BLE scan remain blocked. See active checkpoint before release claims.

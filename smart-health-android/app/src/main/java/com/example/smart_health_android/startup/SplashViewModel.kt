@@ -64,6 +64,7 @@ interface SplashBootstrapGateway {
     suspend fun existingSessionToken(): String?
     fun pinnedFirebaseOwner(): FirebaseOwnerBinding?
     fun sessionIsCurrent(): Boolean
+    fun hasNoCurrentFirebaseOwner(): Boolean
     suspend fun reloadCurrentUser(): Boolean
     suspend fun pendingAccountType(): String
     suspend fun authenticateCurrentUser(): AuthUser
@@ -101,6 +102,9 @@ class DefaultSplashBootstrapGateway(
             FirebaseAuthService.isCurrentOwner(owner)
         }
     }
+
+    override fun hasNoCurrentFirebaseOwner(): Boolean =
+        FirebaseAuthService.currentOwnerBindingOrNull() == null
 
     override suspend fun existingSessionToken(): String? {
         val owner = pinnedOwnerOrNull()
@@ -275,7 +279,10 @@ class SplashViewModel(
                     gateway.authenticateCurrentUser()
                 } catch (error: SmartHealthApiException) {
                     requirePinnedSession()
-                    if (error.twoFactorChallengeOrNull() == null) throw error
+                    val backendRejectedSession = error.statusCode in setOf(401, 403)
+                    if (error.twoFactorChallengeOrNull() == null && !backendRejectedSession) {
+                        throw error
+                    }
                     check(gateway.clearSession()) { STALE_SPLASH_SESSION_MESSAGE }
                     _effects.send(SplashUiEffect.NavigateToLogin)
                     return@launch
@@ -300,6 +307,10 @@ class SplashViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
+                if (!gateway.sessionIsCurrent() && gateway.hasNoCurrentFirebaseOwner()) {
+                    _effects.send(SplashUiEffect.NavigateToLogin)
+                    return@launch
+                }
                 _uiState.update {
                     SplashUiState(
                         loadState = SplashLoadState.Error,

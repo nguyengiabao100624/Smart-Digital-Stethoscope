@@ -140,7 +140,7 @@ bool parseIso8601UtcMillis(const std::string &value, std::int64_t &epochMs) {
 bool isSupportedCommand(const std::string &type) {
   static constexpr const char *kSupported[] = {
       "restart",      "wifi.status", "device.lock",
-      "device.revoke", "device.rotate_secret", "wifi.update", "ota.update",
+      "device.revoke", "device.rotate_secret", "wifi.setup.open", "wifi.update", "ota.update",
       "audio.session.start", "audio.session.stop",
   };
   return std::any_of(std::begin(kSupported), std::end(kSupported),
@@ -572,8 +572,14 @@ bool developmentUdpAllowed(bool productionProfile,
   return !productionProfile && developmentUdpEnabled;
 }
 
-bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture) {
-  return !hasWifiConfig || physicalGesture;
+bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture,
+                        bool trustedRecovery) {
+  return !hasWifiConfig || physicalGesture || trustedRecovery;
+}
+
+bool shouldOpenSetupPortalAfterReconnectFailures(std::uint32_t failureCount,
+                                                 std::uint32_t threshold) {
+  return threshold > 0 && failureCount >= threshold;
 }
 
 bool setupPortalExpired(std::uint32_t nowMs, std::uint32_t startedAtMs,
@@ -803,6 +809,11 @@ AuthAcceptedParseResult parseAuthAccepted(const std::string &json) {
   result.code = AuthAcceptedParseCode::Ok;
   result.stableCode = "OK";
   return result;
+}
+
+bool parseAuthAcceptedServerTimeEpochMillis(const AuthAcceptedMessage &accepted,
+                                            std::int64_t &epochMs) {
+  return parseIso8601UtcMillis(accepted.serverTime, epochMs);
 }
 
 bool authAcceptanceMatchesCredentialAttempt(
@@ -1524,6 +1535,7 @@ CommandJournal::CommandJournal(std::size_t capacity)
 bool CommandJournal::recordTerminal(const CommandJournalEntry &entry) {
   const bool supportedType = entry.type == "wifi.status" ||
                              entry.type == "restart" ||
+                             entry.type == "wifi.setup.open" ||
                              entry.type == "wifi.update" ||
                              entry.type == "ota.update";
   const bool validEffectFingerprint =

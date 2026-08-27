@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   DeviceOwnershipError,
+  applyDeviceOwnershipRelease,
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,
   classifyDeviceClaim,
@@ -119,6 +120,36 @@ test("ownership state machine accepts only canonical lifecycle transitions", () 
     (error) =>
       error instanceof DeviceOwnershipError &&
       error.code === "DEVICE_ASSIGNMENT_TRANSITION_REQUIRED",
+  );
+});
+
+test("account release clears authority without deleting device history identity", () => {
+  const released = applyDeviceOwnershipRelease(
+    {
+      id: "dev_release",
+      organizationId: "org_1",
+      ownershipState: "assigned",
+      ownerUserId: "user_1",
+      pairedUserId: "user_1",
+      assignedPatientId: "patient_1",
+      connected: true,
+      status: "connected",
+      historyMarker: "retained",
+    },
+    { at: "2026-07-18T00:04:00.000Z" },
+  );
+  assert.equal(released.id, "dev_release");
+  assert.equal(released.organizationId, "org_1");
+  assert.equal(released.ownershipState, "provisioned");
+  assert.equal(released.ownerUserId, null);
+  assert.equal(released.pairedUserId, null);
+  assert.equal(released.assignedPatientId, null);
+  assert.equal(released.connected, false);
+  assert.equal(released.status, "available");
+  assert.equal(released.historyMarker, "retained");
+  assert.throws(
+    () => applyDeviceOwnershipRelease(released),
+    (error) => error instanceof DeviceOwnershipError && error.code === "DEVICE_ALREADY_RELEASED",
   );
 });
 

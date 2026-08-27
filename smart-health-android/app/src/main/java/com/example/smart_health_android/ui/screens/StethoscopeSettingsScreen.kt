@@ -22,7 +22,7 @@ import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
@@ -108,8 +108,8 @@ fun StethoscopeSettingsScreen(
                 StethoscopeSettingsLoadState.Empty -> ShcareEmptyState(
                     title = stringResource(R.string.stethoscope_empty_title),
                     message =
-                        "Ghép thiết bị bằng QR hoặc mã thủ công. " +
-                            "Shcare chỉ báo kết nối sau khi thiết bị đăng nhập WSS thành công.",
+                        "Nhập Device ID của thiết bị đã được công ty gán cho tài khoản. " +
+                            "Kết nối Wi-Fi nằm trong phần cài đặt của từng thiết bị.",
                     actionLabel = stringResource(R.string.stethoscope_pair_device),
                     onAction = onNavigateToDevicePairing,
                     modifier = Modifier
@@ -254,12 +254,12 @@ private fun StethoscopeSettingsContent(
                         .defaultMinSize(minHeight = 48.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
+                        imageVector = Icons.Default.Add,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(spacing.small))
-                    Text("Ghép thiết bị mới")
+                    Text("Thêm thiết bị")
                 }
                 OutlinedButton(
                     onClick = onNavigateToDeviceManagement,

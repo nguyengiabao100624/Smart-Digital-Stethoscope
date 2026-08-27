@@ -261,6 +261,27 @@ class SplashViewModelTest {
         }
 
     @Test
+    fun `restored session rejected by backend returns to clean login instead of offline error`() =
+        runTest(dispatcher) {
+            val gateway = FakeSplashBootstrapGateway(
+                authenticateFailure = SmartHealthApiException(
+                    statusCode = 401,
+                    code = "AUTH_TOKEN_INVALID",
+                    message = "invalid token",
+                ),
+            )
+            val viewModel = SplashViewModel(gateway)
+            val effect = async { viewModel.effects.first() }
+
+            advanceUntilIdle()
+
+            assertEquals(SplashUiEffect.NavigateToLogin, effect.await())
+            assertEquals(1, gateway.authenticateCalls)
+            assertEquals(1, gateway.clearSessionCalls)
+            assertEquals(SplashLoadState.Checking, viewModel.uiState.value.loadState)
+        }
+
+    @Test
     fun `push registration failure cannot block authenticated navigation`() = runTest(dispatcher) {
         val authenticatedUser = AuthUser(
             id = "doctor",
@@ -341,6 +362,22 @@ class SplashViewModelTest {
                 assertEquals(SplashLoadState.Error, viewModel.uiState.value.loadState)
                 assertEquals(0, gateway.clearSessionCalls)
             }
+        }
+
+    @Test
+    fun `Firebase sign-out during bootstrap returns to login instead of showing a network error`() =
+        runTest(dispatcher) {
+            val gateway = FakeSplashBootstrapGateway(signOutAfterReload = true)
+            val viewModel = SplashViewModel(gateway)
+            val effect = async { viewModel.effects.first() }
+
+            advanceUntilIdle()
+
+            assertEquals(SplashUiEffect.NavigateToLogin, effect.await())
+            assertEquals(SplashLoadState.Checking, viewModel.uiState.value.loadState)
+            assertEquals(1, gateway.reloadCalls)
+            assertEquals(0, gateway.authenticateCalls)
+            assertEquals(0, gateway.clearSessionCalls)
         }
 
     @Test
@@ -463,6 +500,7 @@ private class FakeSplashBootstrapGateway(
     private val ownerAfterHealth: FirebaseOwnerBinding? = null,
     private val ownerAfterSessionToken: FirebaseOwnerBinding? = null,
     private val ownerAfterReload: FirebaseOwnerBinding? = null,
+    private val signOutAfterReload: Boolean = false,
     private val ownerAfterPendingAccountType: FirebaseOwnerBinding? = null,
     private val ownerAfterAuthenticate: FirebaseOwnerBinding? = null,
     private val ownerAfterPush: FirebaseOwnerBinding? = null,
@@ -511,8 +549,11 @@ private class FakeSplashBootstrapGateway(
     override fun sessionIsCurrent(): Boolean =
         hasPinnedOwner && currentOwner == pinnedOwner
 
+    override fun hasNoCurrentFirebaseOwner(): Boolean = currentOwner == null
+
     override suspend fun reloadCurrentUser(): Boolean {
         reloadCalls += 1
+        if (signOutAfterReload) currentOwner = null
         ownerAfterReload?.let { currentOwner = it }
         return verifiedEmail
     }

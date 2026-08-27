@@ -840,6 +840,17 @@ async function expectStatus(label, session, pathname, status, options = {}) {
   return result.body;
 }
 
+async function readPersistedDbJson(dbPath, retries = 10) {
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return JSON.parse(fs.readFileSync(dbPath, "utf8"));
+    } catch (error) {
+      if (attempt === retries - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+    }
+  }
+}
+
 function assertPatientMutationReceipt(
   receipt,
   { userId, workspaceId, patientId, intent, replayed },
@@ -7034,7 +7045,7 @@ async function runScenario() {
     "/api/v1/exports/download/export_unknown_after_create",
     404,
   );
-  const persistedExports = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const persistedExports = await readPersistedDbJson(path.join(dataDir, "db.json"));
   assert.equal(
     persistedExports.auditLogs.filter(
       (entry) => entry.action === "export.create" && entry.resourceId === workspaceExport.export.id,

@@ -14423,6 +14423,8 @@ async function handleAuthApi(req, res, segments) {
         ? payload.password
         : "";
     const demoPasswordAllowed =
+      Boolean(user) &&
+      !user.password &&
       (AUTH_MODE !== "production" || ALLOW_DEMO_AUTH) &&
       (password === "Shcare-Demo-2026!" || password === "12345678");
     if (!user || (!verifyPasswordSecret(password, user.password) && !demoPasswordAllowed)) {

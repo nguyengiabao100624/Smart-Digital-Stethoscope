@@ -33,6 +33,18 @@ test("production container uses the migration-aware canonical start command", ()
     /if \(migration\.status !== 0\)[\s\S]*process\.exit\(migration\.status \|\| 1\)/,
     "a failed migration must terminate startup",
   );
+  assert.doesNotMatch(
+    startScript,
+    /seedProductionIfEmpty|seed-database\.json|migrateJsonToPostgres/,
+    "production startup must never import demo fixtures into the live database",
+  );
+
+  const serverSource = fs.readFileSync(path.join(projectRoot, "server.js"), "utf8");
+  assert.doesNotMatch(
+    serverSource,
+    /sync-seed-database/,
+    "the production API must not expose a route that imports demo fixtures",
+  );
 });
 
 test("integrated demo keeps Firebase Auth and physical-device HIL local and explicit", () => {

@@ -15100,32 +15100,6 @@ async function handleAdminApi(req, res, url, segments) {
     return;
   }
 
-  if (segments[2] === "sync-seed-database" && method === "POST") {
-    requireAdminRole(adminUser);
-    const seedFile = path.join(__dirname, "db", "seeds", "seed-database.json");
-    if (repositories?.devices?.getPool && repositories.devices.getPool()) {
-      const { spawnSync } = require("node:child_process");
-      const seedProc = spawnSync(process.execPath, [path.join(__dirname, "scripts", "migrateJsonToPostgres.js")], {
-        stdio: "pipe",
-        env: {
-          ...process.env,
-          DB_FILE: seedFile,
-        },
-      });
-      const output = seedProc.stdout?.toString() || "";
-      const errorOutput = seedProc.stderr?.toString() || "";
-      sendJson(res, 200, {
-        ok: seedProc.status === 0,
-        status: seedProc.status,
-        message: seedProc.status === 0 ? "Đã đồng bộ toàn bộ dữ liệu mẫu vào PostgreSQL thành công" : "Lỗi khi đồng bộ dữ liệu mẫu",
-        details: output || errorOutput,
-      });
-      return;
-    }
-    sendJson(res, 200, { ok: true, message: "Hệ thống đang chạy trên JsonDataStore cục bộ" });
-    return;
-  }
-
   if (segments[2] === "overview-stats" && method === "GET") {
     requireAnyCapability(adminUser, DASHBOARD_VIEW_CAPABILITIES, "Không có quyền xem tổng quan workspace");
     const workspaceId = getUserWorkspaceContext(adminUser).currentWorkspaceId || "";

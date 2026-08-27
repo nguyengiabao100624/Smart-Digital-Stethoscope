@@ -448,6 +448,7 @@ async function exerciseAdminMutations(page, state) {
   const clinicId = `org_${runKey}`;
   const clinicResult = await apiFetch(page, "/admin/clinics", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:workspace:create` },
     body: {
       id: clinicId,
       name: `Admin smoke workspace ${runId}`,
@@ -460,15 +461,19 @@ async function exerciseAdminMutations(page, state) {
     },
   });
   state.clinicId = clinicResult.payload?.clinic?.id || clinicId;
+  state.clinicVersion = Number(clinicResult.payload?.clinic?.version || 1);
 
   const clinicPatch = await apiFetch(page, `/admin/clinics/${encodeURIComponent(state.clinicId)}`, {
     method: "PATCH",
+    headers: { "Idempotency-Key": `${runId}:workspace:update` },
     body: {
       name: `Admin smoke workspace ${runId} updated`,
       website: `https://${runKey}-updated.smarthealth.test`,
       subscriptionStatus: "active",
+      expectedVersion: state.clinicVersion,
     },
   });
+  state.clinicVersion = Number(clinicPatch.payload?.clinic?.version || state.clinicVersion + 1);
 
   const adminEmail = `${runKey}-workspace-admin@smarthealth.test`;
   const adminCreate = await apiFetch(page, "/admin/admin-users", {
@@ -934,10 +939,41 @@ async function cleanup(page, state, cleanupResults) {
   }
 
   if (state.clinicId) {
-    await apiFetch(page, `/admin/clinics/${encodeURIComponent(state.clinicId)}`, {
-      method: "DELETE",
-      allowFailure: true,
-    })
+    await (async () => {
+      const inventory = await apiFetch(page, "/admin/clinics?limit=100", {
+        allowFailure: true,
+      });
+      const current = inventory.payload?.clinics?.find((item) => item.id === state.clinicId);
+      let expectedVersion = Number(current?.version || state.clinicVersion || 1);
+      if (current && current.status !== "inactive") {
+        const transition = await apiFetch(
+          page,
+          `/admin/clinics/${encodeURIComponent(state.clinicId)}`,
+          {
+            method: "PATCH",
+            headers: { "Idempotency-Key": `${runId}:workspace:inactivate` },
+            body: {
+              status: "inactive",
+              reason: "Automated production smoke cleanup",
+              expectedVersion,
+            },
+            allowFailure: true,
+          },
+        );
+        if (!transition.ok) return transition;
+        expectedVersion = Number(
+          transition.payload?.workspace?.version ||
+            transition.payload?.clinic?.version ||
+            expectedVersion + 1,
+        );
+      }
+      return apiFetch(page, `/admin/clinics/${encodeURIComponent(state.clinicId)}`, {
+        method: "DELETE",
+        headers: { "Idempotency-Key": `${runId}:workspace:archive` },
+        body: { expectedVersion },
+        allowFailure: true,
+      });
+    })()
       .then((result) => {
         cleanupResults.push({
           target: "workspace",

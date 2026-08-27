@@ -10,11 +10,6 @@ if (process.env.DATABASE_URL) {
     process.exit(migration.status || 1);
   }
 
-  // Seed default data if database has no users/devices
-  spawnSync(process.execPath, [path.join(__dirname, "seedProductionIfEmpty.js")], {
-    stdio: "inherit",
-    env: process.env,
-  });
 }
 
 require("../server");

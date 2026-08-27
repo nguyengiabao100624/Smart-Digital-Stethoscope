@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-27
 
+## 2026-08-27 Antigravity Full Transfer & Synchronization Checkpoint
+
+- Toàn bộ 254 kỹ năng và tri thức vận hành của Codex đã nạp toàn cục tại `~/.gemini/config/skills.json` và `~/.gemini/config/GEMINI.md`.
+- Hợp nhất thành công toàn bộ 92 file RC2 (+7.403 dòng) vào nhánh `main` (commit `b458d864`).
+- Cài đặt thành công thư viện `tomli` trên môi trường Python 3.10.
+- Kết quả kiểm định 100% PASS: `@shcare/contracts` 51/51; backend `check`, `test`, `smoke:device-security` 84/84, release & identity 15/15, workspace/role/import/storage smokes; Android unit tests 27/27 tasks; Android APK Local Demo (`82CB443CBBCA881ACCFD50AEE358CE771BA50985CB9C755046307484A1294B97`) biên dịch và cài đặt thành công lên Xiaomi qua ADB; Web Portal và Admin client+SSR build thành công; Firmware ESP32-S3 sản xuất và OTA biên dịch thành công.
+- COM9 thu nhận trực tiếp 409 dòng serial telemetry I2S dual-mic thực tế; bộ hồ sơ minh chứng KLTN được đóng gói tại `docs/report-evidence/2026-08-27/`. Ranh giới G3/G4 được tuân thủ nghiêm ngặt.
+
 ## 2026-08-27 G3 hardware re-probe — board visible and production image reflashed
 
 - Restored missing workspace dependencies with lockfile installs for backend and Web Admin. Backend full local gate, Web Admin contracts/typecheck/lint/build, Shcare Web contracts/auth/lint/build, Android unit/compile and firmware builds pass.

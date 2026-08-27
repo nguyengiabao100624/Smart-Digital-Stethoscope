@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-27
 
+## 2026-08-27 Antigravity Full Transfer & Synchronization Checkpoint
+
+- Nạp thành công 254 kỹ năng toàn cục và quy tắc kỷ luật Codex vào Antigravity (`~/.gemini/config/`).
+- Hợp nhất hoàn chỉnh 92 file (+7.403 dòng) từ nhánh Codex vào nhánh `main` (commit `b458d864`).
+- Cài đặt `tomli` trên Python 3.10 giải quyết dứt điểm rào cản môi trường công cụ bảo mật.
+- Kiểm định 100% PASS: `@shcare/contracts` 51/51; backend `check`, `test`, `smoke:device-security` 84/84, release & identity 15/15, workspace/role/import/storage smokes; Android unit tests 27/27 tasks; Android APK Local Demo (`82CB443CBBCA881ACCFD50AEE358CE771BA50985CB9C755046307484A1294B97`) cài đặt thành công lên Xiaomi qua ADB; Web Portal và Admin client+SSR build thành công; Firmware ESP32-S3 sản xuất và OTA biên dịch thành công.
+- Thu thập 409 dòng serial telemetry I2S dual-mic thực tế trên COM9; thành lập thư mục minh chứng KLTN tại `docs/report-evidence/2026-08-27/`. Ranh giới G3 (người dùng nhập mật khẩu Wi-Fi trên ứng dụng) và G4 (cấu hình biến môi trường và chạy migration trên Render/Supabase) được duy trì đúng quy định.
+
 ## 2026-08-27 G3 re-probe checkpoint
 
 - Reinstalled backend/Admin dependencies from lockfiles and reran the local release gates successfully. Android unit/compile and ESP32-S3 production build are green.

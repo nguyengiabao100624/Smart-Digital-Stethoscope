@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-27
 
+## 2026-08-27 Antigravity Full Transfer & Synchronization Checkpoint
+
+- Nạp thành công 254 kỹ năng Codex toàn cục và xác lập 6 quy tắc vận hành khắt khe (Superpowers, TDD, Anti-Fake-Completion, UI/UX Pool, Security, Continual Memory).
+- Hợp nhất hoàn chỉnh 92 files từ worktree Codex sang nhánh `main` (commit `b458d864`).
+- Cài đặt dependency `tomli` trên Python 3.10 giải tỏa rào cản môi trường công cụ bảo mật.
+- Xác nhận kiểm thử 100% PASS: `@shcare/contracts` 51/51; backend `check`, `test`, `smoke:device-security` 84/84, release/identity 15/15, workspace/role/import/storage smokes; Android unit tests 27/27 tasks; Android APK Local Demo (`82CB443CBBCA881ACCFD50AEE358CE771BA50985CB9C755046307484A1294B97`) cài đặt thành công lên Xiaomi qua ADB; Web Portal và Admin client+SSR build thành công; Firmware ESP32-S3 sản xuất và OTA biên dịch thành công.
+- Ghi nhận 409 dòng serial telemetry I2S dual-mic thực tế trên COM9; tạo lập bộ hồ sơ minh chứng KLTN tại `docs/report-evidence/2026-08-27/`.
+
 ## 2026-08-27 Dependency recovery and G3 hardware re-probe
 
 - Reinstalled backend and Web Admin dependencies from their lockfiles after a clean checkout lacked `node_modules`; backend `check`, smoke suite, Web/Admin contracts, typechecks, lint/build, Android unit/compile, and ESP32-S3 production build pass.

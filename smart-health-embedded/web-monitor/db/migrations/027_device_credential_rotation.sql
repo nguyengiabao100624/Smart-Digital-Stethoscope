@@ -12,5 +12,5 @@ ALTER TABLE devices
   CHECK (jsonb_typeof(credential_rotation) = 'object');
 
 CREATE INDEX IF NOT EXISTS devices_pending_credential_rotation_idx
-  ON devices ((credential_rotation->>'state'), ((credential_rotation->>'expiresAt')::timestamptz))
+  ON devices ((credential_rotation->>'state'), (credential_rotation->>'expiresAt'))
   WHERE credential_rotation->>'state' IN ('initiated', 'pending_device_ack', 'confirming');

@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Camera,
@@ -435,7 +435,8 @@ export function AccountSettings() {
     setProfile((current) => ({ ...current, ...patch }));
   };
 
-  const applyUserProfile = (user: SmartHealthAuthUser) => {
+  const applyUserProfile = (user?: SmartHealthAuthUser | null) => {
+    if (!user) return;
     setProfile((current) => ({
       ...profileFromUser(user),
       notificationPreferences: current.notificationPreferences,
@@ -541,8 +542,13 @@ export function AccountSettings() {
     setAvatarUploading(true);
     setObjectAvatarPreview(file);
     try {
-      const { user } = await smartHealthApi.uploadMyAvatar(file);
-      applyUserProfile(user);
+      const res = await smartHealthApi.uploadMyAvatar(file);
+      if (res && typeof res === "object" && "user" in res && res.user) {
+        applyUserProfile(res.user as SmartHealthAuthUser);
+      } else {
+        const { user } = await smartHealthApi.me();
+        applyUserProfile(user);
+      }
       toast.success("Đã cập nhật ảnh đại diện.");
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể tải ảnh đại diện."));
@@ -560,13 +566,18 @@ export function AccountSettings() {
         "Ảnh đại diện sẽ được gỡ khỏi hồ sơ tài khoản và file avatar hiện tại sẽ bị xóa khỏi storage nếu còn tồn tại.",
       confirmLabel: "Gỡ ảnh",
       run: async () => {
-        const { user } = await smartHealthApi.deleteMyAvatar();
+        const res = await smartHealthApi.deleteMyAvatar();
         if (avatarObjectUrlRef.current) {
           URL.revokeObjectURL(avatarObjectUrlRef.current);
           avatarObjectUrlRef.current = "";
         }
         setAvatarPreview("");
-        applyUserProfile(user);
+        if (res && typeof res === "object" && "user" in res && res.user) {
+          applyUserProfile(res.user as SmartHealthAuthUser);
+        } else {
+          const { user } = await smartHealthApi.me();
+          applyUserProfile(user);
+        }
         toast.success("Đã gỡ ảnh đại diện.");
       },
     });

@@ -18136,6 +18136,17 @@ async function handleMeApi(req, res, segments) {
       },
     });
     if (receipt.replayed) res.setHeader("Idempotency-Replayed", "true");
+    if (!canonicalRequest) {
+      const refreshedUser =
+        (await refreshAuthenticatedAuthorization(user)) ||
+        (await repositories?.users?.findById?.(user.id)) ||
+        db.users.find((u) => u.id === user.id);
+      sendJson(res, receipt.replayed ? 200 : 201, {
+        ...receipt,
+        user: publicUser(refreshedUser || user),
+      });
+      return;
+    }
     sendJson(res, receipt.replayed ? 200 : 201, receipt);
     return;
   }
@@ -18228,6 +18239,17 @@ async function handleMeApi(req, res, segments) {
       },
     });
     if (receipt.replayed) res.setHeader("Idempotency-Replayed", "true");
+    if (!canonicalRequest) {
+      const refreshedUser =
+        (await refreshAuthenticatedAuthorization(user)) ||
+        (await repositories?.users?.findById?.(user.id)) ||
+        db.users.find((u) => u.id === user.id);
+      sendJson(res, 200, {
+        ...receipt,
+        user: publicUser(refreshedUser || user),
+      });
+      return;
+    }
     sendJson(res, 200, receipt);
     return;
   }

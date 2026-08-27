@@ -363,11 +363,11 @@ LANGUAGE plpgsql
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  current_user users%ROWTYPE;
+  target_user users%ROWTYPE;
   current_identity_patient patients%ROWTYPE;
 BEGIN
   SELECT *
-  INTO current_user
+  INTO target_user
   FROM users
   WHERE id = NEW.id;
 
@@ -375,20 +375,20 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  IF current_user.patient_id IS NOT NULL THEN
+  IF target_user.patient_id IS NOT NULL THEN
     SELECT *
     INTO current_identity_patient
     FROM patients
-    WHERE id = current_user.patient_id
+    WHERE id = target_user.patient_id
     FOR KEY SHARE;
 
     IF NOT FOUND THEN
       RAISE EXCEPTION USING ERRCODE = '23503', MESSAGE = 'user patient identity does not exist';
     END IF;
     IF current_identity_patient.deleted_at IS NOT NULL
-      OR current_identity_patient.account_user_id IS DISTINCT FROM current_user.id
-      OR current_identity_patient.owner_user_id IS DISTINCT FROM current_user.id
-      OR NOT (current_identity_patient.organization_id IS NOT DISTINCT FROM current_user.organization_id)
+      OR current_identity_patient.account_user_id IS DISTINCT FROM target_user.id
+      OR current_identity_patient.owner_user_id IS DISTINCT FROM target_user.id
+      OR NOT (current_identity_patient.organization_id IS NOT DISTINCT FROM target_user.organization_id)
     THEN
       RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'user patient inverse identity is invalid';
     END IF;
@@ -397,8 +397,8 @@ BEGIN
   PERFORM 1
   FROM patients patient
   WHERE patient.deleted_at IS NULL
-    AND patient.account_user_id = current_user.id
-    AND current_user.patient_id IS DISTINCT FROM patient.id
+    AND patient.account_user_id = target_user.id
+    AND target_user.patient_id IS DISTINCT FROM patient.id
   LIMIT 1
   FOR KEY SHARE;
 
@@ -411,9 +411,9 @@ BEGIN
   PERFORM 1
   FROM patients patient
   WHERE patient.deleted_at IS NULL
-    AND (patient.account_user_id = current_user.id OR patient.owner_user_id = current_user.id)
+    AND (patient.account_user_id = target_user.id OR patient.owner_user_id = target_user.id)
     AND (
-      NOT (current_user.organization_id IS NOT DISTINCT FROM patient.organization_id)
+      NOT (target_user.organization_id IS NOT DISTINCT FROM patient.organization_id)
     )
   LIMIT 1
   FOR KEY SHARE;

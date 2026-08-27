@@ -42,6 +42,8 @@ async function main() {
         console.log(`applied ${file}`);
       } catch (err) {
         await client.query("ROLLBACK");
+        console.error(`\n[MIGRATION ERROR] Failed on file: ${file}`);
+        console.error(err.stack || err.message);
         throw err;
       }
     }

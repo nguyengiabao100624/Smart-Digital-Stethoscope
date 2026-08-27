@@ -7,6 +7,7 @@ Last updated: 2026-08-28
 - Deployed the current `main` frontend bundles to Firebase Hosting: Portal `shcare` version `688821e5060a0204`, Admin `shcare-admin` version `f11f18346406ba05`. Public deployment smoke and filtered browser accessibility checks pass.
 - Render is serving backend commit `1c80697eac2b`; `/api/v1/health/data-summary` is Postgres/production with `users=12`, `patients=1`, `devices=0`, `scans=0`, `organizations=32`. No demo device is being fabricated in the UI.
 - Verification completed: backend syntax/smoke/device security `84/84`; API production scan/audio smoke PASS after replacing a retired hard-coded fixture; Web auth `390/390`, Web contracts `139/139`; Admin contracts `192`, lint, and device-route browser smoke; Android Gradle test/lint/local-demo assemble; ESP32-S3 production/OTA builds.
+- The resulting Android debug artifact (`82CB443CBBCA881ACCFD50AEE358CE771BA50985CB9C755046307484A1294B97`) was installed on the attached Xiaomi through ADB.
 - Remaining release gates: authenticated production role/mutation smoke, live migration/provider/secret evidence, complete cross-browser matrix (unfiltered sweeps timed out on this host), and physical production firmware/OTA promotion. G4 remains PENDING/BLOCKED until those gates have evidence.
 
 ## 2026-08-27 Gate G3 Physical Hardware HIL Pass Checkpoint

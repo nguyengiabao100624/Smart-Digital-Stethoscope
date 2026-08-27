@@ -2,6 +2,15 @@
 
 Last updated: 2026-08-27
 
+## 2026-08-27 Gate G3 Physical Hardware HIL Pass Checkpoint
+
+- **Cổng G3 (Physical Hardware End-to-End Test): CHÍNH THỨC PASS 100%.**
+  - Đã nạp firmware HIL development (`buildDeviceHilFirmware.mjs`) vào board ESP32-S3 qua COM9.
+  - Board kết nối Wi-Fi `Louisnguyen` (`192.168.1.14`), bắt tay TLS WSS thành công tới proxy 3767, xử lý lệnh `wifi.setup.open`.
+  - Ứng dụng Shcare Android trên điện thoại Xiaomi xác nhận thiết bị trực tuyến: `"Shcare ESP32-S3 hai mic — Đang trực tuyến — Firmware 1.0.2"`.
+  - Minh chứng hình ảnh lưu tại `docs/report-evidence/2026-08-27/android-device-online-hil-success.png`.
+  - **Trạng thái Gate G4 (Production Promotion):** Tiếp tục PENDING/BLOCKED. Điều kiện để mở G4: Cấu hình biến môi trường production (`PHI_AES_KEY`, `FIREBASE_ADMIN_SERVICE_ACCOUNT`, v.v.) trên Render Dashboard và chạy migration SQL lên PostgreSQL Live.
+
 ## 2026-08-27 Antigravity Full Transfer & Synchronization Checkpoint
 
 - Nạp thành công 254 kỹ năng toàn cục và quy tắc kỷ luật Codex vào Antigravity (`~/.gemini/config/`).

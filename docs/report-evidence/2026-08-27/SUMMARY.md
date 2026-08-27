@@ -80,10 +80,41 @@ Trích đoạn log từ `firmware-serial-telemetry-com9.log`:
 
 ---
 
-## 4. Tuyên Bố Giới Hạn & Ranh Giới Bắt Buộc (Thesis Limitations)
+## 4. Nghiệm Thu Phần Cứng Vật Lý Thực Tế (Gate G3 HIL Pass)
+
+- **Thời gian nghiệm thu:** 27/08/2026 20:20 (Giờ địa phương).
+- **Thiết bị điện thoại:** Xiaomi (kết nối ADB TLS qua mạng LAN, đã cài bản release `1.0.0-rc.2`).
+- **Board nhúng:** ESP32-S3 DevKitM-1 (cổng COM9 CH343, nạp firmware `1.0.2` bản HIL development).
+- **Mạng Wi-Fi:** `Louisnguyen` (2.4GHz), IP board nhận: `192.168.1.14`.
+- **Kết nối Cloud:** WSS kết nối bảo mật qua TLS proxy cổng 3767 (`server-ca.crt`).
+- **Minh chứng ảnh màn hình điện thoại:** `docs/report-evidence/2026-08-27/android-device-online-hil-success.png`
+  - Ứng dụng Shcare Android hiển thị thẻ thiết bị: **"Shcare ESP32-S3 hai mic — Đang trực tuyến — Firmware 1.0.2"**.
+- **Trạng thái thiết bị trả về từ API backend (`GET /api/v1/devices/shcare-g3-hil`):**
+  ```json
+  {
+    "id": "shcare-g3-hil",
+    "organizationId": "org_default_clinic",
+    "ownerUserId": "usr_patient_default",
+    "name": "Shcare ESP32-S3 hai mic",
+    "status": "connected",
+    "online": true,
+    "connected": true,
+    "wifiSsid": "Louisnguyen",
+    "ipAddress": "192.168.1.14",
+    "connectionMethod": "WSS",
+    "firmwareVersion": "1.0.2",
+    "audioStatus": "ready"
+  }
+  ```
+- **Kết luận:** **Cổng G3 (Physical Hardware End-to-End Test) CHÍNH THỨC PASS 100% VỚI PHẦN CỨNG THẬT.**
+
+---
+
+## 5. Tuyên Bố Giới Hạn & Ranh Giới Bắt Buộc (Thesis Limitations)
 
 Theo đúng quy định chống báo cáo khống:
 1. **Thiết bị hỗ trợ theo dõi, không phải thiết bị y tế đã được chứng nhận (Not FDA/CE-certified medical device).**
 2. **AI Signal Quality / Chatbot là công cụ hỗ trợ thông tin lâm sàng tham khảo, không tự ý đưa ra kết luận chẩn đoán độc lập.**
 3. **Mật khẩu Wi-Fi của người dùng chỉ được nhập trực tiếp trên màn hình bảo mật của ứng dụng Shcare, không bao giờ được ghi vào mã nguồn, log hay công cụ terminal.**
-4. **Cổng G4 (Production Promotion) vẫn ở trạng thái PENDING cho đến khi thao tác nhập Wi-Fi trên điện thoại Xiaomi được thực hiện và các biến môi trường Production được gắn trên Render.**
+4. **Cổng G4 (Production Promotion) vẫn ở trạng thái PENDING/BLOCKED cho đến khi các biến môi trường Production được cấu hình trên Render dashboard và migration SQL chạy trên PostgreSQL Live.**
+

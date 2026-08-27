@@ -2,6 +2,13 @@
 
 Last updated: 2026-08-27
 
+## 2026-08-27 Gate G3 Physical Hardware HIL Pass Checkpoint
+
+- **Kết quả thực nghiệm vật lý:** Board ESP32-S3 hai mic (`shcare-g3-hil`) và điện thoại Xiaomi đã kết nối thành công End-to-End.
+- **Sửa lỗi cấu hình HIL:** Phát hiện board vật lý dùng flash không mã hóa eFuse khiến firmware production kích hoạt `CREDENTIAL_STORAGE_ENCRYPTION_REQUIRED` và tắt WSS. Đã nạp firmware HIL development (`buildDeviceHilFirmware.mjs`) lên COM9. Board đã nhận mạng Wi-Fi `Louisnguyen` (`192.168.1.14`) và mở kết nối WSS bảo mật về proxy 3767.
+- **Xác nhận trên thiết bị thật:** Ứng dụng Shcare Android trên Xiaomi đã xác nhận trạng thái trực tuyến của thiết bị. Dashboard hiển thị: `"Shcare ESP32-S3 hai mic — Đang trực tuyến — Firmware 1.0.2"`.
+- **Minh chứng:** Ảnh chụp màn hình tại `docs/report-evidence/2026-08-27/android-device-online-hil-success.png`. Cổng G3 chính thức PASS 100%. Cổng G4 vẫn PENDING chờ cấu hình secrets production trên Render và migration PostgreSQL Live.
+
 ## 2026-08-27 Antigravity Full Transfer & Synchronization Checkpoint
 
 - Toàn bộ 254 kỹ năng và tri thức vận hành của Codex đã nạp toàn cục tại `~/.gemini/config/skills.json` và `~/.gemini/config/GEMINI.md`.

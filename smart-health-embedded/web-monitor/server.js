@@ -1243,24 +1243,26 @@ function ensureAppDefaults() {
     const updatedAt = nowIso();
     db.devices.push(
       {
-        id: "esp32-stethoscope",
-        name: "StethoEdge Pro",
+        id: "shcare-g3-hil",
+        name: "Shcare ESP32-S3 hai mic",
         type: "stethoscope",
-        status: "connected",
+        status: "claimed",
         signal: -45,
         battery: 85,
         connected: true,
+        organizationId: "org_default_clinic",
         lastSeenAt: updatedAt,
         updatedAt,
       },
       {
-        id: "lite-steth-a92",
-        name: "LiteSteth-A92",
+        id: "dev_workspace_demo_001",
+        name: "Ống nghe Demo Workspace",
         type: "stethoscope",
         status: "available",
-        signal: -68,
-        battery: 72,
+        signal: -52,
+        battery: 92,
         connected: false,
+        organizationId: "org_workspace_demo_hospital",
         lastSeenAt: updatedAt,
         updatedAt,
       }
@@ -15095,6 +15097,32 @@ async function handleAdminApi(req, res, url, segments) {
 
   if (segments[2] === "staff-invitations") {
     await handleAdminStaffInvitationApi(req, res, url, segments, adminUser);
+    return;
+  }
+
+  if (segments[2] === "sync-seed-database" && method === "POST") {
+    requireAdminRole(adminUser);
+    const seedFile = path.join(__dirname, "db", "seeds", "seed-database.json");
+    if (repositories?.devices?.getPool && repositories.devices.getPool()) {
+      const { spawnSync } = require("node:child_process");
+      const seedProc = spawnSync(process.execPath, [path.join(__dirname, "scripts", "migrateJsonToPostgres.js")], {
+        stdio: "pipe",
+        env: {
+          ...process.env,
+          DB_FILE: seedFile,
+        },
+      });
+      const output = seedProc.stdout?.toString() || "";
+      const errorOutput = seedProc.stderr?.toString() || "";
+      sendJson(res, 200, {
+        ok: seedProc.status === 0,
+        status: seedProc.status,
+        message: seedProc.status === 0 ? "Đã đồng bộ toàn bộ dữ liệu mẫu vào PostgreSQL thành công" : "Lỗi khi đồng bộ dữ liệu mẫu",
+        details: output || errorOutput,
+      });
+      return;
+    }
+    sendJson(res, 200, { ok: true, message: "Hệ thống đang chạy trên JsonDataStore cục bộ" });
     return;
   }
 

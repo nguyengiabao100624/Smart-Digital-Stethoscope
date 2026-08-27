@@ -1,8 +1,37 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-07-23
+Last updated: 2026-08-27
+
+## 2026-08-27 G3 hardware re-probe — board visible and production image reflashed
+
+- Restored missing workspace dependencies with lockfile installs for backend and Web Admin. Backend full local gate, Web Admin contracts/typecheck/lint/build, Shcare Web contracts/auth/lint/build, Android unit/compile and firmware builds pass.
+- Host now detects Xiaomi over ADB and the ESP32-S3 on `COM9`. Production firmware `esp32-s3-devkitm-1` was reflashed successfully; esptool verified the image hash on-device. Serial telemetry shows active waveform/envelope/RMS/peak metrics from the firmware.
+- Native firmware tests remain `BLOCKED` because this Windows host has no `gcc/g++`. Android physical provisioning remains open because the phone is locked and MIUI blocks shell input injection; no Wi-Fi password was sent through ADB or logs. G4 remains pending until G3 association/WSS/ACK/audio/scan/OTA rollback evidence is captured.
+
+## 2026-08-26 authoritative Android ESPTouch V2 update — supersedes earlier SoftAP notes
+
+- The canonical provisioning flow is `Device ID -> backend-authorized setup session -> ESPTouch V2 AES-128 broadcast -> ESP32-S3 joins the target router -> authenticated WSS presence -> Online`. BLE, ESP setup AP, local HTTP `192.168.4.1`, browser/IP entry, and a manual Wi-Fi Settings handoff are not part of the Android production path.
+- A real Xiaomi scan confirmed that the active router publishes the same SSID on both 5 GHz and a separate 2.4 GHz BSSID (2442 MHz). `AndroidDeviceWifiProvisioner` now selects the strongest exact 2.4 GHz BSSID for that same SSID with `WifiNetworkSpecifier`, binds the process only during the ESPTouch broadcast, then releases the network request. The user does not select an ESP network.
+- The merged APK manifest has no Bluetooth or nearby-device permission. The app requests only coarse/fine location at the point it needs SSID/BSSID scan data; Android may show its one-time system consent dialog. It must not send the user to Settings unless Android reports a permanent denial.
+- Proof completed: focused Android unit/source-contract tests (37 tests), `:app:lintDebug`, `:app:assembleLocalDemoDebug`, and Xiaomi APK install all passed. Installed APK SHA-256: `30002978605139CA73B8618479DE72CBF2DFBC32E8DF7A9228A83A8EB3696C5D`.
+- HIL remains open: the real target password must be entered only in the secure foreground app field and the user may need to approve Android's normal network confirmation. Association/DHCP, authenticated WSS, command ACK, audio-v2, durable scan, signed OTA and rollback are not yet claimed as passed. G3 remains active; G4 must not start.
 
 This is the first file a new Codex chat should read before working on Smart Health. Its purpose is to reduce quota/token usage by summarizing the project state, decisions, paths, tools, and next work so the assistant does not re-scan the entire codebase from scratch.
+
+## 2026-08-26 Device Wi-Fi flow clarification and HIL constraint
+
+- Android provisioning is the native path `App -> ESP Wi-Fi -> HTTP 192.168.4.1 -> target Wi-Fi -> online confirmation`; it does not use BLE, a browser, or a user-entered IP address. The app makes the local HTTP calls itself.
+- User-facing Android copy now calls the flow “Kết nối với ESP”, “Mở API nội bộ”, “Gửi Wi-Fi”, “Chờ ESP vào Wi-Fi”, and “Xác nhận ESP trực tuyến”. It no longer exposes confusing “Wi-Fi tạm thời”, SoftAP, or WSS terminology.
+- Android `:app:compileDebugKotlin :app:testDebugUnitTest` passed after the copy change. XML parsing and a string sweep passed.
+- The attempted full physical HIL is not a product failure: wireless ADB is disconnected when Android changes the Wi-Fi radio to the ESP, so Gradle reports `device not found`. A full app-driven provisioning HIL needs a stable USB ADB transport (or equivalent independent device telemetry); it must remain `BLOCKED` until that evidence exists. At the last probe neither the Xiaomi ADB device nor ESP COM9 was visible to the host.
+
+## 2026-08-26 G3 update â€” supersedes the preceding same-date HIL note
+
+- Device ID is a backend authorization/ownership proof, not a radio link to an offline ESP. The canonical route stays `App -> secured ESP AP -> local HTTP -> target Wi-Fi -> authenticated WSS`; no BLE, browser or user-entered IP is part of the Android flow.
+- Backend setup-session now sends signed `wifi.setup.open` only to the authenticated target device, with an empty payload. Firmware journals the command before opening its secured setup AP, and opens the same recovery AP after three saved-network reconnect failures. Wi-Fi credentials never enter the backend command or WSS payload.
+- Android waits for AP startup, then requests the system-owned Wi-Fi connection and calls the ESP API itself. Its trace has no BLE, browser, IP or temporary-network wording; Android may still show the mandatory network-consent dialog.
+- Evidence: backend `smoke:device-security` passed `83/83`; the ESP32-S3 production image built and flashed to real `COM9` with SHA-256 `4B4822D2C88C99100556281DCA45E12FAB9212EC428ACC84D84A02DBB250EE51`; serial proves two active I2S slots and Windows scan sees `Shcare-9789739A9DB9`. Android unit tests, local-LAN APK build/install and Xiaomi Compose HIL through Device Management -> Kết nối Wi-Fi -> secure password boundary passed.
+- Xiaomi is visible over wireless ADB, but MIUI rejects shell input injection. The target Wi-Fi password remains input only in the foreground App field; ESP association, authenticated WSS, ACK, audio-v2, durable scan and OTA rollback are still `BLOCKED`. Do not start G4 or claim physical end-to-end PASS.
 
 ## Mandatory Context Maintenance Rule
 

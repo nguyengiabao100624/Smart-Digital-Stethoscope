@@ -1,10 +1,62 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-07-23
+Last updated: 2026-08-27
+
+## 2026-08-27 G3 hardware re-probe commands
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
+& 'C:\Users\baobe\.platformio\penv\Scripts\platformio.exe' device list
+& 'C:\Users\baobe\.platformio\penv\Scripts\platformio.exe' run -e esp32-s3-devkitm-1 --target upload --upload-port COM9
+```
+
+The 2026-08-27 run detected Xiaomi ADB and `COM9`, reflashed successfully, and verified the firmware image. To collect non-secret serial telemetry without leaving a monitor process holding the port:
+
+```powershell
+$port=[System.IO.Ports.SerialPort]::new('COM9',115200,'None',8,'One'); $port.ReadTimeout=500; $port.Open(); $end=(Get-Date).AddSeconds(8); while((Get-Date)-lt $end){try{$line=$port.ReadLine(); if($line){$line}}catch{}}; $port.Close()
+```
+
+Do not pass a real Wi-Fi password through shell, ADB, source, environment variables, or logs. Unlock the phone and enter it only in the foreground App field before attempting the Android provisioning HIL.
 
 This file contains the commands future new chats should use instead of rediscovering how to run the project. Update it whenever commands, ports, env vars, scripts, or verification steps change. Keeping this file current reduces quota/token usage in new chats because the assistant can read this guide instead of scanning package files and scripts first.
 
 All commands are for Windows PowerShell unless noted.
+
+## Android ESPTouch V2 regression and local Xiaomi install
+
+Use the SDK environment explicitly when working from a copied worktree that lacks `local.properties`:
+
+```powershell
+$env:JAVA_HOME = 'C:\Users\baobe\.gradle\jdks\jetbrains_s_r_o_-21-amd64-windows.2'
+$env:ANDROID_HOME = 'C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+cd <smart-health-android>
+.\gradlew.bat :app:testDebugUnitTest --tests=com.example.smart_health_android.devices.DevicePairingViewModelTest --tests=com.example.smart_health_android.devices.DevicePairingCanonicalSourceTest :app:lintDebug :app:assembleLocalDemoDebug --no-daemon --console=plain
+```
+
+Install the local-demo APK without passing any Wi-Fi credential:
+
+```powershell
+$adb = "$env:ANDROID_HOME\platform-tools\adb.exe"
+& $adb install --no-streaming -r .\app\build\outputs\apk\debug\app-debug.apk
+& $adb reverse tcp:3765 tcp:3765
+& $adb reverse tcp:9099 tcp:9099
+```
+
+The app sends ESPTouch V2 AES-128 broadcast on the router's 2.4 GHz BSSID. If the phone is attached to the 5 GHz branch of a combined SSID, Android requests the same router's exact 2.4 GHz BSSID only for the broadcast window; it never joins an ESP SoftAP, opens `192.168.4.1`, invokes BLE, or opens Wi-Fi Settings. Do not pass a real Wi-Fi password through ADB, Gradle arguments, source, environment variables, or logs. A physical end-to-end test still needs the password entered in the secure app field and Android's normal network confirmation if shown; collect serial/backend telemetry afterwards and record unavailable hardware as `BLOCKED`.
+
+## Android direct ESP Wi-Fi regression
+
+Use the SDK environment explicitly when working from a copied worktree that lacks `local.properties`:
+
+```powershell
+$env:ANDROID_HOME = 'C:\Users\baobe\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+cd <smart-health-android>
+.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon --console=plain
+```
+
+The app uses `WifiNetworkSpecifier` to reach ESP `192.168.4.1` and sends the local HTTP setup calls itself. Do not pass a real Wi-Fi password through ADB, Gradle arguments, source, environment variables, or logs. A physical end-to-end test cannot use wireless ADB as its only transport: joining the ESP can disconnect that transport and produces a false `device not found` test failure. Use stable USB ADB or separate serial/backend telemetry, and record unavailable hardware as `BLOCKED`.
 
 Project navigation entrypoint:
 
@@ -1804,18 +1856,17 @@ Firmware flash and monitor after the ESP32-S3 board appears as a real COM port:
 ```powershell
 cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
 & "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" device list
-& "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" run --target upload --upload-port COM6
-& "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" device monitor --port COM6 --baud 115200
+& "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" run -e esp32-s3-devkitm-1 --target upload --upload-port COM9
+& "C:\Users\baobe\.platformio\penv\Scripts\platformio.exe" device monitor --port COM9 --baud 115200
 ```
 
-Firmware setup portal behavior:
+Firmware setup transport (Android is canonical):
 
-- If WiFi config is missing or WiFi cannot connect, the board starts AP `SmartHealth-<suffix>`.
-- On a phone or laptop, open WiFi settings and connect to that AP.
-- The recovery AP is open/no password in this KLTN slice because it only accepts WiFi SSID/password; it does not expose backend host, device secret, owner, OTA, restart, or admin settings.
-- Many phones show a captive portal automatically. If not, open a browser manually and type exactly `http://192.168.4.1` (use `http`, not `https`).
-- Enter only WiFi SSID/password. Save restarts the board and stores WiFi config in ESP32 NVS namespace `smart-health`.
-- Backend host, device id, device secret, firmware version, ownership, and OTA are managed through build/provisioning plus the main Web Admin/backend cloud flow.
+- Device ID proves backend authorization/ownership; it does not create a direct radio route to an offline ESP.
+- The app opens an authorized setup session. For an online device, backend sends signed `wifi.setup.open`; firmware opens the secured `Shcare-<suffix>` AP. Missing Wi-Fi configuration and three bounded reconnect failures also open that recovery AP.
+- Android asks the OS to connect to the AP, calls `192.168.4.1` itself, sends only SSID/password to the ESP, then waits for authenticated online confirmation. The user never types an IP, setup SSID, PoP or browser URL, and BLE is not used.
+- The Wi-Fi password is entered only in the foreground secure App field. Never put it in ADB, shell, source, environment variables, logs, documentation or test arguments.
+- The local endpoint is an internal device API transport, not a user-facing browser workflow. Backend host, device ID/secret, ownership, firmware version and OTA remain cloud/provisioning-managed.
 
 Firmware cloud operation after the first wired flash:
 

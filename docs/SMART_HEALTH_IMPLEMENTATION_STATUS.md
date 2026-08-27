@@ -1,8 +1,49 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-07-23
+Last updated: 2026-08-27
+
+## 2026-08-27 Dependency recovery and G3 hardware re-probe
+
+- Reinstalled backend and Web Admin dependencies from their lockfiles after a clean checkout lacked `node_modules`; backend `check`, smoke suite, Web/Admin contracts, typechecks, lint/build, Android unit/compile, and ESP32-S3 production build pass.
+- Xiaomi ADB and ESP32-S3 `COM9` are currently visible. The production image was reflashed to `COM9` with esptool hash verification; serial output confirms live waveform/envelope/RMS/peak telemetry.
+- Native PlatformIO tests are still blocked by missing host `gcc/g++`. The Android HIL boundary remains secure foreground password entry on the unlocked phone; association/DHCP, WSS, ACK, audio-v2, durable scan, signed OTA and rollback are not yet proven. G4 is not started.
+
+## 2026-08-26 ESPTouch V2 dual-band router handover — implemented; physical confirmation remains open
+
+### Implemented
+
+- Android uses ESPTouch V2 AES-128 broadcast, not BLE or ESP SoftAP/local HTTP provisioning. A phone attached to 5 GHz is no longer rejected when its router presents the same SSID on 2.4 GHz: the app requests the exact 2.4 GHz BSSID of that router through Android `WifiNetworkSpecifier`, binds only the short broadcast window, and returns the process to its previous network afterwards.
+- The router selection is SSID- and BSSID-bound, uses no user-visible ESP SSID/IP, and never logs the Wi-Fi password, provisioning key, token, or credential payload. The trace names the 2.4 GHz router selection rather than device discovery or temporary ESP Wi-Fi.
+- The merged manifest was checked after the change: it contains no Bluetooth or nearby-device permission. Coarse/fine location are requested only when needed to obtain current Wi-Fi and scan data. Focused unit/source-contract tests (37), Android lint, and local-demo debug assemble passed; APK `30002978605139CA73B8618479DE72CBF2DFBC32E8DF7A9228A83A8EB3696C5D` was installed on Xiaomi.
+
+### Remaining limit
+
+- The phone was locked at the post-install cold-start visual check, so it was not bypassed. The secure password entry and any Android system network confirmation remain an intentional on-device boundary. ESPTouch delivery, ESP association/DHCP, WSS presence, ACK, audio-v2, durable scan, signed OTA and rollback remain `BLOCKED`, not passed or failed, pending that boundary and physical telemetry.
 
 This file records the real project state. Keep it factual: implemented, partial, scaffold, or not done. Update this file after every meaningful Smart Health code/config change so future new chats can avoid re-reading the whole codebase and reduce quota/token usage.
+
+## 2026-08-26 Android ESP Wi-Fi flow — implemented; physical HIL still blocked
+
+### Implemented
+
+- The device Wi-Fi screen describes the actual app-controlled route: connect to ESP, call its local API, send Wi-Fi, wait for the ESP to reconnect, then confirm online. It does not route users to Bluetooth, a browser, or an IP-entry screen.
+- The visible live trace has five clear, accessible steps and preserves password redaction. Only the Android system consent dialog may ask the user to allow the app to connect to the ESP.
+- Android XML validation plus `:app:compileDebugKotlin :app:testDebugUnitTest` passed on 2026-08-26.
+
+### Remaining limit
+
+- A full physical provisioning run over wireless ADB is invalid evidence because the test transport disconnects as the phone joins the ESP. The current result is `BLOCKED`, not an ESP/app failure and not a PASS. Repeat only when the phone has stable USB debugging or independent hardware telemetry is available; last host probe saw neither the phone ADB transport nor COM9.
+
+## 2026-08-26 G3 update â€” source/device handoff complete; final HIL remains open
+
+### Implemented
+
+- An online device setup session emits signed `wifi.setup.open` with an empty payload. Firmware validates and journals it before opening the secured AP; a bounded three-failure reconnect recovery opens the same AP when saved Wi-Fi is unavailable. Credentials stay on the ESP local HTTP channel.
+- Android `:app:testDebugUnitTest`, local-LAN debug assemble/install, and physical Xiaomi `PhysicalDeviceProvisioningHilTest` through the secure password boundary passed. Backend `smoke:device-security` passed `83/83`; the ESP32-S3 production image built and flashed to COM9 with image hash `4B4822D2C88C99100556281DCA45E12FAB9212EC428ACC84D84A02DBB250EE51`.
+
+### Remaining limit
+
+- The live ESP AP and two microphone slots are visible on COM9, and Xiaomi is visible over wireless ADB. MIUI blocks shell input injection, while the target Wi-Fi password is deliberately never supplied through ADB, source, logs, shell or test arguments. The association/WSS/ACK/audio-v2/durable-scan/OTA-rollback chain is `BLOCKED`, not failed and not PASS, until the password is supplied through the phone's secure App field and post-provision telemetry is collected.
 
 ## Status Legend
 

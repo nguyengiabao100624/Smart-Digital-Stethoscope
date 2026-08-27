@@ -1,8 +1,32 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-07-23
+Last updated: 2026-08-27
+
+## 2026-08-27 G3 re-probe checkpoint
+
+- Reinstalled backend/Admin dependencies from lockfiles and reran the local release gates successfully. Android unit/compile and ESP32-S3 production build are green.
+- Reconnected the physical targets: Xiaomi is visible over ADB and ESP32-S3 is on `COM9`; the production firmware was reflashed and esptool verified the image. Serial telemetry is active.
+- Next action is an unlocked-phone HIL pass with the Wi-Fi password entered only in the secure App field, followed by independent serial/backend collection for association/DHCP, WSS presence, command ACK, dual-mic audio-v2, durable scan, signed OTA and forced rollback. Keep G4 pending until every item has evidence.
+
+## Active G3 ESPTouch V2 physical-evidence gap — 2026-08-26
+
+- The Android direction is now fixed: ESPTouch V2 AES-128 broadcast, with automatic exact-2.4-GHz BSSID handover when a combined router keeps the phone on 5 GHz. Earlier SoftAP/local-HTTP references are historical and must not be restored to Android's primary flow.
+- Source, focused contract/unit tests, lint, local-demo assembly, merged-manifest permission inspection and Xiaomi install are complete. The installed local-demo APK SHA-256 is `30002978605139CA73B8618479DE72CBF2DFBC32E8DF7A9228A83A8EB3696C5D`.
+- Complete HIL only after the real password is entered in Shcare's secure foreground field and Android's standard network confirmation is approved if shown. Capture ESPTouch listener, association/DHCP, authenticated WSS presence, command ACK, dual-mic audio-v2, durable scan, signed OTA and forced rollback with serial/backend evidence. Do not mark G3 complete from the source/build/install evidence; G4 remains pending.
 
 This backlog is ordered to reduce rework. Keep it updated after implementation so future new chats can start from this plan without re-reading the whole codebase and wasting quota/token.
+
+## Active G3 device-provisioning evidence gap — 2026-08-26
+
+- Android UI/source proof for the direct ESP local-HTTP Wi-Fi flow passed, but G3 must not close yet.
+- Re-run the physical flow using stable USB ADB or independent ESP/backend telemetry. Wireless ADB drops when Android joins the ESP and creates a false Gradle `device not found` failure; do not treat that as an app failure or as physical success.
+- Before the rerun, the host must again detect both the Xiaomi transport and ESP serial port COM9. Keep WSS, command ACK, dual-mic audio, durable scan, signed OTA and rollback as separate required evidence.
+
+## 2026-08-26 G3 update â€” current authoritative device-provisioning state
+
+- Source, backend security smoke, Xiaomi Compose route proof, ESP32-S3 production build and verified real-COM9 flash are complete. The physical ESP currently broadcasts `Shcare-9789739A9DB9`; serial proves both I2S slots have active windows.
+- The remaining physical boundary is intentionally secure: the target Wi-Fi password must be entered only in the foreground Shcare App. MIUI denies ADB input injection, and the password must never enter shell, source, logs, environment variables or test arguments.
+- After that boundary, automatically collect ESP association, authenticated WSS, `wifi.setup.open` command ACK, two-mic audio-v2, durable scan, signed OTA and forced-failure rollback. Do not treat wireless-ADB loss during a network change as a product failure or success. G3 remains open and G4 remains pending.
 
 ## Production Direction Already Chosen
 

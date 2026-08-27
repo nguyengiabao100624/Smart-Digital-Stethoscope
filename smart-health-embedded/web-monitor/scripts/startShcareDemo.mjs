@@ -119,30 +119,35 @@ function prepareIntegratedDeviceFixture() {
     hilOtaPrivateKey = fs.readFileSync(hilOtaPrivateKeyPath, "utf8").trim();
   }
   const now = new Date().toISOString();
-  const database = {
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-    devices: [
-      {
-        // The local, Firebase-backed Android demo starts after the company has
-        // already assigned this fixture to the demo account.  This exercises
-        // the same ID-only boundary as production: entering an ID opens setup
-        // only for a device the current user is already authorized to manage.
-        ...createFactoryEnrolledDeviceFixture({
-        deviceId,
-        organizationId: "org_default_clinic",
-        factoryCredential: deviceMaterial,
-        name: "Shcare ESP32-S3 hai mic",
-        createdAt: now,
-        }),
-        status: "claimed",
-        ownershipState: "claimed",
-        ownerUserId: "usr_patient_default",
-        pairedUserId: "usr_patient_default",
-      },
-    ],
+  const candidateDbFiles = [
+    path.join(backendRoot, "data", "db.json"),
+    path.join(backendRoot, "db", "seeds", "seed-database.json"),
+  ];
+  const baseDbFile = candidateDbFiles.find((f) => fs.existsSync(f));
+  const database = baseDbFile
+    ? JSON.parse(fs.readFileSync(baseDbFile, "utf8"))
+    : { version: 1, createdAt: now, updatedAt: now, devices: [] };
+
+  database.devices = database.devices || [];
+  const hilDeviceIndex = database.devices.findIndex((d) => d.id === deviceId);
+  const hilDeviceFixture = {
+    ...createFactoryEnrolledDeviceFixture({
+      deviceId,
+      organizationId: "org_default_clinic",
+      factoryCredential: deviceMaterial,
+      name: "Shcare ESP32-S3 hai mic",
+      createdAt: now,
+    }),
+    status: "claimed",
+    ownershipState: "claimed",
+    ownerUserId: "usr_patient_default",
+    pairedUserId: "usr_patient_default",
   };
+  if (hilDeviceIndex >= 0) {
+    database.devices[hilDeviceIndex] = { ...database.devices[hilDeviceIndex], ...hilDeviceFixture };
+  } else {
+    database.devices.unshift(hilDeviceFixture);
+  }
   fs.writeFileSync(path.join(dataDir, "db.json"), JSON.stringify(database, null, 2));
 }
 
@@ -392,7 +397,7 @@ async function registerDemoAdmin() {
         ...credentials,
       }),
     });
-    if (response.status !== 201) {
+    if (response.status !== 201 && response.status !== 409) {
       const body = await response.text();
       throw new Error(`Unable to create isolated demo admin ${index + 1}: HTTP ${response.status} ${body}`);
     }

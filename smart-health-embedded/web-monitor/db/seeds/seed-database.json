@@ -1,0 +1,3479 @@
+{
+  "version": 1,
+  "createdAt": "2026-05-22T14:10:54.919Z",
+  "updatedAt": "2026-06-21T15:14:17.464Z",
+  "patients": [
+    {
+      "id": "pat_workspace_demo_001",
+      "createdAt": "2026-06-06T00:18:29.300Z",
+      "patientCode": "WS-DEMO-001",
+      "name": "Bệnh nhân Demo Workspace",
+      "age": 45,
+      "gender": "Nam",
+      "phone": "0900000001",
+      "organizationId": "org_workspace_demo_hospital",
+      "ownerUserId": "usr_20260606001642_77209e89",
+      "updatedAt": "2026-06-06T00:40:09.899Z",
+      "primaryDoctorId": "usr_workspace_demo_doctor",
+      "doctorName": "Bác sĩ Demo Workspace",
+      "profileType": "dependent",
+      "relationship": "dependent"
+    },
+    {
+      "id": "pat_20260523212049_de96fc0d",
+      "patientCode": "SELF-202605232120",
+      "name": "Bao",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "baobee1006@gmail.com",
+      "address": "",
+      "notes": "Patient profile created for app account",
+      "organizationId": "org_default_clinic",
+      "ownerUserId": "",
+      "createdAt": "2026-05-23T21:20:49.050Z",
+      "updatedAt": "2026-07-23T06:11:18.383Z"
+    },
+    {
+      "id": "pat_20260523210428_eb7affd2",
+      "patientCode": "SELF-202605232104",
+      "name": "1232132131",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "baobee100624@gmail.com",
+      "address": "",
+      "notes": "Patient profile created for app account",
+      "organizationId": "vn_hospital_quan_y_175",
+      "ownerUserId": "usr_20260526062020_05a18dfc",
+      "createdAt": "2026-05-23T21:04:28.685Z",
+      "updatedAt": "2026-07-23T06:11:18.383Z",
+      "accountUserId": "usr_20260526062020_05a18dfc",
+      "profileType": "self",
+      "relationship": "self"
+    },
+    {
+      "id": "pat_20260523145431_12eeff0d",
+      "patientCode": "SELF-patient_defa",
+      "name": "Nguyễn Văn A",
+      "age": null,
+      "gender": "",
+      "phone": "0900000000",
+      "email": "nguyenvana@gmail.com",
+      "address": "Hồ Chí Minh",
+      "notes": "Patient profile created for app account",
+      "organizationId": "org_default_clinic",
+      "ownerUserId": "usr_patient_default",
+      "createdAt": "2026-05-23T14:54:31.064Z",
+      "updatedAt": "2026-05-23T14:54:31.064Z",
+      "accountUserId": "usr_patient_default",
+      "profileType": "self",
+      "relationship": "self"
+    },
+    {
+      "id": "pat_20260523145431_1b1bad06",
+      "patientCode": "SELF-202605221655",
+      "name": "Nguyen Gia Bao",
+      "age": null,
+      "gender": "",
+      "phone": "0986002210",
+      "email": "nguyengiabao100624@gmail.com",
+      "address": "",
+      "notes": "Patient profile created for app account",
+      "organizationId": "org_default_clinic",
+      "ownerUserId": "usr_20260522165505_5287c725",
+      "createdAt": "2026-05-23T14:54:31.064Z",
+      "updatedAt": "2026-05-23T14:54:31.064Z",
+      "accountUserId": "usr_20260522165505_5287c725",
+      "profileType": "self",
+      "relationship": "self"
+    },
+    {
+      "id": "pat_20260523073410_a57d23c1",
+      "patientCode": "PAT-20260523",
+      "name": "Bệnh nhân vãng lai",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-23T07:34:10.297Z",
+      "updatedAt": "2026-05-23T07:34:10.297Z",
+      "organizationId": "org_default_clinic"
+    },
+    {
+      "id": "pat_20260523060732_d51b1702",
+      "patientCode": "PAT-20260523",
+      "name": "Bệnh nhân vãng lai",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-23T06:07:32.834Z",
+      "updatedAt": "2026-05-23T06:07:32.834Z",
+      "organizationId": "org_default_clinic"
+    },
+    {
+      "id": "pat_20260522154555_bd0709c7",
+      "patientCode": "PAT-20260522",
+      "name": "Bệnh nhân vãng lai",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-22T15:45:55.496Z",
+      "updatedAt": "2026-05-22T15:45:55.496Z",
+      "organizationId": "org_default_clinic"
+    },
+    {
+      "id": "pat_20260522153345_e6cb8c61",
+      "patientCode": "PAT-20260522",
+      "name": "Bệnh nhân vãng lai",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-22T15:33:45.878Z",
+      "updatedAt": "2026-05-22T15:43:32.103Z",
+      "organizationId": "org_default_clinic"
+    },
+    {
+      "id": "pat_20260522153100_94ca4000",
+      "patientCode": "PAT-20260522",
+      "name": "Bệnh nhân vãng lai",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-22T15:31:00.259Z",
+      "updatedAt": "2026-05-22T15:43:32.113Z",
+      "organizationId": "org_default_clinic"
+    },
+    {
+      "id": "pat_20260522153042_8648dcab",
+      "patientCode": "PAT-20260522",
+      "name": "Nguyen Gia Bao",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-22T15:30:42.423Z",
+      "updatedAt": "2026-05-22T15:30:42.423Z",
+      "organizationId": "org_default_clinic"
+    },
+    {
+      "id": "pat_20260522145035_73681726",
+      "patientCode": "PAT-20260522",
+      "name": "Bệnh nhân vãng lai",
+      "age": null,
+      "gender": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "notes": "",
+      "createdAt": "2026-05-22T14:50:35.725Z",
+      "updatedAt": "2026-05-22T15:43:32.113Z",
+      "organizationId": "org_default_clinic"
+    }
+  ],
+  "scans": [
+    {
+      "id": "scan_20260523073410_23fd3e42",
+      "patientId": "pat_20260523073410_a57d23c1",
+      "patient": {
+        "id": "pat_20260523073410_a57d23c1",
+        "patientCode": "PAT-20260523",
+        "name": "Bệnh nhân vãng lai",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-23T07:34:10.298Z",
+      "endedAt": "2026-05-23T07:34:23.452Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 0,
+      "durationSeconds": 0,
+      "peak": 0,
+      "rms": 0,
+      "levelPercent": 0,
+      "bpm": 0,
+      "aiLabel": "too_short",
+      "aiConfidence": 0.4,
+      "aiSummary": "Thời lượng ghi dưới 1 giây. Hãy ghi lâu hơn trước khi xem xét kết quả.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260523073410_23fd3e42/audio",
+      "wavFile": "scan_20260523073410_23fd3e42.wav",
+      "createdAt": "2026-05-23T07:34:10.298Z",
+      "updatedAt": "2026-05-23T07:34:23.452Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    },
+    {
+      "id": "scan_20260523060732_95424268",
+      "patientId": "pat_20260523060732_d51b1702",
+      "patient": {
+        "id": "pat_20260523060732_d51b1702",
+        "patientCode": "PAT-20260523",
+        "name": "Bệnh nhân vãng lai",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-23T06:07:32.834Z",
+      "endedAt": "2026-05-23T07:33:18.987Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 31694976,
+      "durationSeconds": 1980.936,
+      "peak": 17116,
+      "rms": 996,
+      "levelPercent": 5,
+      "bpm": 54,
+      "aiLabel": "captured",
+      "aiConfidence": 0.65,
+      "aiSummary": "Âm thanh đã được ghi và lưu. Hệ thống hiện chỉ kiểm tra chất lượng tín hiệu; phần chẩn đoán lâm sàng có thể bổ sung sau.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260523060732_95424268/audio",
+      "wavFile": "scan_20260523060732_95424268.wav",
+      "createdAt": "2026-05-23T06:07:32.834Z",
+      "updatedAt": "2026-05-23T07:33:18.987Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    },
+    {
+      "id": "scan_20260522154555_514d17a5",
+      "patientId": "pat_20260522154555_bd0709c7",
+      "patient": {
+        "id": "pat_20260522154555_bd0709c7",
+        "patientCode": "PAT-20260522",
+        "name": "Bệnh nhân vãng lai",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-22T15:45:55.498Z",
+      "endedAt": "2026-05-22T15:45:57.366Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 29952,
+      "durationSeconds": 1.872,
+      "peak": 2752,
+      "rms": 738,
+      "levelPercent": 4,
+      "bpm": 0,
+      "aiLabel": "captured",
+      "aiConfidence": 0.65,
+      "aiSummary": "Âm thanh đã được ghi và lưu. Hệ thống hiện chỉ kiểm tra chất lượng tín hiệu; phần chẩn đoán lâm sàng có thể bổ sung sau.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260522154555_514d17a5/audio",
+      "wavFile": "scan_20260522154555_514d17a5.wav",
+      "createdAt": "2026-05-22T15:45:55.498Z",
+      "updatedAt": "2026-05-22T15:45:57.366Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    },
+    {
+      "id": "scan_20260522153345_ab3bf240",
+      "patientId": "pat_20260522153345_e6cb8c61",
+      "patient": {
+        "id": "pat_20260522153345_e6cb8c61",
+        "patientCode": "PAT-20260522",
+        "name": "Bệnh nhân vãng lai",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-22T15:33:45.879Z",
+      "endedAt": "2026-05-22T15:33:52.930Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 112768,
+      "durationSeconds": 7.048,
+      "peak": 6307,
+      "rms": 425,
+      "levelPercent": 2,
+      "bpm": 111,
+      "aiLabel": "captured",
+      "aiConfidence": 0.65,
+      "aiSummary": "Âm thanh đã được ghi và lưu. Hệ thống hiện chỉ kiểm tra chất lượng tín hiệu; phần chẩn đoán lâm sàng có thể bổ sung sau.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260522153345_ab3bf240/audio",
+      "wavFile": "scan_20260522153345_ab3bf240.wav",
+      "createdAt": "2026-05-22T15:33:45.879Z",
+      "updatedAt": "2026-05-22T15:43:32.113Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    },
+    {
+      "id": "scan_20260522153100_6a4cbc1e",
+      "patientId": "pat_20260522153100_94ca4000",
+      "patient": {
+        "id": "pat_20260522153100_94ca4000",
+        "patientCode": "PAT-20260522",
+        "name": "Bệnh nhân vãng lai",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-22T15:31:00.260Z",
+      "endedAt": "2026-05-22T15:31:07.744Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 119680,
+      "durationSeconds": 7.48,
+      "peak": 106,
+      "rms": 18,
+      "levelPercent": 0,
+      "bpm": 0,
+      "aiLabel": "low_signal",
+      "aiConfidence": 0.7,
+      "aiSummary": "Mức tín hiệu rất thấp. Kiểm tra tiếp xúc cảm biến và đo lại nếu dạng sóng gần như phẳng.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260522153100_6a4cbc1e/audio",
+      "wavFile": "scan_20260522153100_6a4cbc1e.wav",
+      "createdAt": "2026-05-22T15:31:00.260Z",
+      "updatedAt": "2026-05-22T15:43:32.113Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    },
+    {
+      "id": "scan_20260522153042_7f27afa6",
+      "patientId": "pat_20260522153042_8648dcab",
+      "patient": {
+        "id": "pat_20260522153042_8648dcab",
+        "patientCode": "PAT-20260522",
+        "name": "Nguyen Gia Bao",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "10/06/2004",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-22T15:30:42.424Z",
+      "endedAt": "2026-05-22T15:30:57.995Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 249088,
+      "durationSeconds": 15.568,
+      "peak": 190,
+      "rms": 19,
+      "levelPercent": 0,
+      "bpm": 0,
+      "aiLabel": "low_signal",
+      "aiConfidence": 0.7,
+      "aiSummary": "Mức tín hiệu rất thấp. Kiểm tra tiếp xúc cảm biến và đo lại nếu dạng sóng gần như phẳng.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260522153042_7f27afa6/audio",
+      "wavFile": "scan_20260522153042_7f27afa6.wav",
+      "createdAt": "2026-05-22T15:30:42.424Z",
+      "updatedAt": "2026-05-22T15:43:32.113Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    },
+    {
+      "id": "scan_20260522145035_c041d7ac",
+      "patientId": "pat_20260522145035_73681726",
+      "patient": {
+        "id": "pat_20260522145035_73681726",
+        "patientCode": "PAT-20260522",
+        "name": "Bệnh nhân vãng lai",
+        "age": null,
+        "gender": ""
+      },
+      "status": "completed",
+      "mode": "heart",
+      "bodySite": "",
+      "deviceId": "android-app",
+      "startedAt": "2026-05-22T14:50:35.736Z",
+      "endedAt": "2026-05-22T15:11:08.438Z",
+      "sampleRate": 16000,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "sampleCount": 19710848,
+      "durationSeconds": 1231.928,
+      "peak": 10243,
+      "rms": 181,
+      "levelPercent": 1,
+      "bpm": 82,
+      "aiLabel": "captured",
+      "aiConfidence": 0.65,
+      "aiSummary": "Âm thanh đã được ghi và lưu. Hệ thống hiện chỉ kiểm tra chất lượng tín hiệu; phần chẩn đoán lâm sàng có thể bổ sung sau.",
+      "doctorNotes": "",
+      "audioUrl": "/api/scans/scan_20260522145035_c041d7ac/audio",
+      "wavFile": "scan_20260522145035_c041d7ac.wav",
+      "createdAt": "2026-05-22T14:50:35.736Z",
+      "updatedAt": "2026-05-22T15:43:32.113Z",
+      "organizationId": "org_default_clinic",
+      "createdByUserId": "usr_doctor_default"
+    }
+  ],
+  "users": [
+    {
+      "id": "usr_workspace_demo_doctor",
+      "createdAt": "2026-06-06T00:18:29.300Z",
+      "role": "doctor",
+      "requestedRole": "doctor",
+      "roleRequestStatus": "approved",
+      "accountStatus": "active",
+      "name": "Bác sĩ Demo Workspace",
+      "email": "doctor.demo.workspace@smarthealth.test",
+      "organizationId": "org_workspace_demo_hospital",
+      "hospital": "Bệnh viện Demo Workspace",
+      "updatedAt": "2026-06-06T00:18:29.300Z",
+      "roleInfoRequiredFields": [],
+      "passwordHash": "scrypt$v1$16384$8$1$QcGJtueomcAq0vp8zDDX0g$Vt_D9IQyxFuiYgczhSgXj2SiyVaWcowZGVlOSUZjPMA-l79H3pddkIY7qKbBSY3zr_1nGMQulE2wHF2ZNVd0og$8sOK_lii35BR-7boU1m0eliStHFDNKaE_URLeHOyhHM",
+      "roleApprovedAt": "2026-08-27T17:27:02.478Z"
+    },
+    {
+      "id": "usr_20260606001642_77209e89",
+      "role": "workspace_owner",
+      "name": "Admin Bệnh viện Demo",
+      "email": "workspace.admin.demo@smarthealth.test",
+      "phone": "",
+      "firebaseUid": "h0P76NqevFVAauupkf9glaTvR3j1",
+      "organizationId": "org_workspace_demo_hospital",
+      "verifiedEmail": true,
+      "verifiedPhone": false,
+      "createdAt": "2026-06-06T00:16:42.988Z",
+      "updatedAt": "2026-06-06T08:44:44.241Z",
+      "accountStatus": "active",
+      "title": "Admin bệnh viện",
+      "hospital": "Bệnh viện Demo Workspace",
+      "roleInfoRequiredFields": [],
+      "notificationPreferences": {
+        "doctorRequests": true,
+        "abnormalResults": true,
+        "deviceOffline": true,
+        "newLogin": true
+      },
+      "avatarFileId": "",
+      "avatarUrl": "",
+      "passwordHash": "scrypt$v1$16384$8$1$JrlX5qoedCCBjGOHiM_aJA$AblMugnKQr-1s1DlbrcgwAUkViXfWzmuiivbrmPY7He5eph2g6AdKC7UXV7l5cB3siRkCZCLtANennh30NAoiQ$m4veSZ0eRmOa07yIqT1fptYM1-OflpIHoj0M0X0nomY",
+      "roleRequestStatus": "approved",
+      "roleApprovedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "usr_20260526062020_05a18dfc",
+      "role": "patient",
+      "name": "Nguyen Gia Bai",
+      "email": "baobee100624@gmail.com",
+      "phone": "",
+      "firebaseUid": "vbBiNsBNN3TzFfsaaEQwXM6NtAA2",
+      "organizationId": "vn_hospital_quan_y_175",
+      "verifiedEmail": true,
+      "verifiedPhone": false,
+      "createdAt": "2026-05-26T06:20:20.283Z",
+      "updatedAt": "2026-05-26T06:20:25.935Z",
+      "patientId": "pat_20260523210428_eb7affd2",
+      "accountStatus": "active",
+      "roleInfoRequiredFields": [],
+      "passwordHash": "scrypt$v1$16384$8$1$iCFkryC-F-hn9vVY7XPhTQ$8ZmQSPbz2s076ES7Y_PwumPk_zzrd3LBGSzq1PneZVIX6NKPDrJ5LvzGE6-g8fQrfkxSXGY00Yq6MsRRNGEb2w$elb8w2fJYDN-9_qq9mxlp5LTCp8A7vnGqqtkE5jXzR4"
+    },
+    {
+      "id": "usr_20260523205957_b819bca4",
+      "role": "admin",
+      "name": "admin",
+      "email": "admin@smarthealth.vn",
+      "phone": "",
+      "firebaseUid": "fQwjTYSCBOdGU5Hd0jbC1hkaaze2",
+      "organizationId": "org_default_clinic",
+      "verifiedEmail": false,
+      "verifiedPhone": false,
+      "createdAt": "2026-05-23T20:59:57.378Z",
+      "updatedAt": "2026-05-24T07:26:50.250Z",
+      "accountStatus": "active",
+      "roleInfoRequiredFields": [],
+      "passwordHash": "scrypt$v1$16384$8$1$zMHDS5Tif7U7ykT8q8VPRw$3etqz_o1JcU2kEQ3Mwy53tG74GKtE37e12eqeV58pdxorz4ivgCn1yST92IiLp0HpGkcbB-j9qyLXxXP7qu0fA$oI7WNCgVH1duFOdJ8l2K1KrXuYp9opZkiHM1hMVBHhI"
+    },
+    {
+      "id": "usr_20260522165505_5287c725",
+      "role": "admin",
+      "name": "Nguyen Gia Bao",
+      "email": "nguyengiabao100624@gmail.com",
+      "phone": "0986002210",
+      "license": "",
+      "hospital": "",
+      "department": "",
+      "address": "",
+      "verifiedEmail": false,
+      "verifiedPhone": false,
+      "createdAt": "2026-05-22T16:55:05.225Z",
+      "updatedAt": "2026-06-06T00:55:29.873Z",
+      "organizationId": "org_default_clinic",
+      "patientId": "pat_20260523145431_1b1bad06",
+      "firebaseUid": "YOPbEgWu4pfRjMsbb8X5zOFBwUx1",
+      "accountStatus": "active",
+      "roleInfoRequiredFields": [],
+      "passwordHash": "scrypt$v1$16384$8$1$10u6MlZfFMroadGidE8QiQ$kHNbzt_Pjf6YoqA7_oVCzOMca411cUVPVdRDKJ_cuwOMENYs-ATI-oRl-yivG7SdOh-OrLsWqdBt6G0dcukuHw$iM3hmWrrFsXNWRB1pd5kCq8kIsJmJbIwf9FD8ILWqfE"
+    },
+    {
+      "id": "usr_doctor_default",
+      "role": "doctor",
+      "name": "Bs. Tuấn",
+      "email": "bacsytuan@benhvien.com",
+      "phone": "0912345678",
+      "license": "123456/BYT-CCHN",
+      "hospital": "Smart Health Clinic",
+      "department": "Khoa Tim mạch",
+      "address": "123 Đường Láng, Đống Đa, Hà Nội",
+      "verifiedEmail": true,
+      "verifiedPhone": true,
+      "createdAt": "2026-05-22T16:01:04.650Z",
+      "updatedAt": "2026-05-23T14:54:31.064Z",
+      "organizationId": "org_default_clinic",
+      "accountStatus": "active",
+      "roleInfoRequiredFields": [],
+      "passwordHash": "scrypt$v1$16384$8$1$hlUvKSHEbzfuqgngpFigTQ$HlVv5wHUz5KwmuL7RuYs4pncj1NgpvOtZ6IyR7591GaLvhSLEdMdh3yewgJp2hXDprl2SrXR3j1l9BzZqpcvVQ$Iw3xe3vPyy6WCEhy8DeUdLogwdd3X2XumP2uc3Ls0v4",
+      "roleRequestStatus": "approved",
+      "roleApprovedAt": "2026-08-27T17:30:37.250Z",
+      "requestedRole": "doctor",
+      "specialty": "Nội Tim Mạch"
+    },
+    {
+      "id": "usr_patient_default",
+      "role": "patient",
+      "name": "Nguyễn Văn A",
+      "email": "nguyenvana@gmail.com",
+      "phone": "0900000000",
+      "address": "Hồ Chí Minh",
+      "verifiedEmail": true,
+      "verifiedPhone": true,
+      "createdAt": "2026-05-22T16:01:04.650Z",
+      "updatedAt": "2026-05-23T14:54:31.064Z",
+      "organizationId": "org_default_clinic",
+      "patientId": "pat_20260523145431_12eeff0d",
+      "accountStatus": "active",
+      "roleInfoRequiredFields": [],
+      "passwordHash": "scrypt$v1$16384$8$1$6pvoOSHUeitbuGoPVrrzvA$bY6J863j5InsAvazx6xtj3y--1K_9OiJ7dU-lmW43XYiDQeYa-RaBICeloMzKoWCxlaATA1Fft5XI3YGfwxNwQ$DUFICisLc2leQuaocR5JncL4G68jtqzc2ZgAzdt_TMg"
+    },
+    {
+      "id": "usr_quan_y_175_admin",
+      "email": "admin.quany175@smarthealth.vn",
+      "name": "Admin Bệnh Viện Quân Y 175",
+      "role": "workspace_owner",
+      "organizationId": "vn_hospital_quan_y_175",
+      "passwordHash": "scrypt$v1$16384$8$1$s8go2TpVQasjfu8ImGzp0A$ITnQYtjEoMLsWtC8286f1DfF9maI-rlLVPP9hAtTp0CFvTZEPlA5UzdRS0C6dZLH2oatDMcLCvaS3IdyEgTMjw$pqMZiaYOInWDBFWS6BdsNMcbTfmxRmu0yi7O_wpUMMw",
+      "verifiedEmail": true,
+      "accountStatus": "active",
+      "roleRequestStatus": "approved",
+      "roleApprovedAt": "2026-08-27T17:27:02.478Z",
+      "createdAt": "2026-08-27T17:27:02.478Z",
+      "updatedAt": "2026-08-27T17:27:02.478Z"
+    },
+    {
+      "id": "usr_platform_admin_demo",
+      "email": "admin.demo@shcare.local",
+      "name": "Shcare Platform Admin",
+      "role": "admin",
+      "organizationId": "org_default_clinic",
+      "passwordHash": "scrypt$v1$16384$8$1$z557Vkzd6eFMqGege-dmEw$0bB998t_z8wOfeosiys8Z1QVPuycIs31hlVQaB8dgaQKZ5R5uhsrFY95tmaCpBO_sX2GgEoF2dj9y1NRCLxoJA$--Q7CRTJqZ7_dwcfvAN72PC9GDDA3Pi4BtzcrJuWHEs",
+      "verifiedEmail": true,
+      "accountStatus": "active",
+      "createdAt": "2026-08-27T17:27:02.478Z",
+      "updatedAt": "2026-08-27T17:27:02.478Z"
+    },
+    {
+      "id": "usr_doctor_quany175",
+      "name": "ThS. BS. Nguyễn Văn Bình",
+      "email": "bsbinh.quany175@smarthealth.vn",
+      "phone": "0987654321",
+      "role": "doctor",
+      "requestedRole": "doctor",
+      "roleRequestStatus": "approved",
+      "roleApprovedAt": "2026-08-27T17:30:37.250Z",
+      "accountStatus": "active",
+      "specialty": "Hô Hấp - Lồng Ngực",
+      "license": "789101/BQP-CCHN",
+      "hospital": "Bệnh viện Quân y 175",
+      "organizationId": "vn_hospital_quan_y_175",
+      "passwordHash": "scrypt$v1$16384$8$1$Fj4sBrrDyYaMUuV_NhlFSA$7unUwZn4wnDAMYPuOOIGtgPN02QekHgehKdsJ78M-PTdANImGkEeKGfN2u1x7jCz-fiwSqpelKXuf0yZotLehw$2aY3N92DP4eE_4l8uOk9fSu1zKNJMjAJhCq4AlKbmCk",
+      "verifiedEmail": true,
+      "verifiedPhone": true,
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "sess_20260621151417_daa04db8",
+      "userId": "usr_doctor_default",
+      "token": "835577853029d751a07e9927d4d324c33f863ce1885105ee5094c41c2f276c69",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-21T15:14:17.464Z",
+      "lastSeenAt": "2026-06-21T15:14:17.464Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260621102610_7797b444",
+      "userId": "usr_doctor_default",
+      "token": "bcc7ad8f2f97baf5e0f625ed3be6ee5a58d2f97ccf3fe98358313084d9d072d7",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-21T10:26:10.163Z",
+      "lastSeenAt": "2026-06-21T15:14:17.461Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260605131927_a0543581",
+      "userId": "usr_20260522165505_5287c725",
+      "token": "5468a2cd4a6451e642cc3c9f0877e19f535d554f6e90e5b23ede47cd960d1529",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-05T13:19:27.799Z",
+      "lastSeenAt": "2026-06-05T13:19:27.799Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260605131830_47673284",
+      "userId": "usr_20260522165505_5287c725",
+      "token": "f690e9c32d29986e98ffbe9108bddfaf580cf1b7904e994fa9c7af9198bd5b06",
+      "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-05T13:18:30.593Z",
+      "lastSeenAt": "2026-06-05T13:18:30.593Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260523081203_6b3190d6",
+      "userId": "usr_doctor_default",
+      "token": "7ff8b97ccbe28db24ec3c9341311af4b7ede27c4c411a85450196673e47aad11",
+      "device": "okhttp/4.12.0",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T08:12:03.412Z",
+      "lastSeenAt": "2026-05-24T09:25:38.969Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260523080256_018d88bd",
+      "userId": "usr_doctor_default",
+      "token": "85b1a45ca574e0ac65f5c6b2d0326d6eebc805d9de178f0a965708a590968a77",
+      "device": "okhttp/4.12.0",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T08:02:56.059Z",
+      "lastSeenAt": "2026-05-23T08:06:08.745Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260523075104_bb54dfd2",
+      "userId": "usr_doctor_default",
+      "token": "96458e22359bfedb0e5192492910cfdf1e92680a2067bef672782f2d1d149116",
+      "device": "okhttp/4.12.0",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T07:51:04.218Z",
+      "lastSeenAt": "2026-05-23T07:53:59.641Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260523073558_49aacc81",
+      "userId": "usr_doctor_default",
+      "token": "1dd4c2a760c9ad78f85483dbeeff4d6f3146349212d5d095373eed884495c542",
+      "device": "okhttp/4.12.0",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T07:35:58.241Z",
+      "lastSeenAt": "2026-05-23T07:36:18.965Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260523070513_96bf2b3f",
+      "userId": "usr_doctor_default",
+      "token": "1e6501e1e5886537e0109a474695b50e9ffaeb40bde185fff52ccbf0b90ed6c4",
+      "device": "okhttp/4.12.0",
+      "ip": "192.168.1.167",
+      "createdAt": "2026-05-23T07:05:13.920Z",
+      "lastSeenAt": "2026-05-23T07:33:45.150Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260523055611_aba01308",
+      "userId": "usr_doctor_default",
+      "token": "113a3383a3c9c9582c2ffa2451cd2256ad6570ca5e56e6dfe1bdca4cbffbc724",
+      "device": "okhttp/4.12.0",
+      "ip": "192.168.1.167",
+      "createdAt": "2026-05-23T05:56:11.243Z",
+      "lastSeenAt": "2026-05-23T05:58:28.058Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260522165543_8cc2b9f3",
+      "userId": "usr_20260522165505_5287c725",
+      "token": "a7195fb7025c92d74b9291b945a9ecba8a2abc01fc94eecc2541824f96de85d8",
+      "device": "okhttp/4.12.0",
+      "ip": "192.168.1.22",
+      "createdAt": "2026-05-22T16:55:43.665Z",
+      "lastSeenAt": "2026-05-22T16:56:23.890Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260522165505_c3433a4e",
+      "userId": "usr_20260522165505_5287c725",
+      "token": "a70a4aa689127a6af51b9f7d3877c82b147565e9fb3492bf05e9844535409afd",
+      "device": "okhttp/4.12.0",
+      "ip": "192.168.1.22",
+      "createdAt": "2026-05-22T16:55:05.226Z",
+      "lastSeenAt": "2026-05-22T16:55:05.226Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260522163606_4a291e57",
+      "userId": "usr_doctor_default",
+      "token": "f77f188bf8d09481d3d80da9c4e59e0e3d91f7d89852fdbf146026254eba5a0e",
+      "device": "okhttp/4.12.0",
+      "ip": "192.168.1.22",
+      "createdAt": "2026-05-22T16:36:06.755Z",
+      "lastSeenAt": "2026-05-22T16:53:28.864Z",
+      "revokedAt": null
+    },
+    {
+      "id": "sess_20260522160134_35300164",
+      "userId": "usr_doctor_default",
+      "token": "70be8f131276f0312183d024847a9ff86ed183b09e6ac96b8f60741cdd1181b1",
+      "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-22T16:01:34.067Z",
+      "lastSeenAt": "2026-05-22T16:01:34.067Z",
+      "revokedAt": null
+    }
+  ],
+  "notifications": [],
+  "accessLogs": [
+    {
+      "id": "log_20260621151417_f51b8a21",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-21T15:14:17.464Z"
+    },
+    {
+      "id": "log_20260621102813_d5e079b0",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/portal/devices/123456",
+      "ip": "127.0.0.1",
+      "userId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "severity": "warning",
+      "createdAt": "2026-06-21T10:28:13.589Z"
+    },
+    {
+      "id": "log_20260621102813_e2ecdffe",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/portal/devices/123456",
+      "ip": "127.0.0.1",
+      "userId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "severity": "warning",
+      "createdAt": "2026-06-21T10:28:13.585Z"
+    },
+    {
+      "id": "log_20260621102747_326bde15",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/portal/staff",
+      "ip": "127.0.0.1",
+      "userId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "severity": "warning",
+      "createdAt": "2026-06-21T10:27:47.692Z"
+    },
+    {
+      "id": "log_20260621102610_e2d2abf2",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-21T10:26:10.163Z"
+    },
+    {
+      "id": "log_20260606074243_b566ff7e",
+      "action": "Cập nhật cài đặt workspace",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T07:42:43.295Z"
+    },
+    {
+      "id": "log_20260606074243_b5bd00eb",
+      "action": "Cập nhật cài đặt workspace",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T07:42:43.049Z"
+    },
+    {
+      "id": "log_20260606074242_be90a0c8",
+      "action": "Cập nhật thông tin cá nhân",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T07:42:42.184Z"
+    },
+    {
+      "id": "log_20260606074241_cf57791f",
+      "action": "Cập nhật thông tin cá nhân",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T07:42:41.896Z"
+    },
+    {
+      "id": "log_20260606074240_15219429",
+      "action": "Cập nhật thông tin cá nhân",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T07:42:40.432Z"
+    },
+    {
+      "id": "log_20260606074240_1fb9d471",
+      "action": "Cập nhật thông tin cá nhân",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T07:42:40.098Z"
+    },
+    {
+      "id": "log_20260606005340_9d118c25",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/me/password",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:53:40.201Z"
+    },
+    {
+      "id": "log_20260606005334_e5f14841",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/me/password",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:53:34.667Z"
+    },
+    {
+      "id": "log_20260606003329_3d94acd8",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:33:29.208Z"
+    },
+    {
+      "id": "log_20260606003018_b7d923d2",
+      "action": "Cập nhật cài đặt workspace",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T00:30:18.768Z"
+    },
+    {
+      "id": "log_20260606002948_78392106",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/doctor-requests",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:29:48.398Z"
+    },
+    {
+      "id": "log_20260606002948_ac166d53",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:29:48.372Z"
+    },
+    {
+      "id": "log_20260606001918_56d902db",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/doctor-requests",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:19:18.811Z"
+    },
+    {
+      "id": "log_20260606001918_1f0a11f9",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/sync-firebase",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:19:18.544Z"
+    },
+    {
+      "id": "log_20260606001918_050970ac",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:19:18.184Z"
+    },
+    {
+      "id": "log_20260606001646_086a6a99",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/doctor-requests",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:16:46.451Z"
+    },
+    {
+      "id": "log_20260606001646_d27ea2ce",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/sync-firebase",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:16:46.165Z"
+    },
+    {
+      "id": "log_20260606001645_fab224e4",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "severity": "warning",
+      "createdAt": "2026-06-06T00:16:45.835Z"
+    },
+    {
+      "id": "log_20260606001642_9f6cc230",
+      "action": "Tạo user từ Firebase Admin Bệnh viện Demo",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-06T00:16:42.988Z"
+    },
+    {
+      "id": "log_20260605153358_aaf3a1b7",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/settings/test-email",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260526062020_05a18dfc",
+      "organizationId": "vn_hospital_quan_y_175",
+      "severity": "warning",
+      "createdAt": "2026-06-05T15:33:58.292Z"
+    },
+    {
+      "id": "log_20260605153235_20ad3c8c",
+      "action": "API request blocked by access control",
+      "device": "Smart Health API",
+      "location": "/api/settings/test-email",
+      "ip": "127.0.0.1",
+      "userId": "usr_20260526062020_05a18dfc",
+      "organizationId": "vn_hospital_quan_y_175",
+      "severity": "warning",
+      "createdAt": "2026-06-05T15:32:35.561Z"
+    },
+    {
+      "id": "log_20260605131927_a9e94ff0",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-05T13:19:27.799Z"
+    },
+    {
+      "id": "log_20260605131830_82883124",
+      "action": "Đăng nhập thất bại",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "warning",
+      "createdAt": "2026-06-05T13:18:30.765Z"
+    },
+    {
+      "id": "log_20260605131830_b9313dc1",
+      "action": "Đăng nhập thất bại",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "warning",
+      "createdAt": "2026-06-05T13:18:30.761Z"
+    },
+    {
+      "id": "log_20260605131830_78433f33",
+      "action": "Đăng nhập thất bại",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "warning",
+      "createdAt": "2026-06-05T13:18:30.732Z"
+    },
+    {
+      "id": "log_20260605131830_11a9ada9",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "userId": "",
+      "organizationId": "",
+      "severity": "info",
+      "createdAt": "2026-06-05T13:18:30.593Z"
+    },
+    {
+      "id": "log_20260526154007_be065ffa",
+      "action": "Hủy ghép nối thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-26T15:40:07.646Z"
+    },
+    {
+      "id": "log_20260526064802_474eeb4e",
+      "action": "Yêu cầu đặt lại mật khẩu cho ssas@gmail.com",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-26T06:48:02.413Z"
+    },
+    {
+      "id": "log_20260526064216_d3803b46",
+      "action": "Cập nhật phòng khám Smart Health Clinic",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "success",
+      "createdAt": "2026-05-26T06:42:16.954Z"
+    },
+    {
+      "id": "log_20260526064214_883bf2ca",
+      "action": "Cập nhật phòng khám Smart Health Clinic",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "success",
+      "createdAt": "2026-05-26T06:42:14.314Z"
+    },
+    {
+      "id": "log_20260526062020_edb6d250",
+      "action": "Tạo user từ Firebase Nguyen Gia Bai",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-26T06:20:20.283Z"
+    },
+    {
+      "id": "log_20260526061924_4c0471c5",
+      "action": "Admin xóa dữ liệu tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-26T06:19:24.974Z"
+    },
+    {
+      "id": "log_20260526061919_a9def5d9",
+      "action": "Admin xóa dữ liệu tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-26T06:19:19.430Z"
+    },
+    {
+      "id": "log_20260526061612_a2cbc579",
+      "action": "Doctor role request approved",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "success",
+      "createdAt": "2026-05-26T06:16:12.296Z"
+    },
+    {
+      "id": "log_20260526061456_129543e1",
+      "action": "Doctor role approval requested",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-26T06:14:56.164Z"
+    },
+    {
+      "id": "log_20260526061455_f4c59fc4",
+      "action": "Cập nhật thông tin cá nhân",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-26T06:14:55.694Z"
+    },
+    {
+      "id": "log_20260526015624_43b1411f",
+      "action": "Doctor role request needs additional information",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "warning",
+      "createdAt": "2026-05-26T01:56:24.207Z"
+    },
+    {
+      "id": "log_20260526013009_3e52df43",
+      "action": "Doctor role approval requested",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-26T01:30:09.237Z"
+    },
+    {
+      "id": "log_20260526013008_83ed82db",
+      "action": "Tạo user từ Firebase Nguyen Gia Bai",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-26T01:30:08.776Z"
+    },
+    {
+      "id": "log_20260524152056_deaad2b4",
+      "action": "Admin mở khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "success",
+      "createdAt": "2026-05-24T15:20:56.013Z"
+    },
+    {
+      "id": "log_20260524151033_741a854f",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T15:10:33.677Z"
+    },
+    {
+      "id": "log_20260524151033_88467a42",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T15:10:33.550Z"
+    },
+    {
+      "id": "log_20260524151033_7e1ccc63",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T15:10:33.050Z"
+    },
+    {
+      "id": "log_20260524151002_1ad59acc",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T15:10:02.139Z"
+    },
+    {
+      "id": "log_20260524150032_36a29ce5",
+      "action": "Doctor role request approved",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "success",
+      "createdAt": "2026-05-24T15:00:32.574Z"
+    },
+    {
+      "id": "log_20260524083856_8f65b23d",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T08:38:56.376Z"
+    },
+    {
+      "id": "log_20260524083834_b0a0ba50",
+      "action": "Doctor role request approved",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "success",
+      "createdAt": "2026-05-24T08:38:34.540Z"
+    },
+    {
+      "id": "log_20260524083801_ec77d32f",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T08:38:01.605Z"
+    },
+    {
+      "id": "log_20260524083757_92afeb07",
+      "action": "Admin khóa tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T08:37:57.065Z"
+    },
+    {
+      "id": "log_20260524083753_ed043223",
+      "action": "Admin xóa dữ liệu tài khoản bác sĩ",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "warning",
+      "createdAt": "2026-05-24T08:37:53.097Z"
+    },
+    {
+      "id": "log_20260523213357_b33be971",
+      "action": "Doctor role approval requested",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T21:33:57.812Z"
+    },
+    {
+      "id": "log_20260523212934_1e90d9c8",
+      "action": "Doctor role approval requested",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T21:29:34.519Z"
+    },
+    {
+      "id": "log_20260523212049_253c98eb",
+      "action": "Doctor role approval requested",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T21:20:49.343Z"
+    },
+    {
+      "id": "log_20260523212049_cdc661ba",
+      "action": "Tạo user từ Firebase Bao",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T21:20:49.048Z"
+    },
+    {
+      "id": "log_20260523210429_89759aea",
+      "action": "Doctor role approval requested",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T21:04:29.109Z"
+    },
+    {
+      "id": "log_20260523210428_da52c47f",
+      "action": "Tạo user từ Firebase 1232132131",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T21:04:28.684Z"
+    },
+    {
+      "id": "log_20260523205957_1ec27585",
+      "action": "Tạo user từ Firebase admin",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T20:59:57.378Z"
+    },
+    {
+      "id": "log_20260523081646_ec417fb4",
+      "action": "Hiệu chuẩn thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:16:46.815Z"
+    },
+    {
+      "id": "log_20260523081319_6f30e593",
+      "action": "Ghép nối thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:13:19.249Z"
+    },
+    {
+      "id": "log_20260523081310_4f340c8b",
+      "action": "Ngắt kết nối thiết bị LiteSteth-A92",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:13:10.693Z"
+    },
+    {
+      "id": "log_20260523081306_490eab13",
+      "action": "Ngắt kết nối thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:13:06.697Z"
+    },
+    {
+      "id": "log_20260523081300_6cf19c19",
+      "action": "Ngắt kết nối thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:13:00.156Z"
+    },
+    {
+      "id": "log_20260523081233_4e73c9b4",
+      "action": "Ghép nối thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:12:33.093Z"
+    },
+    {
+      "id": "log_20260523081203_828c09dd",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:12:03.412Z"
+    },
+    {
+      "id": "log_20260523080256_49ad6712",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T08:02:56.060Z"
+    },
+    {
+      "id": "log_20260523075112_4fdea488",
+      "action": "Ghép nối thiết bị Stetho-AI-Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:51:12.088Z"
+    },
+    {
+      "id": "log_20260523075104_57ed6e1d",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:51:04.218Z"
+    },
+    {
+      "id": "log_20260523075056_c134b08d",
+      "action": "Đăng nhập thất bại",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "warning",
+      "createdAt": "2026-05-23T07:50:56.156Z"
+    },
+    {
+      "id": "log_20260523073618_25f2dd22",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:36:18.965Z"
+    },
+    {
+      "id": "log_20260523073618_43dd3207",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:36:18.099Z"
+    },
+    {
+      "id": "log_20260523073617_2a2d00d3",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:36:17.234Z"
+    },
+    {
+      "id": "log_20260523073558_9d40ca71",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:35:58.241Z"
+    },
+    {
+      "id": "log_20260523073126_3ebcb8c2",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:31:26.537Z"
+    },
+    {
+      "id": "log_20260523073123_f33230a6",
+      "action": "Kết nối thiết bị LiteSteth-A92",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:31:23.612Z"
+    },
+    {
+      "id": "log_20260523073122_2d6ffead",
+      "action": "Kết nối thiết bị LiteSteth-A92",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:31:22.228Z"
+    },
+    {
+      "id": "log_20260523070533_dac734bf",
+      "action": "Kết nối thiết bị LiteSteth-A92",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:05:33.618Z"
+    },
+    {
+      "id": "log_20260523070513_b7f9da3a",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.167",
+      "severity": "info",
+      "createdAt": "2026-05-23T07:05:13.920Z"
+    },
+    {
+      "id": "log_20260523055828_fba745f8",
+      "action": "Ghép nối thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-23T05:58:28.058Z"
+    },
+    {
+      "id": "log_20260523055611_16d444c5",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.167",
+      "severity": "info",
+      "createdAt": "2026-05-23T05:56:11.243Z"
+    },
+    {
+      "id": "log_20260523055602_692e547f",
+      "action": "Đăng nhập thất bại",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.167",
+      "severity": "warning",
+      "createdAt": "2026-05-23T05:56:02.662Z"
+    },
+    {
+      "id": "log_20260522165630_e39b2a07",
+      "action": "Đăng nhập thất bại",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.22",
+      "severity": "warning",
+      "createdAt": "2026-05-22T16:56:30.399Z"
+    },
+    {
+      "id": "log_20260522165623_765b46ae",
+      "action": "Ghép nối thiết bị LiteSteth-A92",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:56:23.890Z"
+    },
+    {
+      "id": "log_20260522165619_1ce04077",
+      "action": "Ghép nối thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:56:19.690Z"
+    },
+    {
+      "id": "log_20260522165543_f32b81a3",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.22",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:55:43.665Z"
+    },
+    {
+      "id": "log_20260522165505_2b73b5f3",
+      "action": "Tạo tài khoản mới",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.22",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:55:05.226Z"
+    },
+    {
+      "id": "log_20260522165427_df04ed63",
+      "action": "Yêu cầu đặt lại mật khẩu cho bacsytuan@benhvien.com",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:54:27.106Z"
+    },
+    {
+      "id": "log_20260522165313_931e3475",
+      "action": "Đổi mật khẩu tài khoản",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:53:13.175Z"
+    },
+    {
+      "id": "log_20260522165230_bfda3744",
+      "action": "Cập nhật cấu hình AI",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:52:30.063Z"
+    },
+    {
+      "id": "log_20260522165154_55d91de3",
+      "action": "Kết nối thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:54.140Z"
+    },
+    {
+      "id": "log_20260522165152_d2b3acbd",
+      "action": "Kết nối thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:52.854Z"
+    },
+    {
+      "id": "log_20260522165151_b588f4e1",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:51.668Z"
+    },
+    {
+      "id": "log_20260522165148_dfdb2293",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:48.040Z"
+    },
+    {
+      "id": "log_20260522165147_0b6aedd4",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:47.834Z"
+    },
+    {
+      "id": "log_20260522165147_baea09f2",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:47.640Z"
+    },
+    {
+      "id": "log_20260522165146_7cd131e1",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:46.947Z"
+    },
+    {
+      "id": "log_20260522165142_bc6ef3d0",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:42.160Z"
+    },
+    {
+      "id": "log_20260522165140_da1a9560",
+      "action": "Hiệu chuẩn thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:40.934Z"
+    },
+    {
+      "id": "log_20260522165138_5229677e",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:38.364Z"
+    },
+    {
+      "id": "log_20260522165136_528b6bb9",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:36.709Z"
+    },
+    {
+      "id": "log_20260522165136_1131e963",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:36.083Z"
+    },
+    {
+      "id": "log_20260522165134_ed1c5915",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:34.026Z"
+    },
+    {
+      "id": "log_20260522165133_85a68433",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:33.251Z"
+    },
+    {
+      "id": "log_20260522165132_7b3694c9",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:32.403Z"
+    },
+    {
+      "id": "log_20260522165129_0319df1f",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:29.773Z"
+    },
+    {
+      "id": "log_20260522165129_be5bafca",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:29.076Z"
+    },
+    {
+      "id": "log_20260522165128_b5f42ab3",
+      "action": "Cập nhật cài đặt ứng dụng",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:28.023Z"
+    },
+    {
+      "id": "log_20260522165105_b4a45877",
+      "action": "Kết nối thiết bị StethoEdge Pro",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:51:05.709Z"
+    },
+    {
+      "id": "log_20260522165033_025f9857",
+      "action": "Xóa bộ nhớ tạm",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:50:33.840Z"
+    },
+    {
+      "id": "log_20260522165019_f8b408e3",
+      "action": "Tạo bản xuất dữ liệu",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:50:19.657Z"
+    },
+    {
+      "id": "log_20260522165016_98db0609",
+      "action": "Tạo bản xuất dữ liệu",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:50:16.826Z"
+    },
+    {
+      "id": "log_20260522164816_ef4e3712",
+      "action": "Sử dụng trợ lý AI",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:48:16.450Z"
+    },
+    {
+      "id": "log_20260522163606_d84dec9f",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "192.168.1.22",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:36:06.755Z"
+    },
+    {
+      "id": "log_20260522160146_da9a32f1",
+      "action": "Tạo bản xuất dữ liệu",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:01:46.650Z"
+    },
+    {
+      "id": "log_20260522160146_c14a8975",
+      "action": "Sử dụng trợ lý AI",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:01:46.582Z"
+    },
+    {
+      "id": "log_20260522160134_f87ce966",
+      "action": "Đăng nhập thành công",
+      "device": "Ứng dụng Android",
+      "location": "Mạng nội bộ",
+      "ip": "127.0.0.1",
+      "severity": "info",
+      "createdAt": "2026-05-22T16:01:34.067Z"
+    }
+  ],
+  "devices": [
+    {
+      "id": "shcare-g3-hil",
+      "name": "Shcare ESP32-S3 hai mic",
+      "type": "stethoscope",
+      "status": "claimed",
+      "connected": true,
+      "battery": 88,
+      "signal": -52,
+      "organizationId": "org_default_clinic",
+      "ownerUserId": "usr_patient_default",
+      "pairedUserId": "usr_patient_default",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "android-app",
+      "name": "Shcare Mobile Virtual Device",
+      "type": "stethoscope",
+      "status": "available",
+      "connected": true,
+      "battery": 95,
+      "signal": -45,
+      "organizationId": "org_default_clinic",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "dev_workspace_demo_001",
+      "name": "Ống nghe Demo Workspace",
+      "type": "stethoscope",
+      "status": "available",
+      "connected": false,
+      "battery": 82,
+      "signal": -58,
+      "organizationId": "org_workspace_demo_hospital",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "123456",
+      "name": "Stetho-AI-Pro (Bác sĩ Tuấn)",
+      "type": "stethoscope",
+      "status": "claimed",
+      "connected": true,
+      "battery": 76,
+      "signal": -60,
+      "organizationId": "org_default_clinic",
+      "ownerUserId": "usr_doctor_default",
+      "pairedUserId": "usr_doctor_default",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "stetho-ai-pro",
+      "name": "Stetho-AI-Pro (Dự phòng)",
+      "type": "stethoscope",
+      "status": "available",
+      "connected": false,
+      "battery": 100,
+      "signal": -50,
+      "organizationId": "org_default_clinic",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "esp32-stethoscope",
+      "name": "ESP32 Stethoscope Lab",
+      "type": "stethoscope",
+      "status": "available",
+      "connected": false,
+      "battery": 65,
+      "signal": -70,
+      "organizationId": "org_default_clinic",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    }
+  ],
+  "exports": [
+    {
+      "id": "export_20260522165019_35340013",
+      "format": "pdf",
+      "includeAudio": true,
+      "includeReports": true,
+      "includeHistory": true,
+      "startDate": "01/01/2026",
+      "endDate": "13/05/2026",
+      "status": "ready",
+      "recordCount": 5,
+      "downloadUrl": "/api/exports/download/1779468619656.json",
+      "createdAt": "2026-05-22T16:50:19.657Z"
+    },
+    {
+      "id": "export_20260522165016_3e22e8ad",
+      "format": "pdf",
+      "includeAudio": true,
+      "includeReports": true,
+      "includeHistory": true,
+      "startDate": "01/01/2026",
+      "endDate": "13/05/2026",
+      "status": "ready",
+      "recordCount": 5,
+      "downloadUrl": "/api/exports/download/1779468616826.json",
+      "createdAt": "2026-05-22T16:50:16.826Z"
+    },
+    {
+      "id": "export_20260522160146_d1933178",
+      "format": "zip",
+      "includeAudio": true,
+      "includeReports": true,
+      "includeHistory": true,
+      "startDate": "01/01/2026",
+      "endDate": "22/05/2026",
+      "status": "ready",
+      "recordCount": 5,
+      "downloadUrl": "/api/exports/download/1779465706650.json",
+      "createdAt": "2026-05-22T16:01:46.650Z"
+    }
+  ],
+  "settings": {
+    "system": {
+      "name": "Smart Health B2B Platform",
+      "supportEmail": "support@smarthealth.vn",
+      "supportHotline": "1900 8888",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "source": "backend-default",
+      "updatedAt": "2026-06-05T00:00:00.000Z"
+    },
+    "branding": {
+      "logoFileId": "",
+      "logoUrl": "",
+      "primaryColor": "#0B5C9A",
+      "accentColor": "#00A896",
+      "updatedAt": ""
+    },
+    "notifications": {
+      "enabled": true,
+      "sound": true,
+      "vibration": true,
+      "abnormalResults": true,
+      "deviceConnection": true,
+      "appointments": true,
+      "aiUpdates": false,
+      "messages": true
+    },
+    "privacy": {
+      "biometric": true,
+      "twoFactor": false,
+      "encryption": true,
+      "passwordUpdatedAt": "2026-05-22T16:53:13.175Z"
+    },
+    "dataAccess": {
+      "shareDoctors": true,
+      "cloudSync": false,
+      "aiResearch": false,
+      "thirdParty": false
+    },
+    "storage": {
+      "autoSync": true,
+      "cloudBackup": true,
+      "localUsedMb": 2450,
+      "localTotalMb": 8192,
+      "cloudUsedMb": 12800,
+      "cloudTotalMb": 51200,
+      "cacheMb": 0
+    },
+    "stethoscope": {
+      "volume": 65,
+      "sensitivity": 100,
+      "noiseCancel": true,
+      "autoConnect": true,
+      "lastCalibrationAt": "2026-05-23T08:16:46.815Z"
+    },
+    "ai": {
+      "selectedModel": "balanced",
+      "version": "AI Medical Analysis v3.2.1",
+      "heartAccuracy": 96.8,
+      "lungAccuracy": 94.2,
+      "sensitivity": 95.5,
+      "specificity": 97.1,
+      "updatedAt": "2026-05-22T16:52:40.646Z",
+      "model": "accurate"
+    },
+    "outbound": {
+      "email": {
+        "enabled": true,
+        "provider": "gmail-smtp",
+        "host": "smtp.gmail.com",
+        "port": 587,
+        "encryption": "tls",
+        "from": "",
+        "testRecipient": ""
+      },
+      "webhook": {
+        "enabled": false,
+        "url": "",
+        "events": {
+          "deviceOffline": true,
+          "aiJobFailed": true,
+          "doctorRegistered": true
+        }
+      },
+      "sms": {
+        "enabled": false,
+        "provider": "webhook",
+        "testRecipient": ""
+      },
+      "zalo": {
+        "enabled": false,
+        "provider": "webhook",
+        "testRecipient": ""
+      }
+    },
+    "securityPolicy": {
+      "sessionTimeoutMinutes": 30,
+      "maxSessionsPerUser": 3,
+      "requireAdmin2fa": false,
+      "ipWhitelist": "",
+      "retentionDays": 1825,
+      "rateLimitPerMinute": 300,
+      "passwordRules": {
+        "minLength": 8,
+        "requireMixedCase": true,
+        "requireNumber": true,
+        "requireSpecial": false,
+        "expireDays": 0
+      },
+      "backupCheckEnabled": false,
+      "lastBackupCheckAt": "",
+      "lastBackupStatus": "",
+      "apiKeys": [
+        {
+          "id": "key_production",
+          "name": "API Key Production",
+          "keyPreview": "sk_live_********1234",
+          "status": "active",
+          "scope": "platform",
+          "createdAt": "2026-06-05T00:00:00.000Z",
+          "updatedAt": "2026-06-05T00:00:00.000Z",
+          "lastRotatedAt": ""
+        },
+        {
+          "id": "key_staging",
+          "name": "API Key Staging",
+          "keyPreview": "sk_test_********7788",
+          "status": "active",
+          "scope": "workspace",
+          "createdAt": "2026-06-05T00:00:00.000Z",
+          "updatedAt": "2026-06-05T00:00:00.000Z",
+          "lastRotatedAt": ""
+        }
+      ]
+    }
+  },
+  "chatMessages": [
+    {
+      "id": "msg_20260522160146_f0dfbf6e",
+      "role": "user",
+      "content": "Tín hiệu phổi bị ran nổ thì xử lý sao?",
+      "createdAt": "2026-05-22T16:01:46.581Z"
+    },
+    {
+      "id": "msg_20260522160146_52adb19e",
+      "role": "assistant",
+      "content": "Tín hiệu phổi bất thường cần đối chiếu với triệu chứng, SpO2, nhiệt độ và X-quang ngực. Nếu có ran nổ khu trú, nên cân nhắc viêm phổi, phù phổi hoặc xẹp phổi tùy bối cảnh lâm sàng.",
+      "createdAt": "2026-05-22T16:01:46.582Z"
+    },
+    {
+      "id": "msg_20260522164816_325c4619",
+      "role": "user",
+      "content": "hi",
+      "createdAt": "2026-05-22T16:48:16.450Z"
+    },
+    {
+      "id": "msg_20260522164816_71419a1a",
+      "role": "assistant",
+      "content": "Tôi đã ghi nhận câu hỏi. Với bản production, phần này có thể nối sang mô hình AI y khoa riêng; hiện backend trả gợi ý dựa trên ngữ cảnh đo và chất lượng tín hiệu.",
+      "createdAt": "2026-05-22T16:48:16.450Z"
+    }
+  ],
+  "organizations": [
+    {
+      "id": "org_workspace_demo_hospital",
+      "createdAt": "2026-06-06T00:18:29.300Z",
+      "name": "Bệnh viện Demo Workspace",
+      "type": "hospital",
+      "workspaceType": "hospital",
+      "status": "active",
+      "packageId": "pkg_clinic_basic",
+      "subscriptionStatus": "active",
+      "billingCycle": "monthly",
+      "email": "workspace.admin.demo@smarthealth.test",
+      "updatedAt": "2026-06-06T07:50:23.692Z",
+      "settings": {
+        "system": {
+          "name": "Smart Health B2B Platform",
+          "supportEmail": "support@smarthealth.vn",
+          "supportHotline": "1900 8888",
+          "timezone": "Asia/Ho_Chi_Minh",
+          "source": "backend-default",
+          "updatedAt": "2026-06-05T00:00:00.000Z"
+        },
+        "branding": {
+          "logoFileId": "",
+          "logoUrl": "",
+          "primaryColor": "#0B5C9A",
+          "accentColor": "#00A896",
+          "updatedAt": ""
+        },
+        "notifications": {
+          "enabled": true,
+          "sound": true,
+          "vibration": true,
+          "abnormalResults": true,
+          "deviceConnection": true,
+          "appointments": true,
+          "aiUpdates": false,
+          "messages": true
+        },
+        "privacy": {
+          "biometric": true,
+          "twoFactor": false,
+          "encryption": true,
+          "passwordUpdatedAt": "2026-05-22T16:53:13.175Z"
+        },
+        "dataAccess": {
+          "shareDoctors": true,
+          "cloudSync": false,
+          "aiResearch": false,
+          "thirdParty": false
+        },
+        "storage": {
+          "autoSync": true,
+          "cloudBackup": true,
+          "localUsedMb": 2450,
+          "localTotalMb": 8192,
+          "cloudUsedMb": 12800,
+          "cloudTotalMb": 51200,
+          "cacheMb": 0
+        },
+        "stethoscope": {
+          "volume": 65,
+          "sensitivity": 100,
+          "noiseCancel": true,
+          "autoConnect": true,
+          "lastCalibrationAt": "2026-05-23T08:16:46.815Z"
+        },
+        "ai": {
+          "selectedModel": "balanced",
+          "version": "AI Medical Analysis v3.2.2-local",
+          "heartAccuracy": 96.8,
+          "lungAccuracy": 94.2,
+          "sensitivity": 95.5,
+          "specificity": 97.1,
+          "updatedAt": "2026-06-06T07:50:23.692Z",
+          "model": "accurate",
+          "lastUpdateStatus": "updated"
+        },
+        "outbound": {
+          "email": {
+            "enabled": true,
+            "provider": "gmail-smtp",
+            "host": "smtp.gmail.com",
+            "port": 587,
+            "encryption": "tls",
+            "from": "",
+            "testRecipient": ""
+          },
+          "webhook": {
+            "enabled": false,
+            "url": "",
+            "events": {
+              "deviceOffline": true,
+              "aiJobFailed": true,
+              "doctorRegistered": true
+            }
+          },
+          "sms": {
+            "enabled": false,
+            "provider": "webhook",
+            "testRecipient": ""
+          },
+          "zalo": {
+            "enabled": false,
+            "provider": "webhook",
+            "testRecipient": ""
+          }
+        },
+        "securityPolicy": {
+          "sessionTimeoutMinutes": 30,
+          "maxSessionsPerUser": 3,
+          "requireAdmin2fa": false,
+          "ipWhitelist": "",
+          "retentionDays": 1825,
+          "rateLimitPerMinute": 300,
+          "passwordRules": {
+            "minLength": 8,
+            "requireMixedCase": true,
+            "requireNumber": true,
+            "requireSpecial": false,
+            "expireDays": 0
+          },
+          "backupCheckEnabled": true,
+          "lastBackupCheckAt": "2026-06-06T07:42:43.592Z",
+          "lastBackupStatus": "ok",
+          "apiKeys": [
+            {
+              "id": "key_staging",
+              "name": "API Key Staging",
+              "keyPreview": "sk_test_********7788",
+              "status": "active",
+              "scope": "workspace",
+              "createdAt": "2026-06-05T00:00:00.000Z",
+              "updatedAt": "2026-06-05T00:00:00.000Z",
+              "lastRotatedAt": ""
+            }
+          ],
+          "lastBackupSummary": {
+            "checkedAt": "2026-06-06T07:42:43.592Z",
+            "mode": "json-local",
+            "databaseFile": "D:\\Study\\KLTN\\smart-health-embedded\\web-monitor\\data\\db.json",
+            "users": 2,
+            "patients": 1,
+            "devices": 1,
+            "scans": 0,
+            "storageFiles": 3,
+            "storageBytes": 206,
+            "status": "ok"
+          }
+        }
+      },
+      "ownerUserId": "usr_20260606001642_77209e89"
+    },
+    {
+      "id": "org_default_clinic",
+      "name": "Smart Health Clinic",
+      "type": "clinic",
+      "createdAt": "2026-05-23T14:54:31.064Z",
+      "updatedAt": "2026-05-26T07:14:04.506Z",
+      "status": "active",
+      "workspaceType": "clinic",
+      "subscriptionStatus": "trial",
+      "billingCycle": "monthly",
+      "ownerUserId": "usr_20260522165505_5287c725"
+    },
+    {
+      "id": "vn_hospital_quan_y_175",
+      "name": "Bệnh viện Quân y 175",
+      "type": "hospital",
+      "address": "TP. Hồ Chí Minh",
+      "phone": "",
+      "email": "",
+      "website": "",
+      "status": "active",
+      "createdAt": "2026-05-26T06:14:56.160Z",
+      "updatedAt": "2026-05-26T07:14:04.506Z",
+      "workspaceType": "hospital",
+      "subscriptionStatus": "trial",
+      "billingCycle": "monthly",
+      "ownerUserId": "usr_quan_y_175_admin"
+    }
+  ],
+  "memberships": [
+    {
+      "id": "mbr_org_default_clinic_owner",
+      "organizationId": "org_default_clinic",
+      "userId": "usr_20260522165505_5287c725",
+      "role": "workspace_owner",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_org_demo_hospital_owner",
+      "organizationId": "org_workspace_demo_hospital",
+      "userId": "usr_20260606001642_77209e89",
+      "role": "workspace_owner",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_vn_hospital_quan_y_175_owner",
+      "organizationId": "vn_hospital_quan_y_175",
+      "userId": "usr_quan_y_175_admin",
+      "role": "workspace_owner",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_doctor_demo",
+      "organizationId": "org_workspace_demo_hospital",
+      "userId": "usr_workspace_demo_doctor",
+      "role": "doctor",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "userId": "usr_doctor_default",
+      "role": "doctor",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_doctor_quany",
+      "organizationId": "vn_hospital_quan_y_175",
+      "userId": "usr_doctor_quany175",
+      "role": "doctor",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_patient_bao",
+      "organizationId": "vn_hospital_quan_y_175",
+      "userId": "usr_20260526062020_05a18dfc",
+      "role": "patient",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    },
+    {
+      "id": "mbr_patient_default",
+      "organizationId": "org_default_clinic",
+      "userId": "usr_patient_default",
+      "role": "patient",
+      "status": "active",
+      "createdAt": "2026-08-27T17:30:37.250Z",
+      "updatedAt": "2026-08-27T17:30:37.250Z"
+    }
+  ],
+  "doctorPatientAccess": [],
+  "idempotencyKeys": [],
+  "deviceClaims": [],
+  "authSessions": [
+    {
+      "id": "authsess_20260606004141_4fee0f8e",
+      "userId": "usr_20260606001642_77209e89",
+      "provider": "firebase",
+      "firebaseUid": "h0P76NqevFVAauupkf9glaTvR3j1",
+      "sessionKey": "5dbe44e6f848acd00dc411606f7ea5d376ce103c7fbdaa8746e56aef6b947fd2",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-06T00:41:41.720Z",
+      "lastSeenAt": "2026-06-06T00:43:33.966Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260606002948_f408fd88",
+      "userId": "usr_20260606001642_77209e89",
+      "provider": "firebase",
+      "firebaseUid": "h0P76NqevFVAauupkf9glaTvR3j1",
+      "sessionKey": "e257dab88f090c1e4cebbea34ec8e75a02ed0c8133aabdce8d9ccf67696ad1bc",
+      "device": "node",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-06T00:29:48.285Z",
+      "lastSeenAt": "2026-06-06T07:51:48.600Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260606001948_f44f1d26",
+      "userId": "usr_20260606001642_77209e89",
+      "provider": "firebase",
+      "firebaseUid": "h0P76NqevFVAauupkf9glaTvR3j1",
+      "sessionKey": "4bd314ebfe51c20a40154baf3f4cda16b7a8569e68e0ebeda2a9692b50438d82",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-06T00:19:48.843Z",
+      "lastSeenAt": "2026-06-06T08:44:44.241Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260606001642_7cea0fe7",
+      "userId": "usr_20260606001642_77209e89",
+      "provider": "firebase",
+      "firebaseUid": "h0P76NqevFVAauupkf9glaTvR3j1",
+      "sessionKey": "d8fd089b63ece3ffe7286d86b704d14908ae4e0f2d117cdd3a1df0f21e55f2b3",
+      "device": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-06T00:16:42.988Z",
+      "lastSeenAt": "2026-06-06T00:19:18.808Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260605155453_45f562d3",
+      "userId": "usr_20260522165505_5287c725",
+      "provider": "firebase",
+      "firebaseUid": "YOPbEgWu4pfRjMsbb8X5zOFBwUx1",
+      "sessionKey": "0863bfc2eabd2e09159ec38a1fb612ac5a3e88bcbceba594e9b0a3c3b6476d4a",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-06-05T15:54:53.597Z",
+      "lastSeenAt": "2026-06-06T00:55:29.873Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260526073523_d1a1bafd",
+      "userId": "usr_20260522165505_5287c725",
+      "provider": "firebase",
+      "firebaseUid": "YOPbEgWu4pfRjMsbb8X5zOFBwUx1",
+      "sessionKey": "469ef43e56f568132a3016e255ae25062885405f837714482f4b758bc3bb1edd",
+      "device": "node",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-26T07:35:23.064Z",
+      "lastSeenAt": "2026-05-26T07:38:57.809Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260526062020_9dc06d99",
+      "userId": "usr_20260526062020_05a18dfc",
+      "provider": "firebase",
+      "firebaseUid": "vbBiNsBNN3TzFfsaaEQwXM6NtAA2",
+      "sessionKey": "b04e8c14f002188a7da1f8e2545b4515cbc15760f91bf7eb6081fcb94e87e96d",
+      "device": "okhttp/4.12.0",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-26T06:20:20.284Z",
+      "lastSeenAt": "2026-05-26T06:20:25.935Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260524074250_521c38d6",
+      "userId": "usr_20260522165505_5287c725",
+      "provider": "firebase",
+      "firebaseUid": "YOPbEgWu4pfRjMsbb8X5zOFBwUx1",
+      "sessionKey": "a296217452767a647f1b2cec9a27ae46901968c5ecc53c57364acc2228a8b0c8",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-24T07:42:50.950Z",
+      "lastSeenAt": "2026-05-26T16:36:45.875Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260523214238_2492e0d3",
+      "userId": "usr_20260523205957_b819bca4",
+      "provider": "firebase",
+      "firebaseUid": "fQwjTYSCBOdGU5Hd0jbC1hkaaze2",
+      "sessionKey": "023460cc52e446376ea7790bf72580ef2d0e9ecbb853d8ab8392987338afab25",
+      "device": "node",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T21:42:38.335Z",
+      "lastSeenAt": "2026-05-23T21:42:38.335Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260523205957_e2cb38bc",
+      "userId": "usr_20260523205957_b819bca4",
+      "provider": "firebase",
+      "firebaseUid": "fQwjTYSCBOdGU5Hd0jbC1hkaaze2",
+      "sessionKey": "2a9c83ae26e92cbe41dabe7d6d1beb71b0e18bfb0e1d69857b956c4e2325f3e6",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T20:59:57.379Z",
+      "lastSeenAt": "2026-05-24T07:26:50.250Z",
+      "revokedAt": null
+    },
+    {
+      "id": "authsess_20260523152032_3491e527",
+      "userId": "usr_20260522165505_5287c725",
+      "provider": "firebase",
+      "firebaseUid": "YOPbEgWu4pfRjMsbb8X5zOFBwUx1",
+      "sessionKey": "3987f7cd851c7a9c5c17f0856471365da771fecadaf0dd1c311fa18560cf7266",
+      "device": "okhttp/4.12.0",
+      "ip": "127.0.0.1",
+      "createdAt": "2026-05-23T15:20:32.426Z",
+      "lastSeenAt": "2026-05-23T15:20:32.426Z",
+      "revokedAt": "2026-05-26T07:34:13.498Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "audit_20260723061118_7d2d0002",
+      "actorUserId": "",
+      "organizationId": "org_default_clinic",
+      "action": "migration.patient_owner_reference_cleared",
+      "resourceType": "patient",
+      "resourceId": "pat_20260523212049_de96fc0d",
+      "ip": "",
+      "userAgent": "Shcare migration remediation",
+      "metadata": {
+        "outcome": "success",
+        "previousOwnerUserId": "usr_20260523212049_cdf412b5",
+        "reason": "Remove a dangling owner reference while preserving the standalone patient record"
+      },
+      "createdAt": "2026-07-23T06:11:18.383Z"
+    },
+    {
+      "id": "audit_20260723061118_7d2d0001",
+      "actorUserId": "",
+      "organizationId": "vn_hospital_quan_y_175",
+      "action": "migration.patient_tenant_remediated",
+      "resourceType": "patient",
+      "resourceId": "pat_20260523210428_eb7affd2",
+      "ip": "",
+      "userAgent": "Shcare migration remediation",
+      "metadata": {
+        "outcome": "success",
+        "previousWorkspaceId": "org_default_clinic",
+        "workspaceId": "vn_hospital_quan_y_175",
+        "reason": "Align the owned patient profile with the owner's active membership before JSON-to-PostgreSQL migration"
+      },
+      "createdAt": "2026-07-23T06:11:18.383Z"
+    },
+    {
+      "id": "audit_20260621102813_401821c7",
+      "actorUserId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/portal/devices/123456",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "method": "PATCH",
+        "path": "/api/portal/devices/123456",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Không có quyền quản lý thiết bị trong workspace này",
+        "requestId": "req_mqnn8ck4_08419ea1",
+        "authSource": "demo-session"
+      },
+      "createdAt": "2026-06-21T10:28:13.589Z"
+    },
+    {
+      "id": "audit_20260621102813_acab9106",
+      "actorUserId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/portal/devices/123456",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "method": "PATCH",
+        "path": "/api/portal/devices/123456",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Không có quyền quản lý thiết bị trong workspace này",
+        "requestId": "req_mqnn8ck0_e0f16f78",
+        "authSource": "demo-session"
+      },
+      "createdAt": "2026-06-21T10:28:13.585Z"
+    },
+    {
+      "id": "audit_20260621102813_1f5fa763",
+      "actorUserId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "action": "patient.create",
+      "resourceType": "patient",
+      "resourceId": "pat_20260621102813_e986e681",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {},
+      "createdAt": "2026-06-21T10:28:13.574Z"
+    },
+    {
+      "id": "audit_20260621102747_d87f9aa1",
+      "actorUserId": "usr_doctor_default",
+      "organizationId": "org_default_clinic",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/portal/staff",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/portal/staff",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Không có quyền xem nhân sự bác sĩ",
+        "requestId": "req_mqnn7sks_e9f47564",
+        "authSource": "demo-session"
+      },
+      "createdAt": "2026-06-21T10:27:47.693Z"
+    },
+    {
+      "id": "audit_20260606075023_82c71828",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "settings.ai.update",
+      "resourceType": "settings",
+      "resourceId": "ai",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "version": "AI Medical Analysis v3.2.2-local"
+      },
+      "createdAt": "2026-06-06T07:50:23.693Z"
+    },
+    {
+      "id": "audit_20260606075014_a8348f1e",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "notification.read",
+      "resourceType": "notification",
+      "resourceId": "noti_20260606074244_526763b8",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {},
+      "createdAt": "2026-06-06T07:50:14.009Z"
+    },
+    {
+      "id": "audit_20260606074244_69d2c54c",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "settings.ai.update",
+      "resourceType": "settings",
+      "resourceId": "ai",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "version": "AI Medical Analysis v3.2.2-local"
+      },
+      "createdAt": "2026-06-06T07:42:44.989Z"
+    },
+    {
+      "id": "audit_20260606074244_67fe0e11",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "settings.api_key.revoke",
+      "resourceType": "api_key",
+      "resourceId": "key_20260606074243_c785c8d6",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "Smoke workspace key",
+        "scope": "workspace"
+      },
+      "createdAt": "2026-06-06T07:42:44.420Z"
+    },
+    {
+      "id": "audit_20260606074244_99431fab",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "settings.api_key.rotate",
+      "resourceType": "api_key",
+      "resourceId": "key_20260606074243_c785c8d6",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "Smoke workspace key",
+        "scope": "workspace"
+      },
+      "createdAt": "2026-06-06T07:42:44.144Z"
+    },
+    {
+      "id": "audit_20260606074243_cad07f70",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "settings.api_key.create",
+      "resourceType": "api_key",
+      "resourceId": "key_20260606074243_c785c8d6",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "Smoke workspace key",
+        "scope": "workspace"
+      },
+      "createdAt": "2026-06-06T07:42:43.874Z"
+    },
+    {
+      "id": "audit_20260606074243_dcf6427f",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "settings.backup_check",
+      "resourceType": "settings",
+      "resourceId": "backup",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "checkedAt": "2026-06-06T07:42:43.592Z",
+        "mode": "json-local",
+        "databaseFile": "D:\\Study\\KLTN\\smart-health-embedded\\web-monitor\\data\\db.json",
+        "users": 2,
+        "patients": 1,
+        "devices": 1,
+        "scans": 0,
+        "storageFiles": 3,
+        "storageBytes": 206,
+        "status": "ok"
+      },
+      "createdAt": "2026-06-06T07:42:43.593Z"
+    },
+    {
+      "id": "audit_20260606074242_c8f3d5f1",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "storage.upload",
+      "resourceType": "storage_file",
+      "resourceId": "file_20260606074242_a602e5b3",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "logo-smoke.png",
+        "bucket": "avatars",
+        "byteSize": 68
+      },
+      "createdAt": "2026-06-06T07:42:42.770Z"
+    },
+    {
+      "id": "audit_20260606074241_2c2a0b91",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "storage.download",
+      "resourceType": "storage_file",
+      "resourceId": "file_20260606074241_872b5f5d",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "avatar-smoke.png",
+        "bucket": "avatars"
+      },
+      "createdAt": "2026-06-06T07:42:41.618Z"
+    },
+    {
+      "id": "audit_20260606074241_4dc4cec6",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "storage.upload",
+      "resourceType": "storage_file",
+      "resourceId": "file_20260606074241_872b5f5d",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "avatar-smoke.png",
+        "bucket": "avatars",
+        "byteSize": 68
+      },
+      "createdAt": "2026-06-06T07:42:41.319Z"
+    },
+    {
+      "id": "audit_20260606074241_1a1ba690",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "account.2fa.disable",
+      "resourceType": "user",
+      "resourceId": "usr_20260606001642_77209e89",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {},
+      "createdAt": "2026-06-06T07:42:41.029Z"
+    },
+    {
+      "id": "audit_20260606074240_7cbf8525",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "account.2fa.enable",
+      "resourceType": "user",
+      "resourceId": "usr_20260606001642_77209e89",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "method": "app"
+      },
+      "createdAt": "2026-06-06T07:42:40.737Z"
+    },
+    {
+      "id": "audit_20260606072548_2f2dcc69",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "storage.download",
+      "resourceType": "storage_file",
+      "resourceId": "file_20260606072548_92504b7e",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "avatar-smoke.png",
+        "bucket": "avatars"
+      },
+      "createdAt": "2026-06-06T07:25:48.730Z"
+    },
+    {
+      "id": "audit_20260606072548_8c345f93",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "storage.upload",
+      "resourceType": "storage_file",
+      "resourceId": "file_20260606072548_92504b7e",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "name": "avatar-smoke.png",
+        "bucket": "avatars",
+        "byteSize": 70
+      },
+      "createdAt": "2026-06-06T07:25:48.416Z"
+    },
+    {
+      "id": "audit_20260606005340_f5b67e5d",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/me/password",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "method": "POST",
+        "path": "/api/me/password",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Demo password auth is disabled in production mode",
+        "requestId": "req_mq1n3ois_890809a0",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:53:40.201Z"
+    },
+    {
+      "id": "audit_20260606005334_ef34376c",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/me/password",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "method": "POST",
+        "path": "/api/me/password",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Demo password auth is disabled in production mode",
+        "requestId": "req_mq1n3k74_3218f60a",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:53:34.667Z"
+    },
+    {
+      "id": "audit_20260606005052_265316c7",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.download",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522145035_c041d7ac",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522145035_c041d7ac.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-06-06T00:50:52.490Z"
+    },
+    {
+      "id": "audit_20260606005025_a964ac27",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.download",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522153345_ab3bf240",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522153345_ab3bf240.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-06-06T00:50:25.410Z"
+    },
+    {
+      "id": "audit_20260606005014_84053e6d",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.share",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522154555_514d17a5",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522154555_514d17a5.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-06-06T00:50:14.595Z"
+    },
+    {
+      "id": "audit_20260606004927_52ea1f7c",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.share",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522154555_514d17a5",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522154555_514d17a5.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-06-06T00:49:27.152Z"
+    },
+    {
+      "id": "audit_20260606004911_8a610ba3",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.download",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522154555_514d17a5",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522154555_514d17a5.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-06-06T00:49:11.490Z"
+    },
+    {
+      "id": "audit_20260606003329_68a1c889",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/packages",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Khong co quyen xem goi dich vu he thong",
+        "requestId": "req_mq1mdq43_cbbdbbf8",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:33:29.208Z"
+    },
+    {
+      "id": "audit_20260606002948_b69341e0",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/doctor-requests",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/doctor-requests",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Chi platform admin moi duoc xu ly yeu cau bac si",
+        "requestId": "req_mq1m8zny_e6223442",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:29:48.398Z"
+    },
+    {
+      "id": "audit_20260606002948_4df7394c",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userAgent": "node",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/packages",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Khong co quyen xem goi dich vu he thong",
+        "requestId": "req_mq1m8znw_1758a64b",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:29:48.372Z"
+    },
+    {
+      "id": "audit_20260606001918_628bfe25",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/doctor-requests",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/doctor-requests",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Chi platform admin moi duoc xu ly yeu cau bac si",
+        "requestId": "req_mq1lvhxu_144a2663",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:19:18.811Z"
+    },
+    {
+      "id": "audit_20260606001918_fd04ee67",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/sync-firebase",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "POST",
+        "path": "/api/admin/sync-firebase",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Chi platform admin moi duoc dong bo Firebase",
+        "requestId": "req_mq1lvhpr_7d312709",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:19:18.544Z"
+    },
+    {
+      "id": "audit_20260606001918_b09917df",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/packages",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Khong co quyen xem goi dich vu he thong",
+        "requestId": "req_mq1lvhg4_b3143578",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:19:18.184Z"
+    },
+    {
+      "id": "audit_20260606001646_f176d344",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/doctor-requests",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/doctor-requests",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Chi platform admin moi duoc xu ly yeu cau bac si",
+        "requestId": "req_mq1ls8d3_cb0079b1",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:16:46.451Z"
+    },
+    {
+      "id": "audit_20260606001646_cc5ba3cd",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/sync-firebase",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "POST",
+        "path": "/api/admin/sync-firebase",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Chi platform admin moi duoc dong bo Firebase",
+        "requestId": "req_mq1ls85d_4e9b2d10",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:16:46.165Z"
+    },
+    {
+      "id": "audit_20260606001645_f63e1b35",
+      "actorUserId": "usr_20260606001642_77209e89",
+      "organizationId": "org_workspace_demo_hospital",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/admin/packages",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "GET",
+        "path": "/api/admin/packages",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Khong co quyen xem goi dich vu he thong",
+        "requestId": "req_mq1ls7x5_f18ab1e0",
+        "authSource": "firebase"
+      },
+      "createdAt": "2026-06-06T00:16:45.835Z"
+    },
+    {
+      "id": "audit_20260605153358_2b74c17b",
+      "actorUserId": "usr_20260526062020_05a18dfc",
+      "organizationId": "vn_hospital_quan_y_175",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/settings/test-email",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "POST",
+        "path": "/api/settings/test-email",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Khong co quyen test email",
+        "requestId": "req_mq133wr7_5dba5385",
+        "authSource": "none"
+      },
+      "createdAt": "2026-06-05T15:33:58.292Z"
+    },
+    {
+      "id": "audit_20260605153235_d435c984",
+      "actorUserId": "usr_20260526062020_05a18dfc",
+      "organizationId": "vn_hospital_quan_y_175",
+      "action": "access.denied",
+      "resourceType": "http_request",
+      "resourceId": "/api/settings/test-email",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "metadata": {
+        "method": "POST",
+        "path": "/api/settings/test-email",
+        "hasQuery": false,
+        "code": "FORBIDDEN",
+        "message": "Khong co quyen test email",
+        "requestId": "req_mq1324x5_3f0d7253",
+        "authSource": "none"
+      },
+      "createdAt": "2026-06-05T15:32:35.562Z"
+    },
+    {
+      "id": "audit_20260526160446_4f83cd8b",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.share",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522153345_ab3bf240",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522153345_ab3bf240.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-05-26T16:04:46.305Z"
+    },
+    {
+      "id": "audit_20260526154007_f502e2cf",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "device.unpair",
+      "resourceType": "device",
+      "resourceId": "stetho-ai-pro",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {},
+      "createdAt": "2026-05-26T15:40:07.652Z"
+    },
+    {
+      "id": "audit_20260526073951_9cc9874f",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "notification.read",
+      "resourceType": "notification",
+      "resourceId": "noti_20260526064802_18a6d2b0",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {},
+      "createdAt": "2026-05-26T07:39:51.652Z"
+    },
+    {
+      "id": "audit_20260526064216_ba5efcb7",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "clinic.update",
+      "resourceType": "organization",
+      "resourceId": "org_default_clinic",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "status": "active"
+      },
+      "createdAt": "2026-05-26T06:42:16.953Z"
+    },
+    {
+      "id": "audit_20260526064214_b186f34f",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "clinic.update",
+      "resourceType": "organization",
+      "resourceId": "org_default_clinic",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "status": "inactive"
+      },
+      "createdAt": "2026-05-26T06:42:14.313Z"
+    },
+    {
+      "id": "audit_20260526062158_d10cd3e3",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "notification.read",
+      "resourceType": "notification",
+      "resourceId": "all",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "scope": "all"
+      },
+      "createdAt": "2026-05-26T06:21:58.716Z"
+    },
+    {
+      "id": "audit_20260526061612_ac1bc9cb",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "vn_hospital_quan_y_175",
+      "action": "doctor.approve",
+      "resourceType": "user",
+      "resourceId": "usr_20260526013008_7e538dfb",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "firebaseUid": "vbBiNsBNN3TzFfsaaEQwXM6NtAA2",
+        "firebaseClaims": {
+          "updated": true,
+          "claims": {
+            "role": "doctor",
+            "organizationId": "vn_hospital_quan_y_175",
+            "smartHealth": {
+              "role": "doctor",
+              "organizationId": "vn_hospital_quan_y_175"
+            }
+          }
+        }
+      },
+      "createdAt": "2026-05-26T06:16:12.297Z"
+    },
+    {
+      "id": "audit_20260526015624_a17bd02b",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "doctor.request_info",
+      "resourceType": "user",
+      "resourceId": "usr_20260526013008_7e538dfb",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "message": "thiếu hồ sơ"
+      },
+      "createdAt": "2026-05-26T01:56:24.209Z"
+    },
+    {
+      "id": "audit_20260526013053_ff51cdfd",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "notification.read",
+      "resourceType": "notification",
+      "resourceId": "noti_20260526013009_41fb65db",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {},
+      "createdAt": "2026-05-26T01:30:53.194Z"
+    },
+    {
+      "id": "audit_20260525162256_320d670e",
+      "actorUserId": "usr_20260522165505_5287c725",
+      "organizationId": "org_default_clinic",
+      "action": "storage.download",
+      "resourceType": "storage_file",
+      "resourceId": "scan_20260522153100_6a4cbc1e",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "metadata": {
+        "name": "scan_20260522153100_6a4cbc1e.wav",
+        "bucket": "heart-audio"
+      },
+      "createdAt": "2026-05-25T16:22:56.689Z"
+    }
+  ],
+  "audioFiles": [],
+  "aiResults": [],
+  "notificationDevices": [],
+  "deviceEvents": [
+    {
+      "id": "devevt_20260526154007_a43c4905",
+      "deviceId": "stetho-ai-pro",
+      "eventType": "unpair",
+      "payload": {
+        "actorUserId": "usr_20260522165505_5287c725"
+      },
+      "createdAt": "2026-05-26T15:40:07.650Z"
+    }
+  ],
+  "storageBuckets": [],
+  "storageFiles": [],
+  "servicePackages": [
+    {
+      "id": "pkg_clinic_basic",
+      "name": "Clinic Basic",
+      "type": "basic",
+      "segment": "organization",
+      "price": 2500000,
+      "currency": "VND",
+      "duration": "monthly",
+      "maxDevices": 3,
+      "maxDoctors": 5,
+      "maxPatients": 1000,
+      "storageGb": 200,
+      "aiMonthly": 2000,
+      "retentionDays": 365,
+      "features": {
+        "cloudStorage": true,
+        "analytics": true,
+        "aiDiagnosis": true
+      },
+      "status": "active",
+      "createdAt": "2026-05-26T07:14:04.506Z",
+      "updatedAt": "2026-05-26T07:14:04.506Z"
+    },
+    {
+      "id": "pkg_solo_doctor",
+      "name": "Solo Doctor",
+      "type": "solo",
+      "segment": "solo_practice",
+      "price": 490000,
+      "currency": "VND",
+      "duration": "monthly",
+      "maxDevices": 1,
+      "maxDoctors": 1,
+      "maxPatients": 150,
+      "storageGb": 50,
+      "aiMonthly": 500,
+      "retentionDays": 180,
+      "features": {
+        "cloudStorage": true,
+        "analytics": true,
+        "aiDiagnosis": true
+      },
+      "status": "active",
+      "createdAt": "2026-05-26T07:14:04.506Z",
+      "updatedAt": "2026-05-26T07:14:04.506Z"
+    },
+    {
+      "id": "pkg_personal_family",
+      "name": "Personal Family",
+      "type": "personal",
+      "segment": "personal",
+      "price": 99000,
+      "currency": "VND",
+      "duration": "monthly",
+      "maxDevices": 2,
+      "maxDoctors": 0,
+      "maxPatients": 6,
+      "storageGb": 20,
+      "aiMonthly": 100,
+      "retentionDays": 180,
+      "features": {
+        "cloudStorage": true,
+        "analytics": false,
+        "aiDiagnosis": true
+      },
+      "status": "active",
+      "createdAt": "2026-05-26T07:14:04.506Z",
+      "updatedAt": "2026-05-26T07:14:04.506Z"
+    }
+  ],
+  "subscriptions": []
+}

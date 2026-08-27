@@ -23115,6 +23115,24 @@ async function handleApi(req, res, url) {
     segments = [segments[0], ...segments.slice(2)];
   }
 
+  if (method === "GET" && segments[1] === "health" && segments[2] === "data-summary") {
+    const deviceIds = db.devices.map((d) => d.id);
+    sendJson(res, 200, {
+      ok: true,
+      counts: {
+        users: db.users.length,
+        devices: db.devices.length,
+        patients: db.patients.length,
+        scans: db.scans.length,
+        organizations: (db.organizations || []).length,
+      },
+      deviceIds,
+      dataBackend: DATA_BACKEND,
+      authMode: AUTH_MODE,
+    });
+    return;
+  }
+
   if (method === "GET" && segments[1] === "health") {
     const publicHealthStatus = buildPublicHealthStatus(nowIso());
     sendJson(res, 200, {

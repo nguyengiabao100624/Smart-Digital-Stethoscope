@@ -5199,22 +5199,22 @@ function createRepositories(options) {
         error.managedAdminCreatePhase = managedAdminSqlPhase;
         throw error;
       }
-      managedAdminSqlPhase = "runtime_sync";
-      syncArrayItem(getDb().users, result.user);
-      if (result.membership) syncArrayItem(getDb().memberships, result.membership);
-      if (result.identityOperation) {
-        getDb().identityOperations = Array.isArray(getDb().identityOperations) ? getDb().identityOperations : [];
-        syncArrayItem(getDb().identityOperations, result.identityOperation);
-      }
-      if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
-      syncRuntimeMutationIdempotency(
-        idempotency,
-        "managed_admin_create",
-        result.user.id,
-        result.reservation.state === "completed" ? 201 : 202,
-        result.reservation,
-      );
       try {
+        managedAdminSqlPhase = "runtime_sync";
+        syncArrayItem(getDb().users, result.user);
+        if (result.membership) syncArrayItem(getDb().memberships, result.membership);
+        if (result.identityOperation) {
+          getDb().identityOperations = Array.isArray(getDb().identityOperations) ? getDb().identityOperations : [];
+          syncArrayItem(getDb().identityOperations, result.identityOperation);
+        }
+        if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
+        syncRuntimeMutationIdempotency(
+          idempotency,
+          "managed_admin_create",
+          result.user.id,
+          result.reservation.state === "completed" ? 201 : 202,
+          result.reservation,
+        );
         managedAdminSqlPhase = "runtime_save";
         await saveDb();
       } catch (error) {

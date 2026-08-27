@@ -12594,9 +12594,18 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
     }
     const providerCode = readString(error?.code || "", 120);
     const providerFailure = providerCode.startsWith("auth/");
+    const stackLocationMatch = /(?:\(|\s)([^()\s]+\.(?:js|mjs)):(\d+):(\d+)\)?/.exec(
+      readString(error?.stack || "", 2000),
+    );
+    const internalLocation = stackLocationMatch
+      ? `${path.basename(stackLocationMatch[1])}:${stackLocationMatch[2]}`
+      : "unknown";
+    const errorName = readString(error?.name || typeof error, 80) || "Error";
     console.error("Managed admin creation failed", {
       phase: managedAdminCreatePhase,
       providerCode: providerCode || "unexpected_error",
+      errorName,
+      internalLocation,
     });
     throw httpError(
       providerFailure ? 502 : 500,
@@ -12607,6 +12616,8 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
       {
         phase: managedAdminCreatePhase,
         providerCode: providerCode || "unexpected_error",
+        errorName,
+        internalLocation,
       },
     );
   } finally {

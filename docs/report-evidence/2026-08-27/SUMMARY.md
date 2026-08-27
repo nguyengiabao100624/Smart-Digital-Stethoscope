@@ -110,11 +110,38 @@ Trích đoạn log từ `firmware-serial-telemetry-com9.log`:
 
 ---
 
-## 5. Tuyên Bố Giới Hạn & Ranh Giới Bắt Buộc (Thesis Limitations)
+## 5. Nghiệm Thu Luồng Âm Thanh Micro Thật & Đóng Gói Bản Phát Hành (Release Artifacts)
+
+- **Phiên đo thực tế từ 2 micro ESP32-S3 (Live Scan ID: `scan_20260827132427_9435066a`):**
+  - Thời lượng: `13.512 giây` (16kHz, 16-bit PCM).
+  - Số mẫu thu nhận: `216,192 mẫu`.
+  - Gói tin nhị phân WSS Audio V2: `1,690 gói` (**0 gói rớt — Zero Dropped Packets**).
+  - Nhịp tim tính toán: `54 BPM`.
+  - Đánh giá AI: *"Âm thanh đủ điều kiện kiểm tra chất lượng tín hiệu (Độ tin cậy 82%)"*.
+  - Tệp WAV lưu trữ: [`docs/report-evidence/2026-08-27/physical-stethoscope-audio.wav`](physical-stethoscope-audio.wav) (Dung lượng `432,428 bytes`).
+
+- **Đóng gói bộ sản phẩm chính thức phục vụ phát hành (Production Artifacts):**
+  - **Android Release APK (`1.0.0-rc.2`):**
+    - Tập tin: [`docs/report-evidence/2026-08-27/app-release-v1.0.0-rc.2.apk`](app-release-v1.0.0-rc.2.apk)
+    - Dung lượng: `38,855,148 bytes` (38.8 MB).
+    - SHA-256: `104D7DA5D5505F13645C737F4EDD72D545953B1549E41FB60502EC7296D68837`.
+    - Biên dịch: 50 actionable tasks executed với Proguard/R8 tối ưu dung lượng và bảo mật bytecode.
+  - **ESP32-S3 Production Firmware Binary (`1.0.2`):**
+    - Tập tin: [`docs/report-evidence/2026-08-27/firmware-production-v1.0.2.bin`](firmware-production-v1.0.2.bin)
+    - Dung lượng: `1,182,560 bytes`.
+    - SHA-256: `22359D81D52FE6D04C039D5C8A2236EB7A87454006D22EEE31DBA3965707C151`.
+  - **Web Portal & Web Admin Production Bundles:**
+    - Web Portal: `dist/client` (361 KB gzip-optimized) + SSR bundles, đạt 139/139 contract tests PASS.
+    - Web Admin: `dist/client` (382 KB gzip-optimized) + 17 prerendered routes, đạt 192/192 contract tests PASS.
+
+---
+
+## 6. Tuyên Bố Giới Hạn & Ranh Giới Bắt Buộc (Thesis Limitations)
 
 Theo đúng quy định chống báo cáo khống:
 1. **Thiết bị hỗ trợ theo dõi, không phải thiết bị y tế đã được chứng nhận (Not FDA/CE-certified medical device).**
 2. **AI Signal Quality / Chatbot là công cụ hỗ trợ thông tin lâm sàng tham khảo, không tự ý đưa ra kết luận chẩn đoán độc lập.**
 3. **Mật khẩu Wi-Fi của người dùng chỉ được nhập trực tiếp trên màn hình bảo mật của ứng dụng Shcare, không bao giờ được ghi vào mã nguồn, log hay công cụ terminal.**
 4. **Cổng G4 (Production Promotion) vẫn ở trạng thái PENDING/BLOCKED cho đến khi các biến môi trường Production được cấu hình trên Render dashboard và migration SQL chạy trên PostgreSQL Live.**
+
 

@@ -12324,6 +12324,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
     return { ...replay, replayed: true, firebase: { ...replay.firebase, created: false } };
   }
 
+  let managedAdminCreatePhase = "reservation";
   const creationPromise = (async () => {
     const begin = await repositories.users.beginManagedAdminCreate({ user: candidateUser, idempotency });
     const reservation = begin.reservation || {};
@@ -12340,6 +12341,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
       providerUser,
       providerCreatedByCurrentAttempt = false,
     ) => {
+      managedAdminCreatePhase = "provider_activation";
       const activation = await activateManagedAdminProvider({
         backendUser: committed.user,
         reservation: committed.reservation,
@@ -12466,6 +12468,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
     }
 
     candidateUser.id = reservation.userId;
+    managedAdminCreatePhase = "provider_identity";
     const provisioningClaims = {
       ...publicClaims,
       shcareProvisioningOperationId: reservation.operationId,
@@ -12505,6 +12508,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
         }
       }
 
+      managedAdminCreatePhase = "provider_claims";
       await firebaseAdminApp.auth().setCustomUserClaims(firebaseUser.uid, provisioningClaims);
       await firebaseAdminApp.auth().updateUser(firebaseUser.uid, {
         displayName: name,
@@ -12515,6 +12519,7 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
       // The durable provider ownership marker stays provider-side. Backend and
       // API models retain only the authorization claims clients need.
       candidateUser.firebaseClaims = publicClaims;
+      managedAdminCreatePhase = "backend_commit";
       const committed = await repositories.users.createManagedAdminWithAudit({
         user: candidateUser,
         idempotency,
@@ -12582,6 +12587,25 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
   });
   try {
     return await creationPromise;
+  } catch (error) {
+    if (error?.statusCode) throw error;
+    const providerCode = readString(error?.code || "", 120);
+    const providerFailure = providerCode.startsWith("auth/");
+    console.error("Managed admin creation failed", {
+      phase: managedAdminCreatePhase,
+      providerCode: providerCode || "unexpected_error",
+    });
+    throw httpError(
+      providerFailure ? 502 : 500,
+      providerFailure
+        ? "Không thể tạo danh tính đăng nhập cho tài khoản quản trị"
+        : "Không thể hoàn tất quy trình tạo tài khoản quản trị",
+      providerFailure ? "MANAGED_ADMIN_PROVIDER_CREATE_FAILED" : "MANAGED_ADMIN_CREATE_FAILED",
+      {
+        phase: managedAdminCreatePhase,
+        providerCode: providerCode || "unexpected_error",
+      },
+    );
   } finally {
     const current = managedAdminCreateInFlight.get(inFlightKey);
     if (current?.promise === creationPromise) managedAdminCreateInFlight.delete(inFlightKey);

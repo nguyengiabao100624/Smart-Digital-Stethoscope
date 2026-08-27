@@ -437,6 +437,10 @@ async function exerciseAdminMutations(page, state) {
   ) {
     throw new Error("platform smoke account is missing platform capabilities");
   }
+  const adminOrganizationId = String(user.currentWorkspaceId || user.organizationId || "");
+  if (!adminOrganizationId) {
+    throw new Error("platform smoke account has no active workspace for managed-admin mutations");
+  }
 
   const originalSettingsResult = await apiFetch(page, "/settings");
   const originalSystem = originalSettingsResult.payload?.settings?.system || {};
@@ -478,6 +482,7 @@ async function exerciseAdminMutations(page, state) {
   const adminEmail = `${runKey}-workspace-admin@smarthealth.test`;
   const adminCreate = await apiFetch(page, "/admin/admin-users", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:admin-account:create` },
     body: {
       role: "workspace_admin",
       email: adminEmail,
@@ -485,7 +490,7 @@ async function exerciseAdminMutations(page, state) {
       name: `Smoke Workspace Admin ${runId}`,
       phone: "0900000090",
       title: "Smoke workspace admin",
-      organizationId: state.clinicId,
+      organizationId: adminOrganizationId,
     },
   });
   state.adminUserId = adminCreate.payload?.user?.id;
@@ -945,7 +950,7 @@ async function cleanup(page, state, cleanupResults) {
       });
       const current = inventory.payload?.clinics?.find((item) => item.id === state.clinicId);
       let expectedVersion = Number(current?.version || state.clinicVersion || 1);
-      if (current && current.status !== "inactive") {
+      if (current?.status === "active") {
         const transition = await apiFetch(
           page,
           `/admin/clinics/${encodeURIComponent(state.clinicId)}`,

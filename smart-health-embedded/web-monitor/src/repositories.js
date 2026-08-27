@@ -4992,7 +4992,10 @@ function createRepositories(options) {
         });
       }
 
-      const result = await withSqlTransaction(async (client) => {
+      let managedAdminSqlPhase = "idempotency_replay";
+      let result;
+      try {
+        result = await withSqlTransaction(async (client) => {
         const replay = await findSqlMutationReplay(client, idempotency);
         if (!replay) {
           throw repositoryError(
@@ -5027,6 +5030,7 @@ function createRepositories(options) {
             "Managed admin reservation does not match the provider identity",
           );
         }
+        managedAdminSqlPhase = "workspace_lock";
         const workspace = await client.query(
           "SELECT id, status, workspace_type, type FROM organizations WHERE id = $1 LIMIT 1 FOR UPDATE",
           [candidate.organizationId],
@@ -5041,6 +5045,7 @@ function createRepositories(options) {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
           `managed-admin-email:${normalizedEmail}`,
         ]);
+        managedAdminSqlPhase = "identity_operation_lock";
         const unresolved = await client.query(
           `
             SELECT id, operation
@@ -5059,6 +5064,7 @@ function createRepositories(options) {
             "Another identity operation prevents managed-admin activation",
           );
         }
+        managedAdminSqlPhase = "identity_conflict_check";
         const conflict = await client.query(
           `
             SELECT id FROM users
@@ -5070,6 +5076,7 @@ function createRepositories(options) {
         if (conflict.rows[0]) {
           throw repositoryError(409, "MANAGED_ADMIN_IDENTITY_CONFLICT", "Managed admin identity already exists");
         }
+        managedAdminSqlPhase = "user_insert";
         const inserted = await client.query(
           `
             INSERT INTO users (
@@ -5122,6 +5129,7 @@ function createRepositories(options) {
             };
         let persistedMembership = null;
         if (membership) {
+          managedAdminSqlPhase = "membership_insert";
           const insertedMembership = await client.query(
             `
               INSERT INTO memberships (id, organization_id, user_id, role, created_at)
@@ -5133,8 +5141,10 @@ function createRepositories(options) {
           persistedMembership = rowToMembership(insertedMembership.rows[0]);
         }
         const auditLog = buildAuditLog();
+        managedAdminSqlPhase = "audit_insert";
         await queryInsertAuditLog(client, auditLog);
         const activationOperationId = `identityop_${reservation.operationId}`;
+        managedAdminSqlPhase = "activation_operation_insert";
         const insertedActivationOperation = await client.query(
           `
             INSERT INTO identity_operations (
@@ -5166,6 +5176,7 @@ function createRepositories(options) {
           ],
         );
         const activationPending = buildActivationPendingResponse(reservation, activationOperationId);
+        managedAdminSqlPhase = "idempotency_update";
         await client.query(
           `
             UPDATE mutation_idempotency
@@ -5183,7 +5194,12 @@ function createRepositories(options) {
           reservation: activationPending,
           replayed: false,
         };
-      });
+        });
+      } catch (error) {
+        error.managedAdminCreatePhase = managedAdminSqlPhase;
+        throw error;
+      }
+      managedAdminSqlPhase = "runtime_sync";
       syncArrayItem(getDb().users, result.user);
       if (result.membership) syncArrayItem(getDb().memberships, result.membership);
       if (result.identityOperation) {
@@ -5199,9 +5215,11 @@ function createRepositories(options) {
         result.reservation,
       );
       try {
+        managedAdminSqlPhase = "runtime_save";
         await saveDb();
       } catch (error) {
         error.backendCommitted = true;
+        error.managedAdminCreatePhase = managedAdminSqlPhase;
         throw error;
       }
       return result;

@@ -12589,6 +12589,9 @@ async function createManagedAdminAccount(payload = {}, actorUser, req) {
     return await creationPromise;
   } catch (error) {
     if (error?.statusCode) throw error;
+    if (error?.managedAdminCreatePhase) {
+      managedAdminCreatePhase = `backend_commit.${readString(error.managedAdminCreatePhase, 80)}`;
+    }
     const providerCode = readString(error?.code || "", 120);
     const providerFailure = providerCode.startsWith("auth/");
     console.error("Managed admin creation failed", {

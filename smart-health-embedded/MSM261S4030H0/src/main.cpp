@@ -300,8 +300,15 @@ public:
   bool connect(const WSString &host, const int port) override {
     IPAddress target;
     if (!target.fromString(SMART_HEALTH_HIL_BACKEND_CONNECT_IP)) {
-      Serial.println("Local HIL TLS route is invalid.");
-      return false;
+      // A local HIL normally pins the resolved address so the TLS SNI/CA
+      // hostname remains production-like.  For a cloud fixture the address
+      // may be omitted or rotated; resolve the same hostname instead of
+      // failing closed with an opaque "route invalid" loop.
+      Serial.println("Local HIL TLS route pin missing; resolving cloud host.");
+      if (WiFi.hostByName(host.c_str(), target) != 1) {
+        Serial.println("Local HIL TLS DNS resolution failed.");
+        return false;
+      }
     }
     const bool connected = client.connect(
         target, port, host.c_str(), BACKEND_CA_CERT, nullptr, nullptr);

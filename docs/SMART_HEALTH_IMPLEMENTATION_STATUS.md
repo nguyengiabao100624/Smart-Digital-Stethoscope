@@ -3007,3 +3007,8 @@ KLTN report artifacts generated from this evidence set:
 - `PASS/physical`: the primary advertisement carries the matching opaque service-data discriminator, and `PhysicalDeviceBleDiscoveryHilTest` passes a non-skipped `1/1` in `1.086s`, including the canonical BLE service and four-characteristic contract.
 - `PASS/device setup`: Fine Location, Nearby Wi-Fi and Nearby Bluetooth permissions are currently granted through the normal Android UI. Future clean installs should use the App-triggered Android permission dialogs; shell/UiAutomation consent bypass remains intentionally unsupported on MIUI.
 - `OPEN/runtime`: the target-network password must be entered only in Shcare App. Encrypted BLE credential transfer, ESP Wi-Fi association, authenticated WSS/ACK, audio-v2, durable scan and signed OTA success/forced rollback still need physical evidence. G3 is not complete and G4 has not started.
+## 2026-08-28 — Supabase factory fixture and Render WSS proof
+
+- Production connector access is active for Render workspace `tea-d974c90k1i2s73a47ok0` and Supabase project `mahvymyncxszvuhlycwp`. Disposable fixture `shcare-g3-prod-demo` is audited in `org_default_clinic`; credential is hash-only in PostgreSQL.
+- ESP32-S3 image flashed on COM9 with Render TLS/WSS settings; SHA-256 `FDEE58BE2CEDC5489852CE9B10663574CF814190761F8D4104DBF0272E4D9F71`, no erase/eFuse. DNS fallback source fix included.
+- Supabase shows `connected=true`, `status=connected`, `connection_method=WSS`, fresh heartbeat after Render WebSocket authentication. G3 remains OPEN pending the remaining HIL/provider/release gates; G4 has not started.

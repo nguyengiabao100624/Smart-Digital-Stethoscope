@@ -2,6 +2,17 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 Doctor Approval regression closure
+
+- [x] Reproduce the 409 target-mismatch path with a solo-doctor request whose
+  current personal workspace differs from its requested workspace.
+- [x] Map `roleRequestOrganizationId` through the Admin API type and request
+  view model; prevent a stale organization picker value from being submitted.
+- [x] Verify focused regression `7/7`, full Admin contracts `194/194`, lint,
+  production build, backend smoke and workspace-access smoke.
+- [x] Deploy Admin to Firebase live (`374e87f559d3de12`, release
+  `1787924022288000`).
+
 ## 2026-08-28 registration approval gate revalidation
 
 - [x] Personal registration becomes an active patient/personal workspace after email verification without Platform Admin approval.

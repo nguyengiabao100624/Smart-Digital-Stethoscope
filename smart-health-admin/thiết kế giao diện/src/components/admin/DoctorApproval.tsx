@@ -58,6 +58,7 @@ type DoctorRequest = {
   lastLogin: string;
   requestedAt?: string;
   organizationId?: string;
+  roleRequestOrganizationId?: string;
   requiredFields?: string[];
   workspaceType?: string;
   accountType?: string;
@@ -160,7 +161,11 @@ function toDoctorRequest(
   clinicMap: Map<string, SmartHealthClinic> = new Map(),
 ): DoctorRequest {
   const hasLicense = Boolean(user.license?.trim());
-  const clinic = user.organizationId ? clinicMap.get(user.organizationId) : undefined;
+  // organizationId is the user's current operational workspace (often their
+  // personal workspace while a role request is pending). Approval must use the
+  // immutable workspace captured with the request instead.
+  const targetOrganizationId = user.roleRequestOrganizationId || user.organizationId;
+  const clinic = targetOrganizationId ? clinicMap.get(targetOrganizationId) : undefined;
   const requestedAt = user.requestedAt || user.roleRequestedAt || user.createdAt;
   const status = normalizeRequestStatus(user);
   const workspaceType = getDoctorWorkspaceType(user, clinic);
@@ -194,7 +199,8 @@ function toDoctorRequest(
     uid: user.firebaseUid || user.id,
     lastLogin: formatDateTime(user.updatedAt),
     requestedAt,
-    organizationId: user.organizationId,
+    organizationId: targetOrganizationId,
+    roleRequestOrganizationId: user.roleRequestOrganizationId,
     requiredFields: user.roleInfoRequiredFields || [],
     workspaceType,
     accountType,
@@ -258,7 +264,12 @@ export function DoctorApproval() {
     const matchedClinic = selectedDoc?.clinic
       ? clinics.find((clinic) => clinic.name === selectedDoc.clinic)
       : undefined;
-    setApproveOrganizationId(selectedDoc?.organizationId || matchedClinic?.id || "");
+    setApproveOrganizationId(
+      selectedDoc?.roleRequestOrganizationId ||
+        selectedDoc?.organizationId ||
+        matchedClinic?.id ||
+        "",
+    );
     setInfoFields(selectedDoc?.requiredFields || []);
   }, [selectedDoc, clinics]);
 
@@ -323,7 +334,11 @@ export function DoctorApproval() {
       return;
     }
 
-    const organizationId = approveOrganizationId || selectedDoc.organizationId;
+    // Never let a stale/manual picker value override the server-persisted
+    // target. The backend rejects mismatches with 409, so this also prevents
+    // the exact personal-workspace regression seen in production.
+    const organizationId =
+      selectedDoc.roleRequestOrganizationId || selectedDoc.organizationId || approveOrganizationId;
     if (!organizationId) {
       toast.error("Vui lòng chọn tổ chức/phòng khám trước khi phê duyệt.");
       return;
@@ -852,7 +867,14 @@ export function DoctorApproval() {
                 value={approveOrganizationId}
                 fallbackLabel={selectedDoc?.clinic || "Chọn tổ chức/phòng khám"}
                 onChange={setApproveOrganizationId}
+                disabled={Boolean(selectedDoc?.roleRequestOrganizationId)}
               />
+              {selectedDoc?.roleRequestOrganizationId && (
+                <p className="-mt-2 text-xs leading-5 text-muted-foreground">
+                  Workspace đích được khóa theo yêu cầu đã gửi; không thể đổi sang hồ sơ cá nhân
+                  hoặc một tổ chức khác.
+                </p>
+              )}
               <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
                 <p className="text-sm font-medium text-foreground">Vai trò được cấp: Bác sĩ</p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -968,11 +990,13 @@ function SearchableClinicSelect({
   value,
   fallbackLabel,
   onChange,
+  disabled = false,
 }: {
   clinics: SmartHealthClinic[];
   value: string;
   fallbackLabel: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -994,6 +1018,8 @@ function SearchableClinicSelect({
         <Popover.Trigger asChild>
           <button
             type="button"
+            disabled={disabled}
+            aria-disabled={disabled}
             className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-muted/60 focus:border-ring focus:ring-1 focus:ring-ring"
           >
             <span className="min-w-0 truncate">

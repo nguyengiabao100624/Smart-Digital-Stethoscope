@@ -2,6 +2,20 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 Admin doctor-approval 409 regression
+
+- **FIXED and deployed:** Doctor Approval now uses the backend-persisted
+  `roleRequestOrganizationId` rather than the applicant's current personal
+  `organizationId`. This covers solo-doctor requests while preserving the
+  clinic target for facility doctors; the target control is read-only once
+  persisted, and the backend still rejects mismatches.
+- Reproduction was a real 409 from `shcare-admin.web.app/doctor-approval/`.
+  Verification: focused regression `7/7`, full Admin contracts `194/194`,
+  changed-file lint PASS, Admin production build PASS, backend smoke PASS and
+  workspace-access smoke PASS.
+- Live Firebase Admin version `374e87f559d3de12`, release
+  `1787924022288000`.
+
 ## 2026-08-28 registration approval lifecycle revalidation
 
 - **PASS — personal:** verified Firebase users default to active `patient` authority in their personal workspace; no admin approval is required.

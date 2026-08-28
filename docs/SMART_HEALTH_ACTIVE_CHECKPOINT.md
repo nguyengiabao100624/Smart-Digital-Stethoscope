@@ -2,6 +2,21 @@
 
 ## 2026-08-28 latest execution evidence
 
+### 2026-08-28 Doctor Approval 409 regression fixed
+
+- Reproduced the live Admin failure: a solo-doctor request kept the user's
+  personal `organizationId`, while the approval dialog sent that value instead
+  of the persisted `roleRequestOrganizationId`; Render correctly returned
+  `409 DOCTOR_REQUEST_TARGET_MISMATCH`.
+- Web Admin now maps and displays the canonical role-request target, prevents
+  the picker from overriding it, and always submits that target. Backend
+  fail-closed validation remains enabled for stale or cross-workspace values.
+- Evidence: focused regression `7/7`, full Admin contract suite `194/194`,
+  changed-file ESLint PASS, production build PASS, backend smoke and workspace
+  access smoke PASS. Admin Firebase live release:
+  `projects/162993928259/sites/shcare-admin/versions/374e87f559d3de12`, release
+  `1787924022288000`.
+
 - Read-only COM9 probe confirms the attached target is ESP32-S3 rev 0.2 with
   16 MB flash (CH343 serial). No erase or firmware write was performed in
   this probe.

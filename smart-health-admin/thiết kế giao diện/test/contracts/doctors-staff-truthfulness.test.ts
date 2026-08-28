@@ -88,3 +88,24 @@ test("platform-only doctor identity controls are not exposed to workspace staff 
   assert.match(source, /confirmError/);
   assert.match(source, /isConfirming/);
 });
+
+test("doctor approval uses the persisted role-request workspace, not the user's current personal workspace", async () => {
+  const source = await readFile(
+    new URL("../../src/components/admin/DoctorApproval.tsx", import.meta.url),
+    "utf8",
+  );
+  const apiSource = await readFile(apiPath, "utf8");
+
+  assert.match(apiSource, /roleRequestOrganizationId\?: string/);
+  assert.match(source, /roleRequestOrganizationId\?: string/);
+  assert.match(
+    source,
+    /const targetOrganizationId = user\.roleRequestOrganizationId \|\| user\.organizationId/,
+  );
+  assert.match(source, /organizationId: targetOrganizationId/);
+  assert.match(
+    source,
+    /selectedDoc\?\.roleRequestOrganizationId\s*\|\|\s*selectedDoc\?\.organizationId/,
+  );
+  assert.match(source, /selectedDoc\.roleRequestOrganizationId \|\| selectedDoc\.organizationId/);
+});

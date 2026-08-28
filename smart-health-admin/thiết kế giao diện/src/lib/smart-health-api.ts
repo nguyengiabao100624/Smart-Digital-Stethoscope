@@ -121,6 +121,8 @@ export type SmartHealthAuthUser = {
   verifiedPhone?: boolean;
   roleRequestStatus?: string;
   requestedRole?: string;
+  /** Workspace selected when the doctor role request was submitted. */
+  roleRequestOrganizationId?: string;
   roleRequestedAt?: string;
   roleApprovedAt?: string;
   roleRejectedAt?: string;

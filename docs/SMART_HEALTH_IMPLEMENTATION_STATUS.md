@@ -3012,3 +3012,10 @@ KLTN report artifacts generated from this evidence set:
 - Production connector access is active for Render workspace `tea-d974c90k1i2s73a47ok0` and Supabase project `mahvymyncxszvuhlycwp`. Disposable fixture `shcare-g3-prod-demo` is audited in `org_default_clinic`; credential is hash-only in PostgreSQL.
 - ESP32-S3 image flashed on COM9 with Render TLS/WSS settings; SHA-256 `FDEE58BE2CEDC5489852CE9B10663574CF814190761F8D4104DBF0272E4D9F71`, no erase/eFuse. DNS fallback source fix included.
 - Supabase shows `connected=true`, `status=connected`, `connection_method=WSS`, fresh heartbeat after Render WebSocket authentication. G3 remains OPEN pending the remaining HIL/provider/release gates; G4 has not started.
+
+## 2026-08-28 — Firebase email-verification production repair
+
+- Firebase reload and forced ID-token refresh were already correct on Android. Physical HIL proved the verified token was rejected only by the production backend with PostgreSQL `23514`.
+- Added safe allow-listed identity-stage diagnostics, localized the failure to `create_patient_identity / patients_blood_type_check`, and fixed empty patient blood type persistence from `""` to `NULL` without weakening Firebase, owner, workspace or tenant checks.
+- Added a repository regression assertion and an explicit opt-in Android `EmailVerificationRuntimeHilTest` that never logs the ID token. Render commit `91dec1f4e93e` is live; the same Xiaomi Firebase session now receives HTTP `200` from `/api/v1/auth/firebase` and the HIL passes `1/1`.
+- Backend syntax aggregate and repository smoke pass. Focused Android Email Verification repository/ViewModel tests and AndroidTest assembly pass. The main APK did not require replacement because the defect was server-side and the installed APK already targets production.

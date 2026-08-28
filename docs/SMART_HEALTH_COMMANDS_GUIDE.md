@@ -4631,3 +4631,20 @@ node --test scripts/deviceSetupSecurityTest.js scripts/deviceSecuritySmokeTest.j
 ```
 
 Demo path: Add Device → enter only the company-assigned Device ID → open **Kết nối Wi-Fi** from Device Settings → enter target SSID/password → let Android show the normal required system permission/temporary network dialog. The App obtains the ESP SoftAP material only from the authenticated setup-session API; never enter, print, copy, or put the setup SSID/proof in a user command or test artifact. MIUI may block ADB shell input injection; that is an OS policy limitation, not a permission to bypass the normal Android prompt.
+
+## 2026-08-28 Production email-verification HIL
+
+Run only on a debuggable device where the user has explicitly authorized the already signed-in, verified Firebase account. The test refreshes Firebase state/token, calls the configured production `/api/v1/auth/firebase`, and never prints the token:
+
+```powershell
+$adb = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+Set-Location smart-health-android
+.\gradlew.bat :app:assembleDebugAndroidTest --no-daemon
+& $adb install -r 'app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk'
+& $adb shell am instrument -w -r `
+  -e SHCARE_EMAIL_VERIFICATION_HIL true `
+  -e class com.example.smart_health_android.security.EmailVerificationRuntimeHilTest `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Count only `OK (1 test)` as PASS. Without `SHCARE_EMAIL_VERIFICATION_HIL=true`, the test intentionally skips instead of touching a real account.

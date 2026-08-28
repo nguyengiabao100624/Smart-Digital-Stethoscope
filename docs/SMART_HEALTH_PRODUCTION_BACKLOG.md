@@ -2646,3 +2646,11 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Backend device security suite `62/62`, Android focused ViewModel test, Kotlin/test compilation, debug APK assembly and installation.
 - [ ] Run the physical SoftAP target-Wi-Fi submission when the Xiaomi foreground surface is available. Do not record the target password in code, logs, environment variables or documentation.
 - [ ] Complete authenticated WSS presence, command ACK, audio-v2, durable scan and signed OTA success/forced rollback. These gates remain prerequisites for G3 closure and before any G4 promotion.
+
+## 2026-08-28 — Production email verification closure
+
+- [x] Reproduce the verified-email failure with a refreshed Firebase ID token from the authorized Xiaomi session.
+- [x] Isolate Render/Supabase failure `23514` to the empty `blood_type` value created during first-login patient bootstrap.
+- [x] Persist an unspecified blood type as SQL `NULL`; retain all Firebase owner, session, tenant and workspace guards.
+- [x] Deploy Render commit `91dec1f4e93e` and prove the same physical account receives backend HTTP `200` (`1/1` HIL).
+- [ ] Visual/TalkBack confirmation remains separate because MIUI is secure-locked; this does not reopen the now-passing Firebase/backend contract.

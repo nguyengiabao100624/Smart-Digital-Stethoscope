@@ -4690,7 +4690,6 @@ function createRepositories(options) {
     if (result.membership) syncArrayItem(runtimeDb.memberships, result.membership);
     if (result.patient) syncArrayItem(runtimeDb.patients, result.patient);
     if (result.auditLog) syncRuntimeAuditLog(result.auditLog);
-    await saveDb();
     return result;
   }
 
@@ -10389,7 +10388,7 @@ function createRepositories(options) {
       }
       getDb().authSessions = Array.isArray(getDb().authSessions) ? getDb().authSessions : [];
       syncArrayItem(getDb().authSessions, resolved);
-      await saveDb();
+      if (!getPool()) await saveDb();
       return resolved;
     },
 

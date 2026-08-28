@@ -4409,13 +4409,18 @@ function createRepositories(options) {
       return { user, workspace, membership, patient, auditLog, created, repaired };
     }
 
-    const result = await withSqlTransaction(async (client) => {
+    let identityStage = "begin";
+    let result;
+    try {
+      result = await withSqlTransaction(async (client) => {
+      identityStage = "lock_identity";
       const lockKeys = [`firebase-uid:${firebaseUid}`];
       if (email) lockKeys.push(`firebase-email:${email}`);
       for (const lockKey of lockKeys.sort()) {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [lockKey]);
       }
 
+      identityStage = "load_user";
       let selected = await client.query(
         "SELECT * FROM users WHERE firebase_uid = $1 LIMIT 1 FOR UPDATE",
         [firebaseUid],
@@ -4439,6 +4444,7 @@ function createRepositories(options) {
       let patient = null;
       let repaired = false;
       if (!user) {
+        identityStage = "create_personal_workspace";
         const createdAt = nowIso();
         const userId = createId("usr");
         const organizationId = personalWorkspaceIdForUser(userId);
@@ -4453,6 +4459,7 @@ function createRepositories(options) {
           `,
           [organizationId, `Hồ sơ cá nhân - ${String(input.name || email || userId)}`, "pkg_personal_family", createdAt],
         );
+        identityStage = "create_user";
         const inserted = await client.query(
           `
             INSERT INTO users (
@@ -4478,16 +4485,19 @@ function createRepositories(options) {
         );
         user = rowToUser(inserted.rows[0]);
       } else {
+        identityStage = "sync_user_identity";
         user = await querySyncFirebaseIdentity(client, user.id, identity);
       }
 
       if (user.role === "patient") {
+        identityStage = "load_memberships";
         const memberships = await client.query(
           "SELECT * FROM memberships WHERE user_id = $1 ORDER BY created_at ASC FOR UPDATE",
           [user.id],
         );
         let membershipRows = memberships.rows;
         if (membershipRows.length === 0) {
+          identityStage = "create_personal_membership";
           const organizationId = personalWorkspaceIdForUser(user.id);
           await client.query(
             `
@@ -4518,6 +4528,7 @@ function createRepositories(options) {
         const workspaceResult = await client.query("SELECT * FROM organizations WHERE id = $1 LIMIT 1 FOR UPDATE", [membership.organizationId]);
         workspace = workspaceResult.rows[0] ? rowToOrganization(workspaceResult.rows[0]) : null;
 
+        identityStage = "load_patient_identity";
         let patientResult = user.patientId
           ? await client.query(
               `
@@ -4547,6 +4558,7 @@ function createRepositories(options) {
         if (patientResult.rows[0]) {
           patient = rowToPatient(patientResult.rows[0]);
         } else {
+          identityStage = "create_patient_identity";
           patient = buildRepositorySelfPatient(user, membership.organizationId);
           await queryUpsertPatient(client, patient);
           repaired = true;
@@ -4555,6 +4567,7 @@ function createRepositories(options) {
         patient.accountUserId = user.id;
         patient.profileType = "self";
         patient.relationship = "self";
+        identityStage = "save_patient_identity";
         await queryUpsertPatient(client, patient);
         const activePatientResult = user.activePatientId
           ? await client.query(
@@ -4572,6 +4585,7 @@ function createRepositories(options) {
             )
           : { rows: [] };
         const activePatientId = activePatientResult.rows[0]?.id || patient.id;
+        identityStage = "bind_user_patient_identity";
         const updatedUser = await client.query(
           `
             UPDATE users
@@ -4590,6 +4604,7 @@ function createRepositories(options) {
           [user.id, membership.organizationId, patient.id, activePatientId],
         );
         user = rowToUser(updatedUser.rows[0]);
+        identityStage = "bind_workspace_owner";
         await client.query(
           "UPDATE organizations SET owner_user_id = COALESCE(owner_user_id, $2), updated_at = now() WHERE id = $1 AND workspace_type = 'personal'",
           [membership.organizationId, user.id],
@@ -4599,6 +4614,7 @@ function createRepositories(options) {
       const linked = !previousFirebaseUid;
       let auditLog = null;
       if (created || linked || repaired) {
+        identityStage = "write_identity_audit";
         auditLog = createAuditLog({
           action: created ? "account.firebase.onboard" : "account.firebase.reconcile",
           actorUserId: user.id,
@@ -4611,8 +4627,29 @@ function createRepositories(options) {
         });
         await queryInsertAuditLog(client, auditLog);
       }
+      identityStage = "commit_identity_graph";
       return { user, workspace, membership, patient, auditLog, created, repaired };
-    });
+      });
+    } catch (error) {
+      if (String(error?.code || "") === "23514") {
+        const knownConstraint = new Set([
+          "users_role_check",
+          "patients_profile_type_check",
+          "patients_blood_type_check",
+          "patients_self_identity_check",
+          "memberships_status_check",
+          "organizations_version_positive_check",
+        ]).has(String(error?.constraint || ""))
+          ? String(error.constraint)
+          : "identity_graph_check";
+        error.details = {
+          operation: "firebase_identity_reconciliation",
+          stage: identityStage,
+          constraint: knownConstraint,
+        };
+      }
+      throw error;
+    }
 
     syncArrayItem(runtimeDb.users, result.user);
     if (result.workspace) syncArrayItem(runtimeDb.organizations, result.workspace);

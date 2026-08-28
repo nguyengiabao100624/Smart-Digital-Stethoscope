@@ -465,6 +465,65 @@ async function runCase(browser, siteUrl, viewport, theme) {
   }
 }
 
+async function runReducedMotionOverrideCase(browser, siteUrl) {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+    colorScheme: "light",
+    reducedMotion: "reduce",
+    locale: "vi-VN",
+  });
+  const page = await context.newPage();
+  const check = (condition, message) => {
+    checks += 1;
+    if (!condition) failures.push(`public.motion-override: ${message}`);
+  };
+
+  try {
+    await page.goto(`${siteUrl}/`, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    const shell = page.locator(".shc-public-layout");
+    const toggle = page.getByRole("button", {
+      name: "Hệ thống đang giảm chuyển động. Nhấn để bật hiệu ứng",
+    });
+    await shell.waitFor({ state: "visible" });
+
+    check(await toggle.isEnabled(), "override control is disabled");
+    check(
+      (await shell.getAttribute("data-shc-motion")) === "reduced",
+      "system reduction was not respected before an explicit override",
+    );
+
+    await toggle.click();
+    check(
+      (await shell.getAttribute("data-shc-motion")) === "enabled",
+      "explicit user override did not enable motion",
+    );
+    check(
+      (await shell.getAttribute("data-shc-motion-preference")) === "enabled",
+      "explicit preference was not persisted in the rendered state",
+    );
+    check(
+      await page
+        .getByRole("button", { name: "Tắt hiệu ứng chuyển động" })
+        .isVisible(),
+      "control did not expose the enabled state",
+    );
+
+    const reveal = page.locator("[data-shc-home-reveal]").first();
+    const duration = await reveal.evaluate(
+      (element) => getComputedStyle(element).transitionDuration,
+    );
+    check(
+      duration.split(",").some((value) => Number.parseFloat(value) >= 0.3),
+      `explicit override remained suppressed (${duration})`,
+    );
+  } finally {
+    await context.close();
+  }
+}
+
 let browser;
 let vite;
 try {
@@ -480,6 +539,7 @@ try {
     await waitForUrl(siteUrl);
   }
   browser = await browserRuntime.browserType.launch({ headless: true });
+  await runReducedMotionOverrideCase(browser, siteUrl);
   for (const viewport of viewports) {
     for (const theme of themes) {
       await runCase(browser, siteUrl, viewport, theme);

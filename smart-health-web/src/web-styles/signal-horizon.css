@@ -2799,7 +2799,7 @@ html.dark .shc-hero-video-wash {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shc-hero-video {
+  .shc-public-layout:not([data-shc-motion="enabled"]) .shc-hero-video {
     animation: none;
   }
 }
@@ -2894,12 +2894,6 @@ html:not(.dark) .shc-motion-toggle {
 @media (max-width: 1023px) {
   .shc-header-actions > .shc-motion-toggle {
     display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shc-public-layout[data-shc-motion="enabled"] [data-shc-reveal] {
-    transition-duration: 0.01ms;
   }
 }
 
@@ -3055,16 +3049,39 @@ html:not(.dark)
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shc-simple-page .shc-page-hero .shc-container,
-  .shc-simple-page .shc-section-heading,
-  .shc-simple-page .shc-flow-panel,
-  .shc-simple-page .shc-contact-aside,
-  .shc-simple-page .shc-contact-form,
-  .shc-simple-page .shc-cta-card,
-  .shc-simple-page .shc-product-card,
-  .shc-simple-page .shc-plan,
-  .shc-simple-page .shc-faq-list > *,
-  .shc-simple-page .shc-contact-methods > * {
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-page-hero
+    .shc-container,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-section-heading,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-flow-panel,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-contact-aside,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-contact-form,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-cta-card,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-product-card,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-plan,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-faq-list
+    > *,
+  .shc-public-layout:not([data-shc-motion="enabled"])
+    .shc-simple-page
+    .shc-contact-methods
+    > * {
     animation: none;
     filter: none;
     transform: none;
@@ -3594,30 +3611,6 @@ html
     max-height: none;
     border-radius: 16px;
     padding: 0.95rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html
-    body
-    .app-shell.public-shell.shc-public-layout[data-shc-motion="enabled"]
-    [data-shc-reveal] {
-    transition-duration: 0.01ms;
-  }
-
-  html
-    body
-    .app-shell.public-shell.shc-public-layout[data-shc-motion="enabled"]
-    .shc-preview,
-  html
-    body
-    .app-shell.public-shell.shc-public-layout[data-shc-motion="enabled"]
-    .shc-proof-card,
-  html
-    body
-    .app-shell.public-shell.shc-public-layout[data-shc-motion="enabled"]
-    .shc-operating-card {
-    transition-duration: 0.01ms;
   }
 }
 

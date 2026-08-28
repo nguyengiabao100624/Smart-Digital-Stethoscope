@@ -5369,12 +5369,15 @@ html:not(.dark)
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shc-public-layout[data-shcare-public-visual="legacy"],
-  .shc-public-layout[data-shcare-public-visual="legacy"]::before,
-  .shc-public-layout[data-shcare-public-visual="legacy"]::after,
-  .shc-public-layout[data-shcare-public-visual="legacy"] *,
-  .shc-public-layout[data-shcare-public-visual="legacy"] *::before,
-  .shc-public-layout[data-shcare-public-visual="legacy"] *::after {
+  .shc-public-layout[data-shcare-public-visual="legacy"]:not([data-shc-motion="enabled"]),
+  .shc-public-layout[data-shcare-public-visual="legacy"]:not([data-shc-motion="enabled"])::before,
+  .shc-public-layout[data-shcare-public-visual="legacy"]:not([data-shc-motion="enabled"])::after,
+  .shc-public-layout[data-shcare-public-visual="legacy"]:not([data-shc-motion="enabled"])
+    *,
+  .shc-public-layout[data-shcare-public-visual="legacy"]:not([data-shc-motion="enabled"])
+    *::before,
+  .shc-public-layout[data-shcare-public-visual="legacy"]:not([data-shc-motion="enabled"])
+    *::after {
     scroll-behavior: auto;
     animation: none;
     transition-duration: 0.01ms;

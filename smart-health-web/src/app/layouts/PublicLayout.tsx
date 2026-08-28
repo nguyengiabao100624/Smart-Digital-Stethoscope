@@ -78,15 +78,15 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function resolveInitialMotionPreference() {
-  if (typeof window === "undefined") return false;
+type PublicMotionPreference = "system" | "enabled" | "reduced";
 
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    return false;
-  }
+function resolveInitialMotionPreference(): PublicMotionPreference {
+  if (typeof window === "undefined") return "system";
 
   const storedMotion = window.localStorage.getItem("shc-public-motion");
-  return storedMotion ? storedMotion === "enabled" : true;
+  return storedMotion === "enabled" || storedMotion === "reduced"
+    ? storedMotion
+    : "system";
 }
 
 export default function PublicLayout() {
@@ -95,7 +95,7 @@ export default function PublicLayout() {
   const [openDesktopGroup, setOpenDesktopGroup] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [homeHeroActive, setHomeHeroActive] = useState(false);
-  const [motionRequested, setMotionRequested] = useState(
+  const [motionPreference, setMotionPreference] = useState(
     resolveInitialMotionPreference,
   );
   const [systemReducedMotion, setSystemReducedMotion] = useState(() =>
@@ -108,7 +108,11 @@ export default function PublicLayout() {
   const publicMainRef = useRef<HTMLElement | null>(null);
   const location = useLocation();
   const isHome = location.pathname === "/";
-  const motionEnabled = motionRequested && !systemReducedMotion;
+  const motionEnabled =
+    motionPreference === "enabled" ||
+    (motionPreference === "system" && !systemReducedMotion);
+  const systemReductionIsActive =
+    motionPreference === "system" && systemReducedMotion;
 
   const clearDesktopCloseTimer = () => {
     if (closeDesktopTimer.current !== null) {
@@ -296,13 +300,14 @@ export default function PublicLayout() {
   }, [location.pathname, motionEnabled]);
 
   const toggleMotion = () => {
-    if (systemReducedMotion) return;
-    setMotionRequested((current) => {
-      const next = !current;
-      window.localStorage.setItem(
-        "shc-public-motion",
-        next ? "enabled" : "reduced",
-      );
+    setMotionPreference((current) => {
+      const currentlyEnabled =
+        current === "enabled" ||
+        (current === "system" && !systemReducedMotion);
+      const next: PublicMotionPreference = currentlyEnabled
+        ? "reduced"
+        : "enabled";
+      window.localStorage.setItem("shc-public-motion", next);
       return next;
     });
   };
@@ -315,6 +320,7 @@ export default function PublicLayout() {
         data-shcare-public-visual="legacy"
         data-shc-home-hero={homeHeroActive ? "active" : "rest"}
         data-shc-motion={motionEnabled ? "enabled" : "reduced"}
+        data-shc-motion-preference={motionPreference}
       >
         <div className="shc-announcement">
           <span>shcare.web.app</span>
@@ -416,17 +422,16 @@ export default function PublicLayout() {
                 className="shc-motion-toggle"
                 onClick={toggleMotion}
                 aria-pressed={motionEnabled}
-                disabled={systemReducedMotion}
                 aria-label={
-                  systemReducedMotion
-                    ? "Hệ thống đang giảm chuyển động"
+                  systemReductionIsActive
+                    ? "Hệ thống đang giảm chuyển động. Nhấn để bật hiệu ứng"
                     : motionEnabled
                       ? "Tắt hiệu ứng chuyển động"
                       : "Bật hiệu ứng chuyển động"
                 }
                 title={
-                  systemReducedMotion
-                    ? "Đang tuân theo cài đặt giảm chuyển động của hệ thống"
+                  systemReductionIsActive
+                    ? "Hệ thống đang giảm chuyển động; bạn vẫn có thể chủ động bật hiệu ứng"
                     : motionEnabled
                       ? "Tắt hiệu ứng"
                       : "Bật hiệu ứng"
@@ -523,12 +528,18 @@ export default function PublicLayout() {
                     className="shc-motion-toggle shc-mobile-motion-toggle"
                     onClick={toggleMotion}
                     aria-pressed={motionEnabled}
-                    disabled={systemReducedMotion}
+                    aria-label={
+                      systemReductionIsActive
+                        ? "Hệ thống đang giảm chuyển động. Nhấn để bật hiệu ứng"
+                        : motionEnabled
+                          ? "Tắt hiệu ứng chuyển động"
+                          : "Bật hiệu ứng chuyển động"
+                    }
                   >
                     {motionEnabled ? <Pause size={15} /> : <Play size={15} />}
                     <span>
-                      {systemReducedMotion
-                        ? "Hệ thống đang giảm chuyển động"
+                      {systemReductionIsActive
+                        ? "Bật hiệu ứng (hệ thống đang giảm)"
                         : motionEnabled
                           ? "Tắt hiệu ứng"
                           : "Bật hiệu ứng"}

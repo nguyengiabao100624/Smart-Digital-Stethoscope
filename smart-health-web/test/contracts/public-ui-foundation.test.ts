@@ -136,7 +136,11 @@ test("isolates classic Public typography and stacking from the newer product sur
 test("makes the classic animation control authoritative for CSS and hero media", () => {
   assert.match(layoutSource, /resolveInitialMotionPreference/);
   assert.match(layoutSource, /media\.addEventListener\("change", syncWithSystem\)/);
-  assert.match(layoutSource, /motionRequested\s*&&\s*!systemReducedMotion/);
+  assert.match(
+    layoutSource,
+    /motionPreference\s*===\s*"enabled"[\s\S]*motionPreference\s*===\s*"system"[\s\S]*!systemReducedMotion/,
+  );
+  assert.doesNotMatch(layoutSource, /disabled=\{systemReducedMotion\}/);
   assert.match(layoutSource, /PublicMotionContext\.Provider value=\{motionEnabled\}/);
   assert.match(motionContextSource, /createContext\(true\)/);
   assert.match(motionContextSource, /return useContext\(PublicMotionContext\)/);
@@ -156,8 +160,16 @@ test("makes the classic animation control authoritative for CSS and hero media",
     legacyMotionRules,
     /@media \(prefers-reduced-motion: reduce\)/,
   );
+  assert.match(
+    legacyMotionRules,
+    /data-shcare-public-visual="legacy"\]:not\(\[data-shc-motion="enabled"\]\)/,
+  );
   assert.match(legacyMotionRules, /animation:\s*none;/);
   assert.doesNotMatch(legacyMotionRules, /!important/);
+  assert.match(
+    signalHorizonSource,
+    /\.shc-public-layout:not\(\[data-shc-motion="enabled"\]\) \.shc-hero-video/,
+  );
   assert.match(signalHorizonSource, /\.shc-hero-video-main/);
   assert.doesNotMatch(signalHorizonSource, /\.shc-hero-video-edge/);
 });

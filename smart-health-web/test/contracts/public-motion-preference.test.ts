@@ -16,12 +16,14 @@ test("resolves the public motion preference before the first animated render", (
   assert.match(publicLayoutSource, /prefers-reduced-motion:\s*reduce/);
 });
 
-test("keeps system reduced motion authoritative over a stored user preference", () => {
+test("uses system reduced motion by default but lets the user explicitly override it", () => {
   assert.match(
     publicLayoutSource,
-    /motionEnabled\s*=\s*motionRequested\s*&&\s*!systemReducedMotion/,
+    /motionPreference\s*===\s*"enabled"[\s\S]*motionPreference\s*===\s*"system"[\s\S]*!systemReducedMotion/,
   );
-  assert.match(publicLayoutSource, /if\s*\(systemReducedMotion\)\s*return/);
+  assert.doesNotMatch(publicLayoutSource, /disabled=\{systemReducedMotion\}/);
+  assert.doesNotMatch(publicLayoutSource, /if\s*\(systemReducedMotion\)\s*return/);
+  assert.match(publicLayoutSource, /Nhấn để bật hiệu ứng/);
   assert.match(
     publicLayoutSource,
     /media\.addEventListener\("change", syncWithSystem\)/,

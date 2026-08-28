@@ -2,6 +2,20 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 execution probe
+
+- COM9 read-only esptool probe: ESP32-S3 rev 0.2, CH343, 16 MB flash. No
+  erase/write was performed during this probe.
+- Firmware runtime-source contracts and normal/OTA PlatformIO builds pass;
+  backend ESPTouch/device-security suite passes `84/84`.
+- A ten-second filtered serial sample from the current board image shows
+  repeated `wssFail`, so the board is not authenticated to the production
+  backend. This is not an online proof.
+- Production enrollment cannot be completed from this shell: live inventory
+  is zero and no approved factory/provider channel or production DB credential
+  is available. The backend intentionally rejects browser-supplied raw
+  credentials; G4 therefore remains PARTIAL/BLOCKED.
+
 ## 2026-08-28 authoritative live-lane status
 
 - Source `main` is `d19b009e`; Render serves the latest backend-relevant commit `2a4359686db5`. Public deployment smoke passes with backend health 200, unauthenticated `/api/me` 401, and Admin/Portal SPA rewrites 200.

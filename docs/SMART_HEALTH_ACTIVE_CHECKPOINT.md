@@ -1,5 +1,21 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-08-28 latest execution evidence
+
+- Read-only COM9 probe confirms the attached target is ESP32-S3 rev 0.2 with
+  16 MB flash (CH343 serial). No erase or firmware write was performed in
+  this probe.
+- Firmware source contracts plus normal and OTA builds are green; backend
+  device-security/ESPTouch focused tests are `84/84` green. Render health is
+  HTTP 200 at `/api/health` and `/api/v1/health` on `git-2a4359686db5`.
+- A short serial sample from the image currently on COM9 reports repeated
+  `wssFail`; this is evidence that the board is not authenticated to the
+  production backend, not evidence of online status.
+- Production enrollment remains the only safe next hardware mutation. Live
+  inventory has zero devices and this shell has no approved factory/provider
+  channel or production database credential. Do not invent a device row,
+  expose a raw secret through the browser, or flash a non-matching image.
+
 > **2026-08-28 authoritative correction — this supersedes and retracts the G4-completed claim below.** G4 is **PARTIALLY DEPLOYED, NOT PASS**. Live lanes are: Render backend commit `2a4359686db5`, Portal Firebase version `a130d4b26582e44c`, and Admin Firebase version `44de8648d0125d7c`; source `main` is `d19b009e`. Public deployment smoke passes and production data is Postgres/auth-production with zero devices. The old `LiteSteth-A92` row was retired fixture data and is no longer present. G4 cannot be closed while production has no factory-enrolled device, no release-signed Android artifact, no secure production firmware enrollment/eFuse evidence, and no production WSS/command/audio/scan/OTA canary. Automated Admin mutations proved create/patch/reset and deterministic cleanup, but Render's Cloudflare layer challenges long CI mutation sequences with HTTP 429; the latest cleanup returned 200 for settings, admin account and workspace, and a separate audit found zero smoke admins/workspaces. Do not report full G4 completion from HTTP 200 shells or successful builds alone.
 
 > 2026-08-27 RETRACTED historical G4 claim (preserved for audit only; not authoritative):

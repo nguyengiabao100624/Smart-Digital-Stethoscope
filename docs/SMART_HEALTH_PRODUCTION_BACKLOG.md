@@ -2,6 +2,23 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 execution probe (no false production completion)
+
+- [x] COM9 hardware probe completed read-only: ESP32-S3 rev 0.2, CH343,
+  detected flash 16 MB (esptool 4.11.0). `pyserial` was installed into the
+  existing local Python tool environment only to run this probe.
+- [x] Firmware source contracts and normal/OTA PlatformIO builds passed.
+- [x] Backend ESPTouch/device-security focused suite passed (`84/84`), and
+  live Render health returned HTTP 200 at both `/api/health` and
+  `/api/v1/health` with release marker `git-2a4359686db5`.
+- [ ] Do not flash the board for production yet: a ten-second serial sample
+  shows repeated `wssFail` and no authenticated production presence. The
+  board currently has no verified production device identity/credential pair.
+- [ ] Production enrollment is still blocked by the missing approved
+  factory/provider channel (production device inventory is zero). The
+  existing `provision-qr` endpoint intentionally cannot create credentials;
+  adding a browser/raw-secret bypass would violate the security contract.
+
 ## 2026-08-28 authoritative G4 status after live audit
 
 - [x] Portal live: Firebase version `a130d4b26582e44c`.

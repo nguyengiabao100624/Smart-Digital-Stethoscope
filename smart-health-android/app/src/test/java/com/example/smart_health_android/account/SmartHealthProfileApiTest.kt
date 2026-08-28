@@ -112,6 +112,7 @@ class SmartHealthProfileApiTest {
                         "requestedRole": "doctor",
                         "roleRequestStatus": "pending",
                         "organizationId": "clinic_2",
+                        "roleRequestOrganizationId": "clinic_2",
                         "name": "Bác sĩ An",
                         "phone": "0912345678",
                         "license": "CCHN-2026-001",
@@ -242,7 +243,8 @@ class SmartHealthProfileApiTest {
             assertEquals("patient", user.role)
             assertEquals("patient", user.currentMembership?.role)
             assertEquals("pending", user.roleRequestStatus)
-            assertEquals("clinic_2", user.organizationId)
+            assertEquals(PERSONAL_WORKSPACE_ID, user.organizationId)
+            assertEquals("clinic_2", user.roleRequestOrganizationId)
             assertEquals(PERSONAL_WORKSPACE_ID, user.canonicalWorkspaceId())
         }
 
@@ -484,7 +486,7 @@ class SmartHealthProfileApiTest {
                 getJSONObject("user").put("workspaceType", "personal")
             },
             validRoleRequestResponse().apply {
-                getJSONObject("user").put("organizationId", "foreign_clinic")
+                getJSONObject("user").put("roleRequestOrganizationId", "foreign_clinic")
             },
             validRoleRequestResponse().apply {
                 getJSONObject("user").put("currentWorkspaceId", "foreign_clinic")
@@ -508,9 +510,13 @@ class SmartHealthProfileApiTest {
         runBlocking {
             val valid = validRoleRequestResponse().apply {
                 getJSONObject("user")
-                    .put("organizationId", "org_solo_user_1")
-                    .put("currentWorkspaceId", "org_solo_user_1")
-                    .put("currentMembership", workspaceMembership("org_solo_user_1"))
+                    .put("organizationId", PERSONAL_WORKSPACE_ID)
+                    .put("roleRequestOrganizationId", "org_solo_user_1")
+                    .put("currentWorkspaceId", PERSONAL_WORKSPACE_ID)
+                    .put(
+                        "currentMembership",
+                        workspaceMembership(PERSONAL_WORKSPACE_ID, workspaceType = "personal"),
+                    )
                     .put("accountType", "solo_doctor")
                     .put("workspaceType", "solo_practice")
             }
@@ -524,15 +530,17 @@ class SmartHealthProfileApiTest {
                 expectedAuthSessionEpoch = api.currentAuthSessionEpoch(),
             )
 
-            assertEquals("org_solo_user_1", user.canonicalWorkspaceId())
+            assertEquals(PERSONAL_WORKSPACE_ID, user.canonicalWorkspaceId())
+            assertEquals("org_solo_user_1", user.roleRequestOrganizationId)
             val request = server.takeRequest()
             val requestBody = JSONObject(request.body.readUtf8())
             assertFalse(requestBody.has("organizationId"))
 
             val mismatched = validRoleRequestResponse().apply {
                 getJSONObject("user")
-                    .put("organizationId", "org_solo_user_1")
-                    .put("currentWorkspaceId", "org_solo_user_1")
+                    .put("organizationId", PERSONAL_WORKSPACE_ID)
+                    .put("roleRequestOrganizationId", "org_solo_user_1")
+                    .put("currentWorkspaceId", PERSONAL_WORKSPACE_ID)
                     .put("currentMembership", workspaceMembership("foreign_solo_workspace"))
                     .put("accountType", "solo_doctor")
                     .put("workspaceType", "solo_practice")
@@ -691,6 +699,7 @@ class SmartHealthProfileApiTest {
                     .put("requestedRole", "doctor")
                     .put("roleRequestStatus", "pending")
                     .put("organizationId", "clinic_2")
+                    .put("roleRequestOrganizationId", "clinic_2")
                     .put("currentWorkspaceId", "clinic_2")
                     .put("accountType", "doctor")
                     .put("workspaceType", "clinic"),
@@ -722,7 +731,8 @@ class SmartHealthProfileApiTest {
             getJSONObject("user")
                 .put("roleRequestStatus", status)
                 .put("role", currentRole)
-                .put("organizationId", "clinic_2")
+                .put("organizationId", currentWorkspaceId)
+                .put("roleRequestOrganizationId", "clinic_2")
                 .put("currentWorkspaceId", currentWorkspaceId)
                 .put("currentMembership", membership)
                 .put("memberships", JSONArray().put(membership))

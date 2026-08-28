@@ -1335,7 +1335,8 @@ async function main() {
     roleInfoRequestAt: "",
     roleInfoRequestMessage: "",
     roleInfoRequiredFields: [],
-    organizationId: "org_alpha",
+    organizationId: "org_personal_role_request",
+    roleRequestOrganizationId: "org_alpha",
     name: "Role Request Doctor",
     phone: "0901234567",
     license: "ROLE-LIC-001",
@@ -1371,6 +1372,8 @@ async function main() {
   assert.equal(firstRoleRequest.replayed, false);
   assert.equal(firstRoleRequest.user.id, "user_role_request");
   assert.equal(firstRoleRequest.user.requestedRole, "doctor");
+  assert.equal(firstRoleRequest.user.organizationId, "org_personal_role_request");
+  assert.equal(firstRoleRequest.user.roleRequestOrganizationId, "org_alpha");
   assert.equal(firstRoleRequest.roleRequest.status, "pending");
   assert.ok(firstRoleRequest.operationId);
   const replayedRoleRequest = await roleRequestRepositories.users.submitRoleRequestWithAudit(
@@ -1458,7 +1461,7 @@ async function main() {
   await assert.rejects(
     roleRequestRepositories.users.submitRoleRequestWithAudit(
       "user_role_request",
-      { ...roleRequestPatch, organizationId: "org_beta" },
+      { ...roleRequestPatch, roleRequestOrganizationId: "org_beta" },
       roleRequestAudit,
       {
         ...roleRequestIdempotency,
@@ -1636,6 +1639,7 @@ async function main() {
   });
   const sqlRoleRequestPatch = {
     ...roleRequestPatch,
+    organizationId: "org_personal_sql_role_request",
     roleRequestedAt: "2026-06-21T00:22:30.000Z",
   };
   const sqlRoleRequestIdempotency = {
@@ -1664,6 +1668,16 @@ async function main() {
     );
   assert.equal(firstSqlRoleRequest.replayed, false);
   assert.equal(firstSqlRoleRequest.user.requestedRole, "doctor");
+  assert.equal(
+    firstSqlRoleRequest.user.organizationId,
+    "org_personal_sql_role_request",
+  );
+  assert.equal(firstSqlRoleRequest.user.roleRequestOrganizationId, "org_alpha");
+  assert.equal(sqlRoleRequestState.user.organization_id, "org_personal_sql_role_request");
+  assert.equal(
+    sqlRoleRequestState.user.firebase_claims.roleRequestOrganizationId,
+    "org_alpha",
+  );
   assert.equal(firstSqlRoleRequest.roleRequest.status, "pending");
   const replayedSqlRoleRequest =
     await sqlRoleRequestRepositories.users.submitRoleRequestWithAudit(
@@ -1719,7 +1733,7 @@ async function main() {
   await assert.rejects(
     sqlRoleRequestRepositories.users.submitRoleRequestWithAudit(
       "user_sql_role_request",
-      { ...sqlRoleRequestPatch, organizationId: "org_beta" },
+      { ...sqlRoleRequestPatch, roleRequestOrganizationId: "org_beta" },
       sqlRoleRequestAudit,
       {
         ...sqlRoleRequestIdempotency,

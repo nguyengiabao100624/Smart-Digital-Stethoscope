@@ -2479,6 +2479,7 @@ class SmartHealthApi(
         val rawAccountType = userJson.opt("accountType")
         val rawWorkspaceType = userJson.opt("workspaceType")
         val rawOrganizationId = userJson.opt("organizationId")
+        val rawRoleRequestOrganizationId = userJson.opt("roleRequestOrganizationId")
         val validStatuses = setOf("pending", "approved")
         if (
             rawUserId !is String ||
@@ -2508,9 +2509,11 @@ class SmartHealthApi(
             rawWorkspaceType != normalizedExpectedWorkspaceType ||
             rawOrganizationId !is String ||
             rawOrganizationId.isBlank() ||
+            rawRoleRequestOrganizationId !is String ||
+            rawRoleRequestOrganizationId.isBlank() ||
             (
                 normalizedExpectedOrganizationId.isNotBlank() &&
-                    rawOrganizationId != normalizedExpectedOrganizationId
+                    rawRoleRequestOrganizationId != normalizedExpectedOrganizationId
                 ) ||
             receiptRole !is String ||
             receiptRole != normalizedExpectedRole ||
@@ -2525,7 +2528,7 @@ class SmartHealthApi(
             invalidRoleRequestContract()
         }
         val user = parseAuthUser(userJson)
-        val returnedTargetWorkspaceId = rawOrganizationId
+        val returnedTargetWorkspaceId = rawRoleRequestOrganizationId
         val currentWorkspaceId = user.canonicalWorkspaceId()
         val currentMembership = user.currentMembership
         val currentMembershipWorkspaceId = currentMembership
@@ -2599,7 +2602,15 @@ class SmartHealthApi(
                 ) ||
             user.accountType != normalizedExpectedAccountType ||
             user.workspaceType != normalizedExpectedWorkspaceType ||
-            user.organizationId.trim() != returnedTargetWorkspaceId ||
+            user.roleRequestOrganizationId.trim() != returnedTargetWorkspaceId ||
+            (
+                receiptStatus != "approved" &&
+                    user.organizationId.trim() != currentWorkspaceId
+                ) ||
+            (
+                receiptStatus == "approved" &&
+                    user.organizationId.trim() != returnedTargetWorkspaceId
+                ) ||
             currentWorkspaceId.isBlank() ||
             (
                 user.currentWorkspaceId.isNotBlank() &&
@@ -2703,6 +2714,7 @@ class SmartHealthApi(
             hospital = json.optString("hospital"),
             department = json.optString("department"),
             organizationId = json.optStringFirst("organizationId").ifBlank { currentWorkspaceId },
+            roleRequestOrganizationId = json.optString("roleRequestOrganizationId"),
             clinicName = json.optString("clinicName").ifBlank { currentWorkspace?.name.orEmpty() },
             specialty = json.optString("specialty"),
             address = json.optString("address"),

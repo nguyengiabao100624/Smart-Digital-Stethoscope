@@ -366,7 +366,8 @@ internal class ProductionDoctorApprovalRepository(
             expectedBackendUserId = expectedIdentity?.backendUserId,
         )
         val currentWorkspaceId = user.canonicalWorkspaceId()
-        val targetWorkspaceId = user.organizationId.trim()
+        val targetWorkspaceId = user.roleRequestOrganizationId.trim()
+            .ifBlank { user.organizationId.trim() }
         val expectedTarget = expectedTargetWorkspaceId?.trim().orEmpty()
         val normalizedUserRole = user.role.trim().lowercase()
         if (
@@ -920,7 +921,9 @@ internal class DoctorApprovalViewModel(
     private fun DoctorApprovalUiState.identityOrNull(): DoctorApprovalIdentity? {
         val user = user ?: return null
         val currentWorkspaceId = user.canonicalWorkspaceId()
-        val targetWorkspaceId = user.organizationId.trim().ifBlank { currentWorkspaceId }
+        val targetWorkspaceId = user.roleRequestOrganizationId.trim()
+            .ifBlank { user.organizationId.trim() }
+            .ifBlank { currentWorkspaceId }
         if (
             user.firebaseUid != expectedFirebaseOwner.firebaseUserId ||
             normalizePendingRegistrationEmail(user.email) != expectedFirebaseOwner.email ||

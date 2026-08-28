@@ -1434,10 +1434,15 @@ function publicUser(user) {
 }
 
 function publicDoctorRoleRequest(user) {
-  const organization = getClinicById(user.organizationId);
+  const roleRequestOrganizationId = readString(
+    user.roleRequestOrganizationId || user.organizationId,
+    120,
+  );
+  const organization = getClinicById(roleRequestOrganizationId);
   const workspaceType = user.workspaceType || organization?.workspaceType || organization?.type || "";
   return {
     ...publicUser(user),
+    roleRequestOrganizationId,
     hospital: user.hospital || organization?.name || "",
     clinicName: user.hospital || organization?.name || "",
     specialty: user.department || "",
@@ -14237,8 +14242,14 @@ async function handleAuthApi(req, res, segments) {
       license: readString(payload.license, 120) || user.license,
       workspaceType: requestedWorkspaceType,
       accountType,
+      // A pending request must not move the account's operational workspace.
+      // The user/patient inverse identity remains in the personal workspace
+      // until an administrator grants membership to the requested target.
       organizationId:
-        selectedClinic?.id || user.organizationId || "org_default_clinic",
+        requestedRole === "doctor" && roleRequestStatus !== "approved"
+          ? user.organizationId || "org_default_clinic"
+          : roleRequestTargetOrganizationId,
+      roleRequestOrganizationId: roleRequestTargetOrganizationId,
       hospital:
         selectedClinic?.name ||
         readString(payload.hospital || payload.clinicName, 160) ||
@@ -14268,7 +14279,7 @@ async function handleAuthApi(req, res, segments) {
       requestedRole,
       accountType,
       workspaceType: requestedWorkspaceType,
-      organizationId: roleRequestPatch.organizationId,
+      organizationId: roleRequestTargetOrganizationId,
       explicitWorkspaceSelection: hasExplicitWorkspaceSelection(payload),
       clinicName: readString(
         payload.clinicName || payload.hospital || payload.clinic,
@@ -14295,7 +14306,7 @@ async function handleAuthApi(req, res, segments) {
       {
         action: "auth.role.request",
         actorUserId: user.id,
-        organizationId: roleRequestPatch.organizationId,
+        organizationId: roleRequestTargetOrganizationId,
         ip: requestContext.ip || req.socket.remoteAddress || "",
         userAgent:
           requestContext.userAgent ||
@@ -14303,7 +14314,7 @@ async function handleAuthApi(req, res, segments) {
         authorization: {
           kind: "self",
           actorUserId: user.id,
-          organizationId: roleRequestPatch.organizationId,
+          organizationId: roleRequestTargetOrganizationId,
         },
         metadata: {
           previousRoleRequestStatus,
@@ -16629,7 +16640,7 @@ async function handleAdminApi(req, res, url, segments) {
     if (segments[4] === "approve" && method === "POST") {
       const payload = await readJsonBody(req);
       const persistedTargetOrganizationId = readString(
-        targetUser.organizationId,
+        targetUser.roleRequestOrganizationId || targetUser.organizationId,
         120,
       );
       const requestedApprovalOrganizationId = readString(
@@ -17859,7 +17870,12 @@ async function handleMeApi(req, res, segments) {
         409,
         "The doctor-request target cannot change before the request is approved",
         "ROLE_REQUEST_TARGET_LOCKED",
-        { targetWorkspaceId: readString(user.organizationId, 120) },
+        {
+          targetWorkspaceId: readString(
+            user.roleRequestOrganizationId || user.organizationId,
+            120,
+          ),
+        },
       );
     }
     const selectedClinic = workspaceSelectionRequested ? getExplicitWorkspaceSelectionFromPayload(payload) : null;

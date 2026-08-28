@@ -23,7 +23,7 @@ internal fun AuthUser.hasActiveCoherentDoctorRequestAuthority(
 ): Boolean {
     val normalizedStatus = roleRequestStatus.trim().lowercase()
     val currentWorkspaceId = canonicalWorkspaceId()
-    val targetWorkspaceId = organizationId.trim()
+    val targetWorkspaceId = roleRequestOrganizationId.trim().ifBlank { organizationId.trim() }
     val expectedTarget = expectedTargetWorkspaceId?.trim().orEmpty()
     val expectedCurrent = expectedCurrentWorkspaceId?.trim().orEmpty()
     val currentMembershipRole = currentMembership?.role?.trim()?.lowercase().orEmpty()

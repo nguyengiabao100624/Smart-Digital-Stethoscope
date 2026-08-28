@@ -1227,6 +1227,8 @@ async function runScenario() {
   assert.equal(roleRequestReceipt.user.role, "patient");
   assert.equal(roleRequestReceipt.user.requestedRole, "doctor");
   assert.equal(roleRequestReceipt.user.roleRequestStatus, "pending");
+  assert.equal(roleRequestReceipt.user.organizationId, "org_personal_patient");
+  assert.equal(roleRequestReceipt.user.roleRequestOrganizationId, "org_alpha");
   assert.equal(
     roleRequestReceipt.user.memberships.some(
       (membership) => membership.organizationId === "org_alpha",
@@ -1331,6 +1333,10 @@ async function runScenario() {
   );
   assert.equal(
     pendingRoleRequestActiveProfile.user.organizationId,
+    "org_personal_patient",
+  );
+  assert.equal(
+    pendingRoleRequestActiveProfile.user.roleRequestOrganizationId,
     roleRequestPayload.organizationId,
   );
   assert.equal(
@@ -1374,6 +1380,10 @@ async function runScenario() {
   assert.equal(roleRequestAfterMismatchedApproval.roleRequestStatus, "pending");
   assert.equal(
     roleRequestAfterMismatchedApproval.organizationId,
+    "org_personal_patient",
+  );
+  assert.equal(
+    roleRequestAfterMismatchedApproval.roleRequestOrganizationId,
     roleRequestPayload.organizationId,
   );
   assert.equal(
@@ -1861,6 +1871,8 @@ async function runScenario() {
   );
   const soloWorkspaceId = "org_solo_usr_solo_role_request";
   assert.equal(soloRoleRequestReceipt.roleRequest.status, "pending");
+  assert.equal(soloRoleRequestReceipt.user.organizationId, "org_personal_patient");
+  assert.equal(soloRoleRequestReceipt.user.roleRequestOrganizationId, soloWorkspaceId);
   assert.equal(
     soloRoleRequestReceipt.user.memberships.some(
       (membership) => membership.organizationId === soloWorkspaceId,

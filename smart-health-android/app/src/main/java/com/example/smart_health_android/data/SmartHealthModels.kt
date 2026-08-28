@@ -572,6 +572,7 @@ data class AuthUser(
     val hospital: String = "",
     val department: String = "",
     val organizationId: String = "",
+    val roleRequestOrganizationId: String = "",
     val clinicName: String = "",
     val specialty: String = "",
     val address: String = "",

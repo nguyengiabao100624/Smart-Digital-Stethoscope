@@ -162,6 +162,14 @@ function firebaseClaimsForUser(user = {}) {
   if (clinicSuggestion) {
     claims.clinicSuggestion = clinicSuggestion;
   }
+  const roleRequestOrganizationId =
+    user.roleRequestOrganizationId ||
+    claims.roleRequestOrganizationId ||
+    existingProfile.roleRequestOrganizationId ||
+    "";
+  if (roleRequestOrganizationId) {
+    claims.roleRequestOrganizationId = roleRequestOrganizationId;
+  }
   if (Array.isArray(user.roleInfoRequiredFields)) {
     claims.roleInfoRequiredFields = user.roleInfoRequiredFields;
   }
@@ -220,6 +228,8 @@ function rowToUser(row) {
     workspaceType: firebaseClaims.workspaceType || profile.workspaceType || "",
     accountType: firebaseClaims.accountType || profile.accountType || "",
     clinicSuggestion: firebaseClaims.clinicSuggestion || profile.clinicSuggestion || "",
+    roleRequestOrganizationId:
+      firebaseClaims.roleRequestOrganizationId || profile.roleRequestOrganizationId || "",
     firebaseClaims,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -1200,6 +1210,7 @@ function createRepositories(options) {
       notificationPreferences: cloneRuntimeValue(objectOf(user.notificationPreferences)),
       activePatientId: String(user.activePatientId || user.patientId || ""),
       organizationId: String(user.organizationId || ""),
+      roleRequestOrganizationId: String(user.roleRequestOrganizationId || ""),
       patientId: String(user.patientId || ""),
       verifiedEmail: Boolean(user.verifiedEmail),
       verifiedPhone: Boolean(user.verifiedPhone),
@@ -3574,7 +3585,9 @@ function createRepositories(options) {
         "Role requests require an account-scoped Idempotency-Key",
       );
     }
-    const requestedWorkspaceId = String(patch.organizationId || "");
+    const requestedWorkspaceId = String(
+      patch.roleRequestOrganizationId || patch.organizationId || "",
+    );
     const auditWorkspaceId = String(auditInput.organizationId || "");
     const authorizedWorkspaceId = String(authorization.organizationId || "");
     if (
@@ -3599,7 +3612,10 @@ function createRepositories(options) {
       id: String(workspaceInput.id || "").trim(),
       name: String(workspaceInput.name || workspaceInput.id || "").trim(),
     };
-    if (!workspace.id || workspace.id !== String(patch.organizationId || "")) {
+    const requestedWorkspaceId = String(
+      patch.roleRequestOrganizationId || patch.organizationId || "",
+    );
+    if (!workspace.id || workspace.id !== requestedWorkspaceId) {
       throw repositoryError(
         403,
         "ROLE_REQUEST_WORKSPACE_SCOPE_DENIED",

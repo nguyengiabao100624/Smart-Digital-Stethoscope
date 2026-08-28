@@ -2,6 +2,16 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 production email-verification repair — HIL PASS
+
+- Git `main` is `b65bb80e`. Render deployed the backend repair at `f248c3f1249c` (the later Git commit only adjusts Android validation).
+- Root causes fixed in sequence: empty patient blood type was persisted instead of SQL `NULL`; the pending solo-doctor request moved `users.organization_id` away from its canonical self-patient tenant; platform notifications persisted an empty workspace foreign key; and Android compared a dynamic solo target against the current personal workspace.
+- The role-request contract now separates `organizationId` (current operational tenant) from `roleRequestOrganizationId` (workspace awaiting approval). PostgreSQL keeps the user/patient inverse identity intact while the request is pending, materializes the solo workspace, stores the target in sanitized Firebase claims, and preserves exact idempotent replay.
+- Backend `check`, `smoke:workspace-access`, and `smoke:repositories` PASS. Focused Android account/email/doctor-approval tests, debug APK and AndroidTest assembly PASS.
+- Production HIL on the attached Xiaomi PASS: `EmailVerificationRuntimeHilTest.verifiedFirebaseAccountIsAcceptedByProductionBackend` completed Firebase reload, fresh token exchange, production role request, tenant/membership verification, and pending-registration cleanup with `OK (1 test)`.
+- Installed production-URL debug APK SHA-256: `FDB67C9F7E74AF8E92BBD78451228D5FDA6E2782F308F4238C27BB6698ED4677`. Cold-start visual proof shows `Đang chờ duyệt tài khoản bác sĩ`, `Email đã xác thực`, and no former email-status/server error. Evidence: `docs/report-evidence/2026-08-28/android-email-verification-pending-approval.png` (SHA-256 `5086353B391044528AEAB07E98EDCAC9DBDE219721A43A0E733DA1E3B7543BFF`).
+- Expected next lifecycle state is administrator review; email verification itself is complete. Do not recreate or re-submit this pending request manually.
+
 ## 2026-08-28 latest authoritative handoff
 
 - Do not trust the older line that says G4 completed. Current status is **G4 partial**.

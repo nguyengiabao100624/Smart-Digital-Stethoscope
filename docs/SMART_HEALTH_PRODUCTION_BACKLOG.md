@@ -2,6 +2,16 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 verified-email production gate
+
+- [x] Deploy the verified-email/solo-doctor tenant repair to Render (`f248c3f1249c`).
+- [x] Preserve current personal `organizationId` and persist the pending target separately as `roleRequestOrganizationId`; verify JSON and PostgreSQL repository paths.
+- [x] Persist workspace-free platform notifications with SQL `NULL` and cover the foreign-key regression.
+- [x] Build/install APK `FDB67C9F7E74AF8E92BBD78451228D5FDA6E2782F308F4238C27BB6698ED4677` on Xiaomi.
+- [x] Run real production Firebase/backend HIL: `EmailVerificationRuntimeHilTest` PASS `OK (1 test)`.
+- [x] Cold-start the installed app and visually verify the account is on `Đang chờ duyệt tài khoản bác sĩ` with `Email đã xác thực`; evidence stored under `docs/report-evidence/2026-08-28/`.
+- [ ] Administrator approval remains a separate lifecycle action; do not label a pending doctor account as approved automatically.
+
 ## 2026-08-28 execution probe (no false production completion)
 
 - [x] COM9 hardware probe completed read-only: ESP32-S3 rev 0.2, CH343,

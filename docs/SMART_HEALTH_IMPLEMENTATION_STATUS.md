@@ -2,6 +2,15 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 Android verified-email production slice
+
+- **PASS:** verified Firebase account → production backend exchange → idempotent solo-doctor request → pending approval screen.
+- Backend deployed repair: `f248c3f1249c`; current source: `b65bb80e`.
+- Tenant contract is explicit: `organizationId` remains the active personal workspace while `roleRequestOrganizationId` identifies the pending clinic/solo-practice target. No pending request grants doctor membership or changes the canonical self-patient tenant.
+- Workspace-free platform notifications now persist `NULL` for `notifications.organization_id`, not the invalid empty foreign-key value.
+- Verification PASS: backend `check`, repository and workspace access smokes; focused Android account/email/doctor approval tests; debug and AndroidTest builds; Xiaomi install; production instrumentation `OK (1 test)`.
+- Installed APK SHA-256 `FDB67C9F7E74AF8E92BBD78451228D5FDA6E2782F308F4238C27BB6698ED4677`; visual evidence is `docs/report-evidence/2026-08-28/android-email-verification-pending-approval.png`.
+
 ## 2026-08-28 execution probe
 
 - COM9 read-only esptool probe: ESP32-S3 rev 0.2, CH343, 16 MB flash. No

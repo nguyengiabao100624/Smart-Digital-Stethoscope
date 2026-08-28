@@ -1970,7 +1970,7 @@ function getSoloPracticeWorkspaceCandidate(user, payload = {}) {
     return {
       id,
       name,
-      type: "solo_practice",
+      type: "clinic",
       workspaceType: "solo_practice",
       address: readString(payload.address, 240),
       phone: readString(payload.phone, 40) || user.phone || "",
@@ -1988,6 +1988,7 @@ function getSoloPracticeWorkspaceCandidate(user, payload = {}) {
   return {
     ...workspace,
     name: name || workspace.name,
+    type: "clinic",
     workspaceType: "solo_practice",
     ownerUserId: workspace.ownerUserId || user.id,
     packageId: workspace.packageId || "pkg_solo_doctor",

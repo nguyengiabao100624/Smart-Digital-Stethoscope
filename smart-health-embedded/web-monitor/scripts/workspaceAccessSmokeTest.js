@@ -1877,6 +1877,8 @@ async function runScenario() {
     (workspace) => workspace.id === soloWorkspaceId,
   );
   assert.equal(stableSoloWorkspace?.name, "Stable Solo Practice");
+  assert.equal(stableSoloWorkspace?.type, "clinic");
+  assert.equal(stableSoloWorkspace?.workspaceType, "solo_practice");
   const conflictingSoloRoleRequest = await expectStatus(
     "a conflicting solo retry is rejected before workspace mutation",
     soloRoleRequestUser,

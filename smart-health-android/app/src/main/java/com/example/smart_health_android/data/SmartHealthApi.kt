@@ -355,10 +355,12 @@ class SmartHealthApi(
             .put("hospital", hospital)
             .put("department", department)
             .put("specialty", department)
-            .put("organizationId", organizationId)
             .put("reason", reason)
             .put("accountType", accountType)
             .put("workspaceType", workspaceType)
+        organizationId.trim().takeIf(String::isNotEmpty)?.let { selectedWorkspaceId ->
+            body.put("organizationId", selectedWorkspaceId)
+        }
         val normalizedExpectedUserId = expectedUserId.trim()
         val normalizedExpectedWorkspaceId = expectedWorkspaceId.trim()
         require(

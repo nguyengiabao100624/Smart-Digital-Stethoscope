@@ -525,6 +525,9 @@ class SmartHealthProfileApiTest {
             )
 
             assertEquals("org_solo_user_1", user.canonicalWorkspaceId())
+            val request = server.takeRequest()
+            val requestBody = JSONObject(request.body.readUtf8())
+            assertFalse(requestBody.has("organizationId"))
 
             val mismatched = validRoleRequestResponse().apply {
                 getJSONObject("user")

@@ -1944,8 +1944,23 @@ function createRepositories(options) {
   const WORKSPACE_OWNER_MEMBERSHIP_ROLES = new Set(["owner", "workspace_owner"]);
   const WORKSPACE_OWNER_CAPABLE_ROLES = new Set(["admin", "platform_admin", "workspace_owner"]);
 
+  // A solo doctor owns the workspace created for the pending role request.
+  // Approval changes the account's operational role to `doctor`, but must not
+  // force an ownership transfer or drop the owner's membership capability.
+  // The server sets this marker only after validating the persisted target;
+  // ordinary membership role changes never carry it.
+  function isSoloDoctorOwnerApproval(targetState = {}) {
+    return (
+      String(targetState.role || "").toLowerCase() === "doctor" &&
+      String(targetState.membershipRole || "").toLowerCase() === "doctor" &&
+      String(targetState.workspaceType || "").toLowerCase() === "solo_practice" &&
+      targetState.roleRequestApproval === true
+    );
+  }
+
   function requiresWorkspaceOwnerGuard(operation, targetState = {}) {
     if (operation === "lock" || operation === "delete") return true;
+    if (operation === "change_role" && isSoloDoctorOwnerApproval(targetState)) return false;
     return operation === "change_role" && !WORKSPACE_OWNER_CAPABLE_ROLES.has(String(targetState.role || ""));
   }
 
@@ -10563,6 +10578,9 @@ function createRepositories(options) {
             organizationId: String(requestedTargetState.organizationId || organizationId || "").trim(),
             accountStatus: String(requestedTargetState.accountStatus || "active").trim(),
             hospital: String(requestedTargetState.hospital || "").trim(),
+            workspaceType: String(requestedTargetState.workspaceType || "").trim(),
+            membershipRole: String(requestedTargetState.membershipRole || requestedTargetState.role || "").trim(),
+            roleRequestApproval: requestedTargetState.roleRequestApproval === true,
           }
         : operation === "reset_password"
           ? {
@@ -11643,7 +11661,12 @@ function createRepositories(options) {
                 ON CONFLICT (organization_id, user_id)
                 DO UPDATE SET role = EXCLUDED.role
               `,
-              [createId("mbr"), roleTarget.organizationId, identityOperation.targetUserId, roleTarget.role],
+              [
+                createId("mbr"),
+                roleTarget.organizationId,
+                identityOperation.targetUserId,
+                roleTarget.membershipRole || roleTarget.role,
+              ],
             );
             await queryInsertAuditLog(client, createAuditLog(finalAuditInput));
           } else {
@@ -11847,12 +11870,12 @@ function createRepositories(options) {
               id: createId("mbr"),
               organizationId: roleTarget.organizationId,
               userId: identityOperation.targetUserId,
-              role: roleTarget.role,
+              role: roleTarget.membershipRole || roleTarget.role,
               createdAt: nowIso(),
             };
             runtimeDb.memberships.push(membership);
           } else {
-            membership.role = roleTarget.role;
+            membership.role = roleTarget.membershipRole || roleTarget.role;
           }
         } else {
           if (!user) throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");

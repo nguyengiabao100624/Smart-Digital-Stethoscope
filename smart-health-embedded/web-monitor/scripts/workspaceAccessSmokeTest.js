@@ -1917,6 +1917,37 @@ async function runScenario() {
   );
   assert.equal(unchangedSoloWorkspace?.name, stableSoloWorkspace.name);
   assert.equal(unchangedSoloWorkspace?.updatedAt, stableSoloWorkspace.updatedAt);
+  const soloApproval = await expectStatus(
+    "platform can approve the owner of a materialized solo-doctor workspace",
+    platform,
+    `/api/v1/admin/doctor-requests/${soloRoleRequestReceipt.user.id}/approve`,
+    200,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-solo-role-approval-owner",
+      },
+      body: JSON.stringify({}),
+    },
+  );
+  assert.equal(soloApproval.request.role, "doctor");
+  assert.equal(soloApproval.request.roleRequestStatus, "approved");
+  assert.equal(soloApproval.request.organizationId, soloWorkspaceId);
+  assert.equal(
+    soloApproval.request.currentMembership?.role,
+    "doctor",
+    "solo-doctor approval keeps a doctor operational membership while ownership remains on the workspace",
+  );
+  assert.equal(
+    (await expectStatus(
+      "approved solo doctor workspace remains owner-bound",
+      platform,
+      "/api/v1/admin/workspaces",
+      200,
+    )).workspaces.find((workspace) => workspace.id === soloWorkspaceId)?.ownerUserId,
+    soloRoleRequestReceipt.user.id,
+  );
   const scopedWorkspaces = await expectStatus("workspace admin sees own workspace", workspaceAdmin, "/api/v1/admin/workspaces", 200);
   assert.deepEqual(scopedWorkspaces.workspaces.map((item) => item.id), ["org_alpha"]);
 

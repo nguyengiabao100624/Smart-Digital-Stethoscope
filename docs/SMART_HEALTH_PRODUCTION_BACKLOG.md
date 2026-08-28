@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 Doctor approval 409 — second production regression
+
+- [x] Reproduce the live 409 with the exact production pending account and capture the API error code.
+- [x] Identify the conflicting invariant: solo-doctor owner approval was treated as an unsafe owner demotion.
+- [x] Implement the narrowly scoped server-side exception and preserve the operational `doctor` membership/owner binding.
+- [x] Add and pass the solo-owner approval regression in `smoke:workspace-access`; backend check and smoke pass.
+- [ ] Deploy the backend to Render and verify the real production approval returns 200; refresh Firebase claims/session and confirm the Admin queue updates.
+
 ## 2026-08-28 Doctor Approval regression closure
 
 - [x] Reproduce the 409 target-mismatch path with a solo-doctor request whose

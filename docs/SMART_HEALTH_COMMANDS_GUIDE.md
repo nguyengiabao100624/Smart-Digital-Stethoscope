@@ -2,6 +2,20 @@
 
 Last updated: 2026-08-28
 
+## Doctor approval 409 regression verification
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd test
+npm.cmd run smoke:workspace-access
+```
+
+The live symptom was `409 WORKSPACE_OWNER_TRANSFER_REQUIRED` for a pending
+solo-doctor owner. After deployment, repeat the Admin approval with the
+persisted request target and verify HTTP 200, `role=doctor`, a `doctor`
+membership in the solo workspace, and unchanged `owner_user_id`.
+
 ## Current live verification (2026-08-28)
 
 Authoritative lane update: source `main=d19b009e`; Render backend `2a4359686db5`; Portal Firebase `a130d4b26582e44c`; Admin Firebase `44de8648d0125d7c`. Production data is Postgres/auth-production with zero devices and no smoke admin/workspace artifacts. G4 is partial, not complete.

@@ -2,6 +2,13 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 Doctor approval owner-guard regression (live diagnosis)
+
+- **Root cause confirmed on production:** the API returned `409 WORKSPACE_OWNER_TRANSFER_REQUIRED` when approving `baobee44@gmail.com`. The applicant owns the active `solo_practice` workspace `org_solo_…`; the generic identity role-change guard incorrectly required an ownership transfer.
+- **Fix in source:** solo-doctor approval now carries a server-generated, validated approval marker, bypasses only this owner guard, and creates the normal operational `doctor` membership while preserving `organizations.owner_user_id`. Ordinary role changes, locks, deletes, and transfers keep the existing owner protections.
+- Regression coverage: workspace-access smoke now approves a materialized solo-doctor owner and verifies doctor membership plus owner binding. Local `npm test`, `npm run check`, and `npm run smoke:workspace-access` PASS.
+- **Deployment pending:** push/deploy the backend change, then repeat the real approval request and verify HTTP 200 plus the persisted role/membership before claiming closure.
+
 ## 2026-08-28 Admin doctor-approval 409 regression
 
 - **FIXED and deployed:** Doctor Approval now uses the backend-persisted

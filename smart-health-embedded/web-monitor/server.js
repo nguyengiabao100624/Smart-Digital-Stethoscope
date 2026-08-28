@@ -16693,6 +16693,15 @@ async function handleAdminApi(req, res, url, segments) {
         organizationId,
         accountStatus: "active",
         hospital: organization.name || targetUser.hospital || "Shcare",
+        workspaceType: readString(organization.workspaceType || organization.type, 40),
+        // A solo-doctor approval preserves the account owner's workspace
+        // capability while granting the doctor operational role. Shared
+        // clinic doctors keep the ordinary doctor membership role.
+        membershipRole:
+          "doctor",
+        roleRequestApproval:
+          String(organization.ownerUserId || "") === String(targetUser.id || "") &&
+          String(organization.workspaceType || organization.type || "").toLowerCase() === "solo_practice",
       };
       const approvalSaga = await runIdentityProviderSaga(
         req,

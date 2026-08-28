@@ -2,6 +2,20 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 latest doctor-approval 409 diagnosis
+
+- Production reproduction for the pending account `baobee44@gmail.com` returned
+  `WORKSPACE_OWNER_TRANSFER_REQUIRED`, not a target-ID mismatch. The account
+  owns its materialized active `solo_practice` workspace; approval was routed
+  through the generic owner-transfer guard.
+- Source fix is ready: the approval route emits a server-derived solo-owner
+  marker; identity finalization bypasses only that guard for this operation,
+  creates a `doctor` operational membership, and leaves workspace ownership
+  unchanged. Normal owner-protection paths remain enforced.
+- Local verification PASS: backend syntax/check, smoke test, and workspace
+  access regression. Render deployment and live HTTP-200 approval verification
+  are still required; do not claim this slice complete before that evidence.
+
 ## 2026-08-28 registration approval invariant revalidation
 
 - Personal registration remains self-service: a verified Firebase identity is materialized as an active `patient` with an active personal workspace and does not enter an administrator approval queue.

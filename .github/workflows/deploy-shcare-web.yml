@@ -88,3 +88,4 @@ jobs:
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
           npx firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+    if: ${{ github.event_name == 'workflow_dispatch' }}

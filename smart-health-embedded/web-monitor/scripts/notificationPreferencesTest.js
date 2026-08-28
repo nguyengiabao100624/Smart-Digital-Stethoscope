@@ -242,3 +242,20 @@ test("doctor role requests explicitly queue the audited platform-admin Brevo fan
     /const doctorRequestNotification = await createBackendNotification\([\s\S]*?if \(!result\.replayed\) \{\s*queueDoctorRequestAdminEmail\(doctorRequestNotification\)/,
   );
 });
+
+test("Brevo retries transient delivery with one provider idempotency key", () => {
+  const serverSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "server.js"),
+    "utf8",
+  );
+  const start = serverSource.indexOf("async function sendBrevoEmail");
+  const end = serverSource.indexOf("async function sendEmail", start);
+  assert.ok(start >= 0 && end > start);
+  const sender = serverSource.slice(start, end);
+
+  assert.match(sender, /const idempotencyKey = crypto\.randomUUID\(\)/);
+  assert.match(sender, /headers:\s*\{ idempotencyKey \}/);
+  assert.match(sender, /for \(let attempt = 1; attempt <= 2; attempt \+= 1\)/);
+  assert.match(sender, /providerCode === "duplicate_parameter"/);
+  assert.match(sender, /\[408, 425, 429\].*response\.status >= 500/s);
+});

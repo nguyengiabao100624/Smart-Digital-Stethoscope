@@ -10627,68 +10627,93 @@ async function sendBrevoEmail({ to, subject, text, html }) {
   }
 
   const brevo = getBrevoEnv();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-  let response;
-  let responseText = "";
-  let responseBody = {};
-  try {
-    response = await fetch(brevo.apiUrl, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "api-key": brevo.apiKey,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        sender: {
-          name: brevo.fromName,
-          email: brevo.fromEmail,
-        },
-        to: recipients.map((recipient) => ({
-          email: recipient.email,
-          ...(recipient.name ? { name: recipient.name } : {}),
-        })),
-        subject,
-        textContent: text,
-        htmlContent: html || `<html><head></head><body><p>${escapeHtml(text).replace(/\n/g, "<br />")}</p></body></html>`,
-      }),
-      signal: controller.signal,
-    });
-    responseText = await response.text();
-    if (responseText) {
-      try {
-        responseBody = JSON.parse(responseText);
-      } catch (_) {
-        responseBody = { message: responseText };
-      }
-    }
-  } catch (error) {
-    throw httpError(400, describeBrevoFailure(0, responseText, error), "BREVO_SEND_FAILED", {
-      provider: "brevo",
-      apiUrl: brevo.apiUrl,
-      from: brevo.fromEmail,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  // Brevo keeps an idempotency key for 30 minutes. Reusing the same UUID on a
+  // retry prevents a timeout after provider acceptance from delivering the
+  // same transactional email twice.
+  const idempotencyKey = crypto.randomUUID();
+  const requestBody = JSON.stringify({
+    sender: {
+      name: brevo.fromName,
+      email: brevo.fromEmail,
+    },
+    to: recipients.map((recipient) => ({
+      email: recipient.email,
+      ...(recipient.name ? { name: recipient.name } : {}),
+    })),
+    subject,
+    textContent: text,
+    htmlContent: html || `<html><head></head><body><p>${escapeHtml(text).replace(/\n/g, "<br />")}</p></body></html>`,
+    headers: { idempotencyKey },
+  });
 
-  if (!response.ok) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    let response;
+    let responseText = "";
+    let responseBody = {};
+    try {
+      response = await fetch(brevo.apiUrl, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "api-key": brevo.apiKey,
+          "content-type": "application/json",
+        },
+        body: requestBody,
+        signal: controller.signal,
+      });
+      responseText = await response.text();
+      if (responseText) {
+        try {
+          responseBody = JSON.parse(responseText);
+        } catch (_) {
+          responseBody = { message: responseText };
+        }
+      }
+    } catch (error) {
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      throw httpError(400, describeBrevoFailure(0, responseText, error), "BREVO_SEND_FAILED", {
+        provider: "brevo",
+        apiUrl: brevo.apiUrl,
+        from: brevo.fromEmail,
+        attempts: attempt,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const providerCode = readString(responseBody.code, 120);
+    if (response.ok || (attempt > 1 && providerCode === "duplicate_parameter")) {
+      return {
+        provider: "brevo",
+        messageId: readString(responseBody.messageId, 240),
+        accepted: recipients.map((recipient) => recipient.email),
+        rejected: [],
+        attempts: attempt,
+        idempotent: providerCode === "duplicate_parameter",
+      };
+    }
+
+    const retryable = [408, 425, 429].includes(response.status) || response.status >= 500;
+    if (attempt < 2 && retryable) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      continue;
+    }
     throw httpError(400, describeBrevoFailure(response.status, responseBody, null), "BREVO_SEND_FAILED", {
       provider: "brevo",
       statusCode: response.status,
       apiUrl: brevo.apiUrl,
       from: brevo.fromEmail,
-      providerCode: readString(responseBody.code, 120),
+      providerCode,
+      attempts: attempt,
     });
   }
 
-  return {
-    provider: "brevo",
-    messageId: readString(responseBody.messageId, 240),
-    accepted: recipients.map((recipient) => recipient.email),
-    rejected: [],
-  };
+  throw httpError(400, "Brevo delivery did not produce a terminal outcome", "BREVO_SEND_FAILED");
 }
 
 async function sendEmail({ to, subject, text, html }) {

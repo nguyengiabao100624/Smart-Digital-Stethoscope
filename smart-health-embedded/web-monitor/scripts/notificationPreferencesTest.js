@@ -223,3 +223,22 @@ test("generic notification factories cannot fan private content out to platform-
     "platform-wide email must use an explicit audited audience flow, never a generic factory side-channel",
   );
 });
+
+test("doctor role requests explicitly queue the audited platform-admin Brevo fanout", () => {
+  const serverSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "server.js"),
+    "utf8",
+  );
+  const factoryStart = serverSource.indexOf("async function createBackendNotification");
+  const factoryEnd = serverSource.indexOf("async function appendAudit", factoryStart);
+  assert.ok(factoryStart >= 0 && factoryEnd > factoryStart);
+  assert.equal(
+    serverSource.slice(factoryStart, factoryEnd).includes("queueDoctorRequestAdminEmail("),
+    false,
+    "generic notification persistence must remain free of platform-wide email fanout",
+  );
+  assert.match(
+    serverSource,
+    /const doctorRequestNotification = await createBackendNotification\([\s\S]*?if \(!result\.replayed\) \{\s*queueDoctorRequestAdminEmail\(doctorRequestNotification\)/,
+  );
+});

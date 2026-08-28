@@ -1,6 +1,15 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Settings, CheckCircle2, AlertTriangle, Info, Clock, Trash2 } from "lucide-react";
+import {
+  Bell,
+  Settings,
+  CheckCircle2,
+  AlertTriangle,
+  Info,
+  Clock,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { toast } from "sonner";
 import {
@@ -92,6 +101,7 @@ export function Notifications() {
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [deleteAllError, setDeleteAllError] = useState("");
+  const [markAllLoading, setMarkAllLoading] = useState(false);
   const [readingIds, setReadingIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -222,20 +232,22 @@ export function Notifications() {
     }
   };
 
-  const markAllRead = () => {
-    if (unreadCount === 0) return;
+  const markAllRead = async () => {
+    if (unreadCount === 0 || markAllLoading) return;
     const snapshot = items;
+    setMarkAllLoading(true);
     setItems((prev) => prev.map((i) => ({ ...i, isRead: true })));
-    smartHealthApi
-      .markAllNotificationsRead()
-      .then(() => {
-        dispatchNotificationSync();
-        toast.success("Đã đánh dấu tất cả thông báo là đã đọc.");
-      })
-      .catch((error) => {
-        setItems(snapshot);
-        toast.error(toVietnameseErrorMessage(error, "Không thể đánh dấu tất cả thông báo."));
-      });
+    try {
+      const { notifications } = await smartHealthApi.markAllNotificationsRead();
+      setItems(notifications.map(mapBackendNotification));
+      dispatchNotificationSync();
+      toast.success("Đã đánh dấu tất cả thông báo là đã đọc.");
+    } catch (error) {
+      setItems(snapshot);
+      toast.error(toVietnameseErrorMessage(error, "Không thể đánh dấu tất cả thông báo."));
+    } finally {
+      setMarkAllLoading(false);
+    }
   };
 
   const removeOne = (id: NotificationItem["id"]) => {
@@ -501,9 +513,16 @@ export function Notifications() {
               <button
                 onClick={markAllRead}
                 className="inline-flex min-h-11 items-center rounded-md px-2 font-medium text-primary hover:bg-primary/10 hover:underline disabled:opacity-50 disabled:no-underline"
-                disabled={unreadCount === 0}
+                disabled={unreadCount === 0 || markAllLoading}
               >
-                Đánh dấu tất cả là đã đọc
+                {markAllLoading ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                    Đang lưu...
+                  </>
+                ) : (
+                  "Đánh dấu tất cả là đã đọc"
+                )}
               </button>
               <CapabilityGate capabilities={NOTIFICATION_MANAGE_CAPABILITIES}>
                 <button

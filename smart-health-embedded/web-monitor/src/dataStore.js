@@ -84,11 +84,32 @@ class JsonDataStore {
         lastError = error;
         if (!retryableCodes.has(error?.code)) throw error;
       }
+      // Copying over the live JSON file exposes a truncated document to
+      // concurrent readers on Windows. Swap the complete files instead so a
+      // reader observes either the old snapshot or the new snapshot, never a
+      // partially copied payload.
+      const backupFile = `${this.dbFile}.${process.pid}.replace-backup`;
+      let movedCurrent = false;
       try {
-        await this.fileSystem.promises.copyFile(tmpFile, this.dbFile);
+        await this.fileSystem.promises.unlink(backupFile).catch(() => {});
+        if (this.fileSystem.existsSync(this.dbFile)) {
+          await this.fileSystem.promises.rename(this.dbFile, backupFile);
+          movedCurrent = true;
+        }
+        await this.fileSystem.promises.rename(tmpFile, this.dbFile);
+        if (movedCurrent) {
+          await this.fileSystem.promises.unlink(backupFile).catch(() => {});
+        }
         return;
       } catch (error) {
         lastError = error;
+        if (
+          movedCurrent &&
+          !this.fileSystem.existsSync(this.dbFile) &&
+          this.fileSystem.existsSync(backupFile)
+        ) {
+          await this.fileSystem.promises.rename(backupFile, this.dbFile).catch(() => {});
+        }
         if (!retryableCodes.has(error?.code)) throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));

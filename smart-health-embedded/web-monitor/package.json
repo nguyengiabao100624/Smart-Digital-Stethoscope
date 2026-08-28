@@ -42,6 +42,7 @@
     "smoke:device-ownership-persistence": "node --test scripts/deviceOwnershipPersistenceTest.js",
     "smoke:device-ownership-repository": "node --test scripts/deviceOwnershipRepositoryTest.js",
     "smoke:data-store-concurrency": "node --test scripts/dataStoreConcurrencyTest.js",
+    "smoke:configuration-persistence": "node --test scripts/configurationPersistenceTest.js",
     "smoke:device-setup-security": "node --test scripts/deviceSetupSecurityTest.js",
     "hil:device:start": "node scripts/startDeviceHil.mjs",
     "hil:device:smoke": "node scripts/runDeviceHilSmoke.mjs",

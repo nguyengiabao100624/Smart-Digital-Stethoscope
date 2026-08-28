@@ -10465,12 +10465,25 @@ function getMutableSettingsForUser(user) {
 
 async function persistMutableSettings(user, settings, workspace = null) {
   if (workspace) {
-    workspace.settings = settings;
-    workspace.updatedAt = nowIso();
+    if (repositories?.configuration?.saveWorkspace) {
+      const persisted = await repositories.configuration.saveWorkspace(
+        workspace.id,
+        settings,
+      );
+      workspace.settings = persisted;
+    } else {
+      workspace.settings = settings;
+      workspace.updatedAt = nowIso();
+      await saveDb();
+    }
   } else {
-    db.settings = settings;
+    if (repositories?.configuration?.savePlatform) {
+      db.settings = await repositories.configuration.savePlatform(settings);
+    } else {
+      db.settings = settings;
+      await saveDb();
+    }
   }
-  await saveDb();
 }
 
 function normalizeSmtpSecret(value, host) {
@@ -11121,11 +11134,21 @@ async function sendNotificationEmailToPlatformAdmins(notification) {
   const recipients = getPlatformAdminEmailRecipients();
   if (recipients.length === 0) {
     console.warn(`Skip notification email ${notification.id || ""}: no platform admin recipients`);
+    await saveNotificationEmailStatus(notification, {
+      emailStatus: "no_recipient",
+      emailErrorMessage: "PLATFORM_ADMIN_EMAIL_RECIPIENT_UNAVAILABLE",
+    });
     return null;
   }
   const runtime = getEmailRuntimeStatus();
-  if (!runtime.configured) {
+  if (!isNotificationEmailEnabled() || !runtime.configured) {
     console.warn(`Skip notification email ${notification.id || ""}: ${runtime.provider} not configured (${runtime.missing.join(", ")})`);
+    await saveNotificationEmailStatus(notification, {
+      emailStatus: isNotificationEmailEnabled() ? "unavailable" : "disabled",
+      emailErrorMessage: isNotificationEmailEnabled()
+        ? "NOTIFICATION_EMAIL_PROVIDER_UNAVAILABLE"
+        : "NOTIFICATION_EMAIL_DISABLED",
+    });
     return null;
   }
 
@@ -11137,14 +11160,55 @@ async function sendNotificationEmailToPlatformAdmins(notification) {
     html: email.html,
   });
 
-  notification.deliveryStatus = "email_sent";
-  notification.sentAt = nowIso();
+  await saveNotificationEmailStatus(notification, {
+    emailStatus: "sent",
+    emailErrorMessage: "",
+    sentAt: nowIso(),
+  });
   addAccessLog(`Email thông báo đã gửi tới ${recipients.length} quản trị viên toàn hệ thống`, {
     severity: "success",
     organizationId: notification.organizationId || "",
   });
-  await saveDb();
   return result;
+}
+
+const doctorRequestAdminEmailDispatchIds = new Set();
+
+// This fanout is deliberately bound to the doctor-review workflow. Generic
+// notification factories must not leak private notification content to the
+// platform-wide administrator audience as a hidden side effect.
+function queueDoctorRequestAdminEmail(notification) {
+  const runtime = getEmailRuntimeStatus();
+  if (
+    !notification?.id ||
+    !isNotificationEmailEnabled() ||
+    !runtime.configured ||
+    doctorRequestAdminEmailDispatchIds.has(notification.id)
+  ) {
+    return;
+  }
+  doctorRequestAdminEmailDispatchIds.add(notification.id);
+  if (doctorRequestAdminEmailDispatchIds.size > 1000) {
+    for (const id of Array.from(doctorRequestAdminEmailDispatchIds).slice(0, 300)) {
+      doctorRequestAdminEmailDispatchIds.delete(id);
+    }
+  }
+  setTimeout(() => {
+    sendNotificationEmailToPlatformAdmins(notification).catch(async (error) => {
+      const errorMessage = readString(error?.message || String(error), 500);
+      await saveNotificationEmailStatus(notification, {
+        emailStatus: "failed",
+        emailErrorMessage: errorMessage,
+        failedAt: nowIso(),
+        retryCount: Number(notification.retryCount || 0) + 1,
+      }).catch(() => {});
+      addAccessLog("Không gửi được email yêu cầu duyệt bác sĩ", {
+        severity: "warning",
+        organizationId: notification.organizationId || "",
+      });
+      console.error(`Doctor request admin email failed (${notification.id}): ${errorMessage}`);
+    });
+  }, 0);
 }
 
 const notificationCampaignEmailDispatchIds = new Set();
@@ -14397,7 +14461,7 @@ async function handleAuthApi(req, res, segments) {
             readString(candidate.role, 40).toLowerCase(),
           ),
       );
-      await createBackendNotification({
+      const doctorRequestNotification = await createBackendNotification({
         id: `noti_${result.operationId}`,
         createOnce: true,
         type: "info",
@@ -14432,6 +14496,7 @@ async function handleAuthApi(req, res, segments) {
         },
       });
       if (!result.replayed) {
+        queueDoctorRequestAdminEmail(doctorRequestNotification);
         addAccessLog("Doctor role approval requested", {
           id: `log_${result.operationId}`,
           operationId: result.operationId,
@@ -19036,9 +19101,11 @@ async function handleNotificationsApi(req, res, segments) {
     const scopedNotifications = filterNotificationsForUser(user, repositories ? await repositories.notifications.list() : db.notifications);
     const count = scopedNotifications.length;
     if (repositories) {
-      for (const notification of scopedNotifications) {
-        await repositories.notifications.delete(notification.id, context);
-      }
+      await repositories.notifications.mutateMany(
+        "delete",
+        scopedNotifications.map((notification) => notification.id),
+        context,
+      );
     } else {
       const scopedIds = new Set(scopedNotifications.map((notification) => notification.id));
       db.notifications = db.notifications.filter((notification) => !scopedIds.has(notification.id));
@@ -19060,9 +19127,11 @@ async function handleNotificationsApi(req, res, segments) {
       await appendAudit("notification.read", req, { resourceType: "notification", resourceId: "all" });
       saveDb();
     } else {
-      for (const notification of notifications) {
-        await repositories.notifications.markRead(notification.id, context);
-      }
+      await repositories.notifications.mutateMany(
+        "read",
+        notifications.map((notification) => notification.id),
+        context,
+      );
     }
     sendJson(res, 200, { notifications: notifications.map((notification) => ({ ...notification, read: true, readAt: notification.readAt || nowIso() })) });
     return;

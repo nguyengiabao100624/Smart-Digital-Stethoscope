@@ -24,21 +24,24 @@ test("JSON storage falls back safely when Windows rename reports EPERM", async (
   const fileSystem = {
     promises: {
       writeFile: (...args) => fs.promises.writeFile(...args),
-      rename: async () => {
+      rename: async (...args) => {
         renameCalls += 1;
-        const error = new Error("simulated Windows destination lock");
-        error.code = "EPERM";
-        throw error;
+        if (renameCalls === 1) {
+          const error = new Error("simulated Windows destination lock");
+          error.code = "EPERM";
+          throw error;
+        }
+        return fs.promises.rename(...args);
       },
-      copyFile: (...args) => fs.promises.copyFile(...args),
       unlink: (...args) => fs.promises.unlink(...args),
     },
+    existsSync: (...args) => fs.existsSync(...args),
   };
   const { directory, dbFile, store } = createTempStore(fileSystem);
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
   await store.save({ revision: 1, state: "safe" });
-  assert.equal(renameCalls, 1);
+  assert.equal(renameCalls, 2);
   assert.deepEqual(JSON.parse(fs.readFileSync(dbFile, "utf8")), {
     revision: 1,
     state: "safe",
@@ -46,7 +49,7 @@ test("JSON storage falls back safely when Windows rename reports EPERM", async (
   assert.deepEqual(
     fs.readdirSync(directory).filter((name) => name.endsWith(".tmp")),
     [],
-    "temporary files must be cleaned after copy fallback",
+    "temporary files must be cleaned after atomic swap fallback",
   );
 });
 

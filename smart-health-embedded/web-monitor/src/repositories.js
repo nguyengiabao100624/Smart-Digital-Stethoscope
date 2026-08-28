@@ -315,6 +315,7 @@ function rowToOrganization(row) {
     subscriptionStatus: row.subscription_status || "trial",
     billingCycle: row.billing_cycle || "monthly",
     requestMetadata: objectOf(row.request_metadata),
+    settings: objectOf(row.settings),
     version: Number(row.version || 1),
     deletedAt: toIso(row.deleted_at),
     createdAt: toIso(row.created_at),
@@ -2314,13 +2315,13 @@ function createRepositories(options) {
           INSERT INTO organizations (
             id, name, type, workspace_type, address, phone, email, website, status,
             legal_name, representative, owner_user_id, package_id, subscription_status,
-            billing_cycle, request_metadata, updated_at
+            billing_cycle, request_metadata, settings, updated_at
           )
           VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9,
             $10, $11,
             CASE WHEN $12::text IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = $12::text) THEN $12::text ELSE NULL END,
-            $13, $14, $15, $16::jsonb, now()
+            $13, $14, $15, $16::jsonb, $17::jsonb, now()
           )
           ON CONFLICT (id)
           DO UPDATE SET
@@ -2339,6 +2340,7 @@ function createRepositories(options) {
             subscription_status = EXCLUDED.subscription_status,
             billing_cycle = EXCLUDED.billing_cycle,
             request_metadata = EXCLUDED.request_metadata,
+            settings = EXCLUDED.settings,
             updated_at = now()
         `,
         [
@@ -2358,6 +2360,7 @@ function createRepositories(options) {
           organization.subscriptionStatus || "trial",
           organization.billingCycle || "monthly",
           JSON.stringify(objectOf(organization.requestMetadata)),
+          JSON.stringify(objectOf(organization.settings)),
         ]
       )
     );
@@ -9673,7 +9676,6 @@ function createRepositories(options) {
           replayed: false,
         },
       );
-      await saveDb();
       return result;
     },
 
@@ -9689,7 +9691,7 @@ function createRepositories(options) {
       }
       syncArrayItem(getDb().notifications, notification);
       getDb().notifications = getDb().notifications.slice(0, 200);
-      await saveDb();
+      if (!getPool()) await saveDb();
       return notification;
     },
 
@@ -9750,7 +9752,7 @@ function createRepositories(options) {
 
       syncArrayItem(getDb().notifications, result.notification);
       getDb().notifications = getDb().notifications.slice(0, 200);
-      await saveDb();
+      if (!getPool()) await saveDb();
       return result;
     },
 
@@ -9890,12 +9892,6 @@ function createRepositories(options) {
       });
       if (!result) return null;
       syncArrayItem(getDb().notifications, result);
-      try {
-        await saveDb();
-      } catch (error) {
-        error.backendCommitted = true;
-        throw error;
-      }
       return result;
     },
 
@@ -10101,8 +10097,109 @@ function createRepositories(options) {
         result.responseStatus,
         { campaign: result.campaign, notifications: result.notifications },
       );
-      await saveDb();
       return result;
+    },
+
+    async mutateMany(action, ids, context = {}) {
+      const normalizedAction = String(action || "");
+      if (!["read", "delete"].includes(normalizedAction)) {
+        throw repositoryError(
+          400,
+          "NOTIFICATION_BULK_ACTION_INVALID",
+          "Bulk notification action must be read or delete",
+        );
+      }
+      const notificationIds = Array.from(
+        new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean)),
+      ).slice(0, 200);
+      if (notificationIds.length === 0) return [];
+      const updatedAt = nowIso();
+      const auditLog = createAuditLog({
+        action: normalizedAction === "read" ? "notification.read" : "notification.delete",
+        actorUserId: context?.actor?.id || context?.actorUserId || "",
+        organizationId: context?.organizationId || "",
+        resourceType: "notification",
+        resourceId: "all",
+        ip: context?.ip || "",
+        userAgent: context?.userAgent || "",
+        metadata: {
+          scope: "visible",
+          action: normalizedAction,
+          requestedCount: notificationIds.length,
+        },
+      });
+
+      if (!getPool()) {
+        const runtimeDb = getDb();
+        const snapshot = snapshotRuntimeDb(runtimeDb);
+        try {
+          const selected = (runtimeDb.notifications || []).filter((item) =>
+            notificationIds.includes(String(item.id || "")),
+          );
+          if (normalizedAction === "read") {
+            for (const item of selected) {
+              item.read = true;
+              item.readAt = item.readAt || updatedAt;
+              item.updatedAt = updatedAt;
+            }
+          } else {
+            const selectedIds = new Set(selected.map((item) => item.id));
+            runtimeDb.notifications = (runtimeDb.notifications || []).filter(
+              (item) => !selectedIds.has(item.id),
+            );
+          }
+          auditLog.metadata.affectedCount = selected.length;
+          syncRuntimeAuditLog(auditLog);
+          await saveDb();
+          return selected;
+        } catch (error) {
+          restoreRuntimeDb(runtimeDb, snapshot);
+          throw error;
+        }
+      }
+
+      const selected = await withSqlTransaction(async (client) => {
+        const locked = await client.query(
+          "SELECT * FROM notifications WHERE id = ANY($1::text[]) FOR UPDATE",
+          [notificationIds],
+        );
+        const existingIds = locked.rows.map((row) => row.id);
+        let rows = locked.rows;
+        if (existingIds.length > 0 && normalizedAction === "read") {
+          const updated = await client.query(
+            `
+              UPDATE notifications
+              SET read_at = COALESCE(read_at, $2::timestamptz),
+                  updated_at = $2::timestamptz
+              WHERE id = ANY($1::text[])
+              RETURNING *
+            `,
+            [existingIds, updatedAt],
+          );
+          rows = updated.rows;
+        } else if (existingIds.length > 0) {
+          const deleted = await client.query(
+            "DELETE FROM notifications WHERE id = ANY($1::text[]) RETURNING *",
+            [existingIds],
+          );
+          rows = deleted.rows;
+        }
+        auditLog.metadata.affectedCount = rows.length;
+        await queryInsertAuditLog(client, auditLog);
+        return rows.map(rowToNotification);
+      });
+
+      const runtimeDb = getDb();
+      if (normalizedAction === "delete") {
+        const selectedIds = new Set(selected.map((item) => item.id));
+        runtimeDb.notifications = (runtimeDb.notifications || []).filter(
+          (item) => !selectedIds.has(item.id),
+        );
+      } else {
+        for (const item of selected) syncArrayItem(runtimeDb.notifications, item);
+      }
+      syncRuntimeAuditLog(auditLog);
+      return selected;
     },
 
     async markAllRead(context) {
@@ -20111,6 +20208,76 @@ function createRepositories(options) {
     },
   };
 
+  const configuration = {
+    async savePlatform(settings) {
+      const canonical = cloneRuntimeValue(objectOf(settings));
+      if (getPool()) {
+        await withSql((pool) =>
+          pool.query(
+            `
+              INSERT INTO platform_settings (id, settings, updated_at)
+              VALUES ('default', $1::jsonb, now())
+              ON CONFLICT (id)
+              DO UPDATE SET settings = EXCLUDED.settings, updated_at = now()
+            `,
+            [JSON.stringify(canonical)],
+          ),
+        );
+      }
+      getDb().settings = canonical;
+      if (!getPool()) await saveDb();
+      return canonical;
+    },
+
+    async saveWorkspace(organizationId, settings) {
+      const workspaceId = String(organizationId || "");
+      if (!workspaceId) {
+        throw repositoryError(
+          400,
+          "WORKSPACE_SETTINGS_ID_REQUIRED",
+          "Workspace settings require an organization id",
+        );
+      }
+      const canonical = cloneRuntimeValue(objectOf(settings));
+      if (getPool()) {
+        const result = await withSql((pool) =>
+          pool.query(
+            `
+              UPDATE organizations
+              SET settings = $2::jsonb, updated_at = now()
+              WHERE id = $1 AND deleted_at IS NULL
+              RETURNING *
+            `,
+            [workspaceId, JSON.stringify(canonical)],
+          ),
+        );
+        if (!result?.rows?.[0]) {
+          throw repositoryError(
+            404,
+            "WORKSPACE_NOT_FOUND",
+            "Workspace settings target was not found",
+          );
+        }
+        syncArrayItem(getDb().organizations, rowToOrganization(result.rows[0]));
+      } else {
+        const workspace = (getDb().organizations || []).find(
+          (item) => item.id === workspaceId && !item.deletedAt,
+        );
+        if (!workspace) {
+          throw repositoryError(
+            404,
+            "WORKSPACE_NOT_FOUND",
+            "Workspace settings target was not found",
+          );
+        }
+        workspace.settings = canonical;
+        workspace.updatedAt = nowIso();
+        await saveDb();
+      }
+      return canonical;
+    },
+  };
+
   const auditLogs = {
     async list(input = {}) {
       const filters = normalizeAuditLogQuery(input);
@@ -20233,9 +20400,10 @@ function createRepositories(options) {
 
   return {
     auditLogs,
+    configuration,
     async hydrateCoreState() {
       const hydrated = await withSql(async (pool) => {
-        const [organizationResult, servicePackageResult, userResult, membershipResult, patientResult, patientShareResult, deviceResult, scanResult, audioResult, aiResult, deviceCommandResult, deviceEventResult, notificationDeviceResult, notificationResult, exportResult, auditResult, authSessionResult] = await Promise.all([
+        const [organizationResult, servicePackageResult, userResult, membershipResult, patientResult, patientShareResult, deviceResult, scanResult, audioResult, aiResult, deviceCommandResult, deviceEventResult, notificationDeviceResult, notificationResult, exportResult, auditResult, authSessionResult, platformSettingsResult] = await Promise.all([
           // Keep archived organization rows as runtime tombstones. Operational
           // lookups and lifecycle lists exclude deletedAt, while the tombstone
           // prevents deterministic/catalog ids from being recreated.
@@ -20256,6 +20424,7 @@ function createRepositories(options) {
           pool.query("SELECT * FROM exports ORDER BY created_at DESC LIMIT 500"),
           pool.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1000"),
           pool.query("SELECT * FROM auth_sessions ORDER BY last_seen_at DESC LIMIT 500"),
+          pool.query("SELECT settings FROM platform_settings WHERE id = 'default' LIMIT 1"),
         ]);
         await repairLegacyPasswordRows(pool, userResult.rows);
         const hydratedState = {
@@ -20276,6 +20445,7 @@ function createRepositories(options) {
           exports: exportResult.rows.map(rowToExport),
           auditLogs: auditResult.rows.map(rowToAuditLog),
           authSessions: authSessionResult.rows.map(rowToAuthSession),
+          settings: objectOf(platformSettingsResult.rows[0]?.settings),
         };
         await repairLegacyDeviceSecretRows(pool, deviceResult.rows);
         hydratedState.devices = deviceResult.rows.map(rowToDevice);
@@ -20321,6 +20491,9 @@ function createRepositories(options) {
       }
 
       const db = getDb();
+      if (hydrated.settings && Object.keys(hydrated.settings).length > 0) {
+        db.settings = hydrated.settings;
+      }
       const counts = {};
       for (const key of ["organizations", "servicePackages", "users", "memberships", "patients", "appointments", "doctorPatientAccess", "devices", "scans", "audioFiles", "aiResults", "deviceCommands", "deviceEvents", "notificationDevices", "notifications", "exports", "auditLogs", "authSessions", "chatMessages", "twoFactorCredentials", "twoFactorEnrollments", "twoFactorChallenges", "twoFactorTokens"]) {
         if (!Array.isArray(hydrated[key])) {

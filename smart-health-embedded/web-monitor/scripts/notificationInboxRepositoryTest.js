@@ -117,6 +117,7 @@ function toSqlNotificationRow(item) {
 function createSqlFixture(options = {}) {
   let sequence = 0;
   let clock = 0;
+  let saveCalls = 0;
   let database = {
     users: [
       {
@@ -227,6 +228,18 @@ function createSqlFixture(options = {}) {
         return { rows: structuredClone(rows) };
       }
       if (
+        statement.startsWith("SELECT * FROM notifications") &&
+        statement.includes("WHERE id = ANY") &&
+        statement.includes("FOR UPDATE")
+      ) {
+        const ids = parameters[0];
+        return {
+          rows: structuredClone(
+            activeDatabase().notifications.filter((row) => ids.includes(row.id)),
+          ),
+        };
+      }
+      if (
         statement.startsWith("UPDATE notifications") &&
         statement.includes("WHERE id = $1") &&
         statement.includes("RETURNING *")
@@ -250,7 +263,24 @@ function createSqlFixture(options = {}) {
           row.read_at = row.read_at || updatedAt;
           row.updated_at = updatedAt;
         }
-        return { rows: [] };
+        return {
+          rows: statement.includes("RETURNING *")
+            ? structuredClone(
+                activeDatabase().notifications.filter((row) => ids.includes(row.id)),
+              )
+            : [],
+        };
+      }
+      if (
+        statement.startsWith("DELETE FROM notifications") &&
+        statement.includes("WHERE id = ANY")
+      ) {
+        const ids = parameters[0];
+        const deleted = activeDatabase().notifications.filter((row) => ids.includes(row.id));
+        activeDatabase().notifications = activeDatabase().notifications.filter(
+          (row) => !ids.includes(row.id),
+        );
+        return { rows: structuredClone(deleted) };
       }
       if (
         statement.startsWith("DELETE FROM notifications") &&
@@ -301,7 +331,9 @@ function createSqlFixture(options = {}) {
   };
   const repositories = createRepositories({
     getDb: () => runtimeDb,
-    saveDb: async () => {},
+    saveDb: async () => {
+      saveCalls += 1;
+    },
     createId: (prefix) => `${prefix}_sql_${++sequence}`,
     nowIso: () => `2026-07-29T09:00:0${clock++}.000Z`,
     getPool: () => pool,
@@ -309,6 +341,7 @@ function createSqlFixture(options = {}) {
   return {
     calls,
     repositories,
+    saveCalls: () => saveCalls,
     state: () => database,
   };
 }
@@ -491,6 +524,38 @@ test("read-all and delete return a canonical snapshot instead of a local success
   assert.equal(db.notifications.some((item) => item.id === "notification-current"), false);
 });
 
+test("legacy bulk notification mutations persist once and keep unrelated rows unchanged", async () => {
+  const { db, repositories } = createRuntimeFixture();
+  const visibleIds = ["notification-current", "notification-account-wide"];
+
+  const read = await repositories.notifications.mutateMany(
+    "read",
+    visibleIds,
+    auditInput(),
+  );
+  assert.equal(read.length, 2);
+  assert.ok(read.every((item) => item.read));
+  assert.equal(
+    db.notifications.find((item) => item.id === "notification-old-workspace").read,
+    false,
+  );
+
+  const deleted = await repositories.notifications.mutateMany(
+    "delete",
+    visibleIds,
+    auditInput(),
+  );
+  assert.equal(deleted.length, 2);
+  assert.equal(
+    db.notifications.some((item) => visibleIds.includes(item.id)),
+    false,
+  );
+  assert.equal(
+    db.notifications.some((item) => item.id === "notification-old-workspace"),
+    true,
+  );
+});
+
 test("runtime save failure restores notification, audit and replay ledgers together", async () => {
   const { db, repositories } = createRuntimeFixture({ failSaveAt: 1 });
   const before = structuredClone(db);
@@ -537,6 +602,31 @@ test("PostgreSQL read commits notification, audit and replay receipt in one tran
   assert.equal(calls.filter((statement) => statement === "BEGIN").length, 2);
   assert.equal(calls.filter((statement) => statement === "COMMIT").length, 2);
   assert.equal(calls.filter((statement) => statement === "ROLLBACK").length, 0);
+});
+
+test("PostgreSQL bulk read/delete use one transaction each and never rewrite runtime-state JSON", async () => {
+  const { calls, repositories, saveCalls, state } = createSqlFixture();
+  const ids = ["notification-current", "notification-account-wide"];
+
+  const read = await repositories.notifications.mutateMany(
+    "read",
+    ids,
+    auditInput(),
+  );
+  assert.equal(read.length, 2);
+  assert.ok(read.every((item) => item.read));
+  assert.equal(saveCalls(), 0);
+
+  const deleted = await repositories.notifications.mutateMany(
+    "delete",
+    ids,
+    auditInput(),
+  );
+  assert.equal(deleted.length, 2);
+  assert.equal(state().notifications.some((row) => ids.includes(row.id)), false);
+  assert.equal(saveCalls(), 0);
+  assert.equal(calls.filter((statement) => statement === "BEGIN").length, 2);
+  assert.equal(calls.filter((statement) => statement === "COMMIT").length, 2);
 });
 
 test("PostgreSQL audit failure rolls notification and replay state back together", async () => {

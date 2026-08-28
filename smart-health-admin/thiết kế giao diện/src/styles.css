@@ -190,6 +190,29 @@
   }
 }
 
+/* Sonner's default icon inherits the toast foreground, which made success
+   and error glyphs look black in the light admin theme. Keep text readable
+   while giving the status glyph its semantic color in every theme. */
+[data-sonner-toast][data-type="success"] [data-icon],
+[data-sonner-toast][data-type="success"] [data-icon] svg {
+  color: var(--success);
+}
+
+[data-sonner-toast][data-type="error"] [data-icon],
+[data-sonner-toast][data-type="error"] [data-icon] svg {
+  color: var(--destructive);
+}
+
+[data-sonner-toast][data-type="warning"] [data-icon],
+[data-sonner-toast][data-type="warning"] [data-icon] svg {
+  color: var(--warning);
+}
+
+[data-sonner-toast][data-type="info"] [data-icon],
+[data-sonner-toast][data-type="info"] [data-icon] svg {
+  color: var(--info);
+}
+
 @keyframes smart-health-pulse {
   0%,
   100% {

@@ -6444,8 +6444,32 @@ function createRepositories(options) {
         nextClaims.roleInfoRequiredFields = patch.roleInfoRequiredFields;
       }
       const hasSql = Boolean(getPool());
-      const sqlUser = await withSql(async (pool) => {
-        const result = await pool.query(
+      const sqlUser = await withSqlTransaction(async (client) => {
+        const current = await client.query(
+          "SELECT id, patient_id FROM users WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1) LIMIT 1 FOR UPDATE",
+          [id],
+        );
+        const currentPatientId = current.rows[0]?.patient_id || "";
+        // A patient account and its self-patient inverse must remain in the
+        // same tenant. Doctor approval moves the account to its operational
+        // workspace, so detach (and tombstone) the old personal inverse in
+        // the same transaction before changing users.organization_id.
+        if (patch.role === "doctor" && currentPatientId) {
+          await client.query(
+            `
+              UPDATE patients
+              SET account_user_id = NULL,
+                  owner_user_id = NULL,
+                  profile_type = 'patient',
+                  relationship = NULL,
+                  deleted_at = COALESCE(deleted_at, now()),
+                  updated_at = now()
+              WHERE id = $1
+            `,
+            [currentPatientId],
+          );
+        }
+        const result = await client.query(
           `
             UPDATE users
             SET
@@ -6460,6 +6484,7 @@ function createRepositories(options) {
               role_info_request_at = $9,
               role_info_request_message = $10,
               organization_id = COALESCE($11, organization_id),
+              patient_id = CASE WHEN $2 = 'doctor' THEN NULL ELSE patient_id END,
               firebase_claims = COALESCE(users.firebase_claims, '{}'::jsonb) || $12::jsonb,
               updated_at = now()
             WHERE id = $1 OR firebase_uid = $1 OR lower(email) = lower($1)
@@ -6490,6 +6515,19 @@ function createRepositories(options) {
         : getDb().users.find((item) => item.id === id || item.firebaseUid === id || String(item.email || "").toLowerCase() === id.toLowerCase());
       if (!user) {
         return null;
+      }
+      if (patch.role === "doctor" && user.patientId) {
+        const patient = getDb().patients.find((item) => item.id === user.patientId);
+        if (patient) {
+          patient.accountUserId = "";
+          patient.ownerUserId = "";
+          patient.profileType = "patient";
+          patient.relationship = "";
+          patient.deletedAt = patient.deletedAt || nowIso();
+          patient.updatedAt = nowIso();
+        }
+        user.patientId = "";
+        user.activePatientId = "";
       }
       Object.assign(user, patch, {
         requestedRole: "doctor",
@@ -11629,6 +11667,21 @@ function createRepositories(options) {
                 }));
               }
             }
+            if (roleTarget.role === "doctor") {
+              await client.query(
+                `
+                  UPDATE patients
+                  SET account_user_id = NULL,
+                      owner_user_id = NULL,
+                      profile_type = 'patient',
+                      relationship = NULL,
+                      deleted_at = COALESCE(deleted_at, now()),
+                      updated_at = now()
+                  WHERE account_user_id = $1
+                `,
+                [identityOperation.targetUserId],
+              );
+            }
             const updated = await client.query(
               `
                 UPDATE users
@@ -11636,6 +11689,7 @@ function createRepositories(options) {
                     requested_role = $3,
                     role_request_status = $4,
                     organization_id = $5,
+                    patient_id = CASE WHEN $2 = 'doctor' THEN NULL ELSE patient_id END,
                     account_status = $6,
                     hospital = $7,
                     updated_at = now()
@@ -11853,6 +11907,21 @@ function createRepositories(options) {
                 },
               }));
             }
+          }
+          if (roleTarget.role === "doctor" && user.patientId) {
+            const patient = (runtimeDb.patients || []).find(
+              (item) => item.id === user.patientId,
+            );
+            if (patient) {
+              patient.accountUserId = "";
+              patient.ownerUserId = "";
+              patient.profileType = "patient";
+              patient.relationship = "";
+              patient.deletedAt = patient.deletedAt || nowIso();
+              patient.updatedAt = nowIso();
+            }
+            user.patientId = "";
+            user.activePatientId = "";
           }
           user.role = roleTarget.role;
           user.requestedRole = roleTarget.requestedRole;

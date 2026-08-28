@@ -89,6 +89,10 @@ function writeSeedDb() {
   users.find((user) => user.id === "usr_pending_doctor").roleRequestStatus = "pending";
   users.find((user) => user.id === "usr_password_repair").password =
     ancillaryRepairPasswordPayload.newPassword;
+  Object.assign(users.find((user) => user.id === "usr_solo_role_request"), {
+    patientId: "pat_solo_role_request_self",
+    activePatientId: "pat_solo_role_request_self",
+  });
   users.find((user) => user.id === "usr_patient").notificationPreferences = {
     enabled: true,
     sound: true,
@@ -218,6 +222,18 @@ function writeSeedDb() {
     patients: [
       { id: "pat_alpha", patientCode: "ALPHA-001", name: "Alpha Patient", organizationId: "org_alpha", createdAt, updatedAt: createdAt },
       { id: "pat_beta", patientCode: "BETA-001", name: "Beta Patient", organizationId: "org_beta", createdAt, updatedAt: createdAt },
+      {
+        id: "pat_solo_role_request_self",
+        patientCode: "SOLO-SELF-001",
+        name: "Solo Role Request",
+        organizationId: "org_personal_patient",
+        accountUserId: "usr_solo_role_request",
+        ownerUserId: "usr_solo_role_request",
+        profileType: "account_holder",
+        relationship: "self",
+        createdAt,
+        updatedAt: createdAt,
+      },
       {
         id: "pat_patient_self",
         patientCode: "SELF-001",
@@ -1934,6 +1950,11 @@ async function runScenario() {
   assert.equal(soloApproval.request.role, "doctor");
   assert.equal(soloApproval.request.roleRequestStatus, "approved");
   assert.equal(soloApproval.request.organizationId, soloWorkspaceId);
+  assert.equal(
+    soloApproval.request.patientId || "",
+    "",
+    "doctor approval detaches the personal self-patient inverse before changing tenant",
+  );
   assert.equal(
     soloApproval.request.currentMembership?.role,
     "doctor",

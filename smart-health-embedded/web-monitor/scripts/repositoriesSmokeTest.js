@@ -1874,6 +1874,47 @@ async function main() {
   });
   assert.equal(platformNotification.userId, "user_notification_platform");
 
+  let platformNotificationInsertParams = null;
+  const platformNotificationSqlClient = {
+    async query(sql, params = []) {
+      const text = String(sql);
+      if (
+        ["BEGIN", "COMMIT", "ROLLBACK"].includes(text) ||
+        text.includes("pg_advisory_xact_lock")
+      ) {
+        return { rows: [] };
+      }
+      if (text.includes("SELECT * FROM notifications")) return { rows: [] };
+      if (text.includes("INSERT INTO notifications")) {
+        platformNotificationInsertParams = params;
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected platform notification SQL: ${text}`);
+    },
+    release() {},
+  };
+  const platformNotificationSqlDb = { notifications: [] };
+  const platformNotificationSqlRepositories = createRepositories({
+    getDb: () => platformNotificationSqlDb,
+    saveDb: async () => {},
+    createId: (prefix) => `${prefix}_platform_sql`,
+    nowIso: () => "2026-06-21T00:25:31.000Z",
+    getPool: () => ({ connect: async () => platformNotificationSqlClient }),
+  });
+  await platformNotificationSqlRepositories.notifications.createOnce({
+    id: "notification_platform_without_workspace",
+    userId: "user_notification_platform",
+    organizationId: "",
+    title: "Platform review request",
+    message: "Targeted platform notification",
+  });
+  assert.equal(platformNotificationInsertParams?.[1], "user_notification_platform");
+  assert.equal(
+    platformNotificationInsertParams?.[2],
+    null,
+    "workspace-free platform notifications must persist SQL NULL, never an empty foreign key",
+  );
+
   const failedSqlShareDb = {
     users: [],
     organizations: [{ id: "org_share_doctor_sql", status: "active", workspaceType: "clinic" }],

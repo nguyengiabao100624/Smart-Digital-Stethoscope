@@ -2423,8 +2423,8 @@ function createRepositories(options) {
         `,
         [
           notification.id,
-          optional(notification.userId),
-          optional(notification.organizationId),
+          notification.userId || null,
+          notification.organizationId || null,
           notification.type || "info",
           notification.title || "",
           notification.message || "",

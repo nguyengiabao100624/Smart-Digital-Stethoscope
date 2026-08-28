@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 registration approval gate revalidation
+
+- [x] Personal registration becomes an active patient/personal workspace after email verification without Platform Admin approval.
+- [x] Doctor and solo-doctor registration remain `patient + pending` until Platform Admin approves the doctor request; pending accounts receive no Portal capability or target-workspace membership.
+- [x] Clinic/business registration creates a pending workspace-owner request through `/api/v1/auth/workspace-request` and remains outside Portal until Platform Admin confirms the owner and activates the workspace.
+- [x] Re-run source gates: backend lifecycle smoke PASS, Web registration/auth `43/43`, Admin contracts `193/193`, focused Android signup/email/approval gate PASS.
+- [x] Re-run live gates: public deployment PASS, registration-route browser smoke `81` checks PASS, production role smoke PASS, authenticated Portal smoke PASS, and deployed bundles contain all four registration/approval endpoint contracts.
+
 ## 2026-08-28 verified-email production gate
 
 - [x] Deploy the verified-email/solo-doctor tenant repair to Render (`f248c3f1249c`).

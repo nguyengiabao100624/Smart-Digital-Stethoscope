@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 registration approval invariant revalidation
+
+- Personal registration remains self-service: a verified Firebase identity is materialized as an active `patient` with an active personal workspace and does not enter an administrator approval queue.
+- Doctor registration remains approval-gated: `/api/v1/auth/role-request` stores `requestedRole=doctor` with `roleRequestStatus=pending`; the operational role remains `patient` and Portal authority is not granted before Platform Admin approval.
+- Clinic/business registration remains approval-gated: `/register/phong-kham` submits `/api/v1/auth/workspace-request`; the workspace and owner request remain pending until Platform Admin uses the workspace approval action. The Admin action validates the owner receipt before activating the workspace.
+- Fresh verification PASS: backend lifecycle smoke; Shcare Web registration/security tests `43/43`; Platform Admin contracts `193/193`; focused Android signup/email/doctor-approval gate; live public deployment smoke; live registration-route browser smoke `81` checks; production role and authenticated Portal smokes. Live bundles contain `/auth/workspace-request`, `/auth/role-request`, `/owner-approval`, and `/admin/doctor-requests`.
+- Render currently serves backend-relevant release `f248c3f1249c`; current Git `main` is `0bc0a7ae` (later commits are Android validation/documentation only).
+
 ## 2026-08-28 production email-verification repair — HIL PASS
 
 - Git `main` is `b65bb80e`. Render deployed the backend repair at `f248c3f1249c` (the later Git commit only adjusts Android validation).

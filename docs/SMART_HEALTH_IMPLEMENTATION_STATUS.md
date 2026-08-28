@@ -2,6 +2,13 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 registration approval lifecycle revalidation
+
+- **PASS — personal:** verified Firebase users default to active `patient` authority in their personal workspace; no admin approval is required.
+- **PASS — doctor:** Android/Web submit the doctor role request, backend keeps the account as `patient` with `pending` status, and only the Platform Admin Doctor Approval mutation grants doctor authority.
+- **PASS — clinic/business:** Shcare Web submits a pending workspace-owner request and Platform Admin exposes the real pending/needs-info/rejected/approved lifecycle. Approval confirms the owner first and activates the workspace second; the UI accepts success only after both canonical receipts.
+- Verification: backend `npm.cmd test`; Web auth registration suite `43/43`; Admin contracts `193/193`; focused Android signup/email/doctor-approval unit gate; live deployment, production-role, authenticated-Portal and registration-route browser smokes all PASS. No implementation defect was reproduced, so this slice required verification/handoff updates rather than a product-code mutation.
+
 ## 2026-08-28 Android verified-email production slice
 
 - **PASS:** verified Firebase account → production backend exchange → idempotent solo-doctor request → pending approval screen.

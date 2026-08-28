@@ -142,7 +142,7 @@ export function Doctors() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", phone: "", specialty: "", clinic: "" });
+  const [editForm, setEditForm] = useState({ name: "", phone: "", specialty: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [workspaceDoctor, setWorkspaceDoctor] = useState<Doctor | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -366,7 +366,6 @@ export function Doctors() {
       name: doc.name,
       phone: doc.phone === "Chưa cung cấp" ? "" : doc.phone,
       specialty: doc.specialty,
-      clinic: doc.clinic,
     });
   };
 
@@ -380,7 +379,6 @@ export function Doctors() {
           name: editForm.name,
           phone: editForm.phone,
           specialty: editForm.specialty,
-          hospital: editForm.clinic,
         },
         createStaffOperationIdempotencyKey("doctor-profile", editingDoctor.id),
       );
@@ -1154,7 +1152,6 @@ export function Doctors() {
                   ["name", "Họ tên"],
                   ["phone", "Số điện thoại"],
                   ["specialty", "Chuyên khoa"],
-                  ["clinic", "Phòng khám"],
                 ] as const
               ).map(([field, label]) => (
                 <label key={field} className="grid gap-1 text-sm font-medium">
@@ -1169,6 +1166,10 @@ export function Doctors() {
                 </label>
               ))}
             </div>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              Phòng khám/workspace không sửa bằng chữ tự do để tránh lệch tenant. Dùng thao tác{" "}
+              <strong>Gán workspace</strong> trong menu bác sĩ.
+            </p>
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"

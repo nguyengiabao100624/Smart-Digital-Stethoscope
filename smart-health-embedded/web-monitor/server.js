@@ -18825,24 +18825,13 @@ async function handleSettingsApi(req, res, segments) {
     const payload = await readJsonBody(req);
     const currentSettings = getEffectiveSettingsForUser(user);
     const patch = parseSettingsPatch(payload, currentSettings);
-    if (isPlatformAdminUser(user)) {
-      db.settings = {
-        ...db.settings,
-        ...patch,
-      };
-    } else {
-      const workspace = getClinicById(getUserWorkspaceContext(user).currentWorkspaceId);
-      if (!workspace) {
-        throw httpError(404, "Không tìm thấy workspace hiện tại");
-      }
-      workspace.settings = {
-        ...(workspace.settings || {}),
-        ...patch,
-      };
-      workspace.updatedAt = nowIso();
-    }
+    const { settings, workspace } = getMutableSettingsForUser(user);
+    const nextSettings = {
+      ...settings,
+      ...patch,
+    };
+    await persistMutableSettings(user, nextSettings, workspace);
     addAccessLog(isPlatformAdminUser(user) ? "Cập nhật cài đặt nền tảng" : "Cập nhật cài đặt workspace");
-    await saveDb();
     sendJson(res, 200, { settings: publicSettings(user) });
     return;
   }

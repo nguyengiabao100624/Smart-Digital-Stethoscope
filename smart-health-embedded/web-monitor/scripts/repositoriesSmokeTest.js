@@ -120,6 +120,7 @@ const guardChecks = {
   organizationOwnerFk: false,
   userPatientFk: false,
   patientOwnerFk: false,
+  patientEmptyBloodTypeNull: false,
   deviceOwnershipColumns: false,
   patientShareScanIds: false,
   scanPageTenantScope: false,
@@ -285,6 +286,7 @@ const pool = {
       guardChecks.patientOwnerFk =
         text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3)") ||
         text.includes("EXISTS (SELECT 1 FROM users WHERE id = $3::text)");
+      guardChecks.patientEmptyBloodTypeNull = params[7] === null;
     }
     if (text.includes("INSERT INTO devices")) {
       guardChecks.deviceOwnershipColumns =
@@ -718,6 +720,11 @@ async function main() {
   assert.equal(guardChecks.organizationOwnerFk, true);
   assert.equal(guardChecks.userPatientFk, true);
   assert.equal(guardChecks.patientOwnerFk, true);
+  assert.equal(
+    guardChecks.patientEmptyBloodTypeNull,
+    true,
+    "PostgreSQL patient writes must persist an unspecified blood type as NULL",
+  );
   assert.equal(guardChecks.deviceOwnershipColumns, true);
   assert.equal(guardChecks.patientShareScanIds, true);
 

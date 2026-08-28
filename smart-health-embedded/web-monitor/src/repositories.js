@@ -2544,7 +2544,7 @@ function createRepositories(options) {
           encrypted ? "Encrypted patient" : patient.name || patient.patientCode || patient.id,
           encrypted ? null : patient.age === undefined || patient.age === "" ? null : patient.age,
           encrypted ? null : patient.dateOfBirth || null,
-          optional(encrypted ? "" : patient.bloodType),
+          encrypted ? null : (String(patient.bloodType || "").trim() || null),
           JSON.stringify(encrypted ? [] : Array.isArray(patient.allergies) ? patient.allergies : []),
           JSON.stringify(encrypted ? {} : objectOf(patient.emergencyContact)),
           optional(encrypted ? "" : patient.gender),

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const actionsPath = new URL("../../src/components/admin/AdminActions.tsx", import.meta.url);
 const settingsPath = new URL("../../src/components/admin/Settings.tsx", import.meta.url);
+const apiPath = new URL("../../src/lib/smart-health-api.ts", import.meta.url);
 const localOnlyNotificationDialogPath = new URL(
   "../../src/components/admin/dialogs/NotificationSettingsDialog.tsx",
   import.meta.url,
@@ -31,4 +32,13 @@ test("removes the local-only success dialog and unsupported blanket claims", asy
   assert.doesNotMatch(source, /Tất cả dữ liệu đều được mã hóa và bảo mật/);
   assert.doesNotMatch(source, /Bạn có thể xuất dữ liệu bất cứ lúc nào/);
   assert.match(source, /Khả năng xuất dữ liệu phụ thuộc vào quyền/);
+});
+
+test("uses the canonical account-status patch for admin lock and unlock", async () => {
+  const source = await readFile(apiPath, "utf8");
+
+  assert.match(source, /body: JSON\.stringify\(\{ accountStatus: "locked" \}\)/);
+  assert.match(source, /body: JSON\.stringify\(\{ accountStatus: "active" \}\)/);
+  assert.doesNotMatch(source, /admin-users\/\$\{encodeURIComponent\(userId\)\}\/lock/);
+  assert.doesNotMatch(source, /admin-users\/\$\{encodeURIComponent\(userId\)\}\/unlock/);
 });

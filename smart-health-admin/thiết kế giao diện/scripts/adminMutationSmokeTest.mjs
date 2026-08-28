@@ -30,6 +30,18 @@ const credentialsPath =
   );
 const accountKey = process.env.SMOKE_ACCOUNT_KEY || "platform";
 const factoryDeviceId = (process.env.SMOKE_FACTORY_DEVICE_ID || "").trim();
+const apiPaceMs = Math.max(0, Number(process.env.SMOKE_API_PACE_MS || 0) || 0);
+const apiWarmupMs = Math.max(0, Number(process.env.SMOKE_API_WARMUP_MS || 0) || 0);
+const staleCleanupWarmupMs = Math.max(
+  0,
+  Number(process.env.SMOKE_STALE_CLEANUP_WARMUP_MS || 0) || 0,
+);
+const finalCleanupWarmupMs = Math.max(
+  0,
+  Number(process.env.SMOKE_FINAL_CLEANUP_WARMUP_MS || 0) || 0,
+);
+const skipRouteSweep = process.env.SMOKE_SKIP_ROUTE_SWEEP === "1";
+const skipDeviceFlow = process.env.SMOKE_SKIP_DEVICE_FLOW === "1";
 const runId = `admin-mutation-${Date.now().toString(36)}`;
 const runKey = runId.replace(/[^a-z0-9]/gi, "_");
 
@@ -180,57 +192,51 @@ async function login(page, account) {
 
 async function apiFetch(page, route, options = {}) {
   const method = options.method || "GET";
-  const result = await page.evaluate(
-    async ({ apiBaseUrl, routePath, methodName, body, bodyBase64, contentType, extraHeaders }) => {
-      const url = new URL(routePath.replace(/^\/+/, ""), `${apiBaseUrl}/`);
-      const token =
-        localStorage.getItem("smart_health_admin_token") ||
-        localStorage.getItem("smart_health_token") ||
-        "";
-      const headers = {
-        "X-Smart-Health-Surface": "admin",
-        "X-Smart-Health-Client": "web-admin-smoke",
-        ...(extraHeaders || {}),
-      };
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const init = { method: methodName, headers };
-      if (bodyBase64 !== undefined) {
-        headers["Content-Type"] = contentType || "application/octet-stream";
-        const binary = atob(bodyBase64);
-        const bytes = new Uint8Array(binary.length);
-        for (let index = 0; index < binary.length; index += 1) {
-          bytes[index] = binary.charCodeAt(index);
-        }
-        init.body = bytes;
-      } else if (body !== undefined) {
-        headers["Content-Type"] = "application/json";
-        init.body = JSON.stringify(body);
-      }
-      const response = await fetch(url.toString(), init);
-      const text = await response.text();
-      let payload = null;
-      if (text) {
-        try {
-          payload = JSON.parse(text);
-        } catch {
-          payload = text;
-        }
-      }
-      return { ok: response.ok, status: response.status, url: url.toString(), payload };
-    },
-    {
-      apiBaseUrl: apiBase,
-      routePath: route,
-      methodName: method,
-      body: options.body,
-      bodyBase64: options.bodyBase64,
-      contentType: options.contentType,
-      extraHeaders: options.headers,
-    },
+  const token = await page.evaluate(
+    () =>
+      localStorage.getItem("smart_health_admin_token") ||
+      localStorage.getItem("smart_health_token") ||
+      "",
   );
+  const url = new URL(route.replace(/^\/+/, ""), `${apiBase}/`);
+  const headers = {
+    "User-Agent": "Shcare-Production-Smoke/1.0",
+    "X-Smart-Health-Surface": "admin",
+    "X-Smart-Health-Client": "web-admin-smoke",
+    ...(options.headers || {}),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const init = { method, headers };
+  if (options.bodyBase64 !== undefined) {
+    headers["Content-Type"] = options.contentType || "application/octet-stream";
+    init.body = Buffer.from(options.bodyBase64, "base64");
+  } else if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(options.body);
+  }
+  let result;
+  const maxAttempts = options.retryTransient ? 2 : 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(url, init);
+    const responseText = await response.text();
+    let payload = null;
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText);
+      } catch {
+        payload = responseText;
+      }
+    }
+    result = { ok: response.ok, status: response.status, url: url.toString(), payload };
+    if (![502, 503, 504].includes(response.status) || attempt === maxAttempts) break;
+    await page.waitForTimeout(15_000);
+  }
 
   if (!result.ok && !options.allowFailure) {
     throw new Error(`${method} ${route}: HTTP ${result.status} ${pickError(result.payload)}`);
+  }
+  if (apiPaceMs > 0) {
+    await page.waitForTimeout(apiPaceMs);
   }
   return result;
 }
@@ -519,13 +525,13 @@ async function exerciseAdminMutations(page, state) {
   );
   const adminLock = await apiFetch(
     page,
-    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/lock`,
-    { method: "POST" },
+    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
+    { method: "PATCH", body: { accountStatus: "locked" }, retryTransient: true },
   );
   const adminUnlock = await apiFetch(
     page,
-    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/unlock`,
-    { method: "POST" },
+    `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
+    { method: "PATCH", body: { accountStatus: "active" }, retryTransient: true },
   );
 
   const packageId = `pkg_${runKey}`;
@@ -594,38 +600,49 @@ async function exerciseAdminMutations(page, state) {
     body: { notes: `Updated by ${runId}` },
   });
 
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$/.test(factoryDeviceId)) {
-    throw new Error(
-      "Device provisioning smoke requires SMOKE_FACTORY_DEVICE_ID for a dedicated factory-enrolled inventory record. The browser must never mint a device id or submit a raw credential.",
-    );
-  }
-  const deviceId = factoryDeviceId;
-  const deviceResult = await apiFetch(page, "/devices/provision-qr", {
-    method: "POST",
-    body: {
-      deviceId,
-      name: `Admin smoke device ${runId}`,
-      organizationId: state.clinicId,
-      type: "stethoscope",
-      manufacturer: "Shcare test fixture",
-      model: "MSM261S4030H0",
-      serialNumber: `SMOKE-${runKey.slice(-24)}`,
-    },
-  });
-  state.deviceId = deviceResult.payload?.device?.id || "";
-  if (state.deviceId !== deviceId) {
-    throw new Error(
-      `device provision response did not confirm the exact factory device id ${deviceId}`,
-    );
-  }
-  if (!deviceResult.payload?.claim?.claimCode) {
-    throw new Error("device provision response did not include claim.claimCode");
-  }
+  let deviceEvidence = {
+    skipped: true,
+    reason: "No disposable factory-enrolled production fixture was supplied.",
+  };
+  if (!skipDeviceFlow) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$/.test(factoryDeviceId)) {
+      throw new Error(
+        "Device provisioning smoke requires SMOKE_FACTORY_DEVICE_ID for a dedicated factory-enrolled inventory record. The browser must never mint a device id or submit a raw credential.",
+      );
+    }
+    const deviceId = factoryDeviceId;
+    const deviceResult = await apiFetch(page, "/devices/provision-qr", {
+      method: "POST",
+      body: {
+        deviceId,
+        name: `Admin smoke device ${runId}`,
+        organizationId: state.clinicId,
+        type: "stethoscope",
+        manufacturer: "Shcare test fixture",
+        model: "MSM261S4030H0",
+        serialNumber: `SMOKE-${runKey.slice(-24)}`,
+      },
+    });
+    state.deviceId = deviceResult.payload?.device?.id || "";
+    if (state.deviceId !== deviceId) {
+      throw new Error(
+        `device provision response did not confirm the exact factory device id ${deviceId}`,
+      );
+    }
+    if (!deviceResult.payload?.claim?.claimCode) {
+      throw new Error("device provision response did not include claim.claimCode");
+    }
 
-  const devicePatch = await apiFetch(page, `/devices/${encodeURIComponent(state.deviceId)}`, {
-    method: "PATCH",
-    body: { name: `Admin smoke device ${runId} updated`, assignedPatientId: state.patientId },
-  });
+    const devicePatch = await apiFetch(page, `/devices/${encodeURIComponent(state.deviceId)}`, {
+      method: "PATCH",
+      body: { name: `Admin smoke device ${runId} updated`, assignedPatientId: state.patientId },
+    });
+    deviceEvidence = {
+      skipped: false,
+      id: state.deviceId,
+      assignedPatientId: devicePatch.payload?.device?.assignedPatientId,
+    };
+  }
 
   const doctorEmail = `${runKey}-doctor@smarthealth.test`;
   const doctorCreate = await apiFetch(page, "/admin/doctors", {
@@ -655,36 +672,52 @@ async function exerciseAdminMutations(page, state) {
   );
   const doctorRequests = await apiFetch(page, "/admin/doctor-requests?status=all");
 
-  const scanCreate = await apiFetch(page, "/scans", {
-    method: "POST",
-    body: {
-      patientId: state.patientId,
-      deviceId: state.deviceId,
-      mode: "heart",
-      bodySite: "apex",
-      doctorNotes: `Created by ${runId}`,
-    },
-  });
-  state.scanId = scanCreate.payload?.scan?.id;
-  if (!state.scanId) throw new Error("scan create response did not include scan.id");
-
-  const scanChunk = await apiFetch(
-    page,
-    `/scans/${encodeURIComponent(state.scanId)}/audio-chunks`,
-    {
+  let scanEvidence = {
+    skipped: true,
+    reason: "Scan mutation requires the disposable factory-enrolled production fixture.",
+  };
+  if (!skipDeviceFlow) {
+    const scanCreate = await apiFetch(page, "/scans", {
       method: "POST",
-      bodyBase64: buildPcmChunkBase64(),
-      contentType: "application/octet-stream",
-    },
-  );
-  const scanComplete = await apiFetch(page, `/scans/${encodeURIComponent(state.scanId)}/complete`, {
-    method: "POST",
-  });
-  const scanReprocess = await apiFetch(
-    page,
-    `/scans/${encodeURIComponent(state.scanId)}/reprocess`,
-    { method: "POST" },
-  );
+      body: {
+        patientId: state.patientId,
+        deviceId: state.deviceId,
+        mode: "heart",
+        bodySite: "apex",
+        doctorNotes: `Created by ${runId}`,
+      },
+    });
+    state.scanId = scanCreate.payload?.scan?.id;
+    if (!state.scanId) throw new Error("scan create response did not include scan.id");
+
+    const scanChunk = await apiFetch(
+      page,
+      `/scans/${encodeURIComponent(state.scanId)}/audio-chunks`,
+      {
+        method: "POST",
+        bodyBase64: buildPcmChunkBase64(),
+        contentType: "application/octet-stream",
+      },
+    );
+    const scanComplete = await apiFetch(
+      page,
+      `/scans/${encodeURIComponent(state.scanId)}/complete`,
+      { method: "POST" },
+    );
+    const scanReprocess = await apiFetch(
+      page,
+      `/scans/${encodeURIComponent(state.scanId)}/reprocess`,
+      { method: "POST" },
+    );
+    scanEvidence = {
+      skipped: false,
+      id: state.scanId,
+      uploadedBytes: scanChunk.payload?.uploadedBytes,
+      completedStatus: scanComplete.payload?.scan?.status,
+      reprocessedStatus: scanReprocess.payload?.scan?.status,
+      aiLabel: scanReprocess.payload?.scan?.aiLabel,
+    };
+  }
 
   const notificationResult = await apiFetch(page, "/notifications", {
     method: "POST",
@@ -770,10 +803,7 @@ async function exerciseAdminMutations(page, state) {
       id: state.patientId,
       patchedNotes: patientPatch.payload?.patient?.notes,
     },
-    device: {
-      id: state.deviceId,
-      assignedPatientId: devicePatch.payload?.device?.assignedPatientId,
-    },
+    device: deviceEvidence,
     doctor: {
       id: state.doctorUserId,
       email: state.doctorEmail,
@@ -783,13 +813,7 @@ async function exerciseAdminMutations(page, state) {
         ? doctorRequests.payload.requests.length
         : 0,
     },
-    scan: {
-      id: state.scanId,
-      uploadedBytes: scanChunk.payload?.uploadedBytes,
-      completedStatus: scanComplete.payload?.scan?.status,
-      reprocessedStatus: scanReprocess.payload?.scan?.status,
-      aiLabel: scanReprocess.payload?.scan?.aiLabel,
-    },
+    scan: scanEvidence,
     notification: {
       id: state.notificationId,
       read: notificationRead.payload?.notification?.read === true,
@@ -801,6 +825,76 @@ async function exerciseAdminMutations(page, state) {
       supportHotline: settingsPatch.payload?.settings?.system?.supportHotline,
     },
   };
+}
+
+async function cleanupStaleSmokeArtifacts(page) {
+  const cleanupResults = [];
+  const adminInventory = await apiFetch(page, "/admin/admin-users?limit=200", {
+    allowFailure: true,
+  });
+  const admins = Array.isArray(adminInventory.payload?.users)
+    ? adminInventory.payload.users
+    : Array.isArray(adminInventory.payload?.adminUsers)
+      ? adminInventory.payload.adminUsers
+      : [];
+  for (const admin of admins) {
+    const email = String(admin?.email || "").toLowerCase();
+    if (!/^(admin_mutation_|diag_admin_)[a-z0-9_-]*@smarthealth\.test$/.test(email)) continue;
+    const result = await apiFetch(page, `/admin/admin-users/${encodeURIComponent(admin.id)}`, {
+      method: "DELETE",
+      headers: { "Idempotency-Key": `${runId}:stale-admin:${admin.id}` },
+      allowFailure: true,
+    });
+    cleanupResults.push({ target: "stale admin account", id: admin.id, status: result.status });
+  }
+
+  const clinicInventory = await apiFetch(page, "/admin/clinics?limit=200", {
+    allowFailure: true,
+  });
+  const clinics = Array.isArray(clinicInventory.payload?.clinics)
+    ? clinicInventory.payload.clinics
+    : [];
+  for (const clinic of clinics) {
+    const id = String(clinic?.id || "");
+    const name = String(clinic?.name || "");
+    if (!/^org_admin_mutation_[a-z0-9_]+$/.test(id) || !/^Admin smoke workspace /.test(name)) {
+      continue;
+    }
+    let expectedVersion = Number(clinic?.version || 1);
+    if (clinic?.status === "active") {
+      const transition = await apiFetch(page, `/admin/clinics/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Idempotency-Key": `${runId}:stale-workspace-inactivate:${id}` },
+        body: {
+          status: "inactive",
+          reason: "Automated production smoke cleanup",
+          expectedVersion,
+        },
+        allowFailure: true,
+      });
+      if (!transition.ok) {
+        cleanupResults.push({
+          target: "stale workspace transition",
+          id,
+          status: transition.status,
+        });
+        continue;
+      }
+      expectedVersion = Number(
+        transition.payload?.workspace?.version ||
+          transition.payload?.clinic?.version ||
+          expectedVersion + 1,
+      );
+    }
+    const result = await apiFetch(page, `/admin/clinics/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "Idempotency-Key": `${runId}:stale-workspace-archive:${id}` },
+      body: { expectedVersion },
+      allowFailure: true,
+    });
+    cleanupResults.push({ target: "stale workspace", id, status: result.status });
+  }
+  return cleanupResults;
 }
 
 async function cleanup(page, state, cleanupResults) {
@@ -1051,10 +1145,21 @@ async function main() {
 
   try {
     await login(page, account);
+    if (apiWarmupMs > 0) {
+      await page.waitForTimeout(apiWarmupMs);
+    }
+    const staleCleanup = await cleanupStaleSmokeArtifacts(page);
+    if (staleCleanup.length) {
+      console.log(JSON.stringify({ staleCleanup }, null, 2));
+      if (staleCleanupWarmupMs > 0) {
+        await page.waitForTimeout(staleCleanupWarmupMs);
+      }
+    }
     const mutations = await exerciseAdminMutations(page, state);
 
     const routeChecks = [];
-    for (const contract of getAdminSmokeContracts("admin")) {
+    const routeContracts = skipRouteSweep ? [] : getAdminSmokeContracts("admin");
+    for (const contract of routeContracts) {
       const href = contract.path;
       const label = contract.smokeId;
       const routeCheck = await visitRoute(page, href, label);
@@ -1123,6 +1228,9 @@ async function main() {
       ),
     );
   } finally {
+    if (finalCleanupWarmupMs > 0 && Object.keys(state).length > 0) {
+      await page.waitForTimeout(finalCleanupWarmupMs);
+    }
     await cleanup(page, state, cleanupResults).catch((error) => {
       cleanupResults.push({ target: "final cleanup", ok: false, error: error.message });
     });

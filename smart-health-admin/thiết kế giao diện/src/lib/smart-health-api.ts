@@ -1869,15 +1869,15 @@ export const smartHealthApi = {
 
   async lockAdminAccount(userId: string) {
     return requestJson<{ user: SmartHealthAdminAccount }>(
-      `/admin/admin-users/${encodeURIComponent(userId)}/lock`,
-      { method: "POST" },
+      `/admin/admin-users/${encodeURIComponent(userId)}`,
+      { method: "PATCH", body: JSON.stringify({ accountStatus: "locked" }) },
     );
   },
 
   async unlockAdminAccount(userId: string) {
     return requestJson<{ user: SmartHealthAdminAccount }>(
-      `/admin/admin-users/${encodeURIComponent(userId)}/unlock`,
-      { method: "POST" },
+      `/admin/admin-users/${encodeURIComponent(userId)}`,
+      { method: "PATCH", body: JSON.stringify({ accountStatus: "active" }) },
     );
   },
 

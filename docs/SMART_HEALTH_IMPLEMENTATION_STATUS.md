@@ -3078,3 +3078,12 @@ KLTN report artifacts generated from this evidence set:
 - [x] Prove one-recipient email-only canary `notification_campaign_20260828191859_a8dd8254`: one Brevo Sent lifecycle event and one Delivered lifecycle event for the same message, zero bounce.
 - [x] Remove four verified `.test` fixture accounts and eight smoke notification records while preserving real Gmail users and real approval notifications.
 - [x] Pass Admin `196/196`, lint/build; backend campaigns `14/14`, inbox `10/10`, preferences `20/20`, aggregate check and deployment smoke.
+
+## 2026-08-29 — Brave Public motion control repair
+
+- [x] Reproduce the production button as disabled when Brave reports `prefers-reduced-motion: reduce` while Chrome remains normal.
+- [x] Replace the boolean request with `system|enabled|reduced`; default follows the OS, explicit user choice overrides it.
+- [x] Keep desktop/mobile controls enabled, labelled and persistent; scope reduced-motion CSS so explicit `enabled` restores only the Public bounded motion system.
+- [x] Add source contracts and a real Chromium reduced-motion override smoke; focused smoke passes `23` checks and measures a `0.42s` reveal transition.
+- [x] Pass full Web contracts, lint and Firebase production build; deploy commit `4d00442d` as Firebase version `161c20b8df24d7d5`, release `1787946098589000`.
+- [x] Verify production UI toggles reduced/enabled with no console warnings/errors. Backend, Android and firmware are unaffected.

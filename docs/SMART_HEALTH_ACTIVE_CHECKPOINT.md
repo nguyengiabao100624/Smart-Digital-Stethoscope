@@ -1075,3 +1075,10 @@ recorded contract invalid.
 - Live email-only canary `notification_campaign_20260828191859_a8dd8254` targeted exactly `baobee44@gmail.com`; Admin and Brevo both reached Delivered, with one Sent plus one Delivered lifecycle event and zero bounce.
 - Four audited `.test` fixture accounts and eight smoke notification rows were deleted. The only remaining Admin accounts are the two real Gmail identities; the only remaining doctor account is the real Gmail identity. Four real approval notifications remain intact.
 - Regression evidence: Admin contracts `196/196`, lint/build; backend campaigns `14/14`, inbox `10/10`, preferences `20/20`, aggregate check and public deployment smoke all PASS. This slice is backend/Admin only; no APK reinstall or COM9 flash is required.
+
+## 2026-08-29 — Active Firebase Public motion checkpoint
+
+- `https://shcare.web.app` serves commit `4d00442d` through Firebase version `161c20b8df24d7d5`, live release `1787946098589000`.
+- Brave's reduced-motion signal no longer disables the control. Default behavior still follows the OS; an explicit user click persists `enabled` or `reduced` and the CSS/video/reveal system follows that rendered preference.
+- Full Web contracts, lint and Firebase build pass. Focused reduced-motion browser smoke passes `23` checks; production UI toggled off/on successfully with no console warnings/errors.
+- This is a Public Web-only compatibility fix. No backend, Portal authority, Android, device, audio or firmware contract changed.

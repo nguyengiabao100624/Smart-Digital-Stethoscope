@@ -4693,3 +4693,16 @@ node --test scripts/notificationPreferencesTest.js
 ```
 
 Run Admin contracts, lint and the Firebase production build from `smart-health-admin\thiết kế giao diện`. For a live canary, select one explicit workspace, verify the preview contains the intended real recipient, choose Email only, submit once, and wait for the receipt to move from `Provider đã nhận` to `Đã giao`. A Brevo Sent event plus a Delivered event sharing the same message/recipient is one message lifecycle, not two emails. Never place a Brevo key or message content in shell output, logs or handoff documents.
+
+## 2026-08-29 Brave/Public motion regression
+
+```powershell
+Set-Location D:\Study\KLTN\smart-health-web
+npm.cmd run test:contracts
+npm.cmd run lint
+npm.cmd run build:firebase
+$env:SMART_HEALTH_WEB_URL='http://127.0.0.1:8180'
+npm.cmd run smoke:public-ui-foundation -- --route=public.home --viewport=desktop --theme=light
+```
+
+The focused browser smoke creates a context with `reducedMotion: reduce`, verifies the control starts usable, clicks it, checks `data-shc-motion=enabled`, and requires a real reveal duration of at least `0.3s`. Production verification must use only the visible control; do not modify browser storage manually.

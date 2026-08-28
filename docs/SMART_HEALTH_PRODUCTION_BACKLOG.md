@@ -2711,3 +2711,10 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Verify production with one email-only recipient: campaign `notification_campaign_20260828191859_a8dd8254` reached Delivered with zero bounce.
 - [x] Remove four verified `.test` accounts and eight smoke notification rows; preserve production Gmail identities and real approval notifications.
 - [ ] Optional P2 hardening: consume Brevo transactional webhooks into a durable worker so campaign history updates even when no Admin page is open. The current production flow remains functional through bounded polling/manual refresh.
+
+## 2026-08-29 — Brave motion compatibility closure
+
+- [x] Remove the disabled motion-control dead end when Brave/OS reports reduced motion.
+- [x] Respect system reduction by default while allowing an explicit, persisted user override.
+- [x] Gate reduced-motion CSS by the rendered preference so the enabled override restores real Public transitions/video without changing Portal/Auth motion policy.
+- [x] Add reduced-motion override browser regression coverage and deploy/verify the Firebase live release.

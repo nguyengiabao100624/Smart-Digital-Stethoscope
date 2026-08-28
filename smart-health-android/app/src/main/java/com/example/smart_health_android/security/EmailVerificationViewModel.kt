@@ -376,7 +376,8 @@ class ProductionEmailVerificationRepository internal constructor(
         ) {
             finalUser.hasActiveCoherentDoctorRequestAuthority(
                 expectedTargetWorkspaceId = expectedWorkspaceId
-                    ?: finalUser.organizationId,
+                    ?: finalUser.roleRequestOrganizationId
+                        .ifBlank { finalUser.organizationId },
                 expectedCurrentWorkspaceId = authenticatedUser.canonicalWorkspaceId(),
             )
         } else {

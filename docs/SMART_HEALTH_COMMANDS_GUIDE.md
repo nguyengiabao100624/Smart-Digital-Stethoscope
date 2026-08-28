@@ -4,9 +4,21 @@ Last updated: 2026-08-28
 
 ## Current live verification (2026-08-28)
 
-- Portal production release: Firebase Hosting site `shcare`, version `688821e5060a0204`, release `1787869121611000`.
-- Platform Admin production release: Firebase Hosting site `shcare-admin`, version `f11f18346406ba05`, release `1787867401307000`.
-- Backend release marker: Render commit `1c80697eac2b`; data summary is Postgres/production and currently contains zero devices. Treat this endpoint as the source of truth when diagnosing stale demo rows.
+Authoritative lane update: source `main=d19b009e`; Render backend `2a4359686db5`; Portal Firebase `a130d4b26582e44c`; Admin Firebase `44de8648d0125d7c`. Production data is Postgres/auth-production with zero devices and no smoke admin/workspace artifacts. G4 is partial, not complete.
+
+Run the public smoke with the exact 12-character backend lane commit:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+$env:SMOKE_EXPECTED_COMMIT='2a4359686db5'
+npm.cmd run smoke:public-deployment
+```
+
+Render's Cloudflare managed challenge currently returns HTTP 429 to long automated Admin mutation sequences. Do not disable backend rate limiting or treat the challenge page as an application response. Use an approved CI allow-rule/test origin before the complete production mutation rerun; always keep cleanup enabled.
+
+- Portal production release: Firebase Hosting site `shcare`, version `a130d4b26582e44c`.
+- Platform Admin production release: Firebase Hosting site `shcare-admin`, version `44de8648d0125d7c`.
+- Backend release marker: Render commit `2a4359686db5`; data summary is Postgres/production and currently contains zero devices. Treat this endpoint as the source of truth when diagnosing stale demo rows.
 - Verified commands: `npm.cmd run smoke:public-deployment`, `npm.cmd run smoke:api-production`, Web/Admin contract and lint gates, Android Gradle test/lint/assemble, and PlatformIO production/OTA builds.
 
 ## 2026-08-27 G3 hardware re-probe commands

@@ -2,12 +2,22 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 latest authoritative handoff
+
+- Do not trust the older line that says G4 completed. Current status is **G4 partial**.
+- Lane identities: Git `main=d19b009e`; Render backend `2a4359686db5`; Portal Firebase `a130d4b26582e44c`; Admin Firebase `44de8648d0125d7c`.
+- Live data is truthful Postgres production: `devices=0`; authenticated audit found 5 active workspaces, 4 managed admins, and no smoke/test admin or workspace artifacts. Do not recreate demo device rows to make screens non-empty.
+- Admin lock/unlock now uses the canonical audited account-status PATCH, deployed live. Source gates pass: Admin lint/build/contracts `193/193`; public deployment smoke passes; prior full live Web matrices passed (`5025` public, `3615` authenticated); authenticated Portal role smoke passes.
+- Long Admin mutation automation is blocked by Render/Cloudflare managed challenge HTTP 429 even at paced rates. Every failed run's settings/admin/workspace cleanup returned HTTP 200 and the independent inventory audit is clean. Treat this as a WAF/CI evidence blocker, not a successful full mutation run.
+- Android on Xiaomi is production-URL debug build SHA-256 `64FF4B99C2D475BBE733253D05372CE22EBC82662A1F4B2DE71D7CDC167DC48C` with no ADB reverse mappings. Firmware production-profile build SHA-256 is `22359D81D52FE6D04C039D5C8A2236EB7A87454006D22EEE31DBA3965707C151`; COM9 exists.
+- Remaining hard blockers: Android release keystore/signing; disposable factory-enrolled production device and secure credential channel; approved encryption/eFuse provisioning runbook; production device WSS/ACK/audio-v2/durable scan/signed OTA/forced rollback; fresh unlocked-phone visual/accessibility proof; Cloudflare CI allow-rule or test origin.
+
 ## 2026-08-28 live synchronization checkpoint
 
-- Current source is `main` at commit `1c80697eac2b` and Render health plus `/api/v1/health/data-summary` are healthy. Production reports `dataBackend=postgres`, `authMode=production`, and currently `devices=0`; this is the authoritative live data and must not be replaced with demo rows.
-- Firebase Hosting was rebuilt from the current source and released: Portal `shcare` version `688821e5060a0204` (release `1787869121611000`), Admin version `f11f18346406ba05` (release `1787867401307000`). Both public URLs return HTTP 200 with `Cache-Control: no-cache, no-store, must-revalidate`.
-- Local verification: backend check/smoke/device-security `84/84`, API production smoke PASS, Web auth `390/390`, Web contracts `139/139`, Portal browser foundation `478` checks, Admin contracts `192`, Admin lint and filtered device-route browser smoke PASS, Android unit/lint/local-demo assemble PASS, firmware production and OTA builds PASS.
-- Android artifact `app-debug.apk` SHA-256 `82CB443CBBCA881ACCFD50AEE358CE771BA50985CB9C755046307484A1294B97` was installed successfully on the attached Xiaomi over ADB; no credential was injected.
+- Current source is `main` at commit `d19b009e` and Render health plus `/api/v1/health/data-summary` are healthy at backend commit `2a4359686db5`. Production reports `dataBackend=postgres`, `authMode=production`, and currently `devices=0`; this is the authoritative live data and must not be replaced with demo rows.
+- Firebase Hosting was rebuilt and released: Portal `shcare` version `a130d4b26582e44c`, Admin version `44de8648d0125d7c`. Both public URLs return HTTP 200 with `Cache-Control: no-cache, no-store, must-revalidate`.
+- Verification: backend check/security suites PASS, Web live public/auth matrices `5025/3615`, Portal authenticated production smoke PASS, Admin contracts `193/193`, lint and production build PASS, Android unit/lint/online debug assemble PASS, firmware production build PASS.
+- Android production-URL debug artifact SHA-256 `64FF4B99C2D475BBE733253D05372CE22EBC82662A1F4B2DE71D7CDC167DC48C` was installed successfully on the attached Xiaomi over ADB; no credential was injected and no local reverse mapping remains.
 - Fixed two release-test drifts: API production smoke now resolves a tenant-visible device instead of the retired `esp32-stethoscope` fixture; Admin ESLint ignores generated `dist-firebase-portal` output so CI does not scan generated bundles.
 - Three full browser sweeps timed out in the host when run without filters; filtered production/route checks pass. This is an environment/runtime limitation, not a product PASS claim for every browser matrix case.
 - G4 is still not closed: live Postgres currently has no devices, and Render production secret/provider/migration evidence plus authenticated production mutation/HIL evidence are still required. The old LiteSteth-A92 screenshot is stale and is not evidence of current production data.

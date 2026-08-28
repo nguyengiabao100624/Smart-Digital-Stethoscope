@@ -2,10 +2,26 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 authoritative G4 status after live audit
+
+- [x] Portal live: Firebase version `a130d4b26582e44c`.
+- [x] Platform Admin live: Firebase version `44de8648d0125d7c`; account lock/unlock uses canonical audited PATCH.
+- [x] Backend public/read/auth boundary live: Render commit `2a4359686db5`; public deployment smoke PASS.
+- [x] Production fixture cleanup: Postgres has zero devices and zero smoke admins/workspaces; no `LiteSteth-A92` demo row remains.
+- [x] Source and UI evidence: Admin lint/build/contracts `193/193`; Web production matrices `5025` public and `3615` authenticated; authenticated Portal role/API smoke PASS.
+- [ ] Provide an approved Cloudflare CI allow-rule/test origin, then rerun the complete Admin and Portal mutation sequences without managed-challenge 429. Cleanup is already verified 200 and independent inventory is clean.
+- [ ] Create/bind a disposable factory-enrolled production device through the secure provider/factory channel; never add a raw-secret browser endpoint.
+- [ ] Produce and verify a release-signed Android artifact. Current Xiaomi build is online but debug-signed.
+- [ ] Execute the secure production hardware canary: factory identity → WSS → command ACK → two-mic audio-v2 → durable scan → signed OTA success → forced rollback.
+- [ ] Approve and document credential storage/flash encryption/eFuse provisioning before promoting the COM9 development board. Do not burn eFuses ad hoc.
+- [ ] Close the fresh unlocked-phone visual/TalkBack/lifecycle gate.
+
+G4 is **PARTIAL/BLOCKED** until every unchecked item above has provider/device evidence. Successful builds and HTTP 200 shells are not sufficient.
+
 ## 2026-08-28 current deployment and data truth
 
-- [x] Build and release current Portal bundle to `https://shcare.web.app` (Firebase version `688821e5060a0204`, release `1787869121611000`).
-- [x] Build and release current Platform Admin bundle to `https://shcare-admin.web.app` (Firebase version `f11f18346406ba05`, release `1787867401307000`).
+- [x] Build and release current Portal bundle to `https://shcare.web.app` (Firebase version `a130d4b26582e44c`).
+- [x] Build and release current Platform Admin bundle to `https://shcare-admin.web.app` (Firebase version `44de8648d0125d7c`).
 - [x] Verify public rewrites, health, unauthenticated 401 boundary, cache headers, and filtered browser UI/accessibility checks.
 - [x] Keep production data truthful: Render reports Postgres/production with zero devices; remove reliance on retired `LiteSteth-A92`/`esp32-stethoscope` fixtures in release smoke.
 - [ ] Run authenticated production role/mutation smoke with approved credentials and verify the live device inventory; do not seed demo data solely to make the Admin table non-empty.

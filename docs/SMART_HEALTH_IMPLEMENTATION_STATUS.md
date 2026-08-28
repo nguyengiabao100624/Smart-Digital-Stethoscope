@@ -2,12 +2,22 @@
 
 Last updated: 2026-08-28
 
+## 2026-08-28 authoritative live-lane status
+
+- Source `main` is `d19b009e`; Render serves the latest backend-relevant commit `2a4359686db5`. Public deployment smoke passes with backend health 200, unauthenticated `/api/me` 401, and Admin/Portal SPA rewrites 200.
+- Firebase live releases are Portal `a130d4b26582e44c` and Admin `44de8648d0125d7c`. The Admin release replaces WAF-sensitive `/admin-users/:id/lock|unlock` calls with the existing audited `PATCH accountStatus` contract. Lint, production build and Admin contracts `193/193` pass.
+- Production data audit: `dataBackend=postgres`, `authMode=production`, users `12`, patients `1`, devices `0`, scans `0`, organizations `44` including archived history. Authenticated inventory shows `5` active workspaces, `4` managed admins, and zero `admin_mutation_*`/`diag_admin_*` accounts or smoke workspaces.
+- Current online Android internal artifact is the production-URL debug APK SHA-256 `64FF4B99C2D475BBE733253D05372CE22EBC82662A1F4B2DE71D7CDC167DC48C`, installed on Xiaomi with all ADB reverse mappings removed. It is debug-signed, not a distributable release artifact; the sleeping/keyguarded phone prevented a fresh visual gate.
+- Current production-profile firmware build SHA-256 is `22359D81D52FE6D04C039D5C8A2236EB7A87454006D22EEE31DBA3965707C151`; COM9 is detected. It was not promoted as production because live inventory has no factory-enrolled identity and the development board lacks the approved secure credential/eFuse provisioning runbook.
+- Full production Web public matrix passed `5025` checks and authenticated matrix passed `3615` checks. Portal authenticated API roles passed. Admin mutation cleanup is deterministic, but long automated production sequences are challenged by Cloudflare HTTP 429 and therefore are not counted as an unqualified end-to-end PASS.
+- G4 remains **PARTIAL/BLOCKED**, not complete: release keystore/signing, factory enrollment, secure production hardware canary, production WSS/ACK/audio/scan/signed-OTA rollback, and a CI allow-rule or approved test origin for Cloudflare remain open.
+
 ## 2026-08-28 synchronization and verification
 
-- Deployed the current `main` frontend bundles to Firebase Hosting: Portal `shcare` version `688821e5060a0204`, Admin `shcare-admin` version `f11f18346406ba05`. Public deployment smoke and filtered browser accessibility checks pass.
-- Render is serving backend commit `1c80697eac2b`; `/api/v1/health/data-summary` is Postgres/production with `users=12`, `patients=1`, `devices=0`, `scans=0`, `organizations=32`. No demo device is being fabricated in the UI.
-- Verification completed: backend syntax/smoke/device security `84/84`; API production scan/audio smoke PASS after replacing a retired hard-coded fixture; Web auth `390/390`, Web contracts `139/139`; Admin contracts `192`, lint, and device-route browser smoke; Android Gradle test/lint/local-demo assemble; ESP32-S3 production/OTA builds.
-- The resulting Android debug artifact (`82CB443CBBCA881ACCFD50AEE358CE771BA50985CB9C755046307484A1294B97`) was installed on the attached Xiaomi through ADB.
+- Deployed the current frontend lanes to Firebase Hosting: Portal `shcare` version `a130d4b26582e44c`, Admin `shcare-admin` version `44de8648d0125d7c`. Public deployment smoke and full Web production matrices pass.
+- Render is serving backend commit `2a4359686db5`; `/api/v1/health/data-summary` is Postgres/production with `users=12`, `patients=1`, `devices=0`, `scans=0`, `organizations=44` including archived history. No demo device is being fabricated in the UI.
+- Verification completed: backend syntax/security suites; Web production public/auth matrices `5025/3615`; authenticated Portal production smoke; Admin contracts `193/193`, lint and build; Android Gradle unit/lint/production-URL debug assemble; ESP32-S3 production build.
+- Android production-URL debug artifact (`64FF4B99C2D475BBE733253D05372CE22EBC82662A1F4B2DE71D7CDC167DC48C`) was installed on the attached Xiaomi through ADB with no local reverse mapping.
 - Remaining release gates: authenticated production role/mutation smoke, live migration/provider/secret evidence, complete cross-browser matrix (unfiltered sweeps timed out on this host), and physical production firmware/OTA promotion. G4 remains PENDING/BLOCKED until those gates have evidence.
 
 ## 2026-08-27 Gate G3 Physical Hardware HIL Pass Checkpoint

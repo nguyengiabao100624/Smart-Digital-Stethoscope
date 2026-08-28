@@ -3056,3 +3056,14 @@ KLTN report artifacts generated from this evidence set:
 - Added safe allow-listed identity-stage diagnostics, localized the failure to `create_patient_identity / patients_blood_type_check`, and fixed empty patient blood type persistence from `""` to `NULL` without weakening Firebase, owner, workspace or tenant checks.
 - Added a repository regression assertion and an explicit opt-in Android `EmailVerificationRuntimeHilTest` that never logs the ID token. Render commit `91dec1f4e93e` is live; the same Xiaomi Firebase session now receives HTTP `200` from `/api/v1/auth/firebase` and the HIL passes `1/1`.
 - Backend syntax aggregate and repository smoke pass. Focused Android Email Verification repository/ViewModel tests and AndroidTest assembly pass. The main APK did not require replacement because the defect was server-side and the installed APK already targets production.
+
+## 2026-08-29 — Production Admin/backend durability repair
+
+- [x] Repair doctor approval SQL transition and verify the exact production request no longer returns `409`.
+- [x] Replace serial notification read/delete loops with one tenant-scoped, audited SQL mutation; verify read-all persists after browser reload.
+- [x] Add migration `056` and canonical repository persistence for platform/workspace settings; verify profile and settings survive reload.
+- [x] Restore Brevo administrator email fanout and confirm Sent/Delivered/Opened in provider logs.
+- [x] Add UUID idempotency and bounded transient retry to Brevo without logging credentials or message bodies.
+- [x] Remove redundant encrypted runtime-snapshot writes from authenticated SQL hot paths; warm reads are now approximately `1.38–1.80s`.
+- [x] Add semantic success/error toast icon colors and run Admin, backend, Web and focused Android regression gates.
+- [x] Keep firmware unchanged because this slice modifies no device/WSS/audio/OTA contract.

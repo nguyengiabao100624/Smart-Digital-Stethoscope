@@ -1058,3 +1058,12 @@ recorded contract invalid.
 - Firmware was flashed to physical ESP32-S3 COM9 without erase/eFuse changes. Artifact SHA-256: `FDEE58BE2CEDC5489852CE9B10663574CF814190761F8D4104DBF0272E4D9F71` (1,211,696 bytes). A bounded DNS fallback was added for the HIL cloud route.
 - Wi-Fi association/DHCP succeeded; Render observed ESP WebSocket authentication and Supabase reported `connected=true`, `status=connected`, `connection_method=WSS` with a fresh heartbeat. This proves the current production WSS presence sub-gate only.
 - G3 remains open: Android visual/TalkBack, user Wi-Fi change, ACK/audio-v2/scan/OTA rollback and provider/migration/CORS gates remain. G4 is not marked PASS.
+
+## 2026-08-29 — Active production checkpoint for approval, notifications and settings
+
+- Active backend marker: `git-080cc60cd7ad`. Active Firebase Admin bundle includes durable notification/settings handling and semantic toast colors.
+- Live doctor-approval regression is closed: the inverse patient/workspace transition no longer raises HTTP `409`; the request moved out of Pending and production counts are Pending `0`, Approved `3`, Rejected `2`.
+- Live notification regression is closed: read-all changed unread `4 → 0`, and a browser reload still showed `0`. Delete/read-all are set-based audited SQL mutations, not serial per-row requests.
+- Profile plus platform/workspace settings survive reload through PostgreSQL migration `056`. Brevo delivery is confirmed Sent/Delivered/Opened, with idempotent bounded retry for transient provider failures.
+- Performance checkpoint: warm authenticated GETs are approximately `/me 1.52–1.80s`, `/notifications 1.47–1.52s`, `/settings 1.39–1.72s`; the redundant per-request SQL snapshot writes that caused multi-second stalls are removed.
+- Current slice does not alter device/WSS/audio/OTA contracts. Existing production device evidence remains valid; do not reflash hardware solely for these Admin/backend changes.

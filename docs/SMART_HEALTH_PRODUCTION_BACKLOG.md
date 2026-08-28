@@ -2691,3 +2691,13 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Persist an unspecified blood type as SQL `NULL`; retain all Firebase owner, session, tenant and workspace guards.
 - [x] Deploy Render commit `91dec1f4e93e` and prove the same physical account receives backend HTTP `200` (`1/1` HIL).
 - [ ] Visual/TalkBack confirmation remains separate because MIUI is secure-locked; this does not reopen the now-passing Firebase/backend contract.
+
+## 2026-08-29 — Admin durability and notification closure
+
+- [x] Doctor approval succeeds in production and the approved account leaves the pending queue.
+- [x] Notification read-all/delete-all persist in PostgreSQL; live reload proof keeps unread at `0`.
+- [x] Profile, platform settings and workspace settings persist through migration `056` and canonical repository APIs.
+- [x] Brevo administrator email delivery restored and provider-confirmed; transient retry is idempotent.
+- [x] Remove per-request runtime snapshot writes from SQL authentication reads; retain immediate authorization/session/tenant enforcement.
+- [x] Deploy semantic Admin toast colors and verify the live bundle.
+- [ ] A remaining warm-cloud latency floor of roughly `1.4–1.8s` is infrastructure/region round-trip time, not a hanging mutation. Do not add unsafe authorization caching merely to hide it.

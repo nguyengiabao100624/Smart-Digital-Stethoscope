@@ -4662,3 +4662,20 @@ Set-Location smart-health-android
 ```
 
 Count only `OK (1 test)` as PASS. Without `SHCARE_EMAIL_VERIFICATION_HIL=true`, the test intentionally skips instead of touching a real account.
+
+## 2026-08-29 Admin durability regression gates
+
+Run the backend gates from `smart-health-embedded\web-monitor`:
+
+```powershell
+npm run check
+npm run smoke:release-security
+npm run smoke:cors-policy
+npm run smoke:notification-preferences
+npm run smoke:notification-inbox
+npm run smoke:configuration-persistence
+npm run smoke:settings-persistence
+npm run smoke:auth-hot-path
+```
+
+Run the Admin gates from `smart-health-admin\thiết kế giao diện` and the public Web gates from `smart-health-web`. Production verification must use the release marker from `/api/health`, then perform one reload-safe notification read test and one reversible settings/profile edit. Do not send repeated Brevo probes once the provider has recorded Sent/Delivered/Opened.

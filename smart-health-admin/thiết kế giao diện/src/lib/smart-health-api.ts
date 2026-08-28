@@ -1933,6 +1933,41 @@ export const smartHealthApi = {
     });
   },
 
+  async updateDoctorProfile(
+    userId: string,
+    payload: Partial<
+      Pick<
+        SmartHealthAuthUser,
+        "name" | "phone" | "title" | "address" | "license" | "hospital" | "department" | "specialty"
+      >
+    >,
+    idempotencyKey: string,
+  ) {
+    return requestJson<{ doctor: SmartHealthAuthUser; replayed?: boolean }>(
+      `/admin/doctors/${encodeURIComponent(userId)}/profile`,
+      {
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async assignDoctorWorkspace(userId: string, organizationId: string, idempotencyKey: string) {
+    return requestJson<{
+      doctor: SmartHealthAuthUser;
+      workspace?: SmartHealthClinic;
+      previousOrganizationId?: string;
+      sessionsRevoked?: number;
+      operationId?: string;
+      replayed?: boolean;
+    }>(`/admin/doctors/${encodeURIComponent(userId)}/workspace`, {
+      method: "PATCH",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ organizationId }),
+    });
+  },
+
   async lockDoctor(userId: string, idempotencyKey: string) {
     return requestJson<{
       request: SmartHealthAuthUser;

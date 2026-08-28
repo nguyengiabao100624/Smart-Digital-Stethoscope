@@ -1545,7 +1545,10 @@ function isOperationalWorkspaceMembership(user, membership, workspace = null) {
     resolvedWorkspace.type === "hospital" ? "hospital" : "clinic",
   );
   if (role !== "patient" && workspaceType === "personal") return false;
-  if (role === "patient") return true;
+  // A membership cannot silently change the identity's product persona. An
+  // approved doctor may retain an old personal membership for history, but it
+  // is not a valid active doctor/Portal context.
+  if (role === "patient") return isPatientUser(user);
   if (role === "doctor") return isApprovedDoctorRole(user);
   return readString(user.roleRequestStatus, 40).toLowerCase() === "approved";
 }
@@ -1806,6 +1809,37 @@ function getUserSurfaceInfo(user, context = getUserWorkspaceContext(user)) {
   }
 
   return { allowedSurfaces: [], defaultSurface: "" };
+}
+
+function assertWorkspaceSelectionSurfaceCompatible(user, workspaceId) {
+  if (isPlatformAdminUser(user)) return;
+  const candidateUser = { ...user, organizationId: workspaceId };
+  const candidateContext = getUserWorkspaceContext(candidateUser);
+  if (
+    candidateContext.currentWorkspaceId !== workspaceId ||
+    !candidateContext.currentMembership?.operational
+  ) {
+    throw httpError(
+      409,
+      "Workspace is not compatible with this account role",
+      "WORKSPACE_SURFACE_INCOMPATIBLE",
+      { workspaceId },
+    );
+  }
+  const candidateSurfaces = getUserSurfaceInfo(candidateUser, candidateContext).allowedSurfaces;
+  const requiredSurface = isPatientUser(user)
+    ? "android"
+    : isApprovedDoctorRole(user) || isApprovedWorkspaceRole(user)
+      ? "portal"
+      : "";
+  if (requiredSurface && !candidateSurfaces.includes(requiredSurface)) {
+    throw httpError(
+      409,
+      "Workspace does not grant the surface required by this account",
+      "WORKSPACE_SURFACE_INCOMPATIBLE",
+      { workspaceId, requiredSurface },
+    );
+  }
 }
 
 function hasPortalSurfaceAccess(user) {
@@ -3687,8 +3721,25 @@ async function authenticateDeviceSocket(socket, payload = {}) {
     return false;
   }
   result.rotationWrapKey.fill(0);
+  // Older ESP images put network telemetry beside the auth envelope while
+  // newer images nest it under `telemetry`. Preserve either wire shape so an
+  // authenticated device immediately reports WiFi/IP instead of appearing
+  // online with empty network fields.
+  const authTelemetry = payload.telemetry && typeof payload.telemetry === "object"
+    ? payload.telemetry
+    : {
+        name: payload.name,
+        firmwareVersion: payload.firmwareVersion || payload.firmware,
+        wifiSsid: payload.wifiSsid,
+        wifiRssi: payload.wifiRssi,
+        ipAddress: payload.ipAddress || payload.ip,
+        battery: payload.battery,
+        audioStatus: payload.audioStatus,
+        backendHost: payload.backendHost,
+        backendPort: payload.backendPort,
+      };
   await handleDeviceTelemetry(result.deviceId, {
-    ...(payload.telemetry || {}),
+    ...authTelemetry,
     connectionMethod: "WSS",
     status: "connected",
     audioStatus: readString(payload?.telemetry?.audioStatus, 80) || "ready",
@@ -15367,7 +15418,9 @@ async function handleAdminApi(req, res, url, segments) {
     const pendingDoctors = db.users
       .filter(isAwaitingDoctorApproval)
       .filter((user) => isPlatformAdminUser(adminUser) || (workspaceId && user.organizationId === workspaceId)).length;
-    const devicesOnline = scopedDevices.filter((d) => d.status === "active" || d.status === "connected" || d.connected).length;
+    // Match the device list and workspace summaries: only an authenticated,
+    // currently open WSS session counts as online.
+    const devicesOnline = scopedDevices.filter((device) => Boolean(getAuthenticatedDeviceSocket(device))).length;
     const devicesOffline = Math.max(0, scopedDevices.length - devicesOnline);
     let overviewSnapshot;
     try {
@@ -15410,13 +15463,21 @@ async function handleAdminApi(req, res, url, segments) {
       { key: "pending", name: "Chờ xử lý", value: pendingScans.length, color: "#A15C00" },
     ];
 
+    const canonicalWorkspacePage = isPlatformAdminUser(adminUser)
+      ? await requireWorkspaceLifecycleRepository().list({ page: 1, limit: 1 })
+      : null;
+    const canonicalWorkspaceCount = isPlatformAdminUser(adminUser)
+      ? Number(canonicalWorkspacePage?.total || 0)
+      : workspaceId
+        ? 1
+        : 0;
     sendJson(res, 200, {
       generatedAt: overviewSnapshot.generatedAt,
       workspaceId,
       range: overviewSnapshot.range,
       stats: {
-        clinics: isPlatformAdminUser(adminUser) ? db.organizations.length : workspaceId ? 1 : 0,
-        workspaces: isPlatformAdminUser(adminUser) ? db.organizations.length : workspaceId ? 1 : 0,
+        clinics: canonicalWorkspaceCount,
+        workspaces: canonicalWorkspaceCount,
         patientsCount: scopedPatients.length,
         pendingDoctors,
         devicesCount: scopedDevices.length,
@@ -17286,6 +17347,140 @@ async function handleAdminApi(req, res, url, segments) {
     return;
   }
 
+  // A platform administrator can repair the operational workspace of an
+  // already-approved doctor.  This is intentionally separate from profile
+  // editing and from the self-service workspace switch: changing the tenant
+  // also refreshes Firebase claims and revokes stale sessions so the mobile
+  // and Portal surfaces cannot loop on the previous persona.
+  if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "workspace" && method === "PATCH") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chá»‰ platform admin má»›i Ä‘Æ°á»£c chuyá»ƒn workspace cho bĂ¡c sÄ©");
+    const targetUserId = decodeURIComponent(segments[3]);
+    const targetUser = repositories
+      ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
+      : db.users.find((candidate) => candidate.id === targetUserId || candidate.firebaseUid === targetUserId);
+    if (!targetUser || (targetUser.role !== "doctor" && targetUser.requestedRole !== "doctor")) {
+      throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y há»“ sÆ¡ bĂ¡c sÄ©", "DOCTOR_NOT_FOUND");
+    }
+    if (targetUser.role !== "doctor" || targetUser.roleRequestStatus !== "approved") {
+      throw httpError(409, "Chá»‰ bĂ¡c sÄ© Ä‘Ă£ Ä‘Æ°á»£c phĂª duyá»‡t má»›i cĂ³ thá»ƒ gĂ¡n workspace", "APPROVED_DOCTOR_REQUIRED");
+    }
+    const payload = await readJsonBody(req);
+    const organizationId = readString(payload.organizationId || payload.workspaceId, 120);
+    if (!organizationId) {
+      throw httpError(400, "Cáº§n organizationId/workspaceId Ä‘á»ƒ gĂ¡n workspace", "DOCTOR_WORKSPACE_REQUIRED");
+    }
+    const organization = getClinicById(organizationId);
+    if (!organization) throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y workspace Ä‘Ă­ch", "WORKSPACE_NOT_FOUND");
+    if (["archived", "suspended", "inactive"].includes(readString(organization.status, 40).toLowerCase())) {
+      throw httpError(409, "Workspace Ä‘Ă­ch Ä‘ang táº¡m ngÆ°ng hoáº·c Ä‘Ă£ lÆ°u trá»¯", "WORKSPACE_NOT_ACTIVE");
+    }
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "doctor workspace assignment");
+    const previousOrganizationId = readString(targetUser.organizationId, 120);
+    const targetState = {
+      role: "doctor",
+      requestedRole: "doctor",
+      roleRequestStatus: "approved",
+      organizationId,
+      hospital: organization.name || targetUser.hospital || "Smart Health",
+      accountStatus: targetUser.accountStatus || "active",
+    };
+    const saga = await runIdentityProviderSaga(
+      req,
+      adminUser,
+      targetUser,
+      "doctor_workspace_assign",
+      { organizationId },
+      async () => {
+        if (!targetUser.firebaseUid || !FIREBASE_AUTH_ENABLED) {
+          return { skipped: true, firebaseClaims: targetUser.firebaseClaims || null };
+        }
+        const claims = await setFirebaseRoleClaimsForUser(targetUser, "doctor", organizationId);
+        return { ...claims, firebaseClaims: claims.claims || claims.firebaseClaims };
+      },
+      { targetState, preserveAccountStatus: true },
+    );
+    Object.assign(targetUser, saga.completed.user || targetState);
+    targetUser.organizationId = organizationId;
+    targetUser.hospital = targetState.hospital;
+    targetUser.role = "doctor";
+    targetUser.requestedRole = "doctor";
+    targetUser.roleRequestStatus = "approved";
+    await persistUserRecord(targetUser);
+    if (repositories?.memberships?.ensureForUser) await repositories.memberships.ensureForUser(targetUser);
+    await appendAudit("admin.doctor.workspace.assign", req, {
+      actorUserId: adminUser.id,
+      organizationId,
+      resourceType: "user",
+      resourceId: targetUser.id,
+      metadata: { previousOrganizationId, organizationId, role: "doctor" },
+    });
+    sendJson(res, 200, {
+      doctor: publicUser(targetUser),
+      workspace: publicWorkspace(organization),
+      previousOrganizationId,
+      sessionsRevoked: saga.started.demoSessionsRevoked || saga.started.firebaseSessionsRevoked || 0,
+      operationId: saga.completed.identityOperation.id,
+      replayed: saga.replayed,
+    });
+    return;
+  }
+
+  // Platform administrators may correct a reviewed doctor's profile without
+  // bypassing the identity/approval workflow. Workspace/role transfers stay
+  // on their dedicated audited routes; this endpoint is deliberately limited
+  // to contact and reviewed profile fields.
+  if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "profile" && method === "PATCH") {
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được chỉnh sửa hồ sơ bác sĩ");
+    const targetUserId = decodeURIComponent(segments[3]);
+    const targetUser = repositories
+      ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
+      : db.users.find((candidate) => candidate.id === targetUserId || candidate.firebaseUid === targetUserId);
+    if (!targetUser || (targetUser.role !== "doctor" && targetUser.requestedRole !== "doctor")) {
+      throw httpError(404, "Không tìm thấy hồ sơ bác sĩ", "DOCTOR_NOT_FOUND");
+    }
+    const payload = await readJsonBody(req);
+    const allowedFields = ["name", "phone", "title", "address", "license", "hospital", "department", "specialty"];
+    const unsupported = Object.keys(payload).find((field) => !allowedFields.includes(field));
+    if (unsupported) {
+      throw httpError(400, `Trường hồ sơ không được phép cập nhật: ${unsupported}`, "DOCTOR_PROFILE_FIELD_UNSUPPORTED", { field: unsupported });
+    }
+    if (Object.keys(payload).length === 0) {
+      throw httpError(400, "Cần ít nhất một trường hồ sơ để cập nhật", "DOCTOR_PROFILE_EMPTY");
+    }
+    const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "doctor profile update");
+    const patch = {};
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(payload, field)) {
+        patch[field] = readString(payload[field], field === "address" ? 1000 : 240);
+      }
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const persisted = repositories?.users?.updateAccountProfileWithAudit
+      ? await repositories.users.updateAccountProfileWithAudit(
+          targetUser.id,
+          patch,
+          {
+            action: "admin.doctor.profile.update",
+            actorUserId: adminUser.id,
+            organizationId: targetUser.organizationId || "",
+            authorization: { kind: "platform_admin", actorUserId: adminUser.id, organizationId: targetUser.organizationId || "" },
+            ip: context.ip || "",
+            userAgent: context.userAgent || "",
+            metadata: { fields: Object.keys(patch).sort(), targetUserId: targetUser.id },
+          },
+          {
+            scope: getIdempotencyScope(adminUser),
+            operation: `admin.doctor.profile.update:${targetUser.id}`,
+            key: idempotencyKey,
+            fingerprint: createIdempotencyFingerprint(patch),
+          },
+        )
+      : null;
+    if (!persisted?.user) throw httpError(503, "Không thể lưu hồ sơ bác sĩ", "DOCTOR_PROFILE_STORAGE_UNAVAILABLE");
+    sendJson(res, 200, { doctor: publicUser(persisted.user), replayed: Boolean(persisted.replayed) });
+    return;
+  }
+
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "lock" && method === "PATCH") {
     requireAnyCapability(
       adminUser,
@@ -18148,6 +18343,7 @@ async function handleMeApi(req, res, segments) {
       if (!isPlatformAdminUser(user) && !hasWorkspaceMembership(user, selectedClinic.id)) {
         throw httpError(403, "Không thể tự chuyển sang workspace khi chưa có membership", "WORKSPACE_MEMBERSHIP_REQUIRED");
       }
+      assertWorkspaceSelectionSurfaceCompatible(user, selectedClinic.id);
       nextUser.organizationId = selectedClinic.id;
       nextUser.hospital = selectedClinic.name;
       mutationPatch.organizationId = nextUser.organizationId;

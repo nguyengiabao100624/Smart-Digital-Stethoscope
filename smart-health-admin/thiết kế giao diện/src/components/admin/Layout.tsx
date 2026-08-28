@@ -408,6 +408,7 @@ export function Layout() {
   const [notificationDetail, setNotificationDetail] = useState<NotificationItem | null>(null);
   const [notificationDetailOpen, setNotificationDetailOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<SmartHealthAuthUser | null>(null);
+  const [avatarObjectUrl, setAvatarObjectUrl] = useState("");
   const [surfaceBlockedUser, setSurfaceBlockedUser] = useState<SmartHealthAuthUser | null>(null);
   const [accessCheckComplete, setAccessCheckComplete] = useState(false);
   const visibleMenuItems = useMemo(() => {
@@ -664,6 +665,44 @@ export function Layout() {
       window.clearInterval(intervalId);
     };
   }, [currentUser, refreshEventBadges]);
+
+  // Avatar files are private and therefore cannot be loaded by an <img> tag
+  // from the API path without the bearer token. Fetch the canonical blob once
+  // and use the same object URL for the top bar and every Admin route.
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    const loadAvatar = async (force = false) => {
+      // The upload screen broadcasts before the auth user object is refreshed.
+      // A forced reload therefore must fetch the canonical private blob even
+      // when the previous user snapshot did not yet contain avatar metadata.
+      if (!force && !currentUser?.avatarFileId && !currentUser?.avatarUrl) {
+        setAvatarObjectUrl("");
+        return;
+      }
+      try {
+        const blob = await smartHealthApi.downloadMyAvatar();
+        if (cancelled) return;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = URL.createObjectURL(blob);
+        setAvatarObjectUrl(objectUrl);
+      } catch {
+        if (!cancelled && force) {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = "";
+          setAvatarObjectUrl("");
+        }
+      }
+    };
+    void loadAvatar();
+    const onAvatarChanged = () => void loadAvatar(true);
+    window.addEventListener("shcare:avatar-updated", onAvatarChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("shcare:avatar-updated", onAvatarChanged);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [currentUser?.avatarFileId, currentUser?.avatarUrl]);
 
   const adminName = currentUser?.name?.trim() || "Quản trị hệ thống";
   const adminEmail = currentUser?.email?.trim() || "";
@@ -1099,8 +1138,16 @@ export function Layout() {
                     aria-label="Mở menu tài khoản"
                     className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-semibold text-primary">
-                      {adminInitial}
+                    <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-primary/20 bg-primary/10 text-sm font-semibold text-primary">
+                      {avatarObjectUrl ? (
+                        <img
+                          src={avatarObjectUrl}
+                          alt="Ảnh đại diện"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        adminInitial
+                      )}
                     </span>
                     <div className="hidden text-left xl:block">
                       <div className="text-sm font-medium leading-none mb-1">{adminName}</div>

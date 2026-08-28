@@ -54,6 +54,9 @@ function roleLabel(role: string) {
 }
 
 function unavailableReason(workspace: Workspace) {
+  if (workspace.type === "personal" && workspace.role !== "patient") {
+    return "Workspace cá nhân chỉ dành cho tài khoản bệnh nhân; bác sĩ dùng workspace phòng khám/bệnh viện"
+  }
   if (workspace.membershipStatus === "suspended") {
     return "Membership đang tạm khóa";
   }
@@ -217,7 +220,9 @@ export default function WorkspaceSwitcher() {
                 {user.workspaces.map((workspace) => {
                   const active = workspace.id === user.currentWorkspace.id;
                   const switching = switchingId === workspace.id;
-                  const unavailable = !workspace.operational;
+                  const incompatiblePersona =
+                    workspace.type === "personal" && workspace.role !== "patient";
+                  const unavailable = !workspace.operational || incompatiblePersona;
                   return (
                     <Button
                       type="button"

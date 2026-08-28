@@ -1,6 +1,13 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
+
+## 2026-08-29 account, telemetry, claim and avatar consistency repair
+
+- Implemented audited Platform Admin doctor profile editing and workspace assignment. The tenant correction refreshes Firebase claims, revokes stale sessions, and ensures the doctor membership.
+- WSS auth now normalizes nested and legacy top-level network telemetry, fixing Online + missing WiFi/IP when the ESP reports those fields.
+- Claim-code, suspend/archive, and private avatar header flows are now explicit and synchronized.
+- Backend `npm run check`, overview contract `4/4`, workspace smoke, and Admin production build pass. No production deploy is claimed from local builds.
 
 ## 2026-08-28 Doctor approval owner-guard regression (live diagnosis)
 

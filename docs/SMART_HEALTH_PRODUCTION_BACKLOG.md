@@ -1,6 +1,14 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
+
+## 2026-08-29 cross-surface consistency slice
+
+- [x] Add audited Platform Admin doctor profile edit/workspace assignment and reject incompatible doctor-to-personal self-switches.
+- [x] Normalize WSS auth telemetry for current and legacy firmware payloads so WiFi/IP can persist immediately.
+- [x] Clarify claim-code creation and suspend/archive lifecycle; force-refresh private Admin avatar after upload/delete.
+- [x] Run backend check, overview contract `4/4`, workspace-access smoke and Admin production build.
+- [ ] Deploy authenticated backend/Admin/Portal workflows, repair the production doctor tenant, and verify live WiFi/IP plus avatar propagation.
 
 ## 2026-08-28 Doctor approval 409 — second production regression
 

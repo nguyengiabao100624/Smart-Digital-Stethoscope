@@ -1,6 +1,13 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
+
+## 2026-08-29 current repair slice
+
+- Platform Admin now has audited doctor profile editing and workspace assignment. Assignment refreshes Firebase claims, revokes stale sessions, and creates the canonical doctor membership; incompatible doctor-to-personal self-switches are rejected.
+- WSS authentication accepts nested and legacy top-level network telemetry, persisting WiFi/IP when the ESP reports them.
+- Admin claim-code copy, workspace suspend/archive labels, and private avatar force-refresh are aligned across surfaces.
+- Local backend checks, overview contract `4/4`, workspace access smoke, and Admin production build pass. Production deployment still requires authenticated Firebase/Render workflows.
 
 ## 2026-08-28 latest doctor-approval 409 diagnosis
 

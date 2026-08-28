@@ -254,7 +254,7 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               <div>
                 <Dialog.Title className="font-semibold text-foreground">Thêm thiết bị</Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
-                  Tạo thiết bị và claim code để ghép nối bằng QR hoặc nhập tay.
+                  Đăng ký thiết bị factory và cấp claim code một lần cho bác sĩ/workspace.
                 </Dialog.Description>
               </div>
             </div>
@@ -363,12 +363,13 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-muted-foreground">Setup AP</dt>
+                        <dt className="text-muted-foreground">Trạng thái factory</dt>
                         <dd className="mt-1 font-mono text-foreground">
-                          {provisionArtifact.qrPayload.setupAp.ssid}
+                          Đã xác minh danh tính thiết bị
                         </dd>
                         <dd className="mt-1 text-xs text-muted-foreground">
-                          WPA2 • proof-of-possession nằm trong QR
+                          Claim code chỉ hiển thị một lần; không chứa device secret hoặc mật khẩu
+                          Wi‑Fi
                         </dd>
                       </div>
                       <div>
@@ -384,9 +385,10 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                       <div className="flex items-start gap-2">
                         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                         <p>
-                          Setup AP chỉ mở khi thiết bị còn ở factory state hoặc người dùng thực hiện
-                          thao tác vật lý trên thiết bị. Sau khi claim backend, App sẽ hướng dẫn kết
-                          nối đúng SSID này và mở portal cục bộ có thời hạn.
+                          Admin tạo mã tại đây sau khi nhập đúng Device ID đã nạp tại factory. Bàn
+                          giao Device ID và claim code cho bác sĩ; bác sĩ nhập hai giá trị đó trong
+                          Portal. Sau khi claim thành công, cấu hình Wi‑Fi được thực hiện trong App
+                          theo luồng SmartConfig/ESPTouch, không cần mở IP hoặc Wi‑Fi tạm.
                         </p>
                       </div>
                     </div>
@@ -578,8 +580,8 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
               <div className="flex items-start gap-3">
                 <Wifi className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
                 <p className="text-sm text-muted-foreground">
-                  QR setup chứa Device ID, one-time claim code và proof WPA2 theo từng thiết bị. QR
-                  không chứa device secret hoặc mật khẩu Wi-Fi của người dùng.
+                  QR claim chứa Device ID và one-time claim code theo workspace. QR không chứa
+                  device secret hoặc mật khẩu Wi‑Fi; mã hết hạn/đã dùng phải được Admin cấp lại.
                 </p>
               </div>
             </div>

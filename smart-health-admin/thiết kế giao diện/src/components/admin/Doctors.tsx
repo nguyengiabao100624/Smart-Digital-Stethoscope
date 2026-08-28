@@ -21,6 +21,7 @@ import {
   Clipboard,
   Loader2,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
@@ -140,6 +141,12 @@ export function Doctors() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", specialty: "", clinic: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [workspaceDoctor, setWorkspaceDoctor] = useState<Doctor | null>(null);
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [invitations, setInvitations] = useState<SmartHealthStaffInvitation[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -351,6 +358,64 @@ export function Doctors() {
         }
       },
     });
+  };
+
+  const openEdit = (doc: Doctor) => {
+    setEditingDoctor(doc);
+    setEditForm({
+      name: doc.name,
+      phone: doc.phone === "Chưa cung cấp" ? "" : doc.phone,
+      specialty: doc.specialty,
+      clinic: doc.clinic,
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingDoctor || !canManagePlatformUsers) return;
+    setEditSaving(true);
+    try {
+      const result = await smartHealthApi.updateDoctorProfile(
+        editingDoctor.id,
+        {
+          name: editForm.name,
+          phone: editForm.phone,
+          specialty: editForm.specialty,
+          hospital: editForm.clinic,
+        },
+        createStaffOperationIdempotencyKey("doctor-profile", editingDoctor.id),
+      );
+      const updated = toDoctor(result.doctor);
+      setDoctors((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedDoctor((current) => (current?.id === updated.id ? updated : current));
+      setEditingDoctor(null);
+      toast.success("Backend đã xác nhận cập nhật hồ sơ bác sĩ.");
+    } catch (error) {
+      toast.error(toVietnameseErrorMessage(error, "Không thể cập nhật hồ sơ bác sĩ."));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const assignWorkspace = async () => {
+    if (!workspaceDoctor || !workspaceId.trim() || !canManagePlatformUsers) return;
+    setWorkspaceSaving(true);
+    try {
+      const result = await smartHealthApi.assignDoctorWorkspace(
+        workspaceDoctor.id,
+        workspaceId.trim(),
+        createStaffOperationIdempotencyKey("doctor-workspace", workspaceDoctor.id),
+      );
+      const updated = toDoctor(result.doctor);
+      setDoctors((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedDoctor((current) => (current?.id === updated.id ? updated : current));
+      setWorkspaceDoctor(null);
+      setWorkspaceId("");
+      toast.success("Backend đã xác nhận gán workspace và làm mới quyền đăng nhập bác sĩ.");
+    } catch (error) {
+      toast.error(toVietnameseErrorMessage(error, "Không thể gán workspace cho bác sĩ."));
+    } finally {
+      setWorkspaceSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -883,6 +948,25 @@ export function Doctors() {
                             <Eye className="w-4 h-4" /> Xem hồ sơ
                           </DropdownMenu.Item>
                           {canManagePlatformUsers && (
+                            <DropdownMenu.Item
+                              onSelect={() => openEdit(doc)}
+                              className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-accent rounded-sm flex items-center gap-2"
+                            >
+                              <Pencil className="w-4 h-4" /> Chỉnh sửa hồ sơ
+                            </DropdownMenu.Item>
+                          )}
+                          {canManagePlatformUsers && (
+                            <DropdownMenu.Item
+                              onSelect={() => {
+                                setWorkspaceDoctor(doc);
+                                setWorkspaceId("");
+                              }}
+                              className="text-sm px-2 py-1.5 cursor-pointer outline-none hover:bg-accent rounded-sm flex items-center gap-2"
+                            >
+                              <Building2 className="w-4 h-4" /> Gán workspace
+                            </DropdownMenu.Item>
+                          )}
+                          {canManagePlatformUsers && (
                             <>
                               <DropdownMenu.Separator className="h-px bg-border my-1" />
                               {doc.status === "inactive" ? (
@@ -1050,6 +1134,107 @@ export function Doctors() {
           </>
         )}
       </DetailDrawer>
+
+      <Dialog.Root
+        open={Boolean(editingDoctor)}
+        onOpenChange={(open) => {
+          if (!open && !editSaving) setEditingDoctor(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-slate-900/45" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[80] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
+            <Dialog.Title className="text-lg font-semibold">Chỉnh sửa hồ sơ bác sĩ</Dialog.Title>
+            <Dialog.Description className="mt-1 text-sm text-muted-foreground">
+              Thay đổi được ghi audit và đồng bộ ngay vào backend.
+            </Dialog.Description>
+            <div className="mt-5 grid gap-3">
+              {(
+                [
+                  ["name", "Họ tên"],
+                  ["phone", "Số điện thoại"],
+                  ["specialty", "Chuyên khoa"],
+                  ["clinic", "Phòng khám"],
+                ] as const
+              ).map(([field, label]) => (
+                <label key={field} className="grid gap-1 text-sm font-medium">
+                  {label}
+                  <input
+                    value={editForm[field]}
+                    onChange={(event) =>
+                      setEditForm((current) => ({ ...current, [field]: event.target.value }))
+                    }
+                    className="h-11 rounded-md border border-border bg-background px-3 font-normal outline-none focus:border-ring"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={editSaving}
+                onClick={() => setEditingDoctor(null)}
+                className="min-h-11 rounded-md border border-border px-4 text-sm"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={editSaving}
+                onClick={() => void saveEdit()}
+                className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60"
+              >
+                {editSaving && <Loader2 className="h-4 w-4 animate-spin" />} Lưu thay đổi
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={Boolean(workspaceDoctor)}
+        onOpenChange={(open) => {
+          if (!open && !workspaceSaving) setWorkspaceDoctor(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-slate-900/45" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[80] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
+            <Dialog.Title className="text-lg font-semibold">Gán workspace cho bác sĩ</Dialog.Title>
+            <Dialog.Description className="mt-1 text-sm leading-5 text-muted-foreground">
+              Thao tác này sửa tenant vận hành, làm mới Firebase claims và thu hồi phiên cũ. Nhập
+              đúng ID workspace đang hoạt động trong mục Phòng khám.
+            </Dialog.Description>
+            <label className="mt-5 grid gap-1 text-sm font-medium">
+              Workspace ID
+              <input
+                value={workspaceId}
+                onChange={(event) => setWorkspaceId(event.target.value)}
+                placeholder="org_..."
+                className="h-11 rounded-md border border-border bg-background px-3 font-normal outline-none focus:border-ring"
+              />
+            </label>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={workspaceSaving}
+                onClick={() => setWorkspaceDoctor(null)}
+                className="min-h-11 rounded-md border border-border px-4 text-sm"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={workspaceSaving || !workspaceId.trim()}
+                onClick={() => void assignWorkspace()}
+                className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60"
+              >
+                {workspaceSaving && <Loader2 className="h-4 w-4 animate-spin" />} Gán workspace
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <Dialog.Root
         open={!!confirmAction}

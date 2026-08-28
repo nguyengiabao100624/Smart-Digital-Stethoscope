@@ -1,6 +1,21 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
+
+## 2026-08-29 consistency repair verification
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+node --test scripts/overviewStatsContractTest.js
+node scripts/workspaceAccessSmokeTest.js
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run build
+```
+
+After deploy, Platform Admin uses **Bác sĩ → thao tác → Gán workspace** and
+enters the canonical `org_...` shown under **Phòng khám**. The audited endpoint
+refreshes claims and revokes old sessions; do not edit production rows in SQL.
 
 ## Doctor approval 409 regression verification
 

@@ -549,6 +549,7 @@ export function AccountSettings() {
         const { user } = await smartHealthApi.me();
         applyUserProfile(user);
       }
+      window.dispatchEvent(new Event("shcare:avatar-updated"));
       toast.success("Đã cập nhật ảnh đại diện.");
     } catch (error) {
       toast.error(toVietnameseErrorMessage(error, "Không thể tải ảnh đại diện."));
@@ -578,6 +579,7 @@ export function AccountSettings() {
           const { user } = await smartHealthApi.me();
           applyUserProfile(user);
         }
+        window.dispatchEvent(new Event("shcare:avatar-updated"));
         toast.success("Đã gỡ ảnh đại diện.");
       },
     });

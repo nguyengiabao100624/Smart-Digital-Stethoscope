@@ -1,5 +1,15 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-08-29 current source checkpoint
+
+- Source includes audited doctor workspace correction/profile APIs, WSS
+  telemetry compatibility, discoverable claim/archive lifecycle copy, and
+  private avatar header refresh. Backend check, overview `4/4`, workspace
+  smoke and Admin production build are green.
+- These changes are not yet live: authenticated GitHub Actions/Firebase
+  credentials are unavailable in this shell. G4 remains partial until deploy,
+  production doctor repair, and real device WiFi/IP/WSS evidence are captured.
+
 ## 2026-08-28 latest execution evidence
 
 ### 2026-08-28 Doctor Approval 409 regression fixed

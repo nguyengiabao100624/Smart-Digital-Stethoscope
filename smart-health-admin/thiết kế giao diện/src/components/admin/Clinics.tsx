@@ -1005,7 +1005,7 @@ function WorkspaceActions({
           {actionable && clinic.status === "active" ? (
             <ActionItem
               icon={Lock}
-              label="Tạm ngưng workspace"
+              label="Tạm ngưng workspace (bước 1 để lưu trữ)"
               onSelect={() => onLifecycle(clinic, "inactive")}
             />
           ) : null}
@@ -1019,7 +1019,7 @@ function WorkspaceActions({
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <ActionItem
                 icon={Archive}
-                label="Lưu trữ workspace"
+                label="Xóa khỏi hoạt động (lưu trữ)"
                 tone="danger"
                 onSelect={() => onArchive(clinic)}
               />

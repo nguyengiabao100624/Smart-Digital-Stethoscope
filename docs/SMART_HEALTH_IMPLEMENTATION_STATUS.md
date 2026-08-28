@@ -3067,3 +3067,14 @@ KLTN report artifacts generated from this evidence set:
 - [x] Remove redundant encrypted runtime-snapshot writes from authenticated SQL hot paths; warm reads are now approximately `1.38–1.80s`.
 - [x] Add semantic success/error toast icon colors and run Admin, backend, Web and focused Android regression gates.
 - [x] Keep firmware unchanged because this slice modifies no device/WSS/audio/OTA contract.
+
+## 2026-08-29 — Notification campaign delivery truth and recipient hygiene
+
+- [x] Reject fake/reserved email recipients before Brevo enqueue and reject email-only campaigns with zero eligible recipients.
+- [x] Persist Brevo `messageId` metadata without provider secrets and add tenant/capability-scoped delivery reconciliation.
+- [x] Distinguish provider acknowledgement, delivered, deferred, bounce, blocked and failed states in backend contracts and Admin UI.
+- [x] Prevent duplicate form submission with a synchronous lock; show exact recipient identity, eligible/excluded counts, bounded automatic refresh and manual refresh.
+- [x] Deploy Render commit `6e71d72cc6f5` and Firebase Admin bundle `e3b659f974e8801a` (release `1787944371865000`).
+- [x] Prove one-recipient email-only canary `notification_campaign_20260828191859_a8dd8254`: one Brevo Sent lifecycle event and one Delivered lifecycle event for the same message, zero bounce.
+- [x] Remove four verified `.test` fixture accounts and eight smoke notification records while preserving real Gmail users and real approval notifications.
+- [x] Pass Admin `196/196`, lint/build; backend campaigns `14/14`, inbox `10/10`, preferences `20/20`, aggregate check and deployment smoke.

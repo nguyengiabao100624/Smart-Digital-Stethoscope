@@ -4679,3 +4679,17 @@ npm run smoke:auth-hot-path
 ```
 
 Run the Admin gates from `smart-health-admin\thiết kế giao diện` and the public Web gates from `smart-health-web`. Production verification must use the release marker from `/api/health`, then perform one reload-safe notification read test and one reversible settings/profile edit. Do not send repeated Brevo probes once the provider has recorded Sent/Delivered/Opened.
+
+## 2026-08-29 Notification campaign delivery verification
+
+Run backend notification regressions from `smart-health-embedded\web-monitor`:
+
+```powershell
+npm run check
+node --test scripts/notificationCampaignsTest.js
+node --test scripts/notificationEmailDeliveryTest.js
+node --test scripts/notificationInboxTest.js
+node --test scripts/notificationPreferencesTest.js
+```
+
+Run Admin contracts, lint and the Firebase production build from `smart-health-admin\thiết kế giao diện`. For a live canary, select one explicit workspace, verify the preview contains the intended real recipient, choose Email only, submit once, and wait for the receipt to move from `Provider đã nhận` to `Đã giao`. A Brevo Sent event plus a Delivered event sharing the same message/recipient is one message lifecycle, not two emails. Never place a Brevo key or message content in shell output, logs or handoff documents.

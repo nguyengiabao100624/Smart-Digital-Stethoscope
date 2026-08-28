@@ -2701,3 +2701,13 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Remove per-request runtime snapshot writes from SQL authentication reads; retain immediate authorization/session/tenant enforcement.
 - [x] Deploy semantic Admin toast colors and verify the live bundle.
 - [ ] A remaining warm-cloud latency floor of roughly `1.4–1.8s` is infrastructure/region round-trip time, not a hanging mutation. Do not add unsafe authorization caching merely to hide it.
+
+## 2026-08-29 — Brevo campaign delivery closure
+
+- [x] Exclude placeholder/reserved addresses from production email audiences and expose the exclusion count before submit.
+- [x] Add per-recipient identity and truthful provider/delivery/bounce states to the Admin campaign receipt.
+- [x] Add synchronous duplicate-submit protection plus idempotent backend behavior.
+- [x] Reconcile Brevo delivery by provider `messageId` through a tenant-scoped endpoint with bounded polling and manual refresh.
+- [x] Verify production with one email-only recipient: campaign `notification_campaign_20260828191859_a8dd8254` reached Delivered with zero bounce.
+- [x] Remove four verified `.test` accounts and eight smoke notification rows; preserve production Gmail identities and real approval notifications.
+- [ ] Optional P2 hardening: consume Brevo transactional webhooks into a durable worker so campaign history updates even when no Admin page is open. The current production flow remains functional through bounded polling/manual refresh.

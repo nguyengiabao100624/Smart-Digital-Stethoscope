@@ -1067,3 +1067,11 @@ recorded contract invalid.
 - Profile plus platform/workspace settings survive reload through PostgreSQL migration `056`. Brevo delivery is confirmed Sent/Delivered/Opened, with idempotent bounded retry for transient provider failures.
 - Performance checkpoint: warm authenticated GETs are approximately `/me 1.52–1.80s`, `/notifications 1.47–1.52s`, `/settings 1.39–1.72s`; the redundant per-request SQL snapshot writes that caused multi-second stalls are removed.
 - Current slice does not alter device/WSS/audio/OTA contracts. Existing production device evidence remains valid; do not reflash hardware solely for these Admin/backend changes.
+
+## 2026-08-29 — Active production checkpoint for truthful email campaigns
+
+- Active notification-delivery code is Render commit `6e71d72cc6f5`. Active Firebase Admin bundle is `e3b659f974e8801a`, release `1787944371865000`.
+- Recipient hygiene is fail-closed for fake/reserved domains. Campaign responses and Admin receipts now separate provider acknowledgement from actual delivery/bounce and identify each recipient explicitly.
+- Live email-only canary `notification_campaign_20260828191859_a8dd8254` targeted exactly `baobee44@gmail.com`; Admin and Brevo both reached Delivered, with one Sent plus one Delivered lifecycle event and zero bounce.
+- Four audited `.test` fixture accounts and eight smoke notification rows were deleted. The only remaining Admin accounts are the two real Gmail identities; the only remaining doctor account is the real Gmail identity. Four real approval notifications remain intact.
+- Regression evidence: Admin contracts `196/196`, lint/build; backend campaigns `14/14`, inbox `10/10`, preferences `20/20`, aggregate check and public deployment smoke all PASS. This slice is backend/Admin only; no APK reinstall or COM9 flash is required.

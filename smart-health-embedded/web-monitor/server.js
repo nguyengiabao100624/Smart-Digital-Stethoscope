@@ -23160,7 +23160,7 @@ async function handleApi(req, res, url) {
     const seedFile = path.join(__dirname, "db", "seeds", "seed-database.json");
     if (DATA_BACKEND === "postgres") {
       const { spawnSync } = require("node:child_process");
-      const seedProc = spawnSync(process.execPath, [path.join(__dirname, "scripts", "migrateJsonToPostgres.js")], {
+      const seedProc = spawnSync(process.execPath, [path.join(__dirname, "scripts", "seedProductionIncremental.js")], {
         stdio: "pipe",
         env: { ...process.env, DB_FILE: seedFile },
         timeout: 120000,
@@ -23176,7 +23176,7 @@ async function handleApi(req, res, url) {
       sendJson(res, 200, {
         ok: seedProc.status === 0,
         exitCode: seedProc.status,
-        message: seedProc.status === 0 ? "Seed completed successfully" : "Seed failed",
+        message: seedProc.status === 0 ? "Incremental seed completed successfully" : "Seed failed",
         stdout: stdout.slice(-2000),
         stderr: stderr.slice(-2000),
       });

@@ -540,6 +540,8 @@ export type SmartHealthDeviceEvent = {
 export type SmartHealthNotification = {
   id: string;
   userId?: string;
+  recipientName?: string;
+  recipientEmail?: string;
   organizationId?: string;
   type?: string;
   title?: string;
@@ -576,6 +578,13 @@ export type SmartHealthNotificationDeliveryStatus =
   | "no_recipient"
   | "no_devices"
   | "sent"
+  | "delivered"
+  | "deferred"
+  | "soft_bounce"
+  | "hard_bounce"
+  | "blocked"
+  | "invalid"
+  | "spam"
   | "partial"
   | "failed";
 
@@ -597,7 +606,15 @@ export type SmartHealthNotificationOptions = {
   audiences: {
     workspaces: Array<{ id: string; name: string; workspaceType: string }>;
     roles: string[];
-    users: Array<{ id: string; workspaceId: string; name: string; email?: string; role: string }>;
+    users: Array<{
+      id: string;
+      workspaceId: string;
+      name: string;
+      email?: string;
+      emailEligible: boolean;
+      emailReasonCode?: string;
+      role: string;
+    }>;
   };
   channels: Record<SmartHealthNotificationChannel, SmartHealthNotificationChannelAvailability>;
 };
@@ -611,7 +628,7 @@ export type SmartHealthNotificationCampaign = {
   recipientCount: number;
   notificationIds: string[];
   channelSummary: Record<string, Record<string, number>>;
-  status: "ready" | "partial" | "unavailable";
+  status: "ready" | "pending" | "delivered" | "partial" | "failed" | "unavailable";
   createdAt: string;
 };
 
@@ -1686,6 +1703,13 @@ export const smartHealthApi = {
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     });
+  },
+
+  async refreshNotificationCampaign(campaignId: string) {
+    return requestJson<SmartHealthNotificationCampaignResponse>(
+      `/notifications/campaigns/${encodeURIComponent(campaignId)}/refresh`,
+      { method: "POST" },
+    );
   },
 
   async markAllNotificationsRead() {

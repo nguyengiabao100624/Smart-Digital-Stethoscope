@@ -43,6 +43,8 @@ test("parses scoped audience catalog and explicit provider availability", () => 
           workspaceId: "org_alpha",
           name: "Bác sĩ A",
           email: "a@example.test",
+          emailEligible: false,
+          emailReasonCode: "NOTIFICATION_EMAIL_RECIPIENT_NON_DELIVERABLE",
           role: "doctor",
         },
       ],
@@ -52,6 +54,7 @@ test("parses scoped audience catalog and explicit provider availability", () => 
   assert.equal(parsed.audiences.workspaces[0].id, "org_alpha");
   assert.equal(parsed.channels.email.available, false);
   assert.equal(parsed.channels.push.status, "unavailable");
+  assert.equal(parsed.audiences.users[0].emailEligible, false);
 });
 
 test("rejects an options payload that hides provider state", () => {
@@ -103,6 +106,47 @@ test("accepts only an exact campaign and per-recipient delivery receipt", () => 
   );
   assert.equal(receipt.campaign.recipientCount, 1);
   assert.equal(receipt.notifications[0].emailStatus, "unavailable");
+});
+
+test("accepts reconciled provider delivery status", () => {
+  const deliveredIntent: NotificationCampaignIntent = { ...intent, channels: ["email"] };
+  const receipt = parseNotificationCampaignReceipt(
+    {
+      campaign: {
+        id: "campaign_2",
+        operationId: "campaign_2",
+        organizationId: "org_alpha",
+        audience: deliveredIntent.audience,
+        requestedChannels: deliveredIntent.channels,
+        recipientCount: 1,
+        notificationIds: ["notification_2"],
+        channelSummary: {
+          in_app: { skipped: 1 },
+          email: { delivered: 1 },
+          push: { skipped: 1 },
+        },
+        status: "delivered",
+        createdAt: "2026-08-29T08:00:00.000Z",
+      },
+      notifications: [
+        {
+          id: "notification_2",
+          userId: "usr_doctor",
+          organizationId: "org_alpha",
+          campaignId: "campaign_2",
+          requestedChannels: deliveredIntent.channels,
+          inAppStatus: "skipped",
+          emailStatus: "delivered",
+          pushStatus: "skipped",
+        },
+      ],
+      idempotent: false,
+      channelAvailability: channels,
+    },
+    deliveredIntent,
+  );
+  assert.equal(receipt.campaign.status, "delivered");
+  assert.equal(receipt.notifications[0].emailStatus, "delivered");
 });
 
 test("rejects partial or mismatched campaign success responses", () => {

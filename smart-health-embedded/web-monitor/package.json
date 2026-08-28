@@ -28,7 +28,7 @@
     "smoke:public-deployment": "node scripts/publicDeploymentSmokeTest.js",
     "smoke:notification-push": "node --test scripts/notificationDeviceEligibilityTest.js scripts/notificationDeviceLimitsTest.js scripts/notificationPushPayloadTest.js && node scripts/notificationPushSmokeTest.js",
     "smoke:notification-preferences": "node --test scripts/notificationPreferencesTest.js scripts/notificationPreferenceRepositoryTest.js",
-    "smoke:notification-campaigns": "node --test scripts/notificationCampaignRepositoryTest.js",
+    "smoke:notification-campaigns": "node --test scripts/notificationCampaignRepositoryTest.js scripts/notificationEmailDeliveryTest.js",
     "smoke:notification-inbox": "node --test scripts/notificationInboxRepositoryTest.js && node scripts/workspaceAccessSmokeTest.js",
     "smoke:overview-stats": "node --test scripts/overviewStatsContractTest.js",
     "smoke:admin-lists": "node --test scripts/adminListContractTest.js",

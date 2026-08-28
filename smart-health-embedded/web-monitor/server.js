@@ -106,6 +106,12 @@ const {
   selectBoundedNotificationDevices,
 } = require("./src/notificationDeviceLimits");
 const {
+  buildBrevoEventReportUrl,
+  isDeliverableNotificationEmailAddress,
+  resolveBrevoDeliveryPatch,
+  summarizeNotificationCampaignDelivery,
+} = require("./src/notificationEmailDelivery");
+const {
   CLOUD_NOTIFICATION_PREFERENCE_KEYS,
   mergeNotificationPreferences,
   mergeNotificationPushStatus,
@@ -7272,6 +7278,15 @@ function filterNotificationsForUser(user, notifications) {
   );
 }
 
+function publicNotificationRecipient(notification) {
+  const recipient = (db.users || []).find((candidate) => candidate.id === notification?.userId);
+  return {
+    ...notification,
+    recipientName: recipient?.name || recipient?.email || notification?.userId || "",
+    recipientEmail: recipient?.email || "",
+  };
+}
+
 function requireNotificationInboxAuthority(user) {
   if (!user || !isActiveUserAccount(user)) {
     throw httpError(
@@ -7491,6 +7506,10 @@ function getNotificationAudienceOptions(user) {
       workspaceId: membership.organizationId,
       name: targetUser.name || targetUser.email || targetUser.id,
       email: targetUser.email || "",
+      emailEligible: isDeliverableNotificationEmailAddress(targetUser.email),
+      emailReasonCode: isDeliverableNotificationEmailAddress(targetUser.email)
+        ? ""
+        : "NOTIFICATION_EMAIL_RECIPIENT_NON_DELIVERABLE",
       role: normalizeNotificationAudienceRole(membership.role || targetUser.role) || "viewer",
     });
     if (users.length >= 500) break;
@@ -7609,52 +7628,66 @@ function resolveNotificationCampaignAudience(actor, normalized) {
     );
   }
   const channelAvailability = options.channels;
-  return {
-    workspace,
-    users,
-    recipients: users.map((targetUser) => {
-      const canonicalTarget = db.users.find((candidate) => candidate.id === targetUser.id);
-      const preferenceDecision = resolveNotificationPreferenceDecision(
-        canonicalTarget?.notificationPreferences,
-        { type: normalized.type },
-      );
-      const requestedInApp = normalized.channels.includes("in_app");
-      const requestedEmail = normalized.channels.includes("email");
-      const requestedPush = normalized.channels.includes("push");
-      return {
-        userId: targetUser.id,
-        inAppStatus:
-          requestedInApp && preferenceDecision.allowed ? "ready" : "skipped",
-        emailStatus: requestedEmail
-          ? !preferenceDecision.allowed
-            ? "skipped"
-            : !targetUser.email
-              ? "no_recipient"
-              : channelAvailability.email.available
-                ? "ready"
-                : channelAvailability.email.status
-          : "skipped",
-        emailErrorMessage:
-          requestedEmail && !preferenceDecision.allowed
-            ? preferenceDecision.reasonCode
+  const recipients = users.map((targetUser) => {
+    const canonicalTarget = db.users.find((candidate) => candidate.id === targetUser.id);
+    const preferenceDecision = resolveNotificationPreferenceDecision(
+      canonicalTarget?.notificationPreferences,
+      { type: normalized.type },
+    );
+    const requestedInApp = normalized.channels.includes("in_app");
+    const requestedEmail = normalized.channels.includes("email");
+    const requestedPush = normalized.channels.includes("push");
+    return {
+      userId: targetUser.id,
+      inAppStatus:
+        requestedInApp && preferenceDecision.allowed ? "ready" : "skipped",
+      emailStatus: requestedEmail
+        ? !preferenceDecision.allowed
+          ? "skipped"
+          : !targetUser.email || !targetUser.emailEligible
+            ? "no_recipient"
+            : channelAvailability.email.available
+              ? "ready"
+              : channelAvailability.email.status
+        : "skipped",
+      emailErrorMessage:
+        requestedEmail && !preferenceDecision.allowed
+          ? preferenceDecision.reasonCode
+          : requestedEmail && (!targetUser.email || !targetUser.emailEligible)
+            ? targetUser.emailReasonCode || "NOTIFICATION_EMAIL_RECIPIENT_NON_DELIVERABLE"
             : requestedEmail && !channelAvailability.email.available
               ? channelAvailability.email.reasonCode
               : "",
-        pushStatus: requestedPush
-          ? !preferenceDecision.allowed
-            ? "skipped"
-            : channelAvailability.push.available
-              ? "ready"
-              : channelAvailability.push.status
-          : "skipped",
-        pushErrorMessage:
-          requestedPush && !preferenceDecision.allowed
-            ? preferenceDecision.reasonCode
-            : requestedPush && !channelAvailability.push.available
-              ? channelAvailability.push.reasonCode
-              : "",
-      };
-    }),
+      pushStatus: requestedPush
+        ? !preferenceDecision.allowed
+          ? "skipped"
+          : channelAvailability.push.available
+            ? "ready"
+            : channelAvailability.push.status
+        : "skipped",
+      pushErrorMessage:
+        requestedPush && !preferenceDecision.allowed
+          ? preferenceDecision.reasonCode
+          : requestedPush && !channelAvailability.push.available
+            ? channelAvailability.push.reasonCode
+            : "",
+    };
+  });
+  if (
+    normalized.channels.length === 1 &&
+    normalized.channels[0] === "email" &&
+    !recipients.some((recipient) => recipient.emailStatus === "ready")
+  ) {
+    throw httpError(
+      409,
+      "No deliverable email recipients match the selected audience",
+      "NOTIFICATION_EMAIL_AUDIENCE_EMPTY",
+    );
+  }
+  return {
+    workspace,
+    users,
+    recipients,
     channelAvailability,
   };
 }
@@ -11331,7 +11364,7 @@ async function sendDirectNotificationEmail(notification) {
     !recipient ||
     !isActiveUserAccount(recipient) ||
     !workspaceAuthorized ||
-    !isValidEmailAddress(recipient.email)
+    !isDeliverableNotificationEmailAddress(recipient.email)
   ) {
     await saveNotificationEmailStatus(notification, {
       emailStatus: "no_recipient",
@@ -11362,6 +11395,10 @@ async function sendDirectNotificationEmail(notification) {
     emailStatus: "sent",
     emailErrorMessage: "",
     sentAt: nowIso(),
+    metadata: {
+      emailProvider: result.provider || runtime.provider,
+      ...(result.messageId ? { emailMessageId: result.messageId } : {}),
+    },
   });
   addAccessLog("Email thông báo đã được provider chấp nhận", {
     severity: "success",
@@ -11371,6 +11408,96 @@ async function sendDirectNotificationEmail(notification) {
   });
   await saveDb();
   return result;
+}
+
+async function fetchBrevoNotificationEvents(messageId) {
+  const brevo = getBrevoEnv();
+  if (!brevo.apiKey || !messageId) return [];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(buildBrevoEventReportUrl(brevo.apiUrl, messageId), {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        "api-key": brevo.apiKey,
+      },
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw httpError(
+        502,
+        "Brevo delivery status is temporarily unavailable",
+        "BREVO_EVENT_REPORT_FAILED",
+        { provider: "brevo", statusCode: response.status },
+      );
+    }
+    return Array.isArray(body?.events) ? body.events : [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function refreshBrevoNotificationDelivery(notification) {
+  const metadata = notification?.metadata && typeof notification.metadata === "object"
+    ? notification.metadata
+    : {};
+  if (
+    metadata.emailProvider !== "brevo" ||
+    !metadata.emailMessageId ||
+    !["sent", "deferred", "soft_bounce"].includes(notification.emailStatus)
+  ) {
+    return notification;
+  }
+  const events = await fetchBrevoNotificationEvents(metadata.emailMessageId);
+  const patch = resolveBrevoDeliveryPatch(events);
+  if (!patch || patch.emailStatus === notification.emailStatus) return notification;
+  await saveNotificationEmailStatus(notification, {
+    ...patch,
+    metadata: {
+      emailProviderLastCheckedAt: nowIso(),
+      emailProviderEvent: patch.emailStatus,
+    },
+  });
+  return notification;
+}
+
+function buildNotificationCampaignReceipt(notifications) {
+  const rows = Array.isArray(notifications) ? notifications : [];
+  const first = rows[0];
+  if (!first) return null;
+  const requestedChannels = Array.isArray(first.requestedChannels)
+    ? first.requestedChannels
+    : [first.channel || "in_app"];
+  const outcome = summarizeNotificationCampaignDelivery(rows, requestedChannels);
+  const audienceType = readString(first.audienceType, 40) || "users";
+  const audience = {
+    type: audienceType,
+    workspaceId: first.organizationId,
+    ...(first.audienceRole ? { role: first.audienceRole } : {}),
+    ...(audienceType === "users"
+      ? { userIds: rows.map((row) => row.userId).filter(Boolean).sort() }
+      : {}),
+  };
+  return {
+    campaign: {
+      id: first.campaignId,
+      operationId: first.campaignId,
+      organizationId: first.organizationId,
+      audience,
+      requestedChannels,
+      recipientCount: rows.length,
+      notificationIds: rows.map((row) => row.id),
+      channelSummary: outcome.channelSummary,
+      status: outcome.status,
+      createdAt: first.createdAt,
+    },
+    notifications: rows.map(publicNotificationRecipient),
+    notification: rows[0] ? publicNotificationRecipient(rows[0]) : null,
+    idempotent: false,
+    channelAvailability: getNotificationChannelAvailability(),
+  };
 }
 
 function queueDirectNotificationEmail(notification) {
@@ -19040,9 +19167,67 @@ async function handleNotificationsApi(req, res, segments) {
     return;
   }
 
+  if (
+    segments.length === 5 &&
+    segments[2] === "campaigns" &&
+    segments[4] === "refresh" &&
+    method === "POST"
+  ) {
+    requireAnyCapability(
+      user,
+      NOTIFICATION_MANAGE_CAPABILITIES,
+      "KhĂ´ng cĂ³ quyá»n xem tráº¡ng thĂ¡i chiáº¿n dá»‹ch thĂ´ng bĂ¡o",
+    );
+    const campaignId = readString(segments[3], 160);
+    const campaignRows = await repositories.notifications.listCampaign(campaignId);
+    if (campaignRows.length === 0) {
+      throw httpError(404, "Notification campaign was not found", "NOTIFICATION_CAMPAIGN_NOT_FOUND");
+    }
+    const organizationId = readString(campaignRows[0].organizationId, 120);
+    const allowedWorkspaceIds = new Set(
+      getNotificationAudienceOptions(user).audiences.workspaces.map((workspace) => workspace.id),
+    );
+    if (
+      !organizationId ||
+      !allowedWorkspaceIds.has(organizationId) ||
+      campaignRows.some((notification) => notification.organizationId !== organizationId)
+    ) {
+      throw httpError(
+        403,
+        "Notification campaign is outside the current authority scope",
+        "NOTIFICATION_CAMPAIGN_FORBIDDEN",
+      );
+    }
+    let providerRefreshFailures = 0;
+    for (let offset = 0; offset < campaignRows.length; offset += 4) {
+      const batch = campaignRows.slice(offset, offset + 4);
+      await Promise.all(
+        batch.map((notification) =>
+          refreshBrevoNotificationDelivery(notification).catch(() => {
+            providerRefreshFailures += 1;
+            return notification;
+          }),
+        ),
+      );
+    }
+    const refreshedRows = await repositories.notifications.listCampaign(campaignId);
+    sendJson(res, 200, {
+      ...buildNotificationCampaignReceipt(refreshedRows),
+      providerRefresh: {
+        attempted: campaignRows.filter((notification) =>
+          ["sent", "deferred", "soft_bounce"].includes(notification.emailStatus),
+        ).length,
+        failed: providerRefreshFailures,
+      },
+    });
+    return;
+  }
+
   if (segments.length === 2 && method === "GET") {
     const notifications = repositories ? await repositories.notifications.list() : db.notifications;
-    sendJson(res, 200, { notifications: filterNotificationsForUser(user, notifications) });
+    sendJson(res, 200, {
+      notifications: filterNotificationsForUser(user, notifications).map(publicNotificationRecipient),
+    });
     return;
   }
 
@@ -19098,8 +19283,10 @@ async function handleNotificationsApi(req, res, segments) {
     }
     sendJson(res, result.responseStatus || 201, {
       campaign: result.campaign,
-      notifications: result.notifications,
-      notification: result.notifications[0] || null,
+      notifications: result.notifications.map(publicNotificationRecipient),
+      notification: result.notifications[0]
+        ? publicNotificationRecipient(result.notifications[0])
+        : null,
       idempotent: result.replayed,
       channelAvailability: resolved.channelAvailability,
     });

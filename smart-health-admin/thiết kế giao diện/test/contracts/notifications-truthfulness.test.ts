@@ -33,8 +33,11 @@ test("notification composer uses backend audience and provider options without f
   assert.match(source, /email/);
   assert.match(source, /push/);
   assert.match(source, /availability\.available/);
+  assert.match(source, /emailEligible/);
+  assert.match(source, /Người nhận của chiến dịch/);
   assert.match(source, /Provider:/);
   assert.match(api, /\/notifications\/options/);
+  assert.match(api, /refreshNotificationCampaign/);
 });
 
 test("campaign mutation keeps a stable attempt and validates the exact receipt before success", async () => {
@@ -42,7 +45,9 @@ test("campaign mutation keeps a stable attempt and validates the exact receipt b
 
   assert.match(source, /resolveNotificationCampaignAttempt\(attempt, intent\)/);
   assert.match(source, /nextAttempt\.idempotencyKey/);
+  assert.match(source, /submitLockRef\.current/);
   assert.match(source, /parseNotificationCampaignReceipt\(response, intent\)/);
+  assert.match(source, /refreshNotificationCampaign/);
   assert.match(source, /Backend chỉ báo đã gửi sau khi provider xác nhận/);
   assert.doesNotMatch(source, /toast\.success\(["']Đã gửi/);
 });

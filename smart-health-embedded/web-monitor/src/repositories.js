@@ -9344,6 +9344,27 @@ function createRepositories(options) {
       return getDb().notifications;
     },
 
+    async listCampaign(campaignId) {
+      const normalizedCampaignId = String(campaignId || "").trim();
+      if (!normalizedCampaignId) return [];
+      const sqlNotifications = await withSql(async (pool) => {
+        const result = await pool.query(
+          "SELECT * FROM notifications WHERE campaign_id = $1 ORDER BY created_at ASC, id ASC LIMIT 200",
+          [normalizedCampaignId],
+        );
+        return result.rows.map(rowToNotification);
+      });
+      if (sqlNotifications !== null) return sqlNotifications;
+      return (getDb().notifications || [])
+        .filter((notification) => notification.campaignId === normalizedCampaignId)
+        .sort((left, right) =>
+          `${left.createdAt || ""}:${left.id || ""}`.localeCompare(
+            `${right.createdAt || ""}:${right.id || ""}`,
+          ),
+        )
+        .slice(0, 200);
+    },
+
     async listInbox(input = {}) {
       const authority = normalizeNotificationInboxAuthority(input);
       const snapshotAt = nowIso();
@@ -9817,6 +9838,10 @@ function createRepositories(options) {
         pushFailedAt: nextString("pushFailedAt", existing.pushFailedAt),
         pushErrorMessage: nextString("pushErrorMessage", existing.pushErrorMessage),
         pushAttempts: mergeAttempts(existing.pushAttempts, input.pushAttempts),
+        metadata: {
+          ...(existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {}),
+          ...(input.metadata && typeof input.metadata === "object" ? input.metadata : {}),
+        },
         updatedAt: nowIso(),
       });
 
@@ -9867,6 +9892,7 @@ function createRepositories(options) {
               push_failed_at = $11::timestamptz,
               push_error_message = $12,
               push_attempts = $13::jsonb,
+              metadata = $14::jsonb,
               updated_at = now()
             WHERE id = $1
             RETURNING *
@@ -9885,6 +9911,7 @@ function createRepositories(options) {
             optionalTimestamp(next.pushFailedAt),
             optional(next.pushErrorMessage),
             JSON.stringify(next.pushAttempts),
+            JSON.stringify(next.metadata),
           ],
         );
         return updated.rows[0] ? rowToNotification(updated.rows[0]) : null;

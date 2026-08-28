@@ -77,6 +77,8 @@ function mapBackendNotification(notification: SmartHealthNotification): Notifica
     emailStatus: notification.emailStatus,
     organizationId: notification.organizationId,
     userId: notification.userId,
+    recipientName: notification.recipientName,
+    recipientEmail: notification.recipientEmail,
     deliveryStatus: notification.deliveryStatus,
     pushStatus: notification.pushStatus,
     sentAt: notification.sentAt,
@@ -394,6 +396,12 @@ export function Notifications() {
                 >
                   {note.message}
                 </p>
+                {(note.recipientName || note.recipientEmail) && (
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    Người nhận: {note.recipientName || note.userId}
+                    {note.recipientEmail ? ` · ${note.recipientEmail}` : ""}
+                  </p>
+                )}
                 <div className="mt-2 flex flex-wrap gap-1">
                   <button
                     onClick={(e) => {

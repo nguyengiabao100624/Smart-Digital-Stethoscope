@@ -8,6 +8,13 @@ export type NotificationDeliveryStatus =
   | "no_recipient"
   | "no_devices"
   | "sent"
+  | "delivered"
+  | "deferred"
+  | "soft_bounce"
+  | "hard_bounce"
+  | "blocked"
+  | "invalid"
+  | "spam"
   | "partial"
   | "failed";
 
@@ -39,7 +46,15 @@ export type NotificationOptions = {
   audiences: {
     workspaces: Array<{ id: string; name: string; workspaceType: string }>;
     roles: string[];
-    users: Array<{ id: string; workspaceId: string; name: string; email?: string; role: string }>;
+    users: Array<{
+      id: string;
+      workspaceId: string;
+      name: string;
+      email?: string;
+      emailEligible: boolean;
+      emailReasonCode?: string;
+      role: string;
+    }>;
   };
   channels: Record<NotificationChannel, NotificationChannelAvailability>;
 };
@@ -54,7 +69,7 @@ export type NotificationCampaignReceipt = {
     recipientCount: number;
     notificationIds: string[];
     channelSummary: Record<string, Record<string, number>>;
-    status: "ready" | "partial" | "unavailable";
+    status: "ready" | "pending" | "delivered" | "partial" | "failed" | "unavailable";
     createdAt: string;
   };
   notifications: Array<{
@@ -81,10 +96,24 @@ const DELIVERY_STATUSES = new Set<NotificationDeliveryStatus>([
   "no_recipient",
   "no_devices",
   "sent",
+  "delivered",
+  "deferred",
+  "soft_bounce",
+  "hard_bounce",
+  "blocked",
+  "invalid",
+  "spam",
   "partial",
   "failed",
 ]);
-const CAMPAIGN_STATUSES = new Set(["ready", "partial", "unavailable"]);
+const CAMPAIGN_STATUSES = new Set([
+  "ready",
+  "pending",
+  "delivered",
+  "partial",
+  "failed",
+  "unavailable",
+]);
 
 function recordOf(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -179,7 +208,11 @@ export function parseNotificationOptions(value: unknown): NotificationOptions {
       workspaceId: requiredString(record.workspaceId, "workspaceId của user"),
       name: requiredString(record.name, "tên user"),
       role: requiredString(record.role, "role của user"),
+      emailEligible: requiredBoolean(record.emailEligible, "emailEligible của user"),
       ...(typeof record.email === "string" ? { email: record.email.trim() } : {}),
+      ...(typeof record.emailReasonCode === "string" && record.emailReasonCode.trim()
+        ? { emailReasonCode: record.emailReasonCode.trim() }
+        : {}),
     };
   });
   return {
@@ -318,7 +351,7 @@ export function parseNotificationCampaignReceipt(
       recipientCount,
       notificationIds,
       channelSummary,
-      status: campaignStatus as "ready" | "partial" | "unavailable",
+      status: campaignStatus as NotificationCampaignReceipt["campaign"]["status"],
       createdAt,
     },
     notifications,

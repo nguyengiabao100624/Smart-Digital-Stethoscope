@@ -33,6 +33,8 @@ export interface NotificationItem {
   emailStatus?: string;
   organizationId?: string;
   userId?: string;
+  recipientName?: string;
+  recipientEmail?: string;
   deliveryStatus?: string;
   pushStatus?: string;
   sentAt?: string;
@@ -90,6 +92,13 @@ const DELIVERY_STATUS_LABELS: Record<string, string> = {
   no_recipient: "Không có địa chỉ nhận",
   no_devices: "Không có thiết bị nhận",
   sent: "Provider đã nhận",
+  delivered: "Đã giao",
+  deferred: "Provider đang thử lại",
+  soft_bounce: "Bị trả lại tạm thời",
+  hard_bounce: "Bị trả lại",
+  blocked: "Bị provider chặn",
+  invalid: "Địa chỉ email không hợp lệ",
+  spam: "Bị báo spam",
   partial: "Gửi một phần",
   failed: "Gửi thất bại",
 };
@@ -282,6 +291,14 @@ function buildNotificationDetailRows(notification: NotificationItem): DetailRow[
       label: "Mã workspace",
       value: notification.organizationId,
       icon: Building2,
+    });
+  }
+  if (notification.recipientName || notification.recipientEmail) {
+    rows.push({
+      key: "recipient",
+      label: "Người nhận",
+      value: [notification.recipientName, notification.recipientEmail].filter(Boolean).join(" · "),
+      icon: UserCheck,
     });
   }
   if (notification.userId) {

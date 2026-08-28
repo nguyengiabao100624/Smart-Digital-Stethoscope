@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, Building2, Mail, RefreshCw, Send, Smartphone, Users } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "./design-system";
@@ -39,9 +39,53 @@ function availabilityLabel(status: string) {
       return "Đã tắt";
     case "unavailable":
       return "Chưa cấu hình";
+    case "sent":
+      return "Provider đã nhận";
+    case "delivered":
+      return "Đã giao";
+    case "deferred":
+      return "Đang thử lại";
+    case "soft_bounce":
+      return "Bị trả lại tạm thời";
+    case "hard_bounce":
+      return "Bị trả lại";
+    case "blocked":
+      return "Bị chặn";
+    case "invalid":
+      return "Email không hợp lệ";
+    case "spam":
+      return "Bị báo spam";
+    case "no_recipient":
+      return "Không có email hợp lệ";
+    case "no_devices":
+      return "Không có thiết bị nhận";
+    case "skipped":
+      return "Đã bỏ qua";
+    case "failed":
+      return "Thất bại";
     default:
       return status;
   }
+}
+
+function campaignStatusPresentation(status: NotificationCampaignReceipt["campaign"]["status"]) {
+  switch (status) {
+    case "delivered":
+      return { label: "Đã giao", tone: "success" as const };
+    case "pending":
+    case "ready":
+      return { label: "Đang gửi", tone: "info" as const };
+    case "partial":
+      return { label: "Một phần", tone: "warning" as const };
+    case "failed":
+      return { label: "Thất bại", tone: "error" as const };
+    default:
+      return { label: "Kênh chưa sẵn sàng", tone: "warning" as const };
+  }
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function countSummary(summary: Record<string, number> | undefined) {
@@ -74,6 +118,17 @@ export function NotificationComposer({ onCreated }: Props) {
   const [isCreating, setIsCreating] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [lastReceipt, setLastReceipt] = useState<NotificationCampaignReceipt | null>(null);
+  const [isRefreshingReceipt, setIsRefreshingReceipt] = useState(false);
+  const submitLockRef = useRef(false);
+  const mountedRef = useRef(true);
+  const lastIntentRef = useRef<NotificationCampaignIntent | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -99,7 +154,9 @@ export function NotificationComposer({ onCreated }: Props) {
         setWorkspaceId((current) =>
           parsed.audiences.workspaces.some((workspace) => workspace.id === current)
             ? current
-            : parsed.audiences.workspaces[0]?.id || "",
+            : parsed.audiences.workspaces.length === 1
+              ? parsed.audiences.workspaces[0].id
+              : "",
         );
         setRole((current) =>
           parsed.audiences.roles.includes(current) ? current : parsed.audiences.roles[0] || "",
@@ -129,6 +186,16 @@ export function NotificationComposer({ onCreated }: Props) {
     if (audienceType === "role") return workspaceUsers.filter((user) => user.role === role).length;
     return workspaceUsers.length;
   }, [audienceType, role, selectedUserIds.length, workspaceUsers]);
+  const audienceUsers = useMemo(() => {
+    if (audienceType === "users") {
+      const selected = new Set(selectedUserIds);
+      return workspaceUsers.filter((user) => selected.has(user.id));
+    }
+    if (audienceType === "role") return workspaceUsers.filter((user) => user.role === role);
+    return workspaceUsers;
+  }, [audienceType, role, selectedUserIds, workspaceUsers]);
+  const emailRecipientCount = audienceUsers.filter((user) => user.emailEligible).length;
+  const blockedEmailRecipientCount = audienceUsers.length - emailRecipientCount;
 
   useEffect(() => {
     setSelectedUserIds((current) =>
@@ -154,8 +221,66 @@ export function NotificationComposer({ onCreated }: Props) {
     );
   };
 
+  const refreshCampaignReceipt = async (campaignId: string, intent: NotificationCampaignIntent) => {
+    const response = await smartHealthApi.refreshNotificationCampaign(campaignId);
+    const receipt = parseNotificationCampaignReceipt(response, intent);
+    if (mountedRef.current) {
+      setLastReceipt(receipt);
+      onCreated(response.notifications, receipt);
+    }
+    return receipt;
+  };
+
+  const pollCampaignReceipt = async (campaignId: string, intent: NotificationCampaignIntent) => {
+    if (mountedRef.current) setIsRefreshingReceipt(true);
+    try {
+      for (const waitMs of [1200, 2500, 5000, 8000]) {
+        await delay(waitMs);
+        if (!mountedRef.current) return;
+        const receipt = await refreshCampaignReceipt(campaignId, intent);
+        if (["delivered", "failed", "unavailable"].includes(receipt.campaign.status)) break;
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setSubmitError(
+          toVietnameseErrorMessage(
+            error,
+            "Đã tạo chiến dịch nhưng chưa thể đồng bộ trạng thái giao email. Bạn có thể bấm Cập nhật trạng thái.",
+          ),
+        );
+      }
+    } finally {
+      if (mountedRef.current) setIsRefreshingReceipt(false);
+    }
+  };
+
+  const refreshLastReceipt = async () => {
+    const intent = lastIntentRef.current;
+    if (!lastReceipt || !intent || isRefreshingReceipt) return;
+    setIsRefreshingReceipt(true);
+    setSubmitError("");
+    try {
+      const receipt = await refreshCampaignReceipt(lastReceipt.campaign.id, intent);
+      if (receipt.campaign.status === "delivered")
+        toast.success("Email trong chiến dịch đã được giao.");
+      else if (["failed", "unavailable"].includes(receipt.campaign.status)) {
+        toast.error("Chiến dịch có kênh gửi thất bại. Xem trạng thái chi tiết bên dưới.");
+      }
+    } catch (error) {
+      const errorMessage = toVietnameseErrorMessage(
+        error,
+        "Không thể cập nhật trạng thái giao email từ provider.",
+      );
+      setSubmitError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsRefreshingReceipt(false);
+    }
+  };
+
   const createCampaign = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submitLockRef.current) return;
     setSubmitError("");
     if (!options || !workspaceId || !title.trim() || !message.trim()) {
       setSubmitError("Vui lòng nhập đủ workspace, tiêu đề và nội dung.");
@@ -163,6 +288,10 @@ export function NotificationComposer({ onCreated }: Props) {
     }
     if (recipientCount < 1) {
       setSubmitError("Audience hiện không có người nhận đang hoạt động.");
+      return;
+    }
+    if (channels.length === 1 && channels[0] === "email" && emailRecipientCount < 1) {
+      setSubmitError("Audience này không có địa chỉ email thật có thể giao.");
       return;
     }
     const audience = {
@@ -180,6 +309,8 @@ export function NotificationComposer({ onCreated }: Props) {
     };
     const nextAttempt = resolveNotificationCampaignAttempt(attempt, intent);
     setAttempt(nextAttempt);
+    lastIntentRef.current = intent;
+    submitLockRef.current = true;
     setIsCreating(true);
     try {
       const response = await smartHealthApi.createNotification(intent, nextAttempt.idempotencyKey);
@@ -189,11 +320,12 @@ export function NotificationComposer({ onCreated }: Props) {
       setAttempt(null);
       if (receipt.campaign.status === "ready") {
         toast.success(
-          `Backend đã tạo chiến dịch cho ${receipt.campaign.recipientCount} người nhận.`,
+          `Đã tạo chiến dịch cho ${receipt.campaign.recipientCount} người nhận và đang gửi.`,
         );
       } else {
         toast.warning("Chiến dịch đã được ghi nhận; có kênh chưa sẵn sàng hoặc chưa có provider.");
       }
+      void pollCampaignReceipt(receipt.campaign.id, intent);
     } catch (error) {
       const errorMessage = toVietnameseErrorMessage(
         error,
@@ -202,6 +334,7 @@ export function NotificationComposer({ onCreated }: Props) {
       setSubmitError(errorMessage);
       toast.error(errorMessage);
     } finally {
+      submitLockRef.current = false;
       setIsCreating(false);
     }
   };
@@ -269,6 +402,9 @@ export function NotificationComposer({ onCreated }: Props) {
             onChange={(event) => setWorkspaceId(event.target.value)}
             className="min-h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
           >
+            <option value="" disabled>
+              Chọn workspace cần gửi
+            </option>
             {options.audiences.workspaces.map((workspace) => (
               <option key={workspace.id} value={workspace.id}>
                 {workspace.name}
@@ -341,6 +477,44 @@ export function NotificationComposer({ onCreated }: Props) {
             )}
           </div>
         </fieldset>
+      )}
+
+      {workspaceId && audienceUsers.length > 0 && (
+        <section
+          aria-label="Xem trước người nhận"
+          className="mt-4 rounded-lg border border-border bg-muted/20 p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Người nhận của chiến dịch</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {audienceUsers.length} tài khoản · {emailRecipientCount} email có thể giao
+                {blockedEmailRecipientCount > 0
+                  ? ` · ${blockedEmailRecipientCount} email thử/không hợp lệ sẽ không gửi`
+                  : ""}
+              </p>
+            </div>
+            {blockedEmailRecipientCount > 0 && channels.includes("email") && (
+              <StatusBadge label={`${blockedEmailRecipientCount} email bị loại`} tone="warning" />
+            )}
+          </div>
+          <ul className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+            {audienceUsers.slice(0, 6).map((user) => (
+              <li key={user.id} className="min-w-0 rounded-md bg-background px-3 py-2">
+                <span className="block truncate font-medium text-foreground">{user.name}</span>
+                <span className="block truncate text-muted-foreground">
+                  {user.email || "Chưa có email"}
+                  {channels.includes("email") && !user.emailEligible ? " · Không gửi email" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {audienceUsers.length > 6 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Và {audienceUsers.length - 6} người nhận khác.
+            </p>
+          )}
+        </section>
       )}
 
       <fieldset className="mt-4">
@@ -444,14 +618,8 @@ export function NotificationComposer({ onCreated }: Props) {
               </p>
             </div>
             <StatusBadge
-              label={
-                lastReceipt.campaign.status === "ready"
-                  ? "Đã xếp hàng"
-                  : lastReceipt.campaign.status === "partial"
-                    ? "Một phần"
-                    : "Kênh chưa sẵn sàng"
-              }
-              tone={lastReceipt.campaign.status === "ready" ? "success" : "warning"}
+              label={campaignStatusPresentation(lastReceipt.campaign.status).label}
+              tone={campaignStatusPresentation(lastReceipt.campaign.status).tone}
             />
           </div>
           <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-3">
@@ -459,6 +627,15 @@ export function NotificationComposer({ onCreated }: Props) {
             <span>Email: {countSummary(lastReceipt.campaign.channelSummary.email)}</span>
             <span>Push: {countSummary(lastReceipt.campaign.channelSummary.push)}</span>
           </div>
+          <button
+            type="button"
+            onClick={refreshLastReceipt}
+            disabled={isRefreshingReceipt}
+            className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-semibold text-foreground hover:bg-muted disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshingReceipt ? "animate-spin" : ""}`} />
+            {isRefreshingReceipt ? "Đang đồng bộ trạng thái..." : "Cập nhật trạng thái giao"}
+          </button>
         </div>
       )}
 
@@ -475,11 +652,16 @@ export function NotificationComposer({ onCreated }: Props) {
         <button
           data-testid="notification-campaign-submit"
           type="submit"
-          disabled={isCreating || !isOnline || recipientCount < 1}
+          disabled={
+            isCreating ||
+            !isOnline ||
+            recipientCount < 1 ||
+            (channels.length === 1 && channels[0] === "email" && emailRecipientCount < 1)
+          }
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Send className="h-4 w-4" />
-          {isCreating ? "Đang tạo chiến dịch..." : "Tạo chiến dịch"}
+          {isCreating ? "Đang tạo chiến dịch..." : `Tạo chiến dịch (${recipientCount} người nhận)`}
         </button>
       </div>
     </form>

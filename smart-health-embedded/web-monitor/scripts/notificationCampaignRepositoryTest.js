@@ -153,6 +153,12 @@ function createSqlFixture() {
           rows: notification ? [structuredClone(notification)] : [],
         };
       }
+      if (/SELECT \* FROM notifications WHERE campaign_id = \$1/i.test(normalized)) {
+        const rows = Array.from(state.notifications.values()).filter(
+          (notification) => notification.campaign_id === params[0],
+        );
+        return { rowCount: rows.length, rows: structuredClone(rows) };
+      }
       if (/UPDATE notifications SET delivery_status/i.test(normalized)) {
         const notification = state.notifications.get(params[0]);
         if (!notification) return { rowCount: 0, rows: [] };
@@ -169,6 +175,7 @@ function createSqlFixture() {
           push_failed_at: params[10],
           push_error_message: params[11],
           push_attempts: JSON.parse(params[12]),
+          metadata: JSON.parse(params[13]),
           updated_at: "2026-07-23T08:02:00.000Z",
           emailStatus: params[6],
           pushStatus: params[8],
@@ -233,7 +240,10 @@ function createSqlFixture() {
     },
     release() {},
   };
-  const pool = { connect: async () => client };
+  const pool = {
+    connect: async () => client,
+    query: (...args) => client.query(...args),
+  };
   const repositories = createRepositories({
     getDb: () => runtime.db,
     saveDb: async () => {},
@@ -459,6 +469,7 @@ test("PostgreSQL delivery status update preserves immutable notification binding
     pushStatus: "partial",
     pushErrorMessage: "one device remains unavailable",
     pushAttempts: [{ id: "attempt_sql", status: "sent" }],
+    metadata: { emailProvider: "brevo", emailMessageId: "message_sql" },
   });
 
   assert.equal(updated.title, notification.title);
@@ -466,7 +477,11 @@ test("PostgreSQL delivery status update preserves immutable notification binding
   assert.equal(updated.organizationId, "org_alpha");
   assert.equal(updated.pushStatus, "partial");
   assert.equal(updated.pushAttempts.length, 1);
+  assert.equal(updated.metadata.emailMessageId, "message_sql");
   assert.equal(state.notifications.get(notification.id).title, notification.title);
+  const campaignRows = await repositories.notifications.listCampaign(campaign.campaign.id);
+  assert.equal(campaignRows.length, 1);
+  assert.equal(campaignRows[0].metadata.emailProvider, "brevo");
   await assert.rejects(
     repositories.notifications.updateDeliveryStatus({
       ...updated,

@@ -1,6 +1,28 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
+
+## 2026-08-30 live Firebase deployment and Render recovery check
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run deploy:firebase:admin
+
+cd D:\Study\KLTN\smart-health-web
+bun run build:firebase
+npx firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+
+curl.exe -sS -L -o NUL -w "%{http_code}" https://shcare-admin.web.app/devices
+curl.exe -sS -L -o NUL -w "%{http_code}" https://shcare.web.app/portal/devices/claim
+curl.exe -sS -L https://smart-health-api-r5is.onrender.com/api/health
+```
+
+Current frontend releases are Admin `d224ae4ce12e5c4c` / `1788099682710000`
+and Web `313f5ceb7b176f87` / `1788099819212000`. If the final command returns
+Render's HTML `Service Suspended` page, check the Render service status first.
+`suspenders: ["billing"]` is an account/provider hold and cannot be repaired by
+another Git commit or deploy; the workspace owner must settle/resolve billing,
+then rerun `npm.cmd run smoke:public-deployment` from `smart-health-embedded/web-monitor`.
 
 ## 2026-08-29 consistency repair verification
 

@@ -1,6 +1,15 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
+
+## 2026-08-30 live deployment gate
+
+- [x] Build and deploy current Platform Admin to Firebase live (`d224ae4ce12e5c4c`, release `1788099682710000`).
+- [x] Build and deploy current Shcare Web/Portal to Firebase live (`313f5ceb7b176f87`, release `1788099819212000`).
+- [x] Verify six representative direct routes return HTTP 200 and deployed bundles target `smart-health-api-r5is.onrender.com`.
+- [x] Verify Render latest backend deploy is `829bc0f114cd` and service configuration still targets `main`, the canonical monorepo root, and `/api/health`.
+- [ ] Clear the Render workspace billing suspension (`suspenders: ["billing"]`) and verify `/api/health` returns JSON again. This requires the Render workspace owner's billing action; a code redeploy cannot remove a provider billing hold.
+- [ ] After restoration, rerun public deployment, authenticated Admin/Portal mutations, doctor workspace repair, notification/Brevo, device WSS/telemetry and HIL gates before G4 PASS.
 
 ## 2026-08-29 cross-surface consistency slice
 

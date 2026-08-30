@@ -1,5 +1,13 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-08-30 live deployment checkpoint
+
+- Platform Admin is current on Firebase live: version `d224ae4ce12e5c4c`, release `1788099682710000`.
+- Shcare Web/Workspace Portal is current on Firebase live: version `313f5ceb7b176f87`, release `1788099819212000`.
+- Six representative direct routes return HTTP 200 and live bundles use `https://smart-health-api-r5is.onrender.com/api`.
+- Render deploy `829bc0f114cd` is still marked live, but service `srv-d978ur1kh4rs73e22fmg` is suspended by the provider with `suspenders: ["billing"]`. Health currently returns non-JSON `Service Suspended`, so no authenticated/data/device production PASS may be claimed.
+- Next action is not another code deploy: clear the Render workspace billing hold, confirm `/api/health` JSON, then rerun public/authenticated smoke and continue the production doctor/device gates. G4 remains partial.
+
 ## 2026-08-29 current source checkpoint
 
 - Source includes audited doctor workspace correction/profile APIs, WSS

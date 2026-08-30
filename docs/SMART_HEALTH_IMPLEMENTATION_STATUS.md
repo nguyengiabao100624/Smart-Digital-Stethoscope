@@ -1,6 +1,14 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
+
+## 2026-08-30 production deployment status
+
+- **LIVE — Platform Admin:** Firebase Hosting `d224ae4ce12e5c4c`, release `1788099682710000`, at `https://shcare-admin.web.app`.
+- **LIVE — Shcare Web/Portal:** Firebase Hosting `313f5ceb7b176f87`, release `1788099819212000`, at `https://shcare.web.app`.
+- Admin `/`, `/devices`, `/doctor-approval` and Web `/`, `/login`, `/portal/devices/claim` each return HTTP 200. Live asset names match the freshly built artifacts and both surfaces use the canonical `smart-health-api-r5is` backend.
+- **BLOCKED BY PROVIDER — backend runtime:** Render service `smart-health-api` is suspended by `billing` even though deploy `829bc0f114cd` remains marked `live`. The provider returns HTML `Service Suspended` instead of health JSON, so authenticated/data/WSS smoke cannot pass until the Render billing hold is removed.
+- This is not a completed G4 claim. Source and both frontend lanes are current; the backend lane is deployed but unavailable at the provider/runtime layer.
 
 ## 2026-08-29 account, telemetry, claim and avatar consistency repair
 

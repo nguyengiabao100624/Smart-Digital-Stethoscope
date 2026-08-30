@@ -1,6 +1,14 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
+
+## 2026-08-30 Firebase live deployment and Render billing suspension
+
+- The latest Platform Admin bundle is live at `https://shcare-admin.web.app`, Firebase Hosting version `d224ae4ce12e5c4c`, release `1788099682710000`.
+- The latest Shcare Web/Workspace Portal bundle is live at `https://shcare.web.app`, Firebase Hosting version `313f5ceb7b176f87`, release `1788099819212000`.
+- Direct Admin and Portal routes return HTTP 200 and the deployed bundles point to `https://smart-health-api-r5is.onrender.com/api`; the Portal bundle contains no `localhost:3000` API target.
+- Render still lists backend deploy `829bc0f114cd` as the latest live deploy, but service `srv-d978ur1kh4rs73e22fmg` is provider-suspended with `suspenders: ["billing"]`. `/api/health` therefore returns Render's non-JSON `Service Suspended` page and the public deployment smoke correctly fails.
+- G4 remains partial. Do not diagnose frontend source/config while Render reports this billing suspension; the Render workspace owner must clear the billing hold before authenticated/data/device production verification can resume.
 
 ## 2026-08-29 current repair slice
 

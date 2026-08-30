@@ -5,8 +5,15 @@ import process from "node:process";
 const rootDir = process.cwd();
 const envFiles = [".env", ".env.local", ".env.production", ".env.production.local"];
 const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "10.0.2.2"]);
-const retiredBaseUrls = new Set(["https://smart-health-api-xj0a.onrender.com"]);
-const retiredApiBaseUrls = new Set(["https://smart-health-api-xj0a.onrender.com/api"]);
+const activeBaseUrl = "https://shcare-api-prod.onrender.com";
+const retiredBaseUrls = new Set([
+  "https://smart-health-api-xj0a.onrender.com",
+  "https://smart-health-api-r5is.onrender.com",
+]);
+const retiredApiBaseUrls = new Set([
+  "https://smart-health-api-xj0a.onrender.com/api",
+  "https://smart-health-api-r5is.onrender.com/api",
+]);
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -77,7 +84,7 @@ function rejectRetiredBackendUrl(key, value) {
   const retiredUrls = key.endsWith("_API_BASE_URL") ? retiredApiBaseUrls : retiredBaseUrls;
   if (retiredUrls.has(value)) {
     throw new Error(
-      `${key} points to a retired Smart Health backend. Use https://smart-health-api-r5is.onrender.com instead.`,
+      `${key} points to a retired Smart Health backend. Use ${activeBaseUrl} instead.`,
     );
   }
 }

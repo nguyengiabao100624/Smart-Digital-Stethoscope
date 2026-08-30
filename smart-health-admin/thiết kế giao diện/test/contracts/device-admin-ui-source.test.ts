@@ -16,6 +16,10 @@ const rotateDeviceSecretPath = new URL(
   import.meta.url,
 );
 const apiPath = new URL("../../src/lib/smart-health-api.ts", import.meta.url);
+const deviceProvisioningPath = new URL(
+  "../../src/lib/device-provisioning.ts",
+  import.meta.url,
+);
 const adminMutationSmokePath = new URL("../../scripts/adminMutationSmokeTest.mjs", import.meta.url);
 
 test("keeps device history by removing hard-delete API and UI actions", async () => {
@@ -208,9 +212,10 @@ test("keeps the one-time claim code inside the dialog instead of a persistent to
 });
 
 test("renders one complete canonical provisioning artifact and clears stale artifacts", async () => {
-  const [addDeviceSource, apiSource] = await Promise.all([
+  const [addDeviceSource, apiSource, provisioningSource] = await Promise.all([
     readFile(addDevicePath, "utf8"),
     readFile(apiPath, "utf8"),
+    readFile(deviceProvisioningPath, "utf8"),
   ]);
 
   assert.match(apiSource, /SmartHealthDeviceProvisionResponse/);
@@ -220,7 +225,14 @@ test("renders one complete canonical provisioning artifact and clears stale arti
   assert.match(addDeviceSource, /serializeProvisionQrPayload\(provisionArtifact\)/);
   assert.match(addDeviceSource, /provisionArtifact\.deviceId/);
   assert.match(addDeviceSource, /provisionArtifact\.expiresAt/);
-  assert.match(addDeviceSource, /provisionArtifact\.qrPayload\.setupAp\.ssid/);
+  assert.match(provisioningSource, /setupAp:\s*\{/);
+  assert.match(provisioningSource, /ssid:\s*string/);
+  assert.match(provisioningSource, /proofOfPossession:\s*string/);
+  assert.doesNotMatch(
+    addDeviceSource,
+    /provisionArtifact\.qrPayload\.setupAp\.(ssid|proofOfPossession)/,
+    "factory setup credentials must stay inside the serialized QR instead of being rendered as text",
+  );
   assert.match(addDeviceSource, /createProvisionArtifactFilename\(provisionArtifact\)/);
   assert.match(addDeviceSource, /const updateFormData[\s\S]{0,240}setProvisionArtifact\(null\)/);
   assert.match(

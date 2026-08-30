@@ -18,7 +18,7 @@ For fast navigation, start with `docs/SMART_HEALTH_PROJECT_INDEX.md`, then the f
 | --- | --- | --- |
 | Shcare Workspace Portal | <https://shcare.web.app> | Doctor, clinic, and facility workspace portal |
 | Platform Admin Console | <https://shcare-admin.web.app> | Platform/system administration |
-| Backend API | <https://smart-health-api-r5is.onrender.com/api> | Render-hosted Smart Health API |
+| Backend API | <https://shcare-api-prod.onrender.com/api> | Render-hosted Smart Health API |
 | Firebase project | `smart-health-stethoscope` | Firebase Auth and Hosting targets |
 
 ## Current Reality
@@ -124,7 +124,7 @@ Production Firebase build requires frontend env vars such as:
 
 ```text
 VITE_AUTH_MODE=production
-VITE_SMART_HEALTH_API_BASE_URL=https://smart-health-api-r5is.onrender.com/api
+VITE_SMART_HEALTH_API_BASE_URL=https://shcare-api-prod.onrender.com/api
 VITE_PUBLIC_SITE_URL=https://shcare.web.app
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=smart-health-stethoscope.firebaseapp.com

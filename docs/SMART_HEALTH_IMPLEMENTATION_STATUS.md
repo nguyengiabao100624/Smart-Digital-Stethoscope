@@ -1,6 +1,14 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
+
+## 2026-08-31 replacement backend synchronization
+
+- **FIXED/LIVE — Admin login connectivity:** Firebase Admin version `9eba8f080728c759`, release `1788112503921000`, targets `https://shcare-api-prod.onrender.com/api`. Live asset inspection confirms zero `r5is`/`xj0a` backend references.
+- **FIXED/LIVE — Web/Portal parity:** Firebase Web version `ab98cdfee8facb87`, release `1788112579000000`, targets the same API and contains no retired backend reference.
+- **PASS — runtime boundary:** replacement Render health returns HTTP 200; CORS echoes `https://shcare-admin.web.app` and `https://shcare.web.app` exactly and does not echo an untrusted origin.
+- **PASS — source gates:** backend check/smoke plus focused security/Firebase/CORS `26/26`; Admin lint/build/contracts `196/196`; Web lint/build/auth `390/390` and contracts `139/139`.
+- **SECURITY FIX READY FOR RENDER:** production diagnostics now require Platform Admin authority and force-seed is disabled in production. This backend source change must be promoted by Git/Render before the live diagnostic endpoint can be counted closed.
 
 ## 2026-08-30 Render egress hot-path repair
 

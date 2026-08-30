@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const rootDir = path.join(__dirname, "..");
-const defaultBackendUrl = "https://smart-health-api-r5is.onrender.com";
+const defaultBackendUrl = "https://shcare-api-prod.onrender.com";
 
 function readEnvFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) {

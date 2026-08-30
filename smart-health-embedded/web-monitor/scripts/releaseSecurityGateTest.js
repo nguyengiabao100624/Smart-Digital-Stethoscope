@@ -188,6 +188,19 @@ test("public JSON routes reject oversized bodies while normal contact remains av
   });
 });
 
+test("diagnostic data and force-seed routes require an authenticated platform administrator", async () => {
+  await withDemoServer({}, async ({ port }) => {
+    const summary = await fetch(`http://127.0.0.1:${port}/api/v1/health/data-summary`);
+    assert.ok([401, 403].includes(summary.status));
+
+    const forceSeed = await fetch(`http://127.0.0.1:${port}/api/v1/health/force-seed`, {
+      method: "POST",
+      headers: { "X-Seed-Key": "test-only-invalid" },
+    });
+    assert.ok([401, 403].includes(forceSeed.status));
+  });
+});
+
 test("rate-limit identity ignores spoofed forwarding headers unless proxy hops are explicit", () => {
   const request = {
     headers: { "x-forwarded-for": "198.51.100.10, 203.0.113.20" },

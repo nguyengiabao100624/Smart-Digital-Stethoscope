@@ -61,7 +61,7 @@ val smartHealthBaseUrl = configuredSmartHealthBaseUrl
         when {
             localDemoDebugRequested -> "http://127.0.0.1:3765"
             releaseBuildRequested -> ""
-            else -> "https://smart-health-api-r5is.onrender.com"
+            else -> "https://shcare-api-prod.onrender.com"
         },
     )
     .get()

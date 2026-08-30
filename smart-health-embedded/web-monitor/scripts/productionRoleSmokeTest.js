@@ -148,7 +148,7 @@ async function main() {
     process.env.PUBLIC_BACKEND_URL ||
     process.env.SMART_HEALTH_PUBLIC_URL ||
     webEnv.VITE_SMART_HEALTH_BASE_URL ||
-    "https://smart-health-api-r5is.onrender.com"
+    "https://shcare-api-prod.onrender.com"
   ).replace(/\/+$/, "");
   const organizationId = process.env.SMOKE_ORGANIZATION_ID || "org_default_clinic";
 

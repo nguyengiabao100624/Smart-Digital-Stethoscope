@@ -1,6 +1,17 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
+
+## 2026-08-31 replacement backend/login recovery
+
+- [x] Confirm `https://shcare-api-prod.onrender.com/api/health` returns HTTP 200 after the Supabase credential reset and Render deploy.
+- [x] Verify exact CORS for Admin and Web, with no reflected untrusted origin.
+- [x] Replace retired Render URLs in Admin/Web production defaults, smoke tooling, Android debug default, CI/deploy workflows and READMEs; keep validators that reject both retired hosts.
+- [x] Deploy Admin version `9eba8f080728c759` / release `1788112503921000` and Web version `ab98cdfee8facb87` / release `1788112579000000`; inspect both live bundles for the new host and zero retired-host matches.
+- [x] Repair the stale Admin provisioning contract assertion and pass Admin contracts `196/196`; pass backend and Web focused gates.
+- [x] Secure production diagnostic/seed source with authenticated Platform Admin capability, production 404 for force-seed and an environment-only optional development seed key.
+- [ ] Push the backend security/source synchronization commit, wait for Render to serve that release, then verify unauthenticated `data-summary` and `force-seed` return 401/403/404.
+- [ ] Run one authenticated Admin login and `/api/me` authority check against the replacement backend. Do not report the cached pre-deploy login tab as current evidence.
 
 ## 2026-08-30 Render bandwidth incident
 

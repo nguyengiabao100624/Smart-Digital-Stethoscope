@@ -1,6 +1,15 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
+
+## 2026-08-31 Render replacement and Admin login repair
+
+- The active backend is now `https://shcare-api-prod.onrender.com` (`/api` API base). Public health is HTTP 200 and exact-origin CORS allows only the two Firebase surfaces.
+- The Admin login failure was frontend configuration drift: the deployed bundle still contained the retired `smart-health-api-r5is` URL. Platform Admin was rebuilt and deployed as Firebase version `9eba8f080728c759`, release `1788112503921000`; the live bundle contains the new backend and neither retired Render URL.
+- Shcare Web/Portal was synchronized and deployed as Firebase version `ab98cdfee8facb87`, release `1788112579000000`; its live bundle also contains only the replacement backend.
+- Source defaults, release smoke tools, Android debug default, CI/deploy workflows and README examples now use the replacement backend. Validators explicitly reject both retired Render URLs.
+- Security review found `/api/v1/health/data-summary` and `/api/v1/health/force-seed` were exposed as public diagnostics. Source now requires authenticated `platform.settings.manage`; production force-seed is disabled and no built-in seed key remains. Regression, backend check/smoke/security, Admin `196/196`, Web auth `390/390`, Web contracts `139/139`, lint and production builds pass.
+- The frontend login connectivity defect is live-fixed. A full authenticated login/result check still requires the existing Firebase account session; do not confuse an old cached login tab with the newly deployed no-cache bundle.
 
 ## 2026-08-30 Render outbound-bandwidth root cause and repair
 

@@ -23610,6 +23610,12 @@ async function handleApi(req, res, url) {
   }
 
   if (method === "GET" && segments[1] === "health" && segments[2] === "data-summary") {
+    const user = requireUser(req);
+    requireAnyCapability(
+      user,
+      ["platform.settings.manage"],
+      "Không có quyền xem chẩn đoán dữ liệu production",
+    );
     const deviceIds = db.devices.map((d) => d.id);
     sendJson(res, 200, {
       ok: true,
@@ -23628,8 +23634,18 @@ async function handleApi(req, res, url) {
   }
 
   if (method === "POST" && segments[1] === "health" && segments[2] === "force-seed") {
+    const user = requireUser(req);
+    requireAnyCapability(
+      user,
+      ["platform.settings.manage"],
+      "Không có quyền nạp dữ liệu khởi tạo",
+    );
+    if (AUTH_MODE === "production" || process.env.NODE_ENV === "production") {
+      throw httpError(404, "Not found");
+    }
     const seedKey = req.headers["x-seed-key"] || "";
-    if (seedKey !== "shcare-seed-2026") {
+    const configuredSeedKey = readString(process.env.FORCE_SEED_KEY, 240);
+    if (!configuredSeedKey || seedKey !== configuredSeedKey) {
       throw httpError(403, "Invalid seed key");
     }
     const seedFile = path.join(__dirname, "db", "seeds", "seed-database.json");

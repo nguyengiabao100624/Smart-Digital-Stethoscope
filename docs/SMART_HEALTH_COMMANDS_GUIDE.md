@@ -1,6 +1,40 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
+
+## 2026-08-31 replacement Render backend and login verification
+
+Canonical production endpoints:
+
+```text
+Backend host: https://shcare-api-prod.onrender.com
+API base:     https://shcare-api-prod.onrender.com/api
+Admin:        https://shcare-admin.web.app
+Web/Portal:   https://shcare.web.app
+```
+
+Build/deploy and verify without printing credentials:
+
+```powershell
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm.cmd run lint
+npm.cmd run test:contracts
+npm.cmd run build:firebase:admin
+npx.cmd firebase-tools@latest deploy --only hosting:admin --project smart-health-stethoscope --non-interactive
+
+cd D:\Study\KLTN\smart-health-web
+npm.cmd run lint
+npm.cmd run test:auth
+npm.cmd run test:contracts
+npm.cmd run build:firebase
+npx.cmd firebase-tools@latest deploy --only hosting:webapp --project smart-health-stethoscope --non-interactive
+
+curl.exe -sS https://shcare-api-prod.onrender.com/api/health
+curl.exe -sS -I -H "Origin: https://shcare-admin.web.app" https://shcare-api-prod.onrender.com/api/health
+curl.exe -sS -I -H "Origin: https://shcare.web.app" https://shcare-api-prod.onrender.com/api/health
+```
+
+The 2026-08-31 live releases are Admin `9eba8f080728c759` / `1788112503921000` and Web `ab98cdfee8facb87` / `1788112579000000`. If an already-open login tab still shows the old connectivity banner, hard-refresh it once so the browser discards the retired bundle. Do not re-add either `smart-health-api-r5is` or `smart-health-api-xj0a` to production configuration.
 
 ## 2026-08-30 Render outbound-bandwidth guard
 

@@ -16,7 +16,7 @@ Dự án này là nguyên mẫu kỹ thuật và sản phẩm nghiên cứu. Đ�
 | --- | --- | --- |
 | Shcare Workspace Portal | <https://shcare.web.app> | Cổng làm việc cho bác sĩ, phòng khám và cơ sở y tế |
 | Platform Admin Console | <https://shcare-admin.web.app> | Quản trị nền tảng/hệ thống |
-| Backend API | <https://smart-health-api-r5is.onrender.com/api> | API Smart Health đang chạy trên Render |
+| Backend API | <https://shcare-api-prod.onrender.com/api> | API Smart Health đang chạy trên Render |
 | Firebase project | `smart-health-stethoscope` | Firebase Auth và Firebase Hosting targets |
 
 ## Trạng Thái Thực Tế
@@ -122,7 +122,7 @@ Firebase production build cần các env frontend:
 
 ```text
 VITE_AUTH_MODE=production
-VITE_SMART_HEALTH_API_BASE_URL=https://smart-health-api-r5is.onrender.com/api
+VITE_SMART_HEALTH_API_BASE_URL=https://shcare-api-prod.onrender.com/api
 VITE_PUBLIC_SITE_URL=https://shcare.web.app
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=smart-health-stethoscope.firebaseapp.com

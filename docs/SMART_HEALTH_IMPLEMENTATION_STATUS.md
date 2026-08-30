@@ -2,6 +2,14 @@
 
 Last updated: 2026-08-30
 
+## 2026-08-30 Render egress hot-path repair
+
+- Root cause: every 10-second device telemetry update performed a normalized PostgreSQL device upsert and an unnecessary full `app_runtime_state` JSONB rewrite to external Supabase. This explains the Render dashboard split of `46.71 GB Service-Initiated` versus only `28 MB HTTP Responses`.
+- Removed the monolithic snapshot rewrite from the SQL `devices.save` hot path. The canonical device row and runtime mirror remain synchronized; JSON storage retains durable snapshot persistence.
+- Added a red/green contract test `scripts/deviceHotPathPersistenceContractTest.js` and command `npm run smoke:device-hot-path`.
+- Verification PASS: hot-path contract `1/1`, device-security suite, device-ownership repository suite, and `npm run check`.
+- Production bandwidth reduction still requires deployment to an active Render service and a measured canary. Existing monthly usage will not disappear from the suspended workspace.
+
 ## 2026-08-30 production deployment status
 
 - **LIVE — Platform Admin:** Firebase Hosting `d224ae4ce12e5c4c`, release `1788099682710000`, at `https://shcare-admin.web.app`.

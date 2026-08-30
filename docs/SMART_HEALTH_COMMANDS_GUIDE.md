@@ -2,6 +2,26 @@
 
 Last updated: 2026-08-30
 
+## 2026-08-30 Render outbound-bandwidth guard
+
+The production ESP sends telemetry every 10 seconds. Verify the SQL path never
+rewrites the monolithic runtime snapshot:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run smoke:device-hot-path
+node --test scripts/deviceSecuritySmokeTest.js
+node --test scripts/deviceOwnershipRepositoryTest.js
+npm.cmd run check
+```
+
+After deploying to an active Render workspace, leave exactly one enrolled test
+device online for 60 minutes. Record **Billing -> Included Usage -> Bandwidth**
+before and after. Treat `Service-Initiated > 5 MB/hour` or a projection above
+`100 MB/day` as a failed canary: disconnect the device and inspect PostgreSQL,
+storage, email and provider workers before continuing. The old `46.71 GB`
+monthly total is historical usage and is not erased by deploying this fix.
+
 ## 2026-08-30 live Firebase deployment and Render recovery check
 
 ```powershell

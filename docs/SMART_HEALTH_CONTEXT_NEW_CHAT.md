@@ -2,6 +2,13 @@
 
 Last updated: 2026-08-30
 
+## 2026-08-30 Render outbound-bandwidth root cause and repair
+
+- Render billing showed `46.71 GB` of `Service-Initiated` bandwidth in `49.47` instance-hours while HTTP responses were only `28 MB` and WebSocket responses were `0 MB`.
+- The ESP production firmware emits telemetry every `10,000 ms`. PostgreSQL device persistence upserted the canonical `devices` row and then redundantly rewrote the full encrypted `app_runtime_state` snapshot to external Supabase PostgreSQL on every telemetry update.
+- The observed ratio is about `2.7 MB` per telemetry tick, matching the redundant monolithic snapshot path. SQL device saves now update the normalized row and in-process mirror only; JSON/demo mode still performs its required snapshot save.
+- Regression `npm run smoke:device-hot-path`, device security, device ownership repository, and backend `npm run check` pass. Deploy this commit before restoring or migrating Render, then monitor `Service-Initiated` growth with a one-device budget below `100 MB/day`; do not assume a new free workspace alone fixes the incident.
+
 ## 2026-08-30 Firebase live deployment and Render billing suspension
 
 - The latest Platform Admin bundle is live at `https://shcare-admin.web.app`, Firebase Hosting version `d224ae4ce12e5c4c`, release `1788099682710000`.

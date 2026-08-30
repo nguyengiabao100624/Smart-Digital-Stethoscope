@@ -15338,15 +15338,6 @@ function createRepositories(options) {
             incomingDevice,
           );
         syncArrayItem(getDb().devices, canonicalDevice);
-        try {
-          await saveDb();
-        } catch (error) {
-          onSqlError(
-            new Error(
-              `PostgreSQL device save committed but runtime mirror refresh failed: ${error.message}`,
-            ),
-          );
-        }
         return cloneRuntimeValue(canonicalDevice);
       }
       return runDeviceProvisionMutationExclusive(async () => {

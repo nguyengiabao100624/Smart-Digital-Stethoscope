@@ -2,6 +2,15 @@
 
 Last updated: 2026-08-30
 
+## 2026-08-30 Render bandwidth incident
+
+- [x] Attribute `46.71 GB` service-initiated egress to the SQL device telemetry hot path rewriting the monolithic runtime snapshot every 10 seconds.
+- [x] Remove the redundant SQL snapshot write without changing JSON/demo persistence or canonical device-row updates.
+- [x] Add and pass the device hot-path regression plus device security/ownership and backend checks.
+- [ ] Deploy the repair to the restored or replacement Render service before connecting the ESP.
+- [ ] Run a one-device 60-minute canary, record starting/ending Render bandwidth, and require projected service-initiated usage below `100 MB/day` before leaving the device online.
+- [ ] Configure a daily usage check and disconnect/suspend the demo device if the projected monthly bandwidth approaches the workspace allowance.
+
 ## 2026-08-30 live deployment gate
 
 - [x] Build and deploy current Platform Admin to Firebase live (`d224ae4ce12e5c4c`, release `1788099682710000`).

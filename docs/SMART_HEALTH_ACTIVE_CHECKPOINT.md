@@ -1,5 +1,12 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-08-30 Render bandwidth repair checkpoint
+
+- Render usage evidence is `46.71 GB Service-Initiated`, `28 MB HTTP Responses`, `0 MB WebSocket Responses` after only `49.47` instance-hours.
+- ESP telemetry runs every 10 seconds. The PostgreSQL device repository was redundantly rewriting the full `app_runtime_state` snapshot after every normalized device upsert; the observed usage is about `2.7 MB` per telemetry tick.
+- Source now skips the full snapshot on SQL device saves while retaining the canonical device upsert, runtime cache sync, and JSON/demo snapshot behavior.
+- Focused regression and device/backend checks pass. The repair is not production-proven until deployed to an active Render service and a 60-minute one-device bandwidth canary stays below `5 MB/hour` (`100 MB/day` operational ceiling).
+
 ## 2026-08-30 live deployment checkpoint
 
 - Platform Admin is current on Firebase live: version `d224ae4ce12e5c4c`, release `1788099682710000`.

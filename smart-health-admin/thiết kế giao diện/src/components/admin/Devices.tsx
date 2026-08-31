@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion";
 import {
   Activity,
+  ArrowRightLeft,
   Battery,
   BatteryLow,
   BatteryMedium,
@@ -9,6 +10,7 @@ import {
   FileCode2,
   Info,
   MonitorSpeaker,
+  PencilLine,
   Plus,
   Power,
   RefreshCw,
@@ -16,6 +18,7 @@ import {
   Search,
   ShieldAlert,
   Stethoscope,
+  UserRoundCog,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -23,6 +26,9 @@ import { toast } from "sonner";
 import { AddDeviceDialog } from "./dialogs/AddDeviceDialog";
 import { ActivateDeviceDialog } from "./dialogs/ActivateDeviceDialog";
 import { RotateDeviceSecretDialog } from "./dialogs/RotateDeviceSecretDialog";
+import { EditDeviceDialog } from "./dialogs/EditDeviceDialog";
+import { TransferDeviceDialog } from "./dialogs/TransferDeviceDialog";
+import { AssignDevicePatientDialog } from "./dialogs/AssignDevicePatientDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
 import { PaginationFooter } from "./PaginationFooter";
@@ -252,6 +258,9 @@ export function Devices() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [activateDialogOpen, setActivateDialogOpen] = useState(false);
   const [rotateSecretDevice, setRotateSecretDevice] = useState<SmartHealthDevice | null>(null);
+  const [editingDevice, setEditingDevice] = useState<SmartHealthDevice | null>(null);
+  const [transferDevice, setTransferDevice] = useState<SmartHealthDevice | null>(null);
+  const [assignmentDevice, setAssignmentDevice] = useState<SmartHealthDevice | null>(null);
   const [dangerAction, setDangerAction] = useState<DangerAction | null>(null);
   const [dangerLoading, setDangerLoading] = useState(false);
   const [dangerError, setDangerError] = useState("");
@@ -1003,7 +1012,7 @@ export function Devices() {
           page={page}
           pageSize={pagination.limit}
           totalItems={pagination.totalCount}
-          itemLabel="thiáº¿t bá»‹"
+          itemLabel="thiết bị"
           onPageChange={setPage}
         />
       </div>
@@ -1205,6 +1214,12 @@ export function Devices() {
                       <dt className="text-xs text-muted-foreground">Workspace ID</dt>
                       <dd className="mt-1 break-words font-mono text-foreground">
                         {selectedDevice.organizationId || "Chưa gán"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Bệnh nhân được gán</dt>
+                      <dd className="mt-1 break-words font-mono text-foreground">
+                        {selectedDevice.assignedPatientId || "Chưa gán"}
                       </dd>
                     </div>
                   </dl>
@@ -1678,8 +1693,32 @@ export function Devices() {
                 <div className="border-t border-border bg-muted/20 p-5">
                   <div className="grid grid-cols-2 gap-2">
                     <button
+                      onClick={() => setEditingDevice(selectedDevice)}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+                      Chỉnh sửa thông tin
+                    </button>
+                    {isPlatformAdmin ? (
+                      <button
+                        onClick={() => setTransferDevice(selectedDevice)}
+                        className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-warning/35 bg-warning/10 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                        Chuyển workspace
+                      </button>
+                    ) : null}
+                    <button
+                      onClick={() => setAssignmentDevice(selectedDevice)}
+                      disabled={selectedDevice.status === "revoked"}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <UserRoundCog className="h-3.5 w-3.5" aria-hidden="true" />
+                      Gán bệnh nhân
+                    </button>
+                    <button
                       onClick={() => setRotateSecretDevice(selectedDevice)}
-                      className="flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
                       Xoay khóa
@@ -1751,6 +1790,42 @@ export function Devices() {
         }}
         onRotated={(device) => {
           updateDevice(device);
+          void loadEvents(device.id);
+        }}
+      />
+      <EditDeviceDialog
+        device={editingDevice}
+        open={canManageDevices && Boolean(editingDevice)}
+        onOpenChange={(open) => {
+          if (!open) setEditingDevice(null);
+        }}
+        onUpdated={(device) => {
+          updateDevice(device);
+          setSelectedDevice(device);
+          void loadEvents(device.id);
+        }}
+      />
+      <TransferDeviceDialog
+        device={transferDevice}
+        open={isPlatformAdmin && Boolean(transferDevice)}
+        onOpenChange={(open) => {
+          if (!open) setTransferDevice(null);
+        }}
+        onTransferred={(device) => {
+          updateDevice(device);
+          setSelectedDevice(device);
+          void loadEvents(device.id);
+        }}
+      />
+      <AssignDevicePatientDialog
+        device={assignmentDevice}
+        open={canManageDevices && Boolean(assignmentDevice)}
+        onOpenChange={(open) => {
+          if (!open) setAssignmentDevice(null);
+        }}
+        onAssigned={(device) => {
+          updateDevice(device);
+          setSelectedDevice(device);
           void loadEvents(device.id);
         }}
       />

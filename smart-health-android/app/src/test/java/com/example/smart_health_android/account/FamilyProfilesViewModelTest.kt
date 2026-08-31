@@ -661,7 +661,7 @@ class FamilyProfilesViewModelTest {
         val repository = FakeFamilyRepository().apply {
             updateReceiptOverride = canonicalUpdateReceipt().copy(
                 patientId = "dependent_other",
-                patient = dependent.copy(id = "dependent_other", name = "KhĂ´ng Ä‘Æ°á»£c dĂ¹ng"),
+                patient = dependent.copy(id = "dependent_other", name = "Không được dùng"),
             )
         }
         val viewModel = FamilyProfilesViewModel(repository, idempotencyKeyFactory = { "update_key" })
@@ -1197,7 +1197,7 @@ private fun canonicalCreateReceipt(
     patient: Patient = Patient(
         id = "server_created",
         patientCode = "P003",
-        name = "BĂ© An",
+        name = "Bé An",
         profileType = "dependent",
         relationship = "Con",
         ownerUserId = TEST_USER_ID,

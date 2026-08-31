@@ -1229,7 +1229,7 @@ describe("WorkspaceSettings", () => {
     expect(previewSpy).not.toHaveBeenCalled();
     expect(invalidateSpy).not.toHaveBeenCalled();
     expect(screen.queryByText("late E1 upload 500")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Thá»­ láº¡i" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thử lại" })).not.toBeInTheDocument();
 
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => expect(api.uploadMyAvatar).toHaveBeenCalledTimes(2));
@@ -1300,7 +1300,7 @@ describe("WorkspaceSettings", () => {
     );
     expect(switched).toBe(true);
     expect(toast.error).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Thá»­ láº¡i" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thử lại" })).not.toBeInTheDocument();
 
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => expect(api.uploadMyAvatar).toHaveBeenCalledTimes(2));
@@ -1537,7 +1537,7 @@ describe("WorkspaceSettings", () => {
     );
     expect(invalidateSpy).not.toHaveBeenCalled();
     expect(screen.queryByText("late E1 delete 500")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Thá»­ láº¡i" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thử lại" })).not.toBeInTheDocument();
 
     fireEvent.click(view.container.querySelector("#account-delete-avatar")!);
     fireEvent.click(
@@ -1613,7 +1613,7 @@ describe("WorkspaceSettings", () => {
     );
     expect(switched).toBe(true);
     expect(toast.error).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Thá»­ láº¡i" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thử lại" })).not.toBeInTheDocument();
 
     fireEvent.click(view.container.querySelector("#account-delete-avatar")!);
     fireEvent.click(

@@ -2136,10 +2136,22 @@ test("human device mutations cannot spoof telemetry or hard-delete the audit gra
       ...betaHeaders,
       "Idempotency-Key": "device-security-rename-metadata",
     },
-    body: JSON.stringify({ name: "Beta Device Renamed" }),
+    body: JSON.stringify({
+      name: "Beta Device Renamed",
+      type: "stethoscope",
+      manufacturer: "Shcare",
+      model: "S3-Pro",
+      serialNumber: "SHC-BETA-2026",
+      purchaseDate: "2026-08-31",
+    }),
   });
   assert.equal(renamed.response.status, 200, JSON.stringify(renamed.body));
   assert.equal(renamed.body.device.name, "Beta Device Renamed");
+  assert.equal(renamed.body.device.type, "stethoscope");
+  assert.equal(renamed.body.device.manufacturer, "Shcare");
+  assert.equal(renamed.body.device.model, "S3-Pro");
+  assert.equal(renamed.body.device.serialNumber, "SHC-BETA-2026");
+  assert.equal(renamed.body.device.purchaseDate, "2026-08-31");
   assert.equal(renamed.body.device.connected, original.connected);
   assert.equal(renamed.body.device.status, original.status);
   assert.equal(renamed.body.device.signal ?? null, original.signal ?? null);
@@ -2149,6 +2161,51 @@ test("human device mutations cannot spoof telemetry or hard-delete the audit gra
     persisted.auditLogs.filter((entry) => entry.action === "device.update" && entry.resourceId === "dev_beta").length,
     1,
     "an operator metadata update must be audited",
+  );
+
+  const replayed = await requestJson("/api/v1/devices/dev_beta", {
+    method: "PATCH",
+    headers: {
+      ...betaHeaders,
+      "Idempotency-Key": "device-security-rename-metadata",
+    },
+    body: JSON.stringify({
+      name: "Beta Device Renamed",
+      type: "stethoscope",
+      manufacturer: "Shcare",
+      model: "S3-Pro",
+      serialNumber: "SHC-BETA-2026",
+      purchaseDate: "2026-08-31",
+    }),
+  });
+  assert.equal(replayed.response.status, 200, JSON.stringify(replayed.body));
+  assert.equal(replayed.body.replayed, true);
+  const afterReplay = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  assert.equal(
+    afterReplay.auditLogs.filter((entry) => entry.action === "device.update" && entry.resourceId === "dev_beta").length,
+    1,
+    "metadata replay must not duplicate the audit event",
+  );
+});
+
+test("patient selection for device assignment is workspace-exact", async () => {
+  const betaAdminToken = await login("admin@beta.test");
+  const platformToken = await loginPlatformAdmin();
+
+  const crossTenant = await requestJson("/api/v1/patients?organizationId=org_alpha", {
+    headers: { Authorization: `Bearer ${betaAdminToken}` },
+  });
+  assert.equal(crossTenant.response.status, 403, JSON.stringify(crossTenant.body));
+  assert.equal(crossTenant.body.code, "patient_list_workspace_scope_denied");
+
+  const scoped = await requestJson("/api/v1/patients?organizationId=org_alpha", {
+    headers: { Authorization: `Bearer ${platformToken}` },
+  });
+  assert.equal(scoped.response.status, 200, JSON.stringify(scoped.body));
+  assert.ok(scoped.body.patients.length > 0);
+  assert.ok(
+    scoped.body.patients.every((patient) => patient.organizationId === "org_alpha"),
+    "Platform Admin may search globally, but device assignment choices must remain exact to the device workspace",
   );
 });
 

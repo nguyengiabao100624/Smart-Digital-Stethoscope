@@ -14816,6 +14816,41 @@ function createRepositories(options) {
       nextDevice.name = name;
     }
 
+    if (Object.prototype.hasOwnProperty.call(patch, "type")) {
+      const type = String(patch.type || "").trim().toLowerCase();
+      if (!["stethoscope", "respiratory", "other"].includes(type)) {
+        throw repositoryError(
+          400,
+          "DEVICE_TYPE_UNSUPPORTED",
+          "Device type is unsupported",
+        );
+      }
+      nextDevice.type = type;
+    }
+    for (const field of ["manufacturer", "model", "serialNumber"]) {
+      if (Object.prototype.hasOwnProperty.call(patch, field)) {
+        nextDevice[field] = String(patch[field] || "").trim().slice(0, 120);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "purchaseDate")) {
+      const purchaseDate = String(patch.purchaseDate || "").trim();
+      if (purchaseDate) {
+        const parsedPurchaseDate = new Date(`${purchaseDate}T00:00:00.000Z`);
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ||
+          Number.isNaN(parsedPurchaseDate.getTime()) ||
+          parsedPurchaseDate.toISOString().slice(0, 10) !== purchaseDate
+        ) {
+          throw repositoryError(
+            400,
+            "DEVICE_PURCHASE_DATE_INVALID",
+            "Purchase date must use a valid YYYY-MM-DD date",
+          );
+        }
+      }
+      nextDevice.purchaseDate = purchaseDate;
+    }
+
     if (operation === "assign") {
       nextDevice = applyDeviceOwnershipTransition(nextDevice, "assigned", {
         assignedPatientId: String(input.assignedPatientId || ""),

@@ -1474,6 +1474,7 @@ export const smartHealthApi = {
           page?: number;
           limit?: number;
           sort?: string;
+          organizationId?: string;
           signal?: AbortSignal;
         } = {},
   ) {
@@ -1487,6 +1488,7 @@ export const smartHealthApi = {
           page: normalized.page,
           limit: normalized.limit,
           sort: normalized.sort,
+          organizationId: normalized.organizationId,
         },
         signal: normalized.signal,
         onResponse: (response) => {
@@ -1560,11 +1562,41 @@ export const smartHealthApi = {
     });
   },
 
-  async patchDevice(id: string, payload: Partial<SmartHealthDevice>) {
+  async patchDevice(
+    id: string,
+    payload: Pick<
+      SmartHealthDevice,
+      "name" | "type" | "manufacturer" | "model" | "serialNumber" | "purchaseDate"
+    >,
+    idempotencyKey: string,
+  ) {
     return requestJson<{ device: SmartHealthDevice }>(`/devices/${encodeURIComponent(id)}`, {
       method: "PATCH",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     });
+  },
+
+  async assignDevicePatient(id: string, assignedPatientId: string, idempotencyKey: string) {
+    return requestJson<{ device: SmartHealthDevice; replayed?: boolean }>(
+      `/devices/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ assignedPatientId }),
+      },
+    );
+  },
+
+  async transferDevice(id: string, organizationId: string, idempotencyKey: string) {
+    return requestJson<{ device: SmartHealthDevice; replayed?: boolean }>(
+      `/devices/${encodeURIComponent(id)}/transfer`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ organizationId }),
+      },
+    );
   },
 
   async connectDevice(id: string) {

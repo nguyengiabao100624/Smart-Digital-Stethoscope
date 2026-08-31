@@ -16,10 +16,7 @@ const rotateDeviceSecretPath = new URL(
   import.meta.url,
 );
 const apiPath = new URL("../../src/lib/smart-health-api.ts", import.meta.url);
-const deviceProvisioningPath = new URL(
-  "../../src/lib/device-provisioning.ts",
-  import.meta.url,
-);
+const deviceProvisioningPath = new URL("../../src/lib/device-provisioning.ts", import.meta.url);
 const adminMutationSmokePath = new URL("../../scripts/adminMutationSmokeTest.mjs", import.meta.url);
 
 test("keeps device history by removing hard-delete API and UI actions", async () => {

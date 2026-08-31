@@ -51,7 +51,7 @@ class SmartHealthClinicalReviewApiTest {
         val response = api.decideClinicalReview(
             scanId = "scan-1",
             decision = ClinicalReviewDecision.FollowUpRequired,
-            note = "Theo dĂµi láº¡i sau 24 giá».",
+            note = "Theo dõi lại sau 24 giờ.",
             expectedVersion = 1,
             idempotencyKey = "review-decision-key-1",
         )
@@ -62,7 +62,7 @@ class SmartHealthClinicalReviewApiTest {
         assertEquals("/api/v1/portal/review-queue/scan-1/decision", request.path)
         assertEquals("review-decision-key-1", request.getHeader("Idempotency-Key"))
         assertEquals("follow_up_required", body.getString("decision"))
-        assertEquals("Theo dĂµi láº¡i sau 24 giá».", body.getString("note"))
+        assertEquals("Theo dõi lại sau 24 giờ.", body.getString("note"))
         assertEquals(1, body.getInt("expectedVersion"))
         assertEquals(ClinicalReviewStatus.Reviewed, response.review.status)
     }
@@ -92,7 +92,7 @@ class SmartHealthClinicalReviewApiTest {
             ApiClinicalReviewsRepository(api).decide(
                 review = original,
                 decision = ClinicalReviewDecision.FollowUpRequired,
-                note = "Theo dĂµi láº¡i sau 24 giá».",
+                note = "Theo dõi lại sau 24 giờ.",
                 idempotencyKey = "review-key-1",
                 expectedWorkspaceId = "workspace-1",
             )
@@ -125,7 +125,7 @@ class SmartHealthClinicalReviewApiTest {
               status = "reviewed",
               decision = "follow_up_required",
               version = version,
-              note = "Theo dĂµi láº¡i sau 24 giá».",
+              note = "Theo dõi lại sau 24 giờ.",
               reviewerUserId = "doctor-1",
               reviewedAt = "2026-07-29T08:10:00.000Z",
           )}

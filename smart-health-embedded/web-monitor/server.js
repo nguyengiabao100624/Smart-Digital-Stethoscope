@@ -5068,7 +5068,7 @@ async function handleScanSocketCommand(socket, message) {
 
     const visibleRecordings = getActiveRecordingsForListener(socket);
     if (!message.scanId && visibleRecordings.length > 1) {
-      throw httpError(409, "Cáº§n chá»n lÆ°á»£t ghi cá»¥ thá»ƒ", "ACTIVE_SCAN_AMBIGUOUS");
+      throw httpError(409, "Cần chọn lượt ghi cụ thể", "ACTIVE_SCAN_AMBIGUOUS");
     }
     const scanId = message.scanId || visibleRecordings[0]?.scanId;
     const targetScan = scanId ? findScan(scanId) : null;
@@ -13534,7 +13534,7 @@ async function expirePrivateFirmwareDownload(device, otaInput, expectedAuthority
     correlationId: ota.correlationId || "",
     code,
   });
-  throw httpError(410, "Firmware OTA Ä‘Ă£ háº¿t háº¡n", code);
+  throw httpError(410, "Firmware OTA đã hết hạn", code);
 }
 
 async function failPrivateFirmwareDownload(device, otaInput, failure = {}) {
@@ -17353,26 +17353,26 @@ async function handleAdminApi(req, res, url, segments) {
   // also refreshes Firebase claims and revokes stale sessions so the mobile
   // and Portal surfaces cannot loop on the previous persona.
   if (segments[2] === "doctors" && segments.length === 5 && segments[4] === "workspace" && method === "PATCH") {
-    requireAnyCapability(adminUser, ["platform.users.manage"], "Chá»‰ platform admin má»›i Ä‘Æ°á»£c chuyá»ƒn workspace cho bĂ¡c sÄ©");
+    requireAnyCapability(adminUser, ["platform.users.manage"], "Chỉ platform admin mới được chuyển workspace cho bác sĩ");
     const targetUserId = decodeURIComponent(segments[3]);
     const targetUser = repositories
       ? await repositories.users.findByIdOrFirebaseUid(targetUserId)
       : db.users.find((candidate) => candidate.id === targetUserId || candidate.firebaseUid === targetUserId);
     if (!targetUser || (targetUser.role !== "doctor" && targetUser.requestedRole !== "doctor")) {
-      throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y há»“ sÆ¡ bĂ¡c sÄ©", "DOCTOR_NOT_FOUND");
+      throw httpError(404, "Không tìm thấy hồ sơ bác sĩ", "DOCTOR_NOT_FOUND");
     }
     if (targetUser.role !== "doctor" || targetUser.roleRequestStatus !== "approved") {
-      throw httpError(409, "Chá»‰ bĂ¡c sÄ© Ä‘Ă£ Ä‘Æ°á»£c phĂª duyá»‡t má»›i cĂ³ thá»ƒ gĂ¡n workspace", "APPROVED_DOCTOR_REQUIRED");
+      throw httpError(409, "Chỉ bác sĩ đã được phê duyệt mới có thể gán workspace", "APPROVED_DOCTOR_REQUIRED");
     }
     const payload = await readJsonBody(req);
     const organizationId = readString(payload.organizationId || payload.workspaceId, 120);
     if (!organizationId) {
-      throw httpError(400, "Cáº§n organizationId/workspaceId Ä‘á»ƒ gĂ¡n workspace", "DOCTOR_WORKSPACE_REQUIRED");
+      throw httpError(400, "Cần organizationId/workspaceId để gán workspace", "DOCTOR_WORKSPACE_REQUIRED");
     }
     const organization = getClinicById(organizationId);
-    if (!organization) throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y workspace Ä‘Ă­ch", "WORKSPACE_NOT_FOUND");
+    if (!organization) throw httpError(404, "Không tìm thấy workspace đích", "WORKSPACE_NOT_FOUND");
     if (["archived", "suspended", "inactive"].includes(readString(organization.status, 40).toLowerCase())) {
-      throw httpError(409, "Workspace Ä‘Ă­ch Ä‘ang táº¡m ngÆ°ng hoáº·c Ä‘Ă£ lÆ°u trá»¯", "WORKSPACE_NOT_ACTIVE");
+      throw httpError(409, "Workspace đích đang tạm ngưng hoặc đã lưu trữ", "WORKSPACE_NOT_ACTIVE");
     }
     const idempotencyKey = getRequiredHeaderIdempotencyKey(req, "doctor workspace assignment");
     const previousOrganizationId = readString(targetUser.organizationId, 120);
@@ -19372,7 +19372,7 @@ async function handleNotificationsApi(req, res, segments) {
     requireAnyCapability(
       user,
       NOTIFICATION_MANAGE_CAPABILITIES,
-      "KhĂ´ng cĂ³ quyá»n xem tráº¡ng thĂ¡i chiáº¿n dá»‹ch thĂ´ng bĂ¡o",
+      "Không có quyền xem trạng thái chiến dịch thông báo",
     );
     const campaignId = readString(segments[3], 160);
     const campaignRows = await repositories.notifications.listCampaign(campaignId);
@@ -20735,6 +20735,30 @@ async function handleDevicesApi(req, res, url, segments) {
 
   if (segments.length === 3 && method === "PATCH") {
     const payload = await readJsonBody(req);
+    const recognizedPatchFields = new Set([
+      "name",
+      "type",
+      "manufacturer",
+      "model",
+      "serialNumber",
+      "purchaseDate",
+      "assignedPatientId",
+      "idempotencyKey",
+      "status",
+      "signal",
+      "battery",
+      "connected",
+      "lastSeenAt",
+    ]);
+    const unsupportedField = Object.keys(payload).find((field) => !recognizedPatchFields.has(field));
+    if (unsupportedField) {
+      throw httpError(
+        400,
+        `Field ${unsupportedField} cannot be changed through device administration`,
+        "DEVICE_UPDATE_FIELD_FORBIDDEN",
+        { field: unsupportedField },
+      );
+    }
     const idempotencyKey = getIdempotencyKey(req, payload);
     if (!idempotencyKey) {
       throw httpError(
@@ -20761,11 +20785,41 @@ async function handleDevicesApi(req, res, url, segments) {
         "DEVICE_REPORTED_FIELD_FORBIDDEN",
       );
     }
-    for (const field of ["name"]) {
+    for (const field of ["name", "manufacturer", "model", "serialNumber"]) {
       if (Object.prototype.hasOwnProperty.call(payload, field)) {
         devicePatch[field] = readString(payload[field], 120);
         operatorUpdatedFields.push(field);
       }
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "type")) {
+      const type = readString(payload.type, 40).toLowerCase();
+      if (!["stethoscope", "respiratory", "other"].includes(type)) {
+        throw httpError(400, "Device type is unsupported", "DEVICE_TYPE_UNSUPPORTED", {
+          field: "type",
+        });
+      }
+      devicePatch.type = type;
+      operatorUpdatedFields.push("type");
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "purchaseDate")) {
+      const purchaseDate = readString(payload.purchaseDate, 20);
+      if (purchaseDate) {
+        const parsedPurchaseDate = new Date(`${purchaseDate}T00:00:00.000Z`);
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ||
+          Number.isNaN(parsedPurchaseDate.getTime()) ||
+          parsedPurchaseDate.toISOString().slice(0, 10) !== purchaseDate
+        ) {
+          throw httpError(
+            400,
+            "Purchase date must use a valid YYYY-MM-DD date",
+            "DEVICE_PURCHASE_DATE_INVALID",
+            { field: "purchaseDate" },
+          );
+        }
+      }
+      devicePatch.purchaseDate = purchaseDate;
+      operatorUpdatedFields.push("purchaseDate");
     }
     if (Object.prototype.hasOwnProperty.call(payload, "assignedPatientId")) {
       assignedPatientId = readString(payload.assignedPatientId, 120);
@@ -24278,8 +24332,25 @@ async function handlePatientsApi(req, res, url, segments) {
     if (repositories) {
       await repositories.patients.list();
     }
+    const requestedOrganizationId = readString(url.searchParams.get("organizationId"), 120);
+    if (requestedOrganizationId && !isPlatformAdminUser(user)) {
+      const currentWorkspaceId = getUserWorkspaceContext(user).currentWorkspaceId || "";
+      if (requestedOrganizationId !== currentWorkspaceId) {
+        throw httpError(
+          403,
+          "Patient list workspace is outside the current operational workspace",
+          "PATIENT_LIST_WORKSPACE_SCOPE_DENIED",
+        );
+      }
+    }
+    const patientSource = filterPatientsForUser(user, db.patients)
+      .filter(
+        (patient) =>
+          !requestedOrganizationId || patient.organizationId === requestedOrganizationId,
+      )
+      .map(withPatientStats);
     const pageResult = resolveAdminListPage(
-      filterPatientsForUser(user, db.patients).map(withPatientStats),
+      patientSource,
       url,
       {
         searchFields: [
@@ -24624,7 +24695,7 @@ async function handlePatientsApi(req, res, url, segments) {
         200,
       );
       if (!persisted.grant) {
-        throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y quyá»n chia sáº»", "PATIENT_SHARE_NOT_FOUND");
+        throw httpError(404, "Không tìm thấy quyền chia sẻ", "PATIENT_SHARE_NOT_FOUND");
       }
       revokedGrant = persisted.grant;
       replayed = Boolean(persisted.replayed);
@@ -25405,7 +25476,7 @@ async function handleScansApi(req, res, url, segments) {
         ? await repositories.scans.findById(scan.id)
         : findScan(scan.id);
       if (!currentScan) {
-        throw httpError(404, "KhĂ´ng tĂ¬m tháº¥y lÆ°á»£t Ä‘o");
+        throw httpError(404, "Không tìm thấy lượt đo");
       }
       const reprocessed = await reprocessScanAudio(currentScan, {
         forceNewProcessingIntent: true,

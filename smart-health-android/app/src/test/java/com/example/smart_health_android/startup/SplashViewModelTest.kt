@@ -408,7 +408,7 @@ class SplashViewModelTest {
                         "method" to "app",
                         "expiresAt" to "2026-07-23T23:00:00.000Z",
                     ),
-                    message = "Cáº§n hoĂ n táº¥t xĂ¡c thá»±c hai yáº¿u tá»‘.",
+                    message = "Cần hoàn tất xác thực hai yếu tố.",
                 ),
                 ownerAfterAuthenticate = OWNER_B,
             )

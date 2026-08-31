@@ -431,7 +431,7 @@ export function Packages() {
           page={page}
           pageSize={pagination.limit}
           totalItems={pagination.totalCount}
-          itemLabel="gĂ³i dá»‹ch vá»¥"
+          itemLabel="gói dịch vụ"
           onPageChange={setPage}
         />
       ) : null}

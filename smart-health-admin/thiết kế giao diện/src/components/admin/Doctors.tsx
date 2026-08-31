@@ -62,8 +62,13 @@ import { PLATFORM_USER_MANAGE_CAPABILITIES, STAFF_MANAGE_CAPABILITIES } from "./
 type Doctor = {
   id: string;
   name: string;
+  title: string;
   specialty: string;
+  department: string;
   clinic: string;
+  hospital: string;
+  license: string;
+  address: string;
   phone: string;
   email: string;
   status: "active" | "inactive" | "unknown";
@@ -88,8 +93,13 @@ function toDoctor(user: SmartHealthAuthUser): Doctor {
   return {
     id: user.id,
     name: user.name || user.email || "Bác sĩ chưa cập nhật tên",
-    specialty: user.department || user.specialty || "",
+    title: user.title || "",
+    specialty: user.specialty || "",
+    department: user.department || "",
     clinic: user.hospital || user.clinicName || "",
+    hospital: user.hospital || "",
+    license: user.license || "",
+    address: user.address || "",
     phone: user.phone || "Chưa cung cấp",
     email: user.email || "Chưa có email",
     status:
@@ -142,7 +152,16 @@ export function Doctors() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", phone: "", specialty: "" });
+  const [editForm, setEditForm] = useState({
+    name: "",
+    phone: "",
+    title: "",
+    address: "",
+    license: "",
+    hospital: "",
+    department: "",
+    specialty: "",
+  });
   const [editSaving, setEditSaving] = useState(false);
   const [workspaceDoctor, setWorkspaceDoctor] = useState<Doctor | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -365,6 +384,11 @@ export function Doctors() {
     setEditForm({
       name: doc.name,
       phone: doc.phone === "Chưa cung cấp" ? "" : doc.phone,
+      title: doc.title,
+      address: doc.address,
+      license: doc.license,
+      hospital: doc.hospital,
+      department: doc.department,
       specialty: doc.specialty,
     });
   };
@@ -378,6 +402,11 @@ export function Doctors() {
         {
           name: editForm.name,
           phone: editForm.phone,
+          title: editForm.title,
+          address: editForm.address,
+          license: editForm.license,
+          hospital: editForm.hospital,
+          department: editForm.department,
           specialty: editForm.specialty,
         },
         createStaffOperationIdempotencyKey("doctor-profile", editingDoctor.id),
@@ -1091,9 +1120,29 @@ export function Doctors() {
                     value={selectedDoctor.specialty || "Chưa cung cấp"}
                   />
                   <DoctorInfo
+                    icon={Stethoscope}
+                    label="Khoa/Bộ phận"
+                    value={selectedDoctor.department || "Chưa cung cấp"}
+                  />
+                  <DoctorInfo
+                    icon={ShieldCheck}
+                    label="Số giấy phép hành nghề"
+                    value={selectedDoctor.license || "Chưa cung cấp"}
+                  />
+                  <DoctorInfo
+                    icon={Stethoscope}
+                    label="Chức danh"
+                    value={selectedDoctor.title || "Chưa cung cấp"}
+                  />
+                  <DoctorInfo
                     icon={Building2}
                     label="Phòng khám"
                     value={selectedDoctor.clinic || "Chưa xác định"}
+                  />
+                  <DoctorInfo
+                    icon={Building2}
+                    label="Địa chỉ liên hệ"
+                    value={selectedDoctor.address || "Chưa cung cấp"}
                   />
                   <DoctorInfo
                     icon={ShieldCheck}
@@ -1141,7 +1190,7 @@ export function Doctors() {
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[70] bg-slate-900/45" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-[80] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[80] max-h-[90vh] w-[min(92vw,620px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-2xl">
             <Dialog.Title className="text-lg font-semibold">Chỉnh sửa hồ sơ bác sĩ</Dialog.Title>
             <Dialog.Description className="mt-1 text-sm text-muted-foreground">
               Thay đổi được ghi audit và đồng bộ ngay vào backend.
@@ -1151,24 +1200,43 @@ export function Doctors() {
                 [
                   ["name", "Họ tên"],
                   ["phone", "Số điện thoại"],
+                  ["title", "Chức danh"],
+                  ["license", "Số giấy phép hành nghề"],
+                  ["hospital", "Cơ sở công tác"],
+                  ["department", "Khoa/Bộ phận"],
                   ["specialty", "Chuyên khoa"],
+                  ["address", "Địa chỉ liên hệ"],
                 ] as const
               ).map(([field, label]) => (
                 <label key={field} className="grid gap-1 text-sm font-medium">
                   {label}
-                  <input
-                    value={editForm[field]}
-                    onChange={(event) =>
-                      setEditForm((current) => ({ ...current, [field]: event.target.value }))
-                    }
-                    className="h-11 rounded-md border border-border bg-background px-3 font-normal outline-none focus:border-ring"
-                  />
+                  {field === "address" ? (
+                    <textarea
+                      name={field}
+                      rows={3}
+                      value={editForm[field]}
+                      onChange={(event) =>
+                        setEditForm((current) => ({ ...current, [field]: event.target.value }))
+                      }
+                      className="min-h-20 resize-y rounded-md border border-border bg-background px-3 py-2 font-normal outline-none focus:border-ring"
+                    />
+                  ) : (
+                    <input
+                      name={field}
+                      value={editForm[field]}
+                      onChange={(event) =>
+                        setEditForm((current) => ({ ...current, [field]: event.target.value }))
+                      }
+                      className="h-11 rounded-md border border-border bg-background px-3 font-normal outline-none focus:border-ring"
+                    />
+                  )}
                 </label>
               ))}
             </div>
             <p className="mt-3 text-xs leading-5 text-muted-foreground">
-              Phòng khám/workspace không sửa bằng chữ tự do để tránh lệch tenant. Dùng thao tác{" "}
-              <strong>Gán workspace</strong> trong menu bác sĩ.
+              Cơ sở công tác là thông tin hồ sơ. Quyền truy cập workspace/tenant không sửa bằng chữ
+              tự do; dùng thao tác <strong>Gán workspace</strong> để backend thu hồi phiên cũ và cấp
+              lại quyền đúng phạm vi.
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button

@@ -3118,3 +3118,14 @@ KLTN report artifacts generated from this evidence set:
 - [x] Add source contracts and a real Chromium reduced-motion override smoke; focused smoke passes `23` checks and measures a `0.42s` reveal transition.
 - [x] Pass full Web contracts, lint and Firebase production build; deploy commit `4d00442d` as Firebase version `161c20b8df24d7d5`, release `1787946098589000`.
 - [x] Verify production UI toggles reduced/enabled with no console warnings/errors. Backend, Android and firmware are unaffected.
+
+## 2026-08-31 — Platform Admin governed data controls and mojibake closure
+
+- [x] Add audited device metadata editing for name, type, manufacturer, model, serial number and purchase date.
+- [x] Add exact-workspace patient assignment/unassignment and Platform-Admin-only workspace transfer with stable idempotency keys.
+- [x] Keep device-reported presence, Wi-Fi/IP, battery, signal and telemetry immutable from human Admin APIs; keep credentials and provider secrets hidden.
+- [x] Expand doctor profile editing to all eight backend-supported profile fields while keeping tenant membership as a separate session-revoking action.
+- [x] Repair runtime/test mojibake across Admin, Web, Android and backend and add UTF-8 source regression gates.
+- [x] Pass Admin `200/200`, lint/build; backend device-security `85/85` and syntax/UTF-8 gates; Web contracts/lint/build plus focused Auth `49/49`; focused Android unit build.
+- [x] Deploy Render release `b3a181af57aa` and Firebase Admin version `51d345c520cfc96e` / release `1788156866635000`.
+- [ ] Repeat authenticated visual/TalkBack smoke when a browser session is connected; current live asset and API evidence is complete but is not a substitute for that visual-only gate.

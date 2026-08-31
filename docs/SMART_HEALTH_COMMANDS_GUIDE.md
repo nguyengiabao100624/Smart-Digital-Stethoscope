@@ -4797,3 +4797,42 @@ npm.cmd run smoke:public-ui-foundation -- --route=public.home --viewport=desktop
 ```
 
 The focused browser smoke creates a context with `reducedMotion: reduce`, verifies the control starts usable, clicks it, checks `data-shc-motion=enabled`, and requires a real reveal duration of at least `0.3s`. Production verification must use only the visible control; do not modify browser storage manually.
+
+## 2026-08-31 Platform Admin data-control and UTF-8 gates
+
+Run Admin contracts, lint and the exact production build:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện'
+npm run test:contracts
+npm run lint
+npm run build:firebase:admin
+```
+
+Run backend syntax, UTF-8 and device authority/tenant gates:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-embedded\web-monitor'
+npm run check
+node --test scripts/utf8SourceContractTest.js
+npm run smoke:device-security
+```
+
+Run the affected Web and Android regressions:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-web'
+npm run test:contracts
+npm run test:auth -- --run test/auth/workspace-settings.test.tsx
+npm run lint
+npm run build
+
+Set-Location 'D:\Study\KLTN\smart-health-android'
+.\gradlew.bat :app:testDebugUnitTest `
+  --tests 'com.example.smart_health_android.clinical.SmartHealthClinicalReviewApiTest' `
+  --tests 'com.example.smart_health_android.security.DoctorApprovalRepositoryTest' `
+  --tests 'com.example.smart_health_android.startup.SplashViewModelTest' `
+  --tests 'com.example.smart_health_android.account.FamilyProfilesViewModelTest'
+```
+
+Production acceptance for this slice requires `/api/health` to report the intended Git commit, Admin-origin CORS preflight to return `204`, unauthenticated mutations to return `401`, and the live Admin asset graph to contain the new controls without mojibake. Never test these controls by entering or displaying passwords, Firebase tokens, device secrets or OTA private keys.

@@ -2755,3 +2755,13 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Respect system reduction by default while allowing an explicit, persisted user override.
 - [x] Gate reduced-motion CSS by the rendered preference so the enabled override restores real Public transitions/video without changing Portal/Auth motion policy.
 - [x] Add reduced-motion override browser regression coverage and deploy/verify the Firebase live release.
+
+## 2026-08-31 — Platform Admin control and UTF-8 production closure
+
+- [x] Ship audited device metadata edit, patient assignment and workspace transfer controls.
+- [x] Enforce workspace-exact patient choices and prove the cross-tenant request returns `403`.
+- [x] Preserve telemetry/credential authority and reject unsupported or device-reported field mutations.
+- [x] Complete the doctor profile editor without conflating workplace text with tenant membership.
+- [x] Remove mojibake from runtime code and corrupted test fixtures; install Admin/Web/backend UTF-8 regression gates.
+- [x] Verify production health/CORS/auth boundary and live Firebase assets against release `b3a181af57aa`.
+- [ ] Visual-only follow-up: run the authenticated Admin route/TalkBack sweep when a controllable signed-in browser is available. No backend or deployment rollback is indicated by current evidence.

@@ -53,9 +53,31 @@ test("campaign mutation keeps a stable attempt and validates the exact receipt b
 });
 
 test("single read mutation rolls back and reports backend failure", async () => {
-  const source = await readFile(notificationsPath, "utf8");
+  const [source, api] = await Promise.all([
+    readFile(notificationsPath, "utf8"),
+    readFile(apiPath, "utf8"),
+  ]);
 
   assert.match(source, /Không thể đánh dấu thông báo là đã đọc/);
   assert.match(source, /setItems\(\(current\)\s*=>/);
+  assert.match(source, /createNotificationInboxIdempotencyKey\("read", normalizedId\)/);
+  assert.match(source, /receipt\.notification\?\.id !== normalizedId/);
+  assert.match(source, /setItems\(receipt\.notifications\.map\(mapBackendNotification\)\)/);
+  assert.match(api, /\/v1\/notifications\/inbox/);
+  assert.match(api, /"Idempotency-Key": idempotencyKey/);
   assert.doesNotMatch(source, /markNotificationRead\([\s\S]*?\.catch\(\(\)\s*=>\s*undefined\)/);
+});
+
+test("personal inbox stays separate from campaign recipient rows and supports atomic delete-all", async () => {
+  const [source, api] = await Promise.all([
+    readFile(notificationsPath, "utf8"),
+    readFile(apiPath, "utf8"),
+  ]);
+
+  assert.match(source, /onCreated=\{\(\) => \{\s*dispatchNotificationSync\(\)/);
+  assert.doesNotMatch(source, /onCreated=\{\(notifications\)/);
+  assert.match(source, /createNotificationInboxIdempotencyKey\("delete_all"\)/);
+  assert.match(source, /receipt\.action !== "delete_all"/);
+  assert.match(api, /async deleteAllNotifications\(idempotencyKey: string\)/);
+  assert.match(api, /"\/v1\/notifications\/inbox"/);
 });

@@ -35,6 +35,19 @@ export type NotificationCampaignIntent = {
 
 export type NotificationCampaignAttempt = { fingerprint: string; idempotencyKey: string };
 
+export type NotificationInboxMutationAction = "read" | "read_all" | "delete" | "delete_all";
+
+export function createNotificationInboxIdempotencyKey(
+  action: NotificationInboxMutationAction,
+  notificationId = "all",
+) {
+  const nonce =
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const normalizedId = notificationId.trim() || "all";
+  return `admin-notification-inbox-${action}-${normalizedId}-${nonce}`.slice(0, 160);
+}
+
 export type NotificationChannelAvailability = {
   available: boolean;
   status: NotificationDeliveryStatus;

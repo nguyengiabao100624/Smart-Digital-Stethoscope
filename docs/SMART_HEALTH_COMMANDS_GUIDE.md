@@ -4836,3 +4836,42 @@ Set-Location 'D:\Study\KLTN\smart-health-android'
 ```
 
 Production acceptance for this slice requires `/api/health` to report the intended Git commit, Admin-origin CORS preflight to return `204`, unauthenticated mutations to return `401`, and the live Admin asset graph to contain the new controls without mojibake. Never test these controls by entering or displaying passwords, Firebase tokens, device secrets or OTA private keys.
+
+## Canonical account and notification-inbox verification (2026-08-31)
+
+Run the exact focused backend authority suite:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-embedded\web-monitor'
+npm run smoke:notification-inbox
+npm run smoke:workspace-access
+npm run smoke:notification-campaigns
+npm run smoke:notification-preferences
+npm run smoke:avatar-mutations
+npm run smoke:release-security
+```
+
+Run the current client gates:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện'
+npm run test:contracts
+npm run lint
+npm run build:firebase:admin
+
+Set-Location 'D:\Study\KLTN\smart-health-web'
+npm run test:contracts
+npm run test:auth
+npm run lint
+npm run build:firebase
+
+Set-Location 'D:\Study\KLTN\smart-health-android'
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
+
+Set-Location 'D:\Study\KLTN\smart-health-embedded\MSM261S4030H0'
+$pioExe = 'C:\Users\baobe\.platformio\penv\Scripts\platformio.exe'
+& $pioExe run -e esp32-s3-devkitm-1
+& $pioExe run -e esp32-s3-ota
+```
+
+The personal Admin inbox uses `/api/v1/notifications/inbox`; `/api/v1/notifications` remains the distinct campaign-recipient and provider-delivery surface. Never merge their rows in client state. `DELETE /api/v1/notifications/inbox` requires `Idempotency-Key` and deletes only the authenticated account's active-workspace inbox.

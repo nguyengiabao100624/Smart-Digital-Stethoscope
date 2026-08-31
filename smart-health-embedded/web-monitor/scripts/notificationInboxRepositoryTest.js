@@ -493,7 +493,7 @@ test("cross-account and stale-workspace notification mutations fail closed", asy
   assert.equal(db.idempotencyKeys.length, 0);
 });
 
-test("read-all and delete return a canonical snapshot instead of a local success guess", async () => {
+test("read-all, delete and delete-all return canonical snapshots instead of local success guesses", async () => {
   const { db, repositories } = createRuntimeFixture();
   const readAll = await repositories.notifications.mutateInboxWithAudit(
     mutation("read_all"),
@@ -522,6 +522,28 @@ test("read-all and delete return a canonical snapshot instead of a local success
   assert.equal(deleted.notification.workspaceId, "workspace-current");
   assert.equal(deleted.notifications.some((item) => item.id === "notification-current"), false);
   assert.equal(db.notifications.some((item) => item.id === "notification-current"), false);
+
+  const deletedAll = await repositories.notifications.mutateInboxWithAudit(
+    mutation("delete_all"),
+    auditInput(),
+    idempotency("delete_all", "delete-all-current"),
+  );
+
+  assert.equal(deletedAll.action, "delete_all");
+  assert.deepEqual(deletedAll.affectedIds, ["notification-account-wide"]);
+  assert.deepEqual(deletedAll.notifications, []);
+  assert.equal(
+    db.notifications.some((item) => item.id === "notification-account-wide"),
+    false,
+  );
+  assert.equal(
+    db.notifications.some((item) => item.id === "notification-old-workspace"),
+    true,
+  );
+  assert.equal(
+    db.notifications.some((item) => item.id === "notification-other-user"),
+    true,
+  );
 });
 
 test("legacy bulk notification mutations persist once and keep unrelated rows unchanged", async () => {

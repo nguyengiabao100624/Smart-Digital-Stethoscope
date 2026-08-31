@@ -16,7 +16,7 @@ test("treats two-factor authentication as a verified backend workflow", () => {
   const account = read("src/components/admin/AccountSettings.tsx");
 
   assert.match(api, /async getTwoFactorStatus\(\)/);
-  assert.match(api, /requestJson<SmartHealthTwoFactorStatus>\("\/me\/2fa"\)/);
+  assert.match(api, /requestJson<SmartHealthTwoFactorStatus>\("\/v1\/me\/2fa"\)/);
   assert.doesNotMatch(api, /async updateTwoFactor\(/);
   assert.doesNotMatch(api, /"\/me\/2fa",\s*\{\s*method:\s*"POST"/);
 
@@ -31,7 +31,7 @@ test("uses the field-level, idempotent notification preference contract", () => 
   const account = read("src/components/admin/AccountSettings.tsx");
 
   assert.match(api, /async getNotificationPreferences\(\)/);
-  assert.match(api, /"\/me\/notification-preferences"/);
+  assert.match(api, /"\/v1\/me\/notification-preferences"/);
   assert.match(api, /async patchNotificationPreference\(/);
   assert.match(
     api,
@@ -85,4 +85,68 @@ test("keeps Firebase as reauthentication only and uses the canonical idempotent 
   assert.match(workflow, /receipt\.user\.id !== intent\.userId/);
   assert.match(workflow, /dependencies\.currentFirebaseUid\(\)/);
   assert.match(workflow, /dependencies\.currentAuthToken\(\)/);
+});
+
+test("uses the canonical idempotent account profile contract without mixing avatar authority", () => {
+  const api = read("src/lib/smart-health-api.ts");
+  const account = read("src/components/admin/AccountSettings.tsx");
+
+  assert.match(api, /payload: SmartHealthAccountProfilePatch/);
+  assert.match(api, /expectedUserId: string/);
+  assert.match(api, /parseAccountProfileReceipt\(/);
+  assert.match(api, /await requestJson<unknown>\("\/v1\/me"/);
+  assert.match(api, /headers: \{ "Idempotency-Key": idempotencyKey \}/);
+
+  const saveSource =
+    account.match(/const handleSave = async \(\) => \{[\s\S]*?\n[ ]{2}\};/)?.[0] || "";
+  assert.match(saveSource, /profileSaveIntentRef/);
+  assert.match(saveSource, /createIdempotencyKey\("account-profile"\)/);
+  assert.match(saveSource, /smartHealthApi\.updateMe\(/);
+  assert.match(saveSource, /activeIntent\.idempotencyKey/);
+  assert.match(saveSource, /smartHealthApi\.me\(\)/);
+  assert.match(saveSource, /Object\.entries\(patch\)/);
+  assert.doesNotMatch(saveSource, /avatarFileId|avatarUrl|organizationId|workspaceId/);
+});
+
+test("binds canonical avatar mutations to the current user, workspace and auth session", () => {
+  const api = read("src/lib/smart-health-api.ts");
+  const account = read("src/components/admin/AccountSettings.tsx");
+
+  assert.match(api, /async resolveAvatarMutationAuthority\(/);
+  assert.match(api, /session\.current === true && !session\.revokedAt/);
+  assert.match(api, /"X-Shcare-Expected-User-Id"/);
+  assert.match(api, /"X-Shcare-Expected-Workspace-Id"/);
+  assert.match(api, /"X-Shcare-Expected-Auth-Session-Id"/);
+  assert.match(
+    api,
+    /parseAvatarUploadReceipt\([\s\S]{0,100}requestJson<unknown>\("\/v1\/me\/avatar"/,
+  );
+  assert.match(
+    api,
+    /parseAvatarDeleteReceipt\([\s\S]{0,100}requestJson<unknown>\("\/v1\/me\/avatar"/,
+  );
+  assert.match(api, /"Idempotency-Key": intent\.idempotencyKey/);
+  assert.match(api, /expectedAvatarFileId: intent\.expectedAvatarFileId/);
+  assert.match(api, /requestBlob\("\/v1\/me\/avatar"\)/);
+
+  assert.match(account, /accountWorkspaceId/);
+  assert.match(account, /avatarUploadIntentRef/);
+  assert.match(account, /avatarDeleteIntentRef/);
+  assert.match(account, /resolveAvatarMutationAuthority\(/);
+  assert.match(account, /user\.avatarFileId !== receipt\.avatar\.fileId/);
+  assert.match(account, /if \(user\.avatarFileId \|\| receipt\.avatar\.fileId/);
+  assert.match(account, /window\.dispatchEvent\(new Event\("shcare:avatar-updated"\)\)/);
+});
+
+test("keeps every Admin account read and mutation on the canonical v1 authority", () => {
+  const api = read("src/lib/smart-health-api.ts");
+
+  assert.match(api, /requestJson<\{ user: SmartHealthAuthUser \}>\("\/v1\/me"\)/);
+  assert.match(api, /"\/v1\/me\/2fa"/);
+  assert.match(api, /"\/v1\/me\/notification-preferences"/);
+  assert.match(api, /"\/v1\/auth\/sessions"/);
+  assert.doesNotMatch(api, /requestJson[^\n]*\("\/me"\)/);
+  assert.doesNotMatch(api, /"\/me\/2fa"/);
+  assert.doesNotMatch(api, /"\/me\/notification-preferences"/);
+  assert.doesNotMatch(api, /"\/auth\/sessions"/);
 });

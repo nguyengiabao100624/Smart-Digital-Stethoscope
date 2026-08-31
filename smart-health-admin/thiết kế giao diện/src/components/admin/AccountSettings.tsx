@@ -221,6 +221,13 @@ export function AccountSettings() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const avatarObjectUrlRef = useRef("");
   const passwordChangeIntentRef = useRef<PasswordChangeIntent | null>(null);
+  const profileSaveIntentRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+  const avatarUploadIntentRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(
+    null,
+  );
+  const avatarDeleteIntentRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(
+    null,
+  );
   const sessionRevokeIntentsRef = useRef<AuthSessionRevokeIntentRegistry | null>(null);
   const sessionAuthorityUserIdRef = useRef("");
   if (!sessionRevokeIntentsRef.current) {
@@ -251,6 +258,7 @@ export function AccountSettings() {
   const [passwordError, setPasswordError] = useState("");
   const [profile, setProfile] = useState<ProfileState>(emptyProfile);
   const [accountUserId, setAccountUserId] = useState("");
+  const [accountWorkspaceId, setAccountWorkspaceId] = useState("");
   const [accountFirebaseUid, setAccountFirebaseUid] = useState<string | null>(null);
   const [twoFactorStatus, setTwoFactorStatus] = useState<SmartHealthTwoFactorStatus | null>(null);
   const [twoFactorLoading, setTwoFactorLoading] = useState(false);
@@ -318,6 +326,13 @@ export function AccountSettings() {
 
         const nextProfile = profileFromUser(user);
         const nextFirebaseUid = user.firebaseUid || null;
+        const nextWorkspaceId =
+          user.organizationId ||
+          user.currentWorkspaceId ||
+          user.workspaceId ||
+          user.currentWorkspace?.id ||
+          user.workspace?.id ||
+          "";
         const previousAuthority = passwordAuthorityRef.current;
         if (
           previousAuthority.userId &&
@@ -325,6 +340,9 @@ export function AccountSettings() {
             previousAuthority.firebaseUid !== nextFirebaseUid)
         ) {
           passwordChangeIntentRef.current = null;
+          profileSaveIntentRef.current = null;
+          avatarUploadIntentRef.current = null;
+          avatarDeleteIntentRef.current = null;
           setPasswordForm({
             currentPassword: "",
             newPassword: "",
@@ -338,6 +356,7 @@ export function AccountSettings() {
         };
         sessionAuthorityUserIdRef.current = user.id;
         setAccountUserId(user.id);
+        setAccountWorkspaceId(nextWorkspaceId);
         setAccountFirebaseUid(nextFirebaseUid);
 
         if (twoFactorResult.ok) {
@@ -416,6 +435,9 @@ export function AccountSettings() {
   useEffect(() => {
     return () => {
       sessionAuthorityUserIdRef.current = "";
+      profileSaveIntentRef.current = null;
+      avatarUploadIntentRef.current = null;
+      avatarDeleteIntentRef.current = null;
       if (avatarObjectUrlRef.current) {
         URL.revokeObjectURL(avatarObjectUrlRef.current);
       }
@@ -445,24 +467,52 @@ export function AccountSettings() {
 
   const handleSave = async () => {
     setSaveStatus("saving");
+    const patch = {
+      name: profile.name.trim(),
+      title: profile.title.trim(),
+      phone: profile.phone.trim(),
+      license: profile.license.trim(),
+      hospital: profile.hospital.trim(),
+      department: profile.department.trim(),
+      specialty: profile.specialty.trim(),
+      address: profile.address.trim(),
+    };
+    const fingerprint = JSON.stringify([accountUserId, Object.entries(patch)]);
+    let activeIntent = profileSaveIntentRef.current;
+    if (!activeIntent || activeIntent.fingerprint !== fingerprint) {
+      activeIntent = {
+        fingerprint,
+        idempotencyKey: createIdempotencyKey("account-profile"),
+      };
+      profileSaveIntentRef.current = activeIntent;
+    }
     try {
-      const { user } = await smartHealthApi.updateMe({
-        name: profile.name,
-        title: profile.title,
-        phone: profile.phone,
-        license: profile.license,
-        hospital: profile.hospital,
-        department: profile.department,
-        specialty: profile.specialty,
-        address: profile.address,
-        avatarFileId: profile.avatarFileId,
-        avatarUrl: profile.avatarUrl,
-      });
+      const receipt = await smartHealthApi.updateMe(
+        patch,
+        activeIntent.idempotencyKey,
+        accountUserId,
+      );
+      if (!accountUserId || receipt.userId !== accountUserId) {
+        throw new Error("Biên nhận hồ sơ không thuộc tài khoản quản trị hiện tại.");
+      }
+      const { user } = await smartHealthApi.me();
+      if (
+        user.id !== accountUserId ||
+        Object.entries(patch).some(
+          ([field, value]) => user[field as keyof SmartHealthAuthUser] !== value,
+        )
+      ) {
+        throw new Error("Backend chưa đồng bộ đầy đủ hồ sơ tài khoản vừa lưu.");
+      }
+      profileSaveIntentRef.current = null;
       applyUserProfile(user);
       setSaveStatus("success");
       toast.success("Đã lưu cài đặt tài khoản");
       window.setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (error) {
+      if (isAuthSessionIdempotencyCollision(error)) {
+        profileSaveIntentRef.current = null;
+      }
       setSaveStatus("idle");
       toast.error(toVietnameseErrorMessage(error, "Không thể lưu cài đặt tài khoản."));
     }
@@ -542,16 +592,46 @@ export function AccountSettings() {
     setAvatarUploading(true);
     setObjectAvatarPreview(file);
     try {
-      const res = await smartHealthApi.uploadMyAvatar(file);
-      if (res && typeof res === "object" && "user" in res && res.user) {
-        applyUserProfile(res.user as SmartHealthAuthUser);
-      } else {
-        const { user } = await smartHealthApi.me();
-        applyUserProfile(user);
+      const authority = await smartHealthApi.resolveAvatarMutationAuthority(
+        accountUserId,
+        accountWorkspaceId,
+      );
+      const fingerprint = JSON.stringify([
+        authority.userId,
+        authority.workspaceId,
+        authority.authSessionId,
+        file.name,
+        file.type,
+        file.size,
+        file.lastModified,
+      ]);
+      let activeIntent = avatarUploadIntentRef.current;
+      if (!activeIntent || activeIntent.fingerprint !== fingerprint) {
+        activeIntent = {
+          fingerprint,
+          idempotencyKey: createIdempotencyKey("avatar-upload"),
+        };
+        avatarUploadIntentRef.current = activeIntent;
       }
+      const receipt = await smartHealthApi.uploadMyAvatar(file, {
+        ...authority,
+        idempotencyKey: activeIntent.idempotencyKey,
+      });
+      const { user } = await smartHealthApi.me();
+      if (user.id !== authority.userId) {
+        throw new Error("Ảnh đại diện không thuộc tài khoản quản trị hiện tại.");
+      }
+      if (!user.avatarFileId || user.avatarFileId !== receipt.avatar.fileId) {
+        throw new Error("Backend chưa xác nhận file ảnh đại diện mới.");
+      }
+      avatarUploadIntentRef.current = null;
+      applyUserProfile(user);
       window.dispatchEvent(new Event("shcare:avatar-updated"));
       toast.success("Đã cập nhật ảnh đại diện.");
     } catch (error) {
+      if (isAuthSessionIdempotencyCollision(error)) {
+        avatarUploadIntentRef.current = null;
+      }
       toast.error(toVietnameseErrorMessage(error, "Không thể tải ảnh đại diện."));
     } finally {
       setAvatarUploading(false);
@@ -567,18 +647,43 @@ export function AccountSettings() {
         "Ảnh đại diện sẽ được gỡ khỏi hồ sơ tài khoản và file avatar hiện tại sẽ bị xóa khỏi storage nếu còn tồn tại.",
       confirmLabel: "Gỡ ảnh",
       run: async () => {
-        const res = await smartHealthApi.deleteMyAvatar();
+        const authority = await smartHealthApi.resolveAvatarMutationAuthority(
+          accountUserId,
+          accountWorkspaceId,
+        );
+        const fingerprint = JSON.stringify([
+          authority.userId,
+          authority.workspaceId,
+          authority.authSessionId,
+          profile.avatarFileId,
+        ]);
+        let activeIntent = avatarDeleteIntentRef.current;
+        if (!activeIntent || activeIntent.fingerprint !== fingerprint) {
+          activeIntent = {
+            fingerprint,
+            idempotencyKey: createIdempotencyKey("avatar-delete"),
+          };
+          avatarDeleteIntentRef.current = activeIntent;
+        }
+        const receipt = await smartHealthApi.deleteMyAvatar({
+          ...authority,
+          expectedAvatarFileId: profile.avatarFileId,
+          idempotencyKey: activeIntent.idempotencyKey,
+        });
+        const { user } = await smartHealthApi.me();
+        if (user.id !== authority.userId) {
+          throw new Error("Biên nhận gỡ ảnh không thuộc tài khoản quản trị hiện tại.");
+        }
+        if (user.avatarFileId || receipt.avatar.fileId !== profile.avatarFileId) {
+          throw new Error("Backend chưa xác nhận ảnh đại diện đã được gỡ.");
+        }
+        avatarDeleteIntentRef.current = null;
         if (avatarObjectUrlRef.current) {
           URL.revokeObjectURL(avatarObjectUrlRef.current);
           avatarObjectUrlRef.current = "";
         }
         setAvatarPreview("");
-        if (res && typeof res === "object" && "user" in res && res.user) {
-          applyUserProfile(res.user as SmartHealthAuthUser);
-        } else {
-          const { user } = await smartHealthApi.me();
-          applyUserProfile(user);
-        }
+        applyUserProfile(user);
         window.dispatchEvent(new Event("shcare:avatar-updated"));
         toast.success("Đã gỡ ảnh đại diện.");
       },
@@ -722,6 +827,7 @@ export function AccountSettings() {
         if (oldTokenCleared || originalSessionIsAbsent) {
           passwordAuthorityRef.current = { userId: "", firebaseUid: null };
           setAccountUserId("");
+          setAccountWorkspaceId("");
           setAccountFirebaseUid(null);
           setProfile(emptyProfile);
           setAvatarPreview("");

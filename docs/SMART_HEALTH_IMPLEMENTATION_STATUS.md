@@ -3129,3 +3129,14 @@ KLTN report artifacts generated from this evidence set:
 - [x] Pass Admin `200/200`, lint/build; backend device-security `85/85` and syntax/UTF-8 gates; Web contracts/lint/build plus focused Auth `49/49`; focused Android unit build.
 - [x] Deploy Render release `b3a181af57aa` and Firebase Admin version `51d345c520cfc96e` / release `1788156866635000`.
 - [ ] Repeat authenticated visual/TalkBack smoke when a browser session is connected; current live asset and API evidence is complete but is not a substitute for that visual-only gate.
+
+## 2026-08-31 — Canonical account/profile/avatar and personal notification inbox
+
+- [x] Move Admin and Portal account reads to canonical `/api/v1` authority paths.
+- [x] Require exact profile/avatar mutation receipts plus a canonical `/api/v1/me` readback before success or shared-header avatar refresh.
+- [x] Separate personal inbox rows from notification campaign recipient/delivery rows.
+- [x] Add owner/workspace-scoped, audited and replay-safe personal inbox delete-all.
+- [x] Make read/read-all/delete/delete-all use stable idempotency keys and canonical post-mutation snapshots.
+- [x] Pass Admin, Web, backend, Android and ESP32 production/OTA build gates listed in the current handoff.
+- [ ] Repeat Xiaomi install/visual/TalkBack and COM serial/WSS/audio/OTA HIL when those devices are physically visible; current ADB and Windows port discovery return no device.
+- [ ] Install a system native C/C++ compiler if the optional PlatformIO `native` Unity gate is required on this workstation; this does not block the successful ESP32 firmware builds.

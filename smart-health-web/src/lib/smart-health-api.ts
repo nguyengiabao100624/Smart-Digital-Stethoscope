@@ -2480,7 +2480,7 @@ export const smartHealthApi = {
     }
     await this.logoutIfTokenMatches(token);
   },
-  me: () => request<{ user: ApiUser }>("/me"),
+  me: () => request<{ user: ApiUser }>("/v1/me"),
   getNotificationPreferences: () =>
     request<NotificationPreferencesResponse>("/v1/me/notification-preferences"),
   patchNotificationPreference: (
@@ -2532,7 +2532,7 @@ export const smartHealthApi = {
     }
     let result: { sessions: AuthSession[] };
     try {
-      result = await request<{ sessions: AuthSession[] }>("/auth/sessions");
+      result = await request<{ sessions: AuthSession[] }>("/v1/auth/sessions");
     } catch (error) {
       assertAvatarAuthSessionSnapshot(
         authSessionEpoch,
@@ -2666,7 +2666,7 @@ export const smartHealthApi = {
       }),
     );
   },
-  getTwoFactorStatus: () => request<TwoFactorStatusResponse>("/me/2fa"),
+  getTwoFactorStatus: () => request<TwoFactorStatusResponse>("/v1/me/2fa"),
   async startTwoFactorEnrollment(intent: TwoFactorEnrollmentStartIntent) {
     assertTwoFactorEnrollmentStartIntent(intent);
     assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
@@ -2720,11 +2720,11 @@ export const smartHealthApi = {
     return result;
   },
   disableTwoFactor: (code: string) =>
-    request<{ twoFactor: TwoFactorState }>("/me/2fa/disable", {
+    request<{ twoFactor: TwoFactorState }>("/v1/me/2fa/disable", {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
-  listSessions: () => request<{ sessions: AuthSession[] }>("/auth/sessions"),
+  listSessions: () => request<{ sessions: AuthSession[] }>("/v1/auth/sessions"),
   revokeSession: async (intent: AuthSessionRevokeIntent) => {
     assertAuthSessionRevokeIntent(intent, intent.userId);
     return parseAuthSessionRevokeReceipt(
@@ -2862,7 +2862,7 @@ export const smartHealthApi = {
         409,
       );
     }
-    const result = await request<{ sessions: AuthSession[] }>("/auth/sessions");
+    const result = await request<{ sessions: AuthSession[] }>("/v1/auth/sessions");
     if (
       getAuthSessionEpochSnapshot() !== authSessionEpoch ||
       getToken() !== bearerSnapshot

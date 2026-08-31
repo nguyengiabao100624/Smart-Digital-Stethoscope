@@ -295,7 +295,7 @@ describe("account avatar mutation contract", () => {
       bearerToken: "avatar-token",
     });
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe(
-      "http://localhost:3000/api/auth/sessions",
+      "http://localhost:3000/api/v1/auth/sessions",
     );
   });
 

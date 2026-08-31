@@ -2765,3 +2765,13 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Remove mojibake from runtime code and corrupted test fixtures; install Admin/Web/backend UTF-8 regression gates.
 - [x] Verify production health/CORS/auth boundary and live Firebase assets against release `b3a181af57aa`.
 - [ ] Visual-only follow-up: run the authenticated Admin route/TalkBack sweep when a controllable signed-in browser is available. No backend or deployment rollback is indicated by current evidence.
+
+## 2026-08-31 — Account authority and notification inbox closure
+
+- [x] Canonicalize Admin/Portal account authority paths and verify profile/avatar mutation receipts with readback.
+- [x] Stop mixing campaign recipient ledgers into the current operator's notification inbox.
+- [x] Add atomic personal inbox delete-all with owner/workspace isolation, audit and idempotent replay.
+- [x] Keep email/push provider reconciliation on the separate campaign contract; no delivery state is inferred from inbox state.
+- [x] Pass local backend security/tenant gates, Admin/Web gates, Android unit/lint/assemble and ESP32 production/OTA builds.
+- [ ] Re-run authenticated production browser smoke after deployment and physical Xiaomi/COM HIL when the devices reconnect.
+- [ ] Optional workstation tooling: add `gcc/g++` to run PlatformIO's native Unity environment; do not substitute it for the already passing target firmware build or for physical HIL.

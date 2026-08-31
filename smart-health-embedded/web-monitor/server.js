@@ -19306,6 +19306,52 @@ async function handleNotificationsApi(req, res, segments) {
   }
 
   if (
+    segments.length === 3 &&
+    segments[2] === "inbox" &&
+    method === "DELETE"
+  ) {
+    const authority = requireNotificationInboxAuthority(user);
+    const idempotencyKey = getRequiredIdempotencyKey(
+      req,
+      {},
+      "notification inbox delete-all",
+    );
+    const action = "delete_all";
+    const result = await repositories.notifications.mutateInboxWithAudit(
+      {
+        ...authority,
+        action,
+      },
+      {
+        actorUserId: user.id,
+        organizationId: authority.workspaceId,
+        authorization: {
+          kind: "self",
+          actorUserId: user.id,
+        },
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      },
+      {
+        scope: `${authority.userId}:${authority.workspaceId}`,
+        operation: `notification.inbox.${action}`,
+        key: idempotencyKey,
+        fingerprint: createIdempotencyFingerprint({
+          ...authority,
+          action,
+          notificationId: "",
+        }),
+      },
+    );
+    sendJson(
+      res,
+      result.responseStatus || 200,
+      publicNotificationInboxMutation(result),
+    );
+    return;
+  }
+
+  if (
     segments.length === 4 &&
     segments[2] === "inbox" &&
     method === "DELETE"

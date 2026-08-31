@@ -5902,6 +5902,45 @@ async function runScenario() {
     ),
     false,
   );
+  await expectStatus(
+    "notification inbox delete-all requires an Idempotency-Key",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox",
+    400,
+    { method: "DELETE" },
+  );
+  const deletedAllInboxItems = await expectStatus(
+    "notification inbox delete-all removes only the current owner and workspace snapshot",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox",
+    200,
+    {
+      method: "DELETE",
+      headers: {
+        "Idempotency-Key": "notification-inbox-delete-all",
+      },
+    },
+  );
+  assert.equal(deletedAllInboxItems.action, "delete_all");
+  assert.deepEqual(deletedAllInboxItems.notifications, []);
+  assert.ok(deletedAllInboxItems.affectedIds.includes("notif_inbox_current"));
+  const replayedDeleteAllInboxItems = await expectStatus(
+    "notification inbox delete-all exact retry replays the original receipt",
+    workspaceAdmin,
+    "/api/v1/notifications/inbox",
+    200,
+    {
+      method: "DELETE",
+      headers: {
+        "Idempotency-Key": "notification-inbox-delete-all",
+      },
+    },
+  );
+  assert.equal(replayedDeleteAllInboxItems.replayed, true);
+  assert.deepEqual(
+    replayedDeleteAllInboxItems.affectedIds,
+    deletedAllInboxItems.affectedIds,
+  );
   const notificationOptions = await expectStatus(
     "workspace admin reads scoped notification audience and provider options",
     workspaceAdmin,

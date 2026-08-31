@@ -72,6 +72,7 @@ import {
   WEB_SURFACE_TITLE,
 } from "@/lib/surface";
 import { parseOverviewStatsResponse } from "@/lib/overview-operations";
+import { createNotificationInboxIdempotencyKey } from "@/lib/notification-operations";
 
 const ROUTE_ICONS = {
   "admin.overview": LayoutDashboard,
@@ -393,6 +394,7 @@ export function Layout() {
   const mobileDrawerRef = useRef<HTMLElement | null>(null);
   const pendingNotificationIdsRef = useRef<Set<string>>(new Set());
   const confirmedReadNotificationIdsRef = useRef<Set<string>>(new Set());
+  const notificationReadIntentKeysRef = useRef<Map<string, string>>(new Map());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(
@@ -777,23 +779,30 @@ export function Layout() {
     pendingNotificationIdsRef.current.add(notificationId);
     setPendingNotificationIds(new Set(pendingNotificationIdsRef.current));
     try {
-      await smartHealthApi.markNotificationRead(notificationId);
-      const isFirstConfirmation = !confirmedReadNotificationIdsRef.current.has(notificationId);
-      confirmedReadNotificationIdsRef.current.add(notificationId);
-      setTopNotifications((prev) =>
-        prev.map((notification) =>
-          String(notification.id) === notificationId
-            ? { ...notification, isRead: true }
-            : notification,
-        ),
-      );
-      if (isFirstConfirmation) {
-        setUnreadNotificationCount((count) => Math.max(0, count - 1));
-        setSidebarBadges((prev) => ({
-          ...prev,
-          "/notifications": Math.max(0, (prev["/notifications"] || 0) - 1),
-        }));
+      const idempotencyKey =
+        notificationReadIntentKeysRef.current.get(notificationId) ||
+        createNotificationInboxIdempotencyKey("read", notificationId);
+      notificationReadIntentKeysRef.current.set(notificationId, idempotencyKey);
+      const receipt = await smartHealthApi.markNotificationRead(notificationId, idempotencyKey);
+      if (
+        receipt.action !== "read" ||
+        receipt.notification?.id !== notificationId ||
+        receipt.notification.read !== true
+      ) {
+        throw new Error("Backend did not confirm the requested notification read.");
       }
+      confirmedReadNotificationIdsRef.current.add(notificationId);
+      notificationReadIntentKeysRef.current.delete(notificationId);
+      const canonicalItems = receipt.notifications.map(mapNotification);
+      const canonicalUnreadCount = canonicalItems.filter(
+        (notification) => !notification.isRead,
+      ).length;
+      setTopNotifications(canonicalItems.slice(0, 5));
+      setUnreadNotificationCount(canonicalUnreadCount);
+      setSidebarBadges((prev) => ({
+        ...prev,
+        "/notifications": canonicalUnreadCount,
+      }));
       dispatchNotificationSync();
     } catch {
       setTopNotificationError(

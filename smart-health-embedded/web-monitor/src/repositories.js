@@ -9062,7 +9062,14 @@ function createRepositories(options) {
     "skipped_preference",
     "disabled",
   ]);
-  const NOTIFICATION_INBOX_ACTIONS = new Set(["read", "read_all", "delete"]);
+  const NOTIFICATION_INBOX_ACTIONS = new Set([
+    "read",
+    "read_all",
+    "delete",
+    "delete_all",
+  ]);
+  const NOTIFICATION_INBOX_ALL_ACTIONS = new Set(["read_all", "delete_all"]);
+  const NOTIFICATION_INBOX_DELETE_ACTIONS = new Set(["delete", "delete_all"]);
 
   function normalizeNotificationInboxAuthority(input = {}) {
     const userId = String(input.userId || "").trim();
@@ -9215,7 +9222,7 @@ function createRepositories(options) {
         "Notification inbox action is invalid",
       );
     }
-    if (action !== "read_all" && !notificationId) {
+    if (!NOTIFICATION_INBOX_ALL_ACTIONS.has(action) && !notificationId) {
       throw repositoryError(
         400,
         "NOTIFICATION_INBOX_ITEM_REQUIRED",
@@ -9255,12 +9262,14 @@ function createRepositories(options) {
       actorUserId: mutation.authority.userId,
       organizationId: mutation.authority.workspaceId,
       action:
-        mutation.action === "delete"
+        NOTIFICATION_INBOX_DELETE_ACTIONS.has(mutation.action)
           ? "notification.delete"
           : "notification.read",
       resourceType: "notification",
       resourceId:
-        mutation.action === "read_all" ? "all" : mutation.notificationId,
+        NOTIFICATION_INBOX_ALL_ACTIONS.has(mutation.action)
+          ? "all"
+          : mutation.notificationId,
       ip: auditInput.ip || "",
       userAgent: auditInput.userAgent || "",
       metadata: {
@@ -9440,7 +9449,10 @@ function createRepositories(options) {
                     (item) => String(item.id || "") === mutation.notificationId,
                   )
                 : null;
-              if (mutation.action !== "read_all" && !target) {
+              if (
+                !NOTIFICATION_INBOX_ALL_ACTIONS.has(mutation.action) &&
+                !target
+              ) {
                 throw repositoryError(
                   404,
                   "NOTIFICATION_INBOX_ITEM_NOT_FOUND",
@@ -9468,7 +9480,7 @@ function createRepositories(options) {
                   item.readAt = item.readAt || updatedAt;
                   item.updatedAt = updatedAt;
                 }
-              } else {
+              } else if (mutation.action === "delete") {
                 affectedIds = [target.id];
                 mutatedNotification = toNotificationInboxItem(
                   target,
@@ -9477,6 +9489,12 @@ function createRepositories(options) {
                 );
                 runtimeDb.notifications = runtimeDb.notifications.filter(
                   (item) => item.id !== target.id,
+                );
+              } else {
+                affectedIds = beforeItems.map((item) => item.id);
+                const affectedIdSet = new Set(affectedIds);
+                runtimeDb.notifications = runtimeDb.notifications.filter(
+                  (item) => !affectedIdSet.has(item.id),
                 );
               }
 
@@ -9567,7 +9585,10 @@ function createRepositories(options) {
               (item) => String(item.id || "") === mutation.notificationId,
             )
           : null;
-        if (mutation.action !== "read_all" && !target) {
+        if (
+          !NOTIFICATION_INBOX_ALL_ACTIONS.has(mutation.action) &&
+          !target
+        ) {
           throw repositoryError(
             404,
             "NOTIFICATION_INBOX_ITEM_NOT_FOUND",
@@ -9608,7 +9629,7 @@ function createRepositories(options) {
               [affectedIds, updatedAt],
             );
           }
-        } else {
+        } else if (mutation.action === "delete") {
           const deleteResult = await client.query(
             `
               DELETE FROM notifications
@@ -9623,6 +9644,17 @@ function createRepositories(options) {
             mutation.authority,
             updatedAt,
           );
+        } else {
+          affectedIds = beforeItems.map((item) => item.id);
+          if (affectedIds.length > 0) {
+            await client.query(
+              `
+                DELETE FROM notifications
+                WHERE id = ANY($1::text[])
+              `,
+              [affectedIds],
+            );
+          }
         }
 
         const finalItems = canonicalNotificationInbox(
@@ -9663,9 +9695,10 @@ function createRepositories(options) {
       runtimeDb.notifications = Array.isArray(runtimeDb.notifications)
         ? runtimeDb.notifications
         : [];
-      if (mutation.action === "delete") {
+      if (NOTIFICATION_INBOX_DELETE_ACTIONS.has(mutation.action)) {
+        const affectedIdSet = new Set(result.affectedIds || []);
         runtimeDb.notifications = runtimeDb.notifications.filter(
-          (item) => item.id !== mutation.notificationId,
+          (item) => !affectedIdSet.has(item.id),
         );
       }
       for (const item of result.notifications || []) {

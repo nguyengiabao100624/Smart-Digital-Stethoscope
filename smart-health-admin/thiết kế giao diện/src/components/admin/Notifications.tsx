@@ -27,10 +27,10 @@ import {
   NOTIFICATION_SYNC_EVENT,
 } from "@/lib/notification-events";
 import { CapabilityGate } from "./AdminAccessContext";
-import { useAdminAccess } from "./useAdminAccess";
 import { NOTIFICATION_MANAGE_CAPABILITIES } from "./action-permissions";
 import { useNavigate } from "./router-shim";
 import { NotificationComposer } from "./NotificationComposer";
+import { createNotificationInboxIdempotencyKey } from "@/lib/notification-operations";
 
 function formatNotificationTime(value?: string | null) {
   if (!value) {
@@ -93,8 +93,6 @@ function mapBackendNotification(notification: SmartHealthNotification): Notifica
 
 export function Notifications() {
   const navigate = useNavigate();
-  const { currentUser, hasAnyCapability } = useAdminAccess();
-  const canManageNotifications = hasAnyCapability(NOTIFICATION_MANAGE_CAPABILITIES);
   const [items, setItems] = React.useState<NotificationItem[]>([]);
   const [detail, setDetail] = useState<NotificationItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -105,6 +103,10 @@ export function Notifications() {
   const [deleteAllError, setDeleteAllError] = useState("");
   const [markAllLoading, setMarkAllLoading] = useState(false);
   const [readingIds, setReadingIds] = useState<Set<string>>(() => new Set());
+  const readIntentKeysRef = React.useRef(new Map<string, string>());
+  const deleteIntentKeysRef = React.useRef(new Map<string, string>());
+  const markAllIntentKeyRef = React.useRef<string | null>(null);
+  const deleteAllIntentKeyRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,14 +203,20 @@ export function Notifications() {
       current.map((item) => (String(item.id) === normalizedId ? { ...item, isRead: true } : item)),
     );
     try {
-      const { notification } = await smartHealthApi.markNotificationRead(normalizedId);
-      setItems((current) =>
-        current.map((item) =>
-          String(item.id) === normalizedId
-            ? { ...item, isRead: true, readAt: notification.readAt || item.readAt }
-            : item,
-        ),
-      );
+      const idempotencyKey =
+        readIntentKeysRef.current.get(normalizedId) ||
+        createNotificationInboxIdempotencyKey("read", normalizedId);
+      readIntentKeysRef.current.set(normalizedId, idempotencyKey);
+      const receipt = await smartHealthApi.markNotificationRead(normalizedId, idempotencyKey);
+      if (
+        receipt.action !== "read" ||
+        receipt.notification?.id !== normalizedId ||
+        receipt.notification.read !== true
+      ) {
+        throw new Error("Máy chủ chưa xác nhận đúng thông báo đã đọc.");
+      }
+      setItems(receipt.notifications.map(mapBackendNotification));
+      readIntentKeysRef.current.delete(normalizedId);
       dispatchNotificationSync();
     } catch (error) {
       setItems((current) =>
@@ -240,8 +248,15 @@ export function Notifications() {
     setMarkAllLoading(true);
     setItems((prev) => prev.map((i) => ({ ...i, isRead: true })));
     try {
-      const { notifications } = await smartHealthApi.markAllNotificationsRead();
-      setItems(notifications.map(mapBackendNotification));
+      const idempotencyKey =
+        markAllIntentKeyRef.current || createNotificationInboxIdempotencyKey("read_all");
+      markAllIntentKeyRef.current = idempotencyKey;
+      const receipt = await smartHealthApi.markAllNotificationsRead(idempotencyKey);
+      if (receipt.action !== "read_all" || receipt.notifications.some((item) => !item.read)) {
+        throw new Error("Máy chủ chưa xác nhận toàn bộ hộp thư đã đọc.");
+      }
+      setItems(receipt.notifications.map(mapBackendNotification));
+      markAllIntentKeyRef.current = null;
       dispatchNotificationSync();
       toast.success("Đã đánh dấu tất cả thông báo là đã đọc.");
     } catch (error) {
@@ -253,19 +268,21 @@ export function Notifications() {
   };
 
   const removeOne = (id: NotificationItem["id"]) => {
-    const notification = items.find((item) => item.id === id);
-    const ownsDirectNotification = Boolean(
-      notification?.userId && notification.userId === currentUser?.id,
-    );
-    if (!canManageNotifications && !ownsDirectNotification) {
-      toast.error("Tài khoản không có quyền xóa thông báo dùng chung.");
-      return;
-    }
+    const normalizedId = String(id);
     const snapshot = items;
     setItems((prev) => prev.filter((i) => i.id !== id));
+    const idempotencyKey =
+      deleteIntentKeysRef.current.get(normalizedId) ||
+      createNotificationInboxIdempotencyKey("delete", normalizedId);
+    deleteIntentKeysRef.current.set(normalizedId, idempotencyKey);
     smartHealthApi
-      .deleteNotification(String(id))
-      .then(() => {
+      .deleteNotification(normalizedId, idempotencyKey)
+      .then((receipt) => {
+        if (receipt.action !== "delete" || receipt.deletedId !== normalizedId) {
+          throw new Error("Máy chủ chưa xác nhận đúng thông báo đã xóa.");
+        }
+        setItems(receipt.notifications.map(mapBackendNotification));
+        deleteIntentKeysRef.current.delete(normalizedId);
         dispatchNotificationSync();
         toast.success("Đã xóa thông báo.");
       })
@@ -276,17 +293,21 @@ export function Notifications() {
   };
 
   const removeAll = async () => {
-    if (!canManageNotifications) {
-      toast.error("Tài khoản không có quyền quản lý thông báo.");
-      return;
-    }
     if (items.length === 0) return;
     setDeleteAllLoading(true);
     setDeleteAllError("");
     const snapshot = items;
     setItems([]);
     try {
-      await smartHealthApi.deleteAllNotifications();
+      const idempotencyKey =
+        deleteAllIntentKeyRef.current || createNotificationInboxIdempotencyKey("delete_all");
+      deleteAllIntentKeyRef.current = idempotencyKey;
+      const receipt = await smartHealthApi.deleteAllNotifications(idempotencyKey);
+      if (receipt.action !== "delete_all" || receipt.notifications.length !== 0) {
+        throw new Error("Máy chủ chưa xác nhận hộp thư đã được xóa.");
+      }
+      setItems([]);
+      deleteAllIntentKeyRef.current = null;
       dispatchNotificationSync();
       toast.success("Đã xóa tất cả thông báo.");
       setDeleteAllConfirmOpen(false);
@@ -301,10 +322,6 @@ export function Notifications() {
   };
 
   const requestRemoveAll = () => {
-    if (!canManageNotifications) {
-      toast.error("Tài khoản không có quyền quản lý thông báo.");
-      return;
-    }
     if (items.length === 0) return;
     setDeleteAllError("");
     setDeleteAllConfirmOpen(true);
@@ -430,21 +447,19 @@ export function Notifications() {
                 {!note.isRead && (
                   <div className="w-2 h-2 bg-primary rounded-full mt-2" title="Chưa đọc" />
                 )}
-                {(canManageNotifications || note.userId === currentUser?.id) && (
-                  <motion.button
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.92 }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeOne(note.id);
-                    }}
-                    title="Xóa thông báo"
-                    aria-label="Xóa thông báo"
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </motion.button>
-                )}
+                <motion.button
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.92 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeOne(note.id);
+                  }}
+                  title="Xóa thông báo"
+                  aria-label="Xóa thông báo"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </motion.button>
               </div>
             </motion.div>
           ))
@@ -482,13 +497,7 @@ export function Notifications() {
 
       <CapabilityGate capabilities={NOTIFICATION_MANAGE_CAPABILITIES}>
         <NotificationComposer
-          onCreated={(notifications) => {
-            const mapped = notifications.map(mapBackendNotification);
-            const createdIds = new Set(mapped.map((notification) => String(notification.id)));
-            setItems((current) => [
-              ...mapped,
-              ...current.filter((notification) => !createdIds.has(String(notification.id))),
-            ]);
+          onCreated={() => {
             dispatchNotificationSync();
           }}
         />
@@ -532,15 +541,13 @@ export function Notifications() {
                   "Đánh dấu tất cả là đã đọc"
                 )}
               </button>
-              <CapabilityGate capabilities={NOTIFICATION_MANAGE_CAPABILITIES}>
-                <button
-                  onClick={requestRemoveAll}
-                  disabled={items.length === 0}
-                  className="flex min-h-11 items-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" /> Xóa tất cả
-                </button>
-              </CapabilityGate>
+              <button
+                onClick={requestRemoveAll}
+                disabled={items.length === 0}
+                className="flex min-h-11 items-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" /> Xóa tất cả
+              </button>
             </div>
           </div>
 

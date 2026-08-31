@@ -568,6 +568,21 @@ export type SmartHealthNotification = {
   updatedAt?: string;
 };
 
+export type SmartHealthNotificationInboxResponse = {
+  userId: string;
+  workspaceId: string;
+  notifications: SmartHealthNotification[];
+  updatedAt: string;
+};
+
+export type SmartHealthNotificationInboxMutationResponse = SmartHealthNotificationInboxResponse & {
+  action: "read" | "read_all" | "delete" | "delete_all";
+  notification: SmartHealthNotification | null;
+  affectedIds: string[];
+  deletedId: string | null;
+  replayed: boolean;
+};
+
 export type SmartHealthNotificationChannel = "in_app" | "email" | "push";
 export type SmartHealthNotificationAudienceType = "workspace" | "role" | "users";
 export type SmartHealthNotificationDeliveryStatus =
@@ -696,6 +711,73 @@ export type SmartHealthAuthSession = {
   lastSeenAt?: string;
   revokedAt?: string;
   current?: boolean;
+};
+
+export type SmartHealthAvatarMutationAuthority = {
+  userId: string;
+  workspaceId: string;
+  authSessionId: string;
+  bearerToken: string;
+};
+
+export type SmartHealthAvatarUploadIntent = SmartHealthAvatarMutationAuthority & {
+  idempotencyKey: string;
+};
+
+export type SmartHealthAvatarDeleteIntent = SmartHealthAvatarMutationAuthority & {
+  expectedAvatarFileId: string;
+  idempotencyKey: string;
+};
+
+export const SMART_HEALTH_ACCOUNT_PROFILE_FIELDS = [
+  "name",
+  "title",
+  "phone",
+  "license",
+  "hospital",
+  "department",
+  "specialty",
+  "address",
+] as const;
+
+export type SmartHealthAccountProfileField = (typeof SMART_HEALTH_ACCOUNT_PROFILE_FIELDS)[number];
+
+export type SmartHealthAccountProfilePatch = Partial<
+  Record<SmartHealthAccountProfileField, string>
+>;
+
+export type SmartHealthAccountProfileReceipt = {
+  userId: string;
+  intent: "profile_update";
+  changedFields: SmartHealthAccountProfileField[];
+  user: SmartHealthAuthUser & { updatedAt: string };
+  replayed: boolean;
+};
+
+export type SmartHealthAvatarUploadReceipt = {
+  avatar: {
+    fileId: string;
+    ownerUserId: string;
+    name: string;
+    contentType: string;
+    byteSize: number;
+    sha256: string;
+    downloadUrl: "/api/v1/me/avatar";
+    uploadedAt: string;
+  };
+  operationId: string;
+  replayed: boolean;
+};
+
+export type SmartHealthAvatarDeleteReceipt = {
+  deleted: true;
+  avatar: {
+    fileId: string;
+    ownerUserId: string;
+    deletedAt: string;
+  };
+  operationId: string;
+  replayed: boolean;
 };
 
 export type SmartHealthReadinessItem = {
@@ -1184,6 +1266,195 @@ function assignApiErrorMetadata(error: SmartHealthApiError, payload: unknown) {
   }
 }
 
+function avatarMutationError(code: string, message: string, status = 409) {
+  const error = new Error(message) as SmartHealthApiError;
+  error.code = code;
+  error.status = status;
+  return error;
+}
+
+function mutationRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function validMutationTimestamp(value: unknown) {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+function hasExactMutationKeys(value: Record<string, unknown> | null, expected: readonly string[]) {
+  if (!value) return false;
+  const actual = Object.keys(value).sort();
+  return JSON.stringify(actual) === JSON.stringify([...expected].sort());
+}
+
+function assertAccountProfilePatch(payload: SmartHealthAccountProfilePatch) {
+  const record = mutationRecord(payload);
+  const keys = record ? Object.keys(record).sort() : [];
+  const allowed = new Set<string>(SMART_HEALTH_ACCOUNT_PROFILE_FIELDS);
+  if (
+    !record ||
+    keys.length === 0 ||
+    keys.some((key) => !allowed.has(key)) ||
+    keys.some((key) => {
+      const value = record[key];
+      const maxLength = key === "address" ? 1000 : 160;
+      return (
+        typeof value !== "string" ||
+        value !== value.trim() ||
+        value.length > maxLength ||
+        (key === "name" && value.length === 0)
+      );
+    })
+  ) {
+    throw avatarMutationError(
+      "ACCOUNT_PROFILE_INTENT_INVALID",
+      "Không thể xác định chính xác thay đổi hồ sơ tài khoản cần gửi.",
+      400,
+    );
+  }
+}
+
+function parseAccountProfileReceipt(
+  payload: unknown,
+  patch: SmartHealthAccountProfilePatch,
+  expectedUserId: string,
+): SmartHealthAccountProfileReceipt {
+  const root = mutationRecord(payload);
+  const user = mutationRecord(root?.user);
+  const expectedFields = Object.keys(patch).sort();
+  const changedFields = Array.isArray(root?.changedFields) ? root.changedFields : [];
+  const userFields = [
+    "id",
+    "name",
+    "title",
+    "phone",
+    "license",
+    "hospital",
+    "department",
+    "specialty",
+    "address",
+    "organizationId",
+    "updatedAt",
+  ] as const;
+  const valid =
+    hasExactMutationKeys(root, ["userId", "intent", "changedFields", "user", "replayed"]) &&
+    hasExactMutationKeys(user, userFields) &&
+    root?.userId === expectedUserId &&
+    root?.intent === "profile_update" &&
+    typeof root?.replayed === "boolean" &&
+    user?.id === expectedUserId &&
+    userFields
+      .filter((field) => field !== "updatedAt")
+      .every((field) => typeof user?.[field] === "string") &&
+    validMutationTimestamp(user?.updatedAt) &&
+    changedFields.length === expectedFields.length &&
+    changedFields.every((field) => typeof field === "string") &&
+    JSON.stringify([...changedFields].sort()) === JSON.stringify(expectedFields) &&
+    expectedFields.every(
+      (field) => user?.[field] === patch[field as SmartHealthAccountProfileField],
+    );
+  if (!valid) {
+    throw avatarMutationError(
+      "ACCOUNT_PROFILE_RECEIPT_INVALID",
+      "Backend chưa xác nhận chính xác thay đổi hồ sơ tài khoản.",
+      502,
+    );
+  }
+  return payload as SmartHealthAccountProfileReceipt;
+}
+
+function parseAvatarUploadReceipt(
+  payload: unknown,
+  file: File,
+  intent: SmartHealthAvatarUploadIntent,
+): SmartHealthAvatarUploadReceipt {
+  const root = mutationRecord(payload);
+  const avatar = mutationRecord(root?.avatar);
+  const valid =
+    avatar?.ownerUserId === intent.userId &&
+    typeof avatar?.fileId === "string" &&
+    avatar.fileId.length > 0 &&
+    avatar?.name === file.name &&
+    avatar?.contentType === (file.type || "application/octet-stream") &&
+    avatar?.byteSize === file.size &&
+    typeof avatar?.sha256 === "string" &&
+    /^[a-f0-9]{64}$/.test(avatar.sha256) &&
+    avatar?.downloadUrl === "/api/v1/me/avatar" &&
+    validMutationTimestamp(avatar?.uploadedAt) &&
+    typeof root?.operationId === "string" &&
+    root.operationId.length > 0 &&
+    typeof root?.replayed === "boolean";
+  if (!valid) {
+    throw avatarMutationError(
+      "AVATAR_UPLOAD_RECEIPT_INVALID",
+      "Backend chưa xác nhận chính xác ảnh đại diện vừa tải lên.",
+      502,
+    );
+  }
+  return payload as SmartHealthAvatarUploadReceipt;
+}
+
+function parseAvatarDeleteReceipt(
+  payload: unknown,
+  intent: SmartHealthAvatarDeleteIntent,
+): SmartHealthAvatarDeleteReceipt {
+  const root = mutationRecord(payload);
+  const avatar = mutationRecord(root?.avatar);
+  const valid =
+    root?.deleted === true &&
+    avatar?.ownerUserId === intent.userId &&
+    avatar?.fileId === intent.expectedAvatarFileId &&
+    validMutationTimestamp(avatar?.deletedAt) &&
+    typeof root?.operationId === "string" &&
+    root.operationId.length > 0 &&
+    typeof root?.replayed === "boolean";
+  if (!valid) {
+    throw avatarMutationError(
+      "AVATAR_DELETE_RECEIPT_INVALID",
+      "Backend chưa xác nhận chính xác ảnh đại diện đã được gỡ.",
+      502,
+    );
+  }
+  return payload as SmartHealthAvatarDeleteReceipt;
+}
+
+function avatarMutationAuthorityHeaders(authority: SmartHealthAvatarMutationAuthority) {
+  const canonical = {
+    userId: authority.userId.trim(),
+    workspaceId: authority.workspaceId.trim(),
+    authSessionId: authority.authSessionId.trim(),
+    bearerToken: authority.bearerToken.trim(),
+  };
+  if (
+    !canonical.userId ||
+    !canonical.workspaceId ||
+    !canonical.authSessionId ||
+    !canonical.bearerToken
+  ) {
+    throw avatarMutationError(
+      "AVATAR_MUTATION_AUTHORITY_REQUIRED",
+      "Chưa xác nhận tài khoản, workspace và phiên đăng nhập hiện tại cho thao tác ảnh đại diện.",
+    );
+  }
+  if (getStoredToken() !== canonical.bearerToken) {
+    throw avatarMutationError(
+      "AUTH_SESSION_REPLACED",
+      "Phiên đăng nhập đã thay đổi trước khi thao tác ảnh đại diện được gửi.",
+    );
+  }
+  return {
+    "X-Shcare-Expected-User-Id": canonical.userId,
+    "X-Shcare-Expected-Workspace-Id": canonical.workspaceId,
+    "X-Shcare-Expected-Auth-Session-Id": canonical.authSessionId,
+  };
+}
+
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { query, headers, body, onResponse, ...init } = options;
   const requestHeaders = new Headers(headers);
@@ -1373,35 +1644,115 @@ export const smartHealthApi = {
   },
 
   async me() {
-    return requestJson<{ user: SmartHealthAuthUser }>("/me");
+    return requestJson<{ user: SmartHealthAuthUser }>("/v1/me");
   },
 
-  async updateMe(payload: Partial<SmartHealthAuthUser>) {
-    return requestJson<{ user: SmartHealthAuthUser }>("/me", {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
+  async updateMe(
+    payload: SmartHealthAccountProfilePatch,
+    idempotencyKey: string,
+    expectedUserId: string,
+  ) {
+    assertAccountProfilePatch(payload);
+    if (!idempotencyKey.trim()) {
+      throw avatarMutationError(
+        "IDEMPOTENCY_KEY_REQUIRED",
+        "Lưu hồ sơ cần mã thao tác ổn định để có thể thử lại an toàn.",
+        400,
+      );
+    }
+    return parseAccountProfileReceipt(
+      await requestJson<unknown>("/v1/me", {
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      }),
+      payload,
+      expectedUserId,
+    );
   },
 
-  async uploadMyAvatar(file: File) {
-    return requestJson<{ user: SmartHealthAuthUser; file: SmartHealthStorageFile }>("/me/avatar", {
-      method: "POST",
-      headers: {
-        "Content-Type": file.type || "application/octet-stream",
-        "X-File-Name": file.name,
-      },
-      body: file,
-    });
+  async resolveAvatarMutationAuthority(
+    expectedUserId: string,
+    expectedWorkspaceId: string,
+  ): Promise<SmartHealthAvatarMutationAuthority> {
+    const bearerToken = getStoredToken();
+    if (!bearerToken || !expectedUserId.trim() || !expectedWorkspaceId.trim()) {
+      throw avatarMutationError(
+        "AVATAR_MUTATION_AUTHORITY_REQUIRED",
+        "Chưa xác nhận tài khoản, workspace và phiên đăng nhập hiện tại cho thao tác ảnh đại diện.",
+      );
+    }
+    const { sessions } = await requestJson<{ sessions: SmartHealthAuthSession[] }>(
+      "/v1/auth/sessions",
+    );
+    if (getStoredToken() !== bearerToken) {
+      throw avatarMutationError(
+        "AUTH_SESSION_REPLACED",
+        "Phiên đăng nhập đã thay đổi trong khi xác định quyền thao tác ảnh đại diện.",
+      );
+    }
+    const currentSession = sessions.find(
+      (session) => session.current === true && !session.revokedAt,
+    );
+    const authority = {
+      userId: expectedUserId.trim(),
+      workspaceId: expectedWorkspaceId.trim(),
+      authSessionId: String(currentSession?.id || "").trim(),
+      bearerToken,
+    } satisfies SmartHealthAvatarMutationAuthority;
+    avatarMutationAuthorityHeaders(authority);
+    return authority;
+  },
+
+  async uploadMyAvatar(file: File, intent: SmartHealthAvatarUploadIntent) {
+    if (!intent.idempotencyKey.trim()) {
+      throw avatarMutationError(
+        "IDEMPOTENCY_KEY_REQUIRED",
+        "Tải ảnh đại diện cần mã thao tác ổn định để có thể thử lại an toàn.",
+        400,
+      );
+    }
+    const authorityHeaders = avatarMutationAuthorityHeaders(intent);
+    return parseAvatarUploadReceipt(
+      await requestJson<unknown>("/v1/me/avatar", {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": file.name,
+          "Idempotency-Key": intent.idempotencyKey,
+          ...authorityHeaders,
+        },
+        body: file,
+      }),
+      file,
+      intent,
+    );
   },
 
   async downloadMyAvatar() {
-    return requestBlob("/me/avatar");
+    return requestBlob("/v1/me/avatar");
   },
 
-  async deleteMyAvatar() {
-    return requestJson<{ user: SmartHealthAuthUser }>("/me/avatar", {
-      method: "DELETE",
-    });
+  async deleteMyAvatar(intent: SmartHealthAvatarDeleteIntent) {
+    if (!intent.expectedAvatarFileId.trim() || !intent.idempotencyKey.trim()) {
+      throw avatarMutationError(
+        "AVATAR_DELETE_INTENT_INVALID",
+        "Không thể xác định ảnh hoặc mã thao tác cần dùng để xoá an toàn.",
+        400,
+      );
+    }
+    const authorityHeaders = avatarMutationAuthorityHeaders(intent);
+    return parseAvatarDeleteReceipt(
+      await requestJson<unknown>("/v1/me/avatar", {
+        method: "DELETE",
+        headers: {
+          "Idempotency-Key": intent.idempotencyKey,
+          ...authorityHeaders,
+        },
+        body: JSON.stringify({ expectedAvatarFileId: intent.expectedAvatarFileId }),
+      }),
+      intent,
+    );
   },
 
   async changePassword(payload: PasswordChangeInput, idempotencyKey: string) {
@@ -1423,11 +1774,13 @@ export const smartHealthApi = {
   },
 
   async getTwoFactorStatus() {
-    return requestJson<SmartHealthTwoFactorStatus>("/me/2fa");
+    return requestJson<SmartHealthTwoFactorStatus>("/v1/me/2fa");
   },
 
   async getNotificationPreferences() {
-    return requestJson<SmartHealthNotificationPreferencesResponse>("/me/notification-preferences");
+    return requestJson<SmartHealthNotificationPreferencesResponse>(
+      "/v1/me/notification-preferences",
+    );
   },
 
   async patchNotificationPreference(
@@ -1440,15 +1793,18 @@ export const smartHealthApi = {
     if (!idempotencyKey.trim()) {
       throw new Error("Idempotency-Key is required for notification preference changes");
     }
-    return requestJson<SmartHealthNotificationPreferencesResponse>("/me/notification-preferences", {
-      method: "PATCH",
-      headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ key: payload.key, enabled: payload.enabled }),
-    });
+    return requestJson<SmartHealthNotificationPreferencesResponse>(
+      "/v1/me/notification-preferences",
+      {
+        method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ key: payload.key, enabled: payload.enabled }),
+      },
+    );
   },
 
   async listSessions() {
-    return requestJson<{ sessions: SmartHealthAuthSession[] }>("/auth/sessions");
+    return requestJson<{ sessions: SmartHealthAuthSession[] }>("/v1/auth/sessions");
   },
 
   async revokeSession(intent: AuthSessionRevokeIntent) {
@@ -1688,7 +2044,7 @@ export const smartHealthApi = {
   },
 
   async listNotifications() {
-    return requestJson<{ notifications: SmartHealthNotification[] }>("/notifications");
+    return requestJson<SmartHealthNotificationInboxResponse>("/v1/notifications/inbox");
   },
 
   async getNotificationOptions() {
@@ -1744,28 +2100,54 @@ export const smartHealthApi = {
     );
   },
 
-  async markAllNotificationsRead() {
-    return requestJson<{ notifications: SmartHealthNotification[] }>("/notifications/read-all", {
-      method: "POST",
-    });
-  },
-
-  async markNotificationRead(id: string) {
-    return requestJson<{ notification: SmartHealthNotification }>(
-      `/notifications/${encodeURIComponent(id)}/read`,
-      { method: "POST" },
+  async markAllNotificationsRead(idempotencyKey: string) {
+    if (!idempotencyKey.trim()) {
+      throw new Error("Thiếu khóa chống gửi lặp cho thao tác thông báo.");
+    }
+    return requestJson<SmartHealthNotificationInboxMutationResponse>(
+      "/v1/notifications/inbox/read-all",
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({}),
+      },
     );
   },
 
-  async deleteNotification(id: string) {
-    return requestJson<{ deleted: boolean }>(`/notifications/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
+  async markNotificationRead(id: string, idempotencyKey: string) {
+    if (!idempotencyKey.trim()) {
+      throw new Error("Thiếu khóa chống gửi lặp cho thao tác thông báo.");
+    }
+    return requestJson<SmartHealthNotificationInboxMutationResponse>(
+      `/v1/notifications/inbox/${encodeURIComponent(id)}/read`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({}),
+      },
+    );
   },
 
-  async deleteAllNotifications() {
-    return requestJson<{ deleted: boolean; count: number }>("/notifications", {
+  async deleteNotification(id: string, idempotencyKey: string) {
+    if (!idempotencyKey.trim()) {
+      throw new Error("Thiếu khóa chống gửi lặp cho thao tác thông báo.");
+    }
+    return requestJson<SmartHealthNotificationInboxMutationResponse>(
+      `/v1/notifications/inbox/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    );
+  },
+
+  async deleteAllNotifications(idempotencyKey: string) {
+    if (!idempotencyKey.trim()) {
+      throw new Error("Thiếu khóa chống gửi lặp cho thao tác thông báo.");
+    }
+    return requestJson<SmartHealthNotificationInboxMutationResponse>("/v1/notifications/inbox", {
       method: "DELETE",
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
 

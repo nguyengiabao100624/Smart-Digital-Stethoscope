@@ -1,7 +1,12 @@
 const path = require("node:path");
 const PDFDocument = require("pdfkit");
 
-const EXPORT_ARTIFACT_RENDERER_VERSION = "shcare.export-artifact.v1";
+const LEGACY_EXPORT_ARTIFACT_RENDERER_VERSION = "shcare.export-artifact.v1";
+const EXPORT_ARTIFACT_RENDERER_VERSION = "shcare.export-artifact.v2";
+const EXPORT_ARTIFACT_RENDERER_VERSIONS = Object.freeze([
+  LEGACY_EXPORT_ARTIFACT_RENDERER_VERSION,
+  EXPORT_ARTIFACT_RENDERER_VERSION,
+]);
 const EXPORT_FORMATS = Object.freeze(["json", "csv", "xlsx", "pdf"]);
 const EXPORT_SCOPE_KINDS = Object.freeze(["platform", "workspace", "assigned_patients", "personal"]);
 
@@ -38,6 +43,16 @@ function normalizeExportFormat(value) {
 function formatMetadata(value) {
   const format = normalizeExportFormat(value);
   return format ? EXPORT_FORMAT_METADATA[format] : null;
+}
+
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalJsonValue(value[key])]),
+  );
 }
 
 function recordTimestamp(record = {}) {
@@ -382,7 +397,7 @@ async function buildPdf(snapshot) {
 }
 
 async function buildExportArtifact(snapshot, value, rendererVersion = EXPORT_ARTIFACT_RENDERER_VERSION) {
-  if (rendererVersion !== EXPORT_ARTIFACT_RENDERER_VERSION) {
+  if (!EXPORT_ARTIFACT_RENDERER_VERSIONS.includes(rendererVersion)) {
     const error = new Error("The export artifact renderer version is unavailable");
     error.code = "EXPORT_RENDERER_UNAVAILABLE";
     throw error;
@@ -395,19 +410,21 @@ async function buildExportArtifact(snapshot, value, rendererVersion = EXPORT_ART
     error.supportedFormats = [...EXPORT_FORMATS];
     throw error;
   }
+  const rendererSnapshot =
+    rendererVersion === EXPORT_ARTIFACT_RENDERER_VERSION ? canonicalJsonValue(snapshot) : snapshot;
   let buffer;
   switch (format) {
     case "csv":
-      buffer = buildCsv(snapshot);
+      buffer = buildCsv(rendererSnapshot);
       break;
     case "xlsx":
-      buffer = buildXlsx(snapshot);
+      buffer = buildXlsx(rendererSnapshot);
       break;
     case "pdf":
-      buffer = await buildPdf(snapshot);
+      buffer = await buildPdf(rendererSnapshot);
       break;
     default:
-      buffer = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+      buffer = Buffer.from(`${JSON.stringify(rendererSnapshot, null, 2)}\n`, "utf8");
       break;
   }
   return { ...metadata, format, buffer };
@@ -415,6 +432,7 @@ async function buildExportArtifact(snapshot, value, rendererVersion = EXPORT_ART
 
 module.exports = {
   EXPORT_ARTIFACT_RENDERER_VERSION,
+  EXPORT_ARTIFACT_RENDERER_VERSIONS,
   EXPORT_FORMATS,
   EXPORT_FORMAT_METADATA,
   EXPORT_SCOPE_KINDS,

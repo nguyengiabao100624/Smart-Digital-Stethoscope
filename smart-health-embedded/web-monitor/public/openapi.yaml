@@ -3788,7 +3788,7 @@ paths:
             X-Shcare-Renderer-Version:
               schema:
                 type: string
-                enum: [shcare.export-artifact.v1]
+                enum: [shcare.export-artifact.v1, shcare.export-artifact.v2]
           content:
             application/json:
               schema:
@@ -9418,7 +9418,7 @@ components:
           additionalProperties: true
         rendererVersion:
           type: string
-          enum: [shcare.export-artifact.v1]
+          enum: [shcare.export-artifact.v1, shcare.export-artifact.v2]
         status:
           type: string
           enum: [pending, ready, failed]

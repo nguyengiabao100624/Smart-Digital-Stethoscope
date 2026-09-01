@@ -6806,7 +6806,7 @@ async function runScenario() {
       artifact.response.headers.get("x-shcare-artifact-sha256"),
       crypto.createHash("sha256").update(artifact.buffer).digest("hex"),
     );
-    assert.equal(artifact.response.headers.get("x-shcare-renderer-version"), "shcare.export-artifact.v1");
+    assert.equal(artifact.response.headers.get("x-shcare-renderer-version"), "shcare.export-artifact.v2");
     assert.match(artifact.response.headers.get("content-disposition") || "", new RegExp(`\\.${format}\\"$`));
     if (format === "json") {
       assert.match(artifact.response.headers.get("content-type") || "", /^application\/json/);

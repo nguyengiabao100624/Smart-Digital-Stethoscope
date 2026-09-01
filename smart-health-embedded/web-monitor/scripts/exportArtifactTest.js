@@ -2,11 +2,22 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  EXPORT_ARTIFACT_RENDERER_VERSION,
   EXPORT_FORMATS,
   buildExportArtifact,
   normalizeExportFormat,
   snapshotRows,
 } = require("../src/exportArtifact");
+
+function reverseObjectKeys(value) {
+  if (Array.isArray(value)) return value.map(reverseObjectKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .reverse()
+      .map((key) => [key, reverseObjectKeys(value[key])]),
+  );
+}
 
 function fixtureSnapshot() {
   return {
@@ -88,6 +99,25 @@ test("unsupported formats fail with a stable contract code", async () => {
   await assert.rejects(
     buildExportArtifact(fixtureSnapshot(), "sql"),
     (error) => error && error.code === "EXPORT_FORMAT_UNSUPPORTED",
+  );
+});
+
+test("current renderer is stable across PostgreSQL JSONB object key reordering", async () => {
+  const original = fixtureSnapshot();
+  const reordered = reverseObjectKeys(original);
+  for (const format of EXPORT_FORMATS) {
+    const left = await buildExportArtifact(original, format, EXPORT_ARTIFACT_RENDERER_VERSION);
+    const right = await buildExportArtifact(reordered, format, EXPORT_ARTIFACT_RENDERER_VERSION);
+    assert.deepEqual(right.buffer, left.buffer, `${format} must not depend on JSON object insertion order`);
+  }
+});
+
+test("legacy renderer remains readable while unknown renderer versions fail closed", async () => {
+  const legacy = await buildExportArtifact(fixtureSnapshot(), "json", "shcare.export-artifact.v1");
+  assert.equal(JSON.parse(legacy.buffer.toString("utf8")).exportId, "export_test");
+  await assert.rejects(
+    buildExportArtifact(fixtureSnapshot(), "json", "shcare.export-artifact.v999"),
+    (error) => error && error.code === "EXPORT_RENDERER_UNAVAILABLE",
   );
 });
 

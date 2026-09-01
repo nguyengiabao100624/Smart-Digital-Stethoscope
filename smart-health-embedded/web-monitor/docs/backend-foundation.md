@@ -158,7 +158,7 @@ POST /api/v1/exports
 GET  /api/v1/exports/download/:exportId
 ```
 
-- Artifacts are produced by the backend as real JSON, UTF-8 CSV, OpenXML XLSX or PDF bytes. Every job stores the immutable snapshot scope, dataset, filters, SHA-256 and renderer version `shcare.export-artifact.v1`.
+- Artifacts are produced by the backend as real JSON, UTF-8 CSV, OpenXML XLSX or PDF bytes. Every job stores the immutable snapshot scope, dataset, filters, SHA-256 and renderer version. New jobs use `shcare.export-artifact.v2`, whose recursively canonical JSON ordering keeps the bytes and hash stable after a PostgreSQL `jsonb` round trip; `v1` remains readable for compatible historical jobs.
 - Clinical export authority is explicit: Platform Admin selects a workspace; workspace owner/admin exports the current workspace; doctor output is limited to currently granted patients; patient output is limited to owned/dependent profiles; billing and viewer are denied.
 - Limited actors can list/download only their own jobs. Workspace export managers can manage jobs in their workspace, and a workspace actor cannot read a platform-global or another-workspace artifact.
 - Create requires `Idempotency-Key`; exact replay returns the same job and does not append another `export.create` audit event. Successful download is audited separately. The workspace regression performs and revokes a temporary doctor grant so cleanup uses the audited lifecycle.

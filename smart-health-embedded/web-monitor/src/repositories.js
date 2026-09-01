@@ -92,6 +92,11 @@ function optionalTimestamp(value) {
   return value ? value : null;
 }
 
+function optionalForeignKey(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
+
 function objectOf(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -2841,12 +2846,12 @@ function createRepositories(options) {
         `,
         [
           device.id,
-          optional(device.organizationId),
-          optional(device.pairedUserId),
+          optionalForeignKey(device.organizationId),
+          optionalForeignKey(device.pairedUserId),
           ownershipState,
-          optional(ownerUserId),
-          optional(device.assignedPatientId),
-          optional(device.revokedByUserId),
+          optionalForeignKey(ownerUserId),
+          optionalForeignKey(device.assignedPatientId),
+          optionalForeignKey(device.revokedByUserId),
           device.name || device.id,
           device.type || "stethoscope",
           device.status || "unclaimed",

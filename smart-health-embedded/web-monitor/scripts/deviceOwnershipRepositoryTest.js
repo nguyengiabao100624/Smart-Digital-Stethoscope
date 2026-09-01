@@ -1293,6 +1293,11 @@ test("SQL locks the canonical device before persisting direct ownership values",
     null,
     "an empty revokedAt value must be persisted as SQL NULL, not an invalid empty timestamp",
   );
+  assert.equal(
+    upsert.params[6],
+    null,
+    "an empty revokedByUserId must be persisted as SQL NULL, not an invalid foreign key",
+  );
   assert.equal(result.device.ownershipState, "assigned");
   assert.equal(result.device.assignedPatientId, PATIENT_ALPHA);
   assert.equal(transaction.committed, true);
@@ -2188,7 +2193,7 @@ test("SQL credential rotation writes the secret column only for a matching confi
 });
 
 test("SQL provision consumes the canonical RETURNING device for runtime and caller state", async () => {
-  const { db, repositories } = createSqlHarness({
+  const { db, queries, repositories } = createSqlHarness({
     canonicalDevice: {
       ownershipState: "provisioned",
       ownerUserId: "",
@@ -2239,6 +2244,13 @@ test("SQL provision consumes the canonical RETURNING device for runtime and call
   assert.equal(result.device.secretHash, CANONICAL_SECRET_HASH);
   assert.equal(incoming.secretHash, CANONICAL_SECRET_HASH);
   assert.equal(db.devices[0].secretHash, CANONICAL_SECRET_HASH);
+  const upsert = queries.find((query) => query.kind === "device_upsert");
+  assert.ok(upsert);
+  assert.deepEqual(
+    [upsert.params[2], upsert.params[4], upsert.params[5], upsert.params[6]],
+    [null, null, null, null],
+    "empty device ownership references must be persisted as SQL NULL foreign keys",
+  );
 });
 
 test("SQL claim provisioning cannot replace a factory-enrolled credential", async () => {

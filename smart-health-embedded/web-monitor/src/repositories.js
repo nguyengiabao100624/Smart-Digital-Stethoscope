@@ -9100,6 +9100,7 @@ function createRepositories(options) {
     }
     const notificationWorkspaceId = String(notification.organizationId || "");
     if (
+      authority.workspaceId !== "platform" &&
       notificationWorkspaceId &&
       notificationWorkspaceId !== authority.workspaceId
     ) {
@@ -9165,6 +9166,8 @@ function createRepositories(options) {
         FROM notifications
         WHERE user_id = $1
           AND (
+            $2 = 'platform'
+            OR
             organization_id = $2
             OR organization_id IS NULL
             OR organization_id = ''
@@ -9270,7 +9273,10 @@ function createRepositories(options) {
   ) {
     return createAuditLog({
       actorUserId: mutation.authority.userId,
-      organizationId: mutation.authority.workspaceId,
+      organizationId:
+        mutation.authority.workspaceId === "platform"
+          ? ""
+          : mutation.authority.workspaceId,
       action:
         NOTIFICATION_INBOX_DELETE_ACTIONS.has(mutation.action)
           ? "notification.delete"

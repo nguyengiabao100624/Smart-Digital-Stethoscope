@@ -262,7 +262,18 @@ async function visitRoute(page, href, label) {
     waitUntil: "domcontentloaded",
   });
   await waitSettled(page);
-  await page.waitForSelector("#admin-global-search", { timeout: 20_000 });
+  try {
+    await page.waitForSelector("#admin-global-search", { timeout: 20_000 });
+  } catch (error) {
+    const bodyExcerpt = await getBodyExcerpt(page);
+    throw new Error(
+      `${label} shell did not render on ${new URL(page.url()).pathname}: ${JSON.stringify({
+        url: page.url(),
+        bodyExcerpt,
+        originalError: error instanceof Error ? error.message : String(error),
+      })}`,
+    );
+  }
   await assertNoAdminError(page, label);
   return { label, path: new URL(page.url()).pathname };
 }
@@ -426,11 +437,11 @@ async function assertDoctorApprovalRoute(page, state) {
 
 async function assertAiMeasurementsRoute(page, state) {
   await page
-    .getByRole("heading", { name: /Lượt đo & AI Processing/i })
+    .getByRole("heading", { name: /Lượt đo và chất lượng tín hiệu/i })
     .waitFor({ state: "visible", timeout: 15_000 });
   if (state.scanId) {
     await page.getByRole("button", { name: /Hoàn tất/i }).click();
-    await page.getByPlaceholder(/Tìm Scan ID/i).fill(state.scanId);
+    await page.getByPlaceholder(/Tìm ID, bệnh nhân, thiết bị/i).fill(state.scanId);
     await page.getByText(state.scanId).first().waitFor({ state: "visible", timeout: 15_000 });
   }
 }

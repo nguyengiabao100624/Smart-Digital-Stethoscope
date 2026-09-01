@@ -7348,6 +7348,16 @@ function requireNotificationInboxAuthority(user) {
       "NOTIFICATION_INBOX_ACCOUNT_UNAVAILABLE",
     );
   }
+  // Platform administrators do not belong to a tenant workspace. They have a
+  // synthetic platform inbox scope so their own operational notifications are
+  // still available without inventing a membership row or leaking tenant data
+  // to regular workspace accounts.
+  if (isPlatformAdminUser(user)) {
+    return {
+      userId: user.id,
+      workspaceId: "platform",
+    };
+  }
   const workspaceContext = getUserWorkspaceContext(user);
   const workspaceId = readString(workspaceContext.currentWorkspaceId, 120);
   if (

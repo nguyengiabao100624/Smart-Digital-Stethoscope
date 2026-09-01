@@ -5749,6 +5749,15 @@ async function runScenario() {
     true,
     "platform administrators retain explicit platform-level operational visibility",
   );
+  const platformInbox = await expectStatus(
+    "platform admin can access the synthetic platform notification inbox scope",
+    platform,
+    "/api/v1/notifications/inbox",
+    200,
+  );
+  assert.equal(platformInbox.userId, "usr_platform");
+  assert.equal(platformInbox.workspaceId, "platform");
+  assert.ok(Array.isArray(platformInbox.notifications));
   const personalInbox = await expectStatus(
     "personal notification inbox is bound to the authenticated account and active workspace",
     workspaceAdmin,

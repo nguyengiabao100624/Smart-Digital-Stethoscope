@@ -503,6 +503,11 @@ async function exerciseAdminMutations(page, state) {
   });
   state.clinicVersion = Number(clinicPatch.payload?.clinic?.version || state.clinicVersion + 1);
 
+  // Managed workspaces are intentionally created as pending until the owner
+  // approval workflow completes. Use the platform admin's active workspace
+  // for staff operations instead of bypassing that approval contract.
+  state.operationalWorkspaceId = adminOrganizationId;
+
   const adminEmail = `${runKey}-workspace-admin@smarthealth.test`;
   console.log("[admin-mutation] managed admin create");
   const adminCreate = await apiFetch(page, "/admin/admin-users", {
@@ -692,7 +697,7 @@ async function exerciseAdminMutations(page, state) {
       phone: "0900000022",
       license: `CCHN-${runKey.slice(-8)}`,
       specialty: "Tim mạch",
-      organizationId: state.clinicId,
+      organizationId: state.operationalWorkspaceId,
     },
   });
   state.staffInvitationId = invitationCreate.payload?.invitation?.id || "";
@@ -701,7 +706,7 @@ async function exerciseAdminMutations(page, state) {
   }
   const invitationList = await apiFetch(
     page,
-    `/admin/staff-invitations?organizationId=${encodeURIComponent(state.clinicId)}&role=doctor&status=pending`,
+    `/admin/staff-invitations?organizationId=${encodeURIComponent(state.operationalWorkspaceId)}&role=doctor&status=pending`,
   );
   if (
     !Array.isArray(invitationList.payload?.invitations) ||
@@ -798,7 +803,7 @@ async function exerciseAdminMutations(page, state) {
       type: "info",
       audience: {
         type: "users",
-        workspaceId: state.clinicId,
+        workspaceId: state.operationalWorkspaceId,
         userIds: [state.adminUserId],
       },
       channels: ["in_app"],
@@ -1062,6 +1067,7 @@ async function cleanup(page, state, cleanupResults) {
   if (state.patientId) {
     await apiFetch(page, `/patients/${encodeURIComponent(state.patientId)}`, {
       method: "DELETE",
+      headers: { "Idempotency-Key": `${runId}:patient:delete` },
       allowFailure: true,
     })
       .then((result) => {
@@ -1143,6 +1149,29 @@ async function cleanup(page, state, cleanupResults) {
       });
       const current = inventory.payload?.clinics?.find((item) => item.id === state.clinicId);
       let expectedVersion = Number(current?.version || state.clinicVersion || 1);
+      if (current?.packageId === state.packageId) {
+        const packageUnassign = await apiFetch(
+          page,
+          `/admin/clinics/${encodeURIComponent(state.clinicId)}`,
+          {
+            method: "PATCH",
+            headers: { "Idempotency-Key": `${runId}:workspace-package:unassign` },
+            body: {
+              packageId: "",
+              subscriptionStatus: "trial",
+              billingCycle: "monthly",
+              expectedVersion,
+            },
+            allowFailure: true,
+          },
+        );
+        if (!packageUnassign.ok) return packageUnassign;
+        expectedVersion = Number(
+          packageUnassign.payload?.workspace?.version ||
+            packageUnassign.payload?.clinic?.version ||
+            expectedVersion + 1,
+        );
+      }
       if (current?.status === "active") {
         const transition = await apiFetch(
           page,

@@ -64,16 +64,16 @@ const watchPatterns = [
   "/api/settings",
 ];
 
-function readSmokeAccount() {
+function readSmokeAccount(key = accountKey) {
   if (!fs.existsSync(credentialsPath)) {
     throw new Error(
       `Missing smoke credentials file: ${credentialsPath}. Run backend smoke:production-roles first.`,
     );
   }
   const credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
-  const account = (credentials.accounts || []).find((item) => item.key === accountKey);
+  const account = (credentials.accounts || []).find((item) => item.key === key);
   if (!account?.email || !account?.password) {
-    throw new Error(`Smoke credentials file is missing the ${accountKey} account.`);
+    throw new Error(`Smoke credentials file is missing the ${key} account.`);
   }
   return account;
 }
@@ -105,6 +105,14 @@ function redactedHeaders(headers) {
 }
 
 function pickError(payload) {
+  if (typeof payload === "string") {
+    return payload
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+  }
   if (payload && typeof payload === "object" && "error" in payload) {
     const error = payload.error;
     if (typeof error === "string") return error;
@@ -215,7 +223,14 @@ async function apiFetch(page, route, options = {}) {
     init.body = JSON.stringify(options.body);
   }
   let result;
-  const maxAttempts = options.retryTransient ? 2 : 1;
+  const hasIdempotencyKey = Object.keys(headers).some(
+    (name) => name.toLowerCase() === "idempotency-key",
+  );
+  const retrySafe =
+    options.retryTransient === true ||
+    ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase()) ||
+    hasIdempotencyKey;
+  const maxAttempts = retrySafe ? 3 : 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetch(url, init);
     const responseText = await response.text();
@@ -228,8 +243,9 @@ async function apiFetch(page, route, options = {}) {
       }
     }
     result = { ok: response.ok, status: response.status, url: url.toString(), payload };
-    if (![502, 503, 504].includes(response.status) || attempt === maxAttempts) break;
-    await page.waitForTimeout(15_000);
+    if (![429, 502, 503, 504].includes(response.status) || attempt === maxAttempts) break;
+    const retryAfterSeconds = Number(response.headers.get("retry-after") || 0);
+    await page.waitForTimeout(Math.max(5_000, Math.min(30_000, retryAfterSeconds * 1_000)));
   }
 
   if (!result.ok && !options.allowFailure) {
@@ -508,6 +524,7 @@ async function exerciseAdminMutations(page, state) {
     `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
     {
       method: "PATCH",
+      headers: { "Idempotency-Key": `${runId}:admin-account:update` },
       body: {
         name: `Smoke Workspace Admin ${runId} patched`,
         phone: "0900000091",
@@ -520,6 +537,7 @@ async function exerciseAdminMutations(page, state) {
     `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/reset-password`,
     {
       method: "POST",
+      headers: { "Idempotency-Key": `${runId}:admin-account:reset-password` },
       body: { password: `Smoke${runKey}!2` },
     },
   );
@@ -575,12 +593,14 @@ async function exerciseAdminMutations(page, state) {
     `/admin/workspaces/${encodeURIComponent(state.clinicId)}/package`,
     {
       method: "POST",
+      headers: { "Idempotency-Key": `${runId}:workspace-package:assign` },
       body: { packageId: state.packageId, subscriptionStatus: "active", billingCycle: "monthly" },
     },
   );
 
   const patientResult = await apiFetch(page, "/patients", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:patient:create` },
     body: {
       name: `Admin Smoke Patient ${runId}`,
       age: 44,
@@ -597,6 +617,7 @@ async function exerciseAdminMutations(page, state) {
 
   const patientPatch = await apiFetch(page, `/patients/${encodeURIComponent(state.patientId)}`, {
     method: "PATCH",
+    headers: { "Idempotency-Key": `${runId}:patient:update` },
     body: { notes: `Updated by ${runId}` },
   });
 
@@ -644,32 +665,64 @@ async function exerciseAdminMutations(page, state) {
     };
   }
 
-  const doctorEmail = `${runKey}-doctor@smarthealth.test`;
-  const doctorCreate = await apiFetch(page, "/admin/doctors", {
+  const invitationEmail = `${runKey}-doctor@smarthealth.test`;
+  const invitationCreate = await apiFetch(page, "/admin/staff-invitations", {
     method: "POST",
+    headers: { "Idempotency-Key": `${runId}:doctor-invitation:create` },
     body: {
       name: `BS Smoke ${runId}`,
-      email: doctorEmail,
+      email: invitationEmail,
+      role: "doctor",
       phone: "0900000022",
       license: `CCHN-${runKey.slice(-8)}`,
-      department: "Tim mạch",
+      specialty: "Tim mạch",
       organizationId: state.clinicId,
     },
   });
-  state.doctorUserId = doctorCreate.payload?.doctor?.id;
-  state.doctorEmail = doctorEmail;
-  if (!state.doctorUserId) throw new Error("doctor create response did not include doctor.id");
+  state.staffInvitationId = invitationCreate.payload?.invitation?.id || "";
+  if (!state.staffInvitationId) {
+    throw new Error("staff invitation create response did not include invitation.id");
+  }
+  const invitationList = await apiFetch(
+    page,
+    `/admin/staff-invitations?organizationId=${encodeURIComponent(state.clinicId)}&role=doctor&status=pending`,
+  );
+  if (
+    !Array.isArray(invitationList.payload?.invitations) ||
+    !invitationList.payload.invitations.some(
+      (invitation) =>
+        invitation.id === state.staffInvitationId && invitation.email === invitationEmail,
+    )
+  ) {
+    throw new Error("staff invitation list did not return the invitation just created");
+  }
+
+  const doctorSmokeAccount = readSmokeAccount("doctor");
+  const approvedDoctors = await apiFetch(
+    page,
+    `/admin/doctors?q=${encodeURIComponent(doctorSmokeAccount.email)}&limit=100`,
+  );
+  const existingDoctor = (approvedDoctors.payload?.doctors || []).find(
+    (doctor) => String(doctor.email || "").toLowerCase() === doctorSmokeAccount.email.toLowerCase(),
+  );
+  state.doctorUserId = existingDoctor?.id || "";
+  state.doctorEmail = doctorSmokeAccount.email;
+  if (!state.doctorUserId) {
+    throw new Error(`dedicated doctor smoke account was not returned: ${state.doctorEmail}`);
+  }
 
   const doctorLock = await apiFetch(
     page,
     `/admin/doctors/${encodeURIComponent(state.doctorUserId)}/lock`,
-    { method: "PATCH" },
+    { method: "PATCH", retryTransient: true },
   );
+  state.doctorNeedsUnlock = true;
   const doctorUnlock = await apiFetch(
     page,
     `/admin/doctors/${encodeURIComponent(state.doctorUserId)}/unlock`,
-    { method: "PATCH" },
+    { method: "PATCH", retryTransient: true },
   );
+  state.doctorNeedsUnlock = false;
   const doctorRequests = await apiFetch(page, "/admin/doctor-requests?status=all");
 
   let scanEvidence = {
@@ -807,6 +860,9 @@ async function exerciseAdminMutations(page, state) {
     doctor: {
       id: state.doctorUserId,
       email: state.doctorEmail,
+      invitationId: state.staffInvitationId,
+      invitationEmail,
+      invitationDelivery: invitationCreate.payload?.delivery?.email || "",
       lockedStatus: doctorLock.payload?.request?.accountStatus,
       unlockedStatus: doctorUnlock.payload?.request?.accountStatus,
       requestCount: Array.isArray(doctorRequests.payload?.requests)
@@ -1003,20 +1059,45 @@ async function cleanup(page, state, cleanupResults) {
       );
   }
 
-  if (state.doctorUserId) {
-    await apiFetch(page, `/admin/doctors/${encodeURIComponent(state.doctorUserId)}`, {
-      method: "DELETE",
+  if (state.doctorNeedsUnlock && state.doctorUserId) {
+    await apiFetch(page, `/admin/doctors/${encodeURIComponent(state.doctorUserId)}/unlock`, {
+      method: "PATCH",
+      retryTransient: true,
       allowFailure: true,
     })
       .then((result) => {
         cleanupResults.push({
-          target: "doctor",
-          ok: result.ok || result.status === 404,
+          target: "doctor smoke account unlock",
+          ok: result.ok,
           status: result.status,
         });
-        state.doctorUserId = "";
+        if (result.ok) state.doctorNeedsUnlock = false;
       })
       .catch((error) => cleanupResults.push({ target: "doctor", ok: false, error: error.message }));
+  }
+
+  if (state.staffInvitationId) {
+    await apiFetch(
+      page,
+      `/admin/staff-invitations/${encodeURIComponent(state.staffInvitationId)}/revoke`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": `${runId}:doctor-invitation:revoke` },
+        body: { reason: "Automated production smoke cleanup" },
+        allowFailure: true,
+      },
+    )
+      .then((result) => {
+        cleanupResults.push({
+          target: "staff invitation",
+          ok: result.ok || result.status === 404 || result.status === 409,
+          status: result.status,
+        });
+        if (result.ok || [404, 409].includes(result.status)) state.staffInvitationId = "";
+      })
+      .catch((error) =>
+        cleanupResults.push({ target: "staff invitation", ok: false, error: error.message }),
+      );
   }
 
   if (state.adminUserId) {

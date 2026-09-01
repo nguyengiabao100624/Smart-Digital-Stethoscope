@@ -1,6 +1,30 @@
 let firebaseApp = null;
 let firebaseServices = null;
 
+function resolveFirebaseAdminMutationTimeoutMs(env = process.env) {
+  const value = Number(env.FIREBASE_ADMIN_MUTATION_TIMEOUT_MS || 8_000);
+  return Number.isFinite(value) ? Math.max(100, Math.min(30_000, value)) : 8_000;
+}
+
+async function runFirebaseAdminMutation(operation, env = process.env, label = "Firebase Admin") {
+  const timeoutMs = resolveFirebaseAdminMutationTimeoutMs(env);
+  let timeout;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          const error = new Error(`${label} timed out after ${timeoutMs} ms`);
+          error.code = "FIREBASE_ADMIN_TIMEOUT";
+          reject(error);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function isFirebaseAuthEnabled(env = process.env) {
   return (
     String(env.FIREBASE_AUTH_ENABLED || "").toLowerCase() === "true" ||
@@ -138,5 +162,7 @@ module.exports = {
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,
   resolveServiceAccount,
+  resolveFirebaseAdminMutationTimeoutMs,
+  runFirebaseAdminMutation,
   verifyFirebaseIdToken,
 };

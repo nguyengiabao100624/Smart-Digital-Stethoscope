@@ -9,9 +9,31 @@ const {
   isFirebaseProviderMutationConfirmed,
   isFirebaseAuthEmulatorConfigured,
   normalizeFirebaseAuthTime,
+  resolveFirebaseAdminMutationTimeoutMs,
   resolveServiceAccount,
+  runFirebaseAdminMutation,
   verifyFirebaseIdToken,
 } = require("../src/firebaseAuth");
+
+test("Firebase Admin mutations are bounded so a provider stall cannot pin the API instance", async () => {
+  assert.equal(resolveFirebaseAdminMutationTimeoutMs({ FIREBASE_ADMIN_MUTATION_TIMEOUT_MS: "1" }), 100);
+  assert.equal(resolveFirebaseAdminMutationTimeoutMs({ FIREBASE_ADMIN_MUTATION_TIMEOUT_MS: "999999" }), 30_000);
+  await assert.rejects(
+    runFirebaseAdminMutation(
+      () => new Promise(() => {}),
+      { FIREBASE_ADMIN_MUTATION_TIMEOUT_MS: "100" },
+      "test mutation",
+    ),
+    (error) => error?.code === "FIREBASE_ADMIN_TIMEOUT",
+  );
+  assert.equal(
+    await runFirebaseAdminMutation(
+      async () => "confirmed",
+      { FIREBASE_ADMIN_MUTATION_TIMEOUT_MS: "100" },
+    ),
+    "confirmed",
+  );
+});
 
 test("Firebase numeric auth_time becomes a stable canonical session binding", () => {
   assert.equal(normalizeFirebaseAuthTime({ auth_time: 1783987200 }), "1783987200");

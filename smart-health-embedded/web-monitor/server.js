@@ -14,6 +14,7 @@ const {
   isFirebaseAuthEnabled,
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,
+  runFirebaseAdminMutation,
   verifyFirebaseIdToken,
 } = require("./src/firebaseAuth");
 const {
@@ -12102,7 +12103,11 @@ async function updateFirebaseAdminAccount(targetUser, payload = {}) {
     updates.password = password;
   }
   if (Object.keys(updates).length > 0) {
-    await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, updates);
+    await runFirebaseAdminMutation(
+      () => firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, updates),
+      process.env,
+      "Firebase Admin user update",
+    );
   }
   return { updated: true };
 }
@@ -12148,14 +12153,22 @@ async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
 
   try {
     if (Object.keys(updates).length > 0) {
-      await firebaseAdminApp.auth().updateUser(firebaseUid, updates);
+      await runFirebaseAdminMutation(
+        () => firebaseAdminApp.auth().updateUser(firebaseUid, updates),
+        process.env,
+        "Firebase linked-account update",
+      );
     }
     // Firebase revokes refresh tokens as part of a password update. Explicit
     // revocation remains available for non-password lock flows.
     let firebaseTokensRevoked =
       Object.prototype.hasOwnProperty.call(updates, "password");
     if (payload.revokeRefreshTokens) {
-      await firebaseAdminApp.auth().revokeRefreshTokens(firebaseUid);
+      await runFirebaseAdminMutation(
+        () => firebaseAdminApp.auth().revokeRefreshTokens(firebaseUid),
+        process.env,
+        "Firebase refresh-token revocation",
+      );
       firebaseTokensRevoked = true;
     }
     return {
@@ -16212,7 +16225,9 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser.title = readString(payload.title, 120);
     }
 
-    await updateFirebaseAdminAccount(targetUser, { displayName: targetUser.name });
+    const profileProviderResult = Object.prototype.hasOwnProperty.call(payload, "name")
+      ? await updateFirebaseLinkedAccount(targetUser, { displayName: targetUser.name })
+      : null;
     await persistUserRecord(targetUser);
     await appendAudit("admin.user.update", req, {
       actorUserId: adminUser.id,
@@ -16226,6 +16241,7 @@ async function handleAdminApi(req, res, url, segments) {
       user: publicManagedAdminAccount(targetUser),
       operationId: roleSaga?.completed.identityOperation.id || accountStatusSaga?.completed.identityOperation.id,
       replayed: roleSaga?.replayed || accountStatusSaga?.replayed || false,
+      providerWarning: profileProviderResult?.warning || "",
     });
     return;
   }

@@ -2,6 +2,14 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 unified device assignment and claim-code boundary
+
+- Platform Admin device control now uses one audited, idempotent assignment transaction for the device workspace, responsible doctor/account and optional patient. The Admin dialog has separate workspace, doctor and patient searches, so a doctor phone number is no longer incorrectly searched only in patient records.
+- Direct assignment and claim are deliberately separate. A device assigned by Platform Admin is opened in Android with Device ID only. A one-time claim code is created in Admin only for a factory-enrolled device that has been returned to unassigned workspace inventory; Portal claim remains the handover path for that inventory state.
+- Returning a device to inventory clears owner/patient atomically, revokes open claim material and preserves the device/audit history. Cross-workspace assignment validates that both responsible account and patient belong to the target workspace; unauthorized or mixed-tenant writes fail closed.
+- Local verification PASS: ownership lifecycle/repository JSON+PostgreSQL tests, backend device security `86/86`, Admin contracts `204/204`, Admin/Web lint and production builds, Web contracts `141/141`, Android pairing tests, debug assemble and zero-issue lint. The HTTP security regression covers Platform Admin-only assignment, mixed-tenant rejection, atomic state, source/target audit and idempotent retry; it caught and fixed the missing `allocate` receipt binding before deployment. Production-connected APK SHA-256 `C908A35E32B97A63A0B8669F10C0C2D6459598BF83FBE7F151199A56141DA9E7` is installed on Xiaomi; cold start reached the authenticated doctor dashboard and FCM registration succeeded.
+- The source candidate still requires Render/Firebase promotion and live authenticated mutation/cleanup before this slice can be called live. The production health marker observed before promotion is `git-08105905a462`.
+
 ## 2026-09-02 Android doctor-surface parity and three-column quick actions
 
 - The authenticated doctor dashboard now uses the same adaptive Shcare visual system as the patient surface: gradient header, explicit loading/offline/error/stale states, current-workspace metadata, device status, quick actions and recent results. The previous four-second infinite polling loop was removed; refresh is explicit and lifecycle-safe.

@@ -17294,12 +17294,18 @@ async function handleAdminApi(req, res, url, segments) {
     const statusFilter = readString(url.searchParams.get("status"), 40).toLowerCase();
     const specialtyFilter = readString(url.searchParams.get("specialty"), 160);
     const clinicFilter = readString(url.searchParams.get("clinic"), 160);
+    const organizationFilter = readString(url.searchParams.get("organizationId"), 120);
     const doctorSource = users.filter((item) => {
       const status = item.accountStatus === "locked" ? "inactive" :
         item.accountStatus === "active" ? "active" : "unknown";
       const specialty = readString(item.department || item.specialty, 160);
       const clinic = readString(item.hospital || item.clinicName, 160);
+      const belongsToOrganization =
+        !organizationFilter ||
+        readString(item.organizationId, 120) === organizationFilter ||
+        hasWorkspaceMembership(item, organizationFilter);
       return (
+        belongsToOrganization &&
         (!statusFilter || statusFilter === "all" || status === statusFilter) &&
         (!specialtyFilter || specialtyFilter === "all" || specialty === specialtyFilter) &&
         (!clinicFilter || clinicFilter === "all" || clinic === clinicFilter)
@@ -21477,6 +21483,196 @@ async function handleDevicesApi(req, res, url, segments) {
     }
     sendJson(res, 200, {
       device: publicDevice(transferredDevice),
+      replayed: Boolean(persisted.replayed),
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[3] === "assignment" && method === "POST") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(
+        403,
+        "Only platform admin can change device workspace, responsible account, and patient assignment",
+        "DEVICE_ASSIGNMENT_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
+    const payload = await readJsonBody(req);
+    const allowedFields = new Set([
+      "organizationId",
+      "ownerUserId",
+      "assignedPatientId",
+      "idempotencyKey",
+    ]);
+    const unsupportedField = Object.keys(payload).find((field) => !allowedFields.has(field));
+    if (unsupportedField) {
+      throw httpError(
+        400,
+        `Field ${unsupportedField} cannot be changed through device assignment`,
+        "DEVICE_ASSIGNMENT_FIELD_FORBIDDEN",
+        { field: unsupportedField },
+      );
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(
+        400,
+        "Idempotency-Key is required for device assignment",
+        "IDEMPOTENCY_KEY_REQUIRED",
+      );
+    }
+
+    const organizationId = readString(payload.organizationId, 120);
+    if (!organizationId || !getClinicById(organizationId)) {
+      throw httpError(404, "Target workspace not found", "DEVICE_ASSIGNMENT_WORKSPACE_NOT_FOUND");
+    }
+
+    const assignedPatientId = readString(payload.assignedPatientId, 120);
+    const assignedPatient = assignedPatientId
+      ? repositories?.patients
+        ? await repositories.patients.findById(assignedPatientId)
+        : findPatient(assignedPatientId)
+      : null;
+    if (assignedPatientId && !assignedPatient) {
+      throw httpError(404, "Target patient not found", "DEVICE_ASSIGNMENT_PATIENT_NOT_FOUND");
+    }
+    if (
+      assignedPatient &&
+      readString(assignedPatient.organizationId, 120) !== organizationId
+    ) {
+      throw httpError(
+        403,
+        "The assigned patient is outside the target workspace",
+        "DEVICE_PATIENT_WORKSPACE_MISMATCH",
+      );
+    }
+
+    let ownerUserId = readString(payload.ownerUserId, 120);
+    if (!ownerUserId && assignedPatient) {
+      ownerUserId = [
+        assignedPatient.accountUserId,
+        assignedPatient.ownerUserId,
+        assignedPatient.guardianUserId,
+      ]
+        .map((candidate) => readString(candidate, 120))
+        .find((candidate) => {
+          if (!candidate) return false;
+          const linkedUser = db.users.find((item) => item.id === candidate);
+          return Boolean(
+            linkedUser &&
+            isActiveUserAccount(linkedUser) &&
+            (isPlatformAdminUser(linkedUser) || hasWorkspaceMembership(linkedUser, organizationId)),
+          );
+        }) || "";
+    }
+
+    const owner = ownerUserId
+      ? repositories?.users
+        ? await repositories.users.findByIdOrFirebaseUid(ownerUserId)
+        : db.users.find(
+            (candidate) => candidate.id === ownerUserId || candidate.firebaseUid === ownerUserId,
+          )
+      : null;
+    if (ownerUserId && !owner) {
+      throw httpError(404, "Target responsible account not found", "DEVICE_ASSIGNMENT_OWNER_NOT_FOUND");
+    }
+    if (
+      owner &&
+      (!isActiveUserAccount(owner) ||
+        (!isPlatformAdminUser(owner) && !hasWorkspaceMembership(owner, organizationId)))
+    ) {
+      throw httpError(
+        403,
+        "The responsible account is not active in the target workspace",
+        "DEVICE_OWNER_WORKSPACE_MISMATCH",
+      );
+    }
+    if (assignedPatient && !owner) {
+      throw httpError(
+        400,
+        "Select a responsible doctor or link the patient to an active account before assigning the device",
+        "DEVICE_ASSIGNMENT_OWNER_REQUIRED",
+      );
+    }
+    ownerUserId = owner?.id || "";
+
+    if (!repositories?.devices?.saveOwnershipMutationWithAudit) {
+      throw httpError(
+        503,
+        "Audited device ownership storage is unavailable",
+        "DEVICE_OWNERSHIP_STORAGE_UNAVAILABLE",
+      );
+    }
+    const at = nowIso();
+    const context = getRequestContext(req) || createRequestContext(req);
+    const previous = {
+      organizationId: readString(device.organizationId, 120),
+      ownerUserId: readString(device.ownerUserId || device.pairedUserId, 120),
+      assignedPatientId: readString(device.assignedPatientId, 120),
+      ownershipState: inferDeviceOwnershipState(device),
+    };
+    const next = {
+      organizationId,
+      ownerUserId,
+      assignedPatientId,
+      ownershipState: assignedPatientId
+        ? "assigned"
+        : ownerUserId
+          ? "unassigned"
+          : "provisioned",
+    };
+    const auditMetadata = { previous, next };
+    const auditOrganizationIds = [...new Set([previous.organizationId, organizationId].filter(Boolean))];
+    const auditInputs = auditOrganizationIds.map((auditOrganizationId) => ({
+      action: "device.assignment.update",
+      actorUserId: user.id,
+      organizationId: auditOrganizationId,
+      resourceType: "device",
+      resourceId: device.id,
+      ip: context.ip || "",
+      userAgent: context.userAgent || "",
+      metadata: auditMetadata,
+    }));
+    const persisted = await repositories.devices.saveOwnershipMutationWithAudit(
+      {
+        deviceId: device.id,
+        operation: "allocate",
+        expected: deviceOwnershipExpectation(device),
+        organizationId,
+        ownerUserId,
+        assignedPatientId,
+        actorUserId: user.id,
+        at,
+        revokeOpenClaims: true,
+        claimOrganizationId: previous.organizationId,
+        idempotency: {
+          scope: getIdempotencyScope(user),
+          operation: `device.assignment:${device.id}`,
+          key: idempotencyKey,
+          fingerprint: createIdempotencyFingerprint({
+            deviceId: device.id,
+            organizationId,
+            ownerUserId,
+            assignedPatientId,
+          }),
+        },
+      },
+      auditInputs,
+    );
+    if (!persisted.replayed) {
+      const authorityChanged =
+        previous.organizationId !== organizationId || previous.ownerUserId !== ownerUserId;
+      if (authorityChanged) {
+        const activeDeviceSocket = deviceSockets.get(device.id);
+        if (activeDeviceSocket) closeSocket(activeDeviceSocket, 1008, "OWNERSHIP_CHANGED");
+        await interruptRecordingForDevice(
+          device.id,
+          "Lượt ghi bị ngắt vì quyền sở hữu thiết bị đã được quản trị viên thay đổi.",
+        );
+      }
+      await appendDeviceEvent(device.id, "assignment.update", auditMetadata);
+    }
+    sendJson(res, 200, {
+      device: publicDevice(persisted.device),
       replayed: Boolean(persisted.replayed),
     });
     return;

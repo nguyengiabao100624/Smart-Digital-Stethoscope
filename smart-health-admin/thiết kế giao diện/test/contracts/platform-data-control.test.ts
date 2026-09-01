@@ -21,7 +21,8 @@ test("Platform Admin exposes real audited controls for each governed data domain
   assert.match(clinics, /Lưu trữ workspace/);
   assert.match(devices, /<EditDeviceDialog/);
   assert.match(devices, /<AssignDevicePatientDialog/);
-  assert.match(devices, /<TransferDeviceDialog/);
+  assert.match(devices, /Phân công thiết bị/);
+  assert.match(devices, /Tạo mã claim/);
   assert.match(accounts, /saveSelected/);
   assert.match(accounts, /askLockToggle/);
   assert.match(accounts, /askDelete/);
@@ -44,6 +45,7 @@ test("Platform Admin exposes real audited controls for each governed data domain
   assert.match(api, /updatePatient/);
   assert.match(api, /updateClinic/);
   assert.match(api, /patchDevice/);
+  assert.match(api, /assignDevice/);
   assert.match(api, /updateAdminAccount/);
 });
 

@@ -2,6 +2,14 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 unified device assignment and claim handover
+
+- **PASS/SOURCE — authoritative assignment:** Platform Admin can atomically select the device workspace, responsible doctor/account and optional patient. Backend validation keeps owner and patient in the selected workspace, rejects revoked devices and patient-without-owner writes, closes stale device authority when ownership changes and writes source/target audit records.
+- **PASS/UI — searchable assignment:** the previous patient-only modal is replaced by a responsive three-stage assignment surface with independent doctor and patient search. Existing workspace managers keep the narrower patient-only mutation; cross-workspace authority remains Platform Admin only.
+- **PASS/CONTRACT — Device ID versus claim:** direct assignment authorizes the Android Device-ID-only flow. Admin exposes `Tạo mã claim` only for unassigned factory-enrolled workspace inventory; the one-time code stays inside the secure provisioning dialog and Portal explains that assigned devices do not use the claim page.
+- **PASS/LOCAL+DEVICE:** lifecycle/repository JSON+SQL tests PASS, device security `86/86`, Admin `204/204`, Web `141/141`, all changed surfaces lint/production-build, Android pairing tests/assemble/lint PASS. The authenticated HTTP regression proves Platform Admin-only access, exact owner/patient tenant binding, atomic source/target audit and safe idempotent retry. APK `C908A35E32B97A63A0B8669F10C0C2D6459598BF83FBE7F151199A56141DA9E7` is installed on Xiaomi and reaches the authenticated doctor dashboard.
+- **PENDING/LIVE:** deploy the candidate to Render and both Firebase Hosting targets, verify the new release marker, then run authenticated assignment/claim negative and cleanup smoke. Production is still on `git-08105905a462` at this checkpoint.
+
 ## 2026-09-02 Android doctor UI completion
 
 - **PASS/DEVICE — doctor dashboard:** installed production-connected debug APK renders the real authenticated doctor account/workspace with the shared Shcare gradient header, explicit state surfaces, device status, recent results and a compact three-column quick-action grid. The grid is three columns at normal font sizes and changes to one column from 150% font scale to protect accessibility.

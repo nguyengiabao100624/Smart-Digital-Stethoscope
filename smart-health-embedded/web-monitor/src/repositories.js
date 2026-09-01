@@ -19,6 +19,7 @@ const {
   transitionDeviceCommand,
 } = require("./deviceCommandLifecycle");
 const {
+  applyDeviceAdministrativeAssignment,
   applyDeviceOwnershipRelease,
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,
@@ -14186,6 +14187,7 @@ function createRepositories(options) {
     }
     if (normalized === "release") return `device.release:${deviceId}`;
     if (normalized === "transfer") return `device.transfer:${deviceId}`;
+    if (normalized === "allocate") return `device.assignment:${deviceId}`;
     if (normalized === "revoke") return `device.revoke:${deviceId}`;
     return "";
   }
@@ -14834,6 +14836,7 @@ function createRepositories(options) {
   function applyDeviceOwnershipIntent(currentDevice, input = {}) {
     const operation = String(input.operation || "").trim().toLowerCase();
     const allowedOperations = new Set([
+      "allocate",
       "update",
       "assign",
       "unassign",
@@ -14900,7 +14903,14 @@ function createRepositories(options) {
       nextDevice.purchaseDate = purchaseDate;
     }
 
-    if (operation === "assign") {
+    if (operation === "allocate") {
+      nextDevice = applyDeviceAdministrativeAssignment(nextDevice, {
+        organizationId: String(input.organizationId || ""),
+        ownerUserId: String(input.ownerUserId || ""),
+        assignedPatientId: String(input.assignedPatientId || ""),
+        at,
+      });
+    } else if (operation === "assign") {
       nextDevice = applyDeviceOwnershipTransition(nextDevice, "assigned", {
         assignedPatientId: String(input.assignedPatientId || ""),
         at,

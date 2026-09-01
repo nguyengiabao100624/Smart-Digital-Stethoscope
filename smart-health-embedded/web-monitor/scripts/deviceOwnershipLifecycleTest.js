@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   DeviceOwnershipError,
+  applyDeviceAdministrativeAssignment,
   applyDeviceOwnershipRelease,
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,
@@ -232,6 +233,54 @@ test("audited transfer preserves lifecycle invariants across workspaces and owne
     (error) =>
       error instanceof DeviceOwnershipError &&
       error.code === "DEVICE_REVOKED_TRANSFER_FORBIDDEN",
+  );
+});
+
+test("platform administrative assignment atomically binds workspace, owner, and patient", () => {
+  const assigned = applyDeviceAdministrativeAssignment(
+    {
+      id: "dev_admin_assignment",
+      organizationId: "org_old",
+      ownershipState: "assigned",
+      ownerUserId: "owner_old",
+      pairedUserId: "owner_old",
+      assignedPatientId: "patient_old",
+      connected: true,
+      status: "online",
+    },
+    {
+      organizationId: "org_new",
+      ownerUserId: "doctor_new",
+      assignedPatientId: "patient_new",
+      at: "2026-09-02T02:00:00.000Z",
+    },
+  );
+  assert.equal(assigned.organizationId, "org_new");
+  assert.equal(assigned.ownerUserId, "doctor_new");
+  assert.equal(assigned.pairedUserId, "doctor_new");
+  assert.equal(assigned.assignedPatientId, "patient_new");
+  assert.equal(assigned.ownershipState, "assigned");
+  assert.equal(assigned.connected, false);
+  assert.equal(assigned.status, "available");
+
+  const workspaceInventory = applyDeviceAdministrativeAssignment(assigned, {
+    organizationId: "org_new",
+    ownerUserId: "",
+    assignedPatientId: "",
+  });
+  assert.equal(workspaceInventory.ownershipState, "provisioned");
+  assert.equal(workspaceInventory.ownerUserId, null);
+  assert.equal(workspaceInventory.assignedPatientId, null);
+
+  assert.throws(
+    () =>
+      applyDeviceAdministrativeAssignment(assigned, {
+        organizationId: "org_new",
+        assignedPatientId: "patient_new",
+      }),
+    (error) =>
+      error instanceof DeviceOwnershipError &&
+      error.code === "DEVICE_ASSIGNMENT_OWNER_REQUIRED",
   );
 });
 

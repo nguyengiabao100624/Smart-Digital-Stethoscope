@@ -247,6 +247,68 @@ function applyDeviceOwnershipTransfer(device, options = {}) {
   return next;
 }
 
+function applyDeviceAdministrativeAssignment(device, options = {}) {
+  if (!device || typeof device !== "object" || !cleanId(device.id)) {
+    throw new DeviceOwnershipError(
+      "DEVICE_OWNERSHIP_DEVICE_REQUIRED",
+      "A persisted device is required for an administrative assignment",
+      400,
+    );
+  }
+
+  if (inferDeviceOwnershipState(device) === "revoked") {
+    throw new DeviceOwnershipError(
+      "DEVICE_REVOKED_ASSIGNMENT_FORBIDDEN",
+      "A revoked device cannot be administratively assigned",
+      409,
+    );
+  }
+
+  const organizationId = cleanId(options.organizationId || device.organizationId);
+  if (!organizationId) {
+    throw new DeviceOwnershipError(
+      "DEVICE_ASSIGNMENT_WORKSPACE_REQUIRED",
+      "A target workspace is required for an administrative assignment",
+      400,
+    );
+  }
+
+  const ownerUserId = cleanId(options.ownerUserId);
+  const assignedPatientId = cleanId(options.assignedPatientId);
+  if (assignedPatientId && !ownerUserId) {
+    throw new DeviceOwnershipError(
+      "DEVICE_ASSIGNMENT_OWNER_REQUIRED",
+      "A responsible account is required when assigning a device to a patient",
+      400,
+    );
+  }
+
+  const at = cleanId(options.at, 40) || new Date().toISOString();
+  const previousOrganizationId = cleanId(device.organizationId);
+  const previousOwnerUserId = cleanId(device.ownerUserId || device.pairedUserId);
+  const authorityChanged =
+    previousOrganizationId !== organizationId || previousOwnerUserId !== ownerUserId;
+  const ownershipState = assignedPatientId
+    ? "assigned"
+    : ownerUserId
+      ? "unassigned"
+      : "provisioned";
+  const next = {
+    ...device,
+    organizationId,
+    ownershipState,
+    ownerUserId: ownerUserId || null,
+    pairedUserId: ownerUserId || null,
+    assignedPatientId: assignedPatientId || null,
+    updatedAt: at,
+  };
+  if (authorityChanged) {
+    next.connected = false;
+    next.status = "available";
+  }
+  return next;
+}
+
 function classifyDeviceClaim(claim, now = Date.now()) {
   if (!claim || typeof claim !== "object") return "invalid";
   if (claim.revokedAt) return "revoked";
@@ -331,6 +393,7 @@ function validateActiveDeviceClaim(claim, expected = {}) {
 module.exports = {
   DEVICE_OWNERSHIP_STATES,
   DeviceOwnershipError,
+  applyDeviceAdministrativeAssignment,
   applyDeviceOwnershipRelease,
   applyDeviceOwnershipTransfer,
   applyDeviceOwnershipTransition,

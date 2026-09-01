@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { smartHealthApi } from "@/lib/smart-health-api";
+import { smartHealthApi, type SmartHealthDevice } from "@/lib/smart-health-api";
 import {
   createProvisionArtifactFilename,
   getProvisionArtifactStatus,
@@ -44,6 +44,7 @@ interface AddDeviceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void | Promise<void>;
+  initialDevice?: SmartHealthDevice | null;
 }
 
 const emptyForm: DeviceFormData = {
@@ -73,7 +74,12 @@ function formatProvisionExpiry(value: string) {
   }).format(date);
 }
 
-export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDialogProps) {
+export function AddDeviceDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  initialDevice = null,
+}: AddDeviceDialogProps) {
   const [formData, setFormData] = useState<DeviceFormData>(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [provisionArtifact, setProvisionArtifact] = useState<DeviceProvisionArtifact | null>(null);
@@ -84,6 +90,25 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
   const provisionIdempotencyKeyRef = useRef<string | null>(null);
   const qrRef = useRef<SVGSVGElement | null>(null);
   const { isPlatformAdmin } = useAdminAccess();
+  const isExistingDeviceClaim = Boolean(initialDevice?.id);
+
+  useEffect(() => {
+    if (!open || !initialDevice) return;
+    setFormData({
+      deviceId: initialDevice.id,
+      deviceName: initialDevice.name || "",
+      deviceType: initialDevice.type || "stethoscope",
+      clinic: initialDevice.organizationId || "",
+      manufacturer: initialDevice.manufacturer || "",
+      model: initialDevice.model || "",
+      serialNumber: initialDevice.serialNumber || "",
+      purchaseDate: initialDevice.purchaseDate || "",
+    });
+    setProvisionArtifact(null);
+    setCopiedField("");
+    setSubmitError("");
+    provisionIdempotencyKeyRef.current = null;
+  }, [initialDevice, open]);
 
   const isDismissBlocked = () => isSubmitting || submitInFlightRef.current;
   const updateFormData = (update: React.SetStateAction<DeviceFormData>) => {
@@ -252,15 +277,20 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                 <Stethoscope className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <Dialog.Title className="font-semibold text-foreground">Thêm thiết bị</Dialog.Title>
+                <Dialog.Title className="font-semibold text-foreground">
+                  {isExistingDeviceClaim ? "Tạo mã claim mới" : "Thêm thiết bị"}
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
-                  Đăng ký thiết bị factory và cấp claim code một lần cho bác sĩ/workspace.
+                  {isExistingDeviceClaim
+                    ? "Cấp lại mã dùng một lần cho thiết bị đang chờ bàn giao."
+                    : "Đăng ký thiết bị factory và cấp claim code một lần cho bác sĩ/workspace."}
                 </Dialog.Description>
               </div>
             </div>
             <Dialog.Close
               disabled={isDismissBlocked()}
               aria-label="Đóng hộp thoại thêm thiết bị"
+              title={isExistingDeviceClaim ? "Đóng tạo mã claim" : undefined}
               className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
             >
               <X className="h-5 w-5" />
@@ -472,10 +502,11 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                     id="deviceId"
                     name="deviceId"
                     required
+                    readOnly={isExistingDeviceClaim}
                     value={formData.deviceId}
                     onChange={(e) => updateFormData({ ...formData, deviceId: e.target.value })}
                     placeholder="Quét hoặc nhập đúng ID trên nhãn thiết bị"
-                    className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring read-only:cursor-not-allowed read-only:bg-muted"
                   />
                 </Field>
                 <Field id="deviceName" label="Tên thiết bị" required>
@@ -512,10 +543,11 @@ export function AddDeviceDialog({ open, onOpenChange, onCreated }: AddDeviceDial
                     <input
                       id="organizationId"
                       name="organizationId"
+                      readOnly={isExistingDeviceClaim}
                       value={formData.clinic}
                       onChange={(e) => updateFormData({ ...formData, clinic: e.target.value })}
                       placeholder="organizationId hoặc để trống"
-                      className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                      className="h-11 w-full rounded-md border border-border bg-background pl-10 pr-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring read-only:cursor-not-allowed read-only:bg-muted"
                     />
                   </Field>
                 )}

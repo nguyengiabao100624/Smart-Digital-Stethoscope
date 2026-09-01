@@ -293,6 +293,21 @@ function writeSeedDb() {
             updatedAt: createdAt,
           },
           {
+            id: "dev_assignment",
+            name: "Administrative Assignment Device",
+            type: "stethoscope",
+            status: "available",
+            organizationId: "org_beta",
+            ownershipState: "provisioned",
+            ownerUserId: "",
+            pairedUserId: "",
+            assignedPatientId: "",
+            connected: false,
+            secret: "administrative-assignment-device-secret",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
             id: "dev_release",
             name: "Release Contract Device",
             type: "stethoscope",
@@ -2206,6 +2221,107 @@ test("patient selection for device assignment is workspace-exact", async () => {
   assert.ok(
     scoped.body.patients.every((patient) => patient.organizationId === "org_alpha"),
     "Platform Admin may search globally, but device assignment choices must remain exact to the device workspace",
+  );
+});
+
+test("Platform Admin assignment is atomic, workspace-exact, audited, and idempotent", async () => {
+  const platformToken = await loginPlatformAdmin();
+  const betaAdminToken = await login("admin@beta.test");
+  const assignmentPath = "/api/v1/devices/dev_assignment/assignment";
+  const assignmentPayload = {
+    organizationId: "org_alpha",
+    ownerUserId: "usr_doctor_alpha",
+    assignedPatientId: "pat_alpha",
+  };
+
+  const denied = await requestJson(assignmentPath, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${betaAdminToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "device-assignment-workspace-admin-denied",
+    },
+    body: JSON.stringify(assignmentPayload),
+  });
+  assert.equal(denied.response.status, 403, JSON.stringify(denied.body));
+  assert.equal(denied.body.code, "device_assignment_platform_admin_required");
+
+  const wrongPatient = await requestJson(assignmentPath, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "device-assignment-wrong-patient",
+    },
+    body: JSON.stringify({
+      organizationId: "org_alpha",
+      ownerUserId: "usr_doctor_alpha",
+      assignedPatientId: "pat_beta",
+    }),
+  });
+  assert.equal(wrongPatient.response.status, 403, JSON.stringify(wrongPatient.body));
+  assert.equal(wrongPatient.body.code, "device_patient_workspace_mismatch");
+
+  const wrongOwner = await requestJson(assignmentPath, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "device-assignment-wrong-owner",
+    },
+    body: JSON.stringify({
+      organizationId: "org_beta",
+      ownerUserId: "usr_doctor_alpha",
+    }),
+  });
+  assert.equal(wrongOwner.response.status, 403, JSON.stringify(wrongOwner.body));
+  assert.equal(wrongOwner.body.code, "device_owner_workspace_mismatch");
+
+  const beforeAssignment = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const beforeDevice = beforeAssignment.devices.find((device) => device.id === "dev_assignment");
+  assert.equal(beforeDevice.organizationId, "org_beta");
+  assert.equal(beforeDevice.ownershipState, "provisioned");
+
+  const assigned = await requestJson(assignmentPath, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "device-assignment-atomic-success",
+    },
+    body: JSON.stringify(assignmentPayload),
+  });
+  assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  assert.equal(assigned.body.replayed, false);
+  assert.equal(assigned.body.device.organizationId, "org_alpha");
+  assert.equal(assigned.body.device.ownerUserId, "usr_doctor_alpha");
+  assert.equal(assigned.body.device.pairedUserId, "usr_doctor_alpha");
+  assert.equal(assigned.body.device.assignedPatientId, "pat_alpha");
+  assert.equal(assigned.body.device.ownershipState, "assigned");
+
+  const replayed = await requestJson(assignmentPath, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "device-assignment-atomic-success",
+    },
+    body: JSON.stringify(assignmentPayload),
+  });
+  assert.equal(replayed.response.status, 200, JSON.stringify(replayed.body));
+  assert.equal(replayed.body.replayed, true);
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf8"));
+  const device = persisted.devices.find((candidate) => candidate.id === "dev_assignment");
+  assert.equal(device.organizationId, "org_alpha");
+  assert.equal(device.ownerUserId, "usr_doctor_alpha");
+  assert.equal(device.assignedPatientId, "pat_alpha");
+  assert.equal(
+    persisted.auditLogs.filter(
+      (entry) => entry.action === "device.assignment.update" && entry.resourceId === "dev_assignment",
+    ).length,
+    2,
+    "cross-workspace assignment must write one source and one target audit entry without replay duplicates",
   );
 });
 

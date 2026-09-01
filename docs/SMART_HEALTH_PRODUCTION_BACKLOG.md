@@ -2,6 +2,15 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 device assignment and claim handover slice
+
+- [x] Replace the patient-only device dialog with independent workspace, doctor/account and patient search plus one atomic save.
+- [x] Add the Platform Admin-only audited assignment API with idempotency, tenant validation, claim revocation and JSON/PostgreSQL parity.
+- [x] Make the handover boundary explicit: assigned device -> Android Device ID only; unassigned factory inventory -> Admin-generated one-time claim code -> Portal claim.
+- [x] Add Admin `Tạo mã claim` for eligible inventory and actionable guidance when an already assigned device does not need a claim code.
+- [x] Pass backend device security `86/86` including authenticated assignment/retry isolation, ownership JSON/SQL regression, Admin contracts `204/204`, Web contracts `141/141`, lint/production-build gates and Android pairing/assemble/lint; install APK `C908A35E...A9E7` on Xiaomi and verify authenticated startup.
+- [ ] Promote backend/Admin/Portal candidate, wait for the exact Render commit marker, and run authenticated live assignment plus one-time-claim negative/cleanup smoke before marking this slice live.
+
 ## 2026-09-02 Android doctor-surface slice
 
 - [x] Replace the legacy doctor dashboard with the shared adaptive Shcare surface and remove continuous four-second polling.

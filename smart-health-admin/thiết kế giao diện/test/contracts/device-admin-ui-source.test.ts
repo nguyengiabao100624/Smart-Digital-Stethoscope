@@ -241,15 +241,15 @@ test("renders one complete canonical provisioning artifact and clears stale arti
   assert.doesNotMatch(addDeviceSource, /localStorage|sessionStorage/);
 });
 
-test("does not invent a setup SSID from the device suffix", async () => {
+test("keeps the primary Wi-Fi flow on ESPTouch and does not invent a setup SSID", async () => {
   const devicesSource = await readFile(devicesPath, "utf8");
 
   assert.doesNotMatch(devicesSource, /deviceSuffix\(selectedDevice\)/);
   assert.doesNotMatch(devicesSource, /SmartHealth-\{/);
-  assert.match(devicesSource, /SSID\/PoP chỉ xuất hiện trong artifact QR/);
-  assert.match(devicesSource, /factory state/);
-  assert.match(devicesSource, /thao tác vật lý/);
-  assert.match(devicesSource, /http:\/\/192\.168\.4\.1/);
+  assert.match(devicesSource, /ESPTouch V2 Broadcast/);
+  assert.match(devicesSource, /Claim code chỉ[\s\S]{0,80}dùng khi bàn giao/);
+  assert.match(devicesSource, /SoftAP chỉ là phương án khôi phục vật lý/);
+  assert.doesNotMatch(devicesSource, /http:\/\/192\.168\.4\.1/);
 });
 
 test("associates add-device labels and names with their form controls", async () => {

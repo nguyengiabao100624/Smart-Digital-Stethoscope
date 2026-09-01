@@ -8,10 +8,6 @@ const dialogPath = new URL(
   "../../src/components/admin/dialogs/EditDeviceDialog.tsx",
   import.meta.url,
 );
-const transferDialogPath = new URL(
-  "../../src/components/admin/dialogs/TransferDeviceDialog.tsx",
-  import.meta.url,
-);
 const assignmentDialogPath = new URL(
   "../../src/components/admin/dialogs/AssignDevicePatientDialog.tsx",
   import.meta.url,
@@ -21,12 +17,11 @@ const backendPath = new URL(
   import.meta.url,
 );
 
-test("Platform Admin can edit audited device inventory metadata without spoofing telemetry", async () => {
-  const [api, devices, dialog, transferDialog, assignmentDialog, backend] = await Promise.all([
+test("Platform Admin can edit metadata and atomically assign workspace, owner, and patient", async () => {
+  const [api, devices, dialog, assignmentDialog, backend] = await Promise.all([
     readFile(apiPath, "utf8"),
     readFile(devicesPath, "utf8"),
     readFile(dialogPath, "utf8"),
-    readFile(transferDialogPath, "utf8"),
     readFile(assignmentDialogPath, "utf8"),
     readFile(backendPath, "utf8"),
   ]);
@@ -41,20 +36,22 @@ test("Platform Admin can edit audited device inventory metadata without spoofing
   assert.match(backend, /DEVICE_PURCHASE_DATE_INVALID/);
   assert.match(backend, /device\.update/);
   assert.match(backend, /DEVICE_REPORTED_FIELD_FORBIDDEN/);
-  assert.match(api, /async transferDevice\([\s\S]*\/transfer/);
-  assert.match(devices, /<TransferDeviceDialog/);
-  assert.match(devices, /Chuyển workspace/);
-  assert.match(transferDialog, /smartHealthApi\.listClinics/);
-  assert.match(transferDialog, /smartHealthApi\.transferDevice/);
-  assert.match(transferDialog, /Thiết bị sẽ ngắt phiên cloud hiện tại/);
+  assert.match(api, /async assignDevice\([\s\S]*\/assignment/);
   assert.match(api, /async assignDevicePatient\(/);
   assert.match(devices, /<AssignDevicePatientDialog/);
-  assert.match(devices, /Gán bệnh nhân/);
+  assert.match(devices, /Phân công thiết bị/);
+  assert.match(assignmentDialog, /smartHealthApi\.listClinics/);
+  assert.match(assignmentDialog, /smartHealthApi\.listApprovedDoctors/);
   assert.match(assignmentDialog, /smartHealthApi\.listPatients/);
-  assert.match(assignmentDialog, /organizationId: device\.organizationId/);
+  assert.match(assignmentDialog, /organizationId: workspaceId/);
+  assert.match(assignmentDialog, /smartHealthApi\.assignDevice/);
   assert.match(assignmentDialog, /smartHealthApi\.assignDevicePatient/);
+  assert.match(assignmentDialog, /Claim code chỉ dùng một lần/);
+  assert.match(backend, /DEVICE_ASSIGNMENT_PLATFORM_ADMIN_REQUIRED/);
+  assert.match(backend, /operation: "allocate"/);
+  assert.match(backend, /device\.assignment\.update/);
   assert.match(backend, /PATIENT_LIST_WORKSPACE_SCOPE_DENIED/);
-  for (const mutationDialog of [dialog, transferDialog, assignmentDialog]) {
+  for (const mutationDialog of [dialog, assignmentDialog]) {
     assert.match(mutationDialog, /attemptRef/);
     assert.match(mutationDialog, /attemptRef\.current\?\.fingerprint !== fingerprint/);
     assert.match(mutationDialog, /attemptRef\.current\.key/);

@@ -799,6 +799,69 @@ test("a successful assignment persists one canonical device state and exactly on
   assert.equal(db.auditLogs[0].resourceId, DEVICE_ID);
 });
 
+test("a platform allocation atomically moves workspace, responsible account, and patient", async () => {
+  const { db, repositories } = createHarness();
+  const result = await repositories.devices.saveOwnershipMutationWithAudit(
+    {
+      deviceId: DEVICE_ID,
+      operation: "allocate",
+      actorUserId: PLATFORM_ADMIN,
+      expected: claimedExpected(),
+      organizationId: ORG_BETA,
+      ownerUserId: OWNER_BETA,
+      assignedPatientId: PATIENT_BETA,
+      at: "2026-07-18T08:08:10.000Z",
+      revokeOpenClaims: true,
+      claimOrganizationId: ORG_ALPHA,
+    },
+    [
+      auditInput("device.assignment.update", { actorUserId: PLATFORM_ADMIN }),
+      auditInput("device.assignment.update", {
+        actorUserId: PLATFORM_ADMIN,
+        organizationId: ORG_BETA,
+      }),
+    ],
+  );
+
+  assert.equal(result.device.organizationId, ORG_BETA);
+  assert.equal(result.device.ownerUserId, OWNER_BETA);
+  assert.equal(result.device.pairedUserId, OWNER_BETA);
+  assert.equal(result.device.assignedPatientId, PATIENT_BETA);
+  assert.equal(result.device.ownershipState, "assigned");
+  assert.equal(db.deviceClaims[0].revokedByUserId, PLATFORM_ADMIN);
+  assert.equal(db.auditLogs.length, 2);
+  assert.deepEqual(
+    db.auditLogs.map((item) => item.organizationId).sort(),
+    [ORG_ALPHA, ORG_BETA].sort(),
+  );
+});
+
+test("a platform allocation can return a device to unassigned workspace inventory", async () => {
+  const { db, repositories } = createHarness();
+  const result = await repositories.devices.saveOwnershipMutationWithAudit(
+    {
+      deviceId: DEVICE_ID,
+      operation: "allocate",
+      actorUserId: PLATFORM_ADMIN,
+      expected: claimedExpected(),
+      organizationId: ORG_ALPHA,
+      ownerUserId: "",
+      assignedPatientId: "",
+      at: "2026-07-18T08:08:11.000Z",
+      revokeOpenClaims: true,
+      claimOrganizationId: ORG_ALPHA,
+    },
+    [auditInput("device.assignment.update", { actorUserId: PLATFORM_ADMIN })],
+  );
+
+  assert.equal(result.device.organizationId, ORG_ALPHA);
+  assert.equal(result.device.ownerUserId, null);
+  assert.equal(result.device.pairedUserId, null);
+  assert.equal(result.device.assignedPatientId, null);
+  assert.equal(result.device.ownershipState, "provisioned");
+  assert.equal(db.auditLogs.length, 1);
+});
+
 test("a runtime assignment replays one exact receipt without duplicating the audit", async () => {
   const { db, repositories } = createHarness();
   const idempotency = assignmentIdempotency("assignment-runtime-replay");
@@ -1230,6 +1293,47 @@ test("SQL locks the canonical device before persisting direct ownership values",
   assert.equal(transaction.committed, true);
   assert.equal(transaction.rolledBack, false);
   assert.equal(transaction.released, true);
+});
+
+test("SQL persists one atomic platform allocation across workspace, owner, and patient", async () => {
+  const { queries, repositories, transaction } = createSqlHarness();
+  const result = await repositories.devices.saveOwnershipMutationWithAudit(
+    {
+      deviceId: DEVICE_ID,
+      operation: "allocate",
+      actorUserId: PLATFORM_ADMIN,
+      expected: claimedExpected(),
+      organizationId: ORG_BETA,
+      ownerUserId: OWNER_BETA,
+      assignedPatientId: PATIENT_BETA,
+      at: "2026-07-18T09:01:10.000Z",
+      revokeOpenClaims: true,
+      claimOrganizationId: ORG_ALPHA,
+    },
+    [
+      auditInput("device.assignment.update", { actorUserId: PLATFORM_ADMIN }),
+      auditInput("device.assignment.update", {
+        actorUserId: PLATFORM_ADMIN,
+        organizationId: ORG_BETA,
+      }),
+    ],
+  );
+
+  const upsert = queries.find((query) => query.kind === "device_upsert");
+  assert.ok(upsert);
+  assert.deepEqual(upsert.params.slice(1, 6), [
+    ORG_BETA,
+    OWNER_BETA,
+    "assigned",
+    OWNER_BETA,
+    PATIENT_BETA,
+  ]);
+  assert.equal(result.device.organizationId, ORG_BETA);
+  assert.equal(result.device.ownerUserId, OWNER_BETA);
+  assert.equal(result.device.assignedPatientId, PATIENT_BETA);
+  assert.equal(queries.filter((query) => query.kind === "audit_insert").length, 2);
+  assert.equal(transaction.committed, true);
+  assert.equal(transaction.rolledBack, false);
 });
 
 test("SQL assignment replay returns the stored receipt without another device or audit write", async () => {

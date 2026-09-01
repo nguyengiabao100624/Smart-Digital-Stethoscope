@@ -326,11 +326,15 @@ export default function ClaimDevicePage() {
             </div>
             <CardTitle>Không có quyền ghép thiết bị</CardTitle>
             <CardDescription>
-              Tài khoản hiện tại không có capability ghép thiết bị trong workspace này.
+              Tài khoản hiện tại không có capability dùng mã claim trong workspace này.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm">Liên hệ quản trị viên workspace để được cấp quyền.</p>
+            <p className="text-sm leading-6">
+              Nếu Platform Admin đã phân công thiết bị trực tiếp cho tài khoản này, bạn không cần
+              claim code: mở App Shcare và nhập Device ID. Nếu thiết bị vẫn ở kho chưa phân công,
+              hãy nhờ Admin cấp mã claim một lần hoặc phân công trực tiếp.
+            </p>
             <Button asChild variant="outline" className="min-h-11">
               <Link to="/portal/devices">
                 <ArrowLeft aria-hidden="true" />
@@ -362,7 +366,7 @@ export default function ClaimDevicePage() {
               Ghép thiết bị Shcare
             </h1>
             <p className="text-sm text-muted-foreground">
-              Nhập chính xác Device ID và claim code trên QR hoặc tem thiết bị.
+              Dùng cho thiết bị chưa được Admin phân công trực tiếp cho tài khoản.
             </p>
           </div>
         </div>
@@ -372,8 +376,9 @@ export default function ClaimDevicePage() {
         <CardHeader>
           <CardTitle>Thông tin xác thực</CardTitle>
           <CardDescription>
-            Claim code là mã dùng một lần và luôn bắt buộc, kể cả với tài khoản quản lý.
-            Hệ thống giữ nguyên chữ hoa, chữ thường của cả hai giá trị.
+            Claim code là mã bàn giao dùng một lần do Platform Admin tạo. Thiết bị đã được Admin
+            phân công thì không dùng màn này; người dùng chỉ nhập Device ID trong App. Hệ thống giữ
+            nguyên chữ hoa, chữ thường của cả hai giá trị.
           </CardDescription>
         </CardHeader>
         <CardContent>

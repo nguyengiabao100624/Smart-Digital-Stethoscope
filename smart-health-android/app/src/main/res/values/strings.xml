@@ -171,10 +171,10 @@
     <string name="device_pairing_invalid_device_id">Device ID phải có 3–63 ký tự chữ, số, gạch dưới hoặc gạch ngang.</string>
     <string name="device_pairing_submit_manual">Thêm thiết bị</string>
     <string name="device_pairing_claiming">Đang xác nhận Device ID với tài khoản của bạn</string>
-    <string name="device_pairing_claim_failed_title">Chưa thể xác nhận quyền sở hữu</string>
-    <string name="device_pairing_claim_failed_message">Máy chủ chưa xác nhận thiết bị. Bạn có thể thử lại mà không tạo yêu cầu claim mới.</string>
-    <string name="device_pairing_retry_claim">Thử xác nhận lại</string>
-    <string name="device_pairing_enter_claim_again">Nhập lại mã claim</string>
+    <string name="device_pairing_claim_failed_title">Chưa thể xác nhận thiết bị</string>
+    <string name="device_pairing_claim_failed_message">Máy chủ chưa xác nhận thiết bị đã được phân công cho tài khoản này trong workspace hiện tại.</string>
+    <string name="device_pairing_retry_claim">Kiểm tra lại</string>
+    <string name="device_pairing_enter_claim_again">Nhập lại Device ID</string>
     <string name="device_pairing_identity_mismatch">Máy chủ trả về một thiết bị khác yêu cầu đã gửi. Shcare chưa xác nhận ghép nối.</string>
     <string name="device_pairing_setup_heading">Kết nối Wi-Fi cho thiết bị</string>
     <string name="device_pairing_setup_description">Nhập Wi-Fi mà thiết bị sẽ sử dụng. Shcare phát cấu hình mã hóa ESPTouch V2 và chờ thiết bị vào mạng. Bạn không cần mở trình duyệt, kết nối mạng tạm hoặc nhập IP.</string>
@@ -235,16 +235,16 @@
     <string name="device_pairing_presence_offline">Shcare chưa kết nối được với máy chủ để xác nhận thiết bị trực tuyến. Kiểm tra mạng rồi thử lại.</string>
     <string name="device_pairing_retry_online">Kiểm tra lại trạng thái</string>
     <string name="device_pairing_invalid_qr">Mã QR không đúng hợp đồng thiết lập Shcare v1, đã hết hạn hoặc thiếu thông tin WPA2 bảo mật.</string>
-    <string name="device_pairing_invalid_manual">Kiểm tra các trường được đánh dấu. Device ID, claim code, tên mạng và mã PoP đều bắt buộc.</string>
+    <string name="device_pairing_invalid_manual">Hãy nhập đúng Device ID gồm 3–63 ký tự chữ, số, gạch dưới hoặc gạch ngang.</string>
     <string name="device_pairing_backend_error">Không thể xác nhận thiết bị với máy chủ.</string>
-    <string name="device_pairing_claim_offline">Chưa thể xác nhận máy chủ đã nhận yêu cầu. Kiểm tra mạng rồi thử lại cùng yêu cầu để tránh claim trùng.</string>
-    <string name="device_pairing_permission_denied">Tài khoản hiện tại không được phép claim thiết bị này trong workspace đang chọn.</string>
+    <string name="device_pairing_claim_offline">Chưa thể kiểm tra phân công thiết bị với máy chủ. Kiểm tra mạng rồi thử lại.</string>
+    <string name="device_pairing_permission_denied">Thiết bị chưa được phân công cho tài khoản này hoặc không thuộc workspace đang chọn.</string>
     <string name="device_pairing_permission_title">Không có quyền ghép thiết bị</string>
     <string name="device_pairing_session_expired">Phiên đăng nhập đã thay đổi hoặc hết hiệu lực. Đăng nhập lại trước khi ghép thiết bị.</string>
     <string name="device_pairing_session_title">Phiên đăng nhập không còn hiệu lực</string>
-    <string name="device_pairing_not_provisioned">Thiết bị chưa được quản trị viên provision nên chưa thể claim.</string>
-    <string name="device_pairing_claim_conflict">Claim code đã được dùng hoặc trạng thái thiết bị không còn cho phép claim.</string>
-    <string name="device_pairing_claim_expired">Claim code đã hết hạn hoặc bị thu hồi. Yêu cầu mã thiết lập mới.</string>
+    <string name="device_pairing_not_provisioned">Thiết bị chưa được factory-enroll hoặc chưa được Platform Admin phân công.</string>
+    <string name="device_pairing_claim_conflict">Phân công thiết bị đã thay đổi. Hãy tải lại danh sách thiết bị rồi thử lại.</string>
+    <string name="device_pairing_claim_expired">Thông tin bàn giao đã hết hạn hoặc bị thu hồi. Hãy liên hệ Platform Admin.</string>
     <string name="device_pairing_request_id">Mã yêu cầu: %1$s</string>
     <string name="device_pairing_success_title">Thiết bị đã trực tuyến</string>
     <string name="device_pairing_success_message">%1$s đã đăng nhập an toàn và sẵn sàng nhận lệnh từ Shcare.</string>
@@ -1152,5 +1152,5 @@
     <string name="clinical_reviews_error_workspace">Phản hồi không thuộc workspace đang hoạt động.</string>
     <string name="clinical_reviews_error_confirmation">Backend chưa xác nhận đúng quyết định duyệt.</string>
     <string name="clinical_reviews_error_unknown">Không thể tải hoặc cập nhật hàng đợi duyệt.</string>
-    <string name="device_pairing_permission_guidance">Quản trị viên workspace có thể cấp quyền tại Portal → Bác sĩ và nhân sự → Điều chỉnh quyền. Sau đó hãy đăng nhập lại hoặc tải lại phiên trong app.</string>
+    <string name="device_pairing_permission_guidance">Platform Admin mở Admin → Thiết bị → Phân công thiết bị, chọn đúng workspace và tài khoản chịu trách nhiệm. Sau đó hãy đăng nhập lại hoặc tải lại phiên trong app.</string>
 </resources>

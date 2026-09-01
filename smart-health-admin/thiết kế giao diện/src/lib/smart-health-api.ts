@@ -302,6 +302,8 @@ export type SmartHealthPatient = {
   notes?: string;
   organizationId?: string;
   ownerUserId?: string;
+  accountUserId?: string;
+  guardianUserId?: string;
   profileType?: string;
   relationship?: string;
   primaryDoctorId?: string;
@@ -1955,6 +1957,25 @@ export const smartHealthApi = {
     );
   },
 
+  async assignDevice(
+    id: string,
+    assignment: {
+      organizationId: string;
+      ownerUserId?: string;
+      assignedPatientId?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return requestJson<{ device: SmartHealthDevice; replayed?: boolean }>(
+      `/devices/${encodeURIComponent(id)}/assignment`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(assignment),
+      },
+    );
+  },
+
   async connectDevice(id: string) {
     return requestJson<{ device: SmartHealthDevice }>(
       `/devices/${encodeURIComponent(id)}/connect`,
@@ -2180,6 +2201,7 @@ export const smartHealthApi = {
       status?: string;
       specialty?: string;
       clinic?: string;
+      organizationId?: string;
       signal?: AbortSignal;
     } = {},
   ) {
@@ -2196,6 +2218,7 @@ export const smartHealthApi = {
         status: params.status,
         specialty: params.specialty,
         clinic: params.clinic,
+        organizationId: params.organizationId,
       },
       signal: params.signal,
       onResponse: (response) => {

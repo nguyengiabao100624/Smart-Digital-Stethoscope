@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion";
 import {
   Activity,
-  ArrowRightLeft,
   Battery,
   BatteryLow,
   BatteryMedium,
@@ -13,6 +12,7 @@ import {
   PencilLine,
   Plus,
   Power,
+  QrCode,
   RefreshCw,
   Router,
   Search,
@@ -27,7 +27,6 @@ import { AddDeviceDialog } from "./dialogs/AddDeviceDialog";
 import { ActivateDeviceDialog } from "./dialogs/ActivateDeviceDialog";
 import { RotateDeviceSecretDialog } from "./dialogs/RotateDeviceSecretDialog";
 import { EditDeviceDialog } from "./dialogs/EditDeviceDialog";
-import { TransferDeviceDialog } from "./dialogs/TransferDeviceDialog";
 import { AssignDevicePatientDialog } from "./dialogs/AssignDevicePatientDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
@@ -221,6 +220,11 @@ function formatInventoryDate(value?: string) {
   return new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium" }).format(date);
 }
 
+function isDeviceWaitingForClaim(device: SmartHealthDevice) {
+  if (device.ownershipState) return device.ownershipState === "provisioned";
+  return !device.ownerUserId && !device.pairedUserId && !device.assignedPatientId;
+}
+
 function eventTone(eventType: string): "success" | "warning" | "error" | "primary" | "muted" {
   if (/failed|rejected|error/i.test(eventType)) return "error";
   if (/ota|command|rotate|revoke|unpair/i.test(eventType)) return "warning";
@@ -256,10 +260,10 @@ export function Devices() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [claimDevice, setClaimDevice] = useState<SmartHealthDevice | null>(null);
   const [activateDialogOpen, setActivateDialogOpen] = useState(false);
   const [rotateSecretDevice, setRotateSecretDevice] = useState<SmartHealthDevice | null>(null);
   const [editingDevice, setEditingDevice] = useState<SmartHealthDevice | null>(null);
-  const [transferDevice, setTransferDevice] = useState<SmartHealthDevice | null>(null);
   const [assignmentDevice, setAssignmentDevice] = useState<SmartHealthDevice | null>(null);
   const [dangerAction, setDangerAction] = useState<DangerAction | null>(null);
   const [dangerLoading, setDangerLoading] = useState(false);
@@ -1217,6 +1221,12 @@ export function Devices() {
                       </dd>
                     </div>
                     <div>
+                      <dt className="text-xs text-muted-foreground">Tài khoản chịu trách nhiệm</dt>
+                      <dd className="mt-1 break-words font-mono text-foreground">
+                        {selectedDevice.ownerUserId || selectedDevice.pairedUserId || "Chưa cấp"}
+                      </dd>
+                    </div>
+                    <div>
                       <dt className="text-xs text-muted-foreground">Bệnh nhân được gán</dt>
                       <dd className="mt-1 break-words font-mono text-foreground">
                         {selectedDevice.assignedPatientId || "Chưa gán"}
@@ -1342,16 +1352,14 @@ export function Devices() {
                 <div className="rounded-xl border border-border bg-card p-4">
                   <div className="mb-3 flex items-center gap-2 font-semibold">
                     <Router className="h-4 w-4 text-primary" />
-                    Khôi phục WiFi khi thiết bị mất mạng
+                    Cấu hình Wi‑Fi cho thiết bị
                   </div>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    SSID/PoP chỉ xuất hiện trong artifact QR được tạo khi provision; Admin không suy
-                    đoán hoặc hiển thị lại thông tin này từ mã thiết bị. Setup AP chỉ được mở khi
-                    thiết bị còn ở factory state hoặc sau thao tác vật lý trực tiếp, và sẽ tự hết
-                    hạn. Sau khi quét artifact, người dùng kết nối AP theo hướng dẫn rồi mở{" "}
-                    <span className="font-mono text-foreground">http://192.168.4.1</span> để nhập
-                    SSID/password WiFi mới. Trang local không cho đổi ownership, secret, OTA policy
-                    hoặc quyền quản trị.
+                    Sau khi Admin phân công trực tiếp, người dùng chỉ nhập Device ID trong App rồi
+                    dùng màn Kết nối Wi‑Fi để phát cấu hình ESPTouch V2 Broadcast. Claim code chỉ
+                    dùng khi bàn giao một thiết bị còn ở kho workspace qua Portal; mã không chứa
+                    device secret hoặc mật khẩu Wi‑Fi. SoftAP chỉ là phương án khôi phục vật lý có
+                    thời hạn, không thuộc luồng chính trên App.
                   </p>
                 </div>
 
@@ -1699,23 +1707,33 @@ export function Devices() {
                       <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
                       Chỉnh sửa thông tin
                     </button>
-                    {isPlatformAdmin ? (
-                      <button
-                        onClick={() => setTransferDevice(selectedDevice)}
-                        className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-warning/35 bg-warning/10 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                        Chuyển workspace
-                      </button>
-                    ) : null}
                     <button
                       onClick={() => setAssignmentDevice(selectedDevice)}
                       disabled={selectedDevice.status === "revoked"}
                       className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <UserRoundCog className="h-3.5 w-3.5" aria-hidden="true" />
-                      Gán bệnh nhân
+                      {isPlatformAdmin ? "Phân công thiết bị" : "Gán bệnh nhân"}
                     </button>
+                    {isPlatformAdmin ? (
+                      <button
+                        onClick={() => {
+                          if (isDeviceWaitingForClaim(selectedDevice)) {
+                            setClaimDevice(selectedDevice);
+                            return;
+                          }
+                          toast.info("Thiết bị đã được phân công nên không cần claim code.", {
+                            description:
+                              "Tài khoản được Admin cấp trực tiếp chỉ cần nhập Device ID trong App. Muốn bàn giao bằng mã một lần, mở Phân công thiết bị, bỏ tài khoản và bệnh nhân, lưu về kho workspace rồi tạo mã claim.",
+                          });
+                        }}
+                        disabled={selectedDevice.status === "revoked"}
+                        className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <QrCode className="h-3.5 w-3.5" aria-hidden="true" />
+                        Tạo mã claim
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => setRotateSecretDevice(selectedDevice)}
                       className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
@@ -1777,6 +1795,14 @@ export function Devices() {
         onOpenChange={setAddDialogOpen}
         onCreated={loadDevices}
       />
+      <AddDeviceDialog
+        initialDevice={claimDevice}
+        open={isPlatformAdmin && Boolean(claimDevice)}
+        onOpenChange={(open) => {
+          if (!open) setClaimDevice(null);
+        }}
+        onCreated={loadDevices}
+      />
       <ActivateDeviceDialog
         open={canManageDevices && activateDialogOpen}
         onOpenChange={setActivateDialogOpen}
@@ -1800,18 +1826,6 @@ export function Devices() {
           if (!open) setEditingDevice(null);
         }}
         onUpdated={(device) => {
-          updateDevice(device);
-          setSelectedDevice(device);
-          void loadEvents(device.id);
-        }}
-      />
-      <TransferDeviceDialog
-        device={transferDevice}
-        open={isPlatformAdmin && Boolean(transferDevice)}
-        onOpenChange={(open) => {
-          if (!open) setTransferDevice(null);
-        }}
-        onTransferred={(device) => {
           updateDevice(device);
           setSelectedDevice(device);
           void loadEvents(device.id);

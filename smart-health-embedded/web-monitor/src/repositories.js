@@ -1098,10 +1098,20 @@ function matchesDoctorRequestStatus(user, status) {
 
 function createRepositories(options) {
   const getDb = options.getDb;
-  const saveDb = options.saveDb;
   const createId = options.createId;
   const nowIso = options.nowIso;
   const getPool = options.getPool || (() => null);
+  const saveRuntimeDb = options.saveDb;
+  const saveDb = async () => {
+    // PostgreSQL repository mutations already commit their canonical rows in
+    // the same operation. Rewriting app_runtime_state here duplicates the
+    // entire hydrated database (including large audit/notification arrays),
+    // serializes otherwise independent requests behind one save queue and can
+    // exhaust Render's service-initiated bandwidth. JSON mode still needs the
+    // runtime snapshot because it has no normalized durable store.
+    if (getPool()) return;
+    await saveRuntimeDb();
+  };
   const onSqlError = options.onSqlError || ((err) => console.warn(`Repository SQL fallback: ${err.message}`));
   const projectRoleRequestUser =
     typeof options.projectRoleRequestUser === "function"

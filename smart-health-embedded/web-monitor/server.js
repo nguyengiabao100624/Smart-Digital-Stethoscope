@@ -16225,9 +16225,11 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser.title = readString(payload.title, 120);
     }
 
-    const profileProviderResult = Object.prototype.hasOwnProperty.call(payload, "name")
-      ? await updateFirebaseLinkedAccount(targetUser, { displayName: targetUser.name })
-      : null;
+    // Shcare profile fields are canonical in the backend and are consumed by
+    // Android, Admin and Portal from this record. Firebase displayName is not
+    // an authorization source, so a profile-only edit must not depend on an
+    // external identity-provider mutation. Security mutations above remain
+    // provider-confirmed and fail closed through their identity sagas.
     await persistUserRecord(targetUser);
     await appendAudit("admin.user.update", req, {
       actorUserId: adminUser.id,
@@ -16241,7 +16243,6 @@ async function handleAdminApi(req, res, url, segments) {
       user: publicManagedAdminAccount(targetUser),
       operationId: roleSaga?.completed.identityOperation.id || accountStatusSaga?.completed.identityOperation.id,
       replayed: roleSaga?.replayed || accountStatusSaga?.replayed || false,
-      providerWarning: profileProviderResult?.warning || "",
     });
     return;
   }

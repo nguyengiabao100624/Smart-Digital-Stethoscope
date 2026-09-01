@@ -149,6 +149,21 @@ test("locked Firebase accounts are denied before an auth session can be created 
   assert.ok(sessionWrite > activeCheck, "the active-account check must precede every session write");
 });
 
+test("profile-only Admin edits persist to the Shcare authority without a Firebase displayName dependency", () => {
+  const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const adminRouteStart = serverSource.indexOf(
+    'segments[2] === "admin-users" && segments.length === 4 && method === "PATCH"',
+  );
+  const profileStart = serverSource.indexOf(
+    'if (Object.prototype.hasOwnProperty.call(payload, "name"))',
+    adminRouteStart,
+  );
+  const persistStart = serverSource.indexOf("await persistUserRecord(targetUser);", profileStart);
+  assert.ok(adminRouteStart >= 0 && profileStart > adminRouteStart && persistStart > profileStart);
+  const profileMutation = serverSource.slice(profileStart, persistStart);
+  assert.doesNotMatch(profileMutation, /updateFirebase|firebaseAdminApp/);
+});
+
 test("Firebase password changes use one provider mutation and rely on automatic token revocation", () => {
   const serverSource = fs.readFileSync(
     path.join(__dirname, "..", "server.js"),

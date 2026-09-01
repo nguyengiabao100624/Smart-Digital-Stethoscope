@@ -42,10 +42,30 @@ class DoctorDashboardViewModelTest {
         assertEquals(DoctorDashboardLoadState.Content, state.loadState)
         assertEquals("workspace-1", state.workspaceId)
         assertEquals("Shcare Clinic", state.workspaceName)
+        assertEquals("Phòng khám • Bác sĩ", state.workspaceMeta)
         assertEquals(listOf("scan-1"), state.scans.map(Scan::id))
         assertEquals(listOf("workspace-1"), repository.statusWorkspaceIds)
         assertFalse(state.isStale)
     }
+
+    @Test
+    fun `solo doctor workspace is localized instead of exposing backend enum`() =
+        runTest(dispatcher) {
+            val repository = FakeDoctorDashboardRepository(
+                userResults = ArrayDeque(
+                    listOf(
+                        Result.success(
+                            doctorUser().copy(workspaceType = "solo_practice"),
+                        ),
+                    ),
+                ),
+            )
+
+            val viewModel = DoctorDashboardViewModel(repository)
+            runCurrent()
+
+            assertEquals("Phòng khám tư • Bác sĩ", viewModel.uiState.value.workspaceMeta)
+        }
 
     @Test
     fun `initial load distinguishes permission denial from offline`() = runTest(dispatcher) {

@@ -57,6 +57,13 @@ class ClinicalAlertsScreenTest {
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             viewModel.uiState.value.loadState == ClinicalAlertsLoadState.Content
         }
+        composeRule.waitUntil(timeoutMillis = 10_000L) {
+            runCatching {
+                composeRule.onAllNodesWithText("Cảnh báo")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }.getOrDefault(false)
+        }
         composeRule.onNodeWithText("Cảnh báo").assertIsDisplayed()
         composeRule.onNodeWithTag("clinical-alert-alert-1").performClick()
         composeRule.onNodeWithText("Tài khoản này chỉ được xem cảnh báo.")
@@ -90,6 +97,13 @@ class ClinicalAlertsScreenTest {
 
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             viewModel.uiState.value.loadState == ClinicalAlertsLoadState.Content
+        }
+        composeRule.waitUntil(timeoutMillis = 10_000L) {
+            runCatching {
+                composeRule.onAllNodesWithText("Cảnh báo")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }.getOrDefault(false)
         }
         composeRule.onNodeWithTag("clinical-alert-alert-1").performClick()
         composeRule.onNodeWithText("Tiếp nhận")

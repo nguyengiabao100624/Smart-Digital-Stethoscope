@@ -39,7 +39,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -63,6 +62,7 @@ import com.example.smart_health_android.data.Patient
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareDetailPanePresentation
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareListDetailScaffold
 import com.example.smart_health_android.ui.components.ShcareListDetailState
 import com.example.smart_health_android.ui.components.ShcareLoadingState
@@ -120,15 +120,9 @@ fun ClinicalPatientsContent(
             .fillMaxSize()
             .testTag("clinical-patients-screen"),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.clinical_patients_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.clinical_patients_title),
+                onNavigateBack = null,
                 actions = {
                     IconButton(
                         onClick = { onAction(ClinicalPatientsUiAction.Refresh) },

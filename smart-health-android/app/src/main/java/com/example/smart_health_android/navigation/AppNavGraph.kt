@@ -934,17 +934,19 @@ fun AppNavGraph(
 
         authorizedMobileComposable(navController, "dashboard") {
             DashboardScreen(
-                onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToMonitoring = { navController.navigate("monitoring") },
                 onNavigateToRecords = { navController.navigate("records") },
                 onNavigateToAssistant = { navController.navigate("ai-assistant") },
                 onNavigateToNewScan = { navController.navigate("new-scan") },
                 onNavigateToNotifications = { navController.navigate("notifications") },
-                onNavigateToBluetooth = { navController.navigate("device-management") },
+                onNavigateToDeviceManagement = { navController.navigate("device-management") },
                 onNavigateToAppointments = { navController.navigate(AppointmentRoute.List.route) },
                 onNavigateToRecordDetail = { recordId ->
                     navController.navigate("record-detail/${Uri.encode(recordId)}")
-                }
+                },
+                onOpenWorkspaceSwitcher = {
+                    navController.navigate(ShcareMobileRoute.WorkspaceSwitcher.routePattern)
+                },
             )
         }
 

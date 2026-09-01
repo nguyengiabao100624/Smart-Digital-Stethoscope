@@ -17,12 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,7 +38,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,9 +61,11 @@ import com.example.smart_health_android.data.ClinicalReviewDecision
 import com.example.smart_health_android.data.ClinicalReviewStatus
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
+import com.example.smart_health_android.ui.components.ShcareGradientTopAppBar
 import com.example.smart_health_android.ui.components.ShcareLoadingState
 import com.example.smart_health_android.ui.components.ShcareOfflineState
 import com.example.smart_health_android.ui.components.ShcarePermissionState
+import com.example.smart_health_android.ui.theme.ShcareTheme
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -138,29 +139,20 @@ internal fun ClinicalReviewsContent(
         modifier = modifier.fillMaxSize().testTag("clinical-reviews-screen"),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.clinical_reviews_title),
-                        modifier = Modifier.semantics { heading() },
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.clinical_reviews_back),
-                        )
-                    }
-                },
+            ShcareGradientTopAppBar(
+                title = stringResource(R.string.clinical_reviews_title),
+                onNavigateBack = onNavigateBack,
+                backContentDescription = stringResource(R.string.clinical_reviews_back),
                 actions = {
                     TextButton(
                         onClick = onOpenWorkspaceSwitcher,
                         modifier = Modifier.sizeIn(minHeight = 48.dp),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = ShcareTheme.colors.onBrandHeader,
+                            disabledContentColor = ShcareTheme.colors.onBrandHeader.copy(
+                                alpha = 0.55f,
+                            ),
+                        ),
                     ) {
                         Text(stringResource(R.string.clinical_reviews_workspace_action))
                     }

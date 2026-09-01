@@ -54,6 +54,13 @@ class ClinicalReviewsScreenTest {
         composeRule.waitUntil(5_000L) {
             viewModel.uiState.value.loadState == ClinicalReviewsLoadState.Content
         }
+        composeRule.waitUntil(10_000L) {
+            runCatching {
+                composeRule.onAllNodesWithText("Hàng đợi duyệt")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }.getOrDefault(false)
+        }
         composeRule.onNodeWithText("Hàng đợi duyệt").assertIsDisplayed()
         composeRule.onNodeWithText(
             "Tài khoản hiện tại chỉ được xem, không được ghi quyết định lâm sàng.",
@@ -84,6 +91,13 @@ class ClinicalReviewsScreenTest {
 
         composeRule.waitUntil(5_000L) {
             viewModel.uiState.value.loadState == ClinicalReviewsLoadState.Content
+        }
+        composeRule.waitUntil(10_000L) {
+            runCatching {
+                composeRule.onAllNodesWithText("Hàng đợi duyệt")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }.getOrDefault(false)
         }
         composeRule.onNodeWithText("Yêu cầu đo lại")
             .assertIsDisplayed()

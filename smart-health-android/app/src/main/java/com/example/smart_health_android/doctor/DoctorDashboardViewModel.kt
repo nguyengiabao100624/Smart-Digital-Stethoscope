@@ -136,7 +136,12 @@ class DoctorDashboardViewModel(
                             .ifBlank { user.clinicName }
                             .ifBlank { user.organizationId },
                         workspaceMeta = listOf(
-                            workspaceTypeLabel(user.workspaceType),
+                            workspaceTypeLabel(
+                                user.workspaceType.ifBlank {
+                                    user.currentWorkspace?.workspaceType.orEmpty()
+                                        .ifBlank { user.currentWorkspace?.type.orEmpty() }
+                                },
+                            ),
                             roleLabel(user.currentMembership?.role.orEmpty().ifBlank { user.role }),
                         ).filter(String::isNotBlank).joinToString(" • "),
                         canViewAppointments = AppointmentRoute.List.canOpen(user.capabilities.toSet()),
@@ -249,6 +254,7 @@ private fun classifyFailure(error: Throwable): DoctorDashboardLoadState = when {
 
 private fun workspaceTypeLabel(value: String): String = when (value.trim().lowercase()) {
     "personal" -> "Không gian cá nhân"
+    "solo_practice", "doctor_private" -> "Phòng khám tư"
     "clinic" -> "Phòng khám"
     "hospital" -> "Bệnh viện"
     "platform" -> "Nền tảng"
@@ -256,7 +262,8 @@ private fun workspaceTypeLabel(value: String): String = when (value.trim().lower
 }
 
 private fun roleLabel(value: String): String = when (value.trim().lowercase()) {
-    "workspace_admin" -> "Quản trị workspace"
+    "workspace_owner" -> "Chủ workspace"
+    "workspace_admin", "clinic_manager" -> "Quản trị workspace"
     "doctor" -> "Bác sĩ"
     "nurse" -> "Điều dưỡng"
     "technician" -> "Kỹ thuật viên"

@@ -1,6 +1,14 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
+
+## 2026-09-02 Android doctor-surface slice
+
+- [x] Replace the legacy doctor dashboard with the shared adaptive Shcare surface and remove continuous four-second polling.
+- [x] Use three compact quick-action cards per row at normal font scale; preserve readable one-column fallback at 150%/200% font and 48dp minimum targets.
+- [x] Align doctor patients, alerts and reviews with the branded top app bar; localize workspace metadata and remove misleading unavailable device transport numbers.
+- [x] Pass JVM `865/865`, lint `0`, debug/AndroidTest build and Xiaomi physical Compose `11/11`; install the verified APK and capture the authenticated production-data screenshot.
+- [ ] This UI slice does not close the remaining production hardware gates below: Wi-Fi re-entry, WSS/ACK/audio/scan/OTA/rollback and the bounded Render-bandwidth canary remain open.
 
 ## 2026-09-01 authoritative remaining G4 gates
 

@@ -18,7 +18,7 @@ class DashboardHeaderContractTest {
 
     private val doctorHeader = doctorSource.sectionBetween(
         start = "private fun DoctorDashboardHeader(",
-        end = "private fun workspaceTypeLabel(",
+        end = "private fun HeaderIconButton(",
     )
     private val doctorHeaderButton = doctorSource.sectionBetween(
         start = "private fun HeaderIconButton(",
@@ -33,7 +33,7 @@ class DashboardHeaderContractTest {
     fun doctorAndPatientHeaderActionsHaveLocalizedAccessibleNamesAndFortyEightDpTargets() {
         assertTrue(
             doctorHeader.contains(
-                "contentDescription = stringResource(R.string.shcare_action_settings)",
+                "contentDescription = stringResource(R.string.doctor_dashboard_refresh)",
             ),
         )
         assertTrue(
@@ -42,6 +42,7 @@ class DashboardHeaderContractTest {
             ),
         )
         assertTrue(doctorHeaderButton.contains("contentDescription: String"))
+        assertTrue(doctorHeaderButton.contains("testTag: String"))
         assertTrue(doctorHeaderButton.contains(".size(48.dp)"))
         assertTrue(
             Regex("""contentDescription\s*=\s*contentDescription""")
@@ -61,6 +62,7 @@ class DashboardHeaderContractTest {
         assertTrue(patientHeader.contains("IconButton("))
         assertTrue(patientHeader.contains(".size(48.dp)"))
         assertFalse(patientHeader.contains("R.string.shcare_action_settings"))
+        assertFalse(doctorHeader.contains("R.string.shcare_action_settings"))
     }
 
     @Test

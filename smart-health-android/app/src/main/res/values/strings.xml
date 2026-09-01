@@ -63,7 +63,6 @@
     <string name="shcare_action_retry">Thử lại</string>
     <string name="shcare_action_grant_permission">Cấp quyền</string>
     <string name="shcare_action_back">Quay lại</string>
-    <string name="shcare_action_settings">Mở cài đặt</string>
     <string name="shcare_action_notifications">Mở thông báo</string>
     <string name="mobile_route_reauth_loading">Đang xác minh lại quyền truy cập</string>
     <string name="mobile_route_permission_title">Không có quyền mở màn hình này</string>

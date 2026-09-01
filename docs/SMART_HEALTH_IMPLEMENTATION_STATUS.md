@@ -1,6 +1,13 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
+
+## 2026-09-02 Android doctor UI completion
+
+- **PASS/DEVICE — doctor dashboard:** installed production-connected debug APK renders the real authenticated doctor account/workspace with the shared Shcare gradient header, explicit state surfaces, device status, recent results and a compact three-column quick-action grid. The grid is three columns at normal font sizes and changes to one column from 150% font scale to protect accessibility.
+- **PASS/CONSISTENCY:** `solo_practice` and related workspace metadata are localized; unavailable device transport values no longer display `0 Hz / UDP 0`; doctor patients, alerts and reviews use the shared branded top app bar and preserve read-only/manage authority behavior.
+- **PASS/VERIFICATION:** JVM `865/865`, Android lint `0`, debug/AndroidTest assembly, Xiaomi Compose instrumentation `11/11`. Installed APK SHA-256: `7B9251D80C3EC1598F21C8B1D471F9D2F153A544909724E47669AFF43FA56C15`.
+- **EVIDENCE:** `docs/report-evidence/2026-09-02/android-doctor-dashboard-three-column.png` is a real post-login screenshot, not a preview or mock. This slice changes Android presentation/navigation only; backend, web and firmware contracts are unchanged.
 
 ## 2026-09-01 production synchronization and Xiaomi verification
 

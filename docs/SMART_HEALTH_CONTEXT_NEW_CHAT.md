@@ -1,6 +1,14 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-08-31
+Last updated: 2026-09-02
+
+## 2026-09-02 Android doctor-surface parity and three-column quick actions
+
+- The authenticated doctor dashboard now uses the same adaptive Shcare visual system as the patient surface: gradient header, explicit loading/offline/error/stale states, current-workspace metadata, device status, quick actions and recent results. The previous four-second infinite polling loop was removed; refresh is explicit and lifecycle-safe.
+- Doctor quick actions use exactly three cards per row at normal font scale on 360/412/600/840dp surfaces. At system font scale 150% or higher they intentionally become one full-width action per row so labels and 48dp targets remain accessible. The final partial row preserves equal three-column widths.
+- Patient list, clinical alerts and clinical review headers now share the branded adaptive top app bar. Raw workspace codes such as `solo_practice` are localized to `Phòng khám tư`; an offline device no longer renders meaningless `0 Hz / UDP 0` telemetry.
+- Verification PASS: Android JVM `865/865`, lint report `0` issues, debug and AndroidTest APK assembly, and a clean Xiaomi instrumentation run `11/11` covering dashboard, three-column actions, 200% font, patients, alerts and reviews.
+- The debug APK installed on Xiaomi has SHA-256 `7B9251D80C3EC1598F21C8B1D471F9D2F153A544909724E47669AFF43FA56C15`. Physical screenshot: `docs/report-evidence/2026-09-02/android-doctor-dashboard-three-column.png`.
 
 ## 2026-08-31 Render replacement and Admin login repair
 

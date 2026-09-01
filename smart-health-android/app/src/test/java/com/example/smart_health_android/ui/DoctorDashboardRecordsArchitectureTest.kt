@@ -13,7 +13,10 @@ class DoctorDashboardRecordsArchitectureTest {
 
         listOf(dashboard, records).forEach { source ->
             assertTrue(source.contains("collectAsStateWithLifecycle"))
-            assertTrue(Regex("""\w+ViewModel\.onAction\(""").containsMatchIn(source))
+            assertTrue(
+                Regex("""\w+ViewModel\.onAction\(""").containsMatchIn(source) ||
+                    source.contains("viewModel::onAction"),
+            )
             assertFalse(source.contains("SmartHealthRepository.api"))
             assertFalse(source.contains("rememberCoroutineScope"))
         }

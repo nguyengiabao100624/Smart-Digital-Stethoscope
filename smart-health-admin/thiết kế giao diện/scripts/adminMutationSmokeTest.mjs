@@ -831,12 +831,9 @@ async function exerciseAdminMutations(page, state) {
       name: `Admin smoke bucket ${runId}`,
       description: "Empty bucket created by Web Admin mutation smoke.",
       category: "smoke",
-      quotaGb: 1,
-      visibility: "private",
       allowedExtensions: ["txt"],
       allowedMimeTypes: ["text/plain"],
       maxFileSizeMb: 1,
-      retentionDays: 1,
     },
   });
   state.storageBucketId = bucketResult.payload?.bucket?.id || bucketId;

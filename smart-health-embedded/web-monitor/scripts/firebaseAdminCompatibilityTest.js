@@ -164,6 +164,31 @@ test("profile-only Admin edits persist to the Shcare authority without a Firebas
   assert.doesNotMatch(profileMutation, /updateFirebase|firebaseAdminApp/);
 });
 
+test("account locks rely on canonical session revocation and Firebase disabled state without a second provider revoke", () => {
+  const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const adminRouteStart = serverSource.indexOf(
+    'segments[2] === "admin-users" && segments.length === 4 && method === "PATCH"',
+  );
+  const adminRouteEnd = serverSource.indexOf(
+    'segments[4] === "reset-password" && method === "POST"',
+    adminRouteStart,
+  );
+  const adminRoute = serverSource.slice(adminRouteStart, adminRouteEnd);
+  assert.match(adminRoute, /disabled:\s*nextStatus === "locked"/);
+  assert.doesNotMatch(adminRoute, /revokeRefreshTokens/);
+
+  const doctorLockStart = serverSource.indexOf(
+    'segments[4] === "lock" && method === "PATCH"',
+  );
+  const doctorUnlockStart = serverSource.indexOf(
+    'segments[4] === "unlock" && method === "PATCH"',
+    doctorLockStart,
+  );
+  const doctorLockRoute = serverSource.slice(doctorLockStart, doctorUnlockStart);
+  assert.match(doctorLockRoute, /disabled:\s*true/);
+  assert.doesNotMatch(doctorLockRoute, /revokeRefreshTokens/);
+});
+
 test("Firebase password changes use one provider mutation and rely on automatic token revocation", () => {
   const serverSource = fs.readFileSync(
     path.join(__dirname, "..", "server.js"),

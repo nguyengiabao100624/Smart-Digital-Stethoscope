@@ -446,6 +446,7 @@ function buildPcmChunkBase64({ sampleRate = 16_000, seconds = 1 } = {}) {
 }
 
 async function exerciseAdminMutations(page, state) {
+  console.log("[admin-mutation] authority and settings snapshot");
   const me = await apiFetch(page, "/me");
   const user = me.payload?.user;
   if (user?.role !== "admin") {
@@ -472,6 +473,7 @@ async function exerciseAdminMutations(page, state) {
   };
 
   const clinicId = `org_${runKey}`;
+  console.log("[admin-mutation] workspace lifecycle");
   const clinicResult = await apiFetch(page, "/admin/clinics", {
     method: "POST",
     headers: { "Idempotency-Key": `${runId}:workspace:create` },
@@ -502,6 +504,7 @@ async function exerciseAdminMutations(page, state) {
   state.clinicVersion = Number(clinicPatch.payload?.clinic?.version || state.clinicVersion + 1);
 
   const adminEmail = `${runKey}-workspace-admin@smarthealth.test`;
+  console.log("[admin-mutation] managed admin create");
   const adminCreate = await apiFetch(page, "/admin/admin-users", {
     method: "POST",
     headers: { "Idempotency-Key": `${runId}:admin-account:create` },
@@ -519,6 +522,7 @@ async function exerciseAdminMutations(page, state) {
   state.adminUserEmail = adminEmail;
   if (!state.adminUserId) throw new Error("admin account create response did not include user.id");
 
+  console.log("[admin-mutation] managed admin profile update");
   const adminPatch = await apiFetch(
     page,
     `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
@@ -532,6 +536,7 @@ async function exerciseAdminMutations(page, state) {
       },
     },
   );
+  console.log("[admin-mutation] managed admin password reset");
   const adminReset = await apiFetch(
     page,
     `/admin/admin-users/${encodeURIComponent(state.adminUserId)}/reset-password`,
@@ -541,11 +546,13 @@ async function exerciseAdminMutations(page, state) {
       body: { password: `Smoke${runKey}!2` },
     },
   );
+  console.log("[admin-mutation] managed admin lock");
   const adminLock = await apiFetch(
     page,
     `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
     { method: "PATCH", body: { accountStatus: "locked" }, retryTransient: true },
   );
+  console.log("[admin-mutation] managed admin unlock");
   const adminUnlock = await apiFetch(
     page,
     `/admin/admin-users/${encodeURIComponent(state.adminUserId)}`,
@@ -553,6 +560,7 @@ async function exerciseAdminMutations(page, state) {
   );
 
   const packageId = `pkg_${runKey}`;
+  console.log("[admin-mutation] package lifecycle");
   const packageResult = await apiFetch(page, "/admin/packages", {
     method: "POST",
     headers: { "Idempotency-Key": `${runId}:package:create` },
@@ -598,6 +606,7 @@ async function exerciseAdminMutations(page, state) {
     },
   );
 
+  console.log("[admin-mutation] patient lifecycle");
   const patientResult = await apiFetch(page, "/patients", {
     method: "POST",
     headers: { "Idempotency-Key": `${runId}:patient:create` },
@@ -665,6 +674,7 @@ async function exerciseAdminMutations(page, state) {
     };
   }
 
+  console.log("[admin-mutation] doctor invitation and account lifecycle");
   const invitationEmail = `${runKey}-doctor@smarthealth.test`;
   const invitationCreate = await apiFetch(page, "/admin/staff-invitations", {
     method: "POST",
@@ -772,6 +782,7 @@ async function exerciseAdminMutations(page, state) {
     };
   }
 
+  console.log("[admin-mutation] notification lifecycle");
   const notificationResult = await apiFetch(page, "/notifications", {
     method: "POST",
     headers: { "Idempotency-Key": `${runId}:notification-campaign:create` },
@@ -799,6 +810,7 @@ async function exerciseAdminMutations(page, state) {
     { method: "POST" },
   );
 
+  console.log("[admin-mutation] storage and settings lifecycle");
   const bucketId = `bucket_${runKey}`.slice(0, 63);
   const bucketResult = await apiFetch(page, "/admin/storage-buckets", {
     method: "POST",

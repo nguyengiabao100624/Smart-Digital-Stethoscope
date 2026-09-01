@@ -16208,7 +16208,6 @@ async function handleAdminApi(req, res, url, segments) {
         { accountStatus: nextStatus },
         () => updateFirebaseLinkedAccount(targetUser, {
           disabled: nextStatus === "locked",
-          revokeRefreshTokens: nextStatus === "locked",
         }),
       );
       Object.assign(targetUser, accountStatusSaga.completed.user || { accountStatus: nextStatus });
@@ -16319,7 +16318,6 @@ async function handleAdminApi(req, res, url, segments) {
       { accountStatus: action === "lock" ? "locked" : "active" },
       () => updateFirebaseLinkedAccount(targetUser, {
         disabled: action === "lock",
-        revokeRefreshTokens: action === "lock",
       }),
     );
     Object.assign(targetUser, saga.completed.user || {
@@ -17522,7 +17520,6 @@ async function handleAdminApi(req, res, url, segments) {
       { accountStatus: "locked" },
       () => updateFirebaseLinkedAccount(targetUser, {
         disabled: true,
-        revokeRefreshTokens: true,
       }),
     );
     Object.assign(targetUser, saga.completed.user || { accountStatus: "locked" });

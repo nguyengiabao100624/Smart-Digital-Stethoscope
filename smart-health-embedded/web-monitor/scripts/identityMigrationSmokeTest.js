@@ -3195,6 +3195,27 @@ async function main() {
   );
   assert.match(importerSource, /Migration JSON -> PostgreSQL đã đối soát:/);
 
+  const doctorWorkspaceIdentityMigration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "..",
+      "db",
+      "migrations",
+      "057_identity_doctor_workspace_assignment.sql",
+    ),
+    "utf8",
+  );
+  assert.match(
+    doctorWorkspaceIdentityMigration,
+    /identity_operations_operation_check[\s\S]*doctor_workspace_assign/i,
+    "the database identity-operation allowlist must include doctor workspace reassignment",
+  );
+  assert.match(
+    doctorWorkspaceIdentityMigration,
+    /NOT\s+VALID[\s\S]*VALIDATE\s+CONSTRAINT/i,
+    "the production constraint change must use a bounded add-and-validate rollout",
+  );
+
   const legacyFixture = JSON.parse(fs.readFileSync(
     path.join(__dirname, "fixtures", "identity-migration-legacy-db.json"),
     "utf8",

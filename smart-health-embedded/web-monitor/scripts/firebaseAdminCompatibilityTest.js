@@ -12,6 +12,7 @@ const {
   resolveFirebaseAdminMutationTimeoutMs,
   resolveServiceAccount,
   runFirebaseAdminMutation,
+  updateFirebaseUserViaRest,
   verifyFirebaseIdToken,
 } = require("../src/firebaseAuth");
 
@@ -32,6 +33,65 @@ test("Firebase Admin mutations are bounded so a provider stall cannot pin the AP
       { FIREBASE_ADMIN_MUTATION_TIMEOUT_MS: "100" },
     ),
     "confirmed",
+  );
+});
+
+test("Firebase password mutations use the bounded Identity Toolkit REST authority", async () => {
+  const requests = [];
+  const result = await updateFirebaseUserViaRest(
+    "firebase-user-1",
+    { password: "safe-test-password", disabled: false },
+    {
+      FIREBASE_PROJECT_ID: "shcare-local-contract",
+      FIREBASE_ADMIN_MUTATION_TIMEOUT_MS: "500",
+    },
+    {
+      accessTokenProvider: async () => ({ access_token: "oauth-test-token" }),
+      fetch: async (url, init) => {
+        requests.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ localId: "firebase-user-1" }),
+        };
+      },
+    },
+  );
+
+  assert.equal(result.updated, true);
+  assert.equal(result.firebaseUid, "firebase-user-1");
+  assert.equal(result.firebaseDisabled, false);
+  assert.equal(result.firebaseTokensRevoked, true);
+  assert.equal(requests.length, 1);
+  assert.equal(
+    requests[0].url,
+    "https://identitytoolkit.googleapis.com/v1/projects/shcare-local-contract/accounts:update",
+  );
+  assert.equal(requests[0].init.headers.Authorization, "Bearer oauth-test-token");
+  assert.deepEqual(JSON.parse(requests[0].init.body), {
+    localId: "firebase-user-1",
+    password: "safe-test-password",
+    disableUser: false,
+    returnSecureToken: false,
+  });
+});
+
+test("Firebase REST mutations fail closed on a mismatched provider identity", async () => {
+  await assert.rejects(
+    updateFirebaseUserViaRest(
+      "firebase-user-1",
+      { password: "safe-test-password" },
+      { FIREBASE_PROJECT_ID: "shcare-local-contract" },
+      {
+        accessTokenProvider: async () => "oauth-test-token",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ localId: "another-user" }),
+        }),
+      },
+    ),
+    (error) => error?.code === "FIREBASE_IDENTITY_MISMATCH",
   );
 });
 
@@ -240,7 +300,8 @@ test("Firebase password changes use one provider mutation and rely on automatic 
   );
   const adminRoute = serverSource.slice(adminStart, adminEnd);
   assert.ok(adminStart >= 0 && adminEnd > adminStart);
-  assert.match(adminRoute, /\.auth\(\)\.updateUser\([^,]+,\s*\{\s*password:/);
+  assert.match(adminRoute, /updateFirebaseUserViaRest\([\s\S]+password:\s*nextPassword/);
+  assert.doesNotMatch(adminRoute, /\.auth\(\)\.updateUser/);
   assert.doesNotMatch(adminRoute, /revokeRefreshTokens/);
 });
 

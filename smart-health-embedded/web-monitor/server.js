@@ -15,6 +15,7 @@ const {
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,
   runFirebaseAdminMutation,
+  updateFirebaseUserViaRest,
   verifyFirebaseIdToken,
 } = require("./src/firebaseAuth");
 const {
@@ -12153,11 +12154,13 @@ async function updateFirebaseLinkedAccount(targetUser, payload = {}) {
 
   try {
     if (Object.keys(updates).length > 0) {
-      await runFirebaseAdminMutation(
-        () => firebaseAdminApp.auth().updateUser(firebaseUid, updates),
+      const restResult = await updateFirebaseUserViaRest(
+        firebaseUid,
+        updates,
         process.env,
-        "Firebase linked-account update",
+        { admin: firebaseAdminApp },
       );
+      return restResult;
     }
     // Firebase revokes refresh tokens as part of a password update. Explicit
     // revocation remains available for non-password lock flows.
@@ -16285,8 +16288,12 @@ async function handleAdminApi(req, res, url, segments) {
           error.code = "IDENTITY_PROVIDER_UNAVAILABLE";
           throw error;
         }
-        await firebaseAdminApp.auth().updateUser(targetUser.firebaseUid, { password: nextPassword, disabled: false });
-        return { updated: true, firebaseDisabled: false, firebaseTokensRevoked: true };
+        return updateFirebaseUserViaRest(
+          targetUser.firebaseUid,
+          { password: nextPassword, disabled: false },
+          process.env,
+          { admin: firebaseAdminApp },
+        );
       },
       {
         targetState: { provider: passwordProvider },

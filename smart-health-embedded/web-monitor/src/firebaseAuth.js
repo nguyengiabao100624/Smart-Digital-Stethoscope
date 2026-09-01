@@ -61,6 +61,12 @@ function resolveServiceAccount(env = process.env) {
   return parseServiceAccount(fs.readFileSync(credentialsPath, "utf8"));
 }
 
+function resolveFirebaseProjectId(env = process.env) {
+  const configured = String(env.FIREBASE_PROJECT_ID || "").trim();
+  if (configured) return configured;
+  return String(resolveServiceAccount(env)?.project_id || "").trim();
+}
+
 function isFirebaseAuthEmulatorConfigured(env = process.env) {
   const value = String(env.FIREBASE_AUTH_EMULATOR_HOST || "").trim();
   return Boolean(value) && /^[A-Za-z0-9.-]+:\d{1,5}$/.test(value);
@@ -112,6 +118,149 @@ async function verifyFirebaseIdToken(idToken, env = process.env, options = {}) {
     return null;
   }
   return admin.auth().verifyIdToken(idToken, true);
+}
+
+function firebaseIdentityToolkitError(status, payload = {}) {
+  const providerMessage = String(payload?.error?.message || payload?.message || "").trim();
+  const error = new Error(
+    providerMessage
+      ? `Firebase Identity Toolkit rejected the mutation (${status}): ${providerMessage}`
+      : `Firebase Identity Toolkit rejected the mutation (${status})`,
+  );
+  const normalized = providerMessage.toUpperCase();
+  error.code = normalized.includes("USER_NOT_FOUND")
+    ? "auth/user-not-found"
+    : "FIREBASE_IDENTITY_MUTATION_FAILED";
+  error.statusCode = Number(status) || 502;
+  return error;
+}
+
+async function updateFirebaseUserViaRest(
+  firebaseUid,
+  payload = {},
+  env = process.env,
+  options = {},
+) {
+  const uid = String(firebaseUid || "").trim();
+  if (!uid) {
+    const error = new Error("Firebase UID is required");
+    error.code = "FIREBASE_UID_REQUIRED";
+    throw error;
+  }
+  const projectId = resolveFirebaseProjectId(env);
+  if (!projectId) {
+    const error = new Error("Firebase project ID is not configured");
+    error.code = "FIREBASE_PROJECT_ID_REQUIRED";
+    throw error;
+  }
+
+  const requestBody = {
+    localId: uid,
+    returnSecureToken: false,
+  };
+  if (Object.prototype.hasOwnProperty.call(payload, "password")) {
+    const password = typeof payload.password === "string" ? payload.password : "";
+    if (password.length < 8 || password.length > 200) {
+      const error = new Error("Firebase password length is invalid");
+      error.code = password.length < 8 ? "PASSWORD_TOO_SHORT" : "PASSWORD_TOO_LONG";
+      throw error;
+    }
+    requestBody.password = password;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "disabled")) {
+    requestBody.disableUser = Boolean(payload.disabled);
+  }
+  if (Object.keys(requestBody).length === 2) {
+    return { updated: false, skipped: true, firebaseUid: uid };
+  }
+
+  const accessTokenProvider = options.accessTokenProvider || (async () => {
+    const admin = options.admin || getFirebaseAdmin(env);
+    const credential = admin?.app?.options?.credential;
+    if (!credential || typeof credential.getAccessToken !== "function") {
+      const error = new Error("Firebase service credential cannot issue an OAuth access token");
+      error.code = "FIREBASE_CREDENTIAL_UNAVAILABLE";
+      throw error;
+    }
+    return runFirebaseAdminMutation(
+      () => credential.getAccessToken(),
+      env,
+      "Firebase OAuth access token",
+    );
+  });
+  const accessTokenResult = await accessTokenProvider();
+  const accessToken = String(
+    typeof accessTokenResult === "string"
+      ? accessTokenResult
+      : accessTokenResult?.access_token || accessTokenResult?.accessToken || "",
+  ).trim();
+  if (!accessToken) {
+    const error = new Error("Firebase OAuth access token is unavailable");
+    error.code = "FIREBASE_ACCESS_TOKEN_UNAVAILABLE";
+    throw error;
+  }
+
+  const fetchFn = options.fetch || globalThis.fetch;
+  if (typeof fetchFn !== "function") {
+    const error = new Error("Fetch is unavailable for Firebase Identity Toolkit");
+    error.code = "FIREBASE_FETCH_UNAVAILABLE";
+    throw error;
+  }
+  const controller = new AbortController();
+  const timeoutMs = resolveFirebaseAdminMutationTimeoutMs(env);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetchFn(
+      `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:update`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      },
+    );
+  } catch (cause) {
+    const error = new Error(
+      controller.signal.aborted
+        ? `Firebase Identity Toolkit timed out after ${timeoutMs} ms`
+        : "Firebase Identity Toolkit request failed",
+      { cause },
+    );
+    error.code = controller.signal.aborted
+      ? "FIREBASE_ADMIN_TIMEOUT"
+      : "FIREBASE_IDENTITY_NETWORK_ERROR";
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const responseText = await response.text();
+  let responsePayload = {};
+  try {
+    responsePayload = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    responsePayload = {};
+  }
+  if (!response.ok) {
+    throw firebaseIdentityToolkitError(response.status, responsePayload);
+  }
+  if (String(responsePayload.localId || "") !== uid) {
+    const error = new Error("Firebase Identity Toolkit returned a different user identity");
+    error.code = "FIREBASE_IDENTITY_MISMATCH";
+    throw error;
+  }
+  return {
+    updated: true,
+    firebaseUid: uid,
+    firebaseDisabled: Object.prototype.hasOwnProperty.call(requestBody, "disableUser")
+      ? requestBody.disableUser
+      : undefined,
+    firebaseTokensRevoked: Object.prototype.hasOwnProperty.call(requestBody, "password"),
+  };
 }
 
 function getFirebaseIdTokenErrorCode(error = {}) {
@@ -168,8 +317,10 @@ module.exports = {
   isFirebaseAuthEnabled,
   isFirebaseProviderMutationConfirmed,
   normalizeFirebaseAuthTime,
+  resolveFirebaseProjectId,
   resolveServiceAccount,
   resolveFirebaseAdminMutationTimeoutMs,
   runFirebaseAdminMutation,
+  updateFirebaseUserViaRest,
   verifyFirebaseIdToken,
 };

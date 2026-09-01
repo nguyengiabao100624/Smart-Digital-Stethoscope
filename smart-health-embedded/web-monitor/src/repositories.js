@@ -467,20 +467,36 @@ function rowToAuthSession(row) {
   };
 }
 
+const DOCTOR_WORKSPACE_ASSIGN_OPERATION = "doctor_workspace_assign";
+const DOCTOR_WORKSPACE_ASSIGN_STORAGE_OPERATION = "change_role";
+
+function identityOperationStorageValue(operation) {
+  return operation === DOCTOR_WORKSPACE_ASSIGN_OPERATION
+    ? DOCTOR_WORKSPACE_ASSIGN_STORAGE_OPERATION
+    : operation;
+}
+
 function rowToIdentityOperation(row) {
   if (!row) return null;
+  const targetState = objectOf(row.target_state);
+  const storedOperation = row.operation || "";
+  const operation =
+    storedOperation === DOCTOR_WORKSPACE_ASSIGN_STORAGE_OPERATION &&
+    targetState.identityOperationKind === DOCTOR_WORKSPACE_ASSIGN_OPERATION
+      ? DOCTOR_WORKSPACE_ASSIGN_OPERATION
+      : storedOperation;
   return {
     id: row.id,
     targetUserId: row.target_user_id || "",
     actorUserId: row.actor_user_id || "",
     organizationId: row.organization_id || "",
-    operation: row.operation || "",
+    operation,
     status: row.status || "pending_provider",
     idempotencyKey: row.idempotency_key || "",
     requestFingerprint: row.request_fingerprint || "",
     previousAccountStatus: row.previous_account_status || "",
     targetAccountStatus: row.target_account_status || "",
-    targetState: objectOf(row.target_state),
+    targetState,
     providerStatus: row.provider_status || "",
     providerResult: objectOf(row.provider_result),
     errorCode: row.error_code || "",
@@ -10793,6 +10809,9 @@ function createRepositories(options) {
             workspaceType: String(requestedTargetState.workspaceType || "").trim(),
             membershipRole: String(requestedTargetState.membershipRole || requestedTargetState.role || "").trim(),
             roleRequestApproval: requestedTargetState.roleRequestApproval === true,
+            ...(operation === DOCTOR_WORKSPACE_ASSIGN_OPERATION
+              ? { identityOperationKind: DOCTOR_WORKSPACE_ASSIGN_OPERATION }
+              : {}),
           }
         : operation === "reset_password"
           ? {
@@ -10802,6 +10821,7 @@ function createRepositories(options) {
       const operationOrganizationId = ["change_role", "doctor_workspace_assign"].includes(operation)
         ? targetState.organizationId
         : organizationId;
+      const storageOperation = identityOperationStorageValue(operation);
       const protectLastPlatformAdmin = Boolean(input.protectLastPlatformAdmin) && ["lock", "delete", "change_role"].includes(operation);
       if (!targetUserId || !actorUserId || !idempotencyKey || !requestFingerprint) {
         throw repositoryError(400, "IDENTITY_OPERATION_INVALID", "Identity operation context is incomplete");
@@ -10873,7 +10893,7 @@ function createRepositories(options) {
               WHERE target_user_id = $1 AND operation = $2 AND idempotency_key = $3
               LIMIT 1 FOR UPDATE
             `,
-            [targetUserId, operation, idempotencyKey],
+            [targetUserId, storageOperation, idempotencyKey],
           );
           if (existing.rows[0]) {
             const identityOperation = rowToIdentityOperation(existing.rows[0]);
@@ -11025,7 +11045,7 @@ function createRepositories(options) {
               targetUserId,
               actorUserId,
               operationOrganizationId,
-              operation,
+              storageOperation,
               idempotencyKey,
               requestFingerprint,
               previousUser.accountStatus || "active",
@@ -11230,6 +11250,7 @@ function createRepositories(options) {
       const operation = String(input.operation || "");
       const idempotencyKey = String(input.idempotencyKey || "");
       const requestFingerprint = String(input.requestFingerprint || "");
+      const storageOperation = identityOperationStorageValue(operation);
       if (
         !targetUserId ||
         !operation ||
@@ -11248,7 +11269,7 @@ function createRepositories(options) {
             `SELECT * FROM identity_operations
              WHERE target_user_id = $1 AND operation = $2 AND idempotency_key = $3
              LIMIT 1`,
-            [targetUserId, operation, idempotencyKey],
+            [targetUserId, storageOperation, idempotencyKey],
           );
           if (!selected.rows[0]) return null;
           const identityOperation = rowToIdentityOperation(selected.rows[0]);

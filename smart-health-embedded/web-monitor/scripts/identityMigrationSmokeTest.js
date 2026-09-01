@@ -3207,18 +3207,37 @@ async function main() {
   );
   assert.match(
     doctorWorkspaceIdentityMigration,
-    /identity_operations_operation_check[\s\S]*doctor_workspace_assign/i,
-    "the database identity-operation allowlist must include doctor workspace reassignment",
+    /doctor_workspace_assign[\s\S]*change_role/i,
+    "doctor workspace assignment must use the released database discriminator",
+  );
+  assert.doesNotMatch(
+    doctorWorkspaceIdentityMigration,
+    /ALTER\s+TABLE|DROP\s+CONSTRAINT|ADD\s+CONSTRAINT/i,
+    "the runtime migration must not require table-owner privileges",
   );
   assert.match(
     doctorWorkspaceIdentityMigration,
-    /managed_admin_activate[\s\S]*doctor_workspace_assign/i,
-    "the migration must preserve every previously released identity operation",
+    /SELECT\s+1/i,
+    "the compatibility rollout must retain a durable migration marker",
+  );
+  const repositoriesSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "repositories.js"),
+    "utf8",
   );
   assert.match(
-    doctorWorkspaceIdentityMigration,
-    /NOT\s+VALID[\s\S]*VALIDATE\s+CONSTRAINT/i,
-    "the production constraint change must use a bounded add-and-validate rollout",
+    repositoriesSource,
+    /DOCTOR_WORKSPACE_ASSIGN_STORAGE_OPERATION\s*=\s*"change_role"/,
+    "doctor workspace assignment must use the released storage discriminator",
+  );
+  assert.match(
+    repositoriesSource,
+    /identityOperationKind:\s*DOCTOR_WORKSPACE_ASSIGN_OPERATION/,
+    "the durable target state must preserve the logical operation kind",
+  );
+  assert.match(
+    repositoriesSource,
+    /identityOperationStorageValue\(operation\)/,
+    "identity operation lookups must consistently apply the storage mapping",
   );
 
   const legacyFixture = JSON.parse(fs.readFileSync(

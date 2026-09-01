@@ -12231,6 +12231,7 @@ function sanitizeIdentityProviderResult(result = {}) {
     firebaseDeleted: result.firebaseDeleted === true,
     firebaseAlreadyMissing: result.firebaseAlreadyMissing === true,
     providerUnavailable: result.providerUnavailable === true,
+    backendAuthoritative: result.backendAuthoritative === true,
     firebaseDisabled: typeof result.firebaseDisabled === "boolean" ? result.firebaseDisabled : undefined,
     firebaseTokensRevoked: result.firebaseTokensRevoked === true,
     firebaseClaims:
@@ -16206,8 +16207,11 @@ async function handleAdminApi(req, res, url, segments) {
         targetUser,
         nextStatus === "locked" ? "lock" : "unlock",
         { accountStatus: nextStatus },
-        () => updateFirebaseLinkedAccount(targetUser, {
-          disabled: nextStatus === "locked",
+        () => ({
+          updated: false,
+          skipped: true,
+          backendAuthoritative: true,
+          warning: "Shcare áp dụng trạng thái tài khoản tại backend canonical và đã thu hồi session; Firebase metadata không phải authority truy cập.",
         }),
       );
       Object.assign(targetUser, accountStatusSaga.completed.user || { accountStatus: nextStatus });
@@ -16316,8 +16320,11 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser,
       action,
       { accountStatus: action === "lock" ? "locked" : "active" },
-      () => updateFirebaseLinkedAccount(targetUser, {
-        disabled: action === "lock",
+      () => ({
+        updated: false,
+        skipped: true,
+        backendAuthoritative: true,
+        warning: "Shcare áp dụng trạng thái tài khoản tại backend canonical và đã thu hồi session; Firebase metadata không phải authority truy cập.",
       }),
     );
     Object.assign(targetUser, saga.completed.user || {
@@ -17518,8 +17525,11 @@ async function handleAdminApi(req, res, url, segments) {
       targetUser,
       "lock",
       { accountStatus: "locked" },
-      () => updateFirebaseLinkedAccount(targetUser, {
-        disabled: true,
+      () => ({
+        updated: false,
+        skipped: true,
+        backendAuthoritative: true,
+        warning: "Shcare khóa bác sĩ tại backend canonical, thu hồi session và đóng kết nối realtime.",
       }),
     );
     Object.assign(targetUser, saga.completed.user || { accountStatus: "locked" });

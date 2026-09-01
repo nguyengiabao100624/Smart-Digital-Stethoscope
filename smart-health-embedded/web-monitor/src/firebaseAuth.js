@@ -144,6 +144,13 @@ function isFirebaseProviderMutationConfirmed(
   if (operation === "reset_password") {
     return result.updated === true;
   }
+  if (
+    ["lock", "unlock"].includes(operation) &&
+    result.skipped === true &&
+    result.backendAuthoritative === true
+  ) {
+    return true;
+  }
   if (!String(targetUser.firebaseUid || "")) {
     return true;
   }

@@ -2,6 +2,13 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 doctor/device live repair checkpoint
+
+- [x] Separate approved-doctor workspace assignment from destructive account role changes; preserve existing workspace-owner/admin memberships and refresh provider claims/sessions safely.
+- [x] Add migration `057` for `doctor_workspace_assign` while retaining the complete existing operation allowlist, including `managed_admin_activate`; pass focused security, repository and migration tests.
+- [ ] Wait for Render to expose the migration-bearing candidate (source `43356130`; live marker at checkpoint `git-76b7060db388`), then repair and verify the real doctor/workspace/device assignment idempotently.
+- [ ] Reopen the installed Xiaomi app after session revocation and prove that the doctor dashboard and assigned device settle without the secure-connection loop.
+
 ## 2026-09-02 device assignment and claim handover slice
 
 - [x] Replace the patient-only device dialog with independent workspace, doctor/account and patient search plus one atomic save.

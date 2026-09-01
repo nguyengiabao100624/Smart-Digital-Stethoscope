@@ -2,6 +2,12 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 doctor workspace reassignment deployment checkpoint
+
+- Live verification found that the approved doctor `usr_20260828091945_bf3c594e` already owns another active workspace, so the generic `change_role` operation correctly rejected a destructive primary-workspace switch. Doctor assignment now has its own audited `doctor_workspace_assign` saga: it preserves existing owner/admin memberships, activates the doctor membership in the selected workspace, updates the primary workspace and Firebase claims, and revokes stale sessions.
+- PostgreSQL migration `057_identity_doctor_workspace_assignment.sql` extends the identity-operation allowlist without removing the existing `managed_admin_activate` operation. Local backend check, workspace-access, managed-admin transition/create, Firebase compatibility, device security `86/86`, identity-migration and diff checks PASS.
+- Source candidate is `43356130`; Admin and Portal device-assignment surfaces are already live from candidate `435e7580`. Render still reports `git-76b7060db388` at this checkpoint, so live doctor/device repair and Xiaomi verification must wait for the migration-bearing marker and must not be reported as complete yet.
+
 ## 2026-09-02 unified device assignment and claim-code boundary
 
 - Platform Admin device control now uses one audited, idempotent assignment transaction for the device workspace, responsible doctor/account and optional patient. The Admin dialog has separate workspace, doctor and patient searches, so a doctor phone number is no longer incorrectly searched only in patient records.

@@ -2,6 +2,12 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 doctor workspace assignment follow-up
+
+- **PASS/SOURCE+SECURITY:** approved-doctor assignment uses the dedicated audited `doctor_workspace_assign` identity operation. It preserves privileged memberships in other workspaces, creates/activates the target doctor membership, updates primary workspace/provider claims and revokes stale sessions instead of misusing the destructive role-change guard.
+- **PASS/MIGRATION:** migration `057` retains every previously valid identity operation, including `managed_admin_activate`, and adds `doctor_workspace_assign`. Backend check, workspace-access, role-transition/create, Firebase compatibility, identity-migration and device-security `86/86` gates pass.
+- **PENDING/LIVE:** candidate `43356130` is pushed, while the public Render marker remains `git-76b7060db388`. Do not run or claim the production doctor/device mutation until the migration-bearing marker is healthy; then verify idempotent assignment and Android session recovery on Xiaomi.
+
 ## 2026-09-02 unified device assignment and claim handover
 
 - **PASS/SOURCE — authoritative assignment:** Platform Admin can atomically select the device workspace, responsible doctor/account and optional patient. Backend validation keeps owner and patient in the selected workspace, rejects revoked devices and patient-without-owner writes, closes stale device authority when ownership changes and writes source/target audit records.

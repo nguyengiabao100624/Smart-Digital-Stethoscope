@@ -411,6 +411,7 @@ async function verifyAppointmentsSurface(page) {
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Đóng", exact: true })
+    .first()
     .click();
   return {
     label: "appointments scheduling controls",
@@ -463,7 +464,7 @@ async function verifyBillingSurface(page) {
   for (const expected of [
     "Gói dịch vụ",
     "Hạn mức sử dụng",
-    "Liên hệ billing",
+    "Liên hệ về gói",
   ]) {
     if (!body.includes(expected)) {
       throw new Error(`billing: missing visible section ${expected}`);
@@ -526,6 +527,7 @@ async function verifyAuditSurface(page) {
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Đóng" })
+      .first()
       .click();
     detailChecked = true;
   }

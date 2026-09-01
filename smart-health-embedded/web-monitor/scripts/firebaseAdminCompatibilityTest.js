@@ -9,6 +9,7 @@ const {
   isFirebaseProviderMutationConfirmed,
   isFirebaseAuthEmulatorConfigured,
   normalizeFirebaseAuthTime,
+  resolveServiceAccount,
   verifyFirebaseIdToken,
 } = require("../src/firebaseAuth");
 
@@ -46,6 +47,26 @@ test("Firebase Auth emulator is explicit and never confused with a production cr
     false,
   );
   assert.equal(isFirebaseAuthEmulatorConfigured({}), false);
+});
+
+test("Google application credentials use the local service-account key instead of remote IAM signing", () => {
+  const tempDir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "shcare-firebase-cert-"));
+  const credentialPath = path.join(tempDir, "service-account.json");
+  const serviceAccount = {
+    type: "service_account",
+    project_id: "shcare-local-contract",
+    private_key: "line-one\\nline-two",
+    client_email: "firebase-admin@shcare-local-contract.iam.gserviceaccount.com",
+  };
+  fs.writeFileSync(credentialPath, JSON.stringify(serviceAccount), "utf8");
+  try {
+    assert.deepEqual(
+      resolveServiceAccount({ GOOGLE_APPLICATION_CREDENTIALS: credentialPath }),
+      { ...serviceAccount, private_key: "line-one\nline-two" },
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("Firebase token verification always checks revocation", async () => {

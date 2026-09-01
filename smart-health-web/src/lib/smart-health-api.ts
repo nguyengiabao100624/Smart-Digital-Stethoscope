@@ -2420,22 +2420,33 @@ export const smartHealthApi = {
   },
   async authenticateFirebase(idToken: string) {
     setToken(idToken);
-    try {
-      return await request<{ user: ApiUser }>("/auth/firebase", {
-        method: "POST",
-      });
-    } catch (error) {
-      if (
-        !(
-          error &&
-          typeof error === "object" &&
-          isTwoFactorAuthCode(String((error as ApiError).code || ""))
-        )
-      ) {
-        clearTokenIfMatches(idToken);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await request<{ user: ApiUser }>("/auth/firebase", {
+          method: "POST",
+        });
+      } catch (error) {
+        const apiError = error as ApiError;
+        const twoFactorRequired = isTwoFactorAuthCode(
+          String(apiError?.code || ""),
+        );
+        const retryable =
+          !twoFactorRequired &&
+          (!Number.isInteger(apiError?.status) || Number(apiError.status) >= 500);
+        if (retryable && attempt < 3) {
+          await new Promise((resolve) =>
+            globalThis.setTimeout(resolve, attempt * 750),
+          );
+          continue;
+        }
+        if (!twoFactorRequired) clearTokenIfMatches(idToken);
+        throw error;
       }
-      throw error;
     }
+    clearTokenIfMatches(idToken);
+    throw new Error(
+      "Kh\u00f4ng th\u1ec3 ho\u00e0n t\u1ea5t x\u00e1c th\u1ef1c Firebase.",
+    );
   },
   async completeTwoFactorChallenge(payload: {
     challengeId: string;

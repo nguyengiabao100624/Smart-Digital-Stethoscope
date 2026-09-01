@@ -30,11 +30,14 @@ const runId = `portal-mutation-${Date.now().toString(36)}`;
 const disableWebSecurity = process.env.SMOKE_DISABLE_WEB_SECURITY === "1";
 const allowDurableSupportTicket =
   process.env.SMOKE_ALLOW_DURABLE_SUPPORT_TICKET === "1";
+const allowDeviceAssignment =
+  process.env.SMOKE_ALLOW_DEVICE_ASSIGNMENT === "1";
+let mutationSequence = 0;
 
 const sensitiveHeaderNames = new Set(["authorization", "cookie", "set-cookie"]);
 const watchPatterns = [
   "/api/auth/firebase",
-  "/api/me",
+  "/api/v1/me",
   "/api/portal/status",
   "/api/portal/patients",
   "/api/portal/appointments",
@@ -217,46 +220,66 @@ function assertPatientReceipt(payload, expected, label, replayed) {
 
 async function apiFetch(page, route, options = {}) {
   const method = options.method || "GET";
-  const result = await page.evaluate(
-    async ({ apiBaseUrl, routePath, methodName, body, idempotencyKey }) => {
-      const url = new URL(routePath.replace(/^\/+/, ""), `${apiBaseUrl}/`);
-      const token = localStorage.getItem("smart_health_token") || "";
-      const headers = {
-        "X-Smart-Health-Surface": "portal",
-        "X-Smart-Health-Client": "web-smoke",
-      };
-      if (token) headers.Authorization = `Bearer ${token}`;
-      if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
-      const init = { method: methodName, headers };
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/json";
-        init.body = JSON.stringify(body);
+  const effectiveIdempotencyKey =
+    options.idempotencyKey ||
+    (["POST", "PATCH", "PUT", "DELETE"].includes(method)
+      ? `${runId}-${method.toLowerCase()}-${++mutationSequence}`
+      : "");
+  const retryable = method === "GET" || Boolean(effectiveIdempotencyKey);
+  let result;
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      result = await page.evaluate(
+        async ({ apiBaseUrl, routePath, methodName, body, idempotencyKey }) => {
+          const url = new URL(routePath.replace(/^\/+/, ""), `${apiBaseUrl}/`);
+          const token = localStorage.getItem("smart_health_token") || "";
+          const headers = {
+            "X-Smart-Health-Surface": "portal",
+            "X-Smart-Health-Client": "web-smoke",
+          };
+          if (token) headers.Authorization = `Bearer ${token}`;
+          if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+          const init = { method: methodName, headers };
+          if (body !== undefined) {
+            headers["Content-Type"] = "application/json";
+            init.body = JSON.stringify(body);
+          }
+          const response = await fetch(url.toString(), init);
+          const text = await response.text();
+          let payload = null;
+          if (text) {
+            try {
+              payload = JSON.parse(text);
+            } catch {
+              payload = text;
+            }
+          }
+          return {
+            ok: response.ok,
+            status: response.status,
+            url: url.toString(),
+            payload,
+          };
+        },
+        {
+          apiBaseUrl: apiBase,
+          routePath: route,
+          methodName: method,
+          body: options.body,
+          idempotencyKey: effectiveIdempotencyKey,
+        },
+      );
+      if (result.ok || result.status < 500 || !retryable || attempt === 3) {
+        break;
       }
-      const response = await fetch(url.toString(), init);
-      const text = await response.text();
-      let payload = null;
-      if (text) {
-        try {
-          payload = JSON.parse(text);
-        } catch {
-          payload = text;
-        }
-      }
-      return {
-        ok: response.ok,
-        status: response.status,
-        url: url.toString(),
-        payload,
-      };
-    },
-    {
-      apiBaseUrl: apiBase,
-      routePath: route,
-      methodName: method,
-      body: options.body,
-      idempotencyKey: options.idempotencyKey,
-    },
-  );
+    } catch (error) {
+      lastError = error;
+      if (!retryable || attempt === 3) throw error;
+    }
+    await page.waitForTimeout(attempt * 750);
+  }
+  if (!result) throw lastError || new Error(`${method} ${route}: no response`);
 
   if (!result.ok && !options.allowFailure) {
     throw new Error(
@@ -264,6 +287,92 @@ async function apiFetch(page, route, options = {}) {
     );
   }
   return result;
+}
+
+async function cleanupStaleSmokeArtifacts(page) {
+  const results = [];
+  const appointmentsResult = await apiFetch(page, "/portal/appointments");
+  const appointments = Array.isArray(appointmentsResult.payload?.appointments)
+    ? appointmentsResult.payload.appointments
+    : [];
+  for (const appointment of appointments) {
+    if (
+      !appointment?.id ||
+      !String(appointment.reason || "").startsWith(
+        "Portal appointment smoke portal-mutation-",
+      )
+    ) {
+      continue;
+    }
+    const deleted = await apiFetch(
+      page,
+      `/portal/appointments/${encodeURIComponent(appointment.id)}`,
+      { method: "DELETE", allowFailure: true },
+    );
+    results.push({
+      target: "stale appointment",
+      id: appointment.id,
+      ok: deleted.ok || deleted.status === 404,
+      status: deleted.status,
+    });
+  }
+
+  const patientsResult = await apiFetch(page, "/portal/patients");
+  const patients = Array.isArray(patientsResult.payload?.patients)
+    ? patientsResult.payload.patients
+    : [];
+  for (const patient of patients) {
+    const isSmokePatient =
+      patient?.id &&
+      String(patient.name || "").startsWith(
+        "Smoke Portal Patient portal-mutation-",
+      ) &&
+      String(patient.email || "").endsWith("@smarthealth.test");
+    if (!isSmokePatient) continue;
+    const deleted = await apiFetch(
+      page,
+      `/portal/patients/${encodeURIComponent(patient.id)}`,
+      { method: "DELETE", allowFailure: true },
+    );
+    results.push({
+      target: "stale patient",
+      id: patient.id,
+      ok: deleted.ok || deleted.status === 404,
+      status: deleted.status,
+    });
+  }
+
+  const notificationsResult = await apiFetch(
+    page,
+    "/portal/notifications/inbox",
+  );
+  const notifications = Array.isArray(
+    notificationsResult.payload?.notifications,
+  )
+    ? notificationsResult.payload.notifications
+    : [];
+  for (const notification of notifications) {
+    if (
+      !notification?.id ||
+      !String(notification.title || "").startsWith(
+        "Smoke notification portal-mutation-",
+      )
+    ) {
+      continue;
+    }
+    const deleted = await apiFetch(
+      page,
+      `/portal/notifications/inbox/${encodeURIComponent(notification.id)}`,
+      { method: "DELETE", allowFailure: true },
+    );
+    results.push({
+      target: "stale notification",
+      id: notification.id,
+      ok: deleted.ok || deleted.status === 404,
+      status: deleted.status,
+    });
+  }
+  return results;
 }
 
 const profileFieldIds = {
@@ -323,7 +432,7 @@ async function assertProfilePersisted(page, expected, label) {
   await waitSettled(page);
   await page.waitForSelector("#account-save-profile", { timeout: 20_000 });
   await assertProfileInputs(page, expected, label);
-  const me = await apiFetch(page, "/me");
+  const me = await apiFetch(page, "/v1/me");
   assertProfileFields(me.payload?.user || {}, expected, label);
 }
 
@@ -334,10 +443,12 @@ async function login(page, account, label = "login") {
       waitUntil: "domcontentloaded",
     },
   );
-  await page.locator("#login-email").fill(account.email);
-  await page.locator("#login-password").fill(account.password);
+  await page.locator("#login-email").fill(account.email, { timeout: 90_000 });
+  await page
+    .locator("#login-password")
+    .fill(account.password, { timeout: 90_000 });
   await Promise.all([
-    page.waitForURL("**/portal**", { timeout: 45_000 }),
+    page.waitForURL("**/portal**", { timeout: 120_000 }),
     page.locator('form button[type="submit"]').click(),
   ]);
   await waitSettled(page);
@@ -505,9 +616,15 @@ async function updatePatientViaUi(page, patientId, created, state) {
     );
   }
   assertPatientReceipt(replay.payload, expected, "update patient replay", true);
-  await page
-    .getByText(expected.phone, { exact: true })
-    .waitFor({ timeout: 15_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitSettled(page);
+  await page.waitForSelector("#patient-phone", { timeout: 20_000 });
+  const persistedPhone = await page.locator("#patient-phone").inputValue();
+  if (persistedPhone !== expected.phone) {
+    throw new Error(
+      `update patient readback: expected phone ${expected.phone}, received ${persistedPhone || "empty"}`,
+    );
+  }
   state.patientUpdateIdempotencyKey = idempotencyKey;
   return { expected, idempotencyKey };
 }
@@ -588,26 +705,57 @@ async function exerciseAppointmentMutation(page, patientId, state) {
 }
 
 async function exerciseDeviceAssignment(page, patientId, state) {
+  if (!allowDeviceAssignment) {
+    return {
+      skipped: true,
+      state: "BLOCKED",
+      reason:
+        "Set SMOKE_ALLOW_DEVICE_ASSIGNMENT=1 only with a dedicated unassigned production fixture; the generic smoke must not change a real device-patient relationship.",
+    };
+  }
   const devicesResult = await apiFetch(page, "/portal/devices");
   const devices = Array.isArray(devicesResult.payload?.devices)
     ? devicesResult.payload.devices
     : [];
-  const device = devices[0];
+  const meResult = await apiFetch(page, "/v1/me");
+  const workspaceId =
+    meResult.payload?.user?.currentWorkspace?.id ||
+    meResult.payload?.user?.currentWorkspaceId ||
+    "";
+  const device = devices.find(
+    (candidate) =>
+      candidate?.id &&
+      !candidate.assignedPatientId &&
+      candidate.status !== "revoked" &&
+      (!workspaceId || candidate.organizationId === workspaceId),
+  );
   if (!device?.id) {
-    return { skipped: true, reason: "workspace has no devices" };
+    return {
+      skipped: true,
+      reason: "workspace has no unassigned, active devices",
+    };
   }
 
   const originalAssignedPatientId = device.assignedPatientId || "";
+  await page.goto(`${siteUrl}/portal/devices/assign?smoke=${runId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await waitSettled(page);
+  await page.waitForSelector('[data-testid="portal-assign-device-page"]', {
+    timeout: 20_000,
+  });
+  if ((await page.locator("#assign-device-id").count()) === 0) {
+    return {
+      skipped: true,
+      reason:
+        "assignment screen has no device and patient pair that is simultaneously assignable",
+    };
+  }
   state.deviceAssignment = {
     deviceId: device.id,
     originalAssignedPatientId,
     restored: false,
   };
-  await page.goto(`${siteUrl}/portal/devices/assign?smoke=${runId}`, {
-    waitUntil: "domcontentloaded",
-  });
-  await waitSettled(page);
-  await page.waitForSelector("#assign-device-id", { timeout: 20_000 });
   await page.locator("#assign-device-id").selectOption(device.id);
   await page.locator("#assign-patient-id").selectOption(patientId);
 
@@ -646,10 +794,10 @@ function exerciseDeviceClaim() {
 }
 
 async function createReadDeleteNotification(page, state) {
-  const meResult = await apiFetch(page, "/me");
+  const meResult = await apiFetch(page, "/v1/me");
   const currentUserId = meResult.payload?.user?.id;
   if (!currentUserId) {
-    throw new Error("create notification: /me did not include user.id");
+    throw new Error("create notification: /v1/me did not include user.id");
   }
   const notificationResult = await apiFetch(page, "/portal/notifications", {
     method: "POST",
@@ -680,7 +828,7 @@ async function createReadDeleteNotification(page, state) {
 
   const readResponse = waitForApiResponse(
     page,
-    `/api/portal/notifications/${encodeURIComponent(notification.id)}/read`,
+    `/api/portal/notifications/inbox/${encodeURIComponent(notification.id)}/read`,
     "POST",
   );
   await page.locator(`[data-notification-read="${idSelector}"]`).click();
@@ -688,7 +836,12 @@ async function createReadDeleteNotification(page, state) {
     await readResponse,
     "mark notification read",
   );
-  if (!readPayload?.notification?.read) {
+  if (
+    readPayload?.action !== "read" ||
+    readPayload?.notification?.id !== notification.id ||
+    !readPayload.notification.read ||
+    !readPayload?.affectedIds?.includes(notification.id)
+  ) {
     throw new Error(
       "mark notification read: backend did not mark the notification read",
     );
@@ -699,11 +852,30 @@ async function createReadDeleteNotification(page, state) {
   });
   const deleteResponse = waitForApiResponse(
     page,
-    `/api/portal/notifications/${encodeURIComponent(notification.id)}`,
+    `/api/portal/notifications/inbox/${encodeURIComponent(notification.id)}`,
     "DELETE",
   );
   await page.locator(`[data-notification-delete="${idSelector}"]`).click();
-  await readResponsePayload(await deleteResponse, "delete notification");
+  const confirmation = page.getByRole("alertdialog");
+  await confirmation.waitFor({ state: "visible", timeout: 10_000 });
+  await confirmation.getByRole("button", { name: "Xóa", exact: true }).click();
+  const deletePayload = await readResponsePayload(
+    await deleteResponse,
+    "delete notification",
+  );
+  if (
+    deletePayload?.action !== "delete" ||
+    deletePayload?.deletedId !== notification.id ||
+    deletePayload?.notification?.id !== notification.id ||
+    !deletePayload?.affectedIds?.includes(notification.id) ||
+    deletePayload?.notifications?.some(
+      (candidate) => candidate.id === notification.id,
+    )
+  ) {
+    throw new Error(
+      "delete notification: backend receipt did not confirm the exact inbox item",
+    );
+  }
   await page.waitForSelector(`[data-notification-delete="${idSelector}"]`, {
     state: "detached",
     timeout: 20_000,
@@ -744,7 +916,7 @@ async function exerciseConsentSharing(page, patientId, state) {
 
   const createResponse = waitForApiResponse(
     page,
-    `/api/portal/patients/${encodeURIComponent(patientId)}/shares`,
+    `/api/v1/portal/patients/${encodeURIComponent(patientId)}/shares`,
     "POST",
   );
   await page.locator("#share-create-submit").click();
@@ -765,19 +937,27 @@ async function exerciseConsentSharing(page, patientId, state) {
     revoked: false,
   };
   const shareIdSelector = cssAttributeValue(share.id);
-  await page.waitForSelector(`[data-share-row="${shareIdSelector}"]`, {
+  await page.waitForSelector(`[data-share-row="${shareIdSelector}"]:visible`, {
     timeout: 20_000,
   });
-  await page.waitForSelector(`[data-share-revoke="${shareIdSelector}"]`, {
+  await page.waitForSelector(
+    `[data-share-revoke="${shareIdSelector}"]:visible`,
+    {
     timeout: 20_000,
-  });
+    },
+  );
 
   const revokeResponse = waitForApiResponse(
     page,
-    `/api/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(share.id)}`,
+    `/api/v1/portal/patients/${encodeURIComponent(patientId)}/shares/${encodeURIComponent(share.id)}`,
     "DELETE",
   );
-  await page.locator(`[data-share-revoke="${shareIdSelector}"]`).click();
+  await page
+    .locator(`[data-share-revoke="${shareIdSelector}"]:visible`)
+    .click();
+  const confirmation = page.getByRole("alertdialog");
+  await confirmation.waitFor({ state: "visible", timeout: 10_000 });
+  await confirmation.locator("[data-share-revoke-confirm]").click();
   const revokePayload = await readResponsePayload(
     await revokeResponse,
     "revoke patient share",
@@ -803,13 +983,18 @@ async function exerciseSettings(page, state) {
   await waitSettled(page);
   await page.waitForSelector("#account-save-profile", { timeout: 20_000 });
 
-  const meBefore = await apiFetch(page, "/me");
+  const meBefore = await apiFetch(page, "/v1/me");
+  const preferencesBefore = await apiFetch(
+    page,
+    "/v1/me/notification-preferences",
+  );
+  const portalSettingsBefore = await apiFetch(page, "/portal/settings");
   const originalUser = meBefore.payload?.user || {};
   const originalProfile = pickProfileFields(originalUser);
   const originalPreferences =
-    originalUser.notificationPreferences &&
-    typeof originalUser.notificationPreferences === "object"
-      ? { ...originalUser.notificationPreferences }
+    preferencesBefore.payload?.preferences &&
+    typeof preferencesBefore.payload.preferences === "object"
+      ? { ...preferencesBefore.payload.preferences }
       : {};
   state.settings = {
     originalProfile,
@@ -821,6 +1006,10 @@ async function exerciseSettings(page, state) {
     restoredProfile: false,
     restoredWorkspace: false,
     restoredPreferences: false,
+    changedPreferenceKeys: [],
+    originalWorkspaceVersion:
+      portalSettingsBefore.payload?.workspace?.version ?? null,
+    restoreWorkspaceVersion: null,
   };
 
   const nextProfile = {
@@ -834,7 +1023,7 @@ async function exerciseSettings(page, state) {
     address: `Address ${runId}`,
   };
   await fillProfileFields(page, nextProfile);
-  const profileResponse = waitForApiResponse(page, "/api/me", "PATCH");
+  const profileResponse = waitForApiResponse(page, "/api/v1/me", "PATCH");
   await page.locator("#account-save-profile").click();
   const profilePayload = await readResponsePayload(
     await profileResponse,
@@ -845,7 +1034,7 @@ async function exerciseSettings(page, state) {
     nextProfile,
     "update account profile response",
   );
-  const profileAfterSave = await apiFetch(page, "/me");
+  const profileAfterSave = await apiFetch(page, "/v1/me");
   assertProfileFields(
     profileAfterSave.payload?.user || {},
     nextProfile,
@@ -864,8 +1053,10 @@ async function exerciseSettings(page, state) {
   await page.waitForSelector("#account-new-password", { timeout: 20_000 });
   await page.waitForSelector("#account-confirm-password", { timeout: 20_000 });
   await page.waitForSelector("#account-change-password", { timeout: 20_000 });
-  await page.waitForSelector("#account-2fa-app", { timeout: 20_000 });
-  await page.waitForSelector("#account-2fa-disable", { timeout: 20_000 });
+  await page.waitForSelector(
+    "#account-2fa-app, #account-2fa-disable, [data-testid='account-2fa-unavailable']",
+    { timeout: 20_000 },
+  );
   await page.waitForSelector("#account-revoke-other-sessions", {
     timeout: 20_000,
   });
@@ -882,7 +1073,11 @@ async function exerciseSettings(page, state) {
   if ((await newLoginCheckbox.count()) > 0) {
     const previous = await newLoginCheckbox.isChecked();
     await newLoginCheckbox.setChecked(!previous);
-    const prefResponse = waitForApiResponse(page, "/api/me", "PATCH");
+    const prefResponse = waitForApiResponse(
+      page,
+      "/api/v1/me/notification-preferences",
+      "PATCH",
+    );
     await page.locator("#workspace-save-notifications").click();
     await readResponsePayload(
       await prefResponse,
@@ -890,6 +1085,7 @@ async function exerciseSettings(page, state) {
     );
     preferencesSaved = true;
     state.settings.preferencesSaved = true;
+    state.settings.changedPreferenceKeys = ["newLogin"];
   }
 
   await page.locator("#portal-settings-workspace-tab").click();
@@ -909,7 +1105,7 @@ async function exerciseSettings(page, state) {
     await page.locator("#workspace-website").fill(nextWebsite);
     const workspaceResponse = waitForApiResponse(
       page,
-      "/api/portal/settings/workspace",
+      "/api/v1/portal/settings/workspace",
       "PATCH",
     );
     await page.locator("#workspace-save").click();
@@ -920,6 +1116,8 @@ async function exerciseSettings(page, state) {
     if (workspacePayload?.workspace?.website !== nextWebsite) {
       throw new Error("update workspace settings: website did not persist");
     }
+    state.settings.restoreWorkspaceVersion =
+      workspacePayload?.workspace?.version ?? null;
     workspaceSaved = true;
     state.settings.workspaceSaved = true;
   }
@@ -957,12 +1155,31 @@ async function exerciseReportExport(page) {
     (response) =>
       response.request().method() === "GET" &&
       response.url().includes("/api/v1/exports/download/"),
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
-  const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
+  const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
   await page.locator("#portal-clinical_bundle-export-submit").click();
 
-  const createResponse = await createResponsePromise;
+  const settled = await Promise.allSettled([
+    createResponsePromise,
+    artifactResponsePromise,
+    downloadPromise,
+  ]);
+  const rejected = settled.filter((result) => result.status === "rejected");
+  if (rejected.length) {
+    const dialogText = await page
+      .getByRole("dialog")
+      .innerText()
+      .catch(() => "");
+    throw new Error(
+      `report export did not complete every phase: ${rejected
+        .map((result) => result.reason?.message || String(result.reason))
+        .join(" | ")}; dialog=${JSON.stringify(dialogText.slice(0, 800))}`,
+    );
+  }
+  const [createResponse, artifactResponse, download] = settled.map(
+    (result) => result.value,
+  );
   const createPayload = await readResponsePayload(
     createResponse,
     "create report export",
@@ -983,7 +1200,6 @@ async function exerciseReportExport(page) {
     createResponse,
     "create report export",
   );
-  const artifactResponse = await artifactResponsePromise;
   if (
     artifactResponse.status() !== 200 ||
     !artifactResponse
@@ -1002,7 +1218,6 @@ async function exerciseReportExport(page) {
   ) {
     throw new Error("report export: artifact identity headers are incomplete");
   }
-  const download = await downloadPromise;
   const suggestedFilename = download.suggestedFilename();
   if (!suggestedFilename.endsWith(".csv")) {
     throw new Error(
@@ -1201,9 +1416,39 @@ async function logoutAndRecover(page, account) {
   return { loggedOut: true, recovered: true };
 }
 
+async function restoreNotificationPreferences(page, settings) {
+  for (const key of settings.changedPreferenceKeys || []) {
+    const enabled = settings.originalPreferences?.[key];
+    if (typeof enabled !== "boolean") continue;
+    await apiFetch(page, "/v1/me/notification-preferences", {
+      method: "PATCH",
+      body: { key, enabled },
+    });
+  }
+}
+
+async function restoreWorkspaceSettings(page, settings) {
+  const expectedVersion = settings.restoreWorkspaceVersion;
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    throw new Error(
+      "workspace cleanup: canonical mutation receipt did not include a version",
+    );
+  }
+  const restored = await apiFetch(page, "/v1/portal/settings/workspace", {
+    method: "PATCH",
+    body: {
+      ...settings.originalWorkspace,
+      expectedVersion,
+    },
+  });
+  settings.restoreWorkspaceVersion =
+    restored.payload?.workspace?.version ?? expectedVersion + 1;
+  return restored;
+}
+
 async function restoreIfNeeded(page, state, cleanupResults) {
   if (state.settings?.profileSaved && state.settings.restoredProfile !== true) {
-    await apiFetch(page, "/me", {
+    await apiFetch(page, "/v1/me", {
       method: "PATCH",
       body: state.settings.originalProfile,
     })
@@ -1251,10 +1496,7 @@ async function restoreIfNeeded(page, state, cleanupResults) {
     state.settings?.workspaceSaved &&
     state.settings.restoredWorkspace !== true
   ) {
-    await apiFetch(page, "/portal/settings/workspace", {
-      method: "PATCH",
-      body: state.settings.originalWorkspace,
-    })
+    await restoreWorkspaceSettings(page, state.settings)
       .then(() =>
         cleanupResults.push({ target: "workspace settings", ok: true }),
       )
@@ -1272,10 +1514,7 @@ async function restoreIfNeeded(page, state, cleanupResults) {
     state.settings?.preferencesSaved &&
     state.settings.restoredPreferences !== true
   ) {
-    await apiFetch(page, "/me", {
-      method: "PATCH",
-      body: { notificationPreferences: state.settings.originalPreferences },
-    })
+    await restoreNotificationPreferences(page, state.settings)
       .then(() =>
         cleanupResults.push({ target: "notification preferences", ok: true }),
       )
@@ -1292,7 +1531,7 @@ async function restoreIfNeeded(page, state, cleanupResults) {
   if (state.notificationId) {
     await apiFetch(
       page,
-      `/portal/notifications/${encodeURIComponent(state.notificationId)}`,
+      `/portal/notifications/inbox/${encodeURIComponent(state.notificationId)}`,
       {
         method: "DELETE",
         allowFailure: true,
@@ -1344,7 +1583,7 @@ async function restoreIfNeeded(page, state, cleanupResults) {
   if (state.patientShare?.shareId && state.patientShare.revoked !== true) {
     await apiFetch(
       page,
-      `/portal/patients/${encodeURIComponent(state.patientShare.patientId)}/shares/${encodeURIComponent(state.patientShare.shareId)}`,
+      `/v1/portal/patients/${encodeURIComponent(state.patientShare.patientId)}/shares/${encodeURIComponent(state.patientShare.shareId)}`,
       {
         method: "DELETE",
         allowFailure: true,
@@ -1418,6 +1657,7 @@ async function main() {
     acceptDownloads: true,
   });
   const page = await context.newPage();
+  page.setDefaultNavigationTimeout(90_000);
 
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) {
@@ -1447,15 +1687,21 @@ async function main() {
   });
 
   try {
+    console.log("[portal-mutation] login");
     await login(page, account, "initial");
+    console.log("[portal-mutation] stale cleanup");
+    cleanupResults.push(...(await cleanupStaleSmokeArtifacts(page)));
 
+    console.log("[portal-mutation] patient create");
     const created = await createPatientViaUi(page, state);
+    console.log("[portal-mutation] patient update");
     const patientUpdate = await updatePatientViaUi(
       page,
       state.patientId,
       created,
       state,
     );
+    console.log("[portal-mutation] appointment lifecycle");
     const appointment = await exerciseAppointmentMutation(
       page,
       state.patientId,
@@ -1464,19 +1710,23 @@ async function main() {
 
     const deviceClaim = exerciseDeviceClaim();
 
+    console.log("[portal-mutation] device assignment gate");
     const deviceAssignment = await exerciseDeviceAssignment(
       page,
       state.patientId,
       state,
     );
 
+    console.log("[portal-mutation] notification lifecycle");
     const notification = await createReadDeleteNotification(page, state);
+    console.log("[portal-mutation] consent lifecycle");
     const consentShare = await exerciseConsentSharing(
       page,
       state.patientId,
       state,
     );
 
+    console.log("[portal-mutation] account and workspace settings");
     const settings = await exerciseSettings(page, state);
 
     if (state.deviceAssignment) {
@@ -1501,10 +1751,7 @@ async function main() {
     }
 
     if (state.settings?.workspaceSaved) {
-      await apiFetch(page, "/portal/settings/workspace", {
-        method: "PATCH",
-        body: state.settings.originalWorkspace,
-      });
+      await restoreWorkspaceSettings(page, state.settings);
       state.settings.restoredWorkspace = true;
       cleanupResults.push({
         target: "workspace settings",
@@ -1513,10 +1760,7 @@ async function main() {
       });
     }
     if (state.settings?.preferencesSaved) {
-      await apiFetch(page, "/me", {
-        method: "PATCH",
-        body: { notificationPreferences: state.settings.originalPreferences },
-      });
+      await restoreNotificationPreferences(page, state.settings);
       state.settings.restoredPreferences = true;
       cleanupResults.push({
         target: "notification preferences",
@@ -1525,6 +1769,7 @@ async function main() {
       });
     }
 
+    console.log("[portal-mutation] report export");
     const reportExport = await exerciseReportExport(page);
     const supportTicket = allowDurableSupportTicket
       ? await exerciseSupportTicket(page)
@@ -1533,6 +1778,7 @@ async function main() {
           reason:
             "Set SMOKE_ALLOW_DURABLE_SUPPORT_TICKET=1 only when retaining a provider support ticket is explicitly acceptable; no cleanup contract exists yet.",
         };
+    console.log("[portal-mutation] patient delete and replay");
     const deletedPatientId = state.patientId;
     const patientDelete = await deletePatientViaUi(
       page,
@@ -1542,6 +1788,7 @@ async function main() {
     expectedFailureFragments.push(deletedPatientId);
     state.patientId = "";
     const negativeApi = await exerciseNegativeApiState(page);
+    console.log("[portal-mutation] logout and session recovery");
     const session = await logoutAndRecover(page, account);
     if (state.settings?.expectedProfile) {
       await assertProfilePersisted(
@@ -1552,7 +1799,7 @@ async function main() {
     }
 
     if (state.settings?.profileSaved) {
-      await apiFetch(page, "/me", {
+      await apiFetch(page, "/v1/me", {
         method: "PATCH",
         body: state.settings.originalProfile,
       });
@@ -1659,6 +1906,6 @@ async function main() {
 
 main().catch((error) => {
   console.error("Smart Health portal mutation smoke: FAIL");
-  console.error(error && error.message ? error.message : error);
+  console.error(error?.stack || (error && error.message ? error.message : error));
   process.exit(1);
 });

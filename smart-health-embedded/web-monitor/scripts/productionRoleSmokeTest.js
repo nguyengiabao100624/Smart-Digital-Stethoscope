@@ -67,13 +67,28 @@ async function postJson(url, payload, headers = {}) {
 }
 
 async function getJson(url, headers = {}) {
-  const response = await fetch(url, { headers });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(`${response.status} ${url}: ${data.error?.message || data.message || text}`);
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers });
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: text.slice(0, 300) };
+      }
+      if (response.ok) return data;
+      const error = new Error(
+        `${response.status} ${url}: ${data.error?.message || data.message || text}`,
+      );
+      error.status = response.status;
+      if (response.status < 500 || attempt === 4) throw error;
+    } catch (error) {
+      if ((error.status && error.status < 500) || attempt === 4) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_500));
   }
-  return data;
+  throw new Error(`Request retry budget exhausted for ${url}.`);
 }
 
 async function signInWithFirebase(apiKey, email, password) {
@@ -81,6 +96,153 @@ async function signInWithFirebase(apiKey, email, password) {
     `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`,
     { email, password, returnSecureToken: true },
   );
+}
+
+async function signInWithFirebaseCustomToken(apiKey, token) {
+  return postJson(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(apiKey)}`,
+    { token, returnSecureToken: true },
+  );
+}
+
+async function apiJson(backendUrl, pathName, { token, method = "GET", body, idempotencyKey } = {}) {
+  const headers = { Authorization: `Bearer ${token}` };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  const retryable = method === "GET" || Boolean(idempotencyKey);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`${backendUrl}${pathName}`, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: text.slice(0, 300) };
+      }
+      if (response.ok) return data;
+      const error = new Error(
+        `${response.status} ${pathName}: ${data.error?.message || data.message || text}`,
+      );
+      error.status = response.status;
+      error.response = data;
+      if (!retryable || response.status < 500 || attempt === 3) throw error;
+    } catch (error) {
+      if (!retryable || (error.status && error.status < 500) || attempt === 3) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_500));
+  }
+  throw new Error(`Request retry budget exhausted for ${pathName}.`);
+}
+
+async function getBootstrapPlatformSession({ admin, apiKey, backendUrl, email }) {
+  if (!email) {
+    throw new Error(
+      "Missing SMOKE_BOOTSTRAP_ADMIN_EMAIL. Set it to an existing canonical platform-admin account.",
+    );
+  }
+  const firebaseUser = await admin.auth().getUserByEmail(email.toLowerCase());
+  const customToken = await admin.auth().createCustomToken(firebaseUser.uid);
+  const signIn = await signInWithFirebaseCustomToken(apiKey, customToken);
+  const authenticated = await authenticateBackend(backendUrl, signIn.idToken);
+  assertPlatformUser(authenticated.meUser);
+  return { idToken: signIn.idToken, user: authenticated.meUser };
+}
+
+async function provisionManagedAdmin({ admin, apiKey, backendUrl, bootstrapToken, account }) {
+  let firebaseUser = null;
+  try {
+    firebaseUser = await admin.auth().getUserByEmail(account.email);
+  } catch (error) {
+    if (error?.code !== "auth/user-not-found") throw error;
+  }
+  let created = null;
+  if (!firebaseUser) {
+    try {
+      created = await apiJson(backendUrl, "/api/admin/admin-users", {
+        token: bootstrapToken,
+        method: "POST",
+        idempotencyKey: `production-role-smoke:${account.key}:v2`,
+        body: {
+          role: account.claims.role,
+          email: account.email,
+          password: account.password,
+          name: account.displayName,
+          title:
+            account.claims.role === "admin"
+              ? "Platform smoke admin"
+              : "Workspace smoke admin",
+          organizationId: account.claims.organizationId,
+        },
+      });
+    } catch (error) {
+      if (Number(error.status) < 500) throw error;
+    }
+    firebaseUser = await admin.auth().getUserByEmail(account.email);
+  }
+  await admin.auth().updateUser(firebaseUser.uid, {
+    password: account.password,
+    displayName: account.displayName,
+    emailVerified: true,
+    disabled: false,
+  });
+  const firebaseUid = firebaseUser?.uid;
+  if (!firebaseUid) {
+    throw new Error(`Managed ${account.key} provisioning did not return canonical identities.`);
+  }
+  const signIn = await signInWithFirebase(apiKey, account.email, account.password);
+  const authenticated = await authenticateBackend(backendUrl, signIn.idToken);
+  account.assertUser(authenticated.meUser);
+  account.uid = firebaseUid;
+  account.created = created?.firebase?.created === true;
+}
+
+async function provisionDoctor({ admin, apiKey, backendUrl, bootstrapToken, account }) {
+  const firebaseUser = await getOrCreateFirebaseUser(admin, account);
+  account.uid = firebaseUser.uid;
+  account.created = firebaseUser.created;
+
+  let signIn = await signInWithFirebase(apiKey, account.email, account.password);
+  let authenticated = await authenticateBackend(backendUrl, signIn.idToken);
+  if (
+    authenticated.meUser.role !== "doctor" ||
+    authenticated.meUser.roleRequestStatus !== "approved"
+  ) {
+    const requested = await apiJson(backendUrl, "/api/v1/auth/role-request", {
+      token: signIn.idToken,
+      method: "POST",
+      idempotencyKey: "production-role-smoke:doctor:v2:request",
+      body: {
+        requestedRole: "doctor",
+        accountType: "doctor",
+        workspaceType: "clinic",
+        organizationId: account.claims.organizationId,
+        name: account.displayName,
+        license: "CCHN-SHCARE-SMOKE-V2",
+        department: "Tim mạch",
+        registrationReason: "Controlled production role smoke account",
+      },
+    });
+    const doctorUserId = requested.user?.id;
+    if (!doctorUserId) throw new Error("Doctor role request did not return user.id.");
+    await apiJson(
+      backendUrl,
+      `/api/admin/doctor-requests/${encodeURIComponent(doctorUserId)}/approve`,
+      {
+        token: bootstrapToken,
+        method: "POST",
+        idempotencyKey: "production-role-smoke:doctor:v2:approve",
+        body: { organizationId: account.claims.organizationId },
+      },
+    );
+    signIn = await signInWithFirebase(apiKey, account.email, account.password);
+    authenticated = await authenticateBackend(backendUrl, signIn.idToken);
+  }
+  assertDoctorPortalUser(authenticated.meUser);
 }
 
 function assertPlatformUser(user) {
@@ -151,6 +313,11 @@ async function main() {
     "https://shcare-api-prod.onrender.com"
   ).replace(/\/+$/, "");
   const organizationId = process.env.SMOKE_ORGANIZATION_ID || "org_default_clinic";
+  const bootstrapAdminEmail = String(
+    process.env.SMOKE_BOOTSTRAP_ADMIN_EMAIL || "",
+  )
+    .trim()
+    .toLowerCase();
 
   if (!apiKey) {
     throw new Error("Missing Firebase Web API key. Set FIREBASE_WEB_API_KEY or WEB_ADMIN_ENV_FILE.");
@@ -164,7 +331,7 @@ async function main() {
   const accounts = [
     {
       key: "platform",
-      email: (process.env.SMOKE_PLATFORM_EMAIL || "platform.admin.smoke@smarthealth.test").toLowerCase(),
+      email: (process.env.SMOKE_PLATFORM_EMAIL || "platform.admin.smoke.v2@smarthealth.test").toLowerCase(),
       password: process.env.SMOKE_PLATFORM_PASSWORD || randomPassword(),
       displayName: "Smart Health Platform Smoke",
       claims: {
@@ -176,7 +343,7 @@ async function main() {
     },
     {
       key: "workspace",
-      email: (process.env.SMOKE_WORKSPACE_EMAIL || "workspace.admin.smoke@smarthealth.test").toLowerCase(),
+      email: (process.env.SMOKE_WORKSPACE_EMAIL || "workspace.admin.smoke.v2@smarthealth.test").toLowerCase(),
       password: process.env.SMOKE_WORKSPACE_PASSWORD || randomPassword(),
       displayName: "Smart Health Workspace Smoke",
       claims: {
@@ -188,7 +355,7 @@ async function main() {
     },
     {
       key: "doctor",
-      email: (process.env.SMOKE_DOCTOR_EMAIL || "doctor.portal.smoke@smarthealth.test").toLowerCase(),
+      email: (process.env.SMOKE_DOCTOR_EMAIL || "doctor.portal.smoke.v2@smarthealth.test").toLowerCase(),
       password: process.env.SMOKE_DOCTOR_PASSWORD || randomPassword(),
       displayName: "Smart Health Doctor Portal Smoke",
       claims: {
@@ -200,11 +367,28 @@ async function main() {
     },
   ];
 
-  for (const account of accounts) {
-    const firebaseUser = await getOrCreateFirebaseUser(admin, account);
-    account.uid = firebaseUser.uid;
-    account.created = firebaseUser.created;
+  const bootstrap = await getBootstrapPlatformSession({
+    admin,
+    apiKey,
+    backendUrl,
+    email: bootstrapAdminEmail,
+  });
+  for (const account of accounts.filter((item) => item.key !== "doctor")) {
+    await provisionManagedAdmin({
+      admin,
+      apiKey,
+      backendUrl,
+      bootstrapToken: bootstrap.idToken,
+      account,
+    });
   }
+  await provisionDoctor({
+    admin,
+    apiKey,
+    backendUrl,
+    bootstrapToken: bootstrap.idToken,
+    account: accounts.find((item) => item.key === "doctor"),
+  });
 
   const results = [];
   for (const account of accounts) {

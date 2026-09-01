@@ -5326,6 +5326,11 @@ async function main() {
 
   const repositorySource = fs.readFileSync(path.join(__dirname, "..", "src", "repositories.js"), "utf8");
   const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.match(
+    repositorySource,
+    /optionalTimestamp\(exportJob\.startDate\)[\s\S]*?optionalTimestamp\(exportJob\.endDate\)/,
+    "exports without a date filter must persist SQL NULL instead of an empty string in date columns",
+  );
   assert.doesNotMatch(
     repositorySource,
     /auditLogs\s*=\s*[^;]*\.slice\(0,\s*(?:1000|2000)\)/i,

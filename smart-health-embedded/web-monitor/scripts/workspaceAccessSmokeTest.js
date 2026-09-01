@@ -7253,6 +7253,55 @@ async function runScenario() {
     },
   );
   assert.equal(crossWorkspaceStaffSuspend.error.code, "WORKSPACE_MEMBERSHIP_NOT_FOUND");
+  await expectStatus(
+    "workspace admin cannot transfer a global doctor identity to another workspace",
+    workspaceAdmin,
+    "/api/admin/doctors/usr_beta_doctor/workspace",
+    403,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "workspace-admin-global-doctor-transfer-denied",
+      },
+      body: JSON.stringify({ organizationId: "org_alpha" }),
+    },
+  );
+  const transferredDoctor = await expectStatus(
+    "platform admin transfers an approved doctor to an operational workspace",
+    platform,
+    "/api/admin/doctors/usr_beta_doctor/workspace",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "platform-doctor-workspace-transfer",
+      },
+      body: JSON.stringify({ organizationId: "org_alpha" }),
+    },
+  );
+  assert.equal(transferredDoctor.doctor.id, "usr_beta_doctor");
+  assert.equal(transferredDoctor.doctor.role, "doctor");
+  assert.equal(transferredDoctor.doctor.organizationId, "org_alpha");
+  assert.equal(transferredDoctor.previousOrganizationId, "org_beta");
+  assert.ok(transferredDoctor.operationId, "doctor workspace transfer must expose its identity operation id");
+  const transferredDoctorReplay = await expectStatus(
+    "doctor workspace transfer is idempotent",
+    platform,
+    "/api/admin/doctors/usr_beta_doctor/workspace",
+    200,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "platform-doctor-workspace-transfer",
+      },
+      body: JSON.stringify({ organizationId: "org_alpha" }),
+    },
+  );
+  assert.equal(transferredDoctorReplay.replayed, true);
+  assert.equal(transferredDoctorReplay.operationId, transferredDoctor.operationId);
 
   const suspendedDoctorMembership = await expectStatus(
     "workspace admin suspends only the selected workspace membership",

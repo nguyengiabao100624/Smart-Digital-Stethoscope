@@ -598,13 +598,19 @@ async function exerciseAdminMutations(page, state) {
 
   const packageAssign = await apiFetch(
     page,
-    `/admin/workspaces/${encodeURIComponent(state.clinicId)}/package`,
+    `/admin/clinics/${encodeURIComponent(state.clinicId)}`,
     {
-      method: "POST",
+      method: "PATCH",
       headers: { "Idempotency-Key": `${runId}:workspace-package:assign` },
-      body: { packageId: state.packageId, subscriptionStatus: "active", billingCycle: "monthly" },
+      body: {
+        packageId: state.packageId,
+        subscriptionStatus: "active",
+        billingCycle: "monthly",
+        expectedVersion: state.clinicVersion,
+      },
     },
   );
+  state.clinicVersion = Number(packageAssign.payload?.clinic?.version || state.clinicVersion + 1);
 
   console.log("[admin-mutation] patient lifecycle");
   const patientResult = await apiFetch(page, "/patients", {

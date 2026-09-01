@@ -3212,6 +3212,11 @@ async function main() {
   );
   assert.match(
     doctorWorkspaceIdentityMigration,
+    /managed_admin_activate[\s\S]*doctor_workspace_assign/i,
+    "the migration must preserve every previously released identity operation",
+  );
+  assert.match(
+    doctorWorkspaceIdentityMigration,
     /NOT\s+VALID[\s\S]*VALIDATE\s+CONSTRAINT/i,
     "the production constraint change must use a bounded add-and-validate rollout",
   );

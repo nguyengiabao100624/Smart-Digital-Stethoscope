@@ -37,6 +37,7 @@ BEGIN
         'delete',
         'reset_password',
         'change_role',
+        'managed_admin_activate',
         'doctor_workspace_assign'
       )
     )

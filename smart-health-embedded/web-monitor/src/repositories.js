@@ -2213,8 +2213,8 @@ function createRepositories(options) {
       `,
       [
         log.id,
-        optional(log.actorUserId),
-        optional(log.organizationId),
+        optional(log.actorUserId || undefined),
+        optional(log.organizationId || undefined),
         log.action,
         optional(log.resourceType),
         optional(log.resourceId),

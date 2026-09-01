@@ -156,6 +156,7 @@ class FakePackageSql {
       this.auditLogs.push({
         id: params[0],
         actor_user_id: params[1],
+        organization_id: params[2],
         action: params[3],
         resource_type: params[4],
         resource_id: params[5],
@@ -338,6 +339,7 @@ test("PostgreSQL repository keeps package, audit and idempotency outcome atomic"
   const created = await repositories.servicePackages.create(createInput);
   assert.equal(created.responseBody.package.id, "pkg_sql_verified");
   assert.equal(sql.auditLogs.length, 1);
+  assert.equal(sql.auditLogs[0].organization_id, null);
   assert.equal(sql.idempotency.size, 1);
 
   const replay = await repositories.servicePackages.create(createInput);

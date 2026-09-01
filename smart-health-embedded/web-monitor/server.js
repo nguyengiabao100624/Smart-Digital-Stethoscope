@@ -17442,7 +17442,7 @@ async function handleAdminApi(req, res, url, segments) {
       req,
       adminUser,
       targetUser,
-      "change_role",
+      "doctor_workspace_assign",
       { organizationId },
       async () => {
         if (!targetUser.firebaseUid || !FIREBASE_AUTH_ENABLED) {

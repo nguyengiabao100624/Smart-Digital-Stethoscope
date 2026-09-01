@@ -54,6 +54,27 @@ function transitionInput(organizationId, suffix = "default") {
   };
 }
 
+function doctorWorkspaceInput(organizationId, suffix = "default") {
+  return {
+    targetUserId: "target_admin",
+    actorUserId: "actor_admin",
+    organizationId,
+    operation: "doctor_workspace_assign",
+    idempotencyKey: `doctor-workspace-${suffix}`,
+    requestFingerprint: `doctor-workspace-fingerprint-${suffix}`,
+    preserveAccountStatus: true,
+    targetState: {
+      role: "doctor",
+      requestedRole: "doctor",
+      roleRequestStatus: "approved",
+      organizationId,
+      accountStatus: "active",
+      hospital: organizationId,
+      membershipRole: "doctor",
+    },
+  };
+}
+
 async function main() {
   const inactiveDb = createDb();
   inactiveDb.organizations.find((item) => item.id === "org_b").status = "pending";
@@ -118,6 +139,53 @@ async function main() {
       (item) => item.action === "membership.role.revoke" && item.resourceId === "membership_old_admin",
     ),
     true,
+  );
+
+  const doctorDb = createDb();
+  const doctorUser = doctorDb.users.find((item) => item.id === "target_admin");
+  Object.assign(doctorUser, {
+    role: "doctor",
+    requestedRole: "doctor",
+    roleRequestStatus: "approved",
+    organizationId: "org_a",
+  });
+  doctorDb.organizations.find((item) => item.id === "org_a").ownerUserId = doctorUser.id;
+  doctorDb.memberships[0].role = "workspace_owner";
+  const doctorRepositories = createHarness(doctorDb);
+  const doctorBegun = await doctorRepositories.identityOperations.begin(
+    doctorWorkspaceInput("org_b"),
+  );
+  assert.equal(
+    doctorUser.accountStatus,
+    "active",
+    "workspace reassignment must not put an approved doctor into a transient disabled status",
+  );
+  await doctorRepositories.identityOperations.markProviderApplied({
+    operationId: doctorBegun.identityOperation.id,
+    providerStatus: "applied",
+    providerResult: { updated: true },
+  });
+  const doctorCompleted = await doctorRepositories.identityOperations.complete({
+    operationId: doctorBegun.identityOperation.id,
+    providerSucceeded: true,
+  });
+  assert.equal(doctorCompleted.user.role, "doctor");
+  assert.equal(doctorCompleted.user.organizationId, "org_b");
+  assert.equal(
+    doctorDb.memberships.find((item) => item.id === "membership_old_admin").role,
+    "workspace_owner",
+    "the prior workspace owner membership must be preserved",
+  );
+  assert.equal(
+    doctorDb.memberships.some(
+      (item) =>
+        item.organizationId === "org_b" &&
+        item.userId === "target_admin" &&
+        item.role === "doctor" &&
+        item.status === "active",
+    ),
+    true,
+    "the target workspace must receive an active doctor membership",
   );
   console.log("managed admin role transition smoke passed");
 }

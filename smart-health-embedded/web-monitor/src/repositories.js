@@ -10778,10 +10778,11 @@ function createRepositories(options) {
           : null;
       const requireActiveTarget = input.requireActiveTarget === true;
       const preserveAccountStatus =
-        input.preserveAccountStatus === true && operation === "reset_password";
+        input.preserveAccountStatus === true &&
+        ["reset_password", "doctor_workspace_assign"].includes(operation);
       const preserveSessionId = String(input.preserveSessionId || "");
       const requestedTargetState = objectOf(input.targetState);
-      const targetState = operation === "change_role"
+      const targetState = ["change_role", "doctor_workspace_assign"].includes(operation)
         ? {
             role: String(requestedTargetState.role || "").trim(),
             requestedRole: String(requestedTargetState.requestedRole || requestedTargetState.role || "").trim(),
@@ -10798,15 +10799,17 @@ function createRepositories(options) {
               provider: String(requestedTargetState.provider || "").trim().toLowerCase(),
             }
           : {};
-      const operationOrganizationId = operation === "change_role" ? targetState.organizationId : organizationId;
+      const operationOrganizationId = ["change_role", "doctor_workspace_assign"].includes(operation)
+        ? targetState.organizationId
+        : organizationId;
       const protectLastPlatformAdmin = Boolean(input.protectLastPlatformAdmin) && ["lock", "delete", "change_role"].includes(operation);
       if (!targetUserId || !actorUserId || !idempotencyKey || !requestFingerprint) {
         throw repositoryError(400, "IDENTITY_OPERATION_INVALID", "Identity operation context is incomplete");
       }
-      if (!["lock", "unlock", "delete", "reset_password", "change_role"].includes(operation)) {
+      if (!["lock", "unlock", "delete", "reset_password", "change_role", "doctor_workspace_assign"].includes(operation)) {
         throw repositoryError(400, "IDENTITY_OPERATION_INVALID", "Identity operation is not supported");
       }
-      if (operation === "change_role") {
+      if (["change_role", "doctor_workspace_assign"].includes(operation)) {
         const supportedRoles = new Set([
           "admin", "platform_admin", "workspace_owner", "workspace_admin", "doctor",
           "patient", "nurse", "technician", "billing", "viewer",
@@ -10820,6 +10823,18 @@ function createRepositories(options) {
           targetState.accountStatus !== "active"
         ) {
           throw repositoryError(400, "IDENTITY_ROLE_TARGET_INVALID", "Role transition target state is invalid");
+        }
+        if (
+          operation === "doctor_workspace_assign" &&
+          (targetState.role !== "doctor" ||
+            targetState.requestedRole !== "doctor" ||
+            targetState.membershipRole !== "doctor")
+        ) {
+          throw repositoryError(
+            400,
+            "DOCTOR_WORKSPACE_TARGET_INVALID",
+            "Doctor workspace assignment must preserve the approved doctor role",
+          );
         }
       }
       if (
@@ -10838,6 +10853,7 @@ function createRepositories(options) {
         delete: "deletion_pending",
         reset_password: "password_reset_pending",
         change_role: "role_change_pending",
+        doctor_workspace_assign: "workspace_change_pending",
       }[operation];
       const revokeSessions = operation !== "unlock";
       let result;
@@ -10875,7 +10891,7 @@ function createRepositories(options) {
               );
             }
             if (identityOperation.status !== "completed") {
-              if (identityOperation.operation === "change_role") {
+              if (["change_role", "doctor_workspace_assign"].includes(identityOperation.operation)) {
                 await assertSqlOperationalWorkspace(client, identityOperation.targetState);
               }
               await queryAssertWorkspaceOwnerTransition(
@@ -10965,7 +10981,7 @@ function createRepositories(options) {
               );
             }
           }
-          if (operation === "change_role") {
+          if (["change_role", "doctor_workspace_assign"].includes(operation)) {
             await assertSqlOperationalWorkspace(client, targetState);
           }
           await queryAssertWorkspaceOwnerTransition(client, targetUserId, operation, targetState);
@@ -11055,7 +11071,7 @@ function createRepositories(options) {
             );
           }
           if (existing.status !== "completed") {
-            if (existing.operation === "change_role") {
+            if (["change_role", "doctor_workspace_assign"].includes(existing.operation)) {
               assertRuntimeOperationalWorkspace(runtimeDb, existing.targetState);
             }
             assertRuntimeWorkspaceOwnerTransition(runtimeDb, targetUserId, existing.operation, existing.targetState);
@@ -11115,7 +11131,7 @@ function createRepositories(options) {
             );
           }
         }
-        if (operation === "change_role") {
+        if (["change_role", "doctor_workspace_assign"].includes(operation)) {
           assertRuntimeOperationalWorkspace(runtimeDb, targetState);
         }
         assertRuntimeWorkspaceOwnerTransition(runtimeDb, targetUserId, operation, targetState);
@@ -11746,7 +11762,7 @@ function createRepositories(options) {
             );
           }
 
-          if (identityOperation.operation === "change_role") {
+          if (["change_role", "doctor_workspace_assign"].includes(identityOperation.operation)) {
             await assertSqlOperationalWorkspace(client, identityOperation.targetState);
           }
           await queryAssertWorkspaceOwnerTransition(
@@ -11760,7 +11776,7 @@ function createRepositories(options) {
           let deleted = false;
           const finalStatus = identityOperation.operation === "lock"
             ? "locked"
-            : identityOperation.operation === "change_role"
+            : ["change_role", "doctor_workspace_assign"].includes(identityOperation.operation)
               ? String(identityOperation.targetState.accountStatus || "active")
               : "active";
           const finalAuditInput = {
@@ -11781,6 +11797,56 @@ function createRepositories(options) {
               );
               deleted = Boolean(priorCompleted.rows[0]);
             }
+          } else if (identityOperation.operation === "doctor_workspace_assign") {
+            const workspaceTarget = identityOperation.targetState;
+            const updated = await client.query(
+              `
+                UPDATE users
+                SET role = 'doctor',
+                    requested_role = 'doctor',
+                    role_request_status = 'approved',
+                    organization_id = $2,
+                    patient_id = NULL,
+                    account_status = $3,
+                    hospital = $4,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING *
+              `,
+              [
+                identityOperation.targetUserId,
+                workspaceTarget.organizationId,
+                finalStatus,
+                workspaceTarget.hospital,
+              ],
+            );
+            if (!updated.rows[0]) throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
+            user = rowToUser(updated.rows[0]);
+            await client.query(
+              `
+                INSERT INTO memberships (
+                  id, organization_id, user_id, role, status,
+                  suspended_at, created_at, updated_at
+                )
+                VALUES ($1, $2, $3, 'doctor', 'active', NULL, now(), now())
+                ON CONFLICT (organization_id, user_id)
+                DO UPDATE SET
+                  role = CASE
+                    WHEN LOWER(COALESCE(memberships.role, '')) IN ('owner', 'workspace_owner', 'workspace_admin', 'admin')
+                      THEN memberships.role
+                    ELSE 'doctor'
+                  END,
+                  status = 'active',
+                  suspended_at = NULL,
+                  updated_at = now()
+              `,
+              [
+                createId("mbr"),
+                workspaceTarget.organizationId,
+                identityOperation.targetUserId,
+              ],
+            );
+            await queryInsertAuditLog(client, createAuditLog(finalAuditInput));
           } else if (identityOperation.operation === "change_role") {
             const roleTarget = identityOperation.targetState;
             if (roleTarget.role === "workspace_admin") {
@@ -12013,7 +12079,7 @@ function createRepositories(options) {
             "The provider result must be persisted before the backend mutation is finalized",
             );
           }
-        if (identityOperation.operation === "change_role") {
+        if (["change_role", "doctor_workspace_assign"].includes(identityOperation.operation)) {
           assertRuntimeOperationalWorkspace(runtimeDb, identityOperation.targetState);
         }
         assertRuntimeWorkspaceOwnerTransition(
@@ -12027,6 +12093,45 @@ function createRepositories(options) {
         if (identityOperation.operation === "delete") {
           deleted = await users.deleteById(identityOperation.targetUserId, { deferSave: true });
           user = null;
+        } else if (identityOperation.operation === "doctor_workspace_assign") {
+          if (!user) throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
+          const workspaceTarget = identityOperation.targetState;
+          user.role = "doctor";
+          user.requestedRole = "doctor";
+          user.roleRequestStatus = "approved";
+          user.organizationId = workspaceTarget.organizationId;
+          user.patientId = "";
+          user.activePatientId = "";
+          user.accountStatus = workspaceTarget.accountStatus || "active";
+          user.hospital = workspaceTarget.hospital;
+          user.updatedAt = nowIso();
+          runtimeDb.memberships = Array.isArray(runtimeDb.memberships) ? runtimeDb.memberships : [];
+          let membership = runtimeDb.memberships.find(
+            (item) =>
+              item.userId === identityOperation.targetUserId &&
+              item.organizationId === workspaceTarget.organizationId,
+          );
+          if (!membership) {
+            membership = {
+              id: createId("mbr"),
+              organizationId: workspaceTarget.organizationId,
+              userId: identityOperation.targetUserId,
+              role: "doctor",
+              status: "active",
+              suspendedAt: "",
+              createdAt: nowIso(),
+              updatedAt: nowIso(),
+            };
+            runtimeDb.memberships.push(membership);
+          } else {
+            const currentRole = String(membership.role || "").toLowerCase();
+            if (!["owner", "workspace_owner", "workspace_admin", "admin"].includes(currentRole)) {
+              membership.role = "doctor";
+            }
+            membership.status = "active";
+            membership.suspendedAt = "";
+            membership.updatedAt = nowIso();
+          }
         } else if (identityOperation.operation === "change_role") {
           if (!user) throw repositoryError(404, "ACCOUNT_NOT_FOUND", "Account no longer exists");
           const roleTarget = identityOperation.targetState;

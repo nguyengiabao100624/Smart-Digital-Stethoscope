@@ -7,6 +7,24 @@ const rootDir = path.join(__dirname, "..");
 const port = 3466;
 const dataDir = path.join(rootDir, ".test-data", `notification-push-${Date.now()}`);
 
+function assertPushDispatchFailureIsolation() {
+  const serverSource = fs.readFileSync(path.join(rootDir, "server.js"), "utf8");
+  const queueStart = serverSource.indexOf("function queueNotificationPush(notification)");
+  const queueEnd = serverSource.indexOf("function buildOutboundWebhookPayload", queueStart);
+  assert.ok(queueStart >= 0 && queueEnd > queueStart, "push dispatcher source must be present");
+  const queueSource = serverSource.slice(queueStart, queueEnd);
+  assert.match(
+    queueSource,
+    /saveNotificationPushStatus\([\s\S]+?\)\.catch\(/,
+    "a failed delivery-status write must be contained instead of crashing the backend",
+  );
+  assert.equal(
+    (serverSource.match(/createNotification\(/g) || []).length,
+    2,
+    "SQL-capable routes must persist notifications before queuing delivery",
+  );
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -74,6 +92,7 @@ async function withServer(fn) {
 }
 
 async function main() {
+  assertPushDispatchFailureIsolation();
   await withServer(async () => {
     const login = await request("/api/v1/auth/login", {
       method: "POST",

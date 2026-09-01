@@ -11887,6 +11887,14 @@ function queueNotificationPush(notification) {
         pushFailedAt: notification.pushFailedAt,
         pushErrorMessage: notification.pushErrorMessage,
         pushAttempts: appendNotificationPushAttempts(notification, attempts),
+      }).catch((persistenceError) => {
+        const persistenceMessage = readString(
+          persistenceError?.message || String(persistenceError),
+          500,
+        );
+        console.error(
+          `Notification push failure status could not be persisted (${notification.id}): ${persistenceMessage}`,
+        );
       });
       console.error(`Notification push failed (${notification.id}): ${notification.pushErrorMessage}`);
     });
@@ -14844,15 +14852,13 @@ async function handleAuthApi(req, res, segments) {
       }
     }
     const session = createSession(user, req);
-    createNotification(
-      "success",
-      "Tạo tài khoản thành công",
-      "Tài khoản Smart Health đã được tạo.",
-      {
-        userId: user.id,
-        organizationId: user.organizationId || "",
-      },
-    );
+    await createBackendNotification({
+      type: "success",
+      title: "Tạo tài khoản thành công",
+      message: "Tài khoản Smart Health đã được tạo.",
+      userId: user.id,
+      organizationId: user.organizationId || "",
+    });
     addAccessLog("Tạo tài khoản mới", { ip: req.socket.remoteAddress || "" });
     await saveDb();
     sendJson(res, 201, { token: session.token, user: publicUser(user) });
@@ -16300,7 +16306,10 @@ async function handleAdminApi(req, res, url, segments) {
       },
     );
     Object.assign(targetUser, saga.completed.user || { accountStatus: "active" });
-    createNotification("warning", "Mật khẩu admin đã được đặt lại", `Tài khoản ${targetUser.email} vừa được cấp mật khẩu mới.`, {
+    await createBackendNotification({
+      type: "warning",
+      title: "Mật khẩu admin đã được đặt lại",
+      message: `Tài khoản ${targetUser.email} vừa được cấp mật khẩu mới.`,
       userId: adminUser.id,
       organizationId: targetUser.organizationId || "",
       targetUserId: targetUser.id,
@@ -22434,15 +22443,13 @@ async function handleDataApi(req, res, segments) {
       }
     }
     addAccessLog("Xóa toàn bộ dữ liệu y tế", { severity: "warning" });
-    createNotification(
-      "warning",
-      "Đã xóa dữ liệu",
-      "Toàn bộ hồ sơ và bản ghi âm đã được xóa theo yêu cầu.",
-      {
-        userId: user.id,
-        organizationId: getUserWorkspaceContext(user).currentWorkspaceId || "",
-      },
-    );
+    await createBackendNotification({
+      type: "warning",
+      title: "Đã xóa dữ liệu",
+      message: "Toàn bộ hồ sơ và bản ghi âm đã được xóa theo yêu cầu.",
+      userId: user.id,
+      organizationId: getUserWorkspaceContext(user).currentWorkspaceId || "",
+    });
     saveDb();
     sendJson(res, 200, { deleted: true, storage: getStorageSummary() });
     return;

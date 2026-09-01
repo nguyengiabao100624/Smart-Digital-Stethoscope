@@ -1288,6 +1288,11 @@ test("SQL locks the canonical device before persisting direct ownership values",
     OWNER_ALPHA,
     PATIENT_ALPHA,
   ]);
+  assert.equal(
+    upsert.params[21],
+    null,
+    "an empty revokedAt value must be persisted as SQL NULL, not an invalid empty timestamp",
+  );
   assert.equal(result.device.ownershipState, "assigned");
   assert.equal(result.device.assignedPatientId, PATIENT_ALPHA);
   assert.equal(transaction.committed, true);
